@@ -6,19 +6,19 @@
 kgen.generator @genericSugar<scalar: type, T: type>(
   %arg0: !kgen.pointer<*"scalar">, %arg1: !kgen.pointer<T>
 ) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @int_literal
 // CHECK-SAME: %arg0: !pop.int_literal
 kgen.func @int_literal(%arg0: !pop.int_literal) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @float_literal
 // CHECK-SAME: %arg0: !pop.float_literal
 kgen.func @float_literal(%arg0: !pop.float_literal) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @memory_only_struct
@@ -38,7 +38,67 @@ kgen.func @memory_only_struct(
   %arg5: !kgen.struct<((index, index) -> index) memoryOnly>,
   %arg6: !kgen.struct<(index, index) isParamPack>
 ) {
-  kgen.return
+  hlcf.return
+}
+
+// COM: A param pack keeps its elements' type values, so an element whose type
+// COM: value differs from its layout cannot use the parenthesized form, which
+// COM: holds layouts only.
+// CHECK-LABEL: @param_pack_type_values
+// CHECK-SAME: %arg0: !kgen.struct<{{\[\[}}typevalue<#kgen.genref<@Span>>, struct<(pointer<none>, scalar<index>)>{{\]\]}} isParamPack>,
+// CHECK-SAME: %arg1: !kgen.struct<(struct<(pointer<none>, scalar<index>)>) isParamPack>
+kgen.func @param_pack_type_values(
+  %arg0: !kgen.struct<[[typevalue<#kgen.genref<@Span>>, struct<(pointer<none>, scalar<index>)>]] isParamPack>,
+  %arg1: !kgen.struct<(struct<(pointer<none>, scalar<index>)>) isParamPack>
+) {
+  hlcf.return
+}
+
+// COM: A param pack over a trait metatype already prints its element list in
+// COM: full, so the parenthesized-form check must not touch it.
+// CHECK-LABEL: @trait_param_pack
+// CHECK-SAME: %arg0: !kgen.struct<:param_list<trait<@AnyType>> [index] isParamPack>
+kgen.func @trait_param_pack(
+  %arg0: !kgen.struct<:!kgen.param_list<!lit.trait<@AnyType>> [index] isParamPack>
+) {
+  hlcf.return
+}
+
+// COM: `(...)` is a layout. `[...]` or an expression has no domain unless it
+// COM: says `layout` or `value`. A layout keeps only the layout half of each
+// COM: element, and a value struct keeps what it is given, even plain elements.
+// CHECK-LABEL: @struct_domains
+// CHECK-SAME: %arg0: !kgen.struct<(index, f32)>,
+// CHECK-SAME: %arg1: !kgen.struct<[index, f32]>,
+// CHECK-SAME: %arg2: !kgen.struct<[index, f32] value>,
+// CHECK-SAME: %arg3: !kgen.struct<(T)>,
+// CHECK-SAME: %arg4: !kgen.struct<[T]>,
+// CHECK-SAME: %arg5: !kgen.struct<(T)>,
+// CHECK-SAME: %arg6: !kgen.struct<[T] value>,
+// CHECK-SAME: %arg7: !kgen.struct<Ts>,
+// CHECK-SAME: %arg8: !kgen.struct<Ts layout>,
+// CHECK-SAME: %arg9: !kgen.struct<Ts value>,
+// CHECK-SAME: %arg10: !kgen.struct<Ts isParamPack layout align(8)>,
+// CHECK-SAME: %arg11: !kgen.struct<{{\[\[}}typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>{{\]\]}}>,
+// CHECK-SAME: %arg12: !kgen.struct<(struct<(scalar<f32>)>)>,
+// CHECK-SAME: %arg13: !kgen.struct<{{\[\[}}typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>{{\]\]}} value>
+kgen.generator @struct_domains<T: type, Ts: param_list<type>>(
+  %arg0: !kgen.struct<(index, f32)>,
+  %arg1: !kgen.struct<[index, f32]>,
+  %arg2: !kgen.struct<[index, f32] value>,
+  %arg3: !kgen.struct<(T)>,
+  %arg4: !kgen.struct<[T]>,
+  %arg5: !kgen.struct<[T] layout>,
+  %arg6: !kgen.struct<[T] value>,
+  %arg7: !kgen.struct<Ts>,
+  %arg8: !kgen.struct<Ts layout>,
+  %arg9: !kgen.struct<Ts value>,
+  %arg10: !kgen.struct<Ts isParamPack layout align(8)>,
+  %arg11: !kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>]]>,
+  %arg12: !kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>]] layout>,
+  %arg13: !kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>]] value>
+) {
+  hlcf.return
 }
 
 // CHECK-LABEL: @aligned_struct
@@ -49,7 +109,7 @@ kgen.generator @aligned_struct<param_align>(
   %arg1: !kgen.struct<(index) memoryOnly align(128)>,
   %arg2: !kgen.struct<(index) align(mul(param_align, 2))>
 ) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @type_printing
@@ -64,14 +124,14 @@ kgen.generator @type_printing() {
   kgen.param.declare btype: type = <struct_inst<"Foo"(data: struct<()>)>>
   // CHECK: type = <struct_inst<"Bar"[elemT, size]<:dtype f32, 16>(data: struct<()>) memoryOnly>>
   kgen.param.declare btype: type = <struct_inst<"Bar"[elemT, size]<:dtype f32, 16>(data: struct<()>) memoryOnly>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @variadic_variant
 // CHECK-SAME: !kgen.variant<[values]>
 // CHECK-SAME-LITERAL: !kgen.variant<[[]]>
 kgen.generator @variadic_variant<values: param_list<type>>(%arg0: !kgen.variant<[values]>, %arg1: !kgen.variant<[[]]>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @parametric_struct
@@ -83,7 +143,7 @@ kgen.generator @parametric_struct<Ts: param_list<type>>(
   %arg1: !kgen.struct<Ts memoryOnly>,
   %arg2: !kgen.struct<[index, f32]>
 ) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @type_value
@@ -92,7 +152,7 @@ kgen.func @type_value() {
   kgen.param.declare atype: type = <typevalue<struct<()>>>
   // CHECK: type = <struct<(struct<()>)>>
   kgen.param.declare atype: type = <struct<(typevalue<struct<()>>)>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @generator_types
@@ -107,7 +167,7 @@ kgen.func @generator_types() {
   kgen.param.declare atype: type = <<AnyType, index, index>i1>
   // CHECK-NEXT: type = <<AnyType, index>(!kgen.param<*(0,0)>, i8) -> !kgen.param<*(0,1)>>
   kgen.param.declare atype: type = <<AnyType, index>(!kgen.param<*(0,0)>, i8) -> !kgen.param<*(0,1)>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @func_types
@@ -116,7 +176,7 @@ kgen.func @func_types() {
   kgen.param.declare atype: type = <!kgen.func<() -> ()>>
   // CHECK-NEXT: btype: type = <(index, i8) -> none>
   kgen.param.declare btype: type = <!kgen.func<(index, i8) -> none>>
-  kgen.return
+  hlcf.return
 }
 
 // COM: Non-null pointer types
@@ -124,11 +184,21 @@ kgen.func @func_types() {
 // CHECK-LABEL: @nonnull_pointer
 // CHECK-SAME: !kgen.pointer<scalar<f32>, nonnull>
 kgen.func @nonnull_pointer(%arg0: !kgen.pointer<scalar<f32>, 0, nonnull>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @nonnull_pointer_addrspace
 // CHECK-SAME: !kgen.pointer<scalar<f32>, 1, nonnull>
 kgen.func @nonnull_pointer_addrspace(%arg0: !kgen.pointer<scalar<f32>, 1, nonnull>) {
-  kgen.return
+  hlcf.return
+}
+
+// COM: An `@inline(expr)` the elaborator has not folded yet round-trips as
+// COM: `inline<expr>` where an inline-level keyword would go.
+// CHECK-LABEL: kgen.generator @unfolded_inline_level
+// CHECK-SAME: inline<#kgen.cast_to_builtin
+kgen.generator @unfolded_inline_level<policy: !kgen.scalar<index>>()
+    inline<#kgen.cast_to_builtin<#kgen.param.decl.ref<"policy">
+                                 : !kgen.scalar<index>> : index> {
+  hlcf.return
 }

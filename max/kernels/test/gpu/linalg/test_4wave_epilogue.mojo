@@ -26,9 +26,8 @@ Compile-time configuration:
 
 from std.sys import align_of, get_defined_int
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext
-from std.utils import IndexList
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
 from std.random import random_float64
@@ -73,7 +72,7 @@ def test_4wave_epilogue[
     var a_tt = TileTensor(device_a, row_major[M, K]())
     var b_tt = TileTensor(device_b, row_major[N, K]())
     var c_tt = TileTensor(device_c, row_major[M, N]())
-    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
+    # Capture the raw pointer: a `{var}` capture byte-copies, so a
     # `DeviceBuffer`-backed tile would reach the device as a host reference.
     var out_tt = TileTensor(device_out.unsafe_ptr(), row_major[M, N]())
 
@@ -81,9 +80,9 @@ def test_4wave_epilogue[
     var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
     vendor_blas.matmul(
         ctx,
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -92,25 +91,22 @@ def test_4wave_epilogue[
 
     # Capturing lambda: writes the SIMD into `out_tt` at the supplied
     # global coords. 4wave hits this with `width=c_frag_size=4`.
-    @__parameter
-    @always_inline
-    @__copy_capture(out_tt)
+    @inline(.always)
     def epilogue_fn[
         _dtype: DType,
         width: SIMDLength,
         *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        var coord = Coord(idx)
-        comptime assert coord.flat_rank == out_tt.flat_rank
-        out_tt.store[width=width, alignment=alignment](
-            coord, rebind[SIMD[out_dtype, width]](val)
+        alignment: Int,
+    ](idx: Coord, val: SIMD[_dtype, width]) {var} -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        comptime assert idx.flat_rank == out_tt.flat_rank
+        out_tt.store[alignment=alignment](
+            idx, rebind[SIMD[out_dtype, width]](val)
         )
 
-    structured_4wave_matmul[
-        enable_swizzle=enable_swizzle,
-        elementwise_lambda_fn=epilogue_fn,
-    ](a_tt, b_tt, c_tt, ctx)
+    structured_4wave_matmul[enable_swizzle=enable_swizzle](
+        a_tt, b_tt, c_tt, epilogue_fn, ctx
+    )
 
     with device_out.map_to_host() as host_out, device_c_ref.map_to_host() as host_c_ref, device_c.map_to_host() as host_c:
         # --- 1. Lambda accuracy: out_tt vs vendor BLAS reference ---
@@ -138,18 +134,9 @@ def test_4wave_epilogue[
                 if printed < 10:
                     var row, col = divmod(i, N)
                     print(
-                        "Mismatch at (",
-                        row,
-                        ",",
-                        col,
-                        "): actual=",
-                        actual,
-                        " expected=",
-                        expected,
-                        " diff=",
-                        diff,
-                        " threshold=",
-                        threshold,
+                        t"Mismatch at ( {row} , {col} ): actual= {actual} "
+                        t" expected= {expected}  diff= {diff}  threshold="
+                        t" {threshold}"
                     )
                     printed += 1
                 errors += 1
@@ -160,9 +147,9 @@ def test_4wave_epilogue[
 
         # --- 2. Lambda exclusivity: c_tt should still be sentinel ---
         # The kernel writes via the lambda, NOT into `c`. If this
-        # check fires, the kernel has a "shadow" store path or my
-        # `comptime if Bool(elementwise_lambda_fn)` branch is leaking
-        # to the no-lambda store as well.
+        # check fires, the kernel has a "shadow" store path or the
+        # `comptime if has_epilogue_fn` branch is leaking to the
+        # no-lambda store as well.
         var leaks = 0
         for i in range(M * N):
             if host_c[i] != sentinel_c:
@@ -178,7 +165,7 @@ def test_4wave_epilogue[
 
 def run_dtype_sweep[dtype: DType](ctx: DeviceContext) raises:
     """Run swizzle on/off cases for one dtype."""
-    print("  Shape: M=", TEST_M, " N=", TEST_N, " K=", TEST_K, sep="")
+    print(t"  Shape: M={TEST_M} N={TEST_N} K={TEST_K}", sep="")
     print("  no swizzle...")
     test_4wave_epilogue[dtype, TEST_M, TEST_N, TEST_K, enable_swizzle=False](
         ctx

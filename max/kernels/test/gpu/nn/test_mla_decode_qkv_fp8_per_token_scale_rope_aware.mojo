@@ -24,7 +24,7 @@ This test exercises the complete production dispatch path:
             -> launch_mla_sm100_decode_fp8_per_token_scale_rope_aware
           + combine kernel for split-K reduction
 
-Using a PagedKVCache (not LayoutTensorMHAOperand) because the production
+Using a PagedKVCache (not TileTensorMHAOperand) because the production
 path's create_rope_tma_tile is only implemented for PagedKVCache.
 
 Layout:
@@ -38,7 +38,6 @@ Layout:
 
 from std.math import ceildiv, nan
 from std.random import randn, seed
-from std.sys import has_nvidia_gpu_accelerator
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import (
@@ -46,15 +45,7 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from nn.attention.gpu.mla import flare_mla_decoding
@@ -64,7 +55,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal
 from max.gpu.host.info import B200, _is_sm10x_gpu
-from std.utils.index import Index, IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -125,9 +115,9 @@ def create_interleaved_q_data(
                 q_ref_bf16[ref_row_start + d] = fp8_val.cast[.bfloat16]()
 
             # Rope: BF16 stored as raw bytes in the FP8 buffer, and in ref
-            var rope_byte_ptr = (q_host_fp8 + fp8_row_start + V_DEPTH).bitcast[
-                BFloat16
-            ]()
+            var rope_byte_ptr = (
+                q_host_fp8.unsafe_offset(fp8_row_start).unsafe_offset(V_DEPTH)
+            ).unsafe_bitcast[BFloat16]()
             for d in range(ROPE_DIM):
                 rope_byte_ptr[d] = rope_bf16[rope_start + d]
                 q_ref_bf16[ref_row_start + V_DEPTH + d] = rope_bf16[
@@ -176,9 +166,9 @@ def create_interleaved_kv_block_data(
             ].cast[.float8_e4m3fn]()
 
         # Rope: store BF16 bytes in the FP8 buffer
-        var rope_byte_ptr = (blocks_host + fp8_row_start + V_DEPTH).bitcast[
-            BFloat16
-        ]()
+        var rope_byte_ptr = (
+            blocks_host.unsafe_offset(fp8_row_start).unsafe_offset(V_DEPTH)
+        ).unsafe_bitcast[BFloat16]()
         for d in range(ROPE_DIM):
             rope_byte_ptr[d] = rope_bf16[rope_start + d]
 
@@ -210,7 +200,11 @@ def extract_bf16_kv_from_block(
             ]()
 
         # Copy BF16 rope
-        var rope_src = (blocks_host + src_row + V_DEPTH).bitcast[BFloat16]()
+        var rope_src = (
+            blocks_host.unsafe_offset(src_row)
+            .unsafe_offset(V_DEPTH)
+            .unsafe_bitcast[BFloat16]()
+        )
         for d in range(ROPE_DIM):
             k_bf16_out[dst_row + V_DEPTH + d] = rope_src[d]
 
@@ -232,14 +226,7 @@ def run_test[
     var batch_size = len(cache_lengths)
     var total_q_tokens = batch_size  # seq_len=1 per batch
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
 
@@ -259,14 +246,6 @@ def run_test[
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -316,14 +295,6 @@ def run_test[
     # deterministically catch OOB scale reads in the kernel.
     # (The kernel must sanitize with max(scale, 0) to handle this.)
     comptime head_dim_gran = 1  # ceildiv(PHYSICAL_DIM, PHYSICAL_DIM)
-    var scales_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        head_dim_gran,
-    )
     var scales_elems = (
         total_pages
         * kv_dim2
@@ -445,69 +416,59 @@ def run_test[
     ctx.synchronize()
 
     # -------------------------------------------------------------------
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection
+    # Step 6: Build native views and PagedKVCacheCollection
     # -------------------------------------------------------------------
-    var blocks_lt = LayoutTensor[fp8_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    var scales_lt = LayoutTensor[.float32, Layout.row_major[6]()](
-        scales_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(scales_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
 
-    var kv_collection = PagedKVCacheCollection[
+    var scales_tt = TileTensor(
+        scales_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[1],
+        ),
+    )
+
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
         fp8_type,
         kv_params,
         PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=PHYSICAL_DIM,
-    ](
-        LayoutTensor[fp8_type, Layout.row_major[6]()](
-            blocks_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[.float32, Layout.row_major[6]()](
-            scales_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[Layout.row_major[6]()](
-                scales_lt.runtime_layout.shape.value,
-                scales_lt.runtime_layout.stride.value,
-            ),
-        ),
+        rebind[Collection.scales_tt_type](scales_tt.as_unsafe_any_origin()),
     )
 
     var kv_cache = kv_collection.get_key_cache(0)
@@ -595,14 +556,13 @@ def run_test[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var dst_offset = tok * KV_NUM_HEADS * LOGICAL_DEPTH
             extract_bf16_kv_from_block(
                 blocks_host.unsafe_ptr(),
-                k_b_host.unsafe_ptr() + dst_offset,
+                k_b_host.unsafe_ptr().unsafe_offset(dst_offset),
                 physical_page,
                 tok_in_page,
                 kv_dim2,
@@ -652,11 +612,11 @@ def run_test[
 
         # mha_gpu_naive: K used as both K and V (MLA: V = K[:,:,:512])
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             1,  # seq_len
@@ -690,14 +650,8 @@ def run_test[
                         first_nan_h = h
                         first_nan_d = d
                         print(
-                            "  NaN at batch",
-                            b,
-                            "head",
-                            h,
-                            "depth",
-                            d,
-                            "expect",
-                            expect,
+                            t"  NaN at batch {b} head {h} depth {d} expect"
+                            t" {expect}"
                         )
                     continue
                 var abs_err = abs(actual - expect)
@@ -707,12 +661,8 @@ def run_test[
                     print(b, h, d, actual, expect)
         if nan_count > 0:
             print(
-                "  TOTAL NaNs for batch",
-                b,
-                ":",
-                nan_count,
-                "out of",
-                num_heads * V_DEPTH,
+                t"  TOTAL NaNs for batch {b} : {nan_count} out of"
+                t" {num_heads * V_DEPTH}"
             )
             print(
                 "  First NaN at h=",
@@ -806,13 +756,8 @@ def run_test_with_scales[
     var total_q_tokens = batch_size  # seq_len=1 per batch
 
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " (with non-trivial scales)",
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}  (with"
+        t" non-trivial scales)"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -835,14 +780,6 @@ def run_test_with_scales[
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -889,14 +826,6 @@ def run_test_with_scales[
     # Scales shape: [total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, num_heads, head_dim_gran]
     # With head_dim_gran=1: one float32 per token.
     comptime head_dim_gran = 1  # ceildiv(PHYSICAL_DIM, PHYSICAL_DIM)
-    var scales_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        head_dim_gran,
-    )
     var scales_elems = (
         total_pages
         * kv_dim2
@@ -979,10 +908,10 @@ def run_test_with_scales[
                 for kh in range(KV_NUM_HEADS):
                     var rope_ptr = (
                         blocks_host.unsafe_ptr()
-                        + tok_fp8_base
-                        + kh * PHYSICAL_DIM
-                        + V_DEPTH
-                    ).bitcast[BFloat16]()
+                        .unsafe_offset(tok_fp8_base)
+                        .unsafe_offset(kh * PHYSICAL_DIM)
+                        .unsafe_offset(V_DEPTH)
+                    ).unsafe_bitcast[BFloat16]()
                     for d in range(ROPE_DIM):
                         rope_ptr[d] = (
                             rope_ptr[d].cast[.float32]() / sigma_kv_t
@@ -1040,8 +969,10 @@ def run_test_with_scales[
             var row_idx = t * num_heads + h
             # Divide Q_rope BF16 in the interleaved FP8 buffer
             var fp8_rope_ptr = (
-                q_host_fp8.unsafe_ptr() + row_idx * PHYSICAL_DIM + V_DEPTH
-            ).bitcast[BFloat16]()
+                q_host_fp8.unsafe_ptr()
+                .unsafe_offset(row_idx * PHYSICAL_DIM)
+                .unsafe_offset(V_DEPTH)
+            ).unsafe_bitcast[BFloat16]()
             for d in range(ROPE_DIM):
                 fp8_rope_ptr[d] = (
                     fp8_rope_ptr[d].cast[.float32]() / sigma_q_t
@@ -1099,73 +1030,63 @@ def run_test_with_scales[
     ctx.synchronize()
 
     # -------------------------------------------------------------------
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection
+    # Step 6: Build native views and PagedKVCacheCollection
     # -------------------------------------------------------------------
-    var blocks_lt = LayoutTensor[fp8_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    var scales_lt = LayoutTensor[.float32, Layout.row_major[6]()](
-        scales_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(scales_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
+    )
+
+    var scales_tt = TileTensor(
+        scales_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[1],
+        ),
+    )
+
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
     )
 
     # Build PagedKVCacheCollection WITH per-token scales.
     # quantization_granularity_ = PHYSICAL_DIM gives head_dim_gran = 1
     # (one scale per token), matching the per-token scale layout.
-    var kv_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         fp8_type,
         kv_params,
         PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=PHYSICAL_DIM,
-    ](
-        LayoutTensor[fp8_type, Layout.row_major[6]()](
-            blocks_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
         # Pass the scales tensor
-        LayoutTensor[.float32, Layout.row_major[6]()](
-            scales_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[Layout.row_major[6]()](
-                scales_lt.runtime_layout.shape.value,
-                scales_lt.runtime_layout.stride.value,
-            ),
-        ),
+        rebind[Collection.scales_tt_type](scales_tt.as_unsafe_any_origin()),
     )
 
     var kv_cache = kv_collection.get_key_cache(0)
@@ -1269,8 +1190,7 @@ def run_test_with_scales[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             # Get sigma_KV[t] for this token from the scales host array.
@@ -1284,7 +1204,7 @@ def run_test_with_scales[
             var dst_offset = tok * KV_NUM_HEADS * LOGICAL_DEPTH
             extract_bf16_kv_from_block(
                 blocks_host.unsafe_ptr(),
-                k_b_host.unsafe_ptr() + dst_offset,
+                k_b_host.unsafe_ptr().unsafe_offset(dst_offset),
                 physical_page,
                 tok_in_page,
                 kv_dim2,
@@ -1348,11 +1268,11 @@ def run_test_with_scales[
 
         # mha_gpu_naive: K used as both K and V (MLA: V = K[:,:,:512])
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             1,  # seq_len
@@ -1386,14 +1306,8 @@ def run_test_with_scales[
                         first_nan_h = h
                         first_nan_d = d
                         print(
-                            "  NaN at batch",
-                            b,
-                            "head",
-                            h,
-                            "depth",
-                            d,
-                            "expect",
-                            expect,
+                            t"  NaN at batch {b} head {h} depth {d} expect"
+                            t" {expect}"
                         )
                     continue
                 var abs_err = abs(actual - expect)
@@ -1403,12 +1317,8 @@ def run_test_with_scales[
                     print(b, h, d, actual, expect)
         if nan_count > 0:
             print(
-                "  TOTAL NaNs for batch",
-                b,
-                ":",
-                nan_count,
-                "out of",
-                num_heads * V_DEPTH,
+                t"  TOTAL NaNs for batch {b} : {nan_count} out of"
+                t" {num_heads * V_DEPTH}"
             )
             print(
                 "  First NaN at h=",
@@ -1457,7 +1367,7 @@ def main() raises:
     seed(42)
     print("Starting test_mla_decode_qkv_fp8_per_token_scale_rope_aware...")
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             print("=" * 72)

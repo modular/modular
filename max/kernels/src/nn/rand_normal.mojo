@@ -16,27 +16,23 @@ from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.random import NormalRandom
-from extensibility import _dot_prod
 
-from std.utils import IndexList
-from std.utils.coord import Coord, coord_to_index_list
+from layout import row_major
+from std.utils.coord import Coord
 
 
 def random_normal[
     dtype: DType,
-    rank: Int,
     //,
     target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDLength, _rank: Int](
-        idx: IndexList[_rank], val: SIMD[dtype, width]
-    ),
+    & def[width: SIMDLength](idx: Coord, val: SIMD[dtype, width]),
 ](
-    shape: IndexList[rank],
+    shape: Coord,
     mean: Float32,
     stddev: Float32,
-    seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin],
+    seed_ptr: ImmPointer[UInt64, ImmutAnyOrigin],
     ctx: DeviceContext,
     output_fn: OutputFn,
 ) raises:
@@ -58,7 +54,6 @@ def random_normal[
 
     Parameters:
         dtype: The data type to generate.
-        rank: The rank of the underlying buffer.
         target: The target to run on.
         OutputFn: The type of the function which stores the generated values.
 
@@ -75,11 +70,13 @@ def random_normal[
     if stddev <= 0:
         raise Error("stddev must be positive")
 
-    var numel = shape.flattened_length()
+    var numel = Int(shape.product())
     if numel == 0:
         return
 
-    var strides = shape.get_row_major_strides()
+    # Row-major layout over `shape`: `layout(idx)` is the element's flat index,
+    # which is what the Philox counter below walks.
+    var layout = row_major(shape)
 
     comptime BLOCK_SIZE: Int = 256
 
@@ -100,20 +97,18 @@ def random_normal[
     else:
         grid_block = numel
 
-    @always_inline
+    @inline(.always)
     def generate[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert (
             width == 1
         ), "PyTorch-compat normal kernel uses scalar lanes"
-        var i = _dot_prod(
-            rebind[type_of(strides)](coord_to_index_list(idx)), strides
-        )
+        var i = Int(layout(idx))
         var thread_id = UInt64(i % grid_block)
         var within_thread = i // grid_block
 
         var rng = NormalRandom(seed=seed_ptr[0], subsequence=thread_id)
         var four = rng.step_normal_4(mean=mean, stddev=stddev)
         var value = four[within_thread].cast[dtype]()
-        output_fn[width=1](coord_to_index_list(idx), SIMD[dtype, 1](value))
+        output_fn[width=1](idx, SIMD[dtype, 1](value))
 
-    elementwise[simd_width=1, target=target](generate, Coord(shape), ctx)
+    elementwise[simd_width=1, target=target](generate, shape, ctx)

@@ -521,9 +521,18 @@ class WanTransformer(CompiledComponent):
         B=2 noise output back into the cond / uncond halves.
 
         Args:
+            hidden_states: The noisy latents at B=1; the pre graph tiles them
+                to the text embedding's batch.
+            timestep: The step's timestep at B=1, tiled the same way.
             encoder_hidden_states_b2: Text embedding pre-concatenated as
                 ``[cond; uncond]`` along axis 0 — the caller is responsible
                 for batching this once per denoising phase.
+            rope_cos: The rotary embedding's cosine table.
+            rope_sin: The rotary embedding's sine table.
+            spatial_shape: The latent grid's shape, which the post pass
+                unpatchifies against.
+            use_secondary_transformer: Whether to run the second compiled
+                transformer instead of the first.
 
         Does not currently support I2V (``i2v_condition``) — callers should
         fall back to two ``__call__``s when an I2V condition is present.
@@ -578,6 +587,7 @@ class WanTransformer(CompiledComponent):
 
     @property
     def device(self) -> Device:
+        """The device the transformer's weights live on."""
         return self._device
 
     # -- Internal helpers ---------------------------------------------------

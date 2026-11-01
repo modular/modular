@@ -301,16 +301,6 @@ public:
   /// If the stack is not deep enough, return null.
   virtual Operation *getOrigin(size_t depth) = 0;
 
-  /// Set the value of a named global.
-  void setNamedGlobal(StringAttr name, Attribute value) {
-    namedGlobals[name] = value;
-  }
-
-  /// Get the value of a named global.
-  Attribute getNamedGlobal(StringAttr name) {
-    return namedGlobals.lookup(name);
-  }
-
   //===--------------------------------------------------------------------===//
   // Interpreter Value Management
 
@@ -495,11 +485,6 @@ protected:
   /// When the interpreter hits an error, construct an error tree given the
   /// current stack frame.
   virtual ErrorTree addStackTrace(ErrorTree error) = 0;
-
-private:
-  /// This map implements named global values. Named global values represent a
-  /// mechanism for storing SSA value captures at compile time.
-  DenseMap<StringAttr, Attribute> namedGlobals;
 };
 
 //===----------------------------------------------------------------------===//

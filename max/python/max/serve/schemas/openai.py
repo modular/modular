@@ -14,8 +14,9 @@
 """OpenAI-compatible request/response schemas for MAX Serve.
 
 Response models are the official Pydantic types from the ``openai`` SDK,
-with small subclasses to expose MAX-only response extensions (currently the
-``reasoning`` text emitted by reasoning models). Subclassing rather than
+with small subclasses to expose MAX-only response extensions (the
+``reasoning`` text emitted by reasoning models, and the token ids requested
+via ``return_token_ids``). Subclassing rather than
 relying on pydantic's ``extra='allow'`` keeps the surface explicit so a
 typo in field handling code is a static error rather than a silent extra.
 
@@ -66,9 +67,9 @@ from openai.types.chat.chat_completion_token_logprob import TopLogprob
 from openai.types.chat.completion_create_params import (
     CompletionCreateParamsBase as _OpenAIChatCompletionParams,
 )
-from openai.types.completion import Completion as CreateCompletionResponse
+from openai.types.completion import Completion as _OpenAICompletion
 from openai.types.completion_choice import (
-    CompletionChoice as CompletionResponseChoice,
+    CompletionChoice as _OpenAICompletionChoice,
     Logprobs as CompletionLogprobs,
 )
 from openai.types.completion_create_params import (
@@ -96,21 +97,27 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     create_model,
+    model_serializer,
     model_validator,
 )
 from typing_extensions import NotRequired, TypedDict
 
+from max.serve.schemas._chat_template import (
+    thinking_requested,
+)
+
 # ---------------------------------------------------------------------------
 # Response models.
 #
-# We subclass the OpenAI SDK pydantic types only to declare the MAX-specific
-# ``reasoning`` field (emitted by reasoning models). OpenAI's official chat
-# completion shapes don't have this field today (it lives on the newer
-# Responses API); other inference servers expose an analogous
-# ``reasoning_content``. Clients that don't know about ``reasoning`` will
-# either accept it as an OpenAI ``extra='allow'`` field or drop it, so we
-# remain a strict superset of the OpenAI wire format.
+# We subclass the OpenAI SDK pydantic types to declare the MAX-specific
+# ``reasoning`` field (emitted by reasoning models) and the opt-in token id
+# fields. OpenAI's official chat completion shapes don't have ``reasoning``
+# today (it lives on the newer Responses API); other inference servers expose
+# an analogous ``reasoning_content``. Clients that don't know about these
+# fields will either accept them as OpenAI ``extra='allow'`` fields or drop
+# them, so we remain a strict superset of the OpenAI wire format.
 # ---------------------------------------------------------------------------
 
 
@@ -140,13 +147,38 @@ class ChatCompletionStreamResponseDelta(_OpenAIChoiceDelta):
     reasoning_content: str | None = None
 
 
-class ChatCompletionResponseChoice(_OpenAIChatCompletionChoice):
+class TokenIdsMixin(BaseModel):
+    """Per-choice token ids, returned only when ``return_token_ids`` is set.
+
+    ``token_ids`` holds the ids the sampler committed for the choice (a delta
+    per chunk when streaming); ``prompt_token_ids`` holds the post-chat-template
+    prompt and is sent once. Both are dropped from the serialized output when
+    unset so the wire format is unchanged for clients that didn't ask.
+    """
+
+    token_ids: list[int] | None = None
+    prompt_token_ids: list[int] | None = None
+
+    @model_serializer(mode="wrap")
+    def _drop_unset_token_ids(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        data = handler(self)
+        for field in ("token_ids", "prompt_token_ids"):
+            if data.get(field) is None:
+                data.pop(field, None)
+        return data
+
+
+class ChatCompletionResponseChoice(TokenIdsMixin, _OpenAIChatCompletionChoice):
     """Non-streaming chat completion choice using the MAX-extended message."""
 
     message: ChatCompletionResponseMessage
 
 
-class ChatCompletionStreamResponseChoice(_OpenAIChatCompletionStreamChoice):
+class ChatCompletionStreamResponseChoice(
+    TokenIdsMixin, _OpenAIChatCompletionStreamChoice
+):
     """Streaming chat completion choice using the MAX-extended delta."""
 
     delta: ChatCompletionStreamResponseDelta
@@ -164,6 +196,18 @@ class CreateChatCompletionStreamResponse(_OpenAIChatCompletionChunk):
     """Streaming chat completion response using MAX-extended choices."""
 
     choices: list[ChatCompletionStreamResponseChoice]  # type: ignore[assignment]
+
+
+class CompletionResponseChoice(TokenIdsMixin, _OpenAICompletionChoice):
+    """Text completion choice extended with MAX token ids."""
+
+
+class CreateCompletionResponse(_OpenAICompletion):
+    """Text completion response using MAX-extended choices."""
+
+    # ``list`` is invariant in pydantic field overrides; mypy needs the ignore
+    # but pydantic accepts the narrowed element type at runtime.
+    choices: list[CompletionResponseChoice]  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -291,12 +335,12 @@ def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     """Builds a pydantic ``BaseModel`` mirroring an OpenAI ``TypedDict``.
 
     All fields default to ``None`` because OpenAI marks only a few fields
-    (e.g. ``model``, ``messages``, ``input``) as ``Required[...]``; we
+    (such as ``model``, ``messages``, ``input``) as ``Required[...]``; we
     re-declare the truly required ones in the subclass below with no
     default.
 
     Field annotations are widened to ``Optional[T]`` so that clients which
-    explicitly serialize unset fields as ``null`` (e.g. ``"tool_choice":
+    explicitly serialize unset fields as ``null`` (such as ``"tool_choice":
     null``) are accepted as equivalent to omission. OpenAI expresses this
     via ``NotRequired`` on the TypedDict, but the underlying type aliases
     (``ChatCompletionToolChoiceOptionParam`` and friends) are not
@@ -312,17 +356,26 @@ def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     return create_model(name, __config__=_FORBID_EXTRA, **fields)
 
 
+# The OpenAI SDK literal stops at ``xhigh``; GLM and MiniMax-M3.1 name the rung
+# above it ``max``. Matches sglang's ``ReasoningEffortTier``, so a value the
+# reference stack rejects is rejected here too.
+ReasoningEffortLevel = Literal[
+    "none", "minimal", "low", "medium", "high", "xhigh", "max"
+]
+
+
 class ReasoningConfig(BaseModel):
     """OpenRouter's ``reasoning`` object (OpenAI only has ``reasoning_effort``).
 
-    Only ``enabled`` is used (mapped to ``enable_thinking`` in the route);
-    the rest are accepted but ignored for now.
+    ``enabled`` and ``effort`` are folded into the chat-template kwargs by
+    :attr:`CreateChatCompletionRequest.resolved_chat_template_kwargs`;
+    ``max_tokens`` and ``exclude`` are accepted but ignored for now.
     """
 
     model_config = _FORBID_EXTRA
 
     enabled: bool | None = None
-    effort: str | None = None
+    effort: ReasoningEffortLevel | None = None
     max_tokens: int | None = None
     exclude: bool | None = None
 
@@ -343,14 +396,18 @@ class _MaxRequestExtensions(BaseModel):
     repetition_penalty: float | None = None
     thinking_temperature: float | None = None
 
-    # MiniMax M3 only: ``False`` folds reasoning into ``content`` wrapped in
-    # ``<think>...</think>``; ``True`` (default) keeps it in the ``reasoning`` field.
+    # ``False`` on chat completions (MiniMax M3 only) folds reasoning into
+    # ``content`` wrapped in ``<think>...</think>``; on completions it skips the
+    # reasoning parser, so ``text`` and ``logprobs`` cover every generated
+    # token. ``True`` (default) keeps reasoning out of ``content``/``text``.
     reasoning_split: bool = True
 
     # Generation control.
     min_tokens: int | None = None
     stop_token_ids: list[int] | None = None
     ignore_eos: bool = False
+    # Returns the prompt and generated token ids on each response choice.
+    return_token_ids: bool = False
 
     # Routing / cache hints used by disaggregated serving.
     target_endpoint: str | None = None
@@ -364,11 +421,12 @@ class _MaxRequestExtensions(BaseModel):
             "entries from other requests. Combined with "
             "kv_cache_hash_seed via XOR. Works under any "
             "kv_cache_hash_algo: a cryptographic guarantee under "
-            "sha256/sha256_64, best-effort under ahash64."
+            "sha256 (64-bit key separation on the dKV external tier), "
+            "best-effort under ahash64."
         ),
     )
 
-    # OpenRouter reasoning object; mapped to enable_thinking in the route.
+    # OpenRouter reasoning object; folded into the chat-template kwargs.
     reasoning: ReasoningConfig | None = None
 
 
@@ -412,8 +470,8 @@ class CreateChatCompletionRequest(
     model: str
     messages: list[ChatCompletionMessageParam] = Field(min_length=1)
 
-    max_tokens: int | None = None
-    max_completion_tokens: int | None = None
+    max_tokens: int | None = Field(default=None, ge=1)
+    max_completion_tokens: int | None = Field(default=None, ge=1)
 
     # Re-typed from the SDK union so the ``json_schema`` arm advertises a
     # boolean ``schema`` (a valid JSON Schema). Pydantic emits a plain dict;
@@ -423,6 +481,9 @@ class CreateChatCompletionRequest(
     # ``stream`` lives on the OpenAI streaming/non-streaming subclasses, not
     # on ``CompletionCreateParamsBase`` - declare it explicitly here.
     stream: bool | None = False
+
+    # Re-typed from the SDK literal to accept ``max``.
+    reasoning_effort: ReasoningEffortLevel | None = None
 
     # MAX-only chat-template extension.
     chat_template_kwargs: dict[str, Any] | None = None
@@ -485,40 +546,71 @@ class CreateChatCompletionRequest(
         ``reasoning`` object are folded into it here (OpenRouter sends both).
 
         The effort is taken from ``chat_template_kwargs`` first, then the
-        top-level field, then the ``reasoning`` object; whichever wins also
+        top-level field, then the ``reasoning`` object; a kwarg present at
+        all — even null or falsy — is never replaced. A falsy effort
+        (``None``, ``0``, ``false``) asks for nothing: the kwargs travel as
+        sent and the model's own thinking default stands. The ``reasoning``
+        object is consulted only when no explicit kwarg or top-level effort
+        was sent, and an empty one asks nothing. Whichever effort wins also
         decides whether the model thinks at all, unless the client set the
-        toggle itself. Templates disagree on the name of that toggle, so both
-        ``enable_thinking`` and ``thinking`` are set.
+        toggle itself. Templates disagree on the name of that toggle, so a
+        missing ``enable_thinking`` or ``thinking`` is filled in, and a
+        spelling the client already set is left as written.
 
         Returns:
             The chat-template kwargs, or ``None`` when the request carries
             none at all.
         """
         kwargs = dict(self.chat_template_kwargs or {})
-        effort = (
-            kwargs.get("reasoning_effort")
-            or self.reasoning_effort
-            or (self.reasoning.effort if self.reasoning is not None else None)
+        reasoning = self.reasoning
+        spoken_for = any(
+            key in kwargs
+            for key in ("thinking_mode", "enable_thinking", "thinking", "reasoning_effort")
         )
-        if self.reasoning is None and effort is None:
+        if reasoning is not None and (
+            spoken_for or self.reasoning_effort is not None
+        ):
+            # The ``reasoning`` object ranks below every explicit kwarg and
+            # the top-level effort, matching the orchestrator's parser.
+            reasoning = None
+        elif reasoning is not None and reasoning.enabled is None and reasoning.effort is None:
+            # An empty ``reasoning`` object asks nothing; the default stands.
+            reasoning = None
+
+        if "reasoning_effort" in kwargs:
+            effort = kwargs["reasoning_effort"]
+        else:
+            effort = self.reasoning_effort or (
+                reasoning.effort if reasoning is not None else None
+            )
+        if reasoning is None and not effort:
+            # A falsy effort (an explicit null kwarg, 0 or false) means the
+            # client asked for nothing: keep the kwargs as sent — the explicit
+            # kwarg still wins over a top-level effort — and let the model's
+            # own thinking default stand.
             return self.chat_template_kwargs
 
-        if self.reasoning is not None and self.reasoning.enabled is not None:
-            enable_thinking = self.reasoning.enabled
+        if reasoning is not None:
+            # Within the object, ``enabled: false`` or ``effort: "none"``
+            # wins and discards any other effort, matching the orchestrator's
+            # parser. ``none`` itself is the off switch, so it is kept and
+            # renders as the top-level ``reasoning_effort: "none"`` does.
+            off = reasoning.enabled is False or reasoning.effort == "none"
+            enable_thinking = not off
+            if off and effort != "none":
+                effort = None
         else:
-            # ``none`` is OpenAI's "don't reason" effort, and a bare
-            # ``reasoning`` object carrying neither field asks for no
-            # reasoning either.
+            # ``none`` is OpenAI's "don't reason" effort.
             enable_thinking = effort is not None and effort != "none"
 
-        # Client may set either spelling of the thinking toggle, here we merge
-        # both.
-        for key in ("enable_thinking", "thinking"):
-            if key in kwargs:
-                enable_thinking = bool(kwargs[key])
-                break
-        kwargs["enable_thinking"] = enable_thinking
-        kwargs["thinking"] = enable_thinking
+        # Client may set either spelling of the thinking toggle, here we fill
+        # in the one missing; a spelling already set stays as the client
+        # wrote it.
+        requested = thinking_requested(kwargs)
+        if requested is not None:
+            enable_thinking = requested
+        kwargs.setdefault("enable_thinking", enable_thinking)
+        kwargs.setdefault("thinking", enable_thinking)
         if effort is not None:
             kwargs["reasoning_effort"] = effort
         return kwargs

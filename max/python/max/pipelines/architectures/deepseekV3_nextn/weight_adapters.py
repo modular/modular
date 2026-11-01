@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Weight adapters for DeepseekV3 NextN model.
+
 The format for the safetensor file is not canonicalized. We use
 https://huggingface.co/SGLang/DeepSeek-V3-NextN as a reference.
 """
@@ -48,6 +49,8 @@ def convert_safetensor_state_dict(
     Args:
         state_dict: Dictionary of weights from safetensors
         huggingface_config: HuggingFace model configuration
+        unused_kwargs: Further keyword arguments the pipeline passes,
+            which this adapter ignores.
 
     Returns:
         Dictionary of weights in MAX format

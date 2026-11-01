@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""arXiv summarization dataset."""
+
 from __future__ import annotations
 
 import random
@@ -24,6 +26,8 @@ from .types import RequestSamples, SampledRequest
 
 
 class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
+    """arXiv summarization dataset."""
+
     def fetch(self) -> None:
         """Fetch ArxivSummarization dataset based on the current dataset_mode.
 
@@ -38,6 +42,7 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
         shuffle: bool = True,
         **kwargs,
     ) -> RequestSamples:
+        """Samples summarization requests from the arXiv dataset."""
         # Extract required parameters from kwargs
         input_len = kwargs.get("input_len")
         max_output_len = kwargs.get("max_output_len")

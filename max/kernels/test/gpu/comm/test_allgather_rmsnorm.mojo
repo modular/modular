@@ -32,26 +32,28 @@ multiply-before-cast, bf16 last):
     `AG_NORM_FUSE_THRESHOLD`, and drives the dispatch routing-invariant check.
 """
 
-from std.sys import (
-    has_amd_gpu_accelerator,
-    simd_width_of,
-    size_of,
-)
+from std.sys import simd_width_of, size_of
 
+from std.math.uutils import ualign_down
 from std.math import rsqrt
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils.index import Index
-from std.utils.numerics import get_accum_type
-from std.testing import assert_raises, assert_true
+from std.testing import assert_equal, assert_raises, assert_true
 
 from layout import Coord, TileTensor, row_major
 
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.allgather_rmsnorm import (
     AG_NORM_FUSE_THRESHOLD,
     _dispatch_ag_norm,
+    _dispatch_ag_norm_quant,
     allgather_rmsnorm,
 )
+from linalg.block_scaled_quantization import (
+    quantize_mx_amd,
+    quantize_mxfp8_lane_group,
+)
+from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from comm.allgather import allgather
 from comm.reducescatter import ReduceScatterConfig
 from nn.normalization import rms_norm_gpu
@@ -62,7 +64,7 @@ from comm.sync import (
 )
 
 
-@always_inline
+@inline(.always)
 def _gathered_value[in_dtype: DType](row: Int, col: Int) -> Scalar[in_dtype]:
     """The bf16 value at global (row, col) of the gathered stream.
 
@@ -76,13 +78,13 @@ def _gathered_value[in_dtype: DType](row: Int, col: Int) -> Scalar[in_dtype]:
 def _rms_norm_full[
     in_dtype: DType,
     num_cols: Int,
+    epsilon: Float32,
+    weight_offset: Float32,
 ](
     rows: Int,
     src: DeviceBuffer[in_dtype],
     dst: DeviceBuffer[in_dtype],
     gamma: DeviceBuffer[in_dtype],
-    epsilon: Float32,
-    weight_offset: Scalar[in_dtype],
     ctx: DeviceContext,
 ) raises:
     """Standalone `rms_norm_gpu` over one full `[rows, num_cols]` tensor, M3
@@ -113,25 +115,24 @@ def _rms_norm_full[
         row_major(Coord(Index(num_cols))),
     )
 
-    @always_inline
-    @__copy_capture(src_view)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-        return src_view.raw_load[width=width](src_view.layout(coords))
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var src_view} -> SIMD[in_dtype, width]:
+        return src_view.load[width=width](coords)
 
-    @always_inline
-    @__copy_capture(dst_view)
-    @__parameter
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-        dst_view.raw_store[width=width, alignment=alignment](
-            dst_view.layout(coords), val
-        )
+    ](coords: Coord, val: SIMD[in_dtype, width]) {var dst_view} -> None:
+        dst_view.store[alignment=alignment](coords, val)
 
-    rms_norm_gpu[2, input_fn, output_fn, multiply_before_cast=True](
-        Coord(Index(rows, num_cols)), gamma_view, epsilon, weight_offset, ctx
-    )
+    rms_norm_gpu[
+        2,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](input_fn, output_fn, Coord(Index(rows, num_cols)), gamma_view, ctx)
 
 
 def _run_case[
@@ -155,7 +156,7 @@ def _run_case[
     # Crossover vs `rms_norm_gpu` was calibrated at simd==8 on AMD (block.sum
     # geometry depends on it); assert so a width change surfaces here, not
     # silently.
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         comptime assert (
             simd_width == 8
         ), "fused-vs-production crossover assumes simd=8 on AMD"
@@ -165,8 +166,9 @@ def _run_case[
     var config = ReduceScatterConfig[in_dtype, ngpus](
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](0.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(0.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
     var full_n = num_rows * num_cols
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -175,9 +177,6 @@ def _run_case[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -221,12 +220,12 @@ def _run_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -278,23 +277,20 @@ def _run_case[
             # into the residual output `sum_full`, then `rms_norm_gpu` into
             # `normed`. `sum_out` must be the gathered stream on both branches
             # (op contract).
-            @__parameter
-            @always_inline
-            def two_launch() raises:
+            @inline(.always)
+            def two_launch() raises {imm}:
                 _allgather_full[in_dtype, ngpus, num_cols](
-                    in_shards, sum_full[i], config, rank_sigs, list_of_ctx[i], i
+                    in_shards, sum_full, config, rank_sigs, list_of_ctx[i], i
                 )
-                _rms_norm_full[in_dtype, num_cols](
+                _rms_norm_full[in_dtype, num_cols, epsilon, weight_offset_f32](
                     num_rows,
                     sum_full[i],
                     normed[i],
                     gamma_dev[i],
-                    epsilon,
-                    weight_offset,
                     list_of_ctx[i],
                 )
 
-            _dispatch_ag_norm[two_launch=two_launch](
+            _dispatch_ag_norm(
                 in_shards,
                 normed_view,
                 sum_view,
@@ -303,6 +299,7 @@ def _run_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 threshold=dispatch_threshold,
             )
         else:
@@ -328,7 +325,7 @@ def _run_case[
     group_start()
     for i in range(ngpus):
         _allgather_full[in_dtype, ngpus, num_cols](
-            in_shards, ag_ref[i], config, rank_sigs, list_of_ctx[i], i
+            in_shards, ag_ref, config, rank_sigs, list_of_ctx[i], i
         )
     group_end()
     for i in range(ngpus):
@@ -416,22 +413,10 @@ def _run_case[
     var frac_gt1 = Float32(gt1_ulp) / Float32(total_elems)
     comptime mode_tag = "[dispatch straddle] " if use_dispatch else ""
     print(
-        String(
-            "  ",
-            mode_tag,
-            "M=",
-            num_rows,
-            ": NORM(vs host ref) frac>1ULP=",
-            frac_gt1 * 100.0,
-            "% max_ulp=",
-            max_ulp,
-            " | residual mismatches=",
-            sum_mismatch,
-            " max_ulp=",
-            sum_max_ulp,
-            " | replication mismatches=",
-            repl_mismatch,
-        )
+        t"  {mode_tag}M={num_rows}: NORM(vs host ref)"
+        t" frac>1ULP={frac_gt1 * 100.0}% max_ulp={max_ulp} | residual"
+        t" mismatches={sum_mismatch} max_ulp={sum_max_ulp} | replication"
+        t" mismatches={repl_mismatch}"
     )
 
     if frac_gt1 > 0.01 or max_ulp > 4:
@@ -447,7 +432,7 @@ def _run_case[
         )
     # Residual: bit-identical on AMD; 1-ULP tolerance on NVIDIA (AG is a pure
     # copy either way, but leave headroom for a non-AMD path).
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -495,7 +480,7 @@ def _allgather_full[
     in_dtype: DType,
     ngpus: Int,
     num_cols: Int,
-    domain_id: Int = 0,
+    group_size: Int = ngpus,
 ](
     in_shards: Array[
         TileTensor[
@@ -505,40 +490,47 @@ def _allgather_full[
         ],
         ngpus,
     ],
-    out_full: DeviceBuffer[in_dtype],
-    config: ReduceScatterConfig[in_dtype, ngpus],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    out_full: List[DeviceBuffer[in_dtype]],
+    config: ReduceScatterConfig[in_dtype, group_size],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     my_rank: Int,
 ) raises:
     """Standalone `allgather` of `in_shards` into the full `[rows, num_cols]`
-    `out_full` on this GPU. Each source's rows land at their global offset (views
-    into `out_full`), so `out_full` is the full gathered tensor -- the exact
-    residual the fused kernel's `sum_out` must match.
+    `out_full[my_rank]` on this GPU. Each source's rows land at their global
+    offset (views into that buffer), so it ends up the full gathered tensor --
+    the exact residual the fused kernel's `sum_out` must match.
 
-    Grouped callers pass group-local `in_shards`/`rank_sigs`, a `group_size`
-    config, this GPU's rank WITHIN the group and the group's `domain_id`, exactly
-    as the handler's two-launch fallback does."""
+    World view vs. group: `ngpus` is the total number of devices in the
+    world; `in_shards`/`rank_sigs` are indexed by GLOBAL device rank, and
+    `my_rank` is GLOBAL too -- the public `allgather` derives the group-local
+    slice, rank, and barrier domain internally from `group_size` (defaults
+    to `ngpus`)."""
     comptime OutViewType = TileTensor[
         mut=True,
         in_dtype,
         type_of(row_major(Coord(Index(0, num_cols)))),
         MutAnyOrigin,
     ]
-    var out_base = rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
-        out_full.unsafe_ptr()
+    # `allgather`'s world-view output array holds every device's own
+    # `group_size` outputs. Every slot has to name a real buffer, not just
+    # this device's: a grouped allgather may route part of a shard through the
+    # other group, whose GPUs then write these buffers directly.
+    var world_out_views = Array[OutViewType, ngpus * group_size](
+        uninitialized=True
     )
-
-    def out_views_at(src: Int) {imm} -> OutViewType:
-        var start = config.rank_unit_start(src)
-        return OutViewType(
-            out_base + start * num_cols,
-            row_major(Coord(Index(config.rank_units(src), num_cols))),
+    for dev in range(ngpus):
+        var dev_base = rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
+            out_full[dev].unsafe_ptr()
         )
-
-    var out_views = Array[_, ngpus](fill_with=out_views_at)
-    allgather[domain_id=domain_id](
-        in_shards, out_views, rank_sigs, ctx, my_rank
+        comptime for src in range(group_size):
+            var start = config.rank_unit_start(src)
+            world_out_views[dev * group_size + src] = OutViewType(
+                dev_base.unsafe_offset(start * num_cols),
+                row_major(Coord(Index(config.rank_units(src), num_cols))),
+            )
+    allgather[group_size=group_size](
+        in_shards, world_out_views, rank_sigs, ctx, my_rank
     )
 
 
@@ -580,17 +572,15 @@ def _run_prod_oracle_case[
     comptime assert (
         ngpus % group_size == 0
     ), "group_size must evenly divide the device count"
-    # Mirrors the handler: a full-world collective keeps barrier domain 0; a
-    # subgroup gets its own counter bank so both can share `Signal` buffers.
-    comptime domain_id = 0 if group_size == ngpus else group_size
     comptime num_groups = ngpus // group_size
 
     var config = ReduceScatterConfig[in_dtype, group_size](
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
-    var epsilon = Float32(1e-6)
+    comptime epsilon = Float32(1e-6)
     # M3 input_layernorm is Gemma-style: weight_offset=1.0, mbc=True.
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
     var full_n = num_rows * num_cols
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -600,9 +590,6 @@ def _run_prod_oracle_case[
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var prod = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -647,12 +634,12 @@ def _run_prod_oracle_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -671,28 +658,25 @@ def _run_prod_oracle_case[
     comptime GammaType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
+
+    # World-view input array `_dispatch_ag_norm` expects (indexed by GLOBAL
+    # device rank); it does its own group-local slicing internally from
+    # `group_size` + `my_rank`. `rank_sigs` is already world-view above.
+    var world_shards = Array[ShardType, ngpus](
+        fill_with=lambda (i: Int) -> ShardType: ShardType(
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                shard_dev[i].unsafe_ptr()
+            ),
+            row_major(
+                Coord(Index(config.rank_units(i % group_size), num_cols))
+            ),
+        )
+    )
+
     # --- Fused kernel directly, or the op's dispatch with the production
     # two-launch fallback. ---
     group_start()
     for i in range(ngpus):
-        var local = i % group_size
-        var base = (i // group_size) * group_size
-        # Group-local peer/signal arrays: entries 0..group_size-1 are this
-        # device's own group, exactly what the handler hands the kernel.
-        var in_shards = Array[_, group_size](
-            fill_with=lambda (k: Int) -> ShardType: ShardType(
-                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
-                    shard_dev[base + k].unsafe_ptr()
-                ),
-                row_major(Coord(Index(config.rank_units(k), num_cols))),
-            )
-        )
-        var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-            uninitialized=True
-        )
-        for k in range(group_size):
-            sigs[k] = rank_sigs[base + k]
-
         var normed_view = FullType(
             normed[i].unsafe_ptr().as_unsafe_any_origin(),
             row_major(Coord(Index(num_rows, num_cols))),
@@ -710,44 +694,49 @@ def _run_prod_oracle_case[
         comptime if use_dispatch:
             # Two-launch fallback writes the residual into `sum_full` (the op
             # contract), then norms it into `normed`.
-            @__parameter
-            @always_inline
-            def two_launch() raises:
+            @inline(.always)
+            def two_launch() raises {imm}:
                 _allgather_full[
-                    in_dtype, group_size, num_cols, domain_id=domain_id
-                ](in_shards, sum_full[i], config, sigs, list_of_ctx[i], local)
-                _rms_norm_full[in_dtype, num_cols](
+                    in_dtype, ngpus, num_cols, group_size=group_size
+                ](
+                    world_shards,
+                    sum_full,
+                    config,
+                    rank_sigs,
+                    list_of_ctx[i],
+                    i,
+                )
+                _rms_norm_full[in_dtype, num_cols, epsilon, weight_offset_f32](
                     num_rows,
                     sum_full[i],
                     normed[i],
                     gamma_dev[i],
-                    epsilon,
-                    weight_offset,
                     list_of_ctx[i],
                 )
 
-            _dispatch_ag_norm[two_launch=two_launch, domain_id=domain_id](
-                in_shards,
+            _dispatch_ag_norm[group_size=group_size](
+                world_shards,
                 normed_view,
                 sum_view,
                 gamma_view,
                 epsilon,
                 weight_offset,
-                sigs,
+                rank_sigs,
                 list_of_ctx[i],
-                local_rank=local,
+                two_launch,
+                my_rank=i,
             )
         else:
-            allgather_rmsnorm[domain_id=domain_id](
-                in_shards,
+            allgather_rmsnorm[group_size=group_size](
+                world_shards,
                 normed_view,
                 sum_view,
                 gamma_view,
                 epsilon,
                 weight_offset,
-                sigs,
+                rank_sigs,
                 list_of_ctx[i],
-                local,
+                my_rank=i,
             )
     group_end()
     for i in range(ngpus):
@@ -761,23 +750,8 @@ def _run_prod_oracle_case[
         list_of_ctx[i].synchronize()
     group_start()
     for i in range(ngpus):
-        var local = i % group_size
-        var base = (i // group_size) * group_size
-        var in_shards = Array[_, group_size](
-            fill_with=lambda (k: Int) -> ShardType: ShardType(
-                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
-                    shard_dev[base + k].unsafe_ptr()
-                ),
-                row_major(Coord(Index(config.rank_units(k), num_cols))),
-            )
-        )
-        var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-            uninitialized=True
-        )
-        for k in range(group_size):
-            sigs[k] = rank_sigs[base + k]
-        _allgather_full[in_dtype, group_size, num_cols, domain_id=domain_id](
-            in_shards, ag_ref[i], config, sigs, list_of_ctx[i], local
+        _allgather_full[in_dtype, ngpus, num_cols, group_size=group_size](
+            world_shards, ag_ref, config, rank_sigs, list_of_ctx[i], i
         )
     group_end()
     for i in range(ngpus):
@@ -786,13 +760,11 @@ def _run_prod_oracle_case[
     # its local-rank-0 device) is the reference for all of the group's devices.
     for g in range(num_groups):
         var lead = g * group_size
-        _rms_norm_full[in_dtype, num_cols](
+        _rms_norm_full[in_dtype, num_cols, epsilon, weight_offset_f32](
             num_rows,
             ag_ref[lead],
             prod[lead],
             gamma_dev[lead],
-            epsilon,
-            weight_offset,
             list_of_ctx[lead],
         )
     for g in range(num_groups):
@@ -851,31 +823,18 @@ def _run_prod_oracle_case[
 
     var rate = Float32(normed_mismatch) / Float32(compared_elems) * 100.0
     comptime mode_tag = "dispatched-op-vs" if use_dispatch else "fused-vs"
+    var result_tag = (
+        "  <-- BIT-IDENTICAL" if normed_mismatch == 0 else "  <-- diverges"
+    )
     print(
-        String(
-            "  M=",
-            num_rows,
-            ": ",
-            mode_tag,
-            "-PRODUCTION mismatch=",
-            normed_mismatch,
-            "/",
-            compared_elems,
-            " (",
-            rate,
-            "%) max_ulp=",
-            normed_max_ulp,
-            " | sum_out mismatch=",
-            sum_mismatch,
-            (
-                "  <-- BIT-IDENTICAL" if normed_mismatch
-                == 0 else "  <-- diverges"
-            ),
-        )
+        t"  M={num_rows}: {mode_tag}-PRODUCTION"
+        t" mismatch={normed_mismatch}/{compared_elems} ({rate}%)"
+        t" max_ulp={normed_max_ulp} | sum_out"
+        t" mismatch={sum_mismatch}{result_tag}"
     )
 
     # sum_out must be bit-identical to a standalone all-gather at every M.
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -890,7 +849,7 @@ def _run_prod_oracle_case[
 
     # Routing invariant: the dispatched op must be bit-identical to production at
     # EVERY M (fused below the threshold, two-launch above). AMD-scoped.
-    comptime if use_dispatch and has_amd_gpu_accelerator():
+    comptime if use_dispatch and list_of_ctx.T.target.is_amd_gpu():
         if normed_mismatch != 0:
             raise Error(
                 String(
@@ -941,7 +900,6 @@ def _run_interleaved_barrier_case[
     comptime assert (
         group_size < ngpus
     ), "interleaving is only meaningful for a subgroup collective"
-    comptime domain_id = group_size
 
     var grp_rows = group_size * rows_per_dev
     var world_rows = ngpus * rows_per_dev
@@ -952,8 +910,9 @@ def _run_interleaved_barrier_case[
         axis_size=world_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var shard_n = rows_per_dev * num_cols
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[List[Scalar[in_dtype]]](capacity=ngpus)
@@ -962,9 +921,6 @@ def _run_interleaved_barrier_case[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var world_out = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -1009,12 +965,12 @@ def _run_interleaved_barrier_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # ONE init for the whole run: continuously advancing shared counters are
     # exactly what desyncs when both collectives sit in domain 0.
@@ -1048,22 +1004,6 @@ def _run_interleaved_barrier_case[
     for _round in range(rounds):
         group_start()
         for i in range(ngpus):
-            var local = i % group_size
-            var base = (i // group_size) * group_size
-            var in_shards = Array[_, group_size](
-                fill_with=lambda (k: Int) -> ShardType: ShardType(
-                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
-                        shard_dev[base + k].unsafe_ptr()
-                    ),
-                    row_major(Coord(Index(rows_per_dev, num_cols))),
-                )
-            )
-            var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-                uninitialized=True
-            )
-            for k in range(group_size):
-                sigs[k] = rank_sigs[base + k]
-
             var normed_view = FullType(
                 normed[i].unsafe_ptr().as_unsafe_any_origin(),
                 row_major(Coord(Index(grp_rows, num_cols))),
@@ -1078,16 +1018,16 @@ def _run_interleaved_barrier_case[
                 ),
                 row_major(Coord(Index(num_cols))),
             )
-            allgather_rmsnorm[domain_id=domain_id](
-                in_shards,
+            allgather_rmsnorm[group_size=group_size](
+                world_shards,
                 normed_view,
                 sum_view,
                 gamma_view,
                 epsilon,
                 weight_offset,
-                sigs,
+                rank_sigs,
                 list_of_ctx[i],
-                local,
+                my_rank=i,
             )
         group_end()
 
@@ -1096,7 +1036,7 @@ def _run_interleaved_barrier_case[
         for i in range(ngpus):
             _allgather_full[in_dtype, ngpus, num_cols](
                 world_shards,
-                world_out[i],
+                world_out,
                 world_cfg,
                 rank_sigs,
                 list_of_ctx[i],
@@ -1113,7 +1053,7 @@ def _run_interleaved_barrier_case[
     var grp_bad = 0
     var world_bad = 0
     for i in range(ngpus):
-        var base = (i // group_size) * group_size
+        var base = ualign_down(i, group_size)
 
         var got = List[Scalar[in_dtype]](
             length=grp_rows * num_cols, fill=Scalar[in_dtype](0)
@@ -1148,22 +1088,10 @@ def _run_interleaved_barrier_case[
         _ = w_got^
 
     print(
-        String(
-            "  interleaved barrier (",
-            ngpus,
-            " GPUs, ",
-            ngpus // group_size,
-            "x TP",
-            group_size,
-            ", ",
-            rounds,
-            " rounds, rows/dev=",
-            rows_per_dev,
-            "): completed; grouped-gather errors=",
-            grp_bad,
-            " full-world-gather errors=",
-            world_bad,
-        )
+        t"  interleaved barrier ({ngpus} GPUs, {ngpus // group_size}x"
+        t" TP{group_size}, {rounds} rounds, rows/dev={rows_per_dev}):"
+        t" completed; grouped-gather errors={grp_bad} full-world-gather"
+        t" errors={world_bad}"
     )
 
     if grp_bad != 0 or world_bad != 0:
@@ -1187,6 +1115,302 @@ def _run_interleaved_barrier_case[
     _ = normed^
     _ = sum_full^
     _ = world_out^
+    _ = signal_buffers^
+
+
+def _run_asymmetric_fuse_gate_case[
+    in_dtype: DType,
+    ngpus: Int,
+    group_size: Int,
+    num_cols: Int,
+    quant: Bool = False,
+](rows_first: Int, rows_second: Int, list_of_ctx: List[DeviceContext]) raises:
+    """Dispatch gate: sibling groups whose gathered heights straddle
+    `AG_NORM_FUSE_THRESHOLD`, as they do under TP-within-DP whenever one
+    replica is idle.
+
+    Only the two-launch arm reaches the relay's pair-wide barrier, so a
+    per-group verdict hangs: the relaying group waits for a group that fused.
+    This case must TERMINATE with every device's gathered residual exact.
+
+    `quant` runs the same gate through `_dispatch_ag_norm_quant`, which carries
+    its own copy of the verdict and its own two-launch arm. CDNA4-only, since
+    that arm quantizes.
+    """
+    comptime scale_cols = num_cols // MXFP8_SF_VECTOR_SIZE
+    comptime assert (
+        ngpus % group_size == 0
+    ), "group_size must evenly divide the device count"
+    comptime assert (
+        group_size < ngpus
+    ), "a straddling verdict needs at least two groups"
+
+    @inline(.always)
+    def rows_of(dev: Int) {imm} -> Int:
+        return rows_first if dev // group_size == 0 else rows_second
+
+    # Both groups on the same side would agree by accident and gate nothing.
+    var first_bytes = group_size * rows_first * num_cols * size_of[in_dtype]()
+    var second_bytes = group_size * rows_second * num_cols * size_of[in_dtype]()
+    assert_true(
+        (first_bytes > AG_NORM_FUSE_THRESHOLD)
+        != (second_bytes > AG_NORM_FUSE_THRESHOLD),
+        "asymmetric fuse gate: groups must straddle AG_NORM_FUSE_THRESHOLD",
+    )
+
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
+
+    var shard_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var gamma_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var normed = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var quant_dev = List[DeviceBuffer[.float8_e4m3fn]](capacity=ngpus)
+    var scale_dev = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+
+    var gamma_host = List(
+        length=num_cols,
+        fill_with=lambda (c: Int) -> Scalar[in_dtype]: (
+            Float64(c + num_cols) / Float64(num_cols)
+        ).cast[in_dtype](),
+    )
+
+    for i in range(ngpus):
+        var local = i % group_size
+        var group_shift = 7 * (i // group_size)
+        var shard_rows = rows_of(i)
+        var shard_n = max(1, shard_rows * num_cols)
+        shard_dev.append(
+            list_of_ctx[i].enqueue_create_buffer[in_dtype](shard_n)
+        )
+        var h = List[Scalar[in_dtype]](length=shard_n, fill=Scalar[in_dtype](0))
+        for lr in range(shard_rows):
+            for c in range(num_cols):
+                h[lr * num_cols + c] = _gathered_value[in_dtype](
+                    local * shard_rows + lr + group_shift, c
+                )
+        list_of_ctx[i].enqueue_copy(shard_dev[i], h)
+        _ = h^
+
+        gamma_dev.append(
+            list_of_ctx[i].enqueue_create_buffer[in_dtype](num_cols)
+        )
+        list_of_ctx[i].enqueue_copy(gamma_dev[i], gamma_host)
+
+        var full_n = max(1, group_size * shard_rows * num_cols)
+        normed.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](full_n))
+        sum_full.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](full_n))
+        quant_dev.append(
+            list_of_ctx[i].enqueue_create_buffer[.float8_e4m3fn](full_n)
+        )
+        scale_dev.append(
+            list_of_ctx[i].enqueue_create_buffer[.float8_e8m0fnu](
+                max(1, group_size * shard_rows * scale_cols)
+            )
+        )
+
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
+        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    comptime ShardType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+    ]
+    comptime FullType = TileTensor[
+        mut=True,
+        in_dtype,
+        type_of(row_major(Coord(Index(0, num_cols)))),
+        MutAnyOrigin,
+    ]
+    comptime GammaType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
+    ]
+    comptime QuantType = TileTensor[
+        mut=True,
+        DType.float8_e4m3fn,
+        type_of(row_major(Coord(Index(0, num_cols)))),
+        MutAnyOrigin,
+    ]
+    comptime ScaleType = TileTensor[
+        mut=True,
+        DType.float8_e8m0fnu,
+        type_of(row_major(Coord(Index(0, scale_cols)))),
+        MutAnyOrigin,
+    ]
+
+    var world_shards = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> ShardType: ShardType(
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                shard_dev[i].unsafe_ptr()
+            ),
+            row_major(Coord(Index(rows_of(i), num_cols))),
+        )
+    )
+
+    group_start()
+    for i in range(ngpus):
+        var my_rows = rows_of(i)
+        var gathered = group_size * my_rows
+        var normed_view = FullType(
+            normed[i].unsafe_ptr().as_unsafe_any_origin(),
+            row_major(Coord(Index(gathered, num_cols))),
+        )
+        var sum_view = FullType(
+            sum_full[i].unsafe_ptr().as_unsafe_any_origin(),
+            row_major(Coord(Index(gathered, num_cols))),
+        )
+        var gamma_view = GammaType(
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                gamma_dev[i].unsafe_ptr()
+            ),
+            row_major(Coord(Index(num_cols))),
+        )
+        var quant_view = QuantType(
+            quant_dev[i].unsafe_ptr().as_unsafe_any_origin(),
+            row_major(Coord(Index(gathered, num_cols))),
+        )
+        var scale_view = ScaleType(
+            scale_dev[i].unsafe_ptr().as_unsafe_any_origin(),
+            row_major(Coord(Index(gathered, scale_cols))),
+        )
+
+        # The op's own fallback. Windowed by each device's OWN group height,
+        # which is what the symmetric `_allgather_full` cannot express.
+        @inline(.always)
+        def two_launch() raises {imm}:
+            var world_out_views = Array[FullType, ngpus * group_size](
+                uninitialized=True
+            )
+            for dev in range(ngpus):
+                var dev_rows = rows_of(dev)
+                var dev_base = rebind[
+                    MutPointer[Scalar[in_dtype], MutAnyOrigin]
+                ](sum_full[dev].unsafe_ptr())
+                comptime for src in range(group_size):
+                    world_out_views[dev * group_size + src] = FullType(
+                        dev_base.unsafe_offset(src * dev_rows * num_cols),
+                        row_major(Coord(Index(dev_rows, num_cols))),
+                    )
+            allgather[group_size=group_size](
+                world_shards,
+                world_out_views,
+                rank_sigs,
+                list_of_ctx[i],
+                i,
+            )
+            _rms_norm_full[in_dtype, num_cols, epsilon, weight_offset_f32](
+                group_size * rows_of(i),
+                sum_full[i],
+                normed[i],
+                gamma_dev[i],
+                list_of_ctx[i],
+            )
+            comptime if quant:
+                quantize_mx_amd(
+                    list_of_ctx[i], quant_view, scale_view, normed_view
+                )
+
+        # The `{var}` copies are mandatory: captured by reference, these reach
+        # the device as host-stack pointers and the stores land out of bounds.
+        @inline(.always)
+        def mx_epilogue[
+            width: Int
+        ](row: Int, col: Int, val: SIMD[in_dtype, width]) {
+            var quant_view, var scale_view
+        }:
+            var quantized: SIMD[.float8_e4m3fn, width]
+            var e8m0: Float8_e8m0fnu
+            # The block max is a cross-lane reduction: lanes past `num_cols`
+            # must participate but must not store.
+            quantized, e8m0 = quantize_mxfp8_lane_group[
+                DType.float8_e4m3fn,
+                DType.float8_e8m0fnu,
+                SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
+            ](val)
+            if col < num_cols:
+                quant_view.store((row, col), quantized)
+                if col % MXFP8_SF_VECTOR_SIZE == 0:
+                    scale_view.store((row, col // MXFP8_SF_VECTOR_SIZE), e8m0)
+
+        comptime if quant:
+            _dispatch_ag_norm_quant[group_size=group_size](
+                world_shards,
+                normed_view,
+                sum_view,
+                gamma_view,
+                epsilon,
+                weight_offset,
+                rank_sigs,
+                list_of_ctx[i],
+                mx_epilogue,
+                two_launch,
+                my_rank=i,
+            )
+        else:
+            _dispatch_ag_norm[group_size=group_size](
+                world_shards,
+                normed_view,
+                sum_view,
+                gamma_view,
+                epsilon,
+                weight_offset,
+                rank_sigs,
+                list_of_ctx[i],
+                two_launch,
+                my_rank=i,
+            )
+    group_end()
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # A verbatim bf16 copy, so a device that read its sibling group's rows --
+    # or none at all -- shows up exactly.
+    for i in range(ngpus):
+        var my_rows = rows_of(i)
+        var gathered = group_size * my_rows
+        var group_shift = 7 * (i // group_size)
+        var host = List[Scalar[in_dtype]](
+            length=max(1, gathered * num_cols), fill=Scalar[in_dtype](0)
+        )
+        list_of_ctx[i].enqueue_copy(host, sum_full[i])
+        list_of_ctx[i].synchronize()
+        for r in range(gathered):
+            for c in range(num_cols):
+                assert_equal(
+                    host[r * num_cols + c],
+                    _gathered_value[in_dtype](r + group_shift, c),
+                    String(
+                        "asymmetric fuse gate: GPU ",
+                        i,
+                        " residual (",
+                        r,
+                        ",",
+                        c,
+                        ") mismatch",
+                    ),
+                )
+        _ = host^
+
+    _ = shard_dev^
+    _ = gamma_dev^
+    _ = normed^
+    _ = sum_full^
+    _ = quant_dev^
+    _ = scale_dev^
     _ = signal_buffers^
 
 
@@ -1214,14 +1438,12 @@ def _run_rank_validation_case[
     var rows_per_dev = 4
     var group_rows = group_size * rows_per_dev
     var world_rows = ngpus * rows_per_dev
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=group_size)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=group_size)
-    var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
     for i in range(group_size):
         shard_dev.append(
             list_of_ctx[i].enqueue_create_buffer[in_dtype](
@@ -1231,12 +1453,13 @@ def _run_rank_validation_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var sigs = Array[_, group_size](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
     var gamma_dev = list_of_ctx[0].enqueue_create_buffer[in_dtype](num_cols)
     # Allocate the WORLD size so a deliberately over-sized view below still
     # points at real memory (nothing launches -- the raises fire first).
@@ -1292,12 +1515,10 @@ def _run_rank_validation_case[
         row_major(Coord(Index(world_rows, num_cols))),
     )
 
-    comptime domain_id = group_size
-
     # 1. A global device id on the trailing group: out of range for arrays that
     #    only hold `group_size` entries.
-    with assert_raises(contains="local_rank"):
-        allgather_rmsnorm[domain_id=domain_id](
+    with assert_raises(contains="my_rank"):
+        allgather_rmsnorm(
             shards,
             normed_ok,
             sum_ok,
@@ -1306,12 +1527,12 @@ def _run_rank_validation_case[
             weight_offset,
             sigs,
             list_of_ctx[0],
-            local_rank=group_size,
+            my_rank=group_size,
         )
 
     # 2. Outputs sized for the whole world instead of this group.
     with assert_raises(contains="normed_out"):
-        allgather_rmsnorm[domain_id=domain_id](
+        allgather_rmsnorm(
             shards,
             normed_world,
             sum_ok,
@@ -1320,11 +1541,11 @@ def _run_rank_validation_case[
             weight_offset,
             sigs,
             list_of_ctx[0],
-            local_rank=0,
+            my_rank=0,
         )
 
     with assert_raises(contains="sum_out"):
-        allgather_rmsnorm[domain_id=domain_id](
+        allgather_rmsnorm(
             shards,
             normed_ok,
             sum_world,
@@ -1333,7 +1554,7 @@ def _run_rank_validation_case[
             weight_offset,
             sigs,
             list_of_ctx[0],
-            local_rank=0,
+            my_rank=0,
         )
 
     print("rank / output-size validation passed.")
@@ -1356,15 +1577,8 @@ def _run_grouped_suite[
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "\n=== grouped: ",
-        ngpus,
-        " GPUs as ",
-        ngpus // group_size,
-        "x TP",
-        group_size,
-        " (H=",
-        num_cols,
-        ") ===",
+        t"\n=== grouped:  {ngpus}  GPUs as  {ngpus // group_size} x TP"
+        t" {group_size}  (H= {num_cols} ) ==="
     )
 
     # Every case routes through the dispatch, so bit-identity vs the grouped
@@ -1392,11 +1606,25 @@ def _run_grouped_suite[
         in_dtype, ngpus, group_size, BARRIER_GATE_COLS
     ](8, 2, list_of_ctx)
 
+    # Sibling groups on opposite sides of the fuse threshold -- the routine
+    # TP-within-DP case where one replica is idle. Gathered heights of 256 and
+    # 32 rows straddle the 128-row threshold at the calibrated H.
+    _run_asymmetric_fuse_gate_case[in_dtype, ngpus, group_size, num_cols](
+        256 // group_size, 32 // group_size, list_of_ctx
+    )
+
+    # `_dispatch_ag_norm_quant` carries its own copy of the verdict and hangs
+    # the same way. Its two-launch arm quantizes, so CDNA4 only.
+    if list_of_ctx.T.target.is_amd_gpu():
+        _run_asymmetric_fuse_gate_case[
+            in_dtype, ngpus, group_size, num_cols, quant=True
+        ](256 // group_size, 32 // group_size, list_of_ctx)
+
     _run_rank_validation_case[in_dtype, ngpus, group_size, num_cols](
         list_of_ctx
     )
 
-    print("grouped ", ngpus // group_size, "x TP", group_size, " passed.")
+    print(t"grouped  {ngpus // group_size} x TP {group_size}  passed.")
     _ = list_of_ctx^
 
 
@@ -1421,11 +1649,8 @@ def _run_suite[
     # wo=1.0/mbc=True): locates the crossover M* that calibrates the fuse
     # threshold. ---
     print(
-        "\nfused-vs-production bit-identity sweep (wo=1.0, mbc=True, TP",
-        ngpus,
-        "H=",
-        num_cols,
-        "):",
+        t"\nfused-vs-production bit-identity sweep (wo=1.0, mbc=True, TP"
+        t" {ngpus} H= {num_cols} ):"
     )
     var largest_bit_identical_m = 0
     var smallest_diverging_m = 0
@@ -1441,7 +1666,7 @@ def _run_suite[
 
         # Calibration gate: any M the threshold would fuse MUST be bit-identical
         # to production. AMD-scoped (gfx950-calibrated).
-        comptime if has_amd_gpu_accelerator():
+        comptime if list_of_ctx.T.target.is_amd_gpu():
             var full_bytes = num_rows * num_cols * size_of[in_dtype]()
             if full_bytes <= AG_NORM_FUSE_THRESHOLD and mismatch != 0:
                 raise Error(
@@ -1510,24 +1735,17 @@ def main() raises:
         _run_grouped_suite[in_dtype, 4, 2, num_cols]()
     else:
         print(
-            "\nSKIPPED grouped-TP coverage (needs >= 4 GPUs, found",
-            num_devices,
-            (
-                "): local-rank remap, group-local slicing, per-group gather and"
-                " the barrier-domain deadlock gate are NOT exercised in this"
-                " run."
-            ),
+            t"\nSKIPPED grouped-TP coverage (needs >= 4 GPUs, found"
+            t" {num_devices} ): local-rank remap, group-local slicing,"
+            t" per-group gather and the barrier-domain deadlock gate are NOT"
+            t" exercised in this run."
         )
     if num_devices >= 8:
         _run_grouped_suite[in_dtype, 8, 4, num_cols]()
     else:
         print(
-            (
-                "\nSKIPPED grouped 2xTP4 (M3's production TP4xDP2 topology,"
-                " needs 8 GPUs, found"
-            ),
-            num_devices,
-            ").",
+            t"\nSKIPPED grouped 2xTP4 (M3's production TP4xDP2 topology, needs"
+            t" 8 GPUs, found {num_devices} )."
         )
 
     print("All fused all-gather + RMSNorm tests passed!")

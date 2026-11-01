@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Request, payload, and sample types shared by the datasets."""
+
 from __future__ import annotations
 
 import base64
@@ -43,24 +45,34 @@ class SharedContext:
 
 
 class OpenAIImageURL(TypedDict):
+    """The ``url`` entry of an OpenAI image part."""
+
     url: str
 
 
 class OpenAIImage(TypedDict):
+    """An OpenAI ``image_url`` content part."""
+
     type: Literal["image_url"]
     image_url: OpenAIImageURL
 
 
 class TextContentBlock(BaseModel):
+    """A text content block."""
+
     type: Literal["text"] = "text"
     text: str
 
 
 class ImageURLDetail(BaseModel):
+    """The URL an image content block points at."""
+
     url: str
 
 
 class ImageContentBlock(BaseModel):
+    """An OpenAI image content block."""
+
     # Images are carried in the separate RequestFuncInput.images field and
     # appended to the payload after serialisation; they appear in content lists
     # only at the wire layer, not in prompts constructed by this codebase.
@@ -71,20 +83,23 @@ class ImageContentBlock(BaseModel):
 
 
 class ChatMessage(BaseModel):
+    """One message in an OpenAI chat request."""
+
     # role is "user", "assistant", or "system" in practice. "system" is
     # used by chat-judge today.
     # TODO: wire sys_prompt_ratio support with "system" role through the
     # multi-turn path.
     role: str
-    # content is always list[TextContentBlock] in prompts produced by this
-    # codebase.  The str variant exists to match the OpenAI spec and to support
-    # _prepend_run_prefix_to_formatted_prompt, which handles both shapes
-    # defensively.
+    # Usually list[TextContentBlock], but not guaranteed: agentic-code passes
+    # plain-string content straight through from its dataset. Consumers that
+    # index or append to content must handle both shapes.
     content: str | list[TextContentBlock | ImageContentBlock]
 
 
 @dataclass
 class SampledRequest:
+    """One sampled request: its prompt, lengths, and images."""
+
     prompt_formatted: str | list[ChatMessage]
     prompt_len: int
     output_len: int | None
@@ -100,6 +115,8 @@ class SampledRequest:
 
 @dataclass
 class PixelGenerationImageOptions:
+    """Image generation options carried by a pixel request."""
+
     width: int | None = None
     height: int | None = None
     steps: int | None = None
@@ -127,35 +144,65 @@ class PixelGenerationSampledRequest(SampledRequest):
 
 MessageSource = Literal["user", "assistant", "system"]
 
+# Which user turn(s) of a multi-turn session an augmentation may act on.
+#
+# The selector is shared; the unit each augmentation's fraction draws in is
+# not. Draw per session when the payload persists into later turns, per turn
+# when it does not: images ride in the message history, a response_format is
+# per-request. That also decides whether "first" survives a warmed session --
+# the prefix loop resends its images but never sets response_format
+# (CENG-1086).
+TurnSelector = Literal["first", "last", "every"]
+
 
 @dataclass
 class SessionMessage:
+    """One message within a chat session."""
+
     source: MessageSource
     content: str
     num_tokens: int
     delay_until_next_message: float | None = None
+    # An agent-loop round; the wire role is still "user".
+    is_agentic: bool = False
+    # Any image tokens are already counted in `num_tokens`, so consumers
+    # must not add them again.
+    images: list[OpenAIImage] = field(default_factory=list)
+    # Constrains this turn's response when set. Only a "user" message carries
+    # one; an assistant message is replayed history and asks the server for
+    # nothing.
+    response_format: ResponseFormat | None = None
+    # Sent as this turn's chat-completions ``tools`` field. Like
+    # ``response_format``, only a "user" message carries one.
+    tools: list[dict[str, Any]] | None = None
 
 
 @dataclass
 class ChatSession:
+    """A multi-turn chat session."""
+
     id: int | None
     messages: Sequence[SessionMessage]
     prefix_turns: int = 0
 
     @property
     def num_turns(self) -> int:
-        """Number of user-initiated turns (model invocations) in the session."""
+        """Model invocations, agent-loop rounds included: the request count."""
         return sum(1 for m in self.messages if m.source == "user")
 
 
 @dataclass
 class RequestSamples:
+    """Single-turn samples, with any contexts they share."""
+
     requests: Sequence[SampledRequest]
     shared_contexts: list[SharedContext] = field(default_factory=list)
 
 
 @dataclass
 class ChatSamples:
+    """Chat session samples, with any contexts they share."""
+
     chat_sessions: Sequence[ChatSession]
     shared_contexts: list[SharedContext] = field(default_factory=list)
 
@@ -164,6 +211,7 @@ Samples = RequestSamples | ChatSamples
 
 
 def estimate_num_tokens(tokenizer: PreTrainedTokenizerBase, text: str) -> int:
+    """Counts ``text``'s tokens, adding no special tokens."""
     return len(tokenizer.encode(text, add_special_tokens=False))
 
 
@@ -174,6 +222,7 @@ def build_chat_message(
     num_tokens: int | None = None,
     delay_until_next_message: float | None = None,
 ) -> SessionMessage:
+    """Builds a session message from a prompt and its token count."""
     return SessionMessage(
         source,
         prompt,
@@ -183,8 +232,8 @@ def build_chat_message(
 
 
 def encode_image(img: Image.Image) -> OpenAIImage:
-    """
-    Convert the given PIL.Image.Image to JPEG and encode in base64.
+    """Convert the given PIL.Image.Image to JPEG and encode in base64.
+
     Returns an openai API image_url content entry with the encoded string.
     """
     img_buffer = BytesIO()
@@ -200,9 +249,10 @@ def encode_image(img: Image.Image) -> OpenAIImage:
 
 
 def encode_image_from_file_path(file_path: str) -> OpenAIImage:
-    """
-    Read an image file as raw bytes and encode in base64 without any transformations.
-    Preserves the exact original file data and determines MIME type from file extension.
+    """Read an image file as raw bytes and encode in base64.
+
+    Preserves the exact original file data, with no transformations, and
+    determines the MIME type from the file extension.
 
     Args:
         file_path: Path to the image file

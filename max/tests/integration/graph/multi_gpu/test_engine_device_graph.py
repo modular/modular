@@ -27,7 +27,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import Allreduce, Signals
+from max.nn.legacy import Allreduce, Signals
 
 
 def test_multi_device_graph_capture_replay() -> None:
@@ -628,7 +628,7 @@ def test_multi_device_debug_verify_replay_many_outputs() -> None:
         outputs.append(graph.inputs[1].tensor * 5 + 15)
         outputs.append(graph.inputs[1].tensor + 8)
 
-        graph.output(*outputs)
+        graph.output(outputs)
 
     session = InferenceSession(devices=[host, device0, device1])
     model = session.load(graph)

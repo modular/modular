@@ -3,7 +3,7 @@
 kgen.func @simd_constant() {
   // expected-error @below {{integer value doesn't fit into 4 bits: 128}}
   %0 = kgen.param.constant: scalar<ui4> = <<128>>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -11,7 +11,7 @@ kgen.func @simd_constant() {
 kgen.func @simd_constant() {
   // expected-error @below {{failed to parse floating point value}}
   %0 = kgen.param.constant: scalar<f16> = <<"e">>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -19,7 +19,7 @@ kgen.func @simd_constant() {
 kgen.func @simd_constant() {
   // expected-error @below {{expected 'true' or 'false' for bool literal}}
   %0 = kgen.param.constant: scalar<bool> = <<e>>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -27,7 +27,7 @@ kgen.func @simd_constant() {
 kgen.generator @simd_constant<size>() {
   // expected-error @below {{SIMD constant requires a concrete type}}
   %0 = kgen.param.constant: simd<size, bool> = <<true>>
-  kgen.return
+  hlcf.return
 }
 
 // -----

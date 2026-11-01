@@ -32,23 +32,15 @@ scale-fold are follow-ups.
 
 from std.math import ceildiv, exp2, sqrt
 from std.math.constants import log2e
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed
-from std.sys import has_nvidia_gpu_accelerator, size_of
 
 from max.gpu import *
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
 )
@@ -56,7 +48,6 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_qkv_fp8 import (
     mla_prefill_sparse_qkv_fp8,
 )
 from std.testing import assert_equal
-from std.utils.index import Index, IndexList
 from std.utils.numerics import isnan, min_or_neg_inf
 
 
@@ -110,9 +101,9 @@ def _coprime_multiplier(n: Int) -> Int:
 def host_reference[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    kv_sparse_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    kv_sparse_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -132,7 +123,7 @@ def host_reference[
                 var q_base = bs * num_heads * qk_depth + h * qk_depth
 
                 var mi = Float64(min_or_neg_inf[.float32]())
-                var s_buf = alloc[Float64](n_valid)
+                var s_buf = unsafe_alloc[Float64](n_valid)
 
                 for k in range(n_valid):
                     var kv_base = (bs * topk + k) * qk_depth
@@ -168,7 +159,7 @@ def host_reference[
                         )
                     output_ptr[o_base + d] = acc.cast[q_type]()
 
-                s_buf.free()
+                s_buf.unsafe_free()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -199,18 +190,8 @@ def run_test_prefill_sparse_qkv_fp8[
 ) raises:
     comptime scale_block_size = 0
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_heads:",
-        num_heads,
-        " num_kv_tokens:",
-        num_kv_tokens,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  seq_len: {seq_len} "
+        t" num_heads: {num_heads}  num_kv_tokens: {num_kv_tokens}  topk: {topk}"
     )
 
     var scale = Float32(1.0) / sqrt(Float32(SOFTMAX_SCALE_BASE_DIM))
@@ -225,14 +206,6 @@ def run_test_prefill_sparse_qkv_fp8[
     var total_pages = batch_size * ceildiv(num_kv_tokens, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_kv_tokens, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        num_layers,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -254,7 +227,7 @@ def run_test_prefill_sparse_qkv_fp8[
 
     # Page lookup table (coprime shuffle).
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
     var page_offset = 0
     for bi in range(batch_size):
         var np = ceildiv(num_kv_tokens, PAGE_SIZE)
@@ -269,13 +242,13 @@ def run_test_prefill_sparse_qkv_fp8[
     # Random BF16 KV, quantized to FP8 at unit scale (no-scale mode), then
     # dequantized for the fp64 oracle so quant noise is common-mode.
     var kv_total = batch_size * num_kv_tokens * row_depth
-    var kv_bf16_host = alloc[BFloat16](kv_total)
+    var kv_bf16_host = unsafe_alloc[BFloat16](kv_total)
     randn[.bfloat16](kv_bf16_host, kv_total, mean=0.0, standard_deviation=0.5)
 
     comptime scales_per_token = 1
     var total_phys_rows = total_pages * num_layers * PAGE_SIZE
 
-    var blocks_fp8_host = alloc[Float8_e4m3fn](block_elems)
+    var blocks_fp8_host = unsafe_alloc[Float8_e4m3fn](block_elems)
     if num_layers > 1:
         for i in range(block_elems):
             blocks_fp8_host[i] = Float8_e4m3fn(
@@ -285,12 +258,11 @@ def run_test_prefill_sparse_qkv_fp8[
         for i in range(block_elems):
             blocks_fp8_host[i] = Float8_e4m3fn(0)
 
-    var kv_dequant_host = alloc[BFloat16](kv_total)
+    var kv_dequant_host = unsafe_alloc[BFloat16](kv_total)
 
     for bi in range(batch_size):
         for t in range(num_kv_tokens):
-            var page_idx = t // PAGE_SIZE
-            var tok_in_page = t % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
             var block_id = Int(
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
@@ -310,10 +282,10 @@ def run_test_prefill_sparse_qkv_fp8[
 
     # Q: BF16 randn -> FP8 (unit scale) -> dequantized BF16 for the oracle.
     var q_elems = total_q_tokens * num_heads * row_depth
-    var q_bf16_host = alloc[BFloat16](q_elems)
+    var q_bf16_host = unsafe_alloc[BFloat16](q_elems)
     randn[.bfloat16](q_bf16_host, q_elems, mean=0.0, standard_deviation=0.5)
-    var q_fp8_host = alloc[Float8_e4m3fn](q_elems)
-    var q_dequant_host = alloc[BFloat16](q_elems)
+    var q_fp8_host = unsafe_alloc[Float8_e4m3fn](q_elems)
+    var q_dequant_host = unsafe_alloc[BFloat16](q_elems)
     for i in range(q_elems):
         var v = q_bf16_host[i].cast[.float32]()
         var v_clamped = min(max(v, -FP8_E4M3_MAX), FP8_E4M3_MAX)
@@ -322,7 +294,7 @@ def run_test_prefill_sparse_qkv_fp8[
         q_dequant_host[i] = fp8_v.cast[.bfloat16]()
 
     # Per-query token selection (coprime rotation).
-    var selected_tokens = alloc[Int](total_q_tokens * topk)
+    var selected_tokens = unsafe_alloc[Int](total_q_tokens * topk)
     var sel_mult = _coprime_multiplier(num_kv_tokens)
     for bi in range(batch_size):
         for s in range(seq_len):
@@ -335,7 +307,7 @@ def run_test_prefill_sparse_qkv_fp8[
 
     # Sparse KV ref from DEQUANTIZED values.
     var kv_sparse_size = total_q_tokens * topk * row_depth
-    var kv_sparse = alloc[BFloat16](kv_sparse_size)
+    var kv_sparse = unsafe_alloc[BFloat16](kv_sparse_size)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
@@ -348,7 +320,7 @@ def run_test_prefill_sparse_qkv_fp8[
 
     # Host reference (consumes FP8-dequantized Q and KV -> common-mode noise).
     var out_elems = total_q_tokens * num_heads * V_DEPTH
-    var ref_host = alloc[BFloat16](out_elems)
+    var ref_host = unsafe_alloc[BFloat16](out_elems)
     host_reference[.bfloat16](
         q_dequant_host,
         kv_sparse,
@@ -368,7 +340,7 @@ def run_test_prefill_sparse_qkv_fp8[
     var blocks_device = ctx.enqueue_create_buffer[.float8_e4m3fn](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_fp8_host)
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
     for bi in range(batch_size):
         cache_lengths_host[bi] = UInt32(num_kv_tokens)
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
@@ -386,15 +358,14 @@ def run_test_prefill_sparse_qkv_fp8[
 
     # Per-query gather4 indices (sentinel 0xFFFFFFFF for masked positions).
     var total_indices = total_q_tokens * topk
-    var h_indices = alloc[UInt32](total_indices)
+    var h_indices = unsafe_alloc[UInt32](total_indices)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
             for i in range(topk):
                 if i < valid_topk:
                     var t = selected_tokens[bs * topk + i]
-                    var page_idx = t // PAGE_SIZE
-                    var tok_in_page = t % PAGE_SIZE
+                    var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
                     var block_id = Int(
                         lookup_table_host[bi * max_pages_per_batch + page_idx]
                     )
@@ -410,7 +381,7 @@ def run_test_prefill_sparse_qkv_fp8[
     var reported_len = (
         valid_topk if topk_lengths_override < 0 else topk_lengths_override
     )
-    var h_topk_lengths = alloc[UInt32](total_q_tokens)
+    var h_topk_lengths = unsafe_alloc[UInt32](total_q_tokens)
     for i in range(total_q_tokens):
         h_topk_lengths[i] = UInt32(reported_len)
     var topk_lengths_device = ctx.enqueue_create_buffer[.uint32](total_q_tokens)
@@ -419,49 +390,40 @@ def run_test_prefill_sparse_qkv_fp8[
     ctx.synchronize()
 
     # FP8 PagedKVCacheCollection.
-    var blocks_lt = LayoutTensor[.float8_e4m3fn, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(num_layers),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
 
-    var kv_collection = PagedKVCacheCollection[
-        DType.float8_e4m3fn, kv_params, PAGE_SIZE
-    ](
-        LayoutTensor[.float8_e4m3fn, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
+        DType.float8_e4m3fn,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),
         UInt32(num_kv_tokens),
     )
@@ -520,18 +482,20 @@ def run_test_prefill_sparse_qkv_fp8[
         group=num_heads,
     )
 
-    var attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    var attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
     var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
-        var sink_host = alloc[Float32](len(sink_values))
+        var sink_host = unsafe_alloc[Float32](len(sink_values))
         for i in range(len(sink_values)):
             sink_host[i] = sink_values[i]
         ctx.enqueue_copy(sink_device, sink_host)
         ctx.synchronize()
-        sink_host.free()
-        attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](
-            sink_device.unsafe_ptr().bitcast[Float32]().as_unsafe_any_origin()
+        sink_host.unsafe_free()
+        attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](
+            sink_device.unsafe_ptr()
+            .unsafe_bitcast[Float32]()
+            .as_unsafe_any_origin()
         )
 
     mla_prefill_sparse_qkv_fp8[
@@ -553,7 +517,7 @@ def run_test_prefill_sparse_qkv_fp8[
 
     ctx.synchronize()
 
-    var out_host = alloc[BFloat16](out_elems)
+    var out_host = unsafe_alloc[BFloat16](out_elems)
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -612,14 +576,8 @@ def run_test_prefill_sparse_qkv_fp8[
                         inf_ref += 1
 
     print(
-        "  DIAG: max_err=",
-        max_err,
-        " max_abs_actual=",
-        max_actual,
-        " num_nonzero=",
-        num_nonzero,
-        "/",
-        total_checked,
+        t"  DIAG: max_err= {max_err}  max_abs_actual= {max_actual} "
+        t" num_nonzero= {num_nonzero} / {total_checked}"
     )
 
     if nan_actual != 0 or inf_actual != 0 or nan_ref != 0 or inf_ref != 0:
@@ -678,17 +636,9 @@ def run_test_prefill_sparse_qkv_fp8[
             + String(atol)
         )
     print(
-        "  PASSED: max_err=",
-        max_err,
-        " mean_abs_err=",
-        mean_abs_err,
-        " cosine=",
-        cosine,
-        " n_err_gt_1e-2=",
-        n_err_gt_1em2,
-        " checked=",
-        total_checked,
-        " elements",
+        t"  PASSED: max_err= {max_err}  mean_abs_err= {mean_abs_err}  cosine="
+        t" {cosine}  n_err_gt_1e-2= {n_err_gt_1em2}  checked= {total_checked} "
+        t" elements"
     )
 
     _ = blocks_device
@@ -700,20 +650,20 @@ def run_test_prefill_sparse_qkv_fp8[
     _ = topk_lengths_device
     _ = sink_device
 
-    blocks_fp8_host.free()
-    kv_bf16_host.free()
-    kv_dequant_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    q_bf16_host.free()
-    q_fp8_host.free()
-    q_dequant_host.free()
-    kv_sparse.free()
-    selected_tokens.free()
-    ref_host.free()
-    out_host.free()
-    h_indices.free()
-    h_topk_lengths.free()
+    blocks_fp8_host.unsafe_free()
+    kv_bf16_host.unsafe_free()
+    kv_dequant_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    q_bf16_host.unsafe_free()
+    q_fp8_host.unsafe_free()
+    q_dequant_host.unsafe_free()
+    kv_sparse.unsafe_free()
+    selected_tokens.unsafe_free()
+    ref_host.unsafe_free()
+    out_host.unsafe_free()
+    h_indices.unsafe_free()
+    h_topk_lengths.unsafe_free()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -756,20 +706,9 @@ def run_nope_native_512_prefill_fp8[
     production-scale shapes below affordable.
     """
     print(
-        "NoPE native 512 prefill (QKV FP8): ",
-        name,
-        " batch_size=",
-        batch_size,
-        " seq_len=",
-        seq_len,
-        " num_kv_tokens=",
-        num_kv_tokens,
-        " num_heads=",
-        num_heads,
-        " topk=",
-        topk,
-        " valid_topk=",
-        valid_topk,
+        t"NoPE native 512 prefill (QKV FP8):  {name}  batch_size= {batch_size} "
+        t" seq_len= {seq_len}  num_kv_tokens= {num_kv_tokens}  num_heads="
+        t" {num_heads}  topk= {topk}  valid_topk= {valid_topk}"
     )
     seed(0x5EED19)
 
@@ -788,12 +727,6 @@ def run_nope_native_512_prefill_fp8[
     var total_pages = batch_size * ceildiv(num_kv_tokens, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_kv_tokens, PAGE_SIZE)
 
-    var block_shape_576 = IndexList[6](
-        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, QK_DEPTH
-    )
-    var block_shape_512 = IndexList[6](
-        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, V_DEPTH
-    )
     var block_elems_576 = (
         total_pages * kv_dim2 * NUM_LAYERS * PAGE_SIZE * KV_NUM_HEADS * QK_DEPTH
     )
@@ -810,7 +743,7 @@ def run_nope_native_512_prefill_fp8[
     # Page lookup table (coprime shuffle) -- shared by both arms, it only
     # depends on num_kv_tokens/batch_size.
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
     var page_offset = 0
     for bi in range(batch_size):
         var np = ceildiv(num_kv_tokens, PAGE_SIZE)
@@ -822,7 +755,7 @@ def run_nope_native_512_prefill_fp8[
             )
         page_offset += np
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
     for bi in range(batch_size):
         cache_lengths_host[bi] = UInt32(num_kv_tokens)
 
@@ -830,11 +763,11 @@ def run_nope_native_512_prefill_fp8[
     # two arms see exactly the same FP8 bytes over [0, 512). The 576 copy's
     # extra 64 columns per row are zero; the 512 copy has no tail at all.
     var kv_total = batch_size * num_kv_tokens * V_DEPTH
-    var kv_bf16_host = alloc[BFloat16](kv_total)
+    var kv_bf16_host = unsafe_alloc[BFloat16](kv_total)
     randn[.bfloat16](kv_bf16_host, kv_total, mean=0.0, standard_deviation=0.5)
 
-    var blocks_576_host = alloc[Float8_e4m3fn](block_elems_576)
-    var blocks_512_host = alloc[Float8_e4m3fn](block_elems_512)
+    var blocks_576_host = unsafe_alloc[Float8_e4m3fn](block_elems_576)
+    var blocks_512_host = unsafe_alloc[Float8_e4m3fn](block_elems_512)
     for i in range(block_elems_576):
         blocks_576_host[i] = Float8_e4m3fn(0)
     for i in range(block_elems_512):
@@ -842,8 +775,7 @@ def run_nope_native_512_prefill_fp8[
 
     for bi in range(batch_size):
         for t in range(num_kv_tokens):
-            var page_idx = t // PAGE_SIZE
-            var tok_in_page = t % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
             var block_id = Int(
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
@@ -864,10 +796,10 @@ def run_nope_native_512_prefill_fp8[
     # Q at both widths, same FP8 bytes over [0, 512); 576's tail is zero.
     var q_elems_512 = total_q_tokens * num_heads * V_DEPTH
     var q_elems_576 = total_q_tokens * num_heads * QK_DEPTH
-    var q_bf16_host = alloc[BFloat16](q_elems_512)
+    var q_bf16_host = unsafe_alloc[BFloat16](q_elems_512)
     randn[.bfloat16](q_bf16_host, q_elems_512, mean=0.0, standard_deviation=0.5)
-    var q_512_host = alloc[Float8_e4m3fn](q_elems_512)
-    var q_576_host = alloc[Float8_e4m3fn](q_elems_576)
+    var q_512_host = unsafe_alloc[Float8_e4m3fn](q_elems_512)
+    var q_576_host = unsafe_alloc[Float8_e4m3fn](q_elems_576)
     for row in range(total_q_tokens * num_heads):
         for d in range(V_DEPTH):
             var v = q_bf16_host[row * V_DEPTH + d].cast[.float32]()
@@ -880,7 +812,7 @@ def run_nope_native_512_prefill_fp8[
 
     # Per-query token selection (coprime rotation) -- identical for both arms,
     # so the same physical rows get selected regardless of row_depth.
-    var selected_tokens = alloc[Int](total_q_tokens * topk)
+    var selected_tokens = unsafe_alloc[Int](total_q_tokens * topk)
     var sel_mult = _coprime_multiplier(num_kv_tokens)
     for bi in range(batch_size):
         for s in range(seq_len):
@@ -894,15 +826,14 @@ def run_nope_native_512_prefill_fp8[
     # Per-query gather4 indices (sentinel 0xFFFFFFFF for masked positions) --
     # shared by both arms.
     var total_indices = total_q_tokens * topk
-    var h_indices = alloc[UInt32](total_indices)
+    var h_indices = unsafe_alloc[UInt32](total_indices)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
             for i in range(topk):
                 if i < valid_topk:
                     var t = selected_tokens[bs * topk + i]
-                    var page_idx = t // PAGE_SIZE
-                    var tok_in_page = t % PAGE_SIZE
+                    var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
                     var block_id = Int(
                         lookup_table_host[bi * max_pages_per_batch + page_idx]
                     )
@@ -915,7 +846,7 @@ def run_nope_native_512_prefill_fp8[
     var reported_len = (
         valid_topk if topk_lengths_override < 0 else topk_lengths_override
     )
-    var h_topk_lengths = alloc[UInt32](total_q_tokens)
+    var h_topk_lengths = unsafe_alloc[UInt32](total_q_tokens)
     for i in range(total_q_tokens):
         h_topk_lengths[i] = UInt32(reported_len)
 
@@ -951,81 +882,71 @@ def run_nope_native_512_prefill_fp8[
     ctx.synchronize()
 
     # Paged KV cache collections, one per row width.
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lt_layout_2d = Layout.row_major[2]()
-    comptime blk_layout = Layout.row_major[6]()
 
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
     )
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
     )
 
-    var blocks_576_lt = LayoutTensor[.float8_e4m3fn, blk_layout](
-        blocks_576_device.unsafe_ptr(),
-        RuntimeLayout[blk_layout].row_major(block_shape_576),
+    var blocks_576_tt = TileTensor(
+        blocks_576_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params_576.num_heads],
+            Idx[kv_params_576.head_size],
+        ),
     )
-    var blocks_512_lt = LayoutTensor[.float8_e4m3fn, blk_layout](
-        blocks_512_device.unsafe_ptr(),
-        RuntimeLayout[blk_layout].row_major(block_shape_512),
+    var blocks_512_tt = TileTensor(
+        blocks_512_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params_512.num_heads],
+            Idx[kv_params_512.head_size],
+        ),
     )
 
-    var kv_collection_576 = PagedKVCacheCollection[
-        DType.float8_e4m3fn, kv_params_576, PAGE_SIZE
-    ](
-        LayoutTensor[.float8_e4m3fn, blk_layout](
-            blocks_576_lt.ptr,
-            RuntimeLayout[blk_layout](
-                blocks_576_lt.runtime_layout.shape.value,
-                blocks_576_lt.runtime_layout.stride.value,
-            ),
+    comptime Collection576 = PagedKVCacheCollection[
+        DType.float8_e4m3fn,
+        kv_params_576,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection_576 = Collection576(
+        rebind[Collection576.blocks_tt_type](
+            blocks_576_tt.as_unsafe_any_origin()
         ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),
         UInt32(num_kv_tokens),
     )
-    var kv_collection_512 = PagedKVCacheCollection[
-        DType.float8_e4m3fn, kv_params_512, PAGE_SIZE
-    ](
-        LayoutTensor[.float8_e4m3fn, blk_layout](
-            blocks_512_lt.ptr,
-            RuntimeLayout[blk_layout](
-                blocks_512_lt.runtime_layout.shape.value,
-                blocks_512_lt.runtime_layout.stride.value,
-            ),
+    comptime Collection512 = PagedKVCacheCollection[
+        DType.float8_e4m3fn,
+        kv_params_512,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection_512 = Collection512(
+        rebind[Collection512.blocks_tt_type](
+            blocks_512_tt.as_unsafe_any_origin()
         ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),
         UInt32(num_kv_tokens),
     )
@@ -1124,8 +1045,8 @@ def run_nope_native_512_prefill_fp8[
     )
     ctx.synchronize()
 
-    var h576 = alloc[BFloat16](out_elems)
-    var h512 = alloc[BFloat16](out_elems)
+    var h576 = unsafe_alloc[BFloat16](out_elems)
+    var h512 = unsafe_alloc[BFloat16](out_elems)
     ctx.enqueue_copy(h576, out_576_device)
     ctx.enqueue_copy(h512, out_512_device)
     ctx.synchronize()
@@ -1138,15 +1059,11 @@ def run_nope_native_512_prefill_fp8[
             mismatches += 1
             if mismatches <= 5:
                 print(
-                    "  mismatch idx=",
-                    i,
-                    " padded576=",
-                    h576[i],
-                    " native512=",
-                    h512[i],
+                    t"  mismatch idx= {i}  padded576= {h576[i]}  native512="
+                    t" {h512[i]}"
                 )
     if mismatches > 0:
-        print("  FAILED: ", mismatches, "of", out_elems, "outputs differ")
+        print(t"  FAILED:  {mismatches} of {out_elems} outputs differ")
         raise Error("native-512 prefill QKV-FP8 does not match padded 576")
     assert_equal(mismatches, 0)
     print("  PASSED: native 512 is bit-identical to zero-padded 576")
@@ -1162,24 +1079,24 @@ def run_nope_native_512_prefill_fp8[
     _ = out_576_device
     _ = out_512_device
 
-    blocks_576_host.free()
-    blocks_512_host.free()
-    kv_bf16_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    q_bf16_host.free()
-    q_512_host.free()
-    q_576_host.free()
-    selected_tokens.free()
-    h_indices.free()
-    h_topk_lengths.free()
-    h576.free()
-    h512.free()
+    blocks_576_host.unsafe_free()
+    blocks_512_host.unsafe_free()
+    kv_bf16_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    q_bf16_host.unsafe_free()
+    q_512_host.unsafe_free()
+    q_576_host.unsafe_free()
+    selected_tokens.unsafe_free()
+    h_indices.unsafe_free()
+    h_topk_lengths.unsafe_free()
+    h576.unsafe_free()
+    h512.unsafe_free()
 
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # ---------------- NoPE native 512 ----------------

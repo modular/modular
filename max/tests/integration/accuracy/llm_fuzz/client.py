@@ -68,16 +68,36 @@ class RunConfig:
     # multi-node deployment is driven at the same per-node pressure a single
     # pod sees.
     image_stress_nodes: int = 1
+    # Size of the needle_prefix_cache scenario: short conversations run side
+    # by side, long ones sized to half the model window alongside them,
+    # recall turns after the cold one, and the short haystack size (None
+    # derives it from the model's context window).
+    needle_conversations: int = 8
+    needle_long_conversations: int = 2
+    needle_turns: int = 3
+    needle_context_tokens: int | None = None
+    # Fail on any follow-up turn that did not reuse its whole previous
+    # prompt. For a deployment expected to serve every reload, such as a KV
+    # connector behind a GPU pool sized to evict.
+    needle_strict_cache_hits: bool = False
 
 
 class FuzzClient:
     """Thin async wrapper around http.client for adversarial requests."""
 
+    # Floor on the send pool, which max_concurrency does not set: that is how
+    # many requests a scenario stating no number of its own may have in
+    # flight, while this is how many blocking sends the client can carry at
+    # once. A pressure scenario passes its own max_concurrent (up to 40
+    # today) and must get it even where the run's default is lowered to match
+    # a small server batch, so the pool is never what caps it.
+    _MIN_POOL_WORKERS = 200
+
     def __init__(self, config: RunConfig):
         self.config = config
         self._parsed = urllib.parse.urlparse(config.base_url)
         self._pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=config.max_concurrency
+            max_workers=max(config.max_concurrency, self._MIN_POOL_WORKERS)
         )
         self._held_sockets: list[socket.socket] = []
 
@@ -207,7 +227,12 @@ class FuzzClient:
             if remaining <= 0:
                 raise TimeoutError
             sock.settimeout(min(remaining, 0.25))
-            chunk = sock.recv(4096)
+            try:
+                chunk = sock.recv(4096)
+            except TimeoutError:
+                # The socket timeout is a poll interval so the deadline can be
+                # re-checked; only ``remaining <= 0`` above ends the wait.
+                continue
             if not chunk:
                 break
             data += chunk
@@ -528,14 +553,16 @@ class FuzzClient:
         t0 = time.perf_counter()
         chunks = []
         cancelled = False
+        conn = None
+        resp = None
         try:
             conn = self._make_conn(timeout)
             conn.request("POST", self._chat_path, body=data, headers=headers)
+            transport = conn.sock
             resp = conn.getresponse()
 
             if resp.status != 200:
                 body = resp.read().decode("utf-8", errors="replace")
-                conn.close()
                 return RawResponse(
                     status=resp.status,
                     headers=dict(resp.getheaders()),
@@ -550,20 +577,36 @@ class FuzzClient:
                 else None
             )
             buf = b""
-            if cancel_time and getattr(conn, "sock", None) is not None:
-                conn.sock.settimeout(min(timeout, 0.1))
 
             if cancel_after_chunks is not None and cancel_after_chunks == 0:
                 cancelled = True
 
             while not cancelled:
+                remaining = (
+                    cancel_time - time.perf_counter() if cancel_time else None
+                )
+                if remaining is not None and remaining <= 0:
+                    cancelled = True
+                    break
+                cancel_limits_read = (
+                    remaining is not None and remaining <= timeout
+                )
+                if transport is not None:
+                    read_timeout = (
+                        min(timeout, remaining)
+                        if remaining is not None
+                        else timeout
+                    )
+                    transport.settimeout(read_timeout)
                 try:
-                    chunk = resp.read(1024)
+                    # read() waits for the full size and hides small SSE frames.
+                    # A buffered response cannot be retried after a socket timeout.
+                    chunk = resp.read1(1024)
                 except TimeoutError:
-                    if cancel_time and time.perf_counter() >= cancel_time:
+                    if cancel_limits_read:
                         cancelled = True
                         break
-                    continue
+                    raise
                 if not chunk:
                     break
                 buf += chunk
@@ -587,7 +630,6 @@ class FuzzClient:
                 if cancelled or (chunks and chunks[-1] == "[DONE]"):
                     break
 
-            conn.close()
             return RawResponse(
                 status=resp.status,
                 headers=dict(resp.getheaders()),
@@ -604,7 +646,7 @@ class FuzzClient:
                 elapsed_ms=(time.perf_counter() - t0) * 1000,
                 error="TIMEOUT",
                 chunks=chunks,
-                cancelled=True,
+                cancelled=cancelled,
             )
         except Exception as e:
             return RawResponse(
@@ -616,6 +658,11 @@ class FuzzClient:
                 chunks=chunks,
                 cancelled=cancelled,
             )
+        finally:
+            if resp is not None:
+                resp.close()
+            if conn is not None:
+                conn.close()
 
     def _sync_slow_body(
         self,

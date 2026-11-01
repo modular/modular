@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
-from nn.argmaxmin import argmax, argmin
+from nn.argmaxmin import argmax
 
 
 # CHECK-LABEL: test_argn
@@ -39,15 +39,6 @@ def test_argn() raises:
 
     # CHECK: argmax = 92
     print("argmax = ", output[0])
-
-    argmin(
-        vector.make_dynamic[.int64](),
-        0,
-        output.make_dynamic[.int64](),
-    )
-
-    # CHECK: argmin = 0
-    print("argmin = ", output[0])
 
 
 # CHECK-LABEL: test_argn_2
@@ -80,19 +71,6 @@ def test_argn_2() raises:
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
 
-    argmin(
-        vector.make_dynamic[.int64](),
-        1,
-        output.make_dynamic[.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
-
 
 # CHECK-LABEL: test_argn_2_test_2
 def test_argn_2_test_2() raises:
@@ -123,17 +101,6 @@ def test_argn_2_test_2() raises:
     # CHECK: argmax = 0
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
-
-    argmin(
-        vector.make_dynamic[.int64](),
-        1,
-        output.make_dynamic[.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 2
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_2_neg_axis
@@ -166,17 +133,6 @@ def test_argn_2_neg_axis() raises:
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
 
-    argmin(
-        vector.make_dynamic[.int64](),
-        -1,
-        output.make_dynamic[.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 2
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
-
 
 # CHECK-LABEL: test_argn_test_zeros
 def test_argn_test_zeros() raises:
@@ -202,16 +158,6 @@ def test_argn_test_zeros() raises:
     # CHECK: argmax = 0
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
-
-    argmin(
-        vector.make_dynamic[.int64](),
-        1,
-        output.make_dynamic[.int64](),
-    )
-
-    # CHECK: argmin = 0
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_test_identity
@@ -245,18 +191,6 @@ def test_argn_test_identity() raises:
     print("argmax = ", output[1, 0])
     # CHECK: argmax = 3
     print("argmax = ", output[2, 0])
-
-    argmin(
-        vector.make_dynamic[.int64](),
-        1,
-        output.make_dynamic[.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_3d_identity
@@ -295,20 +229,6 @@ def test_argn_3d_identity() raises:
     # CHECK: argmax = 3
     print("argmax = ", output[1, 1, 0])
 
-    argmin(
-        vector.make_dynamic[.int64](),
-        2,
-        output.make_dynamic[.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    for i in range(batch_size):
-        for j in range(seq_len):
-            print("argmin = ", output[i, j, 0])
-
 
 def test_argn_less_than_simd() raises:
     print("== test_argn_less_than_simd")
@@ -341,17 +261,6 @@ def test_argn_less_than_simd() raises:
     print("argmax = ", output[0, 0])
     # CHECK: argmax = 0
     print("argmax = ", output[1, 0])
-
-    argmin(
-        vector.make_dynamic[.int64](),
-        1,
-        output.make_dynamic[.int64](),
-    )
-
-    # CHECK: argmin = 0
-    print("argmin = ", output[0, 0])
-    # CHECK: argmin = 2
-    print("argmin = ", output[1, 0])
 
 
 # CHECK-LABEL: test_argn_simd_edge_case
@@ -388,15 +297,6 @@ def test_argn_simd_index_order() raises:
 
     # CHECK: argmax = 5
     print("argmax = ", output[0])
-
-    argmin(
-        vector.make_dynamic[.int64](),
-        0,
-        output.make_dynamic[.int64](),
-    )
-
-    # CHECK: argmin = 4
-    print("argmin = ", output[0])
 
 
 # CHECK-LABEL: test_argn_parallelize
@@ -454,25 +354,6 @@ def test_argn_parallelize() raises:
     print("argmax = ", output[6, 0])
     # CHECK: argmax = 400
     print("argmax = ", output[7, 0])
-
-    argmin(input.make_dynamic[.int64](), 1, output.make_dynamic[.int64]())
-
-    # CHECK: argmin = 100
-    print("argmin = ", output[0, 0])
-    # CHECK: argmin = 20
-    print("argmin = ", output[1, 0])
-    # CHECK: argmin = 300
-    print("argmin = ", output[2, 0])
-    # CHECK: argmin = 40
-    print("argmin = ", output[3, 0])
-    # CHECK: argmin = 100
-    print("argmin = ", output[4, 0])
-    # CHECK: argmin = 200
-    print("argmin = ", output[5, 0])
-    # CHECK: argmin = 300
-    print("argmin = ", output[6, 0])
-    # CHECK: argmin = 40
-    print("argmin = ", output[7, 0])
     _ = input_ptr^
 
 

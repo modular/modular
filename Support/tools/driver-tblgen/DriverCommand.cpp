@@ -74,6 +74,16 @@ getValueAsOptionalIndex(const llvm::Record *record) {
   return i->getValue();
 }
 
+/// Prints an error for an option or alias `record` that has an index, which
+/// would otherwise be ignored, and returns `true`.
+static bool printIndexedOptionError(const llvm::Record *record) {
+  return printError(
+      record->getLoc(),
+      llvm::formatv("option '{0}' has an index, but options and aliases are "
+                    "listed in the order they are defined",
+                    record->getValueAsString("Name")));
+}
+
 /// Given an LLVMOption TableGen record, return whether "HelpHidden" appears in
 /// its "Flags" list value. "Flags" must be defined on this record, as it is for
 /// `OptionGroup` and `Option` records.
@@ -274,7 +284,9 @@ M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
           continue;
         }
 
-        invalid |= failed(aliasedOption.get().addAlias(option));
+        if (getValueAsOptionalIndex(option))
+          invalid |= printIndexedOptionError(option);
+        aliasedOption.get().addAlias(option);
         continue;
       }
 
@@ -332,7 +344,7 @@ M::CommandOptionGroup::findOrCreateOption(const llvm::Record *option) {
   assert(group == option->getValueAsDef("Group") &&
          "option does not belong to this group");
 
-  auto it = llvm::lower_bound(options, CommandOption(option), LessIndex());
+  auto it = llvm::lower_bound(options, CommandOption(option), LessByID());
   if (it != options.end() && it->getOption() == option)
     return *it;
 
@@ -369,12 +381,8 @@ M::CommandOptionGroup::findOrCreateOption(const llvm::Record *option) {
                                  name));
   }
 
-  if (!result.getIndex())
-    invalid |= printError(
-        option->getLoc(),
-        llvm::formatv("option '{0}' has no index with which to order it by; "
-                      "it will appear in a non-deterministic order",
-                      name));
+  if (getValueAsOptionalIndex(option))
+    invalid |= printIndexedOptionError(option);
 
   if (isHidden() && CommandOption::isHidden(option))
     invalid |= printError(
@@ -393,48 +401,17 @@ M::CommandOptionGroup::findOrCreateOption(const llvm::Record *option) {
 // CommandOption
 //===----------------------------------------------------------------------===//
 
-std::optional<int64_t> CommandOption::getIndex() const {
-  return getValueAsOptionalIndex(option);
-}
-
 bool CommandOption::isHidden(const llvm::Record *option) {
   return isRecordHidden(option);
 }
 
-LogicalResult CommandOption::addAlias(const llvm::Record *aliasRecord) {
+void CommandOption::addAlias(const llvm::Record *aliasRecord) {
   CommandAlias alias(aliasRecord);
-
-  bool invalid = false;
-  std::optional<int64_t> aliasIndex =
-      getValueAsOptionalIndex(alias.getRecord());
-  auto it = llvm::lower_bound(aliases, alias, LessIndex());
-  if (it != aliases.end()) {
-    // If the alias already exists in the collection, no need to insert it.
-    if (*it == alias)
-      return success();
-
-    // If we're inserting an alias behind another, they may have the same
-    // index value. If so, emit a warning.
-    if (std::optional<int64_t> index = getValueAsOptionalIndex(it->getRecord()))
-      if (aliasIndex && aliasIndex == *index)
-        invalid |= printError(
-            aliasRecord->getLoc(),
-            llvm::formatv("alias '{0}' has index {1}, which has already been "
-                          "used; it will appear in a non-deterministic order",
-                          aliasRecord->getValueAsString("Name"), *aliasIndex));
-  }
-
-  // Now that we're adding this alias for the first time, perform some
-  // validation.
-  if (!aliasIndex)
-    invalid |= printError(
-        aliasRecord->getLoc(),
-        llvm::formatv("alias '{0}' has no index with which to order it by; "
-                      "it will appear in a non-deterministic order",
-                      aliasRecord->getValueAsString("Name")));
-
+  auto it = llvm::lower_bound(aliases, alias, LessByID());
+  // If the alias already exists in the collection, no need to insert it.
+  if (it != aliases.end() && *it == alias)
+    return;
   aliases.insert(it, alias);
-  return success(/*isSuccess=*/!invalid);
 }
 
 //===----------------------------------------------------------------------===//

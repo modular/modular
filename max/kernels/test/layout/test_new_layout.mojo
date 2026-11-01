@@ -14,7 +14,6 @@
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
     TileTensor,
     col_major,
@@ -256,8 +255,7 @@ def test_tile_tensor_reshape_is_view() raises:
 
 
 def test_tile_tensor_tile_with_int_coords() raises:
-    """Test tile method with variadic Int coordinates (LayoutTensor compatible).
-    """
+    """Test tile method with variadic Int coordinates."""
     var storage = Array[Float32, 16](fill={})
     var tensor = TileTensor(storage, row_major[4, 4]())
 
@@ -992,10 +990,10 @@ def test_tile_tensor_hierarchical_load_store() raises:
     # dim 1 is scalar 2, decomposed within shape (2, 3) -> divmod(2, 2) = (1, 0)
     #   -> 1*12 + 0*4 = 12
     # total offset: 1 + 12 = 13
-    tensor.store(Coord(Idx[1], Idx[2]), Float32(99.0))
+    tensor.store((Idx[1], Idx[2]), Float32(99.0))
 
     # Read back at the same offset
-    var val = tensor.load(Coord(Idx[1], Idx[2]))
+    var val = tensor.load((Idx[1], Idx[2]))
     assert_equal(val, 99.0)
 
 
@@ -1017,7 +1015,7 @@ def test_tile_tensor_hierarchical_getitem_setitem() raises:
 
     # Read with rank-matching coord (2, 1) -> offset 14
     # (scalar 1 in (3,2) sub-dim: divmod(1,3)=(0,1) -> 1*2 = 2, total 12+2=14)
-    var val = tensor[Coord(Idx[2], Idx[1])]
+    var val = tensor[Idx[2], Idx[1]]
     assert_equal(val, 77.0)
 
 
@@ -1038,7 +1036,7 @@ def test_tile_tensor_hierarchical_scalar_index() raises:
 
     # Scalar index 1 -> decomposed: divmod(1, 4) = (0, 1)
     # -> 1*6 + 0 = 6
-    var val = tensor.load(Coord(Idx[1]))
+    var val = tensor.load((Idx[1],))
     assert_equal(val, 55.0)
 
 
@@ -1523,7 +1521,7 @@ def test_weakly_compatible_not_symmetric() raises:
     because scalar coord elements are always compatible with any layout mode.
     """
     comptime flat_L = type_of(row_major[1, 1]())
-    comptime nested_L = type_of(row_major(Coord(Coord(Idx[1], Idx[1]), Idx[1])))
+    comptime nested_L = type_of(row_major(Coord(Idx[1], Idx[1]), Idx[1]))
 
     # Nested coord vs flat layout — incompatible.
     comptime assert not WeaklyCompatible[

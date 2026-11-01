@@ -21,7 +21,7 @@ GPU kernel output to it.
 
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.tpool_patch_merger import (
     tpool_patch_merger,
 )
@@ -47,12 +47,9 @@ def cpu_reference_one_video[
     var new_W = w // kW
     var n_pat = new_H * new_W * kH * kW
     for pat_idx in range(n_pat):
-        var sp_idx = pat_idx // (kH * kW)
-        var ker_idx = pat_idx % (kH * kW)
-        var nh = sp_idx // new_W
-        var nw = sp_idx % new_W
-        var ph = ker_idx // kW
-        var pw = ker_idx % kW
+        var sp_idx, ker_idx = divmod(pat_idx, (kH * kW))
+        var nh, nw = divmod(sp_idx, new_W)
+        var ph, pw = divmod(ker_idx, kW)
         var h_src = nh * kH + ph
         var w_src = nw * kW + pw
         var spatial_flat = h_src * w + w_src
@@ -62,7 +59,7 @@ def cpu_reference_one_video[
                 var row = in_offset + ti * (h * w) + spatial_flat
                 acc += x[row * D + d]
             acc = acc / Scalar[dtype](t)
-            out_base.store(pat_idx * D + d, acc)
+            out_base.unsafe_store(pat_idx * D + d, acc)
 
 
 def test_tpool_patch_merger(ctx: DeviceContext) raises:
@@ -144,15 +141,15 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     # GPU kernel: contiguous output
     var x_tile = TileTensor[mut=False, Engine=_](
         x_dev,
-        row_major(Coord(total_in, D)),
+        row_major(total_in, D),
     )
     var out_tile = TileTensor(
         out_dev,
-        row_major(Coord(total_out, D)),
+        row_major(total_out, D),
     )
     var bounds_tensor = TileTensor[mut=False, Engine=_](
         bounds,
-        row_major(Coord(n_videos, Idx[3])),
+        row_major(n_videos, Idx[3]),
     )
 
     tpool_patch_merger(

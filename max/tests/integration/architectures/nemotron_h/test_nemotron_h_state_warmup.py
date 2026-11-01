@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for NemotronHStateCache and NemotronHModel graph-capture warmup.
+"""Tests for NemotronHStateCache and Nemotron-H's graph-capture warmup.
 
 Validates the ``SupportsSSMStateWarmup`` contract so that the overlap
 pipeline's ``_warmup_model_inputs`` context manager can safely claim and
@@ -22,13 +22,17 @@ These tests run CPU-only (no model load, no GPU) so they complete quickly.
 
 from __future__ import annotations
 
+from unittest.mock import NonCallableMock
+
 import numpy as np
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.pipelines.architectures.nemotron_h.model import NemotronHModel
+from max.graph import BufferType, TensorType
+from max.pipelines.architectures.nemotron_h.arch import nemotron_h_arch
 from max.pipelines.architectures.nemotron_h.state_cache import (
     NemotronHStateCache,
 )
+from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportsSSMStateWarmup
 from max.pipelines.modeling.types import RequestID
 
@@ -165,16 +169,56 @@ def test_slot_zeroed_on_re_claim() -> None:
 
 
 def test_nemotron_h_model_implements_supports_ssm_state_warmup() -> None:
-    """NemotronHModel satisfies the SupportsSSMStateWarmup Protocol.
+    """Nemotron-H's pipeline model satisfies the SupportsSSMStateWarmup Protocol.
 
     Checks the @runtime_checkable Protocol and the existence of
     ``release_warmup_state`` without instantiating the full model (which
     requires weights and a GPU).
     """
-    assert issubclass(NemotronHModel, SupportsSSMStateWarmup), (
-        "NemotronHModel must implement SupportsSSMStateWarmup so the overlap "
-        "pipeline can release warmup SSM state slots after each probe."
+    model = nemotron_h_arch.pipeline_model
+    assert isinstance(model, type)
+    assert issubclass(model, SupportsSSMStateWarmup), (
+        "Nemotron-H's pipeline model must implement SupportsSSMStateWarmup so "
+        "the overlap pipeline can release warmup SSM state slots after each "
+        "probe."
     )
-    assert callable(getattr(NemotronHModel, "release_warmup_state", None)), (
-        "NemotronHModel.release_warmup_state must be callable"
+    assert callable(getattr(model, "release_warmup_state", None)), (
+        "release_warmup_state must be callable"
     )
+
+
+# ---------------------------------------------------------------------------
+# RequestStateStore: the graph inputs the state adds
+# ---------------------------------------------------------------------------
+
+
+def test_state_inputs_follow_their_types() -> None:
+    """slot_idx, the conv pools, the SSM pools, then has_initial_state."""
+    cache = _make_cache(max_slots=4)
+    types = cache.input_types()
+    assert len(types) == 1 + 2 * 2 + 1
+    slot_type, *pool_types, has_initial_type = types
+    assert isinstance(slot_type, TensorType)
+    assert slot_type.dtype == DType.uint32
+    assert all(isinstance(t, BufferType) for t in pool_types)
+    assert [t.dtype for t in pool_types] == [DType.bfloat16] * 2 + [
+        DType.float32
+    ] * 2
+    assert isinstance(has_initial_type, TensorType)
+    assert has_initial_type.dtype == DType.bool
+    # Export bounds every per-step dim; the pools' are the store's to size.
+    assert cache.max_dims() == {"batch_size": 4, "has_initial_state_len": 4}
+
+    batch = [
+        NonCallableMock(spec=TextContext, request_id=RequestID())
+        for _ in range(3)
+    ]
+    slot_idx, *pools, has_initial_state = cache.prepare(batch)
+    assert tuple(slot_idx.shape) == (3,)
+    assert len(set(slot_idx.to_numpy().tolist())) == 3
+    assert pools == [*cache.conv_pools, *cache.ssm_pools]
+    np.testing.assert_array_equal(has_initial_state.to_numpy(), [True] * 3)
+    assert cache.num_free_slots == 1
+
+    cache.release_warmup([ctx.request_id for ctx in batch])
+    assert cache.num_free_slots == 4

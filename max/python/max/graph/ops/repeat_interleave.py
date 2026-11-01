@@ -22,11 +22,13 @@ from ..value import TensorValue, TensorValueLike
 from .broadcast_to import broadcast_to
 from .constant import constant
 from .custom import custom
+from .transfer_to import transfer_to
 
 
 def _promote_repeats(
     repeats: int | TensorValue,
     input_dim: Dim,
+    device: DeviceRef,
     out_dim: DimLike | None,
 ) -> tuple[TensorValue, Dim | None]:
     if out_dim is not None:
@@ -35,6 +37,10 @@ def _promote_repeats(
     if isinstance(repeats, TensorValue):
         if repeats.rank == 0:
             repeats = broadcast_to(repeats, [1])
+        # The custom op is single-device: repeats must ride on the
+        # input's device (GPU included since the tensor-repeats kernel).
+        if repeats.device != device:
+            repeats = transfer_to(repeats, device)
         return repeats, out_dim
 
     if repeats <= 0:
@@ -43,7 +49,7 @@ def _promote_repeats(
         )
 
     return constant(
-        np.array([repeats]), DType.int64, DeviceRef.CPU()
+        np.array([repeats]), DType.int64, device
     ), input_dim * repeats
 
 
@@ -117,19 +123,16 @@ def repeat_interleave(
         axis: The axis to repeat along. If ``None`` (the default), the input is
             flattened first.
         out_dim: The output size along ``axis``. Required when ``repeats`` is a
-            ``TensorValue``.
+            ``TensorValue`` (the output extent is data-dependent).
 
     Returns:
         A ``TensorValue`` representing the input with its elements interleaved.
 
     Raises:
-        ValueError: If ``repeats`` is non-positive, if ``axis`` is out of range,
-            or if the input is on a GPU device.
+        ValueError: If ``repeats`` is non-positive or ``axis`` is out of
+            range.
     """
     x = TensorValue(x)
-
-    if x.device == DeviceRef.GPU():
-        raise ValueError("repeat_interleave is not supported on GPU")
 
     if axis is not None and not -x.rank <= axis < x.rank:
         raise ValueError(
@@ -144,7 +147,9 @@ def repeat_interleave(
     if axis < 0:
         axis += x.rank
 
-    repeats, inferred_size = _promote_repeats(repeats, x.shape[axis], out_dim)
+    repeats, inferred_size = _promote_repeats(
+        repeats, x.shape[axis], x.device, out_dim
+    )
 
     result_shape = Shape(x.shape)
 
@@ -155,6 +160,12 @@ def repeat_interleave(
     # is statically known, otherwise use the provided out_dim.
     result_shape[axis] = inferred_size
 
+    # The axis stays a CPU constant: the kernel registration reads it
+    # as a host-side Scalar, and the compiled path (GPU included) depends
+    # on that. Eager execution is therefore CPU-only for now -- the
+    # interpreter's single-device custom-op admission rejects the
+    # mixed-device op -- until the axis moves to a compile-time custom
+    # op parameter (tracked in AGENT-492).
     axis_val = constant(axis, DType.int64, DeviceRef.CPU())
 
     output = custom(

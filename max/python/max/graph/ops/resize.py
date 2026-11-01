@@ -12,10 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for resize operations."""
 
-from enum import Enum
+from collections.abc import Iterable
+from enum import Enum, IntEnum
 
 from max._core.dialects import builtin, kgen, mo, rmo
+from max.dtype import DType
 
+from ..dim import DimLike
 from ..graph import Graph
 from ..type import Shape, ShapeLike, TensorType
 from ..value import TensorValue, TensorValueLike
@@ -41,10 +44,42 @@ class InterpolationMode(Enum):
         return self.value
 
 
+class CoordinateTransformMode(IntEnum):
+    """How a resize maps an output coordinate to an input coordinate."""
+
+    HALF_PIXEL = 0
+    """Shifts by 0.5 before scaling, consistent with most deep learning
+    frameworks."""
+    ALIGN_CORNERS = 1
+    """Aligns the corner pixels of the input and output so that the first and
+    last coordinates are preserved exactly."""
+    ASYMMETRIC = 2
+    """Applies no shift, mapping an output coordinate to
+    ``out_coord / scale``."""
+    HALF_PIXEL_1D = 3
+    """Like :attr:`HALF_PIXEL` on every axis, except any axis whose output
+    size is 1 maps to coordinate 0."""
+
+
+class RoundMode(IntEnum):
+    """How :func:`resize_nearest` rounds a mapped coordinate to an index."""
+
+    HALF_DOWN = 0
+    """``ceil(x - 0.5)``."""
+    HALF_UP = 1
+    """``floor(x + 0.5)``."""
+    FLOOR = 2
+    """``floor(x)``."""
+    CEIL = 3
+    """``ceil(x)``."""
+
+
 def resize_linear(
     input: TensorValueLike,
     size: ShapeLike,
-    coordinate_transform_mode: int = 0,
+    coordinate_transform_mode: CoordinateTransformMode = (
+        CoordinateTransformMode.HALF_PIXEL
+    ),
     antialias: bool = False,
 ) -> TensorValue:
     """Resizes a tensor using linear (bilinear) interpolation.
@@ -53,7 +88,9 @@ def resize_linear(
     1-D linear filters. It resizes every dimension whose size changes,
     including batch and channel dimensions. The operation maps output
     coordinates back to input coordinates according to
-    ``coordinate_transform_mode``.
+    ``coordinate_transform_mode``. The op runs on the input's device, CPU or
+    GPU; interpolation always accumulates in float32 (float64 for float64
+    inputs).
 
     .. code-block:: python
 
@@ -77,17 +114,8 @@ def resize_linear(
         input: The input symbolic tensor to resize.
         size: The desired output shape. Must have the same rank as ``input``.
         coordinate_transform_mode: How to map an output coordinate to an input
-            coordinate. Allowed values:
-
-            - ``0`` (``half_pixel``): Default. Shifts by 0.5 before
-              scaling, consistent with most deep learning frameworks.
-            - ``1`` (``align_corners``): Aligns the corner pixels of the input
-              and output so that the first and last coordinates are preserved
-              exactly.
-            - ``2`` (``asymmetric``): Applies no shift, mapping an output
-              coordinate to ``out_coord / scale``.
-            - ``3`` (``half_pixel_1D``): Like ``half_pixel`` on every axis,
-              except any axis whose output size is 1 maps to coordinate 0.
+            coordinate. Defaults to
+            :attr:`CoordinateTransformMode.HALF_PIXEL`.
         antialias: When ``True``, applies an antialiasing filter when
             downscaling, which reduces aliasing artifacts by widening the tent
             filter support by ``1 / scale``. Has no effect when upscaling.
@@ -98,15 +126,13 @@ def resize_linear(
         and the same dtype as ``input``.
 
     Raises:
-        ValueError: If ``coordinate_transform_mode`` isn't 0-3, or if ``size``
-            has a different rank than ``input``.
+        ValueError: If ``coordinate_transform_mode`` isn't a
+            :class:`CoordinateTransformMode`, or if ``size`` has a different
+            rank than ``input``.
     """
-    if coordinate_transform_mode not in (0, 1, 2, 3):
-        raise ValueError(
-            f"coordinate_transform_mode must be 0-3, got"
-            f" {coordinate_transform_mode}"
-        )
-
+    coordinate_transform_mode = CoordinateTransformMode(
+        coordinate_transform_mode
+    )
     input = TensorValue(input)
     size = Shape(size)
 
@@ -124,7 +150,7 @@ def resize_linear(
         input,
         shape_to_tensor(size),
         mo.CoordinateTransformModeAttr(
-            mo.CoordinateTransformMode(coordinate_transform_mode)
+            mo.CoordinateTransformMode(coordinate_transform_mode.value)
         ),
         builtin.BoolAttr(antialias),
         kgen.ParamDeclArrayAttr([]),
@@ -134,8 +160,10 @@ def resize_linear(
 def resize_nearest(
     input: TensorValueLike,
     size: ShapeLike,
-    coordinate_transform_mode: int = 0,
-    round_mode: int = 0,
+    coordinate_transform_mode: CoordinateTransformMode = (
+        CoordinateTransformMode.HALF_PIXEL
+    ),
+    round_mode: RoundMode = RoundMode.HALF_DOWN,
 ) -> TensorValue:
     """Resizes a tensor using nearest-neighbor interpolation.
 
@@ -164,38 +192,25 @@ def resize_nearest(
         input: The input symbolic tensor to resize.
         size: The desired output shape. Must have the same rank as ``input``.
         coordinate_transform_mode: How to map an output coordinate to an input
-            coordinate. Allowed values:
-
-            - ``0`` (``half_pixel``). Default.
-            - ``1`` (``align_corners``).
-            - ``2`` (``asymmetric``).
-            - ``3`` (``half_pixel_1D``).
-
-            See :func:`resize_linear` for a description of each mode.
+            coordinate. Defaults to
+            :attr:`CoordinateTransformMode.HALF_PIXEL`.
         round_mode: How to round the mapped coordinate to select the nearest
-            input sample. Allowed values:
-
-            - ``0`` (``HalfDown``, the default): ``ceil(x - 0.5)``.
-            - ``1`` (``HalfUp``): ``floor(x + 0.5)``.
-            - ``2`` (``Floor``): ``floor(x)``.
-            - ``3`` (``Ceil``): ``ceil(x)``.
+            input sample. Defaults to :attr:`RoundMode.HALF_DOWN`.
 
     Returns:
         A ``TensorValue`` representing the resized tensor, with shape ``size``
         and the same dtype as ``input``.
 
     Raises:
-        ValueError: If ``coordinate_transform_mode`` isn't 0-3, ``round_mode``
-            isn't 0-3, or ``size`` has a different rank than ``input``.
+        ValueError: If ``coordinate_transform_mode`` isn't a
+            :class:`CoordinateTransformMode`, ``round_mode`` isn't a
+            :class:`RoundMode`, or ``size`` has a different rank than
+            ``input``.
     """
-    if coordinate_transform_mode not in (0, 1, 2, 3):
-        raise ValueError(
-            f"coordinate_transform_mode must be 0-3, got"
-            f" {coordinate_transform_mode}"
-        )
-    if round_mode not in (0, 1, 2, 3):
-        raise ValueError(f"round_mode must be 0-3, got {round_mode}")
-
+    coordinate_transform_mode = CoordinateTransformMode(
+        coordinate_transform_mode
+    )
+    round_mode = RoundMode(round_mode)
     input = TensorValue(input)
     size = Shape(size)
 
@@ -213,22 +228,32 @@ def resize_nearest(
         input,
         shape_to_tensor(size),
         mo.CoordinateTransformModeAttr(
-            mo.CoordinateTransformMode(coordinate_transform_mode)
+            mo.CoordinateTransformMode(coordinate_transform_mode.value)
         ),
-        builtin.IntegerAttr(builtin.IntegerType(64), round_mode),
+        builtin.IntegerAttr(builtin.IntegerType(64), round_mode.value),
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
 
 def resize_bicubic(
     input: TensorValueLike,
-    size: ShapeLike,
+    size: ShapeLike | TensorValue,
+    *,
+    antialias: bool = False,
+    out_dims: Iterable[DimLike] | None = None,
 ) -> TensorValue:
     """Resizes a tensor using bicubic interpolation.
 
     Produces an output tensor whose dimensions are given by ``size`` using a
-    4x4-pixel Keys/PyTorch (``a = -0.75``) cubic convolution filter with
-    half-pixel coordinate mapping.
+    cubic convolution filter with half-pixel coordinate mapping. By default
+    the filter is the 4x4-pixel Keys/PyTorch cubic, ``a = -0.75``. With
+    ``antialias``, it is the ``a = -0.5`` cubic stretched by the downscale
+    factor with its weights normalized, the filter of PyTorch's
+    ``interpolate(mode="bicubic", antialias=True)`` and Pillow's ``BICUBIC``.
+    The antialiased resize runs on the CPU, in float32, and matches PyTorch
+    to float32 rounding. A uint8 ``input`` resizes to a uint8 output: the
+    float32 result rounded half to even and clamped to ``[0, 255]``, the same
+    bits as casting to float32, resizing, and then rounding and clamping.
 
     .. code-block:: python
 
@@ -253,36 +278,89 @@ def resize_bicubic(
             channels-first (NCHW) layout,
             ``(batch_size, channels, height, width)``.
         size: The desired output shape, of length 4,
-            ``(batch_size, channels, height, width)``.
+            ``(batch_size, channels, height, width)``: a shape, or a rank-1
+            int64 :class:`~max.graph.TensorValue` on the CPU giving it at
+            runtime.
+        antialias: Whether to use the antialiased ``a = -0.5`` filter, which
+            reads more input pixels when downscaling. ``input`` must then be
+            float32 or uint8 on the CPU.
+        out_dims: The output's dimensions. Required when ``size`` is a
+            :class:`~max.graph.TensorValue`, to declare the symbolic output
+            type, and refused otherwise. Its batch and channel dims must be
+            the input's, and the runtime ``size`` must agree with them.
 
     Returns:
         A ``TensorValue`` representing the resized tensor, with shape ``size``
         and the same dtype as ``input``.
 
     Raises:
-        ValueError: If ``input`` doesn't have rank 4, or if ``size`` has a
-            different length.
+        ValueError: If ``input`` doesn't have rank 4, if ``size`` has a
+            different length or other batch or channel dims, if ``size`` is a
+            tensor and ``out_dims`` is not given or the other way round, if a
+            tensor ``size`` is not a CPU int64 tensor of shape ``[4]``, or if
+            ``antialias`` is set for an input that is not float32 or uint8 on
+            the CPU.
     """
     input = TensorValue(input)
-    size = Shape(size)
 
     if input.rank != 4:
         raise ValueError(
             f"resize_bicubic requires rank-4 (NCHW) input, got rank"
             f" {input.rank}"
         )
-    if len(size) != 4:
+    if antialias and (
+        input.dtype not in (DType.float32, DType.uint8)
+        or not input.device.is_cpu()
+    ):
         raise ValueError(
-            f"size must have 4 elements for NCHW format, got {len(size)}"
+            "an antialiased resize_bicubic takes a float32 or uint8 input on"
+            f" the CPU, got {input.dtype} on {input.device}"
+        )
+    if isinstance(size, TensorValue):
+        if out_dims is None:
+            raise ValueError(
+                f"must pass out_dims with a tensor-valued size {size}"
+            )
+        if (
+            size.dtype != DType.int64
+            or size.shape != [4]
+            or not size.device.is_cpu()
+        ):
+            raise ValueError(
+                "a tensor-valued size must be a CPU int64 tensor of shape"
+                f" [4], got {size.type}"
+            )
+        shape = Shape(out_dims)
+        size_operand = size
+    elif out_dims is not None:
+        raise ValueError(
+            "out_dims declares a tensor-valued size's dims; a static size"
+            " is its own"
+        )
+    else:
+        shape = Shape(size)
+        size_operand = shape_to_tensor(shape)
+    if len(shape) != 4:
+        raise ValueError(
+            f"size must have 4 elements for NCHW format, got {len(shape)}"
+        )
+    if shape[:2] != input.shape[:2]:
+        raise ValueError(
+            "resize_bicubic resizes height and width only: size must keep"
+            f" the input's batch and channel dims {input.shape[:2]}, got"
+            f" {shape[:2]}"
         )
 
-    result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
+    result_type = TensorType(
+        dtype=input.dtype, shape=shape, device=input.device
+    )
 
     return Graph.current._add_op_generated(
         rmo.MoResizeBicubicOp,
         result_type.to_mlir(),
         input,
-        shape_to_tensor(size),
+        size_operand,
+        builtin.BoolAttr(antialias),
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 

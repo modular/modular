@@ -102,10 +102,7 @@ static void propagateTrivialParameters(Region *region,
             decl = cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl));
             evaluator.setDeclBinding(decl, ParamDeclRefAttr::get(decl));
           });
-      // Nested regions can declare parameters, so we cannot fully rebind the
-      // operation now. It will be handled later when this function recurses.
-      if (!isa<ParamDeclareRegionOp>(op))
-        processOp(op, evaluator);
+      processOp(op, evaluator);
     }
   }
 
@@ -123,10 +120,10 @@ static void propagateTrivialParameters(Region *region,
     // GeneratorUser ops need concretize callee to be called when the callee
     // attr is updated.
     if (auto generatorUser = dyn_cast<GeneratorUserOpInterface>(op)) {
-      if (auto symCst =
-              dyn_cast<SymbolConstantAttr>(generatorUser.getCallee())) {
+      auto callee = FuncSymbolGenerator::dynCast(generatorUser.getCallee());
+      if (callee && callee.isFullyBound()) {
         IRRewriter b{OpBuilder(op)};
-        generatorUser.concretizeCallee(b, symCst);
+        generatorUser.concretizeCallee(b, callee);
       }
     }
   }
@@ -212,11 +209,13 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
 
     auto consolidateFn = [emptyCache](ParamCache &original,
                                       ArrayRef<ParamCache> threadCaches) {
-      // Consolidate the caches, but only when the original cache is empty.
-      // In reality, the cache does not grow much after the first run of
-      // this pass on an input IR, so consolidation is only worthwhile on
-      // the first run of the pass, when the cache is empty.
-      if (emptyCache)
+      // Consolidate the caches, but only when the original cache was empty
+      // before this run. In reality, the cache does not grow much after the
+      // first run of this pass on an input IR, so consolidation is only
+      // worthwhile on the first run of the pass, when the cache is empty.
+      // `original` is itself one worker's cache, so test the flag captured
+      // before the run rather than `original`.
+      if (!emptyCache)
         return;
       for (const ParamCache &threadCache : threadCaches) {
         original.parameterLess.insert(threadCache.parameterLess.begin(),

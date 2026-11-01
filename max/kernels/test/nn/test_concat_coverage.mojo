@@ -25,10 +25,12 @@ This file tests various code paths in nn/concat.mojo:
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TensorLayout, TileTensor, row_major
+from layout.coord import DynamicCoord
 from nn.concat import (
     _concat_inner,
     _concat_parallel,
     _concat_serial,
+    _no_epilogue,
     concat,
     concat_shape,
     fused_concat,
@@ -53,7 +55,7 @@ def _tuple_to_list[
         capacity=len(elems)
     )
     for i in range(len(elems)):
-        output.append(elems[i].as_immut())
+        output.append(elems[i].as_imm())
     return output^
 
 
@@ -88,20 +90,23 @@ def test_concat_inner_all_outer_dims_singleton() raises:
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=2
     )
-    input_vec.append(x1_dyn.as_unsafe_any_origin().as_immut())
-    input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
+    input_vec.append(x1_dyn.as_unsafe_any_origin().as_imm())
+    input_vec.append(x2_dyn.as_unsafe_any_origin().as_imm())
 
-    _concat_inner[dtype, None](output.make_dynamic[.int64](), input_vec)
+    _concat_inner[dtype, has_epilogue=False](
+        output.make_dynamic[.int64](), input_vec, _no_epilogue
+    )
 
     # Verify contiguous concatenation
+    var out_flat = output.reshape(row_major(out_layout.product()))
+    var x1_flat = x1.reshape(row_major(l1.product()))
+    var x2_flat = x2.reshape(row_major(l2.product()))
     for i in range(l1.product()):
-        assert_equal(
-            output.raw_load(i), x1.raw_load(i), msg="Mismatch in first input"
-        )
+        assert_equal(out_flat[i], x1_flat[i], msg="Mismatch in first input")
     for i in range(l2.product()):
         assert_equal(
-            output.raw_load(l1.product() + i),
-            x2.raw_load(i),
+            out_flat[l1.product() + i],
+            x2_flat[i],
             msg="Mismatch in second input",
         )
 
@@ -144,11 +149,13 @@ def test_concat_serial_general_case() raises:
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=3
     )
-    input_vec.append(x1_dyn.as_unsafe_any_origin().as_immut())
-    input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
-    input_vec.append(x3_dyn.as_unsafe_any_origin().as_immut())
+    input_vec.append(x1_dyn.as_unsafe_any_origin().as_imm())
+    input_vec.append(x2_dyn.as_unsafe_any_origin().as_imm())
+    input_vec.append(x3_dyn.as_unsafe_any_origin().as_imm())
 
-    _concat_serial[dtype, None](output.make_dynamic[.int64](), axis, input_vec)
+    _concat_serial[dtype, has_epilogue=False](
+        output.make_dynamic[.int64](), axis, input_vec, _no_epilogue
+    )
 
     # Verify concatenation
     for i in range(4):
@@ -202,11 +209,11 @@ def test_concat_parallel_large() raises:
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=2
     )
-    input_vec.append(x1_dyn.as_unsafe_any_origin().as_immut())
-    input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
+    input_vec.append(x1_dyn.as_unsafe_any_origin().as_imm())
+    input_vec.append(x2_dyn.as_unsafe_any_origin().as_imm())
 
-    _concat_parallel[dtype, None](
-        output.make_dynamic[.int64](), axis, input_vec
+    _concat_parallel[dtype, has_epilogue=False](
+        output.make_dynamic[.int64](), axis, input_vec, _no_epilogue
     )
 
     # Sample verification (checking all elements would be too slow)
@@ -228,52 +235,39 @@ def test_fused_concat_cpu() raises:
     comptime rank = 3
     comptime axis = 1
 
-    comptime input_shape_0 = IndexList[rank](2, 3, 4)
-    comptime input_shape_1 = IndexList[rank](2, 5, 4)
+    comptime input_shape_0 = Coord(2, 3, 4)
+    comptime input_shape_1 = Coord(2, 5, 4)
     comptime output_shape = IndexList[rank](2, 8, 4)
 
     var out_stack = Array[Scalar[dtype], product(output_shape, rank)](fill=-999)
     var output = TileTensor(out_stack, row_major(Coord(output_shape)))
 
     # Input lambda: generates data based on input index
-    @__parameter
-    @always_inline
+    @inline(.always)
     def input_fn[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+        input_index: Int, width: Int, alignment: Int = 1
+    ](coords: Coord) -> SIMD[dtype, width]:
+        var flat = Int(coords[0]) * 100 + Int(coords[1]) * 10 + Int(coords[2])
         comptime if input_index == 0:
-            return SIMD[dtype, width](
-                Float32(indices[0] * 100 + indices[1] * 10 + indices[2])
-            )
+            return SIMD[dtype, width](Float32(flat))
         else:
-            return SIMD[dtype, width](
-                Float32(1000 + indices[0] * 100 + indices[1] * 10 + indices[2])
-            )
+            return SIMD[dtype, width](Float32(1000 + flat))
 
     # Output epilogue: multiply by 2
-    @__parameter
-    @always_inline
-    @__copy_capture(output)
+    @inline(.always)
     def output_fn[
-        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        var coord = Coord(indices)
-        comptime assert output.flat_rank >= coord.flat_rank
-        output.store[width=width](coord, rebind[SIMD[dtype, width]](val * 2))
+        c_type: DType, width: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[c_type, width]) {var output}:
+        comptime assert output.flat_rank >= coords.flat_rank
+        output.store(coords, rebind[SIMD[dtype, width]](val * 2))
 
     var output_dyn = output.make_dynamic[.int64]()
 
-    fused_concat[
-        dtype,
-        rank,
+    fused_concat[dtype, rank, axis=axis, target="cpu"](
+        StaticTuple[DynamicCoord[.int, rank], 2](input_shape_0, input_shape_1),
+        output_dyn.layout,
         input_fn,
         output_fn,
-        output_dyn.LayoutType,
-        axis=axis,
-        target="cpu",
-    ](
-        StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
-        output_dyn,
         DeviceContext(api="cpu"),
     )
 
@@ -322,14 +316,14 @@ def test_concat_shape() raises:
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=2
     )
-    input_vec.append(x1_dyn.as_unsafe_any_origin().as_immut())
-    input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
+    input_vec.append(x1_dyn.as_unsafe_any_origin().as_imm())
+    input_vec.append(x2_dyn.as_unsafe_any_origin().as_imm())
 
     var output_shape = concat_shape[dtype](input_vec, axis)
 
-    assert_equal(output_shape[0], 2, msg="Wrong dim 0")
-    assert_equal(output_shape[1], 8, msg="Wrong concat dim (3+5=8)")
-    assert_equal(output_shape[2], 4, msg="Wrong dim 2")
+    assert_equal(Int(output_shape[0]), 2, msg="Wrong dim 0")
+    assert_equal(Int(output_shape[1]), 8, msg="Wrong concat dim (3+5=8)")
+    assert_equal(Int(output_shape[2]), 4, msg="Wrong dim 2")
 
     print("✅ Test passed!")
 
@@ -365,24 +359,22 @@ def test_concat_with_epilogue() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         2,
     ](
-        x1_dyn.as_unsafe_any_origin().as_immut(),
-        x2_dyn.as_unsafe_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_imm(),
+        x2_dyn.as_unsafe_any_origin().as_imm(),
     )
 
-    @__parameter
-    @always_inline
-    @__copy_capture(output)
+    @inline(.always)
     def epilogue_add_10[
-        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        var coord = Coord(indices)
-        comptime assert output.flat_rank >= coord.flat_rank
-        output.store[width=width](coord, rebind[SIMD[dtype, width]](val + 10))
+        c_type: DType, width: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[c_type, width]) {var output}:
+        comptime assert output.flat_rank >= coords.flat_rank
+        output.store(coords, rebind[SIMD[dtype, width]](val + 10))
 
-    concat[dtype, epilogue_fn=epilogue_add_10](
-        output.make_dynamic[.int64](),
+    concat[dtype](
+        output.make_dynamic[.int64]().as_unsafe_any_origin(),
         axis,
         input_tuple,
+        epilogue_add_10,
         DeviceContext(api="cpu"),
     )
 
@@ -438,11 +430,11 @@ def test_concat_many_inputs() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         5,
     ](
-        x1_dyn.as_unsafe_any_origin().as_immut(),
-        x2.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
-        x3.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
-        x4.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
-        x5.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_imm(),
+        x2.make_dynamic[.int64]().as_unsafe_any_origin().as_imm(),
+        x3.make_dynamic[.int64]().as_unsafe_any_origin().as_imm(),
+        x4.make_dynamic[.int64]().as_unsafe_any_origin().as_imm(),
+        x5.make_dynamic[.int64]().as_unsafe_any_origin().as_imm(),
     )
 
     concat[dtype](

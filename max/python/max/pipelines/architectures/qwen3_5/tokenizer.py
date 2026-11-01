@@ -17,18 +17,20 @@ from __future__ import annotations
 from typing import Any
 
 from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import resolve_single_special_token
+from max.pipelines.lib.tokenizer import ReasoningDelimitersMixin
 from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
 
-_THINK_START_TOKEN = "<think>"
-_THINK_END_TOKEN = "</think>"
+# Hugging Face reads these as call arguments, not template variables. A
+# client's chat_template would replace the model's own.
+_RESERVED_OPTIONS = ("chat_template", "tokenize")
 
 
-class Qwen3_5Tokenizer(Qwen3VLTokenizer):
+class Qwen3_5Tokenizer(ReasoningDelimitersMixin, Qwen3VLTokenizer):
     """Tokenizer for Qwen3.5 multimodal models.
 
     Inherits full image-processing pipeline from :class:`Qwen3VLTokenizer` and
@@ -36,6 +38,9 @@ class Qwen3_5Tokenizer(Qwen3VLTokenizer):
     :class:`~max.pipelines.modeling.types.ReasoningPipelineTokenizer` by
     resolving the ``<think>``/``</think>`` delimiter token IDs at construction.
     """
+
+    # Text-only checkpoints (model_type "qwen3_5_text") carry no vision config.
+    _requires_vision_config = False
 
     def __init__(
         self,
@@ -57,22 +62,7 @@ class Qwen3_5Tokenizer(Qwen3VLTokenizer):
             trust_remote_code=trust_remote_code,
             **unused_kwargs,
         )
-        self._reasoning_start_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_START_TOKEN
-        )
-        self._reasoning_end_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_END_TOKEN
-        )
-
-    @property
-    def reasoning_start_token_id(self) -> int:
-        """Token id of ``<think>`` (opens a Qwen3.5 reasoning span)."""
-        return self._reasoning_start_token_id
-
-    @property
-    def reasoning_end_token_id(self) -> int:
-        """Token id of ``</think>`` (closes a Qwen3.5 reasoning span)."""
-        return self._reasoning_end_token_id
+        self._resolve_reasoning_delimiters(self.delegate)
 
     def apply_chat_template(
         self,
@@ -86,18 +76,29 @@ class Qwen3_5Tokenizer(Qwen3VLTokenizer):
             messages: List of messages for the chat template.
             tools: Optional tools available for the model to invoke.
             **chat_template_options: Template options to forward to the Jinja
-                template. Merged with ``add_generation_prompt=True`` and
+                template. They override the ``add_generation_prompt=True`` and
                 ``enable_thinking=True`` defaults.
 
         Returns:
             The templated chat message as a string.
-        """
-        enable_thinking = chat_template_options.get("enable_thinking", True)
 
+        Raises:
+            InputError: If an option sets ``chat_template`` or ``tokenize``.
+        """
+        for key in _RESERVED_OPTIONS:
+            if key in chat_template_options:
+                raise InputError(
+                    f"chat_template_kwargs cannot set {key!r}, since the "
+                    "tokenizer sets it itself."
+                )
+        chat_template_options = {
+            "add_generation_prompt": True,
+            "enable_thinking": True,
+            **chat_template_options,
+        }
         return self.delegate.apply_chat_template(
             [msg.model_dump(exclude_none=True) for msg in messages],
             tools=tools,
             tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=enable_thinking,
+            **chat_template_options,
         )

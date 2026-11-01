@@ -20,7 +20,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc, unsafe_memset_zero
+from std.memory import unsafe_memset_zero
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -29,7 +29,6 @@ from std.random import rand
 from internal_utils._measure import relative_difference
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -40,7 +39,7 @@ from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul impor
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def simple_init() -> Bool:
@@ -58,9 +57,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     scales_type: DType = .float32,
     transpose_b: Bool = True,
@@ -70,72 +69,38 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     comptime BLOCK_SCALE_K = 128
 
-    if Int(m.value()) * size_of[DType.float32]() % 16 != 0:
+    if Int(m) * size_of[DType.float32]() % 16 != 0:
         raise Error("TMA expects M to be divisible by 16 bytes")
 
     print(
-        "in/out dtypes=(",
-        a_type,
-        ", ",
-        b_type,
-        ", ",
-        c_type,
-        ") ",
-        " problem shape=(",
-        Int(m.value()),
-        ", ",
-        Int(n.value()),
-        ", ",
-        Int(k.value()),
-        ") ",
-        "mma_shape=",
-        mma_shape,
-        " block_tile_shape=",
-        block_tile_shape,
-        " cta_group=",
-        cta_group,
-        " cluster_shape=(",
-        cluster_shape[0],
-        ", ",
-        cluster_shape[1],
-        ", ",
-        cluster_shape[2],
-        ")",
+        (
+            t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem"
+            t" shape=({Int(m)}, {Int(n)}, {Int(k)})"
+            t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
+            t" {cluster_shape[1]}, {cluster_shape[2]})"
+        ),
         sep="",
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(k.value()), BLOCK_SCALE_K),
-            m,
-        )
-    )
+    var a_scales_shape = row_major(ceildiv(Int(k), BLOCK_SCALE_K), m)
     var b_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(n.value()), BLOCK_SCALE_K),
-            ceildiv(Int(k.value()), BLOCK_SCALE_K),
-        )
+        ceildiv(Int(n), BLOCK_SCALE_K),
+        ceildiv(Int(k), BLOCK_SCALE_K),
     )
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = (
-        Int(n.value())
-        * Int(k.value()) if transpose_b else Int(k.value())
-        * Int(n.value())
-    )
-    var c_size = Int(m.value()) * Int(n.value())
-    var a_scales_size = ceildiv(Int(k.value()), BLOCK_SCALE_K) * Int(m.value())
-    var b_scales_size = ceildiv(Int(n.value()), BLOCK_SCALE_K) * ceildiv(
-        Int(k.value()), BLOCK_SCALE_K
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k) if transpose_b else Int(k) * Int(n)
+    var c_size = Int(m) * Int(n)
+    var a_scales_size = ceildiv(Int(k), BLOCK_SCALE_K) * Int(m)
+    var b_scales_size = ceildiv(Int(n), BLOCK_SCALE_K) * ceildiv(
+        Int(k), BLOCK_SCALE_K
     )
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
@@ -175,30 +140,30 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 
     # Initialize matmul operands
     if simple_init():
-        for m in range(Int(m.value())):
-            for k in range(Int(k.value())):
+        for m in range(Int(m)):
+            for k in range(Int(k)):
                 comptime assert a_host.flat_rank == 2
                 a_host[m, k] = Scalar[a_type](1.0)
-        for n in range(Int(n.value())):
-            for k in range(Int(k.value())):
+        for n in range(Int(n)):
+            for k in range(Int(k)):
                 b_host[n, k] = Scalar[b_type](1.0)
 
-        for m in range(Int(m.value())):
-            for k in range(Int(k.value())):
+        for m in range(Int(m)):
+            for k in range(Int(k)):
                 comptime assert a_scales_host.flat_rank == 2
                 a_scales_host[k // BLOCK_SCALE_K, m] = Scalar[scales_type](0.5)
-        for n in range(Int(n.value())):
-            for k in range(Int(k.value())):
+        for n in range(Int(n)):
+            for k in range(Int(k)):
                 comptime assert b_scales_host.flat_rank == 2
                 b_scales_host[n // BLOCK_SCALE_K, k // BLOCK_SCALE_K] = Scalar[
                     scales_type
                 ](0.5)
 
     else:
-        rand(a_host._storage, a_host.num_elements())
-        rand(b_host._storage, b_host.num_elements())
-        rand(a_scales_host._storage, a_scales_host.num_elements())
-        rand(b_scales_host._storage, b_scales_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
+        rand(a_scales_host.as_span())
+        rand(b_scales_host.as_span())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -207,16 +172,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    # LayoutTensors for reference matmul
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
+    # TileTensors for reference matmul
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=0,
@@ -241,13 +203,15 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_K, BLOCK_SCALE_K
+        ),
     ](
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
-        a_scales_lt.as_imm(),
-        b_scales_lt.as_imm(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
         ctx,
     )
 
@@ -291,8 +255,8 @@ def main() raises:
 
         # Part B: mma_m_scale = 2 only (256x32N MMA shapes for 2SM)
         comptime for mma_n_scale in [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16]:
-            comptime block_tile_shape = Index(128, 8 * mma_n_scale, BK)
-            comptime umma_shape = Index(256, 16 * mma_n_scale, MMA_K)
+            comptime block_tile_shape = (128, 8 * mma_n_scale, BK)
+            comptime umma_shape = (256, 16 * mma_n_scale, MMA_K)
 
             print(
                 "block_tile_shape",
@@ -307,7 +271,7 @@ def main() raises:
                 out_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 cta_group=2,
@@ -324,7 +288,7 @@ def main() raises:
                 out_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 cta_group=2,
@@ -341,7 +305,7 @@ def main() raises:
                 out_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                cluster_shape=(4, 4, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 scales_type=.bfloat16,
@@ -359,7 +323,7 @@ def main() raises:
                 out_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                cluster_shape=(4, 4, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 cta_group=2,
@@ -376,7 +340,7 @@ def main() raises:
                 out_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                cluster_shape=(4, 4, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 cta_group=2,
@@ -393,7 +357,7 @@ def main() raises:
                 out_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                cluster_shape=(8, 2, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 cta_group=2,
@@ -410,7 +374,7 @@ def main() raises:
                 out_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
+                cluster_shape=(2, 2, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 scales_type=.bfloat16,
@@ -428,7 +392,7 @@ def main() raises:
                 out_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                cluster_shape=(4, 4, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 cta_group=2,

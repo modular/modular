@@ -21,10 +21,8 @@ from std.python._cpython import (
     PyModuleDef,
     PyObject,
     PyObjectPtr,
-    Py_TPFLAGS_LONG_SUBCLASS,
-    Py_TPFLAGS_LIST_SUBCLASS,
 )
-from std.memory import alloc, dealloc, ThinAllocation, Layout
+from std.memory import alloc, Layout
 from std.testing import (
     assert_equal,
     assert_false,
@@ -71,9 +69,7 @@ def _test_exception_handling_api(cpy: CPython) raises:
     assert_true(cpy.PyErr_Occurred())
     cpy.PyErr_Clear()
 
-    cpy.PyErr_SetString(
-        ValueError, msg.as_c_string_slice().ptr().as_unsafe_any_origin()
-    )
+    cpy.PyErr_SetString(ValueError, msg.as_c_string_span().ptr())
     assert_true(cpy.PyErr_Occurred())
 
     if cpy.version.minor < 12:
@@ -114,6 +110,8 @@ def _test_object_protocol_api(cpy: CPython) raises:
 
     assert_true(cpy.PyObject_Str(n))
     assert_equal(cpy.PyObject_Hash(n), 42)
+    assert_equal(cpy.PySequence_Contains(l, n), 0)
+    assert_equal(cpy.PySequence_Contains(l, z), 1)
     assert_equal(cpy.PyObject_IsTrue(n), 1)
     assert_true(cpy.PyObject_Type(n))
     assert_equal(cpy.PyObject_Length(l), 1)
@@ -121,6 +119,8 @@ def _test_object_protocol_api(cpy: CPython) raises:
     assert_equal(cpy.PyObject_GetItem(l, z), z)
     assert_equal(cpy.PyObject_SetItem(l, z, n), 0)
     assert_equal(cpy.PyObject_GetItem(l, z), n)
+    assert_equal(cpy.PySequence_Contains(l, n), 1)
+    assert_equal(cpy.PySequence_Contains(l, z), 0)
 
     var it = cpy.PyObject_GetIter(l)
     assert_true(it)
@@ -292,10 +292,7 @@ def _test_dictionary_object_api(cpy: CPython) raises:
     var pos: Py_ssize_t = 0
 
     var succ = cpy.PyDict_Next(
-        d,
-        Pointer(to=pos).as_unsafe_any_origin(),
-        Pointer(to=key).as_unsafe_any_origin(),
-        Pointer(to=value).as_unsafe_any_origin(),
+        d, Pointer(to=pos), Pointer(to=key), Pointer(to=value)
     )
     assert_equal(pos, 1)
     assert_equal(key, b)
@@ -303,10 +300,7 @@ def _test_dictionary_object_api(cpy: CPython) raises:
     assert_true(succ)
 
     succ = cpy.PyDict_Next(
-        d,
-        Pointer(to=pos).as_unsafe_any_origin(),
-        Pointer(to=key).as_unsafe_any_origin(),
-        Pointer(to=value).as_unsafe_any_origin(),
+        d, Pointer(to=pos), Pointer(to=key), Pointer(to=value)
     )
     assert_false(succ)
 
@@ -327,24 +321,14 @@ def _test_module_object_api(cpy: CPython) raises:
 
     var funcs = Array[PyMethodDef, 1](fill={})
     # returns 0 on success, -1 on failure
-    assert_equal(
-        cpy.PyModule_AddFunctions(
-            mod, funcs.unsafe_ptr().as_unsafe_any_origin()
-        ),
-        0,
-    )
-    _ = funcs
+    assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
 
     var n = cpy.PyLong_FromSsize_t(0)
     var name = "n"
     # returns 0 on success, -1 on failure
     assert_equal(
-        cpy.PyModule_AddObjectRef(
-            mod, name.as_c_string_slice().ptr().as_unsafe_any_origin(), n
-        ),
-        0,
+        cpy.PyModule_AddObjectRef(mod, name.as_c_string_span().ptr(), n), 0
     )
-    _ = name
 
 
 def _test_slice_object_api(cpy: CPython) raises:
@@ -357,8 +341,7 @@ def _test_capsule_api(cpy: CPython) raises:
     with assert_raises(contains="called with invalid PyCapsule object"):
         _ = cpy.PyCapsule_GetPointer(o, "some_name")
 
-    var capsule_impl_layout = Layout[UInt64].single()
-    var capsule_impl_ptr = alloc(capsule_impl_layout).unsafe_leak()
+    var capsule_impl = alloc(Layout[UInt64].single()).into_managed()
 
     def empty_dtor(capsule: PyObjectPtr) abi("C"):
         pass
@@ -369,32 +352,24 @@ def _test_capsule_api(cpy: CPython) raises:
     # lifetime, so the pointer remains valid for the `PyCapsule_GetPointer`
     # lookups after `PyCapsule_New` returns.
     var capsule = cpy.PyCapsule_New(
-        capsule_impl_ptr.unsafe_bitcast[NoneType]().unsafe_origin_cast[
-            MutUntrackedOrigin
-        ](),
+        capsule_impl.unsafe_ptr()
+        .unsafe_bitcast[NoneType]()
+        .unsafe_origin_cast[MutUntrackedOrigin](),
         "some_name",
         empty_dtor,
     )
     var capsule_pointer = cpy.PyCapsule_GetPointer(capsule, "some_name")
 
     # The capsule holds the raw pointer but never dereferences it (its
-    # destructor is a no-op and the lookups below fail before any deref), so it
-    # is safe to release the storage now. Capture the address first because
-    # `assert_equal` can raise, and the allocation must be freed on every path.
-    var capsule_impl_addr = Int(capsule_impl_ptr)
-    dealloc(
-        ThinAllocation(unsafe_owned_ptr=capsule_impl_ptr).unsafe_with_layout(
-            capsule_impl_layout
-        )
-    )
-    assert_equal(capsule_impl_addr, Int(capsule_pointer))
+    # destructor is a no-op).
+    assert_equal(Int(capsule_impl.unsafe_ptr()), Int(capsule_pointer))
     with assert_raises(contains="called with incorrect name"):
         _ = cpy.PyCapsule_GetPointer(capsule, "some_other_name")
 
 
 def _test_memory_management_api(cpy: CPython) raises:
     var ptr = cpy.lib.call[
-        "PyObject_Malloc", OptionalPointer[NoneType, MutUntrackedOrigin]
+        "PyObject_Malloc", Optional[Pointer[NoneType, MutUntrackedOrigin]]
     ](64)
     assert_true(ptr)
 
@@ -577,6 +552,13 @@ def test_pymoduledef_write_repr_to() raises:
     assert_true(s.startswith("PyModuleDef("))
     assert_true("name=" in s)
     assert_true("size=" in s)
+
+
+def test_cpython_init_populates_version() raises:
+    # Successful CPython initialization records a real interpreter version.
+    var python = Python()
+    ref cpython = python.cpython()
+    assert_true(cpython.version.major >= 3)
 
 
 def main() raises:

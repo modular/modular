@@ -11,7 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Idx, Coord, coord, row_major, col_major
+from layout import (
+    Idx,
+    coord,
+    row_major,
+    col_major,
+)
 from layout.tile_layout import (
     Layout,
     CoalesceLayout,
@@ -233,14 +238,14 @@ def test_idx2crd_flat_row_major() raises:
     """Test idx2crd on a flat row-major layout."""
     var layout = row_major[3, 4]()
     var c0 = layout.idx2crd(0)
-    assert_equal(Int(c0[0].value()), 0)
-    assert_equal(Int(c0[1].value()), 0)
+    assert_equal(Int(c0[0]), 0)
+    assert_equal(Int(c0[1]), 0)
     var c5 = layout.idx2crd(5)
-    assert_equal(Int(c5[0].value()), 1)
-    assert_equal(Int(c5[1].value()), 1)
+    assert_equal(Int(c5[0]), 1)
+    assert_equal(Int(c5[1]), 1)
     var c11 = layout.idx2crd(11)
-    assert_equal(Int(c11[0].value()), 2)
-    assert_equal(Int(c11[1].value()), 3)
+    assert_equal(Int(c11[0]), 2)
+    assert_equal(Int(c11[1]), 3)
 
 
 def test_idx2crd_nested_zipped_divide() raises:
@@ -256,10 +261,10 @@ def test_idx2crd_nested_zipped_divide() raises:
     var coords = layout.idx2crd(linear_idx)
     var inner = coords[0].tuple()
     var outer = coords[1].tuple()
-    assert_equal(Int(inner[0].value()), 1)
-    assert_equal(Int(inner[1].value()), 0)
-    assert_equal(Int(outer[0].value()), 1)
-    assert_equal(Int(outer[1].value()), 0)
+    assert_equal(Int(inner[0]), 1)
+    assert_equal(Int(inner[1]), 0)
+    assert_equal(Int(outer[0]), 1)
+    assert_equal(Int(outer[1]), 0)
 
 
 def test_idx2crd_nested_roundtrip() raises:
@@ -273,10 +278,10 @@ def test_idx2crd_nested_roundtrip() raises:
         var outer = coords[1].tuple()
         # Reconstruct using the flat formula
         var reconstructed = (
-            Int(inner[0].value()) * 6
-            + Int(inner[1].value()) * 1
-            + Int(outer[0].value()) * 12
-            + Int(outer[1].value()) * 3
+            Int(inner[0]) * 6
+            + Int(inner[1]) * 1
+            + Int(outer[0]) * 12
+            + Int(outer[1]) * 3
         )
         assert_equal(reconstructed, i)
 

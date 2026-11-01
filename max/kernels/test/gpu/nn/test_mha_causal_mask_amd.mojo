@@ -20,9 +20,6 @@ from max.gpu import *
 from max.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -44,7 +41,6 @@ from std.testing import (
     assert_true,
 )
 
-from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
 
@@ -69,20 +65,9 @@ def test[
 ) raises:
     print("test_mha_causal_mask")
     print(
-        "qkv_type:",
-        qkv_type,
-        "depth:",
-        depth,
-        "num_heads:",
-        num_heads,
-        "group:",
-        group,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "batch_size:",
-        batch_size,
+        t"qkv_type: {qkv_type} depth: {depth} num_heads: {num_heads} group:"
+        t" {group} seq_len: {seq_len} num_keys: {num_keys} batch_size:"
+        t" {batch_size}"
     )
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -109,12 +94,8 @@ def test[
         output_ptr[i] = Scalar[output_type](0)
 
     # Construct mask buffer for causal mask initialization.
-    comptime layout_4d = Layout.row_major[4]()
-    var mask = LayoutTensor[mask_type, layout_4d](
-        mask_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
+    var mask = TileTensor(
+        mask_ptr, row_major((batch_size, num_heads, seq_len, num_keys))
     )
 
     # Initialize Q, K, V in bf16, then roundtrip through qkv_type so the
@@ -144,7 +125,7 @@ def test[
             for q_idx in range(seq_len):
                 for k_idx in range(num_keys):
                     mask.store(
-                        Index(b, h, q_idx, k_idx),
+                        (b, h, q_idx, k_idx),
                         0 if q_idx + num_keys - seq_len
                         >= k_idx else min_or_neg_inf[mask_type](),
                     )
@@ -184,7 +165,7 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
         ctx: DeviceContext,
     ) raises {

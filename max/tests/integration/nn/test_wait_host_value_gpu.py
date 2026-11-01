@@ -39,7 +39,7 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 
 def _build_launch_then_wait_graph(device_ref: DeviceRef) -> Graph:

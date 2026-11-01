@@ -26,7 +26,7 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from std.collections.optional import Optional, OptionalReg
+from std.collections.optional import Optional
 from std.collections.string import StaticString
 from std.collections.string.string_span import (
     _get_kgen_string,
@@ -37,14 +37,12 @@ from std.sys import (
     bit_width_of,
     is_apple_gpu,
     is_amd_gpu,
-    is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
     size_of,
 )
 from std.sys._assembly import inlined_assembly
 from std.sys.info import (
-    CompilationTarget,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
     is_apple_gpu,
@@ -55,10 +53,12 @@ from std.builtin.dtype import _uint_type_of_width
 from std.memory.address_space import AddressSpace
 from std.memory.unsafe import bitcast
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
+from std.utils.coord import Coord, CoordLike
 from std.utils.numerics import get_accum_type
 
-from std._gpu._utils import (
+from max._plugin import CurrentMaxPlugin
+from max.gpu._utils import (
     to_i16,
     to_i32,
     to_i64,
@@ -68,10 +68,7 @@ from std._gpu._utils import (
     to_llvm_shared_cluster_mem_ptr,
 )
 
-from std._gpu.intrinsics import Scope
-
-# Re-exports from the standard library
-from std._gpu.intrinsics import CacheOperation
+from max.gpu.intrinsics import Scope, CacheOperation
 
 # ===-----------------------------------------------------------------------===#
 # CacheEviction
@@ -79,7 +76,7 @@ from std._gpu.intrinsics import CacheOperation
 
 
 @fieldwise_init
-struct CacheEviction(Equatable, TrivialRegisterPassable):
+struct CacheEviction(EnumLike, Equatable, TrivialRegisterPassable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -136,6 +133,30 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
     - Streaming operations with no data reuse
     """
 
+    comptime _enum_case_names = ParameterList.of[
+        "EVICT_NORMAL".value,
+        "EVICT_FIRST".value,
+        "EVICT_LAST".value,
+        "EVICT_UNCHANGED".value,
+        "NO_ALLOCATE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "CacheEviction has no payload"
+
     def __eq__(self, other: Self) -> Bool:
         """Tests if two CacheEviction instances are equal.
 
@@ -147,7 +168,7 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
         """
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def mnemonic(self) -> StaticString:
         """Returns the string mnemonic for this cache eviction policy.
 
@@ -176,7 +197,7 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Fill(Equatable, TrivialRegisterPassable, Writable):
+struct Fill(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -195,6 +216,28 @@ struct Fill(Equatable, TrivialRegisterPassable, Writable):
     comptime NAN = Self(2)
     """Fill memory with NaN values. Useful for debugging floating point computations."""
 
+    comptime _enum_case_names = ParameterList.of[
+        "NONE".value,
+        "ZERO".value,
+        "NAN".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Fill has no payload"
+
     def __eq__(self, other: Self) -> Bool:
         """Tests if two Fill instances have the same fill pattern.
 
@@ -206,7 +249,7 @@ struct Fill(Equatable, TrivialRegisterPassable, Writable):
         """
         return self._value == other._value
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the fill pattern.
 
@@ -231,7 +274,7 @@ struct Fill(Equatable, TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct Consistency(Equatable, TrivialRegisterPassable, Writable):
+struct Consistency(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -265,6 +308,29 @@ struct Consistency(Equatable, TrivialRegisterPassable, Writable):
     Ensures all previous memory operations are ordered before this operation.
     Paired with acquire operations for synchronization."""
 
+    comptime _enum_case_names = ParameterList.of[
+        "WEAK".value,
+        "RELAXED".value,
+        "ACQUIRE".value,
+        "RELEASE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Consistency has no payload"
+
     def __eq__(self, other: Self) -> Bool:
         """Tests if two Consistency instances are equal.
 
@@ -292,7 +358,7 @@ struct Consistency(Equatable, TrivialRegisterPassable, Writable):
         """
         t"Consistency({self})".write_to(writer)
 
-    @always_inline
+    @inline(.always)
     def mnemonic(self) -> StaticString:
         """Returns the mnemonic string for the consistency level.
 
@@ -317,7 +383,7 @@ struct Consistency(Equatable, TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
+struct ReduceOp(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -357,6 +423,31 @@ struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
 
     Performs bitwise XOR across all inputs."""
 
+    comptime _enum_case_names = ParameterList.of[
+        "ADD".value,
+        "MIN".value,
+        "MAX".value,
+        "AND".value,
+        "OR".value,
+        "XOR".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ReduceOp has no payload"
+
     def __eq__(self, other: Self) -> Bool:
         """Tests if two ReduceOp instances are equal.
 
@@ -379,7 +470,7 @@ struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
         """
         return self == other
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the reduction operation.
 
@@ -388,7 +479,7 @@ struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
         """
         writer.write_string(self.mnemonic())
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the reduction operation.
 
@@ -397,7 +488,7 @@ struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
         """
         t"ReduceOp({self})".write_to(writer)
 
-    @always_inline
+    @inline(.always)
     def mnemonic(self) -> StaticString:
         """Returns the mnemonic string for the reduction operation.
 
@@ -419,7 +510,7 @@ struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
 
         return "unknown reduce operation"
 
-    @always_inline
+    @inline(.always)
     def _nvvm_reduction_code(self) -> Int:
         """Returns the llvm.nvvm TMA reduction-op immediate for this operation.
 
@@ -448,7 +539,7 @@ struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _mark_eviction[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL
 ]() -> UInt64:
@@ -463,26 +554,53 @@ def _mark_eviction[
             - Non-zero handle for fractional L2 eviction policy.
     """
 
-    comptime if eviction_policy == CacheEviction.EVICT_NORMAL:
-        return 0
-    elif eviction_policy == CacheEviction.EVICT_LAST:
-        return inlined_assembly[
-            "createpolicy.fractional.L2::evict_last.b64 $0;",
-            UInt64,
-            constraints="=l",
-        ]()
-    else:
-        comptime assert (
-            eviction_policy == CacheEviction.EVICT_FIRST
-        ), "invalid eviction policy, only support normal, first, and last"
-        return inlined_assembly[
-            "createpolicy.fractional.L2::evict_first.b64 $0;",
-            UInt64,
-            constraints="=l",
-        ]()
+    comptime match eviction_policy:
+        case == CacheEviction.EVICT_NORMAL:
+            return 0
+        case == CacheEviction.EVICT_LAST:
+            return inlined_assembly[
+                "createpolicy.fractional.L2::evict_last.b64 $0;",
+                UInt64,
+                constraints="=l",
+            ]()
+        case _:
+            comptime assert (
+                eviction_policy == CacheEviction.EVICT_FIRST
+            ), "invalid eviction policy, only support normal, first, and last"
+            return inlined_assembly[
+                "createpolicy.fractional.L2::evict_first.b64 $0;",
+                UInt64,
+                constraints="=l",
+            ]()
 
 
-@always_inline("nodebug")
+@always_inline
+def _tma_cache_hint[eviction_policy: CacheEviction]() -> Int64:
+    """Returns the L2 cache-policy word a TMA copy's `.L2::cache_hint`
+    operand takes for `eviction_policy`.
+
+    The operand is the opaque value `createpolicy.fractional` returns, not the
+    enum's discriminant. These are its values for a fraction of 1.0, as
+    immediates so they cost no instruction.
+
+    Parameters:
+        eviction_policy: The cache eviction policy to encode.
+
+    Returns:
+        The 64-bit cache-policy word.
+    """
+    comptime match eviction_policy:
+        case == CacheEviction.EVICT_FIRST:
+            return 0x12F0000000000000
+        case == CacheEviction.EVICT_LAST:
+            return 0x14F0000000000000
+        case == CacheEviction.EVICT_UNCHANGED:
+            return 0x10F0000000000000
+        case _:
+            return 0x16F0000000000000
+
+
+@inline(.nodebug)
 def async_copy[
     dtype: DType,
     //,
@@ -540,11 +658,11 @@ def async_copy[
         comptime n_scalars = size // size_of[dtype]()
         var n_src_scalars = src_size // Int32(size_of[dtype]())
 
-        comptime if fill:
+        comptime if case .Some(fill_value) = fill:
             for i in range(n_src_scalars):
                 dst.unsafe_store(i, src.unsafe_load(i))
             for i in range(Int(n_src_scalars), n_scalars):
-                dst.unsafe_store(i, fill.value())
+                dst.unsafe_store(i, fill_value)
         else:
             comptime for i in range(n_scalars):
                 dst.unsafe_store(i, src.unsafe_load(i))
@@ -588,8 +706,7 @@ def async_copy[
         ), "Non zero filling is supported only for 16B access."
 
         # Pack filling values into 4B registers.
-        @__parameter
-        @always_inline
+        @inline(.always)
         def _i32_repr[fill: Scalar[dtype]]() -> Int32:
             comptime if size_of[dtype]() == 1:
                 return bitcast[.int32, 1](
@@ -658,7 +775,15 @@ def async_copy[
             )
 
 
-@always_inline
+comptime _AsyncCopyGroupPluginHookFnType = def() thin -> None
+"""Plugin-hook signature for `MaxPluginHooks.async_copy_commit_group_fn` and
+`MaxPluginHooks.async_copy_wait_all_fn`."""
+
+comptime _AsyncCopyWaitGroupPluginHookFnType = def(n: Int32) thin -> None
+"""Plugin-hook signature for `MaxPluginHooks.async_copy_wait_group_fn`."""
+
+
+@inline(.always)
 def async_copy_commit_group():
     """Commits all prior initiated but uncommitted cp.async instructions into a cp.async-group.
 
@@ -673,18 +798,13 @@ def async_copy_commit_group():
     - Should be paired with async_copy_wait_group() or async_copy_wait_all()
     """
 
-    comptime if is_nvidia_gpu():
-        llvm_intrinsic["llvm.nvvm.cp.async.commit.group", NoneType]()
-    elif is_amd_gpu() or is_apple_gpu() or not is_gpu():
-        # This operation is a no-op on AMD and CPU.
-        pass
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+    comptime if case .Some(
+        _async_copy_commit_group
+    ) = CurrentMaxPlugin.async_copy_commit_group_fn:
+        _async_copy_commit_group()
 
 
-@always_inline
+@inline(.always)
 def async_copy_wait_group(n: Int32):
     """Waits for the completion of `n` most recently committed cp.async-groups.
 
@@ -702,18 +822,13 @@ def async_copy_wait_group(n: Int32):
     - Can be used to implement a pipeline of asynchronous transfers.
     """
 
-    comptime if is_nvidia_gpu():
-        llvm_intrinsic["llvm.nvvm.cp.async.wait.group", NoneType](n)
-    elif is_amd_gpu() or is_apple_gpu() or not is_gpu():
-        # This operation is a no-op on AMD and CPU.
-        pass
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+    comptime if case .Some(
+        _async_copy_wait_group
+    ) = CurrentMaxPlugin.async_copy_wait_group_fn:
+        _async_copy_wait_group(n)
 
 
-@always_inline
+@inline(.always)
 def async_copy_wait_all():
     """Waits for completion of all committed cp.async-groups.
 
@@ -729,18 +844,13 @@ def async_copy_wait_all():
     - More coarse-grained than `async_copy_wait_group()`.
     """
 
-    comptime if is_nvidia_gpu():
-        llvm_intrinsic["llvm.nvvm.cp.async.wait.all", NoneType]()
-    elif is_amd_gpu() or is_apple_gpu() or not is_gpu():
-        # This operation is a no-op on AMD and CPU.
-        pass
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+    comptime if case .Some(
+        _async_copy_wait_all
+    ) = CurrentMaxPlugin.async_copy_wait_all_fn:
+        _async_copy_wait_all()
 
 
-@always_inline
+@inline(.always)
 def external_memory[
     dtype: TrivialRegisterPassable,
     *,
@@ -790,7 +900,7 @@ def external_memory[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def fence_proxy_tensormap_generic_sys_acquire[
     dtype: AnyType,
 ](ptr: Pointer[mut=True, dtype, _, address_space=.GENERIC], size: Int32,):
@@ -817,7 +927,7 @@ def fence_proxy_tensormap_generic_sys_acquire[
     ](ptr, size)
 
 
-@always_inline
+@inline(.always)
 def fence_proxy_tensormap_generic_sys_release():
     """Releases the system-wide memory fence for tensor map operations.
 
@@ -835,7 +945,7 @@ def fence_proxy_tensormap_generic_sys_release():
     ]()
 
 
-@always_inline
+@inline(.always)
 def fence_async_view_proxy():
     """Establishes a memory fence for shared memory view operations.
 
@@ -853,7 +963,7 @@ def fence_async_view_proxy():
     ]()
 
 
-@always_inline
+@inline(.always)
 def fence_mbarrier_init():
     """Creates a memory fence after mbarrier initialization.
 
@@ -875,7 +985,7 @@ def fence_mbarrier_init():
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cp_async_bulk_shared_cluster_global[
     dst_type: AnyType,
     src_type: AnyType,
@@ -945,7 +1055,7 @@ def cp_async_bulk_shared_cluster_global[
         )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cp_async_bulk_global_shared_cta[
     dst_type: AnyType,
     src_type: AnyType,
@@ -1010,7 +1120,7 @@ def cp_async_bulk_global_shared_cta[
         )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cp_async_bulk_prefetch[
     src_type: AnyType,
     /,
@@ -1059,7 +1169,76 @@ def cp_async_bulk_prefetch[
         )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
+def cp_async_bulk_prefetch_tensor[
+    coord_types: TypeList[Trait=CoordLike, ...]
+](tma_descriptor: OpaquePointer[mut=False, _], coords: Coord[*coord_types]):
+    """Initiates an asynchronous prefetch of a tensor tile into the L2 cache.
+
+    Reads the box that the TMA descriptor places at `coords` from global
+    memory into L2. There is no shared memory destination and no barrier.
+    This is a hint to the memory subsystem: a later TMA load of the same box
+    may hit L2.
+
+    Requires sm_90 or higher.
+
+    Parameters:
+        coord_types: The element types of the coordinates (1 to 5 elements).
+
+    Args:
+        tma_descriptor: Pointer to the TMA descriptor of the tensor.
+        coords: The coordinates of the box, innermost dimension first.
+    """
+    comptime assert _is_sm_9x_or_newer(), "TMA prefetch requires sm_90 or newer"
+    comptime rank = Coord[*coord_types].rank
+    comptime assert rank >= 1 and rank <= 5, "rank must be 1 to 5"
+    comptime asm = String(
+        "cp.async.bulk.prefetch.tensor.", rank, "d.L2.global.tile [$0, {"
+    )
+
+    comptime if rank == 1:
+        inlined_assembly[asm + "$1}];", NoneType, constraints="l,r"](
+            tma_descriptor, Int32(coords[0])
+        )
+    elif rank == 2:
+        inlined_assembly[asm + "$1, $2}];", NoneType, constraints="l,r,r"](
+            tma_descriptor, Int32(coords[0]), Int32(coords[1])
+        )
+    elif rank == 3:
+        inlined_assembly[
+            asm + "$1, $2, $3}];", NoneType, constraints="l,r,r,r"
+        ](
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+        )
+    elif rank == 4:
+        inlined_assembly[
+            asm + "$1, $2, $3, $4}];", NoneType, constraints="l,r,r,r,r"
+        ](
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            Int32(coords[3]),
+        )
+    else:
+        inlined_assembly[
+            asm + "$1, $2, $3, $4, $5}];",
+            NoneType,
+            constraints="l,r,r,r,r,r",
+        ](
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            Int32(coords[3]),
+            Int32(coords[4]),
+        )
+
+
+@inline(.nodebug)
 def cp_async_bulk_reduce_global_shared_cta[
     dtype: DType,
     /,
@@ -1149,11 +1328,11 @@ def cp_async_bulk_reduce_global_shared_cta[
         ](Int64(Int(dst_global)), Int32(Int(src_mem)), size)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType,  # Type of the destination memory
     mbr_type: AnyType,  # Type of the memory barrier
-    rank: Int,  # Dimensionality of the tensor (1, 2, or 3)
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -1162,7 +1341,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
 ):
     """Initiates an asynchronous bulk copy operation of tensor data from global memory to shared memory.
 
@@ -1173,7 +1352,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
     Parameters:
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
-        rank: The dimensionality of the tensor (1, 2, or 3).
+        coord_types: The element types of the coordinates (1 to 5 elements).
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
         eviction_policy: Optional cache eviction policy that controls how the data is handled
                         in the cache hierarchy. Defaults to EVICT_NORMAL.
@@ -1197,6 +1376,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
     - Requires NVIDIA GPU with TMA support.
     - The memory barrier should be properly initialized before use.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert (
         rank <= 5
     ), "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
@@ -1226,7 +1406,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
                 Int32(coords[0]),
                 Int32(coords[1]),
                 Int32(coords[2]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
             )
         elif rank == 2:
             inlined_assembly[
@@ -1239,7 +1419,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
                 Int32(Int(mem_bar)) & 0xFEFFFFFF,
                 Int32(coords[0]),
                 Int32(coords[1]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
             )
         elif rank == 1:
             inlined_assembly[
@@ -1251,7 +1431,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
                 tma_descriptor,
                 Int32(Int(mem_bar)) & 0xFEFFFFFF,
                 Int32(coords[0]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
             )
         elif rank == 4:
             inlined_assembly[
@@ -1266,7 +1446,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
                 Int32(coords[1]),
                 Int32(coords[2]),
                 Int32(coords[3]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
             )
         else:  # rank == 5
             inlined_assembly[
@@ -1282,7 +1462,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
                 Int32(coords[2]),
                 Int32(coords[3]),
                 Int32(coords[4]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
             )
     else:
         comptime if rank == 3:
@@ -1352,11 +1532,11 @@ def cp_async_bulk_tensor_shared_cluster_global[
             )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cp_async_bulk_tensor_shared_cluster_global_elect[
     dst_type: AnyType,
     mbr_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -1365,7 +1545,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
     elect: Int32,
 ):
     """Elect-predicated variant of `cp_async_bulk_tensor_shared_cluster_global`.
@@ -1379,7 +1559,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
     Parameters:
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
-        rank: The dimensionality of the tensor (1, 2, 3, 4, or 5).
+        coord_types: The element types of the coordinates (1 to 5 elements).
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
         eviction_policy: Optional cache eviction policy. Defaults to
             `EVICT_NORMAL`.
@@ -1393,6 +1573,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             single elected lane (issue the TMA). Typically the `Int32`
             returned by `elect()` from `nn.attention.gpu.nvidia.sm100.attention_utils`.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert (
         rank <= 5
     ), "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
@@ -1435,7 +1616,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
                 Int32(coords[0]),
                 Int32(coords[1]),
                 Int32(coords[2]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
         elif rank == 2:
@@ -1449,7 +1630,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
                 Int32(Int(mem_bar)) & 0xFEFFFFFF,
                 Int32(coords[0]),
                 Int32(coords[1]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
         elif rank == 1:
@@ -1462,7 +1643,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
                 tma_descriptor,
                 Int32(Int(mem_bar)) & 0xFEFFFFFF,
                 Int32(coords[0]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
         elif rank == 4:
@@ -1480,7 +1661,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
                 Int32(coords[1]),
                 Int32(coords[2]),
                 Int32(coords[3]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
         else:  # rank == 5
@@ -1499,7 +1680,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
                 Int32(coords[2]),
                 Int32(coords[3]),
                 Int32(coords[4]),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
     else:
@@ -1579,7 +1760,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cp_async_bulk_tensor_2d_gather4[
     dst_type: AnyType,
     mbr_type: AnyType,
@@ -1654,7 +1835,7 @@ def cp_async_bulk_tensor_2d_gather4[
             row1,
             row2,
             row3,
-            Int64(eviction_policy._value),
+            _tma_cache_hint[eviction_policy](),
         )
     else:
         inlined_assembly[
@@ -1673,11 +1854,12 @@ def cp_async_bulk_tensor_2d_gather4[
         )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cp_async_bulk_tensor_shared_cluster_global_im2col[
     dst_type: AnyType,
     mbr_type: AnyType,
-    tensor_rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
+    filter_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -1685,8 +1867,8 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[tensor_rank],
-    filter_offsets: IndexList[tensor_rank - 2],
+    coords: Coord[*coord_types],
+    filter_offsets: Coord[*filter_types],
 ):
     """Initiates an asynchronous TMA load with im2col addressing for convolution.
 
@@ -1707,7 +1889,8 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col[
     Parameters:
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
-        tensor_rank: The rank of the tensor (3, 4, or 5).
+        coord_types: The element types of the coordinates (3, 4, or 5 elements).
+        filter_types: The element types of the filter offsets.
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
@@ -1717,6 +1900,10 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col[
         coords: Tensor coordinates (c, w, h, n for 4D).
         filter_offsets: Filter window offsets (offset_w, offset_h for 4D).
     """
+    comptime tensor_rank = Coord[*coord_types].rank
+    comptime assert (
+        Coord[*filter_types].rank == tensor_rank - 2
+    ), "im2col filter offsets must have two fewer dimensions than coords"
     comptime assert tensor_rank in (
         3,
         4,
@@ -1853,11 +2040,12 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col[
             )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
     dst_type: AnyType,
     mbr_type: AnyType,
-    tensor_rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
+    filter_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -1865,8 +2053,8 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[tensor_rank],
-    filter_offsets: IndexList[tensor_rank - 2],
+    coords: Coord[*coord_types],
+    filter_offsets: Coord[*filter_types],
     multicast_mask: UInt16,
 ):
     """Initiates an asynchronous multicast TMA load with im2col addressing.
@@ -1887,7 +2075,8 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
     Parameters:
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
-        tensor_rank: The rank of the tensor (3, 4, or 5).
+        coord_types: The element types of the coordinates (3, 4, or 5 elements).
+        filter_types: The element types of the filter offsets.
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
@@ -1898,6 +2087,10 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
         filter_offsets: Filter window offsets (offset_w, offset_h for 4D).
         multicast_mask: Bitmask specifying target CTAs for multicast.
     """
+    comptime tensor_rank = Coord[*coord_types].rank
+    comptime assert (
+        Coord[*filter_types].rank == tensor_rank - 2
+    ), "im2col filter offsets must have two fewer dimensions than coords"
     comptime assert tensor_rank in (
         3,
         4,
@@ -2042,11 +2235,11 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
             )
 
 
-@always_inline
+@inline(.always)
 def cp_async_bulk_tensor_shared_cluster_global_multicast[
     dst_type: AnyType,
     mbr_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -2054,7 +2247,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
     multicast_mask: UInt16,
 ):
     """Initiates an asynchronous multicast load operation using NVIDIA's Tensor Memory Access (TMA)
@@ -2067,7 +2260,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     Parameters:
         dst_type: The data type of the destination tensor elements.
         mbr_type: The data type of the memory barrier.
-        rank: The dimensionality of the tensor (must be 1 or 2).
+        coord_types: The element types of the coordinates (1 to 4 elements).
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
@@ -2092,6 +2285,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     - The memory barrier should be properly initialized before use.
     - The multicast_mask must be properly configured based on cluster size and desired distribution.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert rank in (
         1,
         2,
@@ -2229,16 +2423,16 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
             )
 
 
-@always_inline
+@inline(.always)
 def cp_async_bulk_tensor_global_shared_cta[
     src_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src_mem: Pointer[src_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
 ):
     """Initiates an asynchronous copy operation to transfer tensor data from shared CTA
     memory to global memory using NVIDIA's Tensor Memory Access (TMA) mechanism.
@@ -2249,7 +2443,7 @@ def cp_async_bulk_tensor_global_shared_cta[
 
     Parameters:
         src_type: The data type of the source tensor elements.
-        rank: The dimensionality of the tensor (must be 1, 2, or 3).
+        coord_types: The element types of the coordinates (1 to 5 elements).
         eviction_policy: Optional cache eviction policy that controls how the data is handled
                         in the cache hierarchy. Defaults to EVICT_NORMAL.
 
@@ -2270,6 +2464,7 @@ def cp_async_bulk_tensor_global_shared_cta[
     - The source memory must be properly aligned for TMA operations.
     - The TMA descriptor must be properly initialized before use.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert rank in (
         1,
         2,
@@ -2289,7 +2484,7 @@ def cp_async_bulk_tensor_global_shared_cta[
             Int32(coords[2]),
             Int32(coords[3]),
             Int32(coords[4]),
-            eviction_policy._value,
+            _tma_cache_hint[eviction_policy](),
             cache_hint,
         )
     elif rank == 4:
@@ -2300,7 +2495,7 @@ def cp_async_bulk_tensor_global_shared_cta[
             Int32(coords[1]),
             Int32(coords[2]),
             Int32(coords[3]),
-            eviction_policy._value,
+            _tma_cache_hint[eviction_policy](),
             cache_hint,
         )
 
@@ -2311,7 +2506,7 @@ def cp_async_bulk_tensor_global_shared_cta[
             Int32(coords[0]),
             Int32(coords[1]),
             Int32(coords[2]),
-            eviction_policy._value,
+            _tma_cache_hint[eviction_policy](),
             cache_hint,
         )
     elif rank == 2:
@@ -2320,7 +2515,7 @@ def cp_async_bulk_tensor_global_shared_cta[
             tma_descriptor,
             Int32(coords[0]),
             Int32(coords[1]),
-            eviction_policy._value,
+            _tma_cache_hint[eviction_policy](),
             cache_hint,
         )
     else:
@@ -2328,21 +2523,21 @@ def cp_async_bulk_tensor_global_shared_cta[
             src_mem,
             tma_descriptor,
             Int32(coords[0]),
-            eviction_policy._value,
+            _tma_cache_hint[eviction_policy](),
             cache_hint,
         )
 
 
-@always_inline
+@inline(.always)
 def cp_async_bulk_tensor_global_shared_cta_elect[
     src_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src_mem: Pointer[src_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
     elect: Int32,
 ):
     """Elect-predicated variant of `cp_async_bulk_tensor_global_shared_cta`.
@@ -2355,7 +2550,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
 
     Parameters:
         src_type: The data type of the source tensor elements.
-        rank: The dimensionality of the tensor (1, 2, 3, 4, or 5).
+        coord_types: The element types of the coordinates (1 to 5 elements).
         eviction_policy: Optional cache eviction policy. Defaults to
             `EVICT_NORMAL`.
 
@@ -2367,6 +2562,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
             elected lane (issue the TMA). Typically the `Int32` returned by
             `elect()` from `nn.attention.gpu.nvidia.common`.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert rank in (
         1,
         2,
@@ -2407,7 +2603,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
                 tma_descriptor,
                 Int32(coords[0]),
                 Int32(Int(src_mem)),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
         elif rank == 2:
@@ -2420,7 +2616,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
                 Int32(coords[0]),
                 Int32(coords[1]),
                 Int32(Int(src_mem)),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
         elif rank == 3:
@@ -2434,7 +2630,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
                 Int32(coords[1]),
                 Int32(coords[2]),
                 Int32(Int(src_mem)),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
         elif rank == 4:
@@ -2449,7 +2645,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
                 Int32(coords[2]),
                 Int32(coords[3]),
                 Int32(Int(src_mem)),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
         else:  # rank == 5
@@ -2467,7 +2663,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
                 Int32(coords[3]),
                 Int32(coords[4]),
                 Int32(Int(src_mem)),
-                Int64(eviction_policy._value),
+                _tma_cache_hint[eviction_policy](),
                 elect,
             )
     else:
@@ -2538,10 +2734,10 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
             )
 
 
-@always_inline
+@inline(.always)
 def cp_async_bulk_tensor_reduce_global_shared_cta[
     src_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     reduction_kind: ReduceOp,
@@ -2549,7 +2745,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
 ](
     src_mem: Pointer[src_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
 ):
     """Initiates an asynchronous reduction operation between shared CTA memory and global memory
     using NVIDIA's Tensor Memory Access (TMA) mechanism.
@@ -2560,7 +2756,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
 
     Parameters:
         src_type: The data type of the source tensor elements.
-        rank: The dimensionality of the tensor (must be 1 or 2).
+        coord_types: The element types of the coordinates (1 to 3 elements).
         reduction_kind: The dtype of reduction operation to perform. Supported operations are:
                        "add", "min", "max", "inc", "dec", "and", "or", "xor".
         eviction_policy: Optional cache eviction policy that controls how the data is handled
@@ -2584,6 +2780,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
     - The TMA descriptor must be properly initialized before use.
     - The reduction operation is performed atomically to ensure correctness.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert rank in (
         1,
         2,
@@ -2602,7 +2799,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
             Int32(coords[0]),
             Int32(coords[1]),
             Int32(coords[2]),
-            UInt64(eviction_policy._value),
+            UInt64(_tma_cache_hint[eviction_policy]()),
             red_op,
             cache_hint,
         )
@@ -2615,7 +2812,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
             tma_descriptor,
             Int32(coords[0]),
             Int32(coords[1]),
-            UInt64(eviction_policy._value),
+            UInt64(_tma_cache_hint[eviction_policy]()),
             red_op,
             cache_hint,
         )
@@ -2627,7 +2824,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
             src_mem,
             tma_descriptor,
             Int32(coords[0]),
-            UInt64(eviction_policy._value),
+            UInt64(_tma_cache_hint[eviction_policy]()),
             red_op,
             cache_hint,
         )
@@ -2638,7 +2835,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _load_impl[
     dtype: DType,
     //,
@@ -2683,8 +2880,8 @@ def _load_impl[
         comptime assert read_only == False
         return ptr.unsafe_load[width=width]()
 
-    comptime if prefetch_size:
-        comptime assert prefetch_size.value() in (64, 128, 256)
+    comptime if case .Some(prefetch_bytes) = prefetch_size:
+        comptime assert prefetch_bytes in (64, 128, 256)
 
     comptime bytes_to_load = size_of[dtype]() * width
     comptime dtype_bitwidth = bit_width_of[dtype]()
@@ -2820,7 +3017,7 @@ def _load_impl[
         return lhs.join(rhs)._refine[new_size=width]()
 
 
-@always_inline
+@inline(.always)
 def load[
     dtype: DType,
     //,
@@ -2862,7 +3059,7 @@ def load[
     ](ptr)
 
 
-@always_inline
+@inline(.always)
 def load[
     OffsetType: Indexer,
     dtype: DType,
@@ -2914,7 +3111,7 @@ def load[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _get_multimem_ld_reduce_asm[
     dtype: DType,
     *,
@@ -2983,7 +3180,7 @@ def _get_multimem_ld_reduce_asm[
     return asm
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def multimem_ld_reduce[
     dtype: DType,
     *,
@@ -3103,7 +3300,7 @@ def multimem_ld_reduce[
     return StaticTuple[SIMD[dtype, output_width], count]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def multimem_ld_reduce[
     dtype: DType,
     *,
@@ -3181,7 +3378,7 @@ def multimem_ld_reduce[
     return result
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _get_multimem_st_asm[
     dtype: DType,
     *,
@@ -3220,7 +3417,7 @@ def _get_multimem_st_asm[
     return asm
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def multimem_st[
     dtype: DType,
     *,
@@ -3431,18 +3628,19 @@ def _get_type_mnemonic[dtype: DType]() -> StaticString:
     This internal utility function converts floating point DTypes into their
     corresponding string mnemonics used in GPU assembly instructions.
     """
-    if dtype == .float32:
-        return "f32"
-    elif dtype == .float16:
-        return "f16"
-    elif dtype == .bfloat16:
-        return "bf16"
-    elif dtype == .float64:
-        return "f64"
-    elif dtype == .float8_e4m3fn:
-        return "e4m3"
-    elif dtype == .float8_e5m2:
-        return "e5m2"
+    match dtype:
+        case .float32:
+            return "f32"
+        case .float16:
+            return "f16"
+        case .bfloat16:
+            return "bf16"
+        case .float64:
+            return "f64"
+        case .float8_e4m3fn:
+            return "e4m3"
+        case .float8_e5m2:
+            return "e5m2"
 
     return "unknown dtype mnemonic"
 

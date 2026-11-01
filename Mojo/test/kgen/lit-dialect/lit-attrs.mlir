@@ -48,7 +48,7 @@ lit.struct.decl @Foo {
 
 
 kgen.generator @lifetime_lower<p: !lit.origin<true>>(%a: !lit.origin<false>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @caller
@@ -57,7 +57,7 @@ kgen.generator @caller() {
   %cst = kgen.param.constant: origin<false> = <#lit.any.origin>
   // CHECK: kgen.call @lifetime_lower<:origin<true> #lit.any.origin>(%origin) : (!lit.origin<false>) -> ()
   kgen.call @lifetime_lower<:origin<true> #lit.any.origin>(%cst) : (!lit.origin<false>) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @ref_type<p: origin<false>, q: origin<true>>(
@@ -65,7 +65,7 @@ kgen.generator @caller() {
 // CHECK-SAME: %arg1: !lit.ref<!lit.struct<@Foo>, mut q>)
 kgen.generator @ref_type<p: !lit.origin<false>, q: !lit.origin<true>>
 (%a: !lit.ref<!lit.struct<@Foo>, imm p>, %b: !lit.ref<!lit.struct<@Foo>, mut q>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @field_attr<life: origin<false>>(
@@ -77,7 +77,7 @@ kgen.generator @field_attr<life: !lit.origin<false>>
 
   // CHECK-NEXT: "verbose_attr"() {attr = #lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<false>, "field0"> : !lit.origin<false>} : () -> ()
   "verbose_attr"() {attr = #lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<false>, "field0"> : !lit.origin<false>} : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @interior_origin_attr<orig: origin<false>>(
@@ -89,7 +89,7 @@ kgen.generator @interior_origin_attr<orig: !lit.origin<false>>
 
   // CHECK-NEXT: "verbose_attr"() {attr = #lit.interior.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<false>, "pointee" : !kgen.string> : !lit.origin<false>} : () -> ()
   "verbose_attr"() {attr = #lit.interior.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<false>, "pointee" : !kgen.string> : !lit.origin<false>} : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @subtree_origin_attr
@@ -98,7 +98,7 @@ kgen.generator @subtree_origin_attr<root: !lit.origin<false>>() {
   "verbose_attr"() {attr = #lit.origin.subtree<#kgen.param.decl.ref<"root"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
   // CHECK-NEXT: "verbose_attr"() {attr = #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"root"> : !lit.origin<false>, "field0"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
   "verbose_attr"() {attr = #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"root"> : !lit.origin<false>, "field0"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 
@@ -108,14 +108,14 @@ kgen.generator @subtree_origin_attr<root: !lit.origin<false>>() {
 kgen.generator @anystruct() {
   // CHECK: T: meta<!lit.struct<@Foo>> = <@Foo>
   kgen.param.declare T: meta<!lit.struct<@Foo>> = <@Foo>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @unpacked
 kgen.generator @unpacked<a: param_list<index>>() {
   // CHECK-NEXT: constant = <#lit.unpacked<:param_list<index> a, kw>>
   %c = kgen.param.constant = <#lit.unpacked<:param_list<index> a, kw>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @lifetime_union
@@ -223,14 +223,14 @@ kgen.generator @lifetime_union<x: !lit.origin<false>, y: !lit.origin<false>>() {
     mut #lit.origin.field<#kgen.param.decl.ref<"a"> : !lit.origin<true>, "z">
   }|>
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @test_origin
 kgen.generator @test_origin<x: !kgen.scalar<bool>>() {
   // CHECK-NEXT: kgen.param.constant: origin<false> = <rebind(:scalar<bool> x)>
   kgen.param.constant: origin<false> = <rebind(:!kgen.scalar<bool> x)>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: "deprecation.attrs"
@@ -247,5 +247,5 @@ kgen.generator @bytecode_lit_extra_types() {
   kgen.param.declare magic_def: type = <!lit.magic.__mlir_deferred_attr>
   // CHECK: kgen.param.declare nl_wild: type = <!lit.name_lookup_arg_wildcard>
   kgen.param.declare nl_wild: type = <!lit.name_lookup_arg_wildcard>
-  kgen.return
+  hlcf.return
 }

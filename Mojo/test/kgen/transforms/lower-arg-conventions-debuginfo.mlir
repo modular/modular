@@ -11,7 +11,7 @@ kgen.func @rewrite_me(%arg1: !kgen.pointer<index> loc("a":0:0) imm_mem, %arg0: !
   // CHECK-NEXT: stack_allocation {{.*}} loc([[LOCSP]])
   // CHECK: load {{.*}} loc([[LOCSP]])
   %none = kgen.param.constant: none = <#kgen.none> loc(#loc)
-  kgen.return %none : !kgen.none loc(#loc)
+  hlcf.return %none : !kgen.none loc(#loc)
 } loc(#loc)
 
 // CHECK: [[LOCSP]] = loc(fused<#subprogram>

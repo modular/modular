@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Wan VAE autoencoder -- slim ComponentModel with init-time graph compilation.
 
 All decoder/encoder graphs are compiled once at ``load_model()`` time with
@@ -29,14 +28,13 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
-from max.driver import CPU, Buffer, Device
+from max.driver import CPU, Buffer, Device, float32_to_bfloat16_as_uint16
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.modeling.base.component_model import ComponentModel
 from max.profiler import Tracer
 
@@ -257,7 +255,7 @@ class AutoencoderKLWanModel(ComponentModel):
             "wan_vae_first_frame", input_types=first_input_types
         ) as first_graph:
             outputs = first_module(first_graph.inputs[0].tensor)
-            first_graph.output(*outputs)
+            first_graph.output(outputs)
         self.first_frame_model = self._session.load(
             first_graph, weights_registry=first_module.state_dict()
         )
@@ -328,7 +326,7 @@ class AutoencoderKLWanModel(ComponentModel):
             z_input = rest_graph.inputs[0].tensor
             cache_inputs = tuple(inp.tensor for inp in rest_graph.inputs[1:])
             outputs = rest_module(z_input, *cache_inputs)
-            rest_graph.output(*outputs)
+            rest_graph.output(outputs)
         self.rest_frame_model = self._session.load(
             rest_graph, weights_registry=rest_module.state_dict()
         )
@@ -422,7 +420,7 @@ class AutoencoderKLWanModel(ComponentModel):
             "wan_vae_enc_first", input_types=[first_input_type]
         ) as first_graph:
             outputs = first_module(first_graph.inputs[0].tensor)
-            first_graph.output(*outputs)
+            first_graph.output(outputs)
         self.first_chunk_encoder = self._session.load(
             first_graph, weights_registry=first_module.state_dict()
         )
@@ -471,7 +469,7 @@ class AutoencoderKLWanModel(ComponentModel):
         ) as rest_graph:
             rest_inputs = [inp.tensor for inp in rest_graph.inputs]
             outputs = rest_module(rest_inputs[0], *rest_inputs[1:])
-            rest_graph.output(*outputs)
+            rest_graph.output(outputs)
         self.rest_chunk_encoder = self._session.load(
             rest_graph, weights_registry=rest_module.state_dict()
         )
@@ -600,6 +598,7 @@ class AutoencoderKLWanModel(ComponentModel):
     def decode(
         self, latents: Buffer, return_dict: bool = False
     ) -> tuple[Buffer]:
+        """Decodes latents to a video clip."""
         del return_dict
         if latents.rank == 5:
             return (self.decode_5d(latents),)
@@ -740,6 +739,7 @@ class AutoencoderKLWanModel(ComponentModel):
         return _numpy_f32_to_buffer(full_latent, target_dtype, device)
 
     def __call__(self, latents: Buffer) -> Buffer:
+        """Decodes latents, handling rank-5 inputs separately."""
         if latents.rank == 5:
             return self.decode_5d(latents)
         return self.decode_4d(latents)

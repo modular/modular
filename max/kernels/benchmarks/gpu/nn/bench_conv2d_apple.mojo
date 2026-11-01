@@ -36,13 +36,7 @@ Run with: `mojo max/kernels/benchmarks/gpu/nn/bench_conv2d_apple.mojo`.
 from std.math import ceildiv
 from std.time import perf_counter
 
-from layout import (
-    Idx,
-    LTToTTLayout,
-    Layout,
-    LayoutTensor,
-    TileTensor,
-)
+from layout import LTToTTLayout, Layout, TileTensor
 from max.gpu.host import DeviceContext
 from nn.conv.conv import conv2d_gpu_naive_nhwc_rscf
 from nn.conv.gpu.im2col_matmul_2d import (
@@ -153,32 +147,30 @@ def bench_shape[
     var mat_ms = (perf_counter() - t_mat) / Float64(hot) * 1e3
 
     # ---- (c) NAIVE thread-per-pixel kernel ----
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
-    var output_lt = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
 
     comptime block_size = 16
     comptime naive = conv2d_gpu_naive_nhwc_rscf[
-        input_layout,
-        filter_layout,
-        output_layout,
+        input_tt.LayoutType,
+        filter_tt.LayoutType,
+        output_tt.LayoutType,
         dtype,
         dtype,
         dtype,
         block_size,
-        None,
+        input_tt.Engine,
+        filter_tt.Engine,
+        output_tt.Engine,
     ]
     var gx = ceildiv(W_out, block_size)
     var gy = ceildiv(H_out, block_size)
     var gz = N
 
-    @__parameter
-    @always_inline
-    def run_naive() raises:
+    @inline(.always)
+    def run_naive() raises {imm}:
         ctx.enqueue_function[naive](
-            input_lt,
-            filter_lt,
-            output_lt,
+            input_tt.as_unsafe_any_origin(),
+            filter_tt.as_unsafe_any_origin(),
+            output_tt.as_unsafe_any_origin(),
             stride,
             IndexList[2](1, 1),
             pad,
@@ -201,37 +193,17 @@ def bench_shape[
     var naive_tflops = flops / (naive_ms * 1e-3) / 1e12
 
     print(name)
-    print(
-        "  (a) FUSED       : ",
-        fused_ms,
-        " ms   (",
-        fused_tflops,
-        " TFLOP/s)",
-    )
-    print(
-        "  (b) MATERIALISE : ",
-        mat_ms,
-        " ms   (",
-        mat_tflops,
-        " TFLOP/s)",
-    )
-    print(
-        "  (c) NAIVE       : ",
-        naive_ms,
-        " ms   (",
-        naive_tflops,
-        " TFLOP/s)",
-    )
+    print(t"  (a) FUSED       :  {fused_ms}  ms   ( {fused_tflops}  TFLOP/s)")
+    print(t"  (b) MATERIALISE :  {mat_ms}  ms   ( {mat_tflops}  TFLOP/s)")
+    print(t"  (c) NAIVE       :  {naive_ms}  ms   ( {naive_tflops}  TFLOP/s)")
     # Ratios > 1.0 mean fused is FASTER than the comparison path.
     print(
-        "  ratio fused/naive       (naive_ms / fused_ms): ",
-        naive_ms / fused_ms,
-        "x",
+        t"  ratio fused/naive       (naive_ms / fused_ms): "
+        t" {naive_ms / fused_ms} x"
     )
     print(
-        "  ratio fused/materialise (mat_ms   / fused_ms): ",
-        mat_ms / fused_ms,
-        "x",
+        t"  ratio fused/materialise (mat_ms   / fused_ms): "
+        t" {mat_ms / fused_ms} x"
     )
 
     _ = input_dev^
@@ -251,8 +223,8 @@ def main() raises:
             Layout.row_major(1, 128, 128, 128),
             Layout.row_major(3, 3, 128, 256),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,128,128,128] 3x3 s1 C128->256 (compute-bound)")
 
         # C128->128 @64^2.
@@ -260,8 +232,8 @@ def main() raises:
             Layout.row_major(1, 64, 64, 128),
             Layout.row_major(3, 3, 128, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,64,64,128] 3x3 s1 C128->128 (compute-bound)")
 
         # C64->64 @256^2: mid-K, high spatial. Crossover region.
@@ -269,8 +241,8 @@ def main() raises:
             Layout.row_major(1, 256, 256, 64),
             Layout.row_major(3, 3, 64, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,256,256,64] 3x3 s1 C64->64 (crossover)")
 
         # ---- Memory-bound regime (the verdict-bar shape) ----
@@ -281,8 +253,8 @@ def main() raises:
             Layout.row_major(1, 512, 512, 32),
             Layout.row_major(3, 3, 32, 32),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,512,512,32] 3x3 s1 C32->32 @512^2 (MEM-BOUND verdict bar)")
 
         # ---- FLUX.2-VAE decoder shapes (production) ----
@@ -292,8 +264,8 @@ def main() raises:
             Layout.row_major(1, 256, 256, 128),
             Layout.row_major(3, 3, 128, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,256,256,128] 3x3 s1 C128->128 (FLUX-VAE)")
 
         # 256->128 at 256^2 (channel reduction stage).
@@ -301,8 +273,8 @@ def main() raises:
             Layout.row_major(1, 256, 256, 256),
             Layout.row_major(3, 3, 256, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,256,256,256] 3x3 s1 C256->128 (FLUX-VAE)")
 
         # 128->64 at 512^2 (late decoder, low-C high-res).
@@ -310,8 +282,8 @@ def main() raises:
             Layout.row_major(1, 512, 512, 128),
             Layout.row_major(3, 3, 128, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,512,512,128] 3x3 s1 C128->64 (FLUX-VAE late)")
 
         print("DONE")

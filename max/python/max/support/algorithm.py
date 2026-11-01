@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Flattens nested sequences."""
+
 from collections.abc import Sequence
 from typing import TypeVar
 

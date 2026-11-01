@@ -19,22 +19,22 @@ import functools
 from collections.abc import Sequence
 
 from max.dtype import DType
-from max.graph import (
-    BufferValue,
-    ShardingStrategy,
-    TensorValue,
-    ops,
+from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    MultiKVCacheParams,
+    PagedCacheValues,
 )
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import ColumnParallelLinear
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import ColumnParallelLinear
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
 
@@ -177,7 +177,8 @@ class GptOssTextModel(DistributedLogitsPostprocessMixin, Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         **kwargs,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
+        """Runs the text model over the tokens."""
         h_embed = self.embed_tokens(tokens)
         if self.embedding_output_dtype is not None:
             h_embed = ops.cast(h_embed, self.embedding_output_dtype)
@@ -223,7 +224,8 @@ class GptOss(Module):
         global_kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
+        """Runs the language model over the tokens."""
         return self.language_model(
             tokens,
             signal_buffers,

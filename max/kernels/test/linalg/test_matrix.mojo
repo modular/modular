@@ -16,18 +16,18 @@ from std.math import iota
 
 def test_matrix(ptr: MutPointer[Int32, MutAnyOrigin], rows: Int, cols: Int):
     # CHECK: [0, 1, 2, 3]
-    print(ptr.load[width=4](0 * cols + 0))
+    print(ptr.unsafe_load[width=4](0 * cols + 0))
     # CHECK: [4, 5, 6, 7]
-    print(ptr.load[width=4](1 * cols + 0))
+    print(ptr.unsafe_load[width=4](1 * cols + 0))
     # CHECK: [8, 9, 10, 11]
-    print(ptr.load[width=4](2 * cols + 0))
+    print(ptr.unsafe_load[width=4](2 * cols + 0))
     # CHECK: [12, 13, 14, 15]
-    print(ptr.load[width=4](3 * cols + 0))
+    print(ptr.unsafe_load[width=4](3 * cols + 0))
 
     var v = iota[.int32, 4]()
-    ptr.store[width=4](3 * cols + 0, v)
+    ptr.unsafe_store(3 * cols + 0, v)
     # CHECK: [0, 1, 2, 3]
-    print(ptr.load[width=4](3 * cols + 0))
+    print(ptr.unsafe_load[width=4](3 * cols + 0))
 
 
 def test_matrix_static():

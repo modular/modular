@@ -13,7 +13,7 @@
 """Subpackage exposing `std.utils.coord` as `layout.coord` for kernel imports."""
 
 from std.utils.coord import (
-    All,
+    _CoordReplaceAt,
     ComptimeInt,
     Coord,
     CoordLike,
@@ -23,8 +23,6 @@ from std.utils.coord import (
     coord_to_index_list,
     crd2idx,
     idx2crd,
-    _All,
-    _AllStatic,
     _IsNotTuplePredicate,
     _CeilDiv,
     _CoordToDynamic,

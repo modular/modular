@@ -28,13 +28,31 @@ _FILECHECK_TESTS = [
     for src in _FILECHECK_TESTS
 ]
 
-# Tile-based elementwise fusion needs the builtin_kernels package (for the
-# `Add` op) which the shared glob deps below don't carry. Give it an explicit
-# target so the other buffer tests don't pull that heavy dep.
+# Fusion tests need additional dependencies, and GPU tests need accelerator
+# constraints. Keep those requirements out of the shared glob below.
 _EXPLICIT_DEP_TESTS = [
     "test_tile_codegen_elementwise_fusion.mojo",
     "test_foreach_fusion_tile_gpu.mojo",
+    "test_managed_tensor_slice_device_encoding.mojo",
 ]
+
+mojo_test(
+    name = "test_managed_tensor_slice_device_encoding.mojo.test",
+    srcs = ["test_managed_tensor_slice_device_encoding.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "--debug-level",
+        "full",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:extensibility",
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
 
 mojo_test(
     name = "test_tile_codegen_elementwise_fusion.mojo.test",

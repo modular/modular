@@ -14,24 +14,25 @@
 
 # COM: Verify generated wrapper structure
 
-# CHECK: lit.trait.decl @"def(x: Int) -> Int"
-# CHECK: lit.struct.decl @"def(x: Int) thin -> Int_PtrWrapper"<Impl: !lit.generator<("x": !Int) -> !Int>
-
-# CHECK: lit.fn @"__call__
-# CHECK-SAME: kgen.transparent_thunk_callee_expr = #kgen.param.decl.ref<"Impl">
-# CHECK: %1 = lit.call tail[!lit.generator<("x": !Int) -> !Int>: Impl](%x)
-# CHECK: lit.return %1 : !Int
-# CHECK: lit.end_fn
-
-# CHECK: kgen.conformance @"def(x: Int) -> Int"
-# CHECK: kgen.witness "__call__($0,::SIMD[DType.int, 1])"
+# CHECK: lit.struct.decl @"inflated$def(x: ::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]|{{[0-9a-f]+}}"<*"#__CALL__#": !lit.generator<("x": !Int) -> !Int>
 
 # CHECK: kgen.conformance @{{.*}}::@AnyType {
 # CHECK-NEXT: }
 
+# CHECK: lit.fn @"__call__
+# CHECK-SAME: kgen.transparent_thunk_callee_expr = #kgen.param.decl.ref<"#__CALL__#">
+# CHECK: %1 = lit.call tail[!lit.generator<("x": !Int) -> !Int>: *"#__CALL__#"](%x)
+# CHECK: lit.return %1 : !Int
+# CHECK: lit.end_fn
+
+# CHECK: kgen.conformance @"##__mojo_closure__##"
+# CHECK: kgen.witness "__call__"
+
+# CHECK: lit.trait.decl @"##__mojo_closure__##"
+
 # CHECK: lit.fn @"wrap_fn()"
 # CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth
-# CHECK: %0 = lit.call {{.*}}:@"def(x: Int) thin -> Int_PtrWrapper"::@"__init__()"
+# CHECK: %0 = lit.call @"inflated$def(x: ::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]|{{[0-9a-f]+}}"::@"__init__()"
 # CHECK: %1 = lit.ref.immut %__call_result_tmp__
 
 
@@ -51,7 +52,7 @@ def wrap_fn() -> Int:
 
 # COM: Verify that wrappers are deduplicated
 
-# CHECK-COUNT-1: lit.struct.decl @"def(x: Int) thin -> Int_PtrWrapper"
+# CHECK-COUNT-1: lit.struct.decl @"inflated$def(x: ::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]|{{[0-9a-f]+}}"
 
 
 def a(x: Int) -> Int:
@@ -74,8 +75,13 @@ def wrap_fn() -> Int:
 
 # COM: fn literals can be converted to closure wrappers.
 
-# CHECK: kgen.conformance @"def(x: Int) -> Int"
-# CHECK: kgen.conformance @"def(Int) -> Int"
+# COM: The wrapper carries a single conformance, instantiated with the named
+# COM: signature it was inflated from, while this section's `use_closure`
+# COM: declares the unnamed one - the two bridge through parametric-trait
+# COM: matching rather than through a second conformance on the wrapper.
+# CHECK: kgen.conformance @"##__mojo_closure__##"
+# CHECK-SAME: #kgen.pog_list<[<"", pos, not_vararg>, <"x", pos_or_kw, not_vararg>]>
+# CHECK: %cb: !lit.ref<:trait<@"##__mojo_closure__##"{{.*}}#kgen.pog_list<[<"", pos, not_vararg>, <"", pos, not_vararg>]>
 
 
 def top_level(x: Int) -> Int:

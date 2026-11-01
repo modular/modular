@@ -31,18 +31,294 @@ implementations of the core operations. It supports various data types including
 integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
-import std._gpu.primitives.warp
-from std._gpu.globals import WARP_SIZE
-from std._gpu.primitives.warp import (
-    _ReduceFn,
-    # Reached directly by the MSA top-k kernels and the SM100 attention
-    # kernels; a private name needs an explicit re-export.
-    _dpp_move,
-    _vote_nvidia_helper,
+from std.sys import (
+    bit_width_of,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    llvm_intrinsic,
+    size_of,
+)
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _cdna_4_or_newer, _cdna_5_or_newer
+
+from std.bit import log2_floor
+from std.math.math import max as _max, min as _min
+from std._gpu import lane_id
+from std.memory import bitcast
+
+from max._plugin import CurrentMaxPlugin
+from max.gpu.globals import WARP_SIZE
+from max.gpu.intrinsics import permlane_shuffle
+
+comptime _FULL_MASK = UInt(2**WARP_SIZE - 1)
+
+# Common function type for binary SIMD reduction operations (add, max, min).
+comptime _ReduceFn = def[dtype: DType, width: SIMDLength](
+    SIMD[dtype, width], SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+
+comptime _reduce_fn_signature = def[dtype: DType, width: SIMDLength](
+    SIMD[dtype, width], SIMD[dtype, width]
+) -> SIMD[dtype, width]
+
+# Value form of `_ReduceFn`, taken as a runtime closure argument.
+comptime _ReduceClosure = (
+    ImplicitlyCopyable & RegisterPassable & _reduce_fn_signature
 )
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# AMD DPP (Data Parallel Primitives) intrinsics
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
+def _dpp_update_i32[
+    dpp_ctrl: Int,
+    row_mask: Int = 0xF,
+    bank_mask: Int = 0xF,
+    bound_ctrl: Bool = True,
+](old: Int32, src: Int32) -> Int32:
+    """Performs a DPP (Data Parallel Primitives) cross-lane operation on AMD GPUs.
+
+    This wraps llvm.amdgcn.update.dpp.i32 to move data between lanes at
+    register-level bandwidth, avoiding LDS-based ds_bpermute.
+
+    Parameters:
+        dpp_ctrl: DPP control word specifying the cross-lane pattern.
+        row_mask: 4-bit mask selecting which rows (of 16 lanes) participate.
+        bank_mask: 4-bit mask selecting which banks (of 4 lanes) participate.
+        bound_ctrl: If True, out-of-range source lanes produce 0 instead of
+            old.
+
+    Args:
+        old: Fallback value for masked-out or out-of-range lanes.
+        src: Source value to read from neighboring lanes via DPP.
+
+    Returns:
+        The value read from the source lane specified by dpp_ctrl, or the
+        fallback value.
+    """
+    return llvm_intrinsic[
+        "llvm.amdgcn.update.dpp.i32",
+        Int32,
+    ](
+        old,
+        src,
+        Int32(dpp_ctrl),
+        Int32(row_mask),
+        Int32(bank_mask),
+        bound_ctrl,
+    )
+
+
+@inline(.always)
+def _dpp_move[
+    dtype: DType, simd_width: SIMDLength, //, dpp_ctrl: Int
+](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    """Returns a neighboring lane's value via a DPP cross-lane operation.
+
+    This is the pure data-movement primitive: it applies the DPP control word
+    and returns the value from the source lane without combining it with the
+    current value. The caller applies its own reduction function.
+
+    Since this uses bound_ctrl=True, out-of-range sources return 0. For the
+    rotation-based reduction pattern (quad_perm, row_ror) all sources are
+    always in-range so the fallback is never reached.
+
+    Parameters:
+        dtype: The data type of the SIMD elements.
+        simd_width: The number of elements in the SIMD vector.
+        dpp_ctrl: DPP control word specifying the cross-lane pattern.
+
+    Args:
+        val: The value whose neighboring lane copy is requested.
+
+    Returns:
+        The value from the source lane specified by dpp_ctrl.
+    """
+    comptime if size_of[SIMD[dtype, simd_width]]() == 4:
+        var src = bitcast[.int32, 1](val)
+        var neighbor = _dpp_update_i32[dpp_ctrl](Int32(0), src)
+        return bitcast[dtype, simd_width](neighbor)
+    elif bit_width_of[dtype]() == 16 and simd_width == 1:
+        var splatted = SIMD[dtype, 2](val._refine[new_size=1]())
+        var result = _dpp_move[dpp_ctrl](splatted)
+        return result[0]
+    elif bit_width_of[dtype]() == 64 and simd_width == 1:
+        var parts = bitcast[.int32, 2](val)
+        var lo = _dpp_update_i32[dpp_ctrl](Int32(0), parts[0])
+        var hi = _dpp_update_i32[dpp_ctrl](Int32(0), parts[1])
+        return bitcast[dtype, 1](SIMD[.int32, 2](lo, hi))
+    else:
+        comptime assert False, "unsupported type for DPP move"
+
+
+@inline(.always)
+def _dpp_reduce_and_broadcast[
+    dtype: DType,
+    simd_width: SIMDLength,
+    FuncType: _ReduceClosure,
+    //,
+    num_lanes: Int = WARP_SIZE,
+](val: SIMD[dtype, simd_width], func: FuncType) -> SIMD[dtype, simd_width]:
+    """Performs a DPP-based reduction and broadcast on AMD GPUs.
+
+    Uses AMD DPP instructions for intra-row (16-lane) reduction and shuffle_xor
+    for cross-row reduction. This is significantly lower latency compared to
+    ds_bpermute-based shuffles for the intra-row portion.
+
+    The reduction uses a rotation-based pattern where all source lanes are
+    always in-range, so this works correctly for any associative+commutative
+    reduction (sum, max, min, etc.):
+    1. Quad permutations give all lanes 2-wide then 4-wide partial results.
+    2. Row rotations (ror:4, ror:8) give all lanes 16-wide row results.
+       Rotation wraps within each 16-lane row, so every lane accumulates
+       the full row result without needing a separate broadcast step.
+    3. Shuffle XOR handles cross-row communication for 32 and 64-wide
+       results.
+
+    For sub-warp sizes the chain is truncated: num_lanes=2 uses 1 DPP step,
+    num_lanes=4 uses 2, num_lanes=8 uses 3, etc.
+
+    Parameters:
+        dtype: The data type of the SIMD elements.
+        simd_width: The number of elements in the SIMD vector.
+        FuncType: The type of the reduction closure.
+        num_lanes: Number of lanes in the reduction group (must be power of 2,
+            2..WARP_SIZE).
+
+    Args:
+        val: The value to reduce across the lane group.
+        func: Binary reduction function (e.g. add, max, min).
+
+    Returns:
+        The reduction result across the lane group, broadcast to every lane
+        in the group.
+    """
+    comptime assert num_lanes >= 2 and Bool(
+        num_lanes.is_power_of_two()
+    ), "num_lanes must be a power of 2 >= 2"
+
+    comptime assert num_lanes <= WARP_SIZE, "num_lanes cannot exceed WARP_SIZE"
+
+    # DPP control constants for the reduction pattern.
+    comptime _DPP_QUAD_PERM_1032 = 0xB1  # quad_perm:[1,0,3,2] - swap pairs
+    comptime _DPP_QUAD_PERM_2301 = 0x4E  # quad_perm:[2,3,0,1] - swap halves
+    comptime _DPP_ROW_HALF_MIRROR = 0x141  # row_half_mirror - mirror within 8-lane halves
+    comptime _DPP_ROW_ROR_8 = 0x128  # row_ror:8 - rotate right by 8 within row
+
+    var out = val
+
+    # Step 1: quad_perm swap pairs → 2-wide results.
+    out = func(out, _dpp_move[_DPP_QUAD_PERM_1032](out))
+
+    # Step 2: quad_perm swap halves → 4-wide results.
+    comptime if num_lanes >= 4:
+        out = func(out, _dpp_move[_DPP_QUAD_PERM_2301](out))
+
+    # Steps 3-4: Intra-row reduction.
+    # row_half_mirror mirrors within each 8-lane half, producing 8-wide
+    # results. For num_lanes >= 16, an additional row_ror:8 yields the
+    # full 16-wide row result.
+    comptime if num_lanes >= 8:
+        out = func(out, _dpp_move[_DPP_ROW_HALF_MIRROR](out))
+    comptime if num_lanes >= 16:
+        out = func(out, _dpp_move[_DPP_ROW_ROR_8](out))
+
+    # Steps 5-6: Cross-row reduction.
+    # On CDNA4+ use permlane_shuffle (register-level) instead of
+    # shuffle_xor (ds_bpermute through LDS). permlane_shuffle only
+    # supports 32-bit operands, so fall back to shuffle_xor for wider types.
+    @inline(.always)
+    def _cross_row_step[
+        shuffle_width: Int
+    ](v: SIMD[dtype, simd_width]) {imm func} -> SIMD[dtype, simd_width]:
+        comptime if _cdna_4_or_newer() and size_of[
+            SIMD[dtype, simd_width]
+        ]() == 4:
+            return func(v, permlane_shuffle[shuffle_width](v))
+        else:
+            return func(v, shuffle_xor(v, UInt32(shuffle_width)))
+
+    comptime if num_lanes >= 32:
+        out = _cross_row_step[16](out)
+    comptime if num_lanes >= 64:
+        out = _cross_row_step[32](out)
+
+    return out
+
+
+@inline(.always)
+def _dpp_prefix_sum[
+    dtype: DType, //, exclusive: Bool
+](val: Scalar[dtype]) -> Scalar[dtype]:
+    comptime assert _cdna_4_or_newer(), "Requires CDNA4 or newer"
+
+    comptime _DPP_ROW_SHR_1 = 0x111
+    comptime _DPP_ROW_SHR_2 = 0x112
+    comptime _DPP_ROW_SHR_4 = 0x114
+    comptime _DPP_ROW_SHR_8 = 0x118
+
+    var out = val
+    var lane = lane_id()
+    var row_lane = lane % 16
+
+    # Steps 1-4: Intra-row prefix sum.
+    var shr_1 = _dpp_move[_DPP_ROW_SHR_1](out)
+    if row_lane >= 1:
+        out += shr_1
+
+    var shr_2 = _dpp_move[_DPP_ROW_SHR_2](out)
+    if row_lane >= 2:
+        out += shr_2
+
+    var shr_4 = _dpp_move[_DPP_ROW_SHR_4](out)
+    if row_lane >= 4:
+        out += shr_4
+
+    var shr_8 = _dpp_move[_DPP_ROW_SHR_8](out)
+    if row_lane >= 8:
+        out += shr_8
+
+    comptime if _cdna_5_or_newer():
+        # Step 5: Cross-row prefix sum propagation.
+        var bcast_15 = shuffle_idx(out, 15)
+        if lane >= 16:
+            out += bcast_15
+
+        # Optionally shift up for exclusive mode.
+        comptime if exclusive:
+            out = shuffle_up(out, 1)
+            if lane == 0:
+                out = 0
+    else:
+        comptime _DPP_WAVE_SHR_1 = 0x138
+        comptime _DPP_ROW_BCAST_15 = 0x142
+        comptime _DPP_ROW_BCAST_31 = 0x143
+
+        # Steps 5-6: Cross-row prefix sum propagation.
+        var bcast_15 = _dpp_move[_DPP_ROW_BCAST_15](out)
+        if (lane % 32) >= 16:
+            out += bcast_15
+
+        var bcast_31 = _dpp_move[_DPP_ROW_BCAST_31](out)
+        if lane >= 32:
+            out += bcast_31
+
+        # Optionally shift up for exclusive mode.
+        comptime if exclusive:
+            out = _dpp_move[_DPP_WAVE_SHR_1](out)
+
+    return out
+
+
+# ===-----------------------------------------------------------------------===#
+# shuffle_idx
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def shuffle_idx[
     dtype: DType, simd_width: SIMDLength, //
 ](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
@@ -77,10 +353,10 @@ def shuffle_idx[
             result = shuffle_idx(val, 5)
         ```
     """
-    return std._gpu.primitives.warp.shuffle_idx(val, offset)
+    return shuffle_idx(_FULL_MASK, val, offset)
 
 
-@always_inline("nodebug")
+@inline(.always)
 def shuffle_idx[
     dtype: DType, simd_width: SIMDLength, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
@@ -116,10 +392,16 @@ def shuffle_idx[
             var result = shuffle_idx(mask, val, 5)
         ```
     """
-    return std._gpu.primitives.warp.shuffle_idx(mask, val, offset)
+
+    return CurrentMaxPlugin.shuffle_idx_fn(mask, val, offset)
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# shuffle_up
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def shuffle_up[
     dtype: DType, simd_width: SIMDLength, //
 ](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
@@ -145,10 +427,10 @@ def shuffle_up[
         The SIMD value from the thread offset lanes lower in the warp.
         Returns undefined values for threads where lane_id - offset < 0.
     """
-    return std._gpu.primitives.warp.shuffle_up(val, offset)
+    return shuffle_up(_FULL_MASK, val, offset)
 
 
-@always_inline("nodebug")
+@inline(.always)
 def shuffle_up[
     dtype: DType, simd_width: SIMDLength, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
@@ -180,10 +462,16 @@ def shuffle_up[
         Returns undefined values for threads where lane_id - offset < 0 or
         threads not in the mask.
     """
-    return std._gpu.primitives.warp.shuffle_up(mask, val, offset)
+
+    return CurrentMaxPlugin.shuffle_up_fn(mask, val, offset)
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# shuffle_down
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def shuffle_down[
     dtype: DType, simd_width: SIMDLength, //
 ](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
@@ -210,10 +498,10 @@ def shuffle_down[
         The SIMD value from the thread offset lanes higher in the warp.
         Returns undefined values for threads where lane_id + offset >= WARP_SIZE.
     """
-    return std._gpu.primitives.warp.shuffle_down(val, offset)
+    return shuffle_down(_FULL_MASK, val, offset)
 
 
-@always_inline("nodebug")
+@inline(.always)
 def shuffle_down[
     dtype: DType, simd_width: SIMDLength, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
@@ -246,10 +534,16 @@ def shuffle_down[
         Returns undefined values for threads where lane_id + offset >= WARP_SIZE
         or where the corresponding mask bit is not set.
     """
-    return std._gpu.primitives.warp.shuffle_down(mask, val, offset)
+
+    return CurrentMaxPlugin.shuffle_down_fn(mask, val, offset)
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# shuffle_xor
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def shuffle_xor[
     dtype: DType, simd_width: SIMDLength, //
 ](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
@@ -271,10 +565,10 @@ def shuffle_xor[
     Returns:
         The SIMD value from the thread at lane (current_lane XOR offset).
     """
-    return std._gpu.primitives.warp.shuffle_xor(val, offset)
+    return shuffle_xor(_FULL_MASK, val, offset)
 
 
-@always_inline("nodebug")
+@inline(.always)
 def shuffle_xor[
     dtype: DType, simd_width: SIMDLength, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
@@ -312,22 +606,30 @@ def shuffle_xor[
             var result = shuffle_xor(mask, val, 4)
         ```
     """
-    return std._gpu.primitives.warp.shuffle_xor(mask, val, offset)
+
+    return CurrentMaxPlugin.shuffle_xor_fn(mask, val, offset)
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# Warp Reduction
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def lane_group_reduce[
     val_type: DType,
     simd_width: SIMDLength,
+    FuncType: _ReduceClosure,
     //,
     shuffle: def[dtype: DType, simd_width: SIMDLength](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) thin -> SIMD[dtype, simd_width],
-    func: _ReduceFn,
     num_lanes: Int,
     *,
     stride: Int = 1,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+](val: SIMD[val_type, simd_width], func: FuncType) -> SIMD[
+    val_type, simd_width
+]:
     """Performs a generic warp-level reduction operation using shuffle operations.
 
     This function implements a parallel reduction across threads in a warp using a butterfly
@@ -336,15 +638,16 @@ def lane_group_reduce[
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in the SIMD vector.
+        FuncType: The type of the reduction closure.
         shuffle: A function that performs the warp shuffle operation. Takes a SIMD value and
                 offset and returns the shuffled result.
-        func: A binary function that combines two SIMD values during reduction. This defines
-              the reduction operation (e.g. add, max, min).
         num_lanes: The number of lanes in a group. The reduction is done within each group. Must be a power of 2.
         stride: The stride between lanes participating in the reduction.
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value.
+        func: A binary function that combines two SIMD values during reduction. This defines
+              the reduction operation (e.g. add, max, min).
 
     Returns:
         A SIMD value containing the reduction result.
@@ -355,28 +658,35 @@ def lane_group_reduce[
             from max.gpu.primitives.warp import lane_group_reduce, shuffle_down
 
             # Compute sum across 16 threads using shuffle down
-            @__parameter
             def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
                 return x + y
             var val = SIMD[.float32, 16](42.0)
-            var result = lane_group_reduce[shuffle_down, add, num_lanes=16](val)
+            var result = lane_group_reduce[shuffle_down, num_lanes=16](val, add)
         ```
     """
-    return std._gpu.primitives.warp.lane_group_reduce[
-        shuffle, func, num_lanes, stride=stride
-    ](val)
+    var res = val
+
+    comptime limit = log2_floor(num_lanes)
+
+    comptime for i in reversed(range(limit)):
+        comptime offset = 1 << i
+        res = func(res, shuffle(res, UInt32(offset * stride)))
+
+    return res
 
 
-@always_inline("nodebug")
+@inline(.always)
 def reduce[
     val_type: DType,
     simd_width: SIMDLength,
+    FuncType: _ReduceClosure,
     //,
     shuffle: def[dtype: DType, simd_width: SIMDLength](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) thin -> SIMD[dtype, simd_width],
-    func: _ReduceFn,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+](val: SIMD[val_type, simd_width], func: FuncType) -> SIMD[
+    val_type, simd_width
+]:
     """Performs a generic warp-wide reduction operation using shuffle operations.
 
     This is a convenience wrapper around lane_group_reduce that operates on the entire warp.
@@ -385,13 +695,14 @@ def reduce[
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in the SIMD vector.
+        FuncType: The type of the reduction closure.
         shuffle: A function that performs the warp shuffle operation. Takes a SIMD value and
                 offset and returns the shuffled result.
-        func: A binary function that combines two SIMD values during reduction. This defines
-              the reduction operation (e.g. add, max, min).
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value.
+        func: A binary function that combines two SIMD values during reduction. This defines
+              the reduction operation (e.g. add, max, min).
 
     Returns:
         A SIMD value containing the reduction result broadcast to all lanes in the warp.
@@ -402,18 +713,66 @@ def reduce[
         from max.gpu.primitives.warp import reduce, shuffle_down
 
         # Compute warp-wide sum using shuffle down
-        @__parameter
-        def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
+        def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
             return x + y
 
         val = SIMD[.float32, 4](2.0, 4.0, 6.0, 8.0)
-        result = reduce[shuffle_down, add](val)
+        result = reduce[shuffle_down](val, add)
     ```
     """
-    return std._gpu.primitives.warp.reduce[shuffle, func](val)
+    return lane_group_reduce[shuffle, num_lanes=WARP_SIZE](val, func)
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# Shared broadcast-reduce dispatch
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
+def _lane_group_broadcast_reduce[
+    val_type: DType,
+    simd_width: SIMDLength,
+    FuncType: _ReduceClosure,
+    //,
+    num_lanes: Int,
+    stride: Int = 1,
+](val: SIMD[val_type, simd_width], func: FuncType) -> SIMD[
+    val_type, simd_width
+]:
+    """Shared broadcast-reduce dispatch: CDNA4+ permlane, AMD DPP, or
+    shuffle_xor fallback."""
+    comptime if (
+        is_amd_gpu() and num_lanes >= 2 and Bool(num_lanes.is_power_of_two())
+    ):
+        comptime if (
+            num_lanes == WARP_SIZE // stride
+            and stride in (16, 32)
+            and _cdna_4_or_newer()
+        ):
+            var out = val
+
+            comptime if WARP_SIZE == 64:
+                out = func(out, permlane_shuffle[32](out))
+
+            comptime if stride == 16:
+                out = func(out, permlane_shuffle[16](out))
+
+            return out
+
+        comptime if stride == 1:
+            return _dpp_reduce_and_broadcast[num_lanes=num_lanes](val, func)
+
+    return lane_group_reduce[shuffle_xor, num_lanes=num_lanes, stride=stride](
+        val, func
+    )
+
+
+# ===-----------------------------------------------------------------------===#
+# Warp Sum
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def lane_group_sum[
     val_type: DType,
     simd_width: SIMDLength,
@@ -440,10 +799,16 @@ def lane_group_sum[
         A SIMD value where all participating lanes contain the sum found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
-    return std._gpu.primitives.warp.lane_group_sum[num_lanes, stride](val)
+
+    def _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
+        return x + y
+
+    return _lane_group_broadcast_reduce[num_lanes=num_lanes, stride=stride](
+        val, _reduce_add
+    )
 
 
-@always_inline("nodebug")
+@inline(.always)
 def sum(val: SIMD) -> Scalar[val.dtype]:
     """Computes the sum of values across all lanes in a warp.
 
@@ -457,10 +822,15 @@ def sum(val: SIMD) -> Scalar[val.dtype]:
     Returns:
         The scalar sum of values across all lanes in the warp.
     """
-    return std._gpu.primitives.warp.sum(val)
+    return lane_group_sum[num_lanes=WARP_SIZE](val.reduce_add())
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# Warp Prefix Sum
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def prefix_sum[
     dtype: DType,
     //,
@@ -502,12 +872,53 @@ def prefix_sum[
         A scalar containing the prefix sum at the current thread's position in
         the warp, cast to the specified output dtype.
     """
-    return std._gpu.primitives.warp.prefix_sum[
-        intermediate_type, output_type=output_type, exclusive=exclusive
-    ](x)
+    var res = x.cast[intermediate_type]()
+
+    comptime if _cdna_4_or_newer():
+        res = _dpp_prefix_sum[exclusive](res)
+    else:
+        var lane = lane_id()
+
+        comptime for i in range(log2_floor(WARP_SIZE)):
+            comptime offset = 1 << i
+            var n = shuffle_up(res, UInt32(offset))
+            if lane >= offset:
+                res += n
+
+        comptime if exclusive:
+            res = shuffle_up(res, 1)
+            if lane == 0:
+                res = 0
+
+    return res.cast[output_type]()
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# Warp Max
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.nodebug)
+def _has_redux_f32_support[dtype: DType, simd_width: Int]() -> Bool:
+    return (
+        (is_nvidia_gpu["sm_100a"]() or is_nvidia_gpu["sm_101a"]())
+        and dtype == .float32
+        and simd_width == 1
+    )
+
+
+@inline(.nodebug)
+def _redux_f32_max_min[direction: StaticString](val: SIMD) -> type_of(val):
+    comptime instruction = StaticString("redux.sync.") + direction + ".NaN.f32"
+    return inlined_assembly[
+        instruction + " $0, $1, $2;",
+        type_of(val),
+        constraints="=f,f,i",
+        has_side_effect=True,
+    ](val, Int32(_FULL_MASK))
+
+
+@inline(.always)
 def lane_group_max[
     val_type: DType,
     simd_width: SIMDLength,
@@ -534,10 +945,22 @@ def lane_group_max[
         A SIMD value where all participating lanes contain the maximum value found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
-    return std._gpu.primitives.warp.lane_group_max[num_lanes, stride](val)
+
+    comptime if (
+        _has_redux_f32_support[val_type, simd_width]()
+        and num_lanes == WARP_SIZE
+    ):
+        return _redux_f32_max_min["max"](val)
+
+    def _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
+        return _max(x, y)
+
+    return _lane_group_broadcast_reduce[num_lanes=num_lanes, stride=stride](
+        val, _reduce_max
+    )
 
 
-@always_inline("nodebug")
+@inline(.always)
 def max(val: SIMD) -> Scalar[val.dtype]:
     """Computes the maximum value across all lanes in a warp.
 
@@ -551,10 +974,15 @@ def max(val: SIMD) -> Scalar[val.dtype]:
     Returns:
         The scalar maximum value across all lanes in the warp.
     """
-    return std._gpu.primitives.warp.max(val)
+    return lane_group_max[num_lanes=WARP_SIZE](val.reduce_max())
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# Warp Min
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def lane_group_min[
     val_type: DType,
     simd_width: SIMDLength,
@@ -581,10 +1009,22 @@ def lane_group_min[
         A SIMD value where all participating lanes contain the minimum value found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
-    return std._gpu.primitives.warp.lane_group_min[num_lanes, stride](val)
+
+    comptime if (
+        _has_redux_f32_support[val_type, simd_width]()
+        and num_lanes == WARP_SIZE
+    ):
+        return _redux_f32_max_min["min"](val)
+
+    def _reduce_min(x: SIMD, y: type_of(x)) -> type_of(x):
+        return _min(x, y)
+
+    return _lane_group_broadcast_reduce[num_lanes=num_lanes, stride=stride](
+        val, _reduce_min
+    )
 
 
-@always_inline("nodebug")
+@inline(.always)
 def min(val: SIMD) -> Scalar[val.dtype]:
     """Computes the minimum value across all lanes in a warp.
 
@@ -598,10 +1038,15 @@ def min(val: SIMD) -> Scalar[val.dtype]:
     Returns:
         The scalar minimum value across all lanes in the warp.
     """
-    return std._gpu.primitives.warp.min(val)
+    return lane_group_min[num_lanes=WARP_SIZE](val.reduce_min())
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# Warp Broadcast
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def broadcast[
     val_type: DType, simd_width: SIMDLength, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
@@ -621,42 +1066,15 @@ def broadcast[
     Returns:
         A SIMD value where all lanes contain a copy of the input value from lane 0.
     """
-    return std._gpu.primitives.warp.broadcast(val)
+    return shuffle_idx(val, 0)
 
 
-@always_inline("nodebug")
-def broadcast(val: Int) -> Int:
-    """Broadcasts an integer value from lane 0 to all lanes in the warp.
-
-    This function takes an integer value from lane 0 and copies it to all other lanes in the warp.
-    It provides a convenient way to share scalar integer data between threads without using shared memory.
-
-    Args:
-        val: The integer value to broadcast from lane 0.
-
-    Returns:
-        The broadcast integer value, where all lanes receive a copy of the input from lane 0.
-    """
-    return std._gpu.primitives.warp.broadcast(val)
+# ===-----------------------------------------------------------------------===#
+# Warp Vote
+# ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
-def broadcast(val: UInt) -> UInt:
-    """Broadcasts an unsigned integer value from lane 0 to all lanes in the warp.
-
-    This function takes an unsigned integer value from lane 0 and copies it to all other lanes in the warp.
-    It provides a convenient way to share scalar unsigned integer data between threads without using shared memory.
-
-    Args:
-        val: The unsigned integer value to broadcast from lane 0.
-
-    Returns:
-        The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
-    """
-    return std._gpu.primitives.warp.broadcast(val)
-
-
-@always_inline("nodebug")
+@inline(.always)
 def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
     """Creates a 32 or 64 bit mask among all threads in the warp, where each bit is set to 1 if the
     corresponding thread voted True, and 0 otherwise.
@@ -676,10 +1094,20 @@ def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
     Returns:
         A mask containing the vote of all threads in the warp.
     """
-    return std._gpu.primitives.warp.vote[ret_type](val)
+
+    comptime assert ret_type in (
+        DType.uint32,
+        DType.uint64,
+    ), "vote ret_type must be DType.uint32 or DType.uint64"
+    return CurrentMaxPlugin.vote_fn[ret_type](val)
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# match_any
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def match_any[
     dtype: DType,
     //,
@@ -720,15 +1148,31 @@ def match_any[
         a bit-equal `value`.
 
     Constraints:
-        Only NVIDIA, AMD, and Apple Silicon GPUs are supported. `dtype` must be
-        a 32- or 64-bit type and `mask_type` must be `DType.uint32` or
-        `DType.uint64` (NVIDIA returns a 32-bit mask, so `mask_type` must be
-        `DType.uint32` there).
+        Requires a GPU target with warp shuffles. `dtype` must be a 32- or
+        64-bit type and `mask_type` must be `DType.uint32` or `DType.uint64`
+        (NVIDIA returns a 32-bit mask, so `mask_type` must be `DType.uint32`
+        there).
     """
-    return std._gpu.primitives.warp.match_any[mask_type](value)
+    comptime assert mask_type in (
+        DType.uint32,
+        DType.uint64,
+    ), "match_any mask_type must be DType.uint32 or DType.uint64"
+    comptime assert size_of[dtype]() in (
+        4,
+        8,
+    ), "match_any value must be a 32- or 64-bit type"
+    comptime bits_type = DType.uint32 if size_of[dtype]() == 4 else DType.uint64
+    var bits = bitcast[bits_type](value)
+
+    return CurrentMaxPlugin.match_any_fn[mask_type](bits)
 
 
-@always_inline("nodebug")
+# ===-----------------------------------------------------------------------===#
+# match_all
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
 def match_all[
     dtype: DType,
     //,
@@ -768,9 +1212,20 @@ def match_all[
         bit-equal `value`, otherwise 0.
 
     Constraints:
-        Only NVIDIA, AMD, and Apple Silicon GPUs are supported. `dtype` must be
-        a 32- or 64-bit type and `mask_type` must be `DType.uint32` or
-        `DType.uint64` (NVIDIA returns a 32-bit mask, so `mask_type` must be
-        `DType.uint32` there).
+        Requires a GPU target with warp shuffles. `dtype` must be a 32- or
+        64-bit type and `mask_type` must be `DType.uint32` or `DType.uint64`
+        (NVIDIA returns a 32-bit mask, so `mask_type` must be `DType.uint32`
+        there).
     """
-    return std._gpu.primitives.warp.match_all[mask_type](value)
+    comptime assert mask_type in (
+        DType.uint32,
+        DType.uint64,
+    ), "match_all mask_type must be DType.uint32 or DType.uint64"
+    comptime assert size_of[dtype]() in (
+        4,
+        8,
+    ), "match_all value must be a 32- or 64-bit type"
+    comptime bits_type = DType.uint32 if size_of[dtype]() == 4 else DType.uint64
+    var bits = bitcast[bits_type](value)
+
+    return CurrentMaxPlugin.match_all_fn[mask_type](bits)

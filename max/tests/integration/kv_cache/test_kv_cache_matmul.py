@@ -19,21 +19,21 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.mlir import StringAttr
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     fused_qkv_ragged_matmul,
     matmul_k_cache_ragged,
     matmul_kv_cache_ragged,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
-    PagedCacheValues,
 )
 from test_common.modular_graph_test import modular_graph_test
 from test_common.simple_kv_cache import (
@@ -135,26 +135,10 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
                 *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
-            (
-                input,
-                input_row_offsets,
-                wqkv,
-                blocks,
-                cache_lengths,
-                lookup_table,
-                max_prompt_length,
-                max_cache_length,
-                _attention_dispatch_metadata,
-            ) = g.inputs
+            input, input_row_offsets, wqkv, *_kv_rest = g.inputs
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                blocks.buffer,
-                cache_lengths.tensor,
-                lookup_table.tensor,
-                max_prompt_length.tensor,
-                max_cache_length.tensor,
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[3:]))[0]
             result = fused_qkv_ragged_matmul(
                 kv_params,
                 input.tensor,
@@ -192,12 +176,12 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         },
         provided_inputs={
             1: input_row_offsets,
-            3: kv_runtime_inputs.kv_blocks,
-            4: kv_runtime_inputs.cache_lengths,
-            5: kv_runtime_inputs.lookup_table,
-            6: kv_runtime_inputs.max_prompt_length,
-            7: kv_runtime_inputs.max_cache_length,
-            8: kv_runtime_inputs.attention_dispatch_metadata,
+            # The KV inputs follow the three leading operands, in the order
+            # `flatten` emits them.
+            **{
+                3 + i: buf
+                for i, buf in enumerate(tree.leaves(kv_runtime_inputs))
+            },
         },
     )
     def test_runs_without_nan(
@@ -237,13 +221,9 @@ class MatmulKVRaggedModel:
             hidden_states,
             input_row_offsets,
             weight,
-            kv_collection=PagedCacheValues(
-                kv_blocks=kv_inputs[0].buffer,
-                cache_lengths=kv_inputs[1].tensor,
-                lookup_table=kv_inputs[2].tensor,
-                max_prompt_length=kv_inputs[3].tensor,
-                max_cache_length=kv_inputs[4].tensor,
-            ),
+            kv_collection=self.kv_params.unflatten_kv_inputs(iter(kv_inputs))[
+                0
+            ],
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
             ),
@@ -331,7 +311,12 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         dtype=torch_dtype,
     )
     wkv = torch.randn(size=wkv_type.shape.static_dims, dtype=torch_dtype)
-    model(hidden_states, input_row_offsets, wkv, *kv_inputs.flatten())
+    model(
+        hidden_states,
+        input_row_offsets,
+        wkv,
+        *tree.leaves(kv_inputs),
+    )
 
     # Check that the matmul wrote output to the KV cache.
     assert kv_blocks.to_numpy().any()
@@ -364,13 +349,9 @@ class MatmulKRaggedModel:
             hidden_states,
             input_row_offsets,
             weight,
-            kv_collection=PagedCacheValues(
-                kv_blocks=kv_inputs[0].buffer,
-                cache_lengths=kv_inputs[1].tensor,
-                lookup_table=kv_inputs[2].tensor,
-                max_prompt_length=kv_inputs[3].tensor,
-                max_cache_length=kv_inputs[4].tensor,
-            ),
+            kv_collection=self.kv_params.unflatten_kv_inputs(iter(kv_inputs))[
+                0
+            ],
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
             ),
@@ -446,7 +427,12 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         dtype=torch_dtype,
     )
     wk = torch.randn(size=wk_type.shape.static_dims, dtype=torch_dtype)
-    model(hidden_states, input_row_offsets, wk, *kv_inputs.flatten())
+    model(
+        hidden_states,
+        input_row_offsets,
+        wk,
+        *tree.leaves(kv_inputs),
+    )
 
     ref_results = hidden_states @ wk.T
 

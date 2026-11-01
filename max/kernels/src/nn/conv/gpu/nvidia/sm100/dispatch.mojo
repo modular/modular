@@ -25,9 +25,18 @@ from std.sys import size_of
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Idx, TileTensor, row_major
-from std.utils.index import IndexList
-from linalg.utils import elementwise_epilogue_type
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
+from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 
 # =========================================================================
@@ -38,9 +47,12 @@ from linalg.utils import elementwise_epilogue_type
 @__name(t"transpose_rscf_to_krsc_{dtype}")
 def _transpose_rscf_to_krsc[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     R: Int32,
     S: Int32,
     C: Int32,
@@ -52,22 +64,27 @@ def _transpose_rscf_to_krsc[
     var _C = Int(C)
     var _F = Int(F)
     var tid = global_idx.x
+
     if tid >= _R * _S * _C * _F:
         return
     var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    var src_idx = r * _S * _C * _F + s * _C * _F + c * _F + k
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+
+    with PDL():
+        dst_ptr.unsafe_store(tid, src.load((r, s, c, k))[0])
 
 
 @__name(t"transpose_fcrs_to_krsc_{dtype}")
 def _transpose_fcrs_to_krsc[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     F: Int32,
     C: Int32,
     R: Int32,
@@ -79,14 +96,16 @@ def _transpose_fcrs_to_krsc[
     var _R = Int(R)
     var _S = Int(S)
     var tid = global_idx.x
+
     if tid >= _F * _C * _R * _S:
         return
     var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    var src_idx = k * _C * _R * _S + c * _R * _S + r * _S + s
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+
+    with PDL():
+        dst_ptr.unsafe_store(tid, src.load((k, c, r, s))[0])
 
 
 # =========================================================================
@@ -94,7 +113,7 @@ def _transpose_fcrs_to_krsc[
 # =========================================================================
 
 
-@always_inline
+@inline(.always)
 def test_alignment_sm100_conv2d[
     input_type: DType, output_type: DType
 ](in_channels: Int, out_channels: Int) -> Bool:
@@ -125,20 +144,25 @@ def dispatch_sm100_conv2d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     filter_is_fcrs: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_residual: Bool = False,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    symmetric_padding: IndexList[2],
+    symmetric_padding: Coord[Int, Int],
     ctx: DeviceContext,
     source_ptr: OptionalReg[
-        UnsafePointer[Scalar[output_type], MutAnyOrigin]
+        MutPointer[Scalar[output_type], MutAnyOrigin]
     ] = None,
     beta: Float32 = 0.0,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.
 
@@ -149,20 +173,29 @@ def dispatch_sm100_conv2d[
         input_type: Data type of the input activation tensor.
         filter_type: Data type of the filter weights tensor.
         output_type: Data type of the output tensor.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         filter_is_fcrs: If True, filter is FCRS layout; otherwise RSCF.
-        elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(IndexList[2], SIMD) -> None`.
         has_residual: If True, fuse residual add D = Conv(A,B) + beta*C.
+        has_epilogue_fn: Whether `epilogue_fn` stores the output.
+        has_compute_fn: Whether the kernel stores `compute_fn` of each
+            output value; not supported with `has_residual`.
 
     Args:
         input: Input activation tensor in NHWC layout.
         filter: Filter weights tensor.
         output: Output tensor in NHWC layout.
-        symmetric_padding: Symmetric padding (pad_h, pad_w).
+        symmetric_padding: Symmetric padding (pad_h, pad_w) as a `Coord`.
         ctx: Device context for kernel launch.
         source_ptr: Pointer to residual source tensor C (NHWC, same shape
             as output). Only used when has_residual is True.
         beta: Residual scale factor. D = Conv(A,B) + beta*C.
+        epilogue_fn: Elementwise epilogue that stores each output value,
+            with coordinates in the [M, N] GEMM view of the output; ignored
+            unless `has_epilogue_fn` is True.
+        compute_fn: Elementwise transform of each output value, with
+            coordinates in the [M, N] GEMM view of the output; ignored
+            unless `has_compute_fn` is True.
 
     Raises:
         Error if kernel launch fails.
@@ -170,6 +203,12 @@ def dispatch_sm100_conv2d[
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
+    comptime assert not (
+        has_residual and has_compute_fn
+    ), "the residual kernel has no compute epilogue"
 
     comptime if input_type == .bfloat16:
         from .conv2d import conv2d_fprop, conv2d_fprop_with_residual
@@ -207,8 +246,14 @@ def dispatch_sm100_conv2d[
             var C = Int(filter.dim[1]())
             var R = Int(filter.dim[2]())
             var S = Int(filter.dim[3]())
-            ctx.enqueue_function[_transpose_fcrs_to_krsc[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_fcrs_to_krsc[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_krsc_ptr,
                 Int32(F),
                 Int32(C),
@@ -216,14 +261,21 @@ def dispatch_sm100_conv2d[
                 Int32(S),
                 grid_dim=grid,
                 block_dim=transpose_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             var R = Int(filter.dim[0]())
             var S = Int(filter.dim[1]())
             var C = Int(filter.dim[2]())
             var F = Int(filter.dim[3]())
-            ctx.enqueue_function[_transpose_rscf_to_krsc[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_rscf_to_krsc[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_krsc_ptr,
                 Int32(R),
                 Int32(S),
@@ -231,6 +283,7 @@ def dispatch_sm100_conv2d[
                 Int32(F),
                 grid_dim=grid,
                 block_dim=transpose_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Construct problem shape and TileTensors
@@ -259,12 +312,11 @@ def dispatch_sm100_conv2d[
         # compiles a separately-instantiated kernel.
         var in_c_bytes = in_c * size_of[input_type]()
 
-        @__parameter
-        @always_inline
+        @inline(.always)
         def _launch[
             swizzle: TensorMapSwizzle,
             num_pipeline_stages_override: Int = 0,
-        ]() raises:
+        ]() raises {imm}:
             comptime config = Conv2dConfig[
                 input_type, filter_type, output_type
             ].default_bf16_1sm[
@@ -280,14 +332,30 @@ def dispatch_sm100_conv2d[
                 )
                 conv2d_fprop_with_residual[
                     config=config,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
                     has_residual=True,
-                ](out_tt, act_tt, filter_tt, src_tt, beta, problem, ctx)
+                    has_epilogue_fn=has_epilogue_fn,
+                ](
+                    out_tt,
+                    act_tt,
+                    filter_tt,
+                    src_tt,
+                    beta,
+                    problem,
+                    ctx,
+                    epilogue_fn,
+                )
+            elif has_epilogue_fn:
+                conv2d_fprop[config=config](
+                    out_tt, act_tt, filter_tt, problem, epilogue_fn, ctx
+                )
+            elif has_compute_fn:
+                conv2d_fprop[config=config](
+                    out_tt, act_tt, filter_tt, problem, compute_fn, ctx
+                )
             else:
-                conv2d_fprop[
-                    config=config,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ](out_tt, act_tt, filter_tt, problem, ctx)
+                conv2d_fprop[config=config](
+                    out_tt, act_tt, filter_tt, problem, ctx
+                )
 
         if in_c_bytes % 128 == 0:
             _launch[TensorMapSwizzle.SWIZZLE_128B]()

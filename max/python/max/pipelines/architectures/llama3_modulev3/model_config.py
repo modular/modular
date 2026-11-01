@@ -21,12 +21,12 @@ from typing import ClassVar, Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
-from max.nn.rotary_embedding import (
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     LongRoPEScalingParams,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -40,6 +40,7 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ModelOutputConfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import (
@@ -124,16 +125,19 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @staticmethod
     def get_head_dim_from_config(config: Llama3Config) -> int:
+        """The head width the config's KV parameters carry."""
         return config.kv_params.head_dim
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers
 
     @staticmethod
     def calculate_attention_multiplier(
         huggingface_config: AutoConfig,
     ) -> float:
+        """The attention scale, from the checkpoint or the head width."""
         return getattr(
             huggingface_config,
             "attention_multiplier",
@@ -319,3 +323,37 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         self.attention_bias = attention_bias
         self.return_logits = return_logits
         self.return_hidden_states = return_hidden_states
+
+
+@dataclass(kw_only=True)
+class Llama3DecoderConfig(Llama3Config):
+    """The config of the registered :class:`~.llama3.Llama3Decoder`.
+
+    The framework finalizes a registered config with one
+    :class:`~max.pipelines.lib.interfaces.arch_config.ModelOutputConfig`,
+    which :meth:`finalize` also takes in place of ``return_logits``.
+    """
+
+    # TODO(kathywu): Fold into Llama3Config.finalize once OlmoConfig and
+    # Idefics3Config finalize through ModelOutputConfig too.
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits | ModelOutputConfig,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
+        attention_bias: bool = False,
+    ) -> None:
+        """Completes the config in place with checkpoint-dependent fields."""
+        if isinstance(return_logits, ModelOutputConfig):
+            return_hidden_states = return_logits.return_hidden_states
+            return_logits = return_logits.return_logits
+        super().finalize(
+            huggingface_config=huggingface_config,
+            state_dict=state_dict,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+            norm_method=norm_method,
+            attention_bias=attention_bias,
+        )

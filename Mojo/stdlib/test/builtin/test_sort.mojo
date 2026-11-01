@@ -13,7 +13,12 @@
 
 from std.collections.string.string_span import _to_string_list
 from std.pathlib import _dir_of_current_file
-from std.random import rand, random_float64, random_si64, random_ui64, seed
+from std.random import (
+    random_float64,
+    random_si64,
+    random_ui64,
+    seed,
+)
 
 from std.builtin.sort import (
     _heap_sort,
@@ -67,10 +72,10 @@ def test_sort_small_3() raises:
     list.append(1)
     list.append(2)
 
-    def _less_than(lhs: Int, rhs: Int) -> Bool:
-        return lhs < rhs
-
-    _small_sort[length](list, _less_than)
+    _small_sort[length](
+        list,
+        lambda (lhs: Int, rhs: Int) -> Bool: lhs < rhs,
+    )
 
     var expected = [1, 2, 9]
     for i in range(length):
@@ -167,10 +172,7 @@ def test_sort3_dupe_elements() raises:
         for i in range(length):
             assert_equal(expected[i], list[i])
 
-    def _lt(lhs: Int, rhs: Int) -> Bool:
-        return lhs < rhs
-
-    test(_lt)
+    test(lambda (lhs: Int, rhs: Int) -> Bool: lhs < rhs)
 
 
 def test_sort4() raises:
@@ -443,19 +445,19 @@ def test_sort_stress() raises:
         for i in range(length - 1):
             assert_true(check_fn(list[i], list[i + 1]))
 
-    @always_inline
+    @inline(.always)
     def _gt(lhs: Int, rhs: Int) -> Bool:
         return lhs > rhs
 
-    @always_inline
+    @inline(.always)
     def _geq(lhs: Int, rhs: Int) -> Bool:
         return lhs >= rhs
 
-    @always_inline
+    @inline(.always)
     def _lt(lhs: Int, rhs: Int) -> Bool:
         return lhs < rhs
 
-    @always_inline
+    @inline(.always)
     def _leq(lhs: Int, rhs: Int) -> Bool:
         return lhs <= rhs
 
@@ -588,11 +590,11 @@ def test_stable_sort_stress() raises:
 
     # sort by only comparing the x value of the IntPair, then check the sort is
     # stable by making sure that for the same x value, the idx field is sorted.
-    @always_inline
+    @inline(.always)
     def _lt(lhs: IntPair, rhs: IntPair) -> Bool:
         return lhs.x < rhs.x
 
-    @always_inline
+    @inline(.always)
     def _lt_check(lhs: IntPair, rhs: IntPair) -> Bool:
         return lhs.idx < rhs.idx if lhs.x == rhs.x else lhs.x < rhs.x
 

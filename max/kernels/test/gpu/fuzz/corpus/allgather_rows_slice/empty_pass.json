@@ -1,0 +1,14 @@
+{
+  "target": "allgather_rows_slice",
+  "spec": {
+    "rows_per_rank": 0,
+    "col_units": 0,
+    "repeats": 1,
+    "order": 2,
+    "data_seed": 12345
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "Empty shards launch no collective.",
+  "findings": []
+}

@@ -7,6 +7,20 @@ common --repo_env=MOJO_IGNORE_UNKNOWN_GPUS=1
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 
+# Mirrors the root .bazelrc of the internal repo.
+build --host_copt=-DMODULAR_HOST_CFG=1
+# Tell MLIR where to bind its python bindings
+build --per_file_copt=max/python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+build --host_per_file_copt=max/python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+build --per_file_copt=external/.*llvm-project.*/Bindings/Python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+build --host_per_file_copt=external/.*llvm-project.*/Bindings/Python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+# Make symbols in TypeID visible
+build --per_file_copt=external/.*llvm-project/mlir/lib/Support/TypeID.cpp@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/mlir/lib/Support/TypeID.cpp@-fvisibility=default
+build --per_file_copt=external/.*llvm-project/llvm/lib/Support/FormatVariadic.cpp@-frtti
+build --host_per_file_copt=external/.*llvm-project/llvm/lib/Support/FormatVariadic.cpp@-frtti
+build --per_file_copt=external/.*llvm-project/third-party/unittest/.*@-frtti
+
 import %workspace%/bazel/internal/common.bazelrc
 
 # Load config generated from tools/bazel
@@ -18,6 +32,8 @@ build --compilation_mode=dbg
 build --//:modular_config=default
 
 build:ci --mojoprecompilecopt=-Werror
+# Match internal CI, which tests optimized builds.
+build:ci --compilation_mode=opt
 
 build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
 build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
@@ -25,8 +41,17 @@ build:public-cache --build_metadata=VISIBILITY=PUBLIC
 build:public-cache --remote_downloader=grpcs://modular-public.buildbuddy.io
 build:public-cache --remote_cache=grpcs://modular-public.buildbuddy.io
 
-build:build-mojo --//:use_prebuilt_mojo_toolchain=false
-build:prebuilt-mojo --//:use_prebuilt_mojo_toolchain=true
+# Read-only access to the same cache, for anyone without a key of their own.
+# The key is already published in .github/workflows/build_and_test.yml, so it
+# discloses nothing to put it here. It sits on its own config rather than on
+# `public-cache` because --remote_header accumulates: a trusted CI run passes
+# its own read-write key, and must not end up sending two.
+build:public-cache-readonly --config=public-cache
+build:public-cache-readonly --remote_header=x-buildbuddy-api-key=gJPttl2LQEONgD2aKziQ
+# BES needs its own header: --remote_header does not reach the build event
+# stream, so without this the upload authenticates anonymously and fails.
+build:public-cache-readonly --bes_header=x-buildbuddy-api-key=gJPttl2LQEONgD2aKziQ
+build:public-cache-readonly --remote_upload_local_results=false
 
 # Check for a local gitignored bazel config.
 # NOTE: Import this last so that local configs can override.

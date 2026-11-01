@@ -144,3 +144,23 @@ def capture_expression():
     # CHECK: error: capture lists expect references to variables
     def f() {imm g + 2}:
         pass
+
+
+# COM: A move capture of a local whose type failed to resolve reports the type
+# COM: error instead of crashing (MOCO-4897).
+comptime OpFn = Some[def () -> None]
+
+
+# CHECK: error: 'OpFn' is not a concrete type
+def make_op() -> OpFn:
+    def op():
+        pass
+
+    return op
+
+
+def move_unresolved():
+    var f = make_op()
+
+    def seq() {var^ f}:
+        f()

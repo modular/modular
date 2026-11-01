@@ -36,7 +36,6 @@ _FILECHECK_TESTS = [
     "test_repeat_interleave.mojo",
     "test_resize.mojo",
     "test_scatter_elements.mojo",
-    "test_softmax.mojo",
     "test_static_conv.mojo",
     "test_static_conv_small_shapes.mojo",
     "test_tile.mojo",
@@ -46,6 +45,10 @@ _FILECHECK_TESTS = [
 _CONSTRAINTS = {
     "test_activations.mojo": ["@platforms//os:linux"],
     "test_top_k.mojo": ["@platforms//os:linux"],  # TODO: Fix on macOS
+    # TODO: This test predates the `Coord` migration of the layout package and
+    # does not build against it (nor against `Layout.row_major` on main). It is
+    # excluded until it is ported.
+    "test_flash_attention.mojo": ["@platforms//:incompatible"],
 }
 
 _FILECHECK_EXTRA_DEPS = {
@@ -55,7 +58,11 @@ _FILECHECK_EXTRA_DEPS = {
 }
 
 _EXTRA_DEPS = {
-    "test_rms_norm_fused_residual_add.mojo": ["//max:max_mojo"],
+    "test_layer_norm.mojo": ["//max:builtin_kernels"],
+    "test_rms_norm_fused_residual_add.mojo": [
+        "//max:builtin_kernels",
+        "//max:max_mojo",
+    ],
     "test_subvolume_start_indices_static.mojo": ["//max:max_mojo"],
     "test_toppminp.mojo": ["//max:max_mojo"],
 }

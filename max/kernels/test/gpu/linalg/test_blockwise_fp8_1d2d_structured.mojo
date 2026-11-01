@@ -83,21 +83,9 @@ def test_blockwise_fp8_1d2d_structured[
     ), "TMA expects total_num_tokens to be divisible by 16 bytes"
 
     print(
-        "== test_blockwise_fp8_1d2d_structured",
-        a_type,
-        "->",
-        c_type,
-        "problem: (",
-        total_num_tokens,
-        "x",
-        N,
-        "x",
-        K,
-        ")",
-        "experts:",
-        num_active_experts,
-        "/",
-        num_experts,
+        t"== test_blockwise_fp8_1d2d_structured {a_type} -> {c_type} problem: ("
+        t" {total_num_tokens} x {N} x {K} ) experts: {num_active_experts} /"
+        t" {num_experts}"
     )
 
     # Sizes
@@ -122,7 +110,7 @@ def test_blockwise_fp8_1d2d_structured[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Int64(total_num_tokens), Idx[K])),
+        row_major(Int64(total_num_tokens), Idx[K]),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -130,15 +118,15 @@ def test_blockwise_fp8_1d2d_structured[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Int64(total_num_tokens), Idx[N])),
+        row_major(Int64(total_num_tokens), Idx[N]),
     )
     var c_host_ref = TileTensor(
         c_host_ref_ptr,
-        row_major(Coord(Int64(total_num_tokens), Idx[N])),
+        row_major(Int64(total_num_tokens), Idx[N]),
     )
     var a_scales_host = TileTensor(
         a_scales_host_ptr,
-        row_major(Coord(Idx[K // BLOCK_SCALE_K], Int64(total_num_tokens))),
+        row_major(Idx[K // BLOCK_SCALE_K], Int64(total_num_tokens)),
     )
     var b_scales_host = TileTensor(
         b_scales_host_ptr,
@@ -200,7 +188,7 @@ def test_blockwise_fp8_1d2d_structured[
     # Create TileTensors for device data
     var a_tt = TileTensor(
         a_device_buffer,
-        row_major(Coord(Int64(total_num_tokens), Idx[K])),
+        row_major(Int64(total_num_tokens), Idx[K]),
     )
     var b_tt = TileTensor(
         b_device_buffer,
@@ -208,20 +196,15 @@ def test_blockwise_fp8_1d2d_structured[
     )
     var c_tt = TileTensor(
         c_device_buffer,
-        row_major(Coord(Int64(total_num_tokens), Idx[N])),
+        row_major(Int64(total_num_tokens), Idx[N]),
     )
     var c_ref_tt = TileTensor(
         c_device_ref_buffer,
-        row_major(Coord(Int64(total_num_tokens), Idx[N])),
+        row_major(Int64(total_num_tokens), Idx[N]),
     )
     var a_scales_tt = TileTensor(
         a_scales_device_buffer,
-        row_major(
-            Coord(
-                Idx[K // BLOCK_SCALE_K],
-                Int64(total_num_tokens),
-            )
-        ),
+        row_major(Idx[K // BLOCK_SCALE_K], Int64(total_num_tokens)),
     )
     var b_scales_tt = TileTensor(
         b_scales_device_buffer,
@@ -250,29 +233,22 @@ def test_blockwise_fp8_1d2d_structured[
         ),
     )
 
-    # Bridge to LayoutTensor for reference kernel
-    var a = a_tt.to_layout_tensor()
-    var b = b_tt.to_layout_tensor()
-    var c_ref = c_ref_tt.to_layout_tensor()
-    var a_scales = a_scales_tt.to_layout_tensor()
-    var b_scales = b_scales_tt.to_layout_tensor()
-    var a_offsets = a_offsets_tt.to_layout_tensor()
-    var expert_ids = expert_ids_tt.to_layout_tensor()
-
     # ===== Reference: naive blockwise FP8 grouped matmul =====
     naive_blockwise_scaled_fp8_grouped_matmul[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_K, BLOCK_SCALE_K
+        ),
     ](
-        c_ref,
-        a,
-        b,
-        a_scales,
-        b_scales,
-        a_offsets,
-        expert_ids,
+        c_ref_tt,
+        a_tt,
+        b_tt,
+        a_scales_tt,
+        b_scales_tt,
+        a_offsets_tt,
+        expert_ids_tt,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -341,7 +317,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](1, [128], [0], ctx)
 
         # 4 active experts, uniform decode-like distribution
@@ -349,7 +325,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](4, [64, 64, 64, 64], [0, 2, 5, 7], ctx)
 
         # Unaligned token counts (realistic MoE routing)
@@ -357,7 +333,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](4, [20, 100, 4, 48], [0, 3, 5, 7], ctx)
 
         # ============================================================
@@ -369,7 +345,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(2048, 7168),
+            expert_shape=(2048, 7168),
         ](1, [128], [0], ctx)
 
         # Multi-expert, unaligned
@@ -377,7 +353,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(2048, 7168),
+            expert_shape=(2048, 7168),
         ](4, [20, 256, 4, 32], [0, 2, 5, 7], ctx)
 
         # ============================================================
@@ -389,7 +365,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](1, [128], [0], ctx)
 
         # Multi-expert unaligned
@@ -397,7 +373,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         # float32 output
@@ -405,7 +381,7 @@ def main() raises:
             .float8_e4m3fn,
             .float32,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         # ============================================================
@@ -416,7 +392,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(2048, 7168),
+            expert_shape=(2048, 7168),
         ](4, [20, 1500, 300, 28], [0, 3, 5, 7], ctx)
 
     print("\nAll blockwise FP8 1D2D structured kernel tests passed!")

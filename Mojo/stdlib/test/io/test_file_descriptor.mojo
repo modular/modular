@@ -11,10 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.io import FileDescriptor
+from std.collections import Optional
+from std.ffi import ErrNo, c_int, get_errno
+from std.io import (
+    BorrowedFileDescriptor,
+    FileDescriptor,
+    IOError,
+    RawFileDescriptor,
+)
+from std.sys import size_of
 from std.sys._io import stdin, stdout, stderr
+from std.sys._libc import FcntlCommands, FcntlFDFlags, fcntl, pipe
 
-from std.testing import TestSuite, assert_false, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_raises,
+    assert_true,
+)
+
+
+def test_value_is_c_int() raises:
+    assert_true(type_of(stdout._value) == c_int)
+    assert_equal(stdout._value, 1)
+    assert_equal(stderr._value, 2)
+    assert_equal(RawFileDescriptor()._value, 1)
 
 
 def test_isatty_with_standard_descriptors() raises:
@@ -23,13 +46,179 @@ def test_isatty_with_standard_descriptors() raises:
     assert_true(type_of(stderr.isatty()) == Bool)
 
 
-def test_isatty_with_invalid_fd() raises:
-    # Test with an invalid file descriptor
-    # isatty should return False for invalid file descriptors
-    assert_false(FileDescriptor(-1).isatty())
+def test_optional_uses_fd_niche() raises:
+    comptime assert (
+        size_of[Optional[RawFileDescriptor]]() == size_of[RawFileDescriptor]()
+    )
+    comptime assert size_of[RawFileDescriptor]() == size_of[c_int]()
 
-    # Test with a very large invalid file descriptor
-    assert_false(FileDescriptor(9999).isatty())
+    var fd: Optional[RawFileDescriptor] = RawFileDescriptor(7)
+    assert_true(fd)
+    assert_equal(fd[]._value, 7)
+
+    fd = None
+    assert_false(fd)
+
+    fd = RawFileDescriptor(3)
+    assert_true(fd)
+    assert_equal(fd[]._value, 3)
+
+
+def test_isatty_with_invalid_fd() raises:
+    # A descriptor that is not open is not a tty.
+    assert_false(RawFileDescriptor(9999).isatty())
+
+
+def _make_pipe() raises -> Tuple[c_int, c_int]:
+    var fds = [c_int(-1), c_int(-1)]
+    if pipe(fds.unsafe_ptr()) != 0:
+        raise Error("pipe failed err: ", String(get_errno()))
+    return (fds[0], fds[1])
+
+
+def _is_open(fd: c_int) -> Bool:
+    return fcntl(fd, FcntlCommands.F_GETFD) != -1
+
+
+def test_close_closes_fd() raises:
+    var read_fd, write_fd = _make_pipe()
+    var owned = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(write_fd))
+    var was_open = _is_open(write_fd)
+    owned^.close()
+    assert_true(was_open)
+    assert_false(_is_open(write_fd))
+    # A second close fails with EBADF, so `close()` closed it exactly once.
+    with assert_raises():
+        RawFileDescriptor(write_fd).close()
+    RawFileDescriptor(read_fd).close()
+
+
+def test_move_only() raises:
+    assert_true(conforms_to(FileDescriptor, Movable))
+    assert_false(conforms_to(FileDescriptor, Copyable))
+
+
+def test_optional_owned_fd_uses_niche() raises:
+    comptime assert (
+        size_of[Optional[FileDescriptor]]() == size_of[FileDescriptor]()
+    )
+
+
+def test_borrowed_does_not_close_owner() raises:
+    var read_fd, write_fd = _make_pipe()
+    var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(write_fd))
+    var view = BorrowedFileDescriptor(owner)
+    var copy = view
+    # Destroying the views leaves the descriptor open; only the owner closes.
+    _ = view
+    _ = copy
+    var was_open = _is_open(write_fd)
+    owner^.close()
+    RawFileDescriptor(read_fd).close()
+    assert_true(was_open)
+    assert_false(_is_open(write_fd))
+
+
+def test_optional_borrowed_fd_uses_niche() raises:
+    comptime assert (
+        size_of[Optional[BorrowedFileDescriptor[ImmStaticOrigin]]]()
+        == size_of[BorrowedFileDescriptor[ImmStaticOrigin]]()
+    )
+
+    var read_fd, write_fd = _make_pipe()
+    var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(write_fd))
+    var view: Optional[
+        BorrowedFileDescriptor[origin_of(owner)]
+    ] = BorrowedFileDescriptor(owner)
+    var was_some = Bool(view)
+    view = None
+    var was_none = not view
+    var still_open = _is_open(write_fd)
+    owner^.close()
+    RawFileDescriptor(read_fd).close()
+    assert_true(was_some)
+    assert_true(was_none)
+    assert_true(still_open)
+
+
+def test_from_borrowed_duplicates_fd() raises:
+    var read_fd, write_fd = _make_pipe()
+    var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(write_fd))
+    var duplicate: FileDescriptor
+    try:
+        duplicate = FileDescriptor(copy_borrowed=BorrowedFileDescriptor(owner))
+    except e:
+        owner^.close()
+        raise e
+    var distinct = duplicate._value._value != write_fd
+
+    # Both descriptors write to the same pipe, and each closes independently.
+    var raw_writer = RawFileDescriptor(write_fd)
+    raw_writer.write_string("a")
+    var owner_closed: Bool
+    try:
+        owner^.close()
+        owner_closed = not _is_open(write_fd)
+        duplicate._value.write_string("b")
+    finally:
+        duplicate^.close()
+
+    var reader = RawFileDescriptor(read_fd)
+    var buffer = List[Byte](length=2, fill=0)
+    var n = 0
+    try:
+        while n < 2:
+            var got = reader.read_bytes(Span(buffer)[n:])
+            if got == 0:
+                break
+            n += got
+    finally:
+        reader.close()
+    var text = String(StringSlice(unsafe_from_utf8=Span(buffer)[:n]))
+    assert_true(distinct)
+    assert_true(owner_closed)
+    assert_equal(text, "ab")
+
+
+def test_from_borrowed_sets_close_on_exec() raises:
+    var read_fd, write_fd = _make_pipe()
+    var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(write_fd))
+    # The copy takes the lowest free descriptor from 3 up.
+    var copy_fd: c_int = 3
+    while _is_open(copy_fd):
+        copy_fd += 1
+    var duplicate: FileDescriptor
+    try:
+        duplicate = FileDescriptor(copy_borrowed=BorrowedFileDescriptor(owner))
+    except e:
+        owner^.close()
+        raise e
+    var flags = fcntl(copy_fd, FcntlCommands.F_GETFD)
+    try:
+        duplicate^.close()
+    finally:
+        owner^.close()
+    RawFileDescriptor(read_fd).close()
+    assert_not_equal(flags, -1)
+    assert_true(flags & FcntlFDFlags.FD_CLOEXEC != 0)
+
+
+def test_from_borrowed_raises_on_invalid_fd() raises:
+    var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(9999))
+    var dup_error = String()
+    try:
+        var duplicate = FileDescriptor(
+            copy_borrowed=BorrowedFileDescriptor(owner)
+        )
+        duplicate^.close()
+    except e:
+        dup_error = String(e)
+    # Nothing owns descriptor 9999, so closing it fails too.
+    with assert_raises():
+        owner^.close()
+    assert_equal(
+        dup_error, String(IOError(errno=ErrNo.EBADF, operation="fcntl"))
+    )
 
 
 def main() raises:

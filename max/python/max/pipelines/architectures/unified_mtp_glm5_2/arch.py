@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Registers the unified GLM-5.2 MTP draft."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
-from ..deepseekV3_2.memory_planner import DeepseekV3_2MemoryPlanner
+from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
 from ..glm5_1.model_config import Glm5_1Config
 from ..glm5_1.reasoning import (
     GlmReasoningParser,  # noqa: F401  registers "glm45"
@@ -51,11 +51,13 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=Glm5_1Config,
-    memory_planner=DeepseekV3_2MemoryPlanner,
+    memory_planner=DeepseekV3MemoryPlanner,
     batching=UnifiedMTPGlm5_2BatchProcessor,
     tool_parser="glm45",
     reasoning_parser="glm45",
-    default_structured_output_backend="xgrammar",
+    # The draft layer copies the target's MLA cache params, so it reads the
+    # same NVFP4 layout through the same sparse MLA kernels.
+    supports_nvfp4_kv_cache=True,
     # Matches the base GlmMoeDsaForCausalLM arch; see the rationale there.
     default_structured_output_any_whitespace=True,
 )

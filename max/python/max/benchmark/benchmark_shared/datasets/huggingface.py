@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Base class for benchmark datasets fetched from Hugging Face."""
+
 from __future__ import annotations
 
 from .interface import BenchmarkDataset
@@ -27,4 +29,4 @@ class HuggingFaceBenchmarkDataset(BenchmarkDataset):
     dataset_mode: DatasetMode = "huggingface"
 
     def fetch(self) -> None:
-        pass
+        """Fetches the dataset; subclasses download what they need."""

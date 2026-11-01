@@ -20,10 +20,9 @@ from std.memory import (
     ArcPointer,
     OwnedPointer,
 )
-from std.ffi import CStringSlice, external_call
+from std.ffi import CStringSpan, c_char, external_call
 import std.format._utils as fmt
 from std.sys import is_gpu
-from std.sys.info import size_of, align_of
 
 
 # ===-----------------------------------------------------------------------===#
@@ -67,7 +66,7 @@ struct StackTrace(ImplicitlyCopyable, Movable, Writable):
         )
 
     @staticmethod
-    @no_inline
+    @inline(.never)
     def collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:
         """Collect a stack trace if enabled by configuration.
 
@@ -111,8 +110,8 @@ struct StackTrace(ImplicitlyCopyable, Movable, Writable):
         """
         writer.write_string(
             StringSlice(
-                unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=self._data[].ptr().unsafe_bitcast[Int8]()
+                unsafe_from_utf8=CStringSpan(
+                    unsafe_from_ptr=self._data[].ptr().unsafe_bitcast[c_char]()
                 )
             )
         )
@@ -162,7 +161,7 @@ struct Error(
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     @implicit
     def __init__(out self, var value: String, *, depth: Int = -1):
         """Construct an Error object with a given String.
@@ -175,7 +174,7 @@ struct Error(
         self._error = value^
         self._stack_trace = StackTrace.collect_if_enabled(depth)
 
-    @always_inline
+    @inline(.always)
     @implicit
     def __init__(out self, value: StringLiteral):
         """Construct an Error object with a given string literal.
@@ -187,7 +186,7 @@ struct Error(
         self._stack_trace = StackTrace.collect_if_enabled(0)
 
     @implicit
-    @no_inline
+    @inline(.never)
     def __init__[*Ts: Writable](out self, *args: *Ts):
         """Construct an Error by concatenating a sequence of Writable arguments.
 
@@ -204,7 +203,7 @@ struct Error(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         """
         Formats this error to the provided Writer.
@@ -214,7 +213,7 @@ struct Error(
         """
         self._error.write_to(writer)
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """
         Formats this error to the provided Writer.
@@ -236,8 +235,8 @@ struct Error(
             collected, or `None` if stack trace collection was disabled
             or unavailable.
         """
-        if self._stack_trace:
-            return String(self._stack_trace.value())
+        if case .Some(stack_trace) = self._stack_trace:
+            return String(stack_trace)
         return None
 
 

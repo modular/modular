@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
@@ -34,6 +35,14 @@ from .tokens import ImageMetadata, TokenBuffer, TokenHashOverride
 
 _CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
+"""Placeholder written to a generated-token slot whose value is still being
+computed on device under overlap scheduling.
+
+A batch's token array carries this sentinel in positions the current GPU
+step has yet to produce; the pipeline replaces each occurrence with the
+real token once that step's outputs land (see
+``max.pipelines.lib.pipeline_variants.overlap_text_generation``).
+"""
 
 _logger = logging.getLogger("max.pipelines")
 
@@ -221,9 +230,10 @@ class StructuredOutputRegionDelimiters:
 class GrammarMatcher(Protocol):
     """Per-request grammar matcher stepped each decode step.
 
-    Backend-agnostic interface; method names mirror llguidance's ``LLMatcher``
-    so a context can hold any backend's matcher (llguidance, xgrammar) without
-    branching. The llguidance ``LLMatcher`` satisfies this protocol natively.
+    Backend-agnostic interface that any grammar backend's matcher must satisfy.
+    The methods are: ``try_consume_tokens`` to advance the matcher,
+    ``is_accepting`` / ``is_stopped`` to query terminal state, and
+    ``deep_copy`` for speculative walks.
     """
 
     def try_consume_tokens(self, tokens: list[int]) -> int:
@@ -236,14 +246,6 @@ class GrammarMatcher(Protocol):
 
     def is_stopped(self) -> bool:
         """Whether the matcher has reached a terminal state."""
-        ...
-
-    def get_error(self) -> str | None:
-        """Error message for the last rejection, if any (diagnostics)."""
-        ...
-
-    def get_grammar_warnings(self) -> Any:
-        """Grammar compilation warnings, if any (diagnostics)."""
         ...
 
     def deep_copy(self) -> GrammarMatcher:
@@ -305,7 +307,7 @@ class GrammarEnforcementState:
     """Token sequences defining tool call boundaries, if conditional enforcement."""
 
     thinking_region_delimiters: StructuredOutputRegionDelimiters | None = None
-    """Token sequences defining thinking boundaries (e.g., ``</think>``).
+    """Token sequences defining thinking boundaries, such as ``</think>``.
 
     When set, grammar enforcement is suspended inside thinking regions.
     The key insight is that when thinking is enabled, the chat template
@@ -498,7 +500,7 @@ class TextContext:
     ignore_eos: bool = field(default=False)
     json_schema: str | None = field(default=None)
     grammar: str | None = field(default=None)
-    """Grammar for constrained decoding (e.g., regex grammar).
+    """Grammar for constrained decoding, such as a regex grammar.
 
     When set, this takes precedence over ``json_schema``. Used for model-specific
     constrained decoding formats like Kimi's tool call grammar.
@@ -529,6 +531,15 @@ class TextContext:
 
     target_endpoint: str | None = field(default=None)
 
+    label_token_ids: list[int] | None = field(default=None)
+    """Candidate label token ids for a label-scoring request.
+
+    When set, the pipeline returns the full-vocabulary log-probability of each
+    of these tokens at the last prompt position (see
+    :attr:`TextGenerationOutput.label_log_probabilities`). ``None`` for ordinary
+    generation requests.
+    """
+
     dkv_cache_hint: bytes | None = field(default=None)
     """The Orchestrator's ``dkv_cache_hint`` for this request, as JSON bytes.
 
@@ -543,8 +554,22 @@ class TextContext:
 
     Combined with ``kv_cache_hash_seed`` via XOR to seed the block hash.
     Works under any ``kv_cache_hash_algo``: a cryptographic guarantee
-    under ``sha256``/``sha256_64``, best-effort under ``ahash64``. Capped
-    at 512 chars at the OpenAI schema layer.
+    under ``sha256`` (64-bit key separation on the dKV external tier),
+    best-effort under ``ahash64``. Capped at 512 chars at the OpenAI
+    schema layer.
+    """
+
+    kv_cache_write_ranges: dict[str, tuple[int, int]] = field(
+        default_factory=dict
+    )
+    """Absolute half-open ranges written by the latest forward, per SWA leaf.
+
+    A range certifies the intersection of writes by every layer sharing the
+    leaf, including draft layers. The batch producer must report it after
+    execution and before the cache manager steps. The manager consumes it.
+    Once a leaf reports partial writes, every subsequent forward must report
+    its writes, including ordinary decode; missing reports cannot extend its
+    known coverage. Unreported leaves retain ordinary full-write behavior.
     """
 
     cached_prefix_length: int | None = field(default=None)
@@ -576,10 +601,11 @@ class TextContext:
 
     trace_carrier: dict[str, str] | None = field(default=None)
     """Serialized W3C trace context (via ``opentelemetry.propagate.inject``)
-    captured from the inbound request's OTel context. Threaded onto this
-    context because it crosses into the model-worker process by value, so the
-    scheduler can re-``extract`` it and parent its phase spans under the
-    caller's trace instead of starting new root spans."""
+    captured from the request's ``max.request`` span, or its HTTP server span
+    where no handler set one. Threaded onto this context because it crosses
+    into the model-worker process by value, so the scheduler can re-``extract``
+    it and parent its phase spans instead of starting new root spans. May also
+    hold the request's ``x-max-trace-level`` level, which propagators ignore."""
 
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
@@ -683,7 +709,7 @@ class TextContext:
     def get_min_token_logit_mask(
         self, num_steps: int
     ) -> list[npt.NDArray[np.int32]]:
-        """Returns per-step masks for logits that should be masked (e.g. EOS during ``min_tokens``).
+        """Returns per-step masks for logits that should be masked (such as EOS during ``min_tokens``).
 
         This is primarily used for the ``min_tokens`` setting, where we mask
         EOS tokens in the logits to avoid generating them before we reach
@@ -781,7 +807,7 @@ class TextContext:
             start_token_ids: Token IDs marking thinking start (can be None if we
                 start inside thinking, which is the case when chat template
                 already emits ``<think>``).
-            end_token_ids: Token IDs marking thinking end (e.g., ``</think>``).
+            end_token_ids: Token IDs marking thinking end (such as ``</think>``).
         """
         if end_token_ids is not None:
             self.grammar_state.thinking_region_delimiters = (
@@ -956,7 +982,7 @@ class TextContext:
 
         Returns:
             True if the token was handled — either consumed by the FSM,
-            recognized as a state-transition delimiter (e.g. a
+            recognized as a state-transition delimiter (such as a
             thinking-end token), or skipped because enforcement is
             inactive. False only when no matcher is present.
         """
@@ -976,13 +1002,10 @@ class TextContext:
                     _logger.error(
                         "Matcher rejected %d token(s) ending at %d "
                         "(request %s); disabling enforcement for the rest "
-                        "of the request. matcher_errors=%s "
-                        "matcher_warnings=%s",
+                        "of the request.",
                         len(tokens),
                         token,
                         self.request_id,
-                        self.matcher.get_error(),
-                        self.matcher.get_grammar_warnings(),
                     )
                     self.grammar_state.grammar_enforced = False
 
@@ -995,7 +1018,7 @@ class TextContext:
         ``update_enforcement_state`` just turned it True at a tool-call
         ``SECTION_BEGIN``), the matcher is fresh and must consume the
         ENTIRE start marker, not just the token that completed it. For
-        multi-token / namespace-prefixed markers (e.g. MiniMax-M3's
+        multi-token / namespace-prefixed markers (such as MiniMax-M3's
         ``NS<tool_call>``) the grammar's ``start`` rule expects the prefix
         first; feeding only the completing token leaves the matcher
         expecting that prefix, so it rejects and enforcement silently
@@ -1018,7 +1041,7 @@ class TextContext:
         It combines ``advance_token_buffer()`` and ``advance_fsm()`` for the
         common case where both need to be advanced together.
 
-        For multi-step execution where FSM is advanced separately (e.g., to
+        For multi-step execution where FSM is advanced separately (such as to
         compute bitmasks between steps), use the individual methods directly.
 
         Args:
@@ -1204,11 +1227,17 @@ class TextAndVisionContext(TextContext):
 
     @property
     def image_idx(self) -> int:
-        """Index of the next unencoded image in the prompt."""
-        for i, img in enumerate(self.images):
-            if self.tokens.processed_length < img.end_idx:
-                return i
-        return len(self.images)
+        """Index of the next unencoded image in the prompt.
+
+        A bisection, as every scheduler step asks this of every context, and
+        a video can be a thousand entries. The images are sorted and
+        non-overlapping, so their end indices ascend.
+        """
+        return bisect_right(
+            self.images,
+            self.tokens.processed_length,
+            key=lambda img: img.end_idx,
+        )
 
     @property
     def next_images(self) -> list[ImageMetadata]:
@@ -1244,7 +1273,7 @@ class TextAndVisionContext(TextContext):
         """Positions of image-placeholder tokens in the full token sequence.
 
         Derived from ``images`` metadata.  Subclasses that precompute indices
-        at tokenization time (e.g. KimiK2.5, Qwen2.5VL) may override this
+        at tokenization time (such as KimiK2.5, Qwen2.5VL) may override this
         with a stored field for efficiency.
         """
         if not self.images:
@@ -1269,10 +1298,13 @@ class TextAndVisionContext(TextContext):
         This means that there are image tokens in both [0:idx) and [idx:end).
 
         As such, this does NOT include the start or end indices.
+
+        Bisects for the first image ending after ``idx``, as
+        :attr:`image_idx` does: every generated token validates this.
         """
-        for img in self.images:
-            if img.start_idx < idx < img.end_idx:
-                return img
+        i = bisect_right(self.images, idx, key=lambda img: img.end_idx)
+        if i < len(self.images) and self.images[i].start_idx < idx:
+            return self.images[i]
         return None
 
     def _validate_state(self) -> None:
@@ -1410,7 +1442,7 @@ class PixelContext:
     conditioning path use different resize targets.
     """
     output_format: str = field(default="jpeg")
-    """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    """Image encoding format for the output, such as 'jpeg', 'png', or 'webp'."""
     seed: int | None = field(default=None)
     """Optional RNG seed from the request. Preserved here so executors that
     sample noise inside the compiled graph can consume the scalar directly,

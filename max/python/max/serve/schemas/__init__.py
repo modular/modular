@@ -10,3 +10,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Pydantic models for MAX Serve's HTTP request and response payloads."""

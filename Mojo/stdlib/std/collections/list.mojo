@@ -18,7 +18,7 @@ These APIs are imported automatically, just like builtins.
 
 from std.builtin.rebind import downcast
 import std.format._utils as fmt
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.reflection import reflect
 from std.collections import check_bounds, check_slice_bounds
 from std.collections._asan_annotations import (
@@ -36,11 +36,10 @@ from std.memory.alloc import (
 )
 from std.memory import (
     Pointer,
-    unsafe_destroy_n,
     unsafe_memcpy,
-    unsafe_uninit_copy_n,
     unsafe_uninit_move_n,
 )
+from std.utils._nicheable import _FieldNicheable
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -76,7 +75,7 @@ struct _ListIter[
     var _data: Pointer[Self.T, Self.origin]
     var _length: Int
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
@@ -94,7 +93,7 @@ struct _ListIter[
             self._index -= 1
             return self._data[unsafe_offset=self._index]
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
@@ -122,17 +121,16 @@ struct _ListIterOwned[T: Movable & Deinitable](
     var _list: List[Self.T]
     var _index: Int
 
-    @always_inline
+    @inline(.always)
     def __deinit__(deinit self):
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        unsafe_destroy_n(
-            self._list.unsafe_ptr().unsafe_offset(self._index),
-            count=len(self._list) - self._index,
-        )
+        Span(self._list)._unchecked_subspan(
+            start=self._index, end=len(self._list)
+        ).unsafe_deinit_elements()
         self._list._len = 0
 
-    @always_inline
+    @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
@@ -146,22 +144,21 @@ struct _ListIterOwned[T: Movable & Deinitable](
             .unsafe_take_pointee()
         )
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len = len(self._list) - self._index
         return (iter_len, {iter_len})
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `List` of"
-    " non-`Deinitable` elements"
-)
 @stable(since="1.0")
 struct List[T: AnyType, /](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy a `List` of"
+        " non-`Deinitable` elements"
+    ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Iterable,
@@ -169,6 +166,7 @@ struct List[T: AnyType, /](
     Movable,
     Sized,
     Writable where conforms_to(T, Writable),
+    _FieldNicheable,
 ):
     """A dynamically-allocated and resizable list.
 
@@ -347,12 +345,10 @@ struct List[T: AnyType, /](
     ]
 
     # Fields
-    var _data: Self._PointerType
-    """The underlying storage for the list."""
+    var _storage: Allocation[Self.T]
+    """The storage backing the list, its `Layout` carries the capacity."""
     var _len: Int
     """The number of elements in the list."""
-    var _capacity: Int
-    """The amount of elements that can fit in the list without resizing it."""
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -371,59 +367,39 @@ struct List[T: AnyType, /](
 
     # asan annotation methods
     def _annotate_new(self):
+        var data = self.unsafe_ptr()
         __sanitizer_annotate_contiguous_container(
-            beg=self._data.unsafe_bitcast[NoneType](),
-            end=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
-                NoneType
-            ](),
-            old_mid=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
-                NoneType
-            ](),
-            new_mid=self._data.unsafe_offset(self._len).unsafe_bitcast[
-                NoneType
-            ](),
+            beg=data,
+            end=data.unsafe_offset(self.capacity()),
+            old_mid=data.unsafe_offset(self.capacity()),
+            new_mid=data.unsafe_offset(self._len),
         )
 
     def _annotate_delete(self):
+        var data = self.unsafe_ptr()
         __sanitizer_annotate_contiguous_container(
-            beg=self._data.unsafe_bitcast[NoneType](),
-            end=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
-                NoneType
-            ](),
-            old_mid=self._data.unsafe_offset(self._len).unsafe_bitcast[
-                NoneType
-            ](),
-            new_mid=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
-                NoneType
-            ](),
+            beg=data,
+            end=data.unsafe_offset(self.capacity()),
+            old_mid=data.unsafe_offset(self._len),
+            new_mid=data.unsafe_offset(self.capacity()),
         )
 
     def _annotate_increase(self, n: Int = 1):
+        var data = self.unsafe_ptr()
         __sanitizer_annotate_contiguous_container(
-            beg=self._data.unsafe_bitcast[NoneType](),
-            end=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
-                NoneType
-            ](),
-            old_mid=self._data.unsafe_offset(self._len).unsafe_bitcast[
-                NoneType
-            ](),
-            new_mid=self._data.unsafe_offset(self._len + n).unsafe_bitcast[
-                NoneType
-            ](),
+            beg=data,
+            end=data.unsafe_offset(self.capacity()),
+            old_mid=data.unsafe_offset(self._len),
+            new_mid=data.unsafe_offset(self._len + n),
         )
 
     def _annotate_shrink(self, old_size: Int):
+        var data = self.unsafe_ptr()
         __sanitizer_annotate_contiguous_container(
-            beg=self._data.unsafe_bitcast[NoneType](),
-            end=self._data.unsafe_offset(self._capacity).unsafe_bitcast[
-                NoneType
-            ](),
-            old_mid=self._data.unsafe_offset(old_size).unsafe_bitcast[
-                NoneType
-            ](),
-            new_mid=self._data.unsafe_offset(self._len).unsafe_bitcast[
-                NoneType
-            ](),
+            beg=data,
+            end=data.unsafe_offset(self.capacity()),
+            old_mid=data.unsafe_offset(old_size),
+            new_mid=data.unsafe_offset(self._len),
         )
 
     # ===-------------------------------------------------------------------===#
@@ -433,9 +409,8 @@ struct List[T: AnyType, /](
     @stable(since="1.0")
     def __init__(out self):
         """Constructs an empty list."""
-        self._data = Self._PointerType.unsafe_dangling()
+        self._storage = Self._dangling_storage()
         self._len = 0
-        self._capacity = 0
 
     @stable(since="1.0")
     def __init__(out self, *, capacity: Int):
@@ -445,11 +420,10 @@ struct List[T: AnyType, /](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = alloc(Layout[Self.T](count=capacity)).unsafe_leak()
+            self._storage = alloc(Layout[Self.T](length=capacity))
         else:
-            self._data = Self._PointerType.unsafe_dangling()
+            self._storage = Self._dangling_storage()
         self._len = 0
-        self._capacity = capacity
         self._annotate_new()
 
     @stable(since="1.0")
@@ -465,7 +439,7 @@ struct List[T: AnyType, /](
         self = Self()
         self._unchecked_grow(length, fill)
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, length: Int, fill_with: Some[def(Int) -> Self.T]):
         """Constructs a list by calling `fill_with(i)` for each index `i`.
 
@@ -484,13 +458,9 @@ struct List[T: AnyType, /](
         self = Self(capacity=length)
         self._annotate_increase(length)
         self._len = length
+        _ = self._storage.storage().unsafe_init_with(fill_with)
 
-        for i in range(length):
-            self._data.unsafe_offset(i).unsafe_write(
-                init_with=lambda () {imm} -> Self.T: fill_with(i)
-            )
-
-    @always_inline
+    @inline(.always)
     def __init__(
         out self, var *values: Self.T, __list_literal__: NoneType
     ) where conforms_to(Self.T, Movable):
@@ -506,7 +476,7 @@ struct List[T: AnyType, /](
 
         # Transfer all of the elements into the List.
         def init_elt(idx: Int, var elt: Self.T) {ref}:
-            self._data.unsafe_offset(idx).unsafe_write(elt^)
+            self.unsafe_ptr().unsafe_offset(idx).unsafe_write(elt^)
 
         values^.consume_elements(init_elt)
 
@@ -534,7 +504,7 @@ struct List[T: AnyType, /](
         for var value in iterable:
             self.append(rebind_var[type_of(self).T](value^))
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, unsafe_uninit_length: Int):
         """Construct a list with the specified length, with uninitialized
         memory. This is unsafe, as it relies on the caller initializing the
@@ -555,27 +525,37 @@ struct List[T: AnyType, /](
         Args:
             copy: The list to copy.
         """
-        self = Self(capacity=copy._capacity)
+        self = Self(capacity=copy.capacity())
         self.extend(Span(copy))
+
+    @staticmethod
+    @inline(.always)
+    def _dangling_storage() -> Allocation[Self.T]:
+        return ThinAllocation(
+            unsafe_owned_ptr=Self._PointerType.unsafe_dangling()
+        ).unsafe_with_layout(Layout[Self.T](length=0))
+
+    @staticmethod
+    @inline(.always)
+    def _dealloc_storage(var storage: Allocation[Self.T]):
+        # Zero-capacity storage is the placeholder from `_dangling_storage`,
+        # which never came from the allocator, so it must not reach `dealloc`.
+        if len(storage) > 0:
+            dealloc(storage^)
+        else:
+            _ = storage^.unsafe_leak()
 
     def _unsafe_assume_destroyed_and_deallocate(deinit self):
         """Assumes self's values are already destroyed and deallocate the backing storage.
         """
-        if self._capacity > 0:
+        if self.capacity() > 0:
             self._annotate_delete()
-            dealloc(
-                ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
-                    Layout[Self.T](count=self._capacity)
-                )
-            )
+        Self._dealloc_storage(self._storage^)
 
     @stable(since="1.0")
     def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         """Destroy all elements in the list and free its memory."""
-        unsafe_destroy_n(
-            self._data,
-            count=len(self),
-        )
+        Span(self).unsafe_deinit_elements()
         self^._unsafe_assume_destroyed_and_deallocate()
 
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
@@ -586,14 +566,7 @@ struct List[T: AnyType, /](
         Args:
             deinit_func: The deinitializing closure called on each `List` element.
         """
-        for i in range(len(self)):
-            # TODO(MOCO-4111): `deinit_func` cannot convert to Pointer.unsafe_deinit_pointee_with
-            # `deinit_func` type since UP is bound on `T: AnyType` but List has `T: Movable`.
-            deinit_func(
-                __get_address_as_owned_value(
-                    self._data.unsafe_offset(i)._get_kgen_pointer()
-                )
-            )
+        Span(self).unsafe_deinit_elements_with(deinit_func)
         self^._unsafe_assume_destroyed_and_deallocate()
 
     # ===-------------------------------------------------------------------===#
@@ -601,7 +574,7 @@ struct List[T: AnyType, /](
     # ===-------------------------------------------------------------------===#
 
     @stable(since="1.0")
-    @always_inline
+    @inline(.always)
     def __eq__(
         self, other: Self, /
     ) -> Bool where conforms_to(Self.T, Equatable):
@@ -758,15 +731,7 @@ struct List[T: AnyType, /](
         comptime assert conforms_to(
             Self.T, Copyable
         ), "List iteration requires the element to be `Copyable`."
-        return _ListIter(
-            0,
-            # `_data` points at untracked owned storage; the iterator borrows
-            # at this call's origin instead.
-            self._data.unsafe_mut_cast[
-                origin_of(self).mut
-            ]().unsafe_origin_cast[origin_of(self)](),
-            self._len,
-        )
+        return _ListIter(0, self.unsafe_ptr(), self._len)
 
     def __reversed__(
         ref self,
@@ -778,19 +743,13 @@ struct List[T: AnyType, /](
         Returns:
             A reversed iterator of immutable references to the list elements.
         """
-        return _ListIter[forward=False](
-            len(self),
-            self._data.unsafe_mut_cast[
-                origin_of(self).mut
-            ]().unsafe_origin_cast[origin_of(self)](),
-            self._len,
-        )
+        return _ListIter[forward=False](len(self), self.unsafe_ptr(), self._len)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __len__(self) -> Int:
         """Gets the number of elements in the list.
 
@@ -819,7 +778,7 @@ struct List[T: AnyType, /](
         fmt.write_sequence_to(writer, iterate)
         _ = iterator^
 
-    @no_inline
+    @inline(.never)
     def write_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
@@ -830,7 +789,7 @@ struct List[T: AnyType, /](
         """
         self._write_self_to[f=fmt.write_to[Self.T]](writer)
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
@@ -849,6 +808,8 @@ struct List[T: AnyType, /](
             fmt.TypeNames[Self.T](),
         ).fields(write_fields)
 
+    comptime _KgenNichedFieldName = "_storage".value
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -861,7 +822,7 @@ struct List[T: AnyType, /](
         """
         return len(self) * size_of[Self.T]()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def capacity(self) -> Int:
         """Gets the number of elements that can fit in the list without resizing.
 
@@ -875,30 +836,27 @@ struct List[T: AnyType, /](
         print(my_list.capacity())  # Current allocated capacity
         ```
         """
-        return self._capacity
+        return len(self._storage)
 
-    @no_inline
+    @inline(.never)
     def _realloc(
         mut self, new_capacity: Int
     ) where conforms_to(Self.T, Movable):
-        var new_data = alloc(Layout[Self.T](count=new_capacity)).unsafe_leak()
-
-        unsafe_uninit_move_n[overlapping=False](
-            dest=new_data, src=self._data, count=len(self)
+        var new_storage = alloc(Layout[Self.T](length=new_capacity))
+        _ = (
+            new_storage.storage()
+            ._unchecked_subspan(start=0, end=len(self))
+            .unsafe_init_move_from(Span(self))
         )
 
-        if self._capacity > 0:
+        if self.capacity() > 0:
             self._annotate_delete()
-            dealloc(
-                ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
-                    Layout[Self.T](count=self._capacity)
-                )
-            )
-        self._data = new_data
-        self._capacity = new_capacity
+        var old_storage = self._storage^
+        self._storage = new_storage^
+        Self._dealloc_storage(old_storage^)
         self._annotate_new()
 
-    @always_inline
+    @inline(.always)
     def _grow_amortized(
         mut self, min_capacity: Int
     ) where conforms_to(Self.T, Movable):
@@ -916,9 +874,9 @@ struct List[T: AnyType, /](
             rather than `reserve`. `append` is the exception: it open-codes the
             equivalent doubling to keep its hot path as small as possible.
         """
-        if self._capacity >= min_capacity:
+        if self.capacity() >= min_capacity:
             return
-        self._realloc(max(self._capacity * 2, min_capacity))
+        self._realloc(max(self.capacity() * 2, min_capacity))
 
     # FIXME: This annotation is needed to support List[Span[x, o]] types with
     # mutable origins.
@@ -944,16 +902,14 @@ struct List[T: AnyType, /](
         print(list) # [1, 2, 3, 4, 5, 6]
         ```
         """
-        if self._len >= self._capacity:
-            self._realloc(self._capacity * 2 | Int(self._capacity == 0))
+        if self._len >= self.capacity():
+            self._realloc(self.capacity() * 2 | Int(self.capacity() == 0))
         self._annotate_increase()
-        # Not `_unsafe_next_uninit_ptr`: its capacity assert survives into the
-        # hot path, because the `@no_inline` `_realloc` hides the invariant
-        # just established above from the optimizer.
-        self._data.unsafe_offset(self._len).unsafe_write(value^)
+        self._storage.storage()._unchecked_get(self._len).unsafe_write(value^)
         self._len += 1
 
-    @always_inline
+    @inline(.always)
+    @stable(since="1.2")
     def insert(
         mut self, i: Int, var value: Self.T, /
     ) where conforms_to(Self.T, Movable):
@@ -979,7 +935,8 @@ struct List[T: AnyType, /](
         self._grow_amortized(old_len + 1)
         self._annotate_increase()
 
-        var data = self._data
+        # UntrackedOrigin is needed to prevent exclusivity violations
+        var data = self.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
         unsafe_uninit_move_n[overlapping=True](
             dest=data.unsafe_offset(i + 1),
             src=data.unsafe_offset(i),
@@ -1010,13 +967,12 @@ struct List[T: AnyType, /](
         var other_len = len(other)
         var final_size = len(self) + other_len
         self._grow_amortized(final_size)
-
-        var dest_ptr = self._data.unsafe_offset(self._len)
-        var src_ptr = other.unsafe_ptr()
         self._annotate_increase(other_len)
 
-        unsafe_uninit_move_n[overlapping=False](
-            dest=dest_ptr, src=src_ptr, count=other_len
+        _ = (
+            self._storage.storage()
+            ._unchecked_subspan(start=self._len, end=final_size)
+            .unsafe_init_move_from(Span(other))
         )
 
         # Update the size now since all elements have been moved into this list.
@@ -1047,16 +1003,14 @@ struct List[T: AnyType, /](
         var elements_len = len(elements)
         var new_num_elts = self._len + elements_len
         self._grow_amortized(new_num_elts)
-
         self._annotate_increase(elements_len)
-        var i = self._len
-        self._len = new_num_elts
 
-        unsafe_uninit_copy_n[overlapping=False](
-            dest=self._data.unsafe_offset(i),
-            src=elements.unsafe_ptr(),
-            count=elements_len,
+        _ = (
+            self._storage.storage()
+            ._unchecked_subspan(start=self._len, end=new_num_elts)
+            .unsafe_init_copy_from(elements)
         )
+        self._len = new_num_elts
 
     @__allow_legacy_custom_self_type
     def extend[
@@ -1144,7 +1098,7 @@ struct List[T: AnyType, /](
         """
         return self.pop(len(self) - 1)
 
-    @always_inline
+    @inline(.always)
     def pop(mut self, i: Int) -> Self.T where conforms_to(Self.T, Movable):
         """Pops a value from the list at the given index.
 
@@ -1163,10 +1117,12 @@ struct List[T: AnyType, /](
         ```
         """
         check_bounds(i, len(self))
-        var ret_val = self._data.unsafe_offset(i).unsafe_take_pointee()
+        # UntrackedOrigin is needed to prevent exclusivity violations
+        var data = self.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+        var ret_val = data.unsafe_offset(i).unsafe_take_pointee()
         unsafe_uninit_move_n[overlapping=True](
-            dest=self._data.unsafe_offset(i),
-            src=self._data.unsafe_offset(i + 1),
+            dest=data.unsafe_offset(i),
+            src=data.unsafe_offset(i + 1),
             count=len(self) - i - 1,
         )
         self._len -= 1
@@ -1184,7 +1140,7 @@ struct List[T: AnyType, /](
             If the current capacity is greater or equal, this is a no-op.
             Otherwise, the storage is reallocated and the date is moved.
         """
-        if self._capacity >= capacity:
+        if self.capacity() >= capacity:
             return
         self._realloc(capacity)
 
@@ -1225,8 +1181,11 @@ struct List[T: AnyType, /](
 
         self._grow_amortized(new_length)
         self._annotate_increase(new_length - self._len)
-        for i in range(self._len, new_length):
-            self._data.unsafe_offset(i).unsafe_write(copy=fill)
+        _ = (
+            self._storage.storage()
+            ._unchecked_subspan(start=self._len, end=new_length)
+            .unsafe_init_with(lambda (_i: Int) -> Self.T: fill.copy())
+        )
         self._len = new_length
 
     def resize(
@@ -1287,10 +1246,9 @@ struct List[T: AnyType, /](
                 " size is smaller than the current size."
             )
 
-        unsafe_destroy_n(
-            self._data.unsafe_offset(new_length),
-            count=len(self) - new_length,
-        )
+        Span(self)._unchecked_subspan(
+            start=new_length, end=len(self)
+        ).unsafe_deinit_elements()
 
         var old_length: Int = self._len
         self._len = new_length
@@ -1310,18 +1268,12 @@ struct List[T: AnyType, /](
 
         var earlier_idx = 0
         var later_idx = len(self) - 1
-
-        var effective_len = len(self)
-        var half_len = effective_len // 2
+        var half_len = len(self) // 2
 
         for _ in range(half_len):
-            var earlier_ptr = self._data.unsafe_offset(earlier_idx)
-            var later_ptr = self._data.unsafe_offset(later_idx)
-
-            var tmp = earlier_ptr.unsafe_take_pointee()
-            earlier_ptr.unsafe_write_move_from(later_ptr)
-            later_ptr.unsafe_write(tmp^)
-
+            self._storage.storage().unsafe_assume_init().unsafe_swap_elements(
+                earlier_idx, later_idx
+            )
             earlier_idx += 1
             later_idx -= 1
 
@@ -1354,11 +1306,11 @@ struct List[T: AnyType, /](
         var start_normalized = start
 
         var stop_normalized: Int
-        if stop is None:
+        if case .Some(stop_value) = stop:
+            stop_normalized = stop_value
+        else:
             # Default end
             stop_normalized = len(self)
-        else:
-            stop_normalized = stop.value()
 
         if start_normalized < 0:
             start_normalized += len(self)
@@ -1407,6 +1359,7 @@ struct List[T: AnyType, /](
             raise "ValueError: Given element is not in list"
         return result.value()
 
+    @stable(since="1.2")
     def clear(
         mut self,
     ) where conforms_to(Self.T, Deinitable):
@@ -1421,7 +1374,7 @@ struct List[T: AnyType, /](
         print(len(list))  # 0
         ```
         """
-        unsafe_destroy_n(self._data, count=self._len)
+        Span(self).unsafe_deinit_elements()
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)
@@ -1442,7 +1395,7 @@ struct List[T: AnyType, /](
 
         A list that never allocated has no storage to hand over, so the
         returned `Allocation` wraps a dangling pointer and a `Layout` with a
-        `count` of zero. Check `layout().count()` before deallocating it.
+        `length` of zero. Check its `len()` before deallocating it.
 
         Examples:
 
@@ -1461,12 +1414,10 @@ struct List[T: AnyType, /](
         ```
         """
         self._annotate_delete()
-        var layout = Layout[Self.T](count=self._capacity)
-        var ptr = self._data
-        self._data = Self._PointerType.unsafe_dangling()
+        var storage = self._storage^
+        self._storage = Self._dangling_storage()
         self._len = 0
-        self._capacity = 0
-        return ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout)
+        return storage^
 
     def __getitem__(
         self, slice: StridedSlice
@@ -1494,7 +1445,7 @@ struct List[T: AnyType, /](
 
     @__unsafe_nested_origins_read_only
     @stable(since="1.0")
-    @always_inline
+    @inline(.always)
     def __getitem__(
         ref self, slice: ContiguousSlice
     ) -> Span[Self.T, Self._InteriorOrigin[origin_of(self)]]:
@@ -1517,7 +1468,7 @@ struct List[T: AnyType, /](
         }
 
     @__unsafe_nested_origins_read_only
-    @always_inline
+    @inline(.always)
     def __getitem__(
         ref self, idx: IntLiteral, /
     ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
@@ -1537,7 +1488,7 @@ struct List[T: AnyType, /](
 
     @stable(since="1.0")
     @__unsafe_nested_origins_read_only
-    @always_inline
+    @inline(.always)
     def __getitem__(
         ref self, idx: Int, /
     ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
@@ -1557,7 +1508,7 @@ struct List[T: AnyType, /](
         return self.unsafe_get(index(idx))
 
     @__unsafe_nested_origins_read_only
-    @always_inline
+    @inline(.always)
     def __getitem__(
         ref self, idx: Some[Indexer]
     ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
@@ -1577,7 +1528,7 @@ struct List[T: AnyType, /](
         return self.unsafe_get(index(idx))
 
     @__unsafe_nested_origins_read_only
-    @always_inline
+    @inline(.always)
     def unsafe_get(
         ref self, idx: Int
     ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
@@ -1602,7 +1553,7 @@ struct List[T: AnyType, /](
         check_bounds[cpu_default=False](idx, len(self))
         return self._unsafe_interior_ptr().unsafe_offset(idx)[]
 
-    @always_inline
+    @inline(.always)
     def unsafe_set(
         mut self, idx: Int, var value: Self.T
     ) where conforms_to(Self.T, Deinitable & Movable):
@@ -1623,9 +1574,7 @@ struct List[T: AnyType, /](
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        var ptr = self._data.unsafe_offset(idx)
-        ptr.unsafe_deinit_pointee()
-        ptr.unsafe_write(value^)
+        Span(self)._unchecked_get(idx) = value^
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):
         """Counts the number of occurrences of a value in the list.
@@ -1674,15 +1623,13 @@ struct List[T: AnyType, /](
             "The indices provided to swap_elements must be within the range"
             " [0, len(List)-1]"
         )
-        var ptr = self._data
-        ptr.unsafe_offset(elt_idx_1).swap_pointees(ptr.unsafe_offset(elt_idx_2))
+        Span(self).unsafe_swap_elements(elt_idx_1, elt_idx_2)
 
-    @always_inline
+    @inline(.always)
     def _unsafe_interior_ptr[
-        origin: Origin, address_space: AddressSpace, //
-    ](ref[origin, address_space] self) -> Pointer[
-        Self.T, Self._InteriorOrigin[origin], address_space=address_space
-    ]:
+        origin: Origin,
+        //,
+    ](ref[origin] self) -> Pointer[Self.T, Self._InteriorOrigin[origin]]:
         return Pointer(
             to=self.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
                 "element", origin
@@ -1690,10 +1637,9 @@ struct List[T: AnyType, /](
         )
 
     def unsafe_ptr[
-        origin: Origin, address_space: AddressSpace, //
-    ](ref[origin, address_space] self) -> Pointer[
-        Self.T, origin, address_space=address_space
-    ]:
+        origin: Origin,
+        //,
+    ](ref[origin] self) -> Pointer[Self.T, origin]:
         """Retrieves a pointer to the underlying memory, or a dangling pointer
         if the `List` has not yet allocated.
 
@@ -1702,18 +1648,13 @@ struct List[T: AnyType, /](
 
         Parameters:
             origin: The origin of the `List`.
-            address_space: The `AddressSpace` of the `List`.
 
         Returns:
             The pointer to the underlying memory.
         """
-        return (
-            self._data.unsafe_mut_cast[origin.mut]()
-            .unsafe_origin_cast[origin]()
-            .unsafe_address_space_cast[address_space]()
-        )
+        return self._storage.unsafe_ptr().unsafe_origin_cast[origin]()
 
-    @always_inline
+    @inline(.always)
     def _unsafe_next_uninit_ptr(
         ref self,
     ) -> Pointer[Self.T, origin_of(self)]:
@@ -1733,7 +1674,7 @@ struct List[T: AnyType, /](
             after the last initialized element. This is equivalent to
             `list.unsafe_ptr() + len(list)`.
         """
-        assert self._capacity > 0 and self._capacity > self._len, (
+        assert self.capacity() > 0 and self.capacity() > len(self), (
             "safety violation: Insufficient capacity to retrieve pointer to"
             " next uninitialized element"
         )

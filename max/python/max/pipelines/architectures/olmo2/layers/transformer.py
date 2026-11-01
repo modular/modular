@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Transformer block for the OLMo2 text model."""
+
 from __future__ import annotations
 
 from max.graph import TensorValue
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Layer, Module
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Layer, Module
 
 
 class Olmo2TransformerBlock(Module):
@@ -49,6 +51,7 @@ class Olmo2TransformerBlock(Module):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the attention and MLP sublayers over a batch of tokens."""
         h = self.self_attn(
             layer_idx,
             x,

@@ -16,14 +16,16 @@ Per-vendor plugin flavor resolution has a single implementation
 (Support/NixlPluginDir.h) that runs on ``import max._core``: the importer
 locates the staged plugins (Bazel runfiles or installed layout) and sets
 NIXL_PLUGIN_DIR before the upstream nixlPluginManager singleton reads it at
-first use. This module only adds test policy on top: fail loudly when a GPU
-host resolves no flavor (broken runfiles staging would otherwise surface as
-an obscure transport-unavailable error mid-test), and pre-load the GPU
-runtime libraries the UCX plugin references (libcuda/libnvidia-ml for the
-CUDA flavor, libhsa-runtime64 for the ROCm flavors, libibverbs/libmlx5 for
-the verbs flavors) with RTLD_GLOBAL so their symbols are visible when the
-plugin manager calls ``dlopen(libplugin_UCX.so, RTLD_NOW)``; those symbols
-are not pre-loaded in the Bazel test sandbox.
+first use. This module only adds test policy on top: keep these suites on
+the plain flavor, fail loudly when a GPU host resolves no flavor (broken
+runfiles staging would otherwise surface as an obscure transport-unavailable
+error mid-test), and pre-load the GPU runtime libraries the UCX plugin
+references without linking (libcuda/libnvidia-ml for the CUDA flavor,
+libhsa-runtime64 for the ROCm flavors) with RTLD_GLOBAL so their symbols are
+visible when the plugin manager calls ``dlopen(libplugin_UCX.so, RTLD_NOW)``;
+those symbols are not pre-loaded in the Bazel test sandbox. The host rdma-core
+is pre-loaded too, so a verbs flavor binds it rather than the prebuilt copies
+its rpath reaches in the runfiles.
 """
 
 from __future__ import annotations
@@ -49,7 +51,8 @@ def preload_gpu_libs() -> None:
         "libnvidia-ml.so",
         "libhsa-runtime64.so.1",
         "libhsa-runtime64.so",
-        # RDMA verbs stack: needed by the *-verbs UCX flavors.
+        # Load the host rdma-core before the plugin, so a *-verbs flavor binds
+        # it rather than the prebuilt copies its rpath reaches in the runfiles.
         "libibverbs.so.1",
         "libmlx5.so.1",
     ):
@@ -59,16 +62,19 @@ def preload_gpu_libs() -> None:
             pass  # not available on this machine; ignore silently
 
 
+# TODO(MXSERV-576): Remove once test_send_recv_concurrent_gpu and test_di pass
+# on the verbs flavor on an InfiniBand host.
 def _force_plain_flavor() -> None:
     """Repoints NIXL_PLUGIN_DIR from a ``*-verbs`` flavor to its plain sibling.
 
-    These tests build two NIXL agents in one process. On an InfiniBand host the
-    verbs flavor opens two mlx5 device contexts on the same HCA, which host
-    rdma-core cannot tear down cleanly (a reserved-QPN mutex assertion in
-    mlx5_free_context aborts the process). The plain flavor omits the verbs
-    transports, so it never opens an mlx5 context; the rc/InfiniBand path is
-    covered cross-process by the perf-smoke cross-node lane instead. No-op off
-    an IB host, where the resolver already picked the plain flavor.
+    The suites that call :func:`configure` are validated on the plain flavor
+    only. On an InfiniBand host the verbs flavor fails two of them: concurrent
+    GPU send/recv hits a local protection error on the mlx5 device, and the
+    disaggregated-inference suite's request cancellation cases fail, after
+    which the suite times out. The rc/InfiniBand path is covered cross-process
+    by the perf-smoke cross-node lane instead. This fires wherever the resolver
+    picked a verbs flavor: NVIDIA hosts with an InfiniBand port, and AMD hosts
+    where libibverbs and libmlx5 load, with or without one.
     """
     plugin_dir = os.environ.get("NIXL_PLUGIN_DIR")
     if not plugin_dir:
@@ -87,9 +93,9 @@ def configure() -> None:
     singleton is constructed.
     """
     preload_gpu_libs()
-    # max._core resolved NIXL_PLUGIN_DIR at import; drop the verbs flavor for
-    # these in-process multi-agent tests (see _force_plain_flavor) before the
-    # plugin-manager singleton reads it.
+    # max._core resolved NIXL_PLUGIN_DIR at import; keep these suites on the
+    # plain flavor (see _force_plain_flavor) before the plugin-manager
+    # singleton reads it.
     _force_plain_flavor()
     if os.environ.get("NIXL_PLUGIN_DIR"):
         return

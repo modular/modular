@@ -17,9 +17,22 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV3",
         "//max/python/max/pipelines/architectures/eagle3_deepseekV3",
+    ],
+)
+
+# Guards the bfloat16 cast in kimik2_5/weight_adapters.py, which every Eagle3
+# MLA draft loads through.
+modular_py_test(
+    name = "test_eagle3_draft_adapter",
+    srcs = ["test_eagle3_draft_adapter.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/eagle3_deepseekV3",
+        requirement("numpy"),
     ],
 )
 
@@ -82,6 +95,7 @@ modular_py_test(
     srcs = ["test_tokenizer.py"],
     deps = [
         "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/architectures/kimik2_5_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
         requirement("pytest-asyncio"),

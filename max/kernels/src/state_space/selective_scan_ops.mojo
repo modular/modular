@@ -24,7 +24,8 @@ import extensibility
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 
-from extensibility import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor, Tensor
+from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
 from state_space.selective_scan import (
@@ -78,7 +79,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         z: InputTensor[dtype=dtype, rank=3, ...],
         delta_bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
 
@@ -101,25 +102,13 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         var z_tt = z.to_tile_tensor[.int32]()
         var delta_bias_tt = delta_bias.to_tile_tensor[.int32]()
 
-        var output_strides = output.strides()
-        var x_strides = x.strides()
-        var out_z_strides = out_z.strides()
-        var u_strides = u.strides()
-        var delta_strides = delta.strides()
-        var A_strides = A.strides()
-        var B_strides = B.strides()
-        var C_strides = C.strides()
-        var D_strides = D.strides()
-        var z_strides = z.strides()
-        var delta_bias_strides = delta_bias.strides()
-
         comptime delta_softplus_int8: Int8 = Int8(
             1
         ) if Self.delta_softplus else Int8(0)
 
         if dstate != 16 and dstate != 8:
             raise Error(
-                "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
+                String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
         # Dispatch runtime dstate to compile-time DSTATE for comptime for
@@ -146,18 +135,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    output_strides,
-                    x_strides,
-                    out_z_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
             else:
                 selective_scan_fwd_cpu[
@@ -180,18 +158,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    output_strides,
-                    x_strides,
-                    out_z_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx
@@ -238,17 +205,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    output_strides,
-                    x_strides,
-                    out_z_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
                 )
@@ -291,17 +247,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    output_strides,
-                    x_strides,
-                    out_z_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
                 )
@@ -310,25 +255,20 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
 
 
 @extensibility.register_shape_function("selective_scan_fwd")
-def selective_scan_fwd_shape[
-    dtype: DType,
-](
-    u: InputTensor[dtype=dtype, rank=3, ...],
-    delta: InputTensor[dtype=dtype, rank=3, ...],
-    A: InputTensor[dtype=dtype, rank=2, ...],
-    B: InputTensor[dtype=dtype, rank=4, ...],
-    C: InputTensor[dtype=dtype, rank=4, ...],
-    D: InputTensor[dtype=dtype, rank=1, ...],
-    z: InputTensor[dtype=dtype, rank=3, ...],
-    delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+def selective_scan_fwd_shape(
+    u: Some[Tensor],
+    delta: Some[Tensor],
+    A: Some[Tensor],
+    B: Some[Tensor],
+    C: Some[Tensor],
+    D: Some[Tensor],
+    z: Some[Tensor],
+    delta_bias: Some[Tensor],
 ) -> IndexList[3]:
     """Returns the output shape for the `selective_scan_fwd` op.
 
     The output of a selective scan forward pass has the same shape as the
     input sequence `u`: `(batch, dim, seqlen)`.
-
-    Parameters:
-        dtype: Element type of the input tensors (inferred).
 
     Args:
         u: Input sequence tensor with shape `(batch, dim, seqlen)`.
@@ -343,7 +283,36 @@ def selective_scan_fwd_shape[
     Returns:
         The shape of the output tensor `(batch, dim, seqlen)`.
     """
-    return u.shape()
+    comptime assert type_of(u).rank == 3, "u must be rank 3"
+    comptime assert type_of(delta).rank == 3, "delta must be rank 3"
+    comptime assert (
+        type_of(delta).dtype == type_of(u).dtype
+    ), "delta dtype must match u dtype"
+    comptime assert type_of(A).rank == 2, "A must be rank 2"
+    comptime assert (
+        type_of(A).dtype == type_of(u).dtype
+    ), "A dtype must match u dtype"
+    comptime assert type_of(B).rank == 4, "B must be rank 4"
+    comptime assert (
+        type_of(B).dtype == type_of(u).dtype
+    ), "B dtype must match u dtype"
+    comptime assert type_of(C).rank == 4, "C must be rank 4"
+    comptime assert (
+        type_of(C).dtype == type_of(u).dtype
+    ), "C dtype must match u dtype"
+    comptime assert type_of(D).rank == 1, "D must be rank 1"
+    comptime assert (
+        type_of(D).dtype == type_of(u).dtype
+    ), "D dtype must match u dtype"
+    comptime assert type_of(z).rank == 3, "z must be rank 3"
+    comptime assert (
+        type_of(z).dtype == type_of(u).dtype
+    ), "z dtype must match u dtype"
+    comptime assert type_of(delta_bias).rank == 1, "delta_bias must be rank 1"
+    comptime assert (
+        type_of(delta_bias).dtype == type_of(u).dtype
+    ), "delta_bias dtype must match u dtype"
+    return rebind[IndexList[3]](coord_to_index_list(u.shape()))
 
 
 @extensibility.register("selective_scan_fwd_minimal")
@@ -379,7 +348,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         B: InputTensor[dtype=dtype, rank=4, ...],
         C: InputTensor[dtype=dtype, rank=4, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
 
@@ -398,21 +367,13 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         var B_tt = B.to_tile_tensor[.int32]()
         var C_tt = C.to_tile_tensor[.int32]()
 
-        var output_strides = output.strides()
-        var x_strides = x.strides()
-        var u_strides = u.strides()
-        var delta_strides = delta.strides()
-        var A_strides = A.strides()
-        var B_strides = B.strides()
-        var C_strides = C.strides()
-
         comptime delta_softplus_int8: Int8 = Int8(
             1
         ) if Self.delta_softplus else Int8(0)
 
         if dstate != 16 and dstate != 8:
             raise Error(
-                "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
+                String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
         comptime if is_cpu[target]():
@@ -433,14 +394,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    output_strides,
-                    x_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
             else:
                 selective_scan_fwd_cpu_minimal[
@@ -459,14 +413,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    output_strides,
-                    x_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx
@@ -505,13 +452,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    output_strides,
-                    x_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
                     grid_dim=(num_blocks),
                     block_dim=(BLOCK_SIZE),
                 )
@@ -546,13 +486,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    output_strides,
-                    x_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
                     grid_dim=(num_blocks),
                     block_dim=(BLOCK_SIZE),
                 )
@@ -561,14 +494,12 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
 
 
 @extensibility.register_shape_function("selective_scan_fwd_minimal")
-def selective_scan_fwd_minimal_shape[
-    dtype: DType,
-](
-    u: InputTensor[dtype=dtype, rank=3, ...],
-    delta: InputTensor[dtype=dtype, rank=3, ...],
-    A: InputTensor[dtype=dtype, rank=2, ...],
-    B: InputTensor[dtype=dtype, rank=4, ...],
-    C: InputTensor[dtype=dtype, rank=4, ...],
+def selective_scan_fwd_minimal_shape(
+    u: Some[Tensor],
+    delta: Some[Tensor],
+    A: Some[Tensor],
+    B: Some[Tensor],
+    C: Some[Tensor],
 ) -> IndexList[3]:
     """Returns the output shape for the `selective_scan_fwd_minimal` op.
 
@@ -585,7 +516,24 @@ def selective_scan_fwd_minimal_shape[
     Returns:
         The shape of the output tensor `(batch, dim, seqlen)`.
     """
-    return u.shape()
+    comptime assert type_of(u).rank == 3, "u must be rank 3"
+    comptime assert type_of(delta).rank == 3, "delta must be rank 3"
+    comptime assert (
+        type_of(delta).dtype == type_of(u).dtype
+    ), "delta dtype must match u dtype"
+    comptime assert type_of(A).rank == 2, "A must be rank 2"
+    comptime assert (
+        type_of(A).dtype == type_of(u).dtype
+    ), "A dtype must match u dtype"
+    comptime assert type_of(B).rank == 4, "B must be rank 4"
+    comptime assert (
+        type_of(B).dtype == type_of(u).dtype
+    ), "B dtype must match u dtype"
+    comptime assert type_of(C).rank == 4, "C must be rank 4"
+    comptime assert (
+        type_of(C).dtype == type_of(u).dtype
+    ), "C dtype must match u dtype"
+    return rebind[IndexList[3]](coord_to_index_list(u.shape()))
 
 
 @extensibility.register("selective_scan_update")
@@ -628,7 +576,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         z: InputTensor[dtype=dtype, rank=2, ...],
         dt_bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var batch = state_out.dim_size(0)
         var dim = state_out.dim_size(1)
         var dstate = state_out.dim_size(2)
@@ -647,25 +595,13 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         var z_tt = z.to_tile_tensor[.int32]()
         var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
 
-        var state_out_strides = state_out.strides()
-        var output_strides = output.strides()
-        var state_in_strides = state_in.strides()
-        var x_strides = x.strides()
-        var dt_strides = dt.strides()
-        var A_strides = A.strides()
-        var B_strides = B.strides()
-        var C_strides = C.strides()
-        var D_strides = D.strides()
-        var z_strides = z.strides()
-        var dt_bias_strides = dt_bias.strides()
-
         comptime delta_softplus_int8: Int8 = Int8(
             1
         ) if Self.delta_softplus else Int8(0)
 
         if dstate != 16 and dstate != 8:
             raise Error(
-                "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
+                String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
         comptime if is_cpu[target]():
@@ -689,18 +625,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    state_out_strides,
-                    output_strides,
-                    state_in_strides,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    dt_bias_strides,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
             else:
                 selective_scan_update_cpu[
@@ -722,18 +647,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    state_out_strides,
-                    output_strides,
-                    state_in_strides,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    dt_bias_strides,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx
@@ -779,17 +693,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    state_out_strides,
-                    output_strides,
-                    state_in_strides,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    dt_bias_strides,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
                 )
@@ -831,17 +734,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    state_out_strides,
-                    output_strides,
-                    state_in_strides,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    dt_bias_strides,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
                 )
@@ -850,18 +742,16 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
 
 
 @extensibility.register_shape_function("selective_scan_update")
-def selective_scan_update_shape[
-    dtype: DType,
-](
-    state_in: InputTensor[dtype=dtype, rank=3, ...],
-    x: InputTensor[dtype=dtype, rank=2, ...],
-    dt: InputTensor[dtype=dtype, rank=2, ...],
-    A: InputTensor[dtype=dtype, rank=2, ...],
-    B: InputTensor[dtype=dtype, rank=3, ...],
-    C: InputTensor[dtype=dtype, rank=3, ...],
-    D: InputTensor[dtype=dtype, rank=1, ...],
-    z: InputTensor[dtype=dtype, rank=2, ...],
-    dt_bias: InputTensor[dtype=dtype, rank=1, ...],
+def selective_scan_update_shape(
+    state_in: Some[Tensor],
+    x: Some[Tensor],
+    dt: Some[Tensor],
+    A: Some[Tensor],
+    B: Some[Tensor],
+    C: Some[Tensor],
+    D: Some[Tensor],
+    z: Some[Tensor],
+    dt_bias: Some[Tensor],
 ) -> Tuple[IndexList[3], IndexList[2]]:
     """Returns the output shapes for the `selective_scan_update` op.
 
@@ -883,4 +773,40 @@ def selective_scan_update_shape[
         A tuple of `(state_out_shape, output_shape)` where `state_out_shape`
         matches `state_in.shape()` and `output_shape` matches `x.shape()`.
     """
-    return (state_in.shape(), x.shape())
+    comptime assert type_of(state_in).rank == 3, "state_in must be rank 3"
+    comptime assert type_of(x).rank == 2, "x must be rank 2"
+    comptime assert (
+        type_of(x).dtype == type_of(state_in).dtype
+    ), "x dtype must match state_in dtype"
+    comptime assert type_of(dt).rank == 2, "dt must be rank 2"
+    comptime assert (
+        type_of(dt).dtype == type_of(state_in).dtype
+    ), "dt dtype must match state_in dtype"
+    comptime assert type_of(A).rank == 2, "A must be rank 2"
+    comptime assert (
+        type_of(A).dtype == type_of(state_in).dtype
+    ), "A dtype must match state_in dtype"
+    comptime assert type_of(B).rank == 3, "B must be rank 3"
+    comptime assert (
+        type_of(B).dtype == type_of(state_in).dtype
+    ), "B dtype must match state_in dtype"
+    comptime assert type_of(C).rank == 3, "C must be rank 3"
+    comptime assert (
+        type_of(C).dtype == type_of(state_in).dtype
+    ), "C dtype must match state_in dtype"
+    comptime assert type_of(D).rank == 1, "D must be rank 1"
+    comptime assert (
+        type_of(D).dtype == type_of(state_in).dtype
+    ), "D dtype must match state_in dtype"
+    comptime assert type_of(z).rank == 2, "z must be rank 2"
+    comptime assert (
+        type_of(z).dtype == type_of(state_in).dtype
+    ), "z dtype must match state_in dtype"
+    comptime assert type_of(dt_bias).rank == 1, "dt_bias must be rank 1"
+    comptime assert (
+        type_of(dt_bias).dtype == type_of(state_in).dtype
+    ), "dt_bias dtype must match state_in dtype"
+    return (
+        rebind[IndexList[3]](coord_to_index_list(state_in.shape())),
+        rebind[IndexList[2]](coord_to_index_list(x.shape())),
+    )

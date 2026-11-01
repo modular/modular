@@ -63,9 +63,9 @@ def test_shape[
     var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
     vendor_blas.matmul(
         ctx,
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -94,16 +94,8 @@ def test_shape[
                 if errors <= 5:
                     var row, col = divmod(i, N)
                     print(
-                        "  Mismatch at row",
-                        row,
-                        "col",
-                        col,
-                        ": actual=",
-                        actual,
-                        "expected=",
-                        expected,
-                        "rel_err=",
-                        rel_err,
+                        t"  Mismatch at row {row} col {col} : actual="
+                        t" {actual} expected= {expected} rel_err= {rel_err}"
                     )
 
         assert_true(errors == 0, msg=String(t"Test failed:{errors} errors"))

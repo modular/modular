@@ -65,8 +65,8 @@ struct Bar(AA1, AA2, Movable where False):
 
 
 trait WithAsyncMethod:
-    # expected-error @+1 {{async defaulted trait methods are not supported; remove the method or remove 'async'}}
-    async def async_default_method(self) -> Int:
+    # expected-error @+1 {{async defaulted trait methods are not supported; remove the method or remove '__async'}}
+    __async def async_default_method(self) -> Int:
         return 42
 
 

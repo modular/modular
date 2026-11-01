@@ -20,23 +20,13 @@ from std.format._utils import _FixedWriteBuffer
 from std.io.io import _printf
 from std.os import abort
 from std.sys import (
-    is_amd_gpu,
     is_apple_gpu,
     is_gpu,
-    is_nvidia_gpu,
-)
-from std.sys._amdgpu import (
-    printf_append_args,
-    printf_append_string_n,
-    printf_begin,
 )
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
 from std.sys.defines import get_defined_string
-from std.collections.string.string_span import (
-    _get_kgen_string,
-    get_static_string,
-)
+from std.collections.string.string_span import _get_kgen_string
 from std.reflection import call_location, SourceLocation
 
 comptime ASSERT_MODE = get_defined_string["ASSERT", "safe"]()
@@ -47,7 +37,7 @@ comptime _NO_MESSAGE = "assertion failed"
 and relies on the trailing nul in static memory."""
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _string_free_comptime_assert[
     cond: Bool, msg: StaticString, *extra: StaticString
 ]():
@@ -64,7 +54,7 @@ def _string_free_comptime_assert[
     ]()
 
 
-@no_inline
+@inline(.never)
 def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     _string_free_comptime_assert[
         ASSERT_MODE == "none"
@@ -93,7 +83,23 @@ def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
         return ASSERT_MODE == assert_mode
 
 
-@always_inline
+@inline(.never)
+def _debug_assert_fail_format[
+    *Ts: Writable
+](location: SourceLocation, *messages: *Ts):
+    var message = _FixedWriteBuffer()
+
+    comptime for i in range(messages.__len__()):
+        messages[i].write_to(message)
+
+    var cstr = message.nul_terminate()
+    var bytes_with_nul = cstr.as_bytes_with_nul()
+    _debug_assert_msg(
+        bytes_with_nul.unsafe_ptr(), len(bytes_with_nul), location
+    )
+
+
+@inline(.always)
 def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
     """Reports a failed assertion, formatting the message if there is one."""
 
@@ -102,19 +108,10 @@ def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
             _NO_MESSAGE.ptr(), _NO_MESSAGE.byte_length() + 1, location
         )
     else:
-        var message = _FixedWriteBuffer()
-
-        comptime for i in range(messages.__len__()):
-            messages[i].write_to(message)
-
-        var cstr = message.nul_terminate()
-        var bytes_with_nul = cstr.as_bytes_with_nul()
-        _debug_assert_msg(
-            bytes_with_nul.unsafe_ptr(), len(bytes_with_nul), location
-        )
+        _debug_assert_fail_format(location, *messages)
 
 
-@always_inline
+@inline(.always)
 def debug_assert[
     Cond: def() -> Bool,
     assert_mode: StaticString = "none",
@@ -231,7 +228,7 @@ def debug_assert[
         )
 
 
-@always_inline
+@inline(.always)
 def debug_assert[
     assert_mode: StaticString = "none",
     *Ts: Writable,
@@ -353,7 +350,7 @@ def debug_assert[
 # optimized for fast compile time, because they are used frequently. An
 # `Optional[SourceLocation]` and an `or_else` call generate extra IR and thus
 # slow compilation down.
-@always_inline
+@inline(.always)
 def debug_assert[
     Cond: def() -> Bool,
     assert_mode: StaticString = "none",
@@ -390,7 +387,7 @@ def debug_assert[
         _debug_assert_fail(location=call_location())
 
 
-@always_inline
+@inline(.always)
 def debug_assert[
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
@@ -425,7 +422,7 @@ def debug_assert[
         assume(cond)
 
 
-@always_inline
+@inline(.always)
 def debug_assert[
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
@@ -538,7 +535,7 @@ def debug_assert[
         assume(cond)
 
 
-@no_inline
+@inline(.never)
 def _debug_assert_msg(
     message: ImmPointer[Byte, _], length: Int, loc: SourceLocation
 ):
@@ -547,7 +544,7 @@ def _debug_assert_msg(
     This function is intentionally marked as no_inline to reduce binary size.
 
     Note that it's important that this function doesn't get inlined; otherwise,
-    an indirect recursion of @always_inline functions is possible (e.g. because
+    an indirect recursion of @inline(.always) functions is possible (e.g. because
     abort's implementation could use debug_assert)
     """
 
@@ -569,86 +566,12 @@ def _debug_assert_msg(
                 abort()
             return
 
-        comptime fmt = (
-            "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu]"
-            " Assert Error: %s\n"
+        _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
+            loc.file_name().as_c_string_span(),
+            loc.line(),
+            loc.column(),
+            message,
         )
-
-        comptime if is_nvidia_gpu():
-            from std._gpu.primitives.id import block_idx, thread_idx
-
-            _printf[fmt](
-                loc.file_name().as_c_string_slice(),
-                loc.line(),
-                loc.column(),
-                UInt(block_idx.x),
-                UInt(block_idx.y),
-                UInt(block_idx.z),
-                UInt(thread_idx.x),
-                UInt(thread_idx.y),
-                UInt(thread_idx.z),
-                message,
-            )
-        # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
-        elif is_amd_gpu():
-            from std._gpu.primitives.id import block_idx, thread_idx
-
-            var fd = printf_begin()
-            # Each appended string must carry its own nul terminator so the AMD
-            # fprintf service can delimit it; `as_bytes()` omits the nul, which
-            # corrupts output when a string's length is a multiple of 8.
-            # `get_static_string` guarantees a trailing nul in static memory
-            # just past the returned range.
-            var fmt_str = get_static_string[fmt]()
-            _ = printf_append_string_n(
-                fd,
-                Span(
-                    unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
-                    length=fmt_str.byte_length() + 1,
-                ),
-                False,
-            )
-            # Runtime %s types must be passed as separate append_string calls.
-            # `file_name()` is a string literal, so its trailing nul lives in
-            # static memory just past the range (same guarantee the NVIDIA `%s`
-            # path relies on).
-            var file_name = loc.file_name()
-            _ = printf_append_string_n(
-                fd,
-                Span(
-                    unsafe_ptr=file_name.as_bytes().unsafe_ptr(),
-                    length=file_name.byte_length() + 1,
-                ),
-                False,
-            )
-            # Can only pass 7 args at a time
-            _ = printf_append_args(
-                fd,
-                7,
-                UInt64(loc.line()),
-                UInt64(loc.column()),
-                UInt64(block_idx.x),
-                UInt64(block_idx.y),
-                UInt64(block_idx.z),
-                UInt64(thread_idx.x),
-                UInt64(thread_idx.y),
-                0,
-            )
-            # Pass last arg
-            _ = printf_append_args(
-                fd, 1, UInt64(thread_idx.z), 0, 0, 0, 0, 0, 0, 0
-            )
-            # Append message and finalize
-            _ = printf_append_string_n(
-                fd, Span(unsafe_ptr=message, length=length), True
-            )
-        else:
-            _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
-                loc.file_name().as_c_string_slice(),
-                loc.line(),
-                loc.column(),
-                message,
-            )
 
         comptime if ASSERT_MODE != "warn":
             abort()

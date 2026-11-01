@@ -17,6 +17,9 @@
 include "mlir/IR/OpBase.td"
 
 def POPDialect : Dialect {
+  // TODO(MOCO-5011): Migrate assembly formats to strict properties before
+  // upstream removes this opt-out.
+  let useStrictPropertiesInAssemblyFormat = 0;
   let name = "pop";
 
   let summary = "The 'pop' dialect";

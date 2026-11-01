@@ -10,11 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Weight adapter for Laguna-M.1-NVFP4 (``poolside/Laguna-M.1-NVFP4``).
+"""Weight adapter for the Laguna checkpoint family.
 
-The checkpoint is compressed-tensors NVFP4: MLP/MoE ``gate_proj``/``up_proj``/
-``down_proj`` (dense layer 0 + the routed experts + the shared expert) are
-4-bit, each quantized Linear carrying four tensors:
+Every released Laguna checkpoint mixes precisions: some linear layers ship
+compressed-tensors NVFP4 weights, the rest ship a plain ``.weight`` tensor.
+Which is which varies per layer and per module, but the adapter renames by
+suffix and so never has to know. Per-layer precision is resolved downstream in
+:meth:`~max.pipelines.architectures.laguna.model.LagunaModel._resolve_nvfp4_quant_config`,
+from the scales this adapter emits.
+
+An NVFP4 Linear carries four tensors:
 
 .. code-block:: text
 
@@ -35,13 +40,18 @@ mapping is a pure suffix rename:
     .input_global_scale   -> .input_scale
     .weight_scale         kept
 
-Attention projections (q/k/v/o/g_proj) are in the quant ``ignore`` list and ship
-bf16 ``.weight`` (passed through). The checkpoint's static FP8 KV-cache scales
-``self_attn.{k,v}_scale`` are DROPPED: MAX computes KV-cache scales dynamically
-at runtime and never consumes checkpoint static scales (same as deepseekV3/Kimi),
-so a strict load would otherwise reject them as unexpected keys. Laguna structural
-renames (router gate, expert correction bias, shared-expert pluralization) match
-the bf16 donor.
+The bf16 modules carry an unsuffixed ``.weight``, which matches none of those
+suffixes and passes through as-is: attention (q/k/v/o/g_proj), norms, router
+gates, correction biases, and whichever dense MLPs, shared experts and routed
+experts a given checkpoint left unquantized.
+
+Beyond the suffixes, the adapter strips the ``model.`` prefix and applies the
+Laguna structural renames (router gate, expert correction bias, shared-expert
+pluralization) that match the bf16 donor. The checkpoint's static FP8 KV-cache
+scales ``self_attn.{k,v}_scale`` are DROPPED: MAX computes KV-cache scales
+dynamically at runtime and never consumes checkpoint static scales (same as
+deepseekV3/Kimi), so a strict load would otherwise reject them as unexpected
+keys.
 """
 
 from __future__ import annotations
@@ -58,7 +68,6 @@ from transformers import AutoConfig
 # semantics (``dict`` preserves insertion order). Order matters: do the NVFP4
 # suffix renames before the structural ones so neither re-matches the other.
 LAGUNA_SAFETENSOR_MAP: dict[str, str] = {
-    "model.": "",
     # NVFP4 compressed-tensors suffixes -> MAX quantized-Linear suffixes.
     ".weight_packed": ".weight",
     ".weight_global_scale": ".weight_scale_2",
@@ -76,11 +85,12 @@ def convert_safetensor_state_dict(
     pipeline_config: PipelineConfig,
     **unused_kwargs,
 ) -> dict[str, WeightData]:
-    """Converts Laguna-M.1-NVFP4 safetensor weights to MAX names.
+    """Converts Laguna safetensor weights to MAX names.
 
     Renames the compressed-tensors NVFP4 suffixes to the per-expert quantized
     Linear names MAX's ``MoEQuantized`` expects, applies the Laguna structural
-    renames, and reinterprets uint8 per-group scales as ``float8_e4m3fn``.
+    renames, and reinterprets uint8 per-group scales as ``float8_e4m3fn``. A
+    tensor carrying none of those suffixes keeps its name and its contents.
     """
     del huggingface_config, pipeline_config
     out: dict[str, WeightData] = {}
@@ -89,7 +99,9 @@ def convert_safetensor_state_dict(
         # unused (strict load would reject them as unexpected). Drop them.
         if hf_name.endswith((".k_scale", ".v_scale")):
             continue
-        max_name = hf_name
+        # Only the leading ``model.`` is a prefix; a substring replace would
+        # also rewrite anything containing it further along the name.
+        max_name = hf_name.removeprefix("model.")
         for before, after in LAGUNA_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
         data = value.data()

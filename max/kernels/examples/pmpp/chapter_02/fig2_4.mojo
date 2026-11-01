@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.memory.alloc import unsafe_alloc
+
 # Figure 2.4: Simple CPU-only vector addition
 # Compute vector sum C_h = A_h + B_h
 
@@ -19,9 +21,9 @@
 
 
 def vec_add(
-    a_h: UnsafePointer[Float32, MutUntrackedOrigin],
-    b_h: UnsafePointer[Float32, MutUntrackedOrigin],
-    c_h: UnsafePointer[Float32, MutUntrackedOrigin],
+    a_h: MutPointer[Float32, MutUntrackedOrigin],
+    b_h: MutPointer[Float32, MutUntrackedOrigin],
+    c_h: MutPointer[Float32, MutUntrackedOrigin],
     n: Int,
 ):
     """Compute vector sum C_h = A_h + B_h on the CPU.
@@ -41,10 +43,10 @@ def vec_add(
 
 def main() raises:
     # Memory allocation for arrays A, B, and C
-    var n = 10
-    var a = alloc[Float32](n)
-    var b = alloc[Float32](n)
-    var c = alloc[Float32](n)
+    comptime n = 10
+    var a = unsafe_alloc[Float32](n)
+    var b = unsafe_alloc[Float32](n)
+    var c = unsafe_alloc[Float32](n)
 
     # Initialize input arrays
     for i in range(n):
@@ -55,6 +57,6 @@ def main() raises:
     vec_add(a, b, c, n)
 
     # Clean up
-    a.free()
-    b.free()
-    c.free()
+    a.unsafe_free()
+    b.unsafe_free()
+    c.unsafe_free()

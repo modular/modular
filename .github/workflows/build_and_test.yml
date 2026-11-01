@@ -19,8 +19,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "bazel/mojo.MODULE.bazel"
 
 permissions:
   contents: read
@@ -31,6 +29,9 @@ concurrency: # Only allow a single build/test run at a time for a PR.
   cancel-in-progress: true
 
 jobs:
+  # SDLC-4549: the OSS tree builds Mojo + MAX entirely from source, so there is a
+  # single configuration (no prebuilt-mojo/build-mojo split, no detect-changes
+  # gate) and //... is built and tested directly.
   build-and-test:
     name: Build and Test on ${{ matrix.os }}
     strategy:
@@ -77,19 +78,7 @@ jobs:
             "${args[@]}" \
             --build_tag_filters=-skip-external-ci,-requires-network \
             --test_tag_filters=-skip-external-ci,-requires-network \
-            --config=prebuilt-mojo \
             -- \
-            //... \
-            -//AsyncRT/... \
-            -//Cache/... \
-            -//Config/... \
-            -//Init/... \
-            -//Mojo/... \
-            -//Support/... \
-            //Mojo/docs/site/... \
-            //Mojo/examples/... \
-            //Mojo/integration-test/... \
-            //Mojo/python/... \
-            //Mojo/stdlib/...
+            //...
         env:
           BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}

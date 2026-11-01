@@ -31,9 +31,9 @@ from max._core.driver import Device
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
+from max.tensor import Tensor
 
 if TYPE_CHECKING:
     from .cache import DenoisingCacheState
@@ -96,15 +96,9 @@ class _TaylorPredictModule(Module):
         """Taylor series prediction: f(t+dt) ~ f(t) + f'(t)*dt + f''(t)*dt^2/2."""
         offset = ops.cast(step_offset, factor_0.dtype)
         result = factor_0 + factor_1 * offset
-        offset_sq_half = (
-            offset
-            * offset
-            * ops.constant(0.5, factor_0.dtype, device=factor_0.device)
-        )
+        offset_sq_half = offset * offset * 0.5
         order2_term = factor_2 * offset_sq_half
-        use_order2 = max_order >= ops.constant(
-            2, DType.int32, device=max_order.device
-        )
+        use_order2 = max_order >= 2
         use_order2_cast = ops.cast(
             ops.broadcast_to(use_order2, order2_term.shape),
             order2_term.dtype,
@@ -147,15 +141,12 @@ class _TaylorUpdateModule(Module):
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         """Compute Taylor factors via divided differences."""
         delta = ops.cast(delta_step, new_output.dtype)
-        eps = ops.constant(1e-9, new_output.dtype, device=new_output.device)
-        safe_delta = delta + eps
+        safe_delta = delta + 1e-9
 
         new_factor_0 = new_output
         new_factor_1 = (new_output - old_factor_0) / safe_delta
         new_factor_2 = (new_factor_1 - old_factor_1) / safe_delta
-        use_order2 = max_order >= ops.constant(
-            2, DType.int32, device=max_order.device
-        )
+        use_order2 = max_order >= 2
         use_order2_cast = ops.cast(
             ops.broadcast_to(use_order2, new_factor_2.shape),
             new_factor_2.dtype,

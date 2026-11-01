@@ -1,14 +1,23 @@
-load("//bazel:api.bzl", "modular_py_binary", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
 modular_py_binary(
     name = "pydeps_test",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = ["test_*.py"],
+    ),
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
         requirement("libcst"),
         requirement("typing-extensions"),
     ],
+)
+
+modular_py_test(
+    name = "test_pydeps_xml",
+    srcs = ["test_pydeps_xml.py"],
+    deps = [":pydeps_test"],
 )

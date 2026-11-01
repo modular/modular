@@ -49,7 +49,7 @@ def reject_metric_outliers(
     values are identical), every value is kept (no rejection).
 
     Args:
-        values: Per-request metric series (e.g. TTFTs in seconds).
+        values: Per-request metric series (such as TTFTs in seconds).
         k: Modified-z-score rejection threshold (default 3.5).
 
     Returns:
@@ -214,7 +214,7 @@ def detect_steady_state(
     and positive TTFT; non-empty TPOT in full mode), sorts by submit time,
     then uses rolling MAD/median to find where metrics stabilize.
 
-    Falls back to a TTFT-only path when no request populated TPOT (e.g.,
+    Falls back to a TTFT-only path when no request populated TPOT (such as
     prefill-only workloads producing <=1 output token per request).
 
     Args:

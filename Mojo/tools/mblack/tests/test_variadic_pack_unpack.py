@@ -64,3 +64,39 @@ def test_star_param_followed_by_other_param():
     """`*args: *Ts` followed by another parameter: no space after `*`."""
     source = "def f[*Ts: Movable](*args: *Ts, other: Int):\n    pass\n"
     assert_mojo_format(source, source)
+
+
+def test_function_type_star_spacing():
+    """Correctly spaced stars in function types stay unchanged."""
+    source = (
+        "comptime Foo[*Ts: AnyType] = def(*args: *Ts) thin -> None\n"
+        "comptime Bar = def(x: Int, *args: Int) thin -> None\n"
+    )
+    assert_mojo_format(source, source)
+
+
+def test_star_pack_in_function_type():
+    """Spaces after `*` are removed from function-type pack parameters."""
+    source = "comptime Foo[*Ts: AnyType] = def(* args: * Ts) thin -> None\n"
+    expected = "comptime Foo[*Ts: AnyType] = def(*args: *Ts) thin -> None\n"
+    assert_mojo_format(source, expected)
+
+
+def test_star_vararg_in_function_type():
+    """A space between `*` and a function-type vararg name is removed."""
+    source = "comptime Foo = def(x: Int, * args: Int) thin -> None\n"
+    expected = "comptime Foo = def(x: Int, *args: Int) thin -> None\n"
+    assert_mojo_format(source, expected)
+
+
+def test_star_self_attr_in_function_type():
+    """Spaces after `*` are removed before argument names and `Self.Ts`."""
+    source = (
+        "struct S[*Ts: AnyType]:\n"
+        "    comptime Foo = def(var * args: * Self.Ts) thin -> None\n"
+    )
+    expected = (
+        "struct S[*Ts: AnyType]:\n"
+        "    comptime Foo = def(var *args: *Self.Ts) thin -> None\n"
+    )
+    assert_mojo_format(source, expected)

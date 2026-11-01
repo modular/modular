@@ -15,20 +15,32 @@
 from __future__ import annotations
 
 import functools
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
-from max.graph import ShardingStrategy
-from max.nn.attention.multi_latent_attention import (
+from max.graph import (
+    BufferType,
+    Graph,
+    ShardingStrategy,
+    TensorType,
+    Type,
+    Value,
+)
+from max.graph import Module as GraphModule
+from max.nn.legacy.attention.multi_latent_attention import (
     TensorParallelLatentAttentionWithRope,
 )
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.moe import MoE
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.moe import MoE
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import (
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
     DistributedTransformer,
     DistributedTransformerBlock,
 )
@@ -36,6 +48,7 @@ from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )
 
+from .deepseekV2 import deepseekV2_input_types, unflatten_kv_collections
 from .model_config import DeepseekV2Config
 
 
@@ -133,13 +146,69 @@ class DistributedDeepseekV2(DistributedTransformer):
             ],
         )
 
+    def input_types(self) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types for this device set and KV params."""
+        return deepseekV2_input_types(self.devices, self.kv_params)
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Adapts the flat graph inputs to :meth:`__call__` by splitting off the
+        signal buffers and unflattening the KV cache.
+
+        Args:
+            *input_types: The graph's input types, :meth:`input_types`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+
+        def forward(
+            tokens: Value[Any],
+            input_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            *variadic_args: Value[Any],
+        ) -> DecoderOutputs:
+            n_devices = len(self.devices)
+            return self(
+                tokens.tensor,
+                [v.buffer for v in variadic_args[:n_devices]],
+                unflatten_kv_collections(
+                    self.kv_params, variadic_args[n_devices:]
+                ),
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def _get_mlp(self, config: DeepseekV2Config, idx: int) -> MLP | MoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP or MoE layer the TransformerBlock uses for a layer.
 
         Args:
             config: Configuration object containing model parameters
-            i: Layer index
+            idx: Layer index
 
         Returns:
             List of MLP shards or MoE modules depending on the layer index and config

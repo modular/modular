@@ -21,6 +21,9 @@ include "mlir/IR/DialectBase.td"
 //===----------------------------------------------------------------------===//
 
 def HLCFDialect : Dialect {
+  // TODO(MOCO-5011): Migrate assembly formats to strict properties before
+  // upstream removes this opt-out.
+  let useStrictPropertiesInAssemblyFormat = 0;
   let name = "hlcf";
 
   let summary = "high-level control-flow dialect";

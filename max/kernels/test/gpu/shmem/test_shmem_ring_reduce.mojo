@@ -18,6 +18,7 @@ from std.math import iota
 from std.os import abort
 from shmem import *
 from std.ffi import c_int
+from std.memory.alloc import unsafe_alloc
 from std.sys.info import size_of
 from max.gpu.host import DeviceBuffer
 
@@ -31,11 +32,13 @@ comptime step_factor = 2
 comptime chunk_size = 1024 * 256
 
 
-def ring_reduce(
-    dst_ptr: Pointer[c_int, MutAnyOrigin],
-    src_ptr: Pointer[c_int, ImmutAnyOrigin],
+def ring_reduce[
+    dst_origin: MutOrigin, src_origin: MutOrigin, signal_origin: MutOrigin
+](
+    dst_ptr: Pointer[c_int, dst_origin],
+    src_ptr: Pointer[c_int, src_origin],
     nreduce_dev: Int32,
-    signal_ptr: Pointer[UInt64, MutAnyOrigin],
+    signal_ptr: Pointer[UInt64, signal_origin],
     chunk_size_dev: Int32,
 ):
     """Perform Allreduce using ring algorithm.
@@ -67,9 +70,9 @@ def ring_reduce(
     if elems_per_block * (block_idx + 1) > nreduce:
         return
 
-    var src = src_ptr + block_idx * elems_per_block
-    var dst = dst_ptr + block_idx * elems_per_block
-    var signal = signal_ptr + block_idx
+    var src = src_ptr.unsafe_offset(block_idx * elems_per_block)
+    var dst = dst_ptr.unsafe_offset(block_idx * elems_per_block)
+    var signal = signal_ptr.unsafe_offset(block_idx)
 
     var chunk_elems = chunk_size // size_of[DType.int32]()
     var num_chunks = elems_per_block // chunk_elems
@@ -99,11 +102,11 @@ def ring_reduce(
                 SHMEM_SIGNAL_ADD,
                 peer,
             )
-        src += chunk_elems
-        dst += chunk_elems
+        src = src.unsafe_offset(chunk_elems)
+        dst = dst.unsafe_offset(chunk_elems)
 
     # Broadcast phase - final result flows back through ring
-    dst -= num_chunks * chunk_elems
+    dst = dst.unsafe_offset(-(num_chunks * chunk_elems))
     if thread_id == 0:
         for chunk in range(num_chunks):
             if mype < npes - 1:
@@ -116,7 +119,7 @@ def ring_reduce(
                 shmem_put_signal_nbi(
                     dst, dst, chunk_elems, signal, 1, SHMEM_SIGNAL_ADD, peer
                 )
-            dst += chunk_elems
+            dst = dst.unsafe_offset(chunk_elems)
         signal[0] = 0
 
 
@@ -134,7 +137,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
     var dst = ctx.enqueue_create_buffer[.int32](max_ints)
     var src = ctx.enqueue_create_buffer[.int32](max_ints)
-    var data_h = alloc[Int32](max_ints)
+    var data_h = unsafe_alloc[Int32](max_ints)
     var signal = shmem_calloc[.uint64](num_blocks)
 
     # Initialize test data - each element has value equal to its index
@@ -153,7 +156,13 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
         # Warmup iterations
         for _ in range(warmup_iters):
-            ctx.enqueue_function_collective_checked[ring_reduce](
+            ctx.enqueue_function_collective_checked[
+                ring_reduce[
+                    origin_of(dst),
+                    origin_of(src),
+                    type_of(signal).origin,
+                ]
+            ](
                 dst,
                 src,
                 Int32(num_ints),
@@ -167,8 +176,14 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.barrier_all()
         ctx.synchronize()
 
-        def benchmark() raises {imm}:
-            ctx.enqueue_function_collective_checked[ring_reduce](
+        def benchmark() raises {mut dst, mut src, imm}:
+            ctx.enqueue_function_collective_checked[
+                ring_reduce[
+                    origin_of(dst),
+                    origin_of(src),
+                    type_of(signal).origin,
+                ]
+            ](
                 dst,
                 src,
                 Int32(num_ints),
@@ -211,12 +226,8 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
         if mype == 0:
             print(
-                "Test passed on size:",
-                size / 1024 / 1024,
-                "MB",
-                "\telapsed:",
-                elapsed_ms,
-                "ms",
+                t"Test passed on size: {size / 1024 / 1024} MB \telapsed:"
+                t" {elapsed_ms} ms"
             )
 
         size *= step_factor

@@ -10,17 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 %mojo -debug-level full %s \
+# RUN:   | FileCheck %s
 
 
 @fieldwise_init
-struct Foo[T: Writable](def(x: T) __param_trait__):
-    def __call__(mut self, arg: Self.T):
+struct Foo[T: Writable](def(T)):
+    def __call__(self, arg: Self.T):
         print("via struct:", arg)
 
 
-def call_int[T: def(x: Int) __param_trait__](mut closure: T):
-    closure.__call__(1)
+def call_int[T: def(Int)](closure: T):
+    closure(1)
+
+
+def sink[T: Writable, C: def(T)](c: C, arg: T):
+    c(arg)
+
+
+def forward[T: Writable & TrivialRegisterPassable, C: def(T)](c: C, arg: T):
+    # `sink` bounds the argument type more loosely, so `C` reaches its closure
+    # trait only through a bridging thunk. The extension struct carrying that
+    # thunk is parameterized on this scope's `T` and `C`.
+    sink(c, arg)
 
 
 def main():
@@ -30,9 +42,24 @@ def main():
 
     var y = 1
 
-    def closure(x: Int) __param_trait__ {mut y}:
+    def closure(x: Int) {mut y}:
         y += x
 
     call_int(closure)
     # CHECK: via closure: 2
     print("via closure:", y)
+
+    var total = 0
+
+    def add(x: Int) {mut total}:
+        total += x
+
+    forward(add, 40)
+    # CHECK: via extension: 40
+    print("via extension:", total)
+
+    def thin_closure(x: Int):
+        # CHECK: via thin: 30
+        print("via thin:", x)
+
+    forward(thin_closure, 30)

@@ -17,8 +17,8 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 
 def get_timestep_embedding(
@@ -135,6 +135,8 @@ def get_1d_rotary_pos_embed(
 
 
 class Timesteps(Module):
+    """Turns a timestep scalar into sinusoidal embeddings."""
+
     def __init__(
         self,
         num_channels: int,
@@ -149,6 +151,7 @@ class Timesteps(Module):
         self.scale = scale
 
     def __call__(self, timesteps: TensorValue) -> TensorValue:
+        """Embeds ``timesteps`` at the configured frequencies."""
         t_emb = get_timestep_embedding(
             timesteps,
             self.num_channels,
@@ -160,6 +163,8 @@ class Timesteps(Module):
 
 
 class TimestepEmbedding(Module):
+    """Projects timestep embeddings through an MLP."""
+
     def __init__(
         self,
         in_channels: int,
@@ -186,6 +191,7 @@ class TimestepEmbedding(Module):
         )
 
     def __call__(self, sample: TensorValue) -> TensorValue:
+        """Runs ``sample`` through the two linear layers."""
         sample = self.linear_1(sample)
         sample = ops.silu(sample)
         sample = self.linear_2(sample)
@@ -223,6 +229,7 @@ class QwenImageTimestepProjEmbeddings(Module):
         )
 
     def __call__(self, timestep: TensorValue) -> TensorValue:
+        """Embeds the timestep and projects it into the block's conditioning."""
         timesteps_proj = self.time_proj(timestep)
         timesteps_emb = self.timestep_embedder(
             ops.cast(timesteps_proj, timestep.dtype)

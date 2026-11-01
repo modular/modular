@@ -19,7 +19,6 @@ from std.memory import OwnedPointer
 ```
 """
 
-from std.builtin.rebind import downcast
 from std.format._utils import (
     Repr,
     FormatStruct,
@@ -32,17 +31,17 @@ from std.memory.alloc import (
     dealloc,
     Layout,
 )
+from std.utils._nicheable import _FieldNicheable
 
 
-@explicit_destroy(
-    "Use `into_inner()` (for a `Movable` `T`) or `unsafe_take_allocation()`"
-    " to consume an `OwnedPointer` whose element type is not"
-    " `Deinitable`"
-)
 struct OwnedPointer[T: AnyType](
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Use `deinit_with()` or `into_inner()` (for a `Movable` `T`) to"
+        " consume an `OwnedPointer` whose element type is not `Deinitable`"
+    ),
     RegisterPassable,
     Writable where conforms_to(T, Writable),
+    _FieldNicheable,
 ):
     """A safe, owning, smart pointer.
 
@@ -57,8 +56,8 @@ struct OwnedPointer[T: AnyType](
     Parameters:
         T: The type to be stored in the `OwnedPointer`. When `T` is not
             `Deinitable`, the `OwnedPointer` has no implicit
-            destructor and must be consumed with `into_inner()` (for a
-            `Movable` `T`) or `unsafe_take_allocation()`.
+            destructor and must be consumed with `deinit_with()` or
+            `into_inner()` (for a `Movable` `T`).
     """
 
     var _inner: ThinAllocation[Self.T]
@@ -67,34 +66,68 @@ struct OwnedPointer[T: AnyType](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    def __init__[_T: Movable](out self: OwnedPointer[_T], var value: _T):
+    def __init__(
+        out self, var value: Self.T, /
+    ) where conforms_to(Self.T, Movable):
         """Construct a new `OwnedPointer` by moving the passed value into a new backing allocation.
-
-        Parameters:
-            _T: The type of the data to store. It is restricted to `Movable` here to allow efficient move construction.
 
         Args:
             value: The value to move into the `OwnedPointer`.
         """
-        self._inner = alloc(Layout[_T].single()).into_thin()
+        self._inner = alloc(Layout[Self.T].single()).into_thin()
         self._inner.unsafe_ptr().unsafe_write(value^)
 
-    def __init__[_T: Copyable](out self: OwnedPointer[_T], *, copy_value: _T):
-        """Construct a new `OwnedPointer` by explicitly copying the passed value into a new backing allocation.
+    def __init__(out self, *, var init_with: Some[def() -> Self.T]):
+        """Construct a new `OwnedPointer` holding the value returned by `init_with`.
 
-        Parameters:
-            _T: The type of the data to store, which must be
-               `Copyable`.
+        The value is constructed directly into the new backing allocation
+        rather than being constructed elsewhere and then moved, so `T` does
+        not need to be `Movable`.
+
+        ```mojo
+        from std.memory import OwnedPointer
+
+        @fieldwise_init
+        struct Pinned(not Movable):
+            var value: Int
+
+        var ptr = OwnedPointer(init_with=lambda () -> Pinned: Pinned(7))
+        print(ptr[].value)  # => 7
+        ```
+
+        Args:
+            init_with: A function that constructs and returns the value to
+                store in the `OwnedPointer`.
+        """
+        self._inner = alloc(Layout[Self.T].single()).into_thin()
+        self._inner.unsafe_ptr().unsafe_write(init_with=init_with)
+
+    @deprecated(
+        "This `OwnedPointer` initializer is deprecated. Use the by value or"
+        " in-place initializers."
+    )
+    def __init__(
+        out self, *, copy_value: Self.T
+    ) where conforms_to(Self.T, Copyable):
+        """Construct a new `OwnedPointer` by explicitly copying the passed value into a new backing allocation.
 
         Args:
             copy_value: The value to explicitly copy into the `OwnedPointer`.
         """
-        self._inner = alloc(Layout[_T].single()).into_thin()
+        self._inner = alloc(Layout[Self.T].single()).into_thin()
         self._inner.unsafe_ptr().unsafe_write(copy=copy_value)
 
+    # Implicitly copyable lvalues would otherwise pick this borrowing overload
+    # over the by-value one, so exclude them to keep them off the deprecation.
+    @deprecated(
+        "This `OwnedPointer` initializer is deprecated. Use the by value or"
+        " in-place initializers."
+    )
     def __init__[
         _T: Copyable, U: NoneType = None
-    ](out self: OwnedPointer[_T], value: _T):
+    ](out self: OwnedPointer[_T], value: _T) where not conforms_to(
+        _T, ImplicitlyCopyable
+    ):
         """Construct a new `OwnedPointer` by copying the passed value into a new backing allocation.
 
         Parameters:
@@ -107,18 +140,13 @@ struct OwnedPointer[T: AnyType](
         self._inner = alloc(Layout[_T].single()).into_thin()
         self._inner.unsafe_ptr().unsafe_write(copy=value)
 
-    def __init__[
-        _T: Copyable
-    ](out self: OwnedPointer[_T], *, other: OwnedPointer[_T]):
+    def __init__(out self, *, other: Self) where conforms_to(Self.T, Copyable):
         """Construct a new `OwnedPointer` by explicitly copying the value from another `OwnedPointer`.
-
-        Parameters:
-            _T: The type of the data to store.
 
         Args:
             other: The `OwnedPointer` to copy.
         """
-        self = OwnedPointer[_T](copy_value=other[])
+        self = {init_with = lambda () -> Self.T: other[].copy()}
 
     def __init__(
         out self,
@@ -169,10 +197,39 @@ struct OwnedPointer[T: AnyType](
         Constraints:
             `T` must be `Deinitable`. When it is not, the
             `OwnedPointer` has no implicit destructor and must be consumed
-            with `into_inner()` (for a `Movable` `T`) or
-            `unsafe_take_allocation()`.
+            with `deinit_with()` or `into_inner()` (for a `Movable` `T`).
         """
         self._inner.unsafe_ptr().unsafe_deinit_pointee()
+        dealloc(self._inner^.unsafe_with_layout(Layout[Self.T].single()))
+
+    def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
+        """Consumes this `OwnedPointer`, passing its value to `deinit_func` to
+        destroy it.
+
+        The value is destroyed in place in its backing allocation, so `T`
+        does not need to be `Movable` or `Deinitable`.
+
+        Args:
+            deinit_func: The function that takes ownership of the value to
+                destroy it.
+
+        Examples:
+
+        ```mojo
+        from std.memory import OwnedPointer
+
+        @fieldwise_init
+        struct Resource(not Deinitable, not Movable):
+            var id: Int
+
+            def close(deinit self):
+                pass
+
+        var p = OwnedPointer(init_with=lambda () -> Resource: Resource(1))
+        p^.deinit_with(Resource.close)
+        ```
+        """
+        self._inner.unsafe_ptr().unsafe_deinit_pointee_with(deinit_func)
         dealloc(self._inner^.unsafe_with_layout(Layout[Self.T].single()))
 
     # ===-------------------------------------------------------------------===#
@@ -207,11 +264,7 @@ struct OwnedPointer[T: AnyType](
         Returns:
             A pointer to the `OwnedPointer`'s contents.
         """
-        return (
-            self._inner.unsafe_ptr()
-            .unsafe_mut_cast[origin.mut]()
-            .unsafe_origin_cast[origin]()
-        )
+        return self._inner.unsafe_ptr().unsafe_origin_cast[origin]()
 
     @doc_hidden
     @deprecated(use=ptr)
@@ -287,3 +340,5 @@ struct OwnedPointer[T: AnyType](
         FormatStruct(writer, "OwnedPointer").params(
             TypeNames[Self.T](),
         ).fields(Repr(self[]))
+
+    comptime _KgenNichedFieldName = "_inner".value

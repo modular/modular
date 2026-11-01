@@ -26,12 +26,11 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     print("New shape:", coord_to_index_list(shape))
     print("New strides:", stride)
 
-    @always_inline
+    @inline(.always)
     def print_elements_lambda[
         simd_width: Int, alignment: Int = 1
     ](coords: Coord) {var}:
-        var idx = tensor.layout(coords)
-        print(tensor.raw_load(idx))
+        print(tensor.load[width=1](coords))
 
     elementwise[1](print_elements_lambda, shape, DeviceContext(api="cpu"))
 
@@ -82,7 +81,7 @@ def test_slice_dim_basic() raises:
     # CHECK-NEXT: 15.0
 
     # print(torch.arange(0, 16).reshape(4, 4)[2:4:1, :].flatten())
-    test_slice_dim[.float32, 16, 2, 0](IndexList[2](4, 4), 2, 4, 1)
+    test_slice_dim[.float32, 16, 2, 0]((4, 4), 2, 4, 1)
 
     # CHECK-NEXT: In shape: (4, 4)
     # CHECK-NEXT: In strides: (4, 1)
@@ -98,7 +97,7 @@ def test_slice_dim_basic() raises:
     # CHECK-NEXT: 15.0
 
     # print(torch.arange(0, 16).reshape(4, 4)[:, 2:4:1].flatten())
-    test_slice_dim[.float32, 16, 2, 1](IndexList[2](4, 4), 2, 4, 1)
+    test_slice_dim[.float32, 16, 2, 1]((4, 4), 2, 4, 1)
 
 
 def main() raises:

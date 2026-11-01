@@ -1,0 +1,51 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Large-M N x K shapes for bench_block_scaled_matmul_w4a8.yaml. M = 128 rows
+# are context only: the specs are tuned for M >= 4096, not for M = 128.
+# Every K is a multiple of 128, as packed FP4 TMA loads require.
+
+name: bench_block_scaled_matmul
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_block_scaled_matmul.mojo
+
+m_values: &m_values
+  $M: [128, 4096, 8192, 16384]
+
+params:
+# Square; 8192 x 8192 is also the Llama-3-70B O projection.
+- <<: *m_values
+  N: 8192
+  K: 8192
+- <<: *m_values
+  N: 16384
+  K: 16384
+# Llama-3-70B QKV, gate_up and down.
+- <<: *m_values
+  N: 10240
+  K: 8192
+- <<: *m_values
+  N: 57344
+  K: 8192
+- <<: *m_values
+  N: 8192
+  K: 28672
+# DeepSeek-V3 / Kimi style.
+- <<: *m_values
+  N: 18432
+  K: 7168
+- <<: *m_values
+  N: 36864
+  K: 7168
+- <<: *m_values
+  N: 7168
+  K: 18432

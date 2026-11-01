@@ -11,12 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import (
-    assert_equal,
-    assert_true,
-    assert_raises,
-    TestSuite,
-)
+from std.testing import assert_equal, assert_raises, TestSuite
 from std.testing.prop import PropTest, PropTestConfig, Rng, Strategy
 
 

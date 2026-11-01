@@ -19,7 +19,7 @@ from std.utils.numerics import min_or_neg_inf
 from std.sys import size_of, get_defined_int, get_defined_bool
 from std.sys.info import _accelerator_arch
 import max.gpu.primitives.warp as warp
-from max.gpu import block_idx
+from max.gpu import WARP_SIZE, block_idx, lane_id
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.sync import (
@@ -41,7 +41,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
-from max.gpu.primitives.warp import _vote_nvidia_helper
+from max.gpu.primitives.warp import vote
 from layout.swizzle import make_swizzle
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -49,7 +49,6 @@ from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
     EnableForcedOrdering,
     EnableEarlyAdd,
-    ExplicitTMEMCrossP,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     add_ftz,
@@ -67,6 +66,8 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     pack_row,
     peel_mask,
     scale_pack_o_row,
+    o_smem_chunk_offset,
+    opaque_u32,
     SharedMemPointer,
     SM100TensorAccumulator,
     splitk_partition_idx,
@@ -86,7 +87,6 @@ from nn.attention.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.mha_tile_scheduler import SeqInfo
 from nn.attention.mha_utils import OptionallyStaticInt, _is_decoding
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from .smem import SM100AttentionSMem
 
@@ -94,7 +94,7 @@ from .smem import SM100AttentionSMem
 comptime f32x2 = SIMD[.float32, 2]
 
 
-@always_inline
+@inline(.always)
 def fa4_scale_write_output[
     output_type: DType,
     //,
@@ -139,33 +139,29 @@ def fa4_scale_write_output[
     comptime BM = config.BM // config.num_q
     comptime ov_depth = config.ov_depth
 
-    # O SMEM is row-major (SWIZZLE_NONE): the O accumulator is loaded
-    # one-row-per-thread via `tcgen05_ld[datapaths=32]` (warp w, lane l -> row
-    # 32*w + l; 4 warps cover 128 rows), exactly the row ownership the S
-    # reductions use. So `inv_row_sum` is already the rescale factor for the
-    # row this thread writes -- no `warp.shuffle_idx` -- and the per-row 16 B
-    # stores stay bank-conflict-free (8 rows * 16 B = 128 B = all 32 banks
-    # once). The inner swizzle is the identity for SWIZZLE_NONE, so each
-    # k-block is plain row-major [BM, o_sw_K].
-    comptime o_swizzle = make_swizzle[output_type, output_swizzle_mode]()
+    # O is loaded one-row-per-thread via `tcgen05_ld[datapaths=32]` (warp w,
+    # lane l -> row 32*w + l), exactly the row ownership the S reductions use,
+    # so `inv_row_sum` is already this row's rescale factor (no
+    # `warp.shuffle_idx`). Each thread writes its row as 16 B chunks into the
+    # block-major `[block, BM, o_sw_K]` tile the O store reads, swizzled within
+    # each block (`o_smem_chunk_offset`), which keeps every store phase
+    # bank-conflict-free.
     comptime o_sw_K = output_swizzle_mode.bytes() // size_of[output_type]()
-    # The group-of-8 / 16 B store path requires a 2-byte output element
-    # (8 elems * 2 B = 16 B = uint32x4). This is the same constraint the
-    # previous `output_reg_to_smem_st_matrix` path enforced.
+    # The 16 B chunk path requires a 2-byte output element (8 elems * 2 B =
+    # 16 B = uint32x4).
     comptime assert (
         size_of[output_type]() == 2
     ), "fa4_scale_write_output requires a 2-byte output dtype (bf16/f16)"
-
-    # Output column count is aligned to the OUTPUT swizzle granularity
-    # (o_sw_K, the SWIZZLE_NONE 16 B box = 8 bf16), NOT the QKV swizzle's
-    # `padded_ov_depth` (which aligns to SWIZZLE_128B = 64 elems). ov_depth is
-    # already a multiple of o_sw_K for every supported head size, so this is
-    # exact and needs no padding (e.g. depth 72 -> 9 boxes, not 128/64=2).
+    comptime chunk = 16 // size_of[output_type]()
+    comptime chunks_per_blk = o_sw_K // chunk
+    # Depths like 72 leave the last block partly empty; the TMA masks its
+    # out-of-bounds columns, so those chunks are never written.
+    comptime n_chunks = align_up(ov_depth, chunk) // chunk
     comptime o_sw_blocks = align_up(ov_depth, o_sw_K) // o_sw_K
     comptime batched = tma_bpo > 0
     comptime if batched:
-        comptime assert (
-            tma_bpo == (o_sw_blocks + 1) // 2
+        comptime assert tma_bpo == ceildiv(
+            o_sw_blocks, 2
         ), "batched scale_write expects a half-depth (ceil(blocks/2)) box."
 
     var e = elect()
@@ -173,60 +169,65 @@ def fa4_scale_write_output[
         if e != 0:
             ragged_tma_store.prefetch_descriptor()
 
-    # Each thread owns output row `local_row` (= tid % 128). Load that row from
-    # TMEM for one o_sw_K-wide block, scale+pack (f32x2 compute, wide store; see
-    # `scale_pack_o_row`), and write one 16 B row-major store.
-    @__parameter
-    @always_inline
-    def write_block[blk: Int]():
-        comptime col = blk * o_sw_K
+    @inline(.always)
+    def write_chunk[j: Int]() {imm}:
+        var packed: SIMD[DType.uint32, chunk // 2]
         comptime if zero_fill:
             # Empty (all-masked) row: emit zeros without reading the
             # never-produced O accumulator in TMEM.
-            var o_vals = Array[Scalar[accum_dtype], o_sw_K](
+            var o_zero = Array[Scalar[accum_dtype], chunk](
                 fill=Scalar[accum_dtype](0)
             )
-            var packed = scale_pack_o_row[output_type, w=o_sw_K](
-                o_vals, inv_row_sum
-            )
-            var o_inner = Int(local_row) * o_sw_K
-            (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-                UInt32
-            ]().store(packed)
+            packed = scale_pack_o_row[output_type, w=chunk](o_zero, inv_row_sum)
         else:
             var o_vals = tcgen05_ld[
                 datapaths=32,
                 bits=32,
-                repeat=o_sw_K,
+                repeat=chunk,
                 dtype=accum_dtype,
                 pack=False,
-                width=o_sw_K,
-            ](o_tmem_arg.tmem_addr + UInt32(col))
+                width=chunk,
+            ](o_tmem_arg.tmem_addr + UInt32(j * chunk))
+            packed = scale_pack_o_row[output_type, w=chunk](o_vals, inv_row_sum)
+        (
+            o_smem_arg.unsafe_offset(
+                o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
+                    Int(local_row), j
+                )
+            )
+        ).unsafe_bitcast[UInt32]().unsafe_store(packed)
 
-            var packed = scale_pack_o_row[output_type, w=o_sw_K](
-                o_vals, inv_row_sum
+    @inline(.always)
+    def write_blocks[lo: Int, hi: Int]() {imm}:
+        comptime for j in range(
+            lo * chunks_per_blk, min(hi * chunks_per_blk, n_chunks)
+        ):
+            write_chunk[j]()
+
+    @inline(.always)
+    def store_blocks[lo: Int, hi: Int]() {imm}:
+        comptime for blk in range(lo, hi):
+            ragged_tma_store.async_copy_from_col[blk](
+                o_smem_arg,
+                ragged_idx=out_row_idx,
+                dynamic_dim=UInt32(num_output_rows),
+                middle_idx=out_head_idx,
+                elect=e,
             )
 
-            # Block `blk` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
-            var o_inner = Int(local_row) * o_sw_K
-            (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-                UInt32
-            ]().store(packed)
-
-    comptime if batched:
-        # Single issuer, 2-phase pipeline: write the first half to smem and kick
-        # off its batched TMA, then write the second half (which overlaps the
-        # first TMA's copy) and kick off its TMA. The two halves touch disjoint
-        # smem blocks, so there is no read/write hazard. The batched store now
-        # also covers fused GQA (group > 1): the (middle_dim, rows) selector
-        # merge in RaggedTMA3DTile keeps the descriptor within the 5D limit
-        # (rank-4 for group==1, rank-5 for group>1); write_block is unchanged
-        # (its BM already includes group).
-        comptime for blk in range(tma_bpo):
-            write_block[blk]()
-        named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
-        if local_warp_idx == 0:
-            fence_async_view_proxy()
+    # Single issuer, 2-phase pipeline: write the first half of the blocks to
+    # smem and kick off its TMA, then write the second half (which overlaps the
+    # first TMA's copy) and kick off its TMA. The two halves touch disjoint
+    # smem blocks, so there is no read/write hazard.
+    comptime half_blocks = ceildiv(o_sw_blocks, 2)
+    write_blocks[0, half_blocks]()
+    named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
+    if local_warp_idx == 0:
+        fence_async_view_proxy()
+        comptime if batched:
+            # SWIZZLE_NONE (MLA): one batched copy per half. The fused-GQA
+            # (middle_dim, rows) selector merge in RaggedTMA3DTile keeps the
+            # descriptor within the 5D limit.
             ragged_tma_store.async_copy_batched[0](
                 o_smem_arg,
                 ragged_idx=out_row_idx,
@@ -234,45 +235,32 @@ def fa4_scale_write_output[
                 middle_idx=out_head_idx,
                 elect=e,
             )
+        else:
+            store_blocks[0, half_blocks]()
 
-        comptime for blk in range(tma_bpo, o_sw_blocks):
-            write_block[blk]()
+    comptime if half_blocks < o_sw_blocks:
+        write_blocks[half_blocks, o_sw_blocks]()
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
         if local_warp_idx == 0:
             fence_async_view_proxy()
-            # col_start = tma_bpo; the box may overhang the last block
-            # for odd o_sw_blocks -> masked off by the TMA.
-            ragged_tma_store.async_copy_batched[tma_bpo](
-                o_smem_arg,
-                ragged_idx=out_row_idx,
-                dynamic_dim=UInt32(num_output_rows),
-                middle_idx=out_head_idx,
-                elect=e,
-            )
-            cp_async_bulk_commit_group()
-    else:
-        # tma_bpo == 0: swizzled-output callers (e.g. an MLA variant with a
-        # SWIZZLE_128B output store) can't use the blocked-smem batched box, so
-        # fall back to one per-block TMA each. (Fused GQA with SWIZZLE_NONE now
-        # takes the batched branch above.)
-        comptime for blk in range(o_sw_blocks):
-            write_block[blk]()
-        named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
-        if local_warp_idx == 0:
-            fence_async_view_proxy()
-            comptime for blk in range(o_sw_blocks):
-                ragged_tma_store.async_copy_from_col[blk](
+            comptime if batched:
+                # col_start = tma_bpo; the box may overhang the last block
+                # for odd o_sw_blocks -> masked off by the TMA.
+                ragged_tma_store.async_copy_batched[tma_bpo](
                     o_smem_arg,
                     ragged_idx=out_row_idx,
                     dynamic_dim=UInt32(num_output_rows),
                     middle_idx=out_head_idx,
                     elect=e,
                 )
-            cp_async_bulk_commit_group()
+            else:
+                store_blocks[half_blocks, o_sw_blocks]()
+    if local_warp_idx == 0:
+        cp_async_bulk_commit_group()
     cp_async_bulk_wait_group[0]()
 
 
-@always_inline
+@inline(.always)
 def fa4_lse_combine_write[
     output_type: DType,
     //,
@@ -281,6 +269,7 @@ def fa4_lse_combine_write[
     iters_per_wg: Int,
     output_swizzle_mode: TensorMapSwizzle,
     tma_bpo: Int,
+    cross_wg: Bool = False,
 ](
     local_row: UInt32,
     local_warp_idx: UInt32,
@@ -313,13 +302,17 @@ def fa4_lse_combine_write[
     """LSE-combine two TMEM_O fragments and TMA-store a depth-column slice.
 
     1Q-only sibling of `fa4_scale_write_output`. Each WG handles a disjoint
-    range `j in [wg_j_offset, wg_j_offset + iters_per_wg)` of swizzle-block
-    columns. For each `j`, the WG loads both its own and the peer's TMEM_O
+    range `j in [wg_j_offset, wg_j_offset + iters_per_wg)` of 16 B column
+    chunks. For each `j`, the WG loads both its own and the peer's TMEM_O
     fragments, combines them in registers via per-row scales
-    (`final_scale_local` for own, `final_scale_peer` for peer), writes the
-    combined output to the shared `o_smem_arg` at the `j` slot, then
-    TMA-stores that slot to gmem. Both WGs target the same `BM` Q rows but
-    disjoint depth columns, so smem and gmem regions never overlap.
+    (`final_scale_local` for own, `final_scale_peer` for peer), and writes the
+    combined chunk to the shared `o_smem_arg` tile the O store reads. Both WGs
+    target the same `BM` Q rows but disjoint depth columns.
+
+    Without `cross_wg` the range covers whole swizzle blocks and each WG
+    TMA-stores its own blocks. With `cross_wg` (a block straddles the two
+    ranges, e.g. one 64-column block at depth 64) both WGs join a 2-WG barrier
+    and WG0 alone stores every block; the caller must invoke it on both WGs.
 
     The caller must have already waited on both `pipeline_o0` and
     `pipeline_o1` producer barriers (and issued `tcgen05_fence_after()`)
@@ -332,44 +325,41 @@ def fa4_lse_combine_write[
     # store descriptor's BM and the shared o_smem tile extent).
     comptime BM = config.BM // config.num_q
 
-    # O SMEM is row-major (SWIZZLE_NONE): O is loaded one-row-per-thread via
-    # `tcgen05_ld[datapaths=32]`, so `final_scale_local`/`final_scale_peer`
-    # are already this thread's row scales (no `warp.shuffle_idx`), the combine
-    # is a pure per-thread register op, and the per-row 16 B stores stay
-    # bank-conflict-free (8 rows * 16 B = 128 B = all 32 banks once). The inner
-    # swizzle is the identity for SWIZZLE_NONE, so each k-block is plain
-    # row-major [BM, o_sw_K].
-    comptime o_swizzle = make_swizzle[output_type, output_swizzle_mode]()
+    # O is loaded one-row-per-thread via `tcgen05_ld[datapaths=32]`, so
+    # `final_scale_local`/`final_scale_peer` are already this thread's row
+    # scales (no `warp.shuffle_idx`) and the combine is a pure per-thread
+    # register op. Chunks land in the swizzled block-major tile via
+    # `o_smem_chunk_offset`, bank-conflict-free.
     comptime o_sw_K = output_swizzle_mode.bytes() // size_of[output_type]()
     comptime assert (
         size_of[output_type]() == 2
     ), "fa4_lse_combine_write requires a 2-byte output dtype (bf16/f16)"
-
-    # Each WG handles a disjoint range of o_sw_K-wide column blocks
-    # [wg_j_offset, wg_j_offset + iters_per_wg). `iters` matches the caller's
-    # `iters_total` and is the output column count aligned to the OUTPUT
-    # swizzle granularity (o_sw_K), NOT the QKV swizzle's `padded_ov_depth`
-    # (which aligns to SWIZZLE_128B = 64 elems). ov_depth is already a multiple
-    # of o_sw_K for every supported head size, so this is exact. Under
-    # SWIZZLE_NONE the block size is small (o_sw_K = 8 for bf16), so depth=64
-    # yields iters=8 and both WGs participate; the caller's `if iters_per_wg1
-    # > 0` guard still skips a WG only when its range is empty.
-    comptime iters = align_up(config.ov_depth, o_sw_K) // o_sw_K
+    comptime chunk = 16 // size_of[output_type]()
+    comptime chunks_per_blk = o_sw_K // chunk
+    comptime n_chunks = align_up(config.ov_depth, chunk) // chunk
+    comptime o_sw_blocks = align_up(config.ov_depth, o_sw_K) // o_sw_K
     comptime assert iters_per_wg >= 1, (
-        "fa4_lse_combine_write requires at least one column block per"
+        "fa4_lse_combine_write requires at least one column chunk per"
         " call; the caller must skip WG1 when iters_per_wg would be 0."
     )
-    comptime assert wg_j_offset + iters_per_wg <= iters
+    comptime assert wg_j_offset + iters_per_wg <= n_chunks
+    comptime if not cross_wg:
+        comptime assert wg_j_offset % chunks_per_blk == 0 and (
+            wg_j_offset + iters_per_wg == n_chunks
+            or iters_per_wg % chunks_per_blk == 0
+        ), "a WG storing its own blocks must own whole blocks"
+    comptime blk_lo = wg_j_offset // chunks_per_blk
+    comptime blk_hi = ceildiv(wg_j_offset + iters_per_wg, chunks_per_blk)
 
-    # Batched: each WG issues ONE TMA over its block range (rank-4 for group==1,
-    # rank-5 for group>1 fused GQA, after the RaggedTMA3DTile selector merge).
-    # The box is the half-depth `ceil(iters/2)`; WG0 (wg_j_offset=0) fills it
-    # exactly, WG1 (wg_j_offset=ceil) overhangs the last block for odd `iters`,
-    # which the TMA masks off.
+    # Batched (SWIZZLE_NONE, one chunk per block): each WG issues ONE TMA over
+    # its block range. The box is the half-depth `ceil(blocks/2)`; WG0
+    # (wg_j_offset=0) fills it exactly, WG1 (wg_j_offset=ceil) overhangs the
+    # last block for odd counts, which the TMA masks off.
     comptime batched = tma_bpo > 0
     comptime if batched:
-        comptime assert (
-            tma_bpo == (iters + 1) // 2
+        comptime assert chunks_per_blk == 1 and not cross_wg
+        comptime assert tma_bpo == ceildiv(
+            o_sw_blocks, 2
         ), "batched combine expects a half-depth (ceil(iters/2)) box."
         comptime assert (
             wg_j_offset == 0 or wg_j_offset == tma_bpo
@@ -380,26 +370,24 @@ def fa4_lse_combine_write[
         if e != 0:
             ragged_tma_store.prefetch_descriptor()
 
-    # Each thread owns output row `local_row` (= tid % 128). Combine own+peer
-    # for this WG's block range and write row-major to SMEM.
     comptime for iter in range(iters_per_wg):
         comptime j = wg_j_offset + iter
-        comptime col_start = j * o_sw_K
+        comptime col_start = j * chunk
         var own_arr = tcgen05_ld[
             datapaths=32,
             bits=32,
-            repeat=o_sw_K,
+            repeat=chunk,
             dtype=accum_dtype,
             pack=False,
-            width=o_sw_K,
+            width=chunk,
         ](own_o_tmem.tmem_addr + UInt32(col_start))
         var peer_arr = tcgen05_ld[
             datapaths=32,
             bits=32,
-            repeat=o_sw_K,
+            repeat=chunk,
             dtype=accum_dtype,
             pack=False,
-            width=o_sw_K,
+            width=chunk,
         ](peer_o_tmem.tmem_addr + UInt32(col_start))
 
         # combined = own * final_scale_local + peer * final_scale_peer, packed
@@ -407,46 +395,156 @@ def fa4_lse_combine_write[
         var packed = combine_pack_o_row[output_type](
             own_arr, peer_arr, final_scale_local, final_scale_peer
         )
-
-        # Block `j` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
-        var o_inner = Int(local_row) * o_sw_K
-        (o_smem_arg + j * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-            UInt32
-        ]().store(packed)
-
-    # Sync all WARPGROUP_SIZE threads before the TMA store.
-    named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
-
-    # TMA store: one elected thread issues this WG's column-block stores.
-    if local_warp_idx == 0:
-        fence_async_view_proxy()
-        comptime if batched:
-            # One batched copy over this WG's half [wg_j_offset, wg_j_offset+tma_bpo).
-            ragged_tma_store.async_copy_batched[wg_j_offset](
-                o_smem_arg,
-                ragged_idx=out_row_idx,
-                dynamic_dim=UInt32(num_output_rows),
-                middle_idx=out_head_idx,
-                elect=e,
+        (
+            o_smem_arg.unsafe_offset(
+                o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
+                    Int(local_row), j
+                )
             )
-        else:
-            # tma_bpo == 0: swizzled-output fallback -> one per-block TMA each.
-            comptime for iter in range(iters_per_wg):
-                comptime j = wg_j_offset + iter
-                ragged_tma_store.async_copy_from_col[j](
+        ).unsafe_bitcast[UInt32]().unsafe_store(packed)
+
+    comptime if cross_wg:
+        named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+        if warp_group_idx == 0 and local_warp_idx == 0:
+            fence_async_view_proxy()
+            comptime for blk in range(o_sw_blocks):
+                ragged_tma_store.async_copy_from_col[blk](
                     o_smem_arg,
                     ragged_idx=out_row_idx,
                     dynamic_dim=UInt32(num_output_rows),
                     middle_idx=out_head_idx,
                     elect=e,
                 )
-        cp_async_bulk_commit_group()
+            cp_async_bulk_commit_group()
+    else:
+        named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
+        if local_warp_idx == 0:
+            fence_async_view_proxy()
+            comptime if batched:
+                ragged_tma_store.async_copy_batched[wg_j_offset](
+                    o_smem_arg,
+                    ragged_idx=out_row_idx,
+                    dynamic_dim=UInt32(num_output_rows),
+                    middle_idx=out_head_idx,
+                    elect=e,
+                )
+            else:
+                comptime for blk in range(blk_lo, blk_hi):
+                    ragged_tma_store.async_copy_from_col[blk](
+                        o_smem_arg,
+                        ragged_idx=out_row_idx,
+                        dynamic_dim=UInt32(num_output_rows),
+                        middle_idx=out_head_idx,
+                        elect=e,
+                    )
+            cp_async_bulk_commit_group()
 
     # Wait for all TMA stores to complete.
     cp_async_bulk_wait_group[0]()
 
 
-@always_inline
+@inline(.always)
+def fa4_ws_store_o_f32[
+    config: FA4Config,
+    col_lo: Int,
+    col_hi: Int,
+    num_threads: Int,
+    barrier_id: Int,
+    single_source: Bool = False,
+](
+    tile_row: UInt32,
+    tid: UInt32,
+    scale_own: Float32,
+    scale_peer: Float32,
+    own_o_tmem_addr: UInt32,
+    peer_o_tmem_addr: UInt32,
+    stage: SharedMemPointer[Float32],
+    o_partial: MutPointer[Float32, MutAnyOrigin],
+    num_output_rows: Int32,
+    head_idx: UInt32,
+    out_row_idx: UInt32,
+):
+    """Stores O to an f32 workspace: `own * scale_own + peer * scale_peer`
+    (`own * scale_own` with `single_source`) for this thread's row, columns
+    `[col_lo, col_hi)`.
+
+    The f32 sibling of `fa4_lse_combine_write` / `fa4_scale_write_output` for
+    workspace split-K: the combine then reads unrounded partials, so the output
+    is rounded to its dtype once. Every one of the `num_threads` callers (`tid`
+    in `[0, num_threads)`) writes its columns to `stage`, which must be dead
+    smem of `BM * (ov_depth + 4)` f32; after `barrier_id` they copy it out a
+    row per warp to `[P * num_rows_q, num_q_heads, ov_depth]` rows, where the
+    O-store descriptor would place them. Storing straight from registers
+    instead puts a warp's 32 rows, `ov_depth` f32 apart, in one instruction,
+    which cost a verify step about 2 us per layer on B200.
+    """
+    comptime assert config.num_q == 1, "the f32 workspace store is 1Q-only"
+    comptime ov_depth = config.ov_depth
+    # The pad staggers rows across banks for the per-row 16 B stores.
+    comptime stage_ld = ov_depth + 4
+    comptime chunk = 8
+    comptime assert col_lo % chunk == 0 and col_hi % chunk == 0
+    comptime assert 0 <= col_lo and col_hi <= ov_depth
+    comptime assert ov_depth % (4 * WARP_SIZE) == 0
+    comptime assert num_threads % WARP_SIZE == 0
+
+    var stage_row = stage.unsafe_offset(Int(tile_row) * stage_ld)
+    comptime for col in range(col_lo, col_hi, chunk):
+        var own = tcgen05_ld[
+            datapaths=32,
+            bits=32,
+            repeat=chunk,
+            dtype=DType.float32,
+            pack=False,
+            width=chunk,
+        ](own_o_tmem_addr + UInt32(col))
+        var vals = SIMD[DType.float32, chunk]()
+        comptime if single_source:
+            comptime for c in range(chunk):
+                vals[c] = own[c] * scale_own
+        else:
+            var peer = tcgen05_ld[
+                datapaths=32,
+                bits=32,
+                repeat=chunk,
+                dtype=DType.float32,
+                pack=False,
+                width=chunk,
+            ](peer_o_tmem_addr + UInt32(col))
+            comptime for c in range(chunk):
+                vals[c] = peer[c].fma(scale_peer, own[c] * scale_own)
+        stage_row.unsafe_offset(col).unsafe_store[alignment=16](vals)
+    named_barrier[Int32(num_threads)](Int32(barrier_id))
+
+    comptime num_warps = num_threads // WARP_SIZE
+    comptime vecs_per_row = ov_depth // (4 * WARP_SIZE)
+    # Not `warp_id()`: its `tid.x` read merges with the kernel prologue's, and
+    # the hoisted math spills across `setmaxnreg` (see `llvm_opaque_tid`).
+    var warp_id = tid // UInt32(WARP_SIZE)
+    var lane = UInt32(lane_id())
+    for row in range(warp_id, UInt32(config.BM), UInt32(num_warps)):
+        var seq_off: UInt32 = (
+            row // UInt32(config.group)
+        ) if config.fuse_gqa else row
+        if Int32(seq_off) >= num_output_rows:
+            break
+        var q_head: UInt32 = (
+            UInt32(config.group) * head_idx + row % UInt32(config.group)
+        ) if config.fuse_gqa else head_idx
+        var dst = o_partial.unsafe_offset(
+            (Int(out_row_idx + seq_off) * config.num_q_heads + Int(q_head))
+            * ov_depth
+        )
+        comptime for v in range(vecs_per_row):
+            var col = Int(lane) * 4 + v * 4 * WARP_SIZE
+            dst.unsafe_offset(col).unsafe_store[alignment=16](
+                stage.unsafe_offset(Int(row) * stage_ld + col).unsafe_load[
+                    width=4, alignment=16
+                ]()
+            )
+
+
+@inline(.always)
 def fa4_ws_exchange4[
     op: StaticString,
     *,
@@ -550,7 +648,7 @@ def fa4_ws_exchange4[
     ), "fa4_ws_exchange4 slot map needs m_pack * rows == WARPGROUP_SIZE"
 
     # Warpgroup `wg` at parity `p` owns [(wg*2 + p)*WARPGROUP_SIZE, +128).
-    var buf = xchg_smem + (
+    var buf = xchg_smem.unsafe_offset(
         (warp_group_idx * 2 + (exchange_seq & 1)) * UInt32(WARPGROUP_SIZE)
     )
     buf[partition_g * UInt32(rows) + local_row] = partial
@@ -567,7 +665,7 @@ def fa4_ws_exchange4[
     return acc
 
 
-@always_inline
+@inline(.always)
 def fa4_ws_level0_band[
     band_cols: Int,
 ](o_tmem: UInt32, mut o_band: Array[Scalar[DType.float32], band_cols],):
@@ -645,13 +743,14 @@ def fa4_ws_level0_band[
             o_band[ld * ld_width + i] = c_frag[i]
 
 
-@always_inline
+@inline(.always)
 def fa4_ws_intracta_combine[
     output_type: DType,
     //,
     m_pack: Int,
     rows: Int,
     ov_depth: Int,
+    output_swizzle_mode: TensorMapSwizzle,
     use_fma: Bool = True,
 ](
     local_row: UInt32,
@@ -695,15 +794,16 @@ def fa4_ws_intracta_combine[
     The caller must have made `O_g` visible in TMEM (wait the O-producer barrier
     and issue `tcgen05_fence_after()`) before this call, exactly as the
     `fa4_lse_combine_write` caller does. Output is written to `o_smem` in the
-    SWIZZLE_NONE 16 B block-major layout (`[block, rows, o_sw_K]`,
-    `o_sw_K = 16 // size_of[output_type]()`) that a SWIZZLE_NONE O-TMA store
-    consumes; the caller performs the egress (the O TMA store in the kernel).
+    block-major `output_swizzle_mode` layout of `o_smem_chunk_offset`, one 16 B
+    chunk per store; the caller performs the egress (the O TMA store in the
+    kernel).
 
     Parameters:
         output_type: The `o_smem` element dtype (bf16 in-kernel; f32 for tests).
         m_pack: Number of key-partitions == datapath quarters (4 for MMA_M=32).
         rows: Query rows per tile (`config.BM`, 32 for MMA_M=32).
         ov_depth: Output value depth.
+        output_swizzle_mode: Swizzle of the O-TMA store that reads `o_smem`.
         use_fma: Gate the `* scale_log2e` step (matches `fa4_splitk_combine_write`).
 
     Args:
@@ -717,8 +817,8 @@ def fa4_ws_intracta_combine[
         stage_smem: SMEM scratch, `>= m_pack*rows*ov_depth` f32 (raw O staging,
             SWIZZLE_NONE 16 B block-major `[m_pack, stage_blocks, rows, 4]`).
         maxsum_smem: SMEM scratch, `>= m_pack*rows*2` f32 ((m, l) staging).
-        o_smem: Output sink, SWIZZLE_NONE 16 B block-major
-            `[block, rows, o_sw_K]` of `output_type`.
+        o_smem: Output sink of `output_type`, laid out by
+            `o_smem_chunk_offset[output_type, output_swizzle_mode, rows]`.
     """
     comptime accum_dtype = DType.float32
     # Physical band width per depth-tile == MMA_N_max(256, F16) / m_pack, and the
@@ -736,12 +836,11 @@ def fa4_ws_intracta_combine[
     comptime assert ov_depth % depth_tile == 0
     comptime assert ov_depth % m_pack == 0
 
-    # SWIZZLE_NONE 16 B block-major layout (matches `fa4_scale_write_output` /
-    # `fa4_splitk_stage_partial`): both `stage_smem` (f32) and `o_smem`
-    # (`output_type`) are `[block, rows, K]` per partition, one 16 B `STS.128`
-    # per block, so consecutive rows land 16 B (4 banks) apart -- bank-conflict
-    # free on both the stage write and the output store. `stage_K` is fixed at 4
-    # (f32), `o_sw_K` widens with a narrower `output_type` (8 for bf16/f16).
+    # `stage_smem` (f32) is SWIZZLE_NONE 16 B block-major `[block, rows, 4]` per
+    # partition, one `STS.128` per block, so consecutive rows land 16 B apart --
+    # bank-conflict free. `o_smem` takes one 16 B chunk per store in the O-store
+    # swizzle's layout (`o_smem_chunk_offset`); `o_sw_K` is the chunk width
+    # (8 for bf16/f16).
     comptime stage_K = 16 // size_of[accum_dtype]()  # f32 -> 4
     comptime stage_blocks = ov_depth // stage_K
     comptime o_sw_K = 16 // size_of[output_type]()  # bf16 -> 8, f32 -> 4
@@ -795,10 +894,10 @@ def fa4_ws_intracta_combine[
                 comptime for k in range(stage_K):
                     v[k] = c_frag[sb * stage_K + k]
                 (
-                    stage_smem
-                    + (g * stage_blocks + sblk) * rows * stage_K
-                    + r * stage_K
-                ).store(v)
+                    stage_smem.unsafe_offset(
+                        (g * stage_blocks + sblk) * rows * stage_K
+                    ).unsafe_offset(r * stage_K)
+                ).unsafe_store(v)
     maxsum_smem[(g * rows + r) * 2] = own_max
     maxsum_smem[(g * rows + r) * 2 + 1] = own_sum
 
@@ -817,18 +916,18 @@ def fa4_ws_intracta_combine[
         )
         m = max_ftz(m, maxsum_smem[(3 * rows + r) * 2])
 
-    var scale = Array[Scalar[accum_dtype], m_pack](uninitialized=True)
-    var lps = Array[Scalar[accum_dtype], m_pack](uninitialized=True)
-    comptime for p in range(m_pack):
+    def scale_at[p: Int]() {imm} -> Scalar[accum_dtype]:
         var mp = maxsum_smem[(p * rows + r) * 2]
-        var lp = maxsum_smem[(p * rows + r) * 2 + 1]
         var d = mp - m
         comptime if use_fma:
             d = mul_ftz(d, scale_log2e)
-        var s = exp2(d)
-        scale[p] = s
-        lps[p] = lp
-        # l_acc = s.fma(lp, l_acc)
+        return exp2(d)
+
+    def lps_at[p: Int]() {imm} -> Scalar[accum_dtype]:
+        return maxsum_smem[(p * rows + r) * 2 + 1]
+
+    var scale = Array[Scalar[accum_dtype], m_pack](fill_with_unrolled=scale_at)
+    var lps = Array[Scalar[accum_dtype], m_pack](fill_with_unrolled=lps_at)
     var l_acc: Float32
     comptime if m_pack == 2:
         l_acc = scale[1].fma(lps[1], scale[0] * lps[0])
@@ -857,21 +956,23 @@ def fa4_ws_intracta_combine[
                 var acc = mul_ftz(
                     f32x2(scale[0]),
                     (
-                        stage_smem
-                        + (0 * stage_blocks + sblk) * rows * stage_K
-                        + r * stage_K
-                        + 2 * hc
-                    ).load[width=2](),
+                        stage_smem.unsafe_offset(
+                            (0 * stage_blocks + sblk) * rows * stage_K
+                        )
+                        .unsafe_offset(r * stage_K)
+                        .unsafe_offset(2 * hc)
+                    ).unsafe_load[width=2](),
                 )
                 comptime for p in range(1, m_pack):
                     acc = fma_ftz(
                         f32x2(scale[p]),
                         (
-                            stage_smem
-                            + (p * stage_blocks + sblk) * rows * stage_K
-                            + r * stage_K
-                            + 2 * hc
-                        ).load[width=2](),
+                            stage_smem.unsafe_offset(
+                                (p * stage_blocks + sblk) * rows * stage_K
+                            )
+                            .unsafe_offset(r * stage_K)
+                            .unsafe_offset(2 * hc)
+                        ).unsafe_load[width=2](),
                         acc,
                     )
                 acc = mul_ftz(acc, f32x2(inv_l))
@@ -884,7 +985,13 @@ def fa4_ws_intracta_combine[
                 else:
                     # bf16/f16 output: each f32x2 chunk packs into one u32 lane.
                     packed[cc] = bitcast[.uint32, 1](acc.cast[output_type]())
-        st_shared_v4_b32(o_smem, oblk * rows * o_sw_K + r * o_sw_K, packed)
+        st_shared_v4_b32(
+            o_smem,
+            o_smem_chunk_offset[output_type, output_swizzle_mode, rows](
+                r, oblk
+            ),
+            packed,
+        )
 
     # Per-row fully-reduced (M_cta, L_cta) (raw max, base-2 denominator),
     # identical across the `m_pack` warps. Ignored by the non-workspace caller;
@@ -892,7 +999,7 @@ def fa4_ws_intracta_combine[
     return (m, l_acc)
 
 
-@always_inline
+@inline(.always)
 def fa4_ws_level1_combine[
     m_pack: Int,
     rows: Int,
@@ -987,10 +1094,10 @@ def fa4_ws_level1_combine[
                 comptime for k in range(stage_K):
                     v[k] = c_frag[sb * stage_K + k]
                 (
-                    stage_smem
-                    + (g * stage_blocks + sblk) * rows * stage_K
-                    + r * stage_K
-                ).store(v)
+                    stage_smem.unsafe_offset(
+                        (g * stage_blocks + sblk) * rows * stage_K
+                    ).unsafe_offset(r * stage_K)
+                ).unsafe_store(v)
     maxsum_smem[(g * rows + r) * 2] = own_max
     maxsum_smem[(g * rows + r) * 2 + 1] = own_sum
 
@@ -1009,16 +1116,18 @@ def fa4_ws_level1_combine[
         )
         m = max_ftz(m, maxsum_smem[(3 * rows + r) * 2])
 
-    var scale = Array[Scalar[accum_dtype], m_pack](uninitialized=True)
-    var lps = Array[Scalar[accum_dtype], m_pack](uninitialized=True)
-    comptime for p in range(m_pack):
+    def scale_at[p: Int]() {imm} -> Scalar[accum_dtype]:
         var mp = maxsum_smem[(p * rows + r) * 2]
-        var lp = maxsum_smem[(p * rows + r) * 2 + 1]
         var d = mp - m
         comptime if use_fma:
             d = mul_ftz(d, scale_log2e)
-        scale[p] = exp2(d)
-        lps[p] = lp
+        return exp2(d)
+
+    def lps_at[p: Int]() {imm} -> Scalar[accum_dtype]:
+        return maxsum_smem[(p * rows + r) * 2 + 1]
+
+    var scale = Array[Scalar[accum_dtype], m_pack](fill_with_unrolled=scale_at)
+    var lps = Array[Scalar[accum_dtype], m_pack](fill_with_unrolled=lps_at)
     var l_acc: Float32
     comptime if m_pack == 2:
         l_acc = scale[1].fma(lps[1], scale[0] * lps[0])
@@ -1042,21 +1151,23 @@ def fa4_ws_level1_combine[
             var acc = mul_ftz(
                 f32x2(scale[0]),
                 (
-                    stage_smem
-                    + (0 * stage_blocks + sblk) * rows * stage_K
-                    + r * stage_K
-                    + 2 * hc
-                ).load[width=2](),
+                    stage_smem.unsafe_offset(
+                        (0 * stage_blocks + sblk) * rows * stage_K
+                    )
+                    .unsafe_offset(r * stage_K)
+                    .unsafe_offset(2 * hc)
+                ).unsafe_load[width=2](),
             )
             comptime for p in range(1, m_pack):
                 acc = fma_ftz(
                     f32x2(scale[p]),
                     (
-                        stage_smem
-                        + (p * stage_blocks + sblk) * rows * stage_K
-                        + r * stage_K
-                        + 2 * hc
-                    ).load[width=2](),
+                        stage_smem.unsafe_offset(
+                            (p * stage_blocks + sblk) * rows * stage_K
+                        )
+                        .unsafe_offset(r * stage_K)
+                        .unsafe_offset(2 * hc)
+                    ).unsafe_load[width=2](),
                     acc,
                 )
             comptime obase = lb * stage_K + 2 * hc
@@ -1066,13 +1177,14 @@ def fa4_ws_level1_combine[
     return (m, l_acc)
 
 
-@always_inline
+@inline(.always)
 def fa4_ws_level2_reduce_scatter_write[
     output_type: DType,
     //,
     m_pack: Int,
     rows: Int,
     ov_depth: Int,
+    output_swizzle_mode: TensorMapSwizzle,
     band_cols: Int = ov_depth // m_pack,
     depth_base: Int = 0,
     single_wg: Bool = False,
@@ -1108,8 +1220,8 @@ def fa4_ws_level2_reduce_scatter_write[
     for all 256 threads (a `bar.sync` fences the intra-CTA `st/ld.shared`, so no
     `fence_async_view_proxy` is needed); then each WG0 warp `g` reads its band's
     `O_1` from `l2_stage_smem`, keeps its own `O_0[band g]` in registers,
-    combines + normalizes, and writes band `g` to `o_smem` (SWIZZLE_NONE 16 B
-    block-major). WG0 uses its own `(m_0, l_0)` from registers, so only WG1's
+    combines + normalizes, and writes band `g` to `o_smem` (in the
+    `output_swizzle_mode` layout). WG0 uses its own `(m_0, l_0)` from registers, so only WG1's
     `(m_1, l_1)` transit `l2_maxsum_smem`. The TMA egress is a separate call
     (`fa4_tma_store_o_smem`). See §5c.
 
@@ -1151,6 +1263,7 @@ def fa4_ws_level2_reduce_scatter_write[
         m_pack: Number of datapath quarters per WG (4 for MMA_M=32).
         rows: Query rows per tile (`config.BM`, 32 for MMA_M=32).
         ov_depth: Output value depth; sets the `o_smem` block geometry.
+        output_swizzle_mode: Swizzle of the O-TMA store that reads `o_smem`.
         band_cols: Columns this warp owns in THIS call. Defaults to
             `ov_depth // m_pack` (the whole band, single-tile).
         depth_base: Global depth column where this tile starts. Defaults to 0.
@@ -1169,7 +1282,8 @@ def fa4_ws_level2_reduce_scatter_write[
         l2_stage_smem: SMEM scratch for THIS tile, `>= m_pack*band_cols*rows`
             f32 (WG1's O staging).
         l2_maxsum_smem: SMEM scratch, `>= rows*2` f32 (WG1's (m_1, l_1)).
-        o_smem: Output sink, SWIZZLE_NONE 16 B block-major of `output_type`.
+        o_smem: Output sink of `output_type`, laid out by
+            `o_smem_chunk_offset[output_type, output_swizzle_mode, rows]`.
     """
     comptime accum_dtype = DType.float32
     comptime stage_K = 16 // size_of[accum_dtype]()  # f32 -> 4
@@ -1206,7 +1320,11 @@ def fa4_ws_level2_reduce_scatter_write[
                 var v = SIMD[accum_dtype, stage_K]()
                 comptime for k in range(stage_K):
                     v[k] = o_band[lb * stage_K + k]
-                (l2_stage_smem + sblk * rows * stage_K + r * stage_K).store(v)
+                (
+                    l2_stage_smem.unsafe_offset(
+                        sblk * rows * stage_K
+                    ).unsafe_offset(r * stage_K)
+                ).unsafe_store(v)
             # `(m_1, l_1)` are depth-independent, so only the FIRST tile
             # transports them and later tiles read what it left. Folds to
             # unconditional at the default `depth_base == 0`.
@@ -1268,11 +1386,10 @@ def fa4_ws_level2_reduce_scatter_write[
                     var o1 = f32x2(0)
                     comptime if not single_wg:
                         o1 = (
-                            l2_stage_smem
-                            + sblk * rows * stage_K
-                            + r * stage_K
-                            + 2 * hc
-                        ).load[width=2]()
+                            l2_stage_smem.unsafe_offset(sblk * rows * stage_K)
+                            .unsafe_offset(r * stage_K)
+                            .unsafe_offset(2 * hc)
+                        ).unsafe_load[width=2]()
                     comptime obase = lsblk * stage_K + 2 * hc
                     var o0 = f32x2(o_band[obase], o_band[obase + 1])
                     var acc = mul_ftz(f32x2(s0), o0)
@@ -1289,12 +1406,18 @@ def fa4_ws_level2_reduce_scatter_write[
                         packed[cc] = bitcast[.uint32, 1](
                             acc.cast[output_type]()
                         )
-            st_shared_v4_b32(o_smem, oblk * rows * o_sw_K + r * o_sw_K, packed)
+            st_shared_v4_b32(
+                o_smem,
+                o_smem_chunk_offset[output_type, output_swizzle_mode, rows](
+                    r, oblk
+                ),
+                packed,
+            )
 
     return (ret_m, ret_l)
 
 
-@always_inline
+@inline(.always)
 def fa4_ws_intracta_combine_partial[
     m_pack: Int,
     rows: Int,
@@ -1344,7 +1467,7 @@ def fa4_ws_intracta_combine_partial[
     return (m_wg, l_wg)
 
 
-@always_inline
+@inline(.always)
 def fa4_ws_level2_combine_partial[
     m_pack: Int,
     rows: Int,
@@ -1391,7 +1514,11 @@ def fa4_ws_level2_combine_partial[
             var v = SIMD[accum_dtype, stage_K]()
             comptime for k in range(stage_K):
                 v[k] = o_band[lb * stage_K + k]
-            (l2_stage_smem + sblk * rows * stage_K + r * stage_K).store(v)
+            (
+                l2_stage_smem.unsafe_offset(
+                    sblk * rows * stage_K
+                ).unsafe_offset(r * stage_K)
+            ).unsafe_store(v)
         if band_g == UInt32(0):  # WG1 warp 0's 32 lanes own all 32 rows' (m,l)
             l2_maxsum_smem[r * 2] = own_max
             l2_maxsum_smem[r * 2 + 1] = own_sum
@@ -1424,8 +1551,10 @@ def fa4_ws_level2_combine_partial[
             var sblk = g * own_sblocks + lb  # global stage-block for this band
             comptime for hc in range(2):  # two f32x2 halves per stage-block
                 var o1 = (
-                    l2_stage_smem + sblk * rows * stage_K + r * stage_K + 2 * hc
-                ).load[width=2]()
+                    l2_stage_smem.unsafe_offset(sblk * rows * stage_K)
+                    .unsafe_offset(r * stage_K)
+                    .unsafe_offset(2 * hc)
+                ).unsafe_load[width=2]()
                 comptime obase = lb * stage_K + 2 * hc
                 var o0 = f32x2(o_band[obase], o_band[obase + 1])
                 var acc = mul_ftz(f32x2(s0), o0)
@@ -1437,7 +1566,7 @@ def fa4_ws_level2_combine_partial[
     return (ret_m, ret_l)
 
 
-@always_inline
+@inline(.always)
 def fa4_ws_splitk_reduce_scatter_write[
     output_type: DType,
     //,
@@ -1539,8 +1668,13 @@ def fa4_ws_splitk_reduce_scatter_write[
     comptime assert ov_depth % m_pack == 0
     comptime assert own_cols % stage_K == 0
     comptime assert own_cols % o_sw_K == 0
+    # Store block width; `fa4_o_store_swizzle` sizes it to divide each
+    # partition's contiguous band.
+    comptime st_K = output_swizzle_mode.bytes() // size_of[output_type]()
+    comptime assert (ceildiv(m_pack, P) * own_cols) % st_K == 0
 
-    var r = Int(local_row)
+    var lrow = opaque_u32(local_row)
+    var r = Int(lrow)
 
     # WG0-only. WG1 skips to the caller's terminal cross-WG barrier.
     if warp_group_idx != UInt32(0):
@@ -1553,10 +1687,10 @@ def fa4_ws_splitk_reduce_scatter_write[
         comptime for k in range(stage_K):
             v[k] = o_band_norm[lb * stage_K + k]
         (
-            stage_smem
-            + sblk * UInt32(rows * stage_K)
-            + local_row * UInt32(stage_K)
-        ).store(v)
+            stage_smem.unsafe_offset(
+                sblk * UInt32(rows * stage_K)
+            ).unsafe_offset(lrow * UInt32(stage_K))
+        ).unsafe_store(v)
     if band_g == UInt32(0):
         maxsum_smem[r * 2] = own_max
         maxsum_smem[r * 2 + 1] = own_sum
@@ -1564,9 +1698,8 @@ def fa4_ws_splitk_reduce_scatter_write[
     # ---- (2) fence the m_pack warps' staging (WG0-local) ----
     named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
 
-    @__parameter
-    @always_inline
-    def reduce_scatter_p[P_static: Int]():
+    @inline(.always)
+    def reduce_scatter_p[P_static: Int]() {imm}:
         comptime bpp = ceildiv(m_pack, P_static)
         var e = elect()
         # ---- (3) publish: WG0 warp 0 ONLY, exactly rows*P_static arrivals ----
@@ -1595,7 +1728,7 @@ def fa4_ws_splitk_reduce_scatter_write[
                         comptime for pp in range(P_static - 1):
                             var rr = pp if pp < b_rank else pp + 1
                             var ms = load_cluster_smem[.float32, 2](
-                                maxsum_smem + local_row * 2, UInt32(rr)
+                                maxsum_smem.unsafe_offset(lrow * 2), UInt32(rr)
                             )
                             pmax[pp + 1] = ms[0]
                             psum[pp + 1] = ms[1]
@@ -1635,9 +1768,9 @@ def fa4_ws_splitk_reduce_scatter_write[
                                 var vec = load_cluster_smem[
                                     DType.float32, stage_K
                                 ](
-                                    stage_smem
-                                    + UInt32(sblk * rows * stage_K)
-                                    + local_row * UInt32(stage_K),
+                                    stage_smem.unsafe_offset(
+                                        UInt32(sblk * rows * stage_K)
+                                    ).unsafe_offset(lrow * UInt32(stage_K)),
                                     UInt32(rr),
                                 )
                                 comptime for c in range(stage_K // 2):
@@ -1650,8 +1783,8 @@ def fa4_ws_splitk_reduce_scatter_write[
                                     )
                                     o_out[obase] = acc[0]
                                     o_out[obase + 1] = acc[1]
-                        # Pack the combined band -> o_smem (SWIZZLE_NONE 16 B
-                        # block-major, mirrors fa4_ws_level2_reduce_scatter_write).
+                        # Pack the combined band -> o_smem (mirrors
+                        # fa4_ws_level2_reduce_scatter_write).
                         comptime col0 = gg * own_cols
                         comptime for ob in range(own_oblocks):
                             comptime oblk = (col0 // o_sw_K) + ob
@@ -1674,7 +1807,9 @@ def fa4_ws_splitk_reduce_scatter_write[
                                         )
                             st_shared_v4_b32(
                                 o_smem,
-                                oblk * rows * o_sw_K + r * o_sw_K,
+                                o_smem_chunk_offset[
+                                    output_type, output_swizzle_mode, rows
+                                ](r, oblk),
                                 packed,
                             )
                 # ---- (6) fence o_smem writes across WG0 before the TMA ----
@@ -1682,17 +1817,18 @@ def fa4_ws_splitk_reduce_scatter_write[
                 # ---- (7) warp 0 TMAs this partition's owned band(s) ----
                 if band_g == UInt32(0):
                     fence_async_view_proxy()
-                    comptime for gg in range(own_lo, own_hi):
-                        comptime col0 = gg * own_cols
-                        comptime for ob in range(own_oblocks):
-                            comptime j_global = (col0 // o_sw_K) + ob
-                            ragged_tma_store.async_copy_from_col[j_global](
-                                o_smem,
-                                ragged_idx=out_row_idx,
-                                dynamic_dim=UInt32(num_output_rows),
-                                middle_idx=out_head_idx,
-                                elect=e,
-                            )
+                    # `fa4_o_store_swizzle` sizes the store block to divide
+                    # this partition's contiguous band.
+                    comptime for j_global in range(
+                        own_lo * own_cols // st_K, own_hi * own_cols // st_K
+                    ):
+                        ragged_tma_store.async_copy_from_col[j_global](
+                            o_smem,
+                            ragged_idx=out_row_idx,
+                            dynamic_dim=UInt32(num_output_rows),
+                            middle_idx=out_head_idx,
+                            elect=e,
+                        )
                     cp_async_bulk_commit_group()
                 cp_async_bulk_wait_group[0]()
 
@@ -1703,7 +1839,7 @@ def fa4_ws_splitk_reduce_scatter_write[
     reduce_scatter_p[P]()
 
 
-@always_inline
+@inline(.always)
 def fa4_tma_store_o_smem[
     output_type: DType,
     //,
@@ -1742,7 +1878,7 @@ def fa4_tma_store_o_smem[
     `else` branch.
 
     Unlike `fa4_scale_write_output`, this does NOT read TMEM or scale -- it
-    assumes `o_smem` already holds the SWIZZLE_NONE 16 B block-major output (as
+    assumes `o_smem` already holds the output in the store's swizzle layout (as
     the WS combine produces). One `named_barrier` fences the combine's `o_smem`
     writes; then warp 0 issues one `async_copy_from_col` per depth block and the
     WG waits the bulk group. See §5c step 4.
@@ -1765,7 +1901,7 @@ def fa4_tma_store_o_smem[
     cp_async_bulk_wait_group[0]()
 
 
-@always_inline
+@inline(.always)
 def fa4_splitk_stage_partial[
     band_cols: Int,
     //,
@@ -1850,10 +1986,14 @@ def fa4_splitk_stage_partial[
     # (o_sw_K bf16 cols) is `subblocks` f32 blocks.
     comptime F = 16 // size_of[DType.float32]()
     comptime assert o_sw_K % F == 0
-    comptime subblocks = o_sw_K // F
+    comptime assert config.ov_depth % o_sw_K == 0
+    # TMEM is read LD_W columns at a time (two f32 blocks) so a wide
+    # SWIZZLE_128B output block does not hold 2*o_sw_K f32 live at once.
+    comptime LD_W = min(2 * F, o_sw_K)
+    comptime subblocks = LD_W // F
     comptime accum_dtype = DType.float32
 
-    var row_F = local_row * UInt32(F)
+    var row_F = opaque_u32(local_row) * UInt32(F)
 
     # Stage the FULL O_cta over ALL `iters` blocks; route OWN band -> o_final
     # (regs, unscaled), every other block -> stage_smem. The f32x2 combine feeds
@@ -1870,79 +2010,86 @@ def fa4_splitk_stage_partial[
         # total loads/stores are unchanged. Defaults run both (single pass).
         comptime process = (in_own and do_own) or ((not in_own) and do_peers)
         comptime if process:
-            comptime col = j * o_sw_K
-            var vblk = Array[SIMD[accum_dtype, F], subblocks](
-                uninitialized=True
-            )
-            comptime if zero_fill:
-                # No TMEM read: finite 0.0 (peers' weight-0 DSMEM read must be
-                # finite, else 0*inf=NaN; the own band's 0 is scaled by w[b]==0).
-                comptime for sb in range(subblocks):
-                    vblk[sb] = SIMD[accum_dtype, F](0)
-            else:
-                var own = tcgen05_ld[
-                    datapaths=32,
-                    bits=32,
-                    repeat=o_sw_K,
-                    dtype=accum_dtype,
-                    pack=False,
-                    width=o_sw_K,
-                ](own_o_tmem.tmem_addr + UInt32(col))
-                comptime if single_source:
-                    # T==1: only o0; normalize by inv_row_sum (final_scale_local).
+            comptime for ld in range(o_sw_K // LD_W):
+                comptime col = j * o_sw_K + ld * LD_W
+                var vblk = Array[SIMD[accum_dtype, F], subblocks](
+                    uninitialized=True
+                )
+                comptime if zero_fill:
+                    # No TMEM read: finite 0.0 (peers' weight-0 DSMEM read must be
+                    # finite, else 0*inf=NaN; the own band's 0 is scaled by w[b]==0).
                     comptime for sb in range(subblocks):
-                        var v = SIMD[accum_dtype, F]()
-                        comptime for c in range(F // 2):
-                            comptime e = sb * F + 2 * c
-                            var pair = (
-                                SIMD[accum_dtype, 2](own[e], own[e + 1])
-                                * final_scale_local
-                            )
-                            v[2 * c] = pair[0]
-                            v[2 * c + 1] = pair[1]
-                        vblk[sb] = v
+                        vblk[sb] = SIMD[accum_dtype, F](0)
                 else:
-                    var peer = tcgen05_ld[
+                    var own = tcgen05_ld[
                         datapaths=32,
                         bits=32,
-                        repeat=o_sw_K,
+                        repeat=LD_W,
                         dtype=accum_dtype,
                         pack=False,
-                        width=o_sw_K,
-                    ](peer_o_tmem.tmem_addr + UInt32(col))
-                    # own*final_scale_local + peer*final_scale_peer (f32x2 fma),
-                    # identical to combine_pack_o_row modulo f32 not bf16.
+                        width=LD_W,
+                    ](own_o_tmem.tmem_addr + UInt32(col))
+                    comptime if single_source:
+                        # T==1: only o0; normalize by inv_row_sum (final_scale_local).
+                        comptime for sb in range(subblocks):
+                            var v = SIMD[accum_dtype, F]()
+                            comptime for c in range(F // 2):
+                                comptime e = sb * F + 2 * c
+                                var pair = (
+                                    SIMD[accum_dtype, 2](own[e], own[e + 1])
+                                    * final_scale_local
+                                )
+                                v[2 * c] = pair[0]
+                                v[2 * c + 1] = pair[1]
+                            vblk[sb] = v
+                    else:
+                        var peer = tcgen05_ld[
+                            datapaths=32,
+                            bits=32,
+                            repeat=LD_W,
+                            dtype=accum_dtype,
+                            pack=False,
+                            width=LD_W,
+                        ](peer_o_tmem.tmem_addr + UInt32(col))
+                        # own*final_scale_local + peer*final_scale_peer (f32x2 fma),
+                        # identical to combine_pack_o_row modulo f32 not bf16.
+                        comptime for sb in range(subblocks):
+                            var v = SIMD[accum_dtype, F]()
+                            comptime for c in range(F // 2):
+                                comptime e = sb * F + 2 * c
+                                var own_c = SIMD[accum_dtype, 2](
+                                    own[e], own[e + 1]
+                                )
+                                var peer_c = SIMD[accum_dtype, 2](
+                                    peer[e], peer[e + 1]
+                                )
+                                var comb = peer_c.fma(
+                                    SIMD[accum_dtype, 2](final_scale_peer),
+                                    own_c * final_scale_local,
+                                )
+                                v[2 * c] = comb[0]
+                                v[2 * c + 1] = comb[1]
+                            vblk[sb] = v
+
+                comptime if in_own:
+                    # Own band -> o_final registers (UNSCALED; combine applies w[b]).
+                    comptime local_iter = j - own_off
                     comptime for sb in range(subblocks):
-                        var v = SIMD[accum_dtype, F]()
-                        comptime for c in range(F // 2):
-                            comptime e = sb * F + 2 * c
-                            var own_c = SIMD[accum_dtype, 2](own[e], own[e + 1])
-                            var peer_c = SIMD[accum_dtype, 2](
-                                peer[e], peer[e + 1]
-                            )
-                            var comb = peer_c.fma(
-                                SIMD[accum_dtype, 2](final_scale_peer),
-                                own_c * final_scale_local,
-                            )
-                            v[2 * c] = comb[0]
-                            v[2 * c + 1] = comb[1]
-                        vblk[sb] = v
-
-            comptime if in_own:
-                # Own band -> o_final registers (UNSCALED; combine applies w[b]).
-                comptime local_iter = j - own_off
-                comptime for sb in range(subblocks):
-                    comptime ocol = local_iter * o_sw_K + sb * F
-                    comptime for k in range(F):
-                        o_final[ocol + k] = vblk[sb][k]
-            else:
-                # Peer-visible block -> stage_smem (16 B v4 f32, block-major).
-                comptime for sb in range(subblocks):
-                    comptime fblk = j * subblocks + sb
-                    (stage_smem + UInt32(fblk * BM * F) + row_F).store(vblk[sb])
+                        comptime ocol = local_iter * o_sw_K + ld * LD_W + sb * F
+                        comptime for k in range(F):
+                            o_final[ocol + k] = vblk[sb][k]
+                else:
+                    # Peer-visible block -> stage_smem (16 B v4 f32, block-major).
+                    comptime for sb in range(subblocks):
+                        comptime fblk = col // F + sb
+                        (
+                            stage_smem.unsafe_offset(
+                                UInt32(fblk * BM * F)
+                            ).unsafe_offset(row_F)
+                        ).unsafe_store(vblk[sb])
 
 
-@always_inline
+@inline(.always)
 def fa4_splitk_combine_write[
     output_type: DType,
     band_cols: Int,
@@ -2065,7 +2212,7 @@ def fa4_splitk_combine_write[
     comptime for p in range(P - 1):
         var r = p if p < b else p + 1
         var ms = load_cluster_smem[.float32, 2](
-            maxsum_smem + tid * 2, UInt32(r)
+            maxsum_smem.unsafe_offset(tid * 2), UInt32(r)
         )
         pmax[p + 1] = ms[0]
         psum[p + 1] = ms[1]
@@ -2104,7 +2251,7 @@ def fa4_splitk_combine_write[
     # reads issue back-to-back (DSMEM-latency MLP). `o_final` spans the FULL band
     # and is written once per block, so the depth-128 column-clobber is
     # impossible.
-    var row_F = local_row * UInt32(F)
+    var row_F = opaque_u32(local_row) * UInt32(F)
 
     # Seed scale: o_final holds the own-rank `b` normalized O_cta band; * its
     # weight, which lives at comptime slot 0 (own rank was stored there above).
@@ -2134,7 +2281,12 @@ def fa4_splitk_combine_write[
                 comptime ocol = iter * o_sw_K + sb * F
                 var vec: SIMD[accum_dtype, F] = load_cluster_smem[
                     DType.float32, F
-                ](stage_smem + UInt32(fblk * BM * F) + row_F, UInt32(r))
+                ](
+                    stage_smem.unsafe_offset(
+                        UInt32(fblk * BM * F)
+                    ).unsafe_offset(row_F),
+                    UInt32(r),
+                )
                 comptime for c in range(F // 2):
                     var acc = SIMD[accum_dtype, 2](
                         o_final[ocol + 2 * c], o_final[ocol + 2 * c + 1]
@@ -2154,33 +2306,38 @@ def fa4_splitk_combine_write[
     # `[0, iters)` disjointly). So the write clobbers nothing peers are reading
     # and needs no cluster-wide fence -- the kernel's terminal `cluster_sync()`
     # (kernel.mojo) keeps the peer-read PEER bands alive until every partition
-    # finishes reading. The own band's f32 data starts at f32-block
-    # `wg_j_offset*subblocks`, so shift the bf16 base by
-    # `wg_j_offset*(subblocks-1)*BM*o_sw_K` output elements; bf16 block
-    # `j == wg_j_offset+iter` then lands at byte `(wg_j_offset*subblocks+iter)*
-    # BM*16`, strictly inside the dead own slice (no overlap with peer bands above
-    # or below). `async_copy_from_col[j]` reads smem at `base + j*BM*o_sw_K` but
-    # its gmem coordinate is `j*swizzle_granularity` (independent of `base`), so
-    # the shifted base + global `j` still stores to the correct global gmem
-    # column. (SWIZZLE_NONE -> simple block stride; the shift is block-aligned, so
-    # the within-block `o_swizzle(o_inner)` row layout is undisturbed.)
-    comptime o_own_shift = wg_j_offset * (subblocks - 1) * BM * o_sw_K
-    var o_smem_own = o_smem_arg + o_own_shift
+    # finishes reading. The own band's f32 data starts at element
+    # `wg_j_offset*o_sw_K*BM` of the f32 stage, i.e. `f32_per_out` times that
+    # many output elements; shifting the output base by the difference puts
+    # block `j == wg_j_offset+iter` (at `base + j*BM*o_sw_K`) strictly inside
+    # the dead own slice. `async_copy_from_col[j]` takes its gmem coordinate
+    # from `j` alone, so the shifted base + global `j` still stores the right
+    # gmem columns, and the shift is a whole number of blocks (>= 1 KiB), so
+    # the in-block swizzle is undisturbed.
+    comptime f32_per_out = size_of[DType.float32]() // size_of[output_type]()
+    comptime o_own_shift = wg_j_offset * (f32_per_out - 1) * BM * o_sw_K
+    comptime chunk = 16 // size_of[output_type]()
+    comptime chunks_per_blk = o_sw_K // chunk
+    var o_smem_own = o_smem_arg.unsafe_offset(o_own_shift)
     comptime for iter in range(iters_per_wg):
         comptime j = wg_j_offset + iter
-        var packed = pack_row[output_type, w=o_sw_K, start=iter * o_sw_K](
-            o_final
-        )
-        var o_inner = Int(local_row) * o_sw_K
-        # Explicit v4.b32 (STS.128): a plain `.store(packed)` scalarizes to 4x
-        # STS.32 here because `packed` is packed from the long-lived `o_final`
-        # accumulator (non-contiguous in-place F2FP pack outputs), which ptxas
-        # can't fuse -- the 4 B stores then hit only every 4th bank (4-way
-        # conflict). Forcing the wide store keeps it one bank-conflict-free 16 B
-        # transaction (see `st_shared_v4_b32`).
-        st_shared_v4_b32(
-            o_smem_own, j * BM * o_sw_K + o_swizzle(o_inner), packed
-        )
+        comptime for c in range(chunks_per_blk):
+            var packed = pack_row[
+                output_type, w=chunk, start=iter * o_sw_K + c * chunk
+            ](o_final)
+            # Explicit v4.b32 (STS.128): a plain `.store(packed)` scalarizes to
+            # 4x STS.32 here because `packed` is packed from the long-lived
+            # `o_final` accumulator (non-contiguous in-place F2FP pack outputs),
+            # which ptxas can't fuse -- the 4 B stores then hit only every 4th
+            # bank (4-way conflict). Forcing the wide store keeps it one
+            # bank-conflict-free 16 B transaction (see `st_shared_v4_b32`).
+            st_shared_v4_b32(
+                o_smem_own,
+                o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
+                    Int(local_row), j * chunks_per_blk + c
+                ),
+                packed,
+            )
 
     named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
     if local_warp_idx == 0:
@@ -2198,7 +2355,7 @@ def fa4_splitk_combine_write[
     cp_async_bulk_wait_group[0]()
 
 
-@always_inline
+@inline(.always)
 def fa4_splitk_reduce_scatter_write[
     output_type: DType,
     //,
@@ -2279,9 +2436,8 @@ def fa4_splitk_reduce_scatter_write[
     # is P-general: a non-pow2 P (6, 10) just yields uneven and/or empty
     # trailing bands, both of which are already handled below.
 
-    @__parameter
-    @always_inline
-    def reduce_scatter_p[P_static: Int]():
+    @inline(.always)
+    def reduce_scatter_p[P_static: Int]() {imm}:
         comptime bpp = ceildiv(iters_total, P_static)
         comptime for p_static in range(P_static):
             comptime ob = p_static * bpp
@@ -2398,20 +2554,25 @@ def fa4_splitk_reduce_scatter_write[
     reduce_scatter_p[P]()
 
 
-@always_inline
+@inline(.always)
 def fa4_softmax[
     QScaleType: OptionalPointer,
     KScaleType: OptionalPointer,
     WSLSEType: OptionalPointer,
+    WSOType: OptionalPointer,
     qkv_dtype: DType,
     rope_dtype_: Optional[DType],
     scale_dtype_: Optional[DType],
+    cross_p: Bool,
     output_type: DType,
     MaskType: MHAMask,
     //,
     KVLUTType: MHAOperand,
     config: FA4Config[
-        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
+        qkv_dtype,
+        rope_dtype_=rope_dtype_,
+        scale_dtype_=scale_dtype_,
+        cross_p=cross_p,
     ],
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
@@ -2478,6 +2639,9 @@ def fa4_softmax[
     ws_num_partitions: UInt32 = 1,
     ws_lse_ptr: WSLSEType = NullPointer[.float32](),
     ws_num_rows_q: UInt32 = 0,
+    # When non-null, the 1Q egress stores O to this f32 buffer (same layout as
+    # `o_partial`) instead of through `ragged_tma_store`.
+    ws_o_ptr: WSOType = NullPointer[.float32](),
 ):
     # Local aliases matching SM100MHA2Q comptime members
     comptime qkv_type = KVLUTType.dtype
@@ -2498,6 +2662,14 @@ def fa4_softmax[
     comptime assert (
         WSLSEType.is_null or WSLSEType.dtype == .float32
     ), "the workspace split-K LSE buffer is f32"
+    comptime ws_o_f32 = not WSOType.is_null
+    comptime assert not ws_o_f32 or (
+        workspace_split
+        and WSOType.dtype == .float32
+        and config.num_q == 1
+        and not config.use_ws
+        and config.splitk_partitions == 1
+    ), "only the 1Q workspace split-K egress stores f32 O partials"
     # Warp-specialized packed-TMEM (1x4 / Layout-G) per-quarter score geometry.
     # `score_cols` is the physical S/P column extent one warp reads/writes;
     # `score_rows` is its query-row extent. Non-WS (m_pack == 1): score_cols ==
@@ -2553,8 +2725,8 @@ def fa4_softmax[
     # `tmem_addr` passed in by register (read once post-barrier in the kernel
     # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o_smem = smem.o_smem[output_type]()
-    var o_prod_mbar: MBarType = (
-        mbars.mbar_base + MiscMBarsType.O_producer_offset
+    var o_prod_mbar: MBarType = mbars.mbar_base.unsafe_offset(
+        MiscMBarsType.O_producer_offset
     )
     var s_tmem: UInt32 = tmem_addr + UInt32(config.TMEM_S0)
 
@@ -2643,12 +2815,14 @@ def fa4_softmax[
     var head_idx: UInt32 = seq_info.head_idx
     var q_head_idx: UInt32 = head_idx
     comptime if config.fuse_gqa:
-        q_head_idx = UInt32(config.group) * head_idx + row % UInt32(
+        # `thread_tile_row`, not `row`: `tid % 128` folds in the WS key
+        # partition, which only agrees mod `group` when `group` divides 128.
+        q_head_idx = UInt32(config.group) * head_idx + thread_tile_row % UInt32(
             config.group
         )
 
     var scale_log2e: Scalar[accum_dtype] = scale
-    var correction_smem = smem.correction_smem() + tid
+    var correction_smem = smem.correction_smem().unsafe_offset(tid)
 
     comptime if not MaskType.apply_log2e_after_mask:
         scale_log2e *= log2e
@@ -2708,11 +2882,10 @@ def fa4_softmax[
         get_defined_int["BLASST_LOG_THRESHOLD_MAG", 1_000_000_000]()
     ) * Float32(0.001)
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     def mask_row[
         BN: Int, //, mask_strategy: MaskStrategy
-    ](mut s: Array[Scalar[accum_dtype], BN], kv_row: UInt32):
+    ](mut s: Array[Scalar[accum_dtype], BN], kv_row: UInt32) {imm}:
         apply_mask[
             mask_strategy=mask_strategy,
             skip_scale=use_fma,
@@ -2777,9 +2950,25 @@ def fa4_softmax[
         ws_part_idx = splitk_partition_idx(ws_num_partitions)
         ws_o_row_off = ws_part_idx * ws_num_rows_q
 
-    @__parameter
-    @always_inline
-    def _ws_write_lse(mx: Scalar[accum_dtype], sm: Scalar[accum_dtype]):
+    @inline(.always)
+    def _ws_o_stage() {imm} -> SharedMemPointer[Float32]:
+        # At the egress every MMA has drained, so Q and the KV ring are dead.
+        comptime assert (
+            config.BM * (config.ov_depth + 4) * 4
+            <= type_of(smem).q_bytes + type_of(smem).kv_bytes
+        ), "the f32 O stage must fit in the dead Q+KV span"
+        return smem.o_smem[DType.float32]()
+
+    @inline(.always)
+    def _ws_o_ptr() {imm} -> MutPointer[Float32, MutAnyOrigin]:
+        # The egress is this buffer's only writer; `rebind` reconciles
+        # `WSOType.dtype` with the f32 the assert above pins.
+        return rebind[MutPointer[Float32, MutAnyOrigin]](
+            ws_o_ptr.value().unsafe_mut_cast[True]()
+        )
+
+    @inline(.always)
+    def _ws_write_lse(mx: Scalar[accum_dtype], sm: Scalar[accum_dtype]) {imm}:
         # Store this thread's fused per-row LSE (log2 domain) into
         # `ws_lse_ptr[p, token_row, q_head]` (layout [P, num_rows_q,
         # num_q_heads]) for the separate combine kernel. WG0 only (LSE is
@@ -2825,7 +3014,7 @@ def fa4_softmax[
                     # `WSLSEType.dtype` with `accum_dtype`, which the assert at
                     # the top of the function pins to the same f32.
                     var _ws_lse = rebind[
-                        UnsafePointer[Scalar[accum_dtype], MutAnyOrigin]
+                        MutPointer[Scalar[accum_dtype], MutAnyOrigin]
                     ](ws_lse_ptr.value().unsafe_mut_cast[True]())
                     _ws_lse[Int(_off)] = _lse
 
@@ -2854,27 +3043,27 @@ def fa4_softmax[
 
     comptime max_unroll = 8
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     def apply_k_scale[
         N: Int, //, offset: Int
-    ](mut s0: Array[Float32, N], k_scale_off: UInt32):
+    ](mut s0: Array[Float32, N], k_scale_off: UInt32) {imm}:
         comptime if not KScaleType.is_null:
             comptime for n in range(0, N, 2):
                 var k_sc: f32x2 = (
                     k_scale.value()
-                    .load[width=2](k_scale_off + UInt32(n + offset))
+                    .unsafe_load[width=2](k_scale_off + UInt32(n + offset))
                     .cast[accum_dtype]()
                 )
                 var sn = mul_ftz(k_sc, f32x2(s0[n], s0[n + 1]))
                 s0[n] = sn[0]
                 s0[n + 1] = sn[1]
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     def load_mask_max_impl[
         *, mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
+    ](kv_row: UInt32) {
+        mut inplace_prod, mut k_scale_off, mut s, imm
+    } -> StaticTuple[Float32, max_unroll]:
         comptime if EnableForcedOrdering:
             order_s_wait.unsafe_value()[].wait(order_phase)
         # break up into sets of 32
@@ -2961,18 +3150,16 @@ def fa4_softmax[
             inplace_prod.commit()
         return vrow_max
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     def init_load_mask_max[
         mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> Float32:
+    ](kv_row: UInt32) {imm} -> Float32:
         return maximum(load_mask_max_impl[mask_strategy=mask_strategy](kv_row))
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     def load_mask_max[
         mask_strategy: MaskStrategy
-    ](kv_row: UInt32, old_max: Float32) -> Float32:
+    ](kv_row: UInt32, old_max: Float32) {imm} -> Float32:
         pipeline_s.wait()
         tcgen05_fence_after()
         return maximum(
@@ -2982,18 +3169,18 @@ def fa4_softmax[
     # Same wait+fence+load as `load_mask_max`, but returns the pure tile-local
     # max (no `old_max` fusion) so one reduction feeds both the running max
     # and the BLASST vote.
-    @__parameter
-    @always_inline
+    @inline(.always)
     def load_mask_tile_max[
         mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
+    ](kv_row: UInt32) {imm} -> StaticTuple[Float32, max_unroll]:
         pipeline_s.wait()
         tcgen05_fence_after()
         return load_mask_max_impl[mask_strategy=mask_strategy](kv_row)
 
-    @__parameter
-    @always_inline
-    def store_exp(max_term: Float32) -> f32x2:
+    @inline(.always)
+    def store_exp(
+        max_term: Float32,
+    ) {mut s, mut inplace_cons, mut pipeline_s, mut order_phase, imm} -> f32x2:
         comptime exp_simd = 2
         comptime vs_len = score_cols // exp_simd  # score_cols // 2
         comptime assert (vs_len % config.num_pv_stages) == 0
@@ -3011,14 +3198,12 @@ def fa4_softmax[
         ]
         comptime assert (score_cols % exp_simd) == 0
 
-        @__parameter
-        @always_inline
-        def s_load[i: Int]() -> f32x2:
+        @inline(.always)
+        def s_load[i: Int]() {imm s} -> f32x2:
             return f32x2(s[2 * i], s[2 * i + 1])
 
-        @__parameter
-        @always_inline
-        def s_store[i: Int](v: f32x2):
+        @inline(.always)
+        def s_store[i: Int](v: f32x2) {mut s}:
             s[2 * i] = v[0]
             s[2 * i + 1] = v[1]
 
@@ -3045,9 +3230,8 @@ def fa4_softmax[
             vscale = f32x2(0)  # unused
             vneg_max_scaled = f32x2(0)  # unused
 
-        @__parameter
-        @always_inline
-        def score_to_logit(score: f32x2) -> f32x2:
+        @inline(.always)
+        def score_to_logit(score: f32x2) {imm} -> f32x2:
             comptime if use_fma:
                 return fma_ftz(score, vscale, vneg_max_scaled)
             else:
@@ -3062,7 +3246,7 @@ def fa4_softmax[
         # emulation path (`exp2_emulation`) rather than hardware
         # `ex2.approx`.  Default 16 on sm_100; disabled on sm_103 where
         # the emulation does not pay off.
-        comptime default_emulate_count: Int = 0 if "sm_103" in _accelerator_arch() else 16
+        comptime default_emulate_count: Int = 0 if "sm_103" in _accelerator_arch() else 14
         # `default_emulate_count` is calibrated at vs_len=64; the
         # `// 64` normalizes it back to that reference so non-default
         # vs_len scales the count proportionally.  Override at compile
@@ -3107,9 +3291,8 @@ def fa4_softmax[
             // (emulation_stride_freq + 1)
         )
 
-        @__parameter
-        @always_inline
-        def exp_iter[idx: Int]():
+        @inline(.always)
+        def exp_iter[idx: Int]() {imm}:
             comptime if idx < vs_len // score_to_logit_ratio:
                 comptime for i in range(score_to_logit_ratio):
                     comptime j = score_to_logit_ratio * idx + i
@@ -3143,15 +3326,8 @@ def fa4_softmax[
         # tree/pairings as the aliased path below => bit-exact, no reassociation.
         comptime if CrossP:
             comptime assert not EnableForcedOrdering, (
-                "FA4_TMEM_CROSS_P per-tile store is untested with"
+                "the cross-stage-P per-tile store is untested with"
                 " FA4ForcedSoftmaxOrdering"
-            )
-            comptime assert not (
-                ExplicitTMEMCrossP
-                and not (remainder == 0 and num_batch_iters == 4)
-            ), (
-                "FA4_TMEM_CROSS_P=true was requested but the per-tile store"
-                " assumes 4 full batches (headline shape)"
             )
 
             # single inplace consume (instant at this static position)
@@ -3323,7 +3499,9 @@ def fa4_softmax[
             # release below lets the MMA overwrite S.
             tcgen05_load_wait()
             store_p_quadrant[BN=config.BN, p_tile_rows=config.BM](
-                smem.p_smem() + warp_group_idx * UInt32(config.BM * config.BN),
+                smem.p_smem().unsafe_offset(
+                    warp_group_idx * UInt32(config.BM * config.BN)
+                ),
                 s,
                 thread_tile_row,
                 partition_g,
@@ -3380,9 +3558,10 @@ def fa4_softmax[
     # Stripped sibling of store_exp for a WG-unanimous skip: no exp2/P-store/
     # row-sum, but reproduces every barrier arrival so the MMA and correction
     # warps stay in lockstep.
-    @__parameter
-    @always_inline
-    def store_exp_skip():
+    @inline(.always)
+    def store_exp_skip() {
+        mut pipeline_s, mut inplace_cons, mut order_phase, imm
+    }:
         # Match store_exp's tail ordering (no P store to fence, but keep the
         # same tcgen05 wait/fence discipline before releasing S-consumer).
         tcgen05_store_wait()
@@ -3578,14 +3757,16 @@ def fa4_softmax[
                     # here (it assumes the BM=128 row=thread TMEM grid).
                     comptime WS_STAGE = config.ws_epilogue_stage_f32()
                     comptime WS_ML = config.ws_epilogue_ml_f32()
-                    comptime WS_L2STAGE = config.ov_depth * config.BM
-                    comptime WS_L2MS = config.BM * 2
                     var ws_f32e = smem.o_smem[.float32]()
-                    var ws_maxsum1e = ws_f32e + (2 * WS_STAGE + WS_ML)
-                    var ws_l2_stagee = ws_f32e + (2 * WS_STAGE + 2 * WS_ML)
+                    var ws_maxsum1e = ws_f32e.unsafe_offset(
+                        2 * WS_STAGE + WS_ML
+                    )
+                    var ws_l2_stagee = ws_f32e.unsafe_offset(
+                        2 * WS_STAGE + 2 * WS_ML
+                    )
                     var ws_o_e = (
-                        ws_l2_stagee + (WS_L2STAGE + WS_L2MS)
-                    ).bitcast[Scalar[output_type]]()
+                        ws_f32e.unsafe_offset(config.ws_epilogue_o_f32_offset())
+                    ).unsafe_bitcast[Scalar[output_type]]()
                     var o_band_zero = Array[
                         Float32,
                         config.ov_depth // config.m_pack,
@@ -3618,7 +3799,9 @@ def fa4_softmax[
                     )
                 elif splitk_combine_active:
                     var stage = smem.o_smem[.float32]()
-                    var maxsum = stage + (config.BM * padded_ov_depth)
+                    var maxsum = stage.unsafe_offset(
+                        config.BM * padded_ov_depth
+                    )
                     # Neutral (max,sum): -inf never wins the cluster Gmax, and
                     # sum 0 zeroes this partition's combine weight regardless.
                     maxsum[row * 2] = min_or_neg_inf[.float32]()
@@ -3743,9 +3926,8 @@ def fa4_softmax[
         ].cast[accum_dtype]()
 
     var row_max: Float32 = peel_mask[
-        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies),
-        init_load_mask_max,
-    ](mask_iters, kv_row)
+        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies)
+    ](init_load_mask_max, mask_iters, kv_row)
     var sink_weight: Scalar[accum_dtype]
 
     # Split-K: the sink mass must land in the *cluster-global* sum exactly
@@ -3816,9 +3998,8 @@ def fa4_softmax[
     # so the two cannot drift. Do not open-code either half.
     var ws_exchange_seq: UInt32 = 0
 
-    @__parameter
-    @always_inline
-    def sk_shared_max(m: Float32) -> Float32:
+    @inline(.always)
+    def sk_shared_max(m: Float32) {mut ws_exchange_seq, imm} -> Float32:
         """Shared-key: agree the running row max across the warpgroup's warps.
 
         Off-mode this is the identity and elaborates to nothing.
@@ -3854,7 +4035,7 @@ def fa4_softmax[
 
     comptime if not SinkType.is_null:
         var sink_weights_ptr = rebind[
-            UnsafePointer[Scalar[qkv_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[qkv_type], ImmutAnyOrigin]
         ](sink_weights.value())
 
         comptime if use_fma:
@@ -3913,9 +4094,8 @@ def fa4_softmax[
     comptime if use_fma:
         neg_scale_log2e = -scale_log2e
 
-    @__parameter
-    @always_inline
-    def neg_scaled_max(m: Float32) -> Float32:
+    @inline(.always)
+    def neg_scaled_max(m: Float32) {imm} -> Float32:
         # `-m*scale_log2e`, with the fp8 `p_fp8_bias` folded in via one fused
         # fma -- so store_exp needs no separate bias add and, since the bias is
         # common to every max, it cancels in the correction diff
@@ -3940,14 +4120,13 @@ def fa4_softmax[
     var blasst_warp_in_wg: UInt32 = warp_idx & UInt32(3)
     var blasst_lane0: Bool = (tid % UInt32(32)) == UInt32(0)
 
-    @__parameter
-    @always_inline
-    def blasst_observe(tile_max: Float32) -> Bool:
+    @inline(.always)
+    def blasst_observe(tile_max: Float32) {mut m_true, imm} -> Bool:
         m_true = max_ftz(m_true, tile_max)
         var diff_true = sub_ftz(tile_max, m_true)
         comptime if use_fma:
             diff_true = mul_ftz(diff_true, scale_log2e)
-        var would_skip = _vote_nvidia_helper(
+        var would_skip = vote[.uint32](
             diff_true < blasst_log_threshold
         ) == UInt32(0xFFFFFFFF)
         # `pipeline_s.state.phase()` is the S-consumer generation of the block
@@ -4005,9 +4184,8 @@ def fa4_softmax[
         # normalize. fp8 adds the same +p_fp8_bias as store_exp; the
         # `comptime if p_fp8_bias != 0` keeps the bf16 sink expression
         # byte-identical.
-        @__parameter
-        @always_inline
-        def sink_mass() -> Float32:
+        @inline(.always)
+        def sink_mass() {imm} -> Float32:
             comptime if use_fma:
                 comptime if p_fp8_bias != 0:
                     return exp2(
@@ -4166,8 +4344,8 @@ def fa4_softmax[
                 break
             var cur_mask_status = mask.status(
                 seq_info.prompt_idx,
-                Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                Index[dtype=DType.int32](BM_mask, BN),
+                (Int(score_row), Int(kv_row)),
+                (Int(BM_mask), Int(BN)),
             )
             if cur_mask_status == TileMaskStatus.FULL_MASK:
                 continue
@@ -4270,9 +4448,8 @@ def fa4_softmax[
         )
 
         # wait on the o_pipeline producer
-        @__parameter
-        @always_inline
-        def wait_and_write_output():
+        @inline(.always)
+        def wait_and_write_output() {imm}:
             o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
             # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
@@ -4282,7 +4459,9 @@ def fa4_softmax[
                 warp_idx & 3,
                 warp_group_idx,
                 inv_row_sum,
-                o_smem + warp_group_idx * UInt32(HalfBM * padded_ov_depth),
+                o_smem.unsafe_offset(
+                    warp_group_idx * UInt32(HalfBM * padded_ov_depth)
+                ),
                 o_tile,
                 ragged_tma_store,
                 num_output_rows,
@@ -4398,19 +4577,27 @@ def fa4_softmax[
             comptime WS_ML = config.ws_epilogue_ml_f32()
             comptime WS_L2STAGE = config.ov_depth * config.BM
             comptime WS_L2MS = config.BM * 2
+            comptime WS_O_OFF = config.ws_epilogue_o_f32_offset()
             comptime assert (
-                config.ws_epilogue_f32_slots() * size_of[DType.float32]()
-                + config.BM * config.ov_depth * size_of[output_type]()
+                WS_O_OFF * size_of[DType.float32]()
+                + config.BM
+                * align_up(config.ov_depth, 64)
+                * size_of[output_type]()
                 <= type_of(smem).q_bytes + type_of(smem).kv_bytes
             ), "WS two-level combine staging must fit the dead Q+KV span"
             var ws_f32 = smem.o_smem[.float32]()
             var ws_stage0 = ws_f32
-            var ws_stage1 = ws_stage0 + WS_STAGE
-            var ws_maxsum0 = ws_stage1 + WS_STAGE
-            var ws_maxsum1 = ws_maxsum0 + WS_ML
-            var ws_l2_stage = ws_maxsum1 + WS_ML
-            var ws_l2_maxsum = ws_l2_stage + WS_L2STAGE
-            var ws_o = (ws_l2_maxsum + WS_L2MS).bitcast[Scalar[output_type]]()
+            var ws_stage1 = ws_stage0.unsafe_offset(WS_STAGE)
+            var ws_maxsum0 = ws_stage1.unsafe_offset(WS_STAGE)
+            var ws_maxsum1 = ws_maxsum0.unsafe_offset(WS_ML)
+            var ws_l2_stage = ws_maxsum1.unsafe_offset(WS_ML)
+            var ws_l2_maxsum = ws_l2_stage.unsafe_offset(WS_L2STAGE)
+            comptime assert (
+                2 * WS_STAGE + 2 * WS_ML + WS_L2STAGE + WS_L2MS <= WS_O_OFF
+            )
+            var ws_o = ws_f32.unsafe_offset(WS_O_OFF).unsafe_bitcast[
+                Scalar[output_type]
+            ]()
 
             var ws_row_sum = row_sum.reduce_add()
 
@@ -4498,9 +4685,8 @@ def fa4_softmax[
                     smem.ws_exchange_smem(),
                 )
 
-                @__parameter
-                @always_inline
-                def sk_epilogue[single_wg: Bool]():
+                @inline(.always)
+                def sk_epilogue[single_wg: Bool]() {imm}:
                     # (M, L) are depth-independent, so every tile computes the
                     # same pair; keep tile 0's. They are carried OUT of the loop
                     # rather than used inside it because the egress below must
@@ -4532,6 +4718,9 @@ def fa4_softmax[
                             depth_base=t * config.pv_mma_n(),
                             single_wg=single_wg,
                             use_fma=use_fma,
+                            output_swizzle_mode=type_of(
+                                ragged_tma_store
+                            ).swizzle_mode,
                         ](
                             thread_tile_row,
                             partition_g,
@@ -4546,7 +4735,9 @@ def fa4_softmax[
                             # so one shared window is a WAR race. Summed over
                             # the tiles this is exactly `WS_L2STAGE` -- the fix
                             # costs no SMEM and no barrier.
-                            ws_l2_stage + t * config.pv_mma_n() * config.BM,
+                            ws_l2_stage.unsafe_offset(
+                                t * config.pv_mma_n() * config.BM
+                            ),
                             ws_l2_maxsum,
                             ws_o,
                         )
@@ -4684,6 +4875,9 @@ def fa4_softmax[
                         config.BM,
                         config.ov_depth,
                         use_fma=use_fma,
+                        output_swizzle_mode=type_of(
+                            ragged_tma_store
+                        ).swizzle_mode,
                     ](
                         thread_tile_row,
                         partition_g,
@@ -4825,6 +5019,9 @@ def fa4_softmax[
                         config.BM,
                         config.ov_depth,
                         use_fma=use_fma,
+                        output_swizzle_mode=type_of(
+                            ragged_tma_store
+                        ).swizzle_mode,
                     ](
                         thread_tile_row,
                         partition_g,
@@ -4884,7 +5081,7 @@ def fa4_softmax[
                 # partition here carries the data; trailing empty partitions take
                 # the empty-partition path above and combine their bands from it.)
                 var stage = smem.o_smem[.float32]()
-                var maxsum = stage + (config.BM * padded_ov_depth)
+                var maxsum = stage.unsafe_offset(config.BM * padded_ov_depth)
                 # o0 tile typed with `config.BM` exactly — `o_tile`'s
                 # `BM // config.num_q` does not fold to `config.BM` at parse
                 # time, so it can't convert to stage_partial's param type.
@@ -4925,6 +5122,29 @@ def fa4_softmax[
                     head_idx,
                     gmem_row + cta_q_offset,
                 )
+            elif ws_o_f32:
+                # WG1 has returned, so WG0 stages and stores every column.
+                fa4_ws_store_o_f32[
+                    config,
+                    0,
+                    config.ov_depth,
+                    num_threads=WARPGROUP_SIZE,
+                    barrier_id=0,
+                    single_source=True,
+                ](
+                    row,
+                    row,
+                    inv_row_sum,
+                    Float32(0),
+                    o_tile.tmem_addr,
+                    o_tile.tmem_addr,
+                    _ws_o_stage(),
+                    _ws_o_ptr(),
+                    num_output_rows,
+                    head_idx,
+                    gmem_row + cta_q_offset + ws_o_row_off,
+                )
+                _ws_write_lse(row_max, row_sum_total)
             else:
                 if is_writer:
                     fa4_scale_write_output[config](
@@ -5058,37 +5278,29 @@ def fa4_softmax[
             + peer_wg * UInt32(config.TMEM_O1 - config.TMEM_O0)
         )
 
-        # 6. Per-WG comptime j-range specialization for the helper.
-        # Ceil/floor split: WG0 takes ceil(iters/2) blocks starting
-        # at j=0, WG1 takes floor(iters/2) starting at j=ceil(iters/2).
-        # Under SWIZZLE_NONE the block is small (o_sw_K = 8 bf16), so
-        # iters = ov_depth/8 >= 8 for every supported head size and both
-        # WGs always participate (iters_per_wg1 >= 4 > 0). When batched,
-        # the store descriptor's box is the half-depth ceil(iters/2): WG0
-        # fills it exactly and WG1, for odd iters (e.g. depth=72 -> 9),
-        # overhangs the last block, which the TMA masks off. The
-        # `iters_per_wg1 > 0` guard below is now always true but kept for
-        # safety.
+        # 6. Per-WG comptime chunk-range specialization for the helper. The
+        # WGs split the 16 B column chunks; when the O-store blocks divide
+        # evenly between them each WG stores its own blocks, otherwise (e.g.
+        # one 64-column SWIZZLE_128B block at depth 64, or depth 72's partial
+        # second block) they split chunks ceil/floor and WG0 stores every
+        # block after a 2-WG barrier (`combine_cross_wg`).
         #
         # The block size must come from the OUTPUT store's swizzle, not
         # `config.swizzle_mode`: fa4_lse_combine_write infers its
-        # `output_swizzle_mode` from `ragged_tma_store`, and the two
-        # differ for FP8-QKV MLA (64B QKV swizzle, 128B BF16 output
-        # store). For MHA the store is built with `config.swizzle_mode`,
-        # so this folds to the previous expression.
-        comptime swizzle_granularity = (
+        # `output_swizzle_mode` from `ragged_tma_store`.
+        comptime o_blk_cols = (
             type_of(ragged_tma_store).swizzle_mode.bytes()
             // size_of[output_type]()
         )
-        # Block count is the output column count aligned to the OUTPUT swizzle
-        # granularity (SWIZZLE_NONE -> 8 bf16), NOT the QKV swizzle's
-        # `padded_ov_depth` (aligned to 64). ov_depth is already a multiple of
-        # the output granularity for every supported head size.
+        comptime o_chunk_cols = 16 // size_of[output_type]()
         comptime iters_total = (
-            align_up(config.ov_depth, swizzle_granularity)
-            // swizzle_granularity
+            align_up(config.ov_depth, o_chunk_cols) // o_chunk_cols
         )
-        comptime iters_per_wg0 = (iters_total + 1) // 2
+        comptime combine_cross_wg = (
+            o_blk_cols > o_chunk_cols
+            and config.ov_depth % (2 * o_blk_cols) != 0
+        )
+        comptime iters_per_wg0 = ceildiv(iters_total, 2)
         comptime iters_per_wg1 = iters_total // 2
         # In 1Q both WGs write the same Q rows; no per-WG gmem-row
         # offset (the depth column j drives the gmem position). Workspace
@@ -5110,7 +5322,7 @@ def fa4_softmax[
                 <= type_of(smem).q_bytes + type_of(smem).kv_bytes
             ), "split-K f32 O+(max,sum) staging must fit in the dead Q+KV span"
             var stage = smem.o_smem[.float32]()
-            var maxsum = stage + (config.BM * config.padded_ov_depth)
+            var maxsum = stage.unsafe_offset(config.BM * config.padded_ov_depth)
 
             # --- Publish (max,sum) for both WGs, then stage + reduce-scatter. ---
             tid = warp_group_idx * UInt32(WARPGROUP_SIZE) + row
@@ -5160,6 +5372,50 @@ def fa4_softmax[
                 head_idx,
                 out_row_idx,
             )
+        elif ws_o_f32:
+            # Both WGs hold every row; each stages half the depth columns.
+            comptime half_cols = align_up(config.ov_depth // 2, 8)
+            var writer_tid = warp_group_idx * UInt32(WARPGROUP_SIZE) + row
+            if warp_group_idx == UInt32(0):
+                fa4_ws_store_o_f32[
+                    config,
+                    0,
+                    half_cols,
+                    num_threads=2 * WARPGROUP_SIZE,
+                    barrier_id=5,
+                ](
+                    row,
+                    writer_tid,
+                    final_scale_local,
+                    final_scale_peer,
+                    own_o_tile.tmem_addr,
+                    peer_o_tile.tmem_addr,
+                    _ws_o_stage(),
+                    _ws_o_ptr(),
+                    num_output_rows,
+                    head_idx,
+                    out_row_idx,
+                )
+            else:
+                fa4_ws_store_o_f32[
+                    config,
+                    half_cols,
+                    config.ov_depth,
+                    num_threads=2 * WARPGROUP_SIZE,
+                    barrier_id=5,
+                ](
+                    row,
+                    writer_tid,
+                    final_scale_local,
+                    final_scale_peer,
+                    own_o_tile.tmem_addr,
+                    peer_o_tile.tmem_addr,
+                    _ws_o_stage(),
+                    _ws_o_ptr(),
+                    num_output_rows,
+                    head_idx,
+                    out_row_idx,
+                )
         else:
             if warp_group_idx == UInt32(0):
                 if is_writer:
@@ -5167,6 +5423,7 @@ def fa4_softmax[
                         config,
                         wg_j_offset=0,
                         iters_per_wg=iters_per_wg0,
+                        cross_wg=combine_cross_wg,
                     ](
                         row,
                         warp_idx & 3,
@@ -5188,6 +5445,7 @@ def fa4_softmax[
                             config,
                             wg_j_offset=iters_per_wg0,
                             iters_per_wg=iters_per_wg1,
+                            cross_wg=combine_cross_wg,
                         ](
                             row,
                             warp_idx & 3,

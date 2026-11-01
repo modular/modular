@@ -30,14 +30,16 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
-from max.pipelines.lib import CompilationTimer
+from max.pipelines.lib import CompilationTimer, PipelineModel
+from max.pipelines.lib.graph_specs import GraphRole
 
 from .diffusion_gemma import (
     DiffusionGemmaDecoderTextModel,
@@ -65,7 +67,21 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
 
     decoder_model: Model
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
+    # The donor mixes in ``LogProbabilitiesMixin``, which claims the
+    # capability by overriding ``compute_log_probabilities``. This port
+    # inherits that claim through the donor, but never computes log
+    # probabilities: the generation loop denoises a canvas and asks for
+    # neither the per-token logits nor the logprobs graph. Both capability
+    # checks (``_computes_log_probabilities`` in the OpenAI route and the
+    # same identity test in ``generate``) compare this attribute against the
+    # base implementation, so binding the base implementation back is how a
+    # subclass reports "no": an ``echo`` + ``logprobs`` request must not be
+    # rejected for want of ``--enable-echo`` on a model that could not score
+    # it anyway.
+    compute_log_probabilities = PipelineModel.compute_log_probabilities
+
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Builds the vision, encoder and decoder graphs."""
         assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
@@ -121,9 +137,12 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
             encoder_model = models[encoder_graph.name]
             self.decoder_model = models[decoder_graph.name]
 
-        # The donor base class calls the language graph `language_model` and
-        # routes its `execute`/graph-capture paths through it.
-        return vision_model, encoder_model
+        # The donor base class runs the decoder role as its language model,
+        # through its `execute`/graph-capture paths; here that is the encoder.
+        return {
+            GraphRole.DECODER: encoder_model,
+            GraphRole.VISION: vision_model,
+        }
 
     def _build_encoder_graph(
         self,
@@ -141,7 +160,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
         }
         with Graph(
             "diffusiongemma_encoder",
-            input_types=self._language_model_input_types(config),
+            input_types=tree.leaves(self._language_model_input_tree(config)),
             module=module,
         ) as graph:
             encoder = DiffusionGemmaEncoderTextModel(config)
@@ -177,7 +196,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
                 image_embeddings=image_embeddings,
                 image_token_indices=image_token_indices,
             )
-            graph.output(*outputs)
+            graph.output(outputs)
         return graph, encoder.state_dict()
 
     def _decoder_input_types(
@@ -209,7 +228,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
             DType.float32, shape=[1], device=device_ref
         )
 
-        from max.nn.comm.allreduce import Signals
+        from max.nn.legacy.comm.allreduce import Signals
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
@@ -222,7 +241,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
             sc_enabled_type,
             temperature_type,
             *signals.input_types(),
-            *self.kv_params.get_symbolic_inputs().flatten(),
+            *self.kv_params.flattened_kv_inputs(),
         ]
 
     def _build_decoder_graph(
@@ -269,7 +288,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
                 sc_enabled=sc_enabled,
                 temperature=temperature,
             )
-            graph.output(*outputs)
+            graph.output(outputs)
         return graph, decoder.state_dict()
 
     def execute_decoder_step(
@@ -279,7 +298,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
         sc_logits: Buffer,
         sc_enabled: Buffer,
         temperature: Buffer,
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
+        kv_cache_inputs: tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...],
     ) -> tuple[Buffer, Buffer, Buffer, Buffer, Buffer]:
         """Runs one denoise step.
 
@@ -295,7 +314,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
             sc_enabled,
             temperature,
             *self.signal_buffers,
-            *kv_cache_inputs.flatten(),
+            *tree.leaves(kv_cache_inputs),
         )
         sc_out, argmax, topk_probs, topk_idx, entropy = outputs[:5]
         # Populated only when the graph was built with DG_DUMP_HIDDEN=1

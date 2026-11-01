@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -11,7 +12,7 @@ _COMMON_DEPS = [
     "//max/python/max/dtype",
     "//max/python/max/engine",
     "//max/python/max/graph",
-    "//max/python/max/nn",
+    "//max/python/max/nn/legacy",
     requirement("numpy"),
 ]
 
@@ -29,9 +30,16 @@ modular_py_test(
         ],
     ),
     per_test_tags = {
+        "test_ep_config.py": ["skip-external-ci"],
         "test_module.py": ["skip-external-ci"],
     },
+    per_test_target_compatible_with = {
+        # Needs mega_ffn.ep_fused_init, registered only by the closed-source kernels.
+        "test_ep_config.py": REQUIRES_INTERNAL_KERNELS,
+    },
     deps = _COMMON_DEPS + [
+        "//max/python/max:tree",
+        "//max/python/max/_artifact",
         "//max/python/max/mlir",
         requirement("torch"),
     ],
@@ -48,7 +56,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )
@@ -60,11 +68,9 @@ modular_py_test(
         "conftest.py",
         "test_sampling_gpu.py",
     ],
-    gpu_constraints = ["//:has_gpu"] + select({
-        # FIXME(MODELS-1389): Test is hitting 10 min timeout on B200
-        "//:b200_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    precompile_shards = 12,
     tags = ["gpu"],
     target_compatible_with = select({
         # FIXME(KERN-2604): topk kernel uses external_memory unsupported on Apple GPU

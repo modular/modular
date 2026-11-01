@@ -37,11 +37,11 @@ loop still carries ``z`` as a realized float32 tensor with no eager glue.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.tensor import Tensor
 
 
 class Ideogram4PackStep(Module[..., Tensor]):
@@ -61,6 +61,7 @@ class Ideogram4PackStep(Module[..., Tensor]):
         self._device = device
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         c = self._in_channels
         d = self._dtype
         dev = self._device
@@ -70,6 +71,7 @@ class Ideogram4PackStep(Module[..., Tensor]):
         )
 
     def forward(self, text_z_padding: Tensor, z: Tensor) -> Tensor:
+        """Packs the text padding and the latents into one sequence."""
         return F.concat([text_z_padding, z], axis=1)
 
 
@@ -93,6 +95,7 @@ class Ideogram4CombineStep(Module[..., Tensor]):
         self._device = device
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         c = self._in_channels
         d = self._dtype
         dev = self._device
@@ -124,6 +127,7 @@ class Ideogram4CombineStep(Module[..., Tensor]):
         dt: Tensor,
         guidance: Tensor,
     ) -> Tensor:
+        """Applies the guidance scale and advances the latents one step."""
         # Image-token velocity = trailing num_image rows of the cond output.
         # ``num_text`` comes from the carrier length; rebind the sliced
         # ``seq - num_text`` span back to z's ``num_image`` so the combine is

@@ -19,7 +19,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from std.memory.address_space import AddressSpace
 
 
 def _kernel(addr: Int64):

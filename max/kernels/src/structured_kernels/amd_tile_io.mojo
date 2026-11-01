@@ -44,13 +44,13 @@ DRAM↔register loaders:
                       Buffer-resource OOB clamping handles the M
                       boundary cleanly but cannot distinguish row/col
                       straddle, so use this only when N is BN-aligned
-                      and no fused lambda is needed.
+                      and no fused closure is needed.
     RegTileEpilogue - Per-lane epilogue writer with optional fused
-                      elementwise lambda. Caller passes
+                      elementwise closure. Caller passes
                       (m_global, n_global) per call; the writer
                       handles the fully-in-bounds chunk store, the
                       partial-chunk-straddling-N per-element fallback,
-                      and the lambda dispatch. Use this for any kernel
+                      and the closure dispatch. Use this for any kernel
                       that needs to support N-misaligned shapes or a
                       fused epilogue.
 
@@ -76,38 +76,44 @@ from max.gpu import lane_id, thread_idx, WARP_SIZE
 from max.gpu.intrinsics import (
     AMDBufferResource,
     ds_read_tr8_b64,
+    readfirstlane,
 )
 from max.gpu._utils import to_i32, to_i64
 from max.gpu.memory import CacheOperation
-from std.memory import AddressSpace
 from std.memory.unsafe import bitcast
 from std.math import ceildiv, min
 from std.math.uutils import udivmod, umod, ufloordiv
 from std.sys._assembly import inlined_assembly
-from std.sys.intrinsics import readfirstlane
 from std.utils import IndexList
 from layout import Coord, Idx, TileTensor, TensorLayout
 from layout.coord import crd2idx
 from layout._utils import make_amd_buffer_resource
 from layout.tile_layout import Layout, row_major, col_major
 from layout.swizzle import Swizzle
-from layout.tensor_engine import DefaultEngine
+from layout.tensor_engine import DefaultEngine, TensorEngine
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.itertools import product
 
 
-comptime elementwise_epilogue_type = def[
-    dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](IndexList[2], SIMD[dtype, width]) capturing -> None
-"""Type alias for a fused elementwise epilogue lambda.
+comptime _elementwise_epilogue_fn_signature = def[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](Coord, SIMD[dtype, width]) -> None
 
-Local re-declaration of `linalg.utils.elementwise_epilogue_type`.
-`structured_kernels` is a *dependency* of `linalg`, so we cannot
-import the canonical definition without creating a cyclic bazel dep.
-Mojo function-pointer types are structural, so this duplicate alias
-is interchangeable with the canonical one at every call site that
-hands a lambda across the package boundary.
-"""
+comptime ElementwiseEpilogueFn = (
+    ImplicitlyCopyable & RegisterPassable & _elementwise_epilogue_fn_signature
+)
+"""Local re-declaration of `linalg.utils.ElementwiseEpilogueFn`;
+`structured_kernels` is a dependency of `linalg`, so it cannot import it."""
+
+comptime _elementwise_compute_fn_signature = def[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](Coord, SIMD[dtype, width]) -> SIMD[dtype, width]
+
+comptime ElementwiseComputeFn = (
+    ImplicitlyCopyable & RegisterPassable & _elementwise_compute_fn_signature
+)
+"""Local re-declaration of `linalg.utils.ElementwiseComputeFn`, for the
+same reason as `ElementwiseEpilogueFn`."""
 
 
 comptime _alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
@@ -119,7 +125,7 @@ comptime _no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.Loca
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _load_to_lds[
     dtype: DType,
     //,
@@ -128,7 +134,7 @@ def _load_to_lds[
 ](
     bc: AMDBufferResource,
     vector_offset: Int32,
-    shared_ptr: UnsafePointer[Scalar[dtype], _, address_space=.SHARED],
+    shared_ptr: Pointer[Scalar[dtype], _, address_space=.SHARED],
     scalar_offset: Int32 = 0,
 ):
     """Loads one raw-buffer vector into LDS with TileIO's async-copy scope.
@@ -167,13 +173,13 @@ def _load_to_lds[
         CacheOperation.ALWAYS,
         CacheOperation.STREAMING,
     ), "_load_to_lds supports ALWAYS or STREAMING cache policy"
-    var desc_ptr = UnsafePointer[
+    var desc_ptr = MutPointer[
         BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
     ].unsafe_dangling()
-    var ptr_to_ptr = UnsafePointer(to=desc_ptr)
-    var ptr_to_simd = UnsafePointer(to=bc.desc)
-    ptr_to_ptr[0] = ptr_to_simd.bitcast[
-        UnsafePointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
+    var ptr_to_ptr = Pointer(to=desc_ptr)
+    var ptr_to_simd = Pointer(to=bc.desc)
+    ptr_to_ptr[0] = ptr_to_simd.unsafe_bitcast[
+        MutPointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
     ]()[0]
     var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type=__mlir_type.`!llvm.ptr<8>`
@@ -215,12 +221,160 @@ def _load_to_lds[
         )
 
 
+@inline(.always)
+def _global_load_to_lds[
+    dtype: DType,
+    //,
+    width: Int,
+](
+    global_ptr: Pointer[Scalar[dtype], _, address_space=.GLOBAL],
+    shared_ptr: Pointer[Scalar[dtype], _, address_space=.SHARED],
+):
+    """Loads one global-memory vector into LDS with TileIO's async-copy scope.
+
+    The per-lane counterpart of `_load_to_lds`: each lane names its own 64-bit
+    source address, so a wave can gather rows from anywhere in a buffer larger
+    than the 4 GiB a buffer resource reaches. The LDS side is unchanged: lane
+    `l`'s `width` elements land at `shared_ptr + l * width`, and `shared_ptr`
+    lowers to M0, so it must be wave-uniform. Waits are software-owned exactly
+    as for `_load_to_lds`.
+
+    Parameters:
+        dtype: Element type of both the source and the LDS destination.
+        width: Number of elements loaded by each lane.
+
+    Args:
+        global_ptr: This lane's source address.
+        shared_ptr: Wave-uniform LDS tile base; hardware adds the lane stride.
+    """
+    comptime assert is_amd_gpu(), "_global_load_to_lds is AMD-only"
+    comptime num_bytes_per_lane = size_of[dtype]() * width
+    # The size is an I32Attr, emitted as a literal for the same reason as
+    # `_load_to_lds`'s aux; only the gfx950 dwordx4 form is needed so far.
+    comptime assert (
+        num_bytes_per_lane == 16
+    ), "_global_load_to_lds supports 16 bytes per lane (gfx950 dwordx4)"
+    var global_ptr1 = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<1>`
+    ](global_ptr)
+    var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<3>`
+    ](shared_ptr)
+    __mlir_op.`rocdl.global.load.lds`[
+        alias_scopes=_alias_scope_attr,
+        size=__mlir_attr.`16 : i32`,
+        offset=__mlir_attr.`0 : i32`,
+        aux=__mlir_attr.`0 : i32`,
+        _type=None,
+    ](global_ptr1, shared_ptr3)
+
+
+struct _IndexedSubTileLayout[
+    dtype: DType,
+    rows: Int,
+    cols: Int,
+    swizzle: Optional[Swizzle],
+]:
+    """The lane-to-chunk map `SubTileLoaderLDS.load` uses for one sub-tile.
+
+    One `global_load_lds` per `sub_rows`-row strip: lane `l` copies
+    `chunk_width` elements of strip row `row(l, strip)` at column
+    `col(l, strip)`, and the hardware writes them at the strip's LDS base plus
+    `l * chunk_width`. Reproducing the map, swizzle included, keeps the LDS
+    image byte-identical to a contiguous load of the same rows.
+
+    Parameters:
+        dtype: Element type.
+        rows: Sub-tile rows.
+        cols: Sub-tile columns (one LDS block width).
+        swizzle: The swizzle `SubTileLoaderLDS` applies for this tile.
+    """
+
+    comptime block_rows = 32 if Self.rows >= 32 else Self.rows
+    comptime _raw_load_bytes = (Self.cols * size_of[Self.dtype]()) // 4
+    comptime lane_rows = 16 if Self._raw_load_bytes <= 16 else 8
+    comptime lane_cols = 4 if Self._raw_load_bytes <= 16 else 8
+    comptime chunk_width = Self.cols // Self.lane_cols
+    comptime sub_rows = (
+        Self.lane_rows if Self.block_rows >= Self.lane_rows else Self.block_rows
+    )
+    comptime num_strips = Self.rows // Self.sub_rows
+
+    @staticmethod
+    @inline(.always)
+    def lane_row_col(strip: Int) -> Tuple[Int, Int]:
+        """Returns this lane's `(row, column)` within the sub-tile for `strip`.
+
+        Args:
+            strip: Strip index in `[0, num_strips)`.
+
+        Returns:
+            The sub-tile row and the first column of this lane's chunk.
+        """
+        var block, sub = divmod(strip, Self.block_rows // Self.sub_rows)
+        var worker = Int(lane_id()) + sub * WARP_SIZE
+        comptime if Self.swizzle:
+            worker = Self.swizzle.value()(worker)
+        var row, col_chunk = divmod(umod(worker, WARP_SIZE), Self.lane_cols)
+        return (
+            block * Self.block_rows + sub * Self.sub_rows + row,
+            col_chunk * Self.chunk_width,
+        )
+
+    @staticmethod
+    @inline(.always)
+    def load_strip(
+        dst: TileTensor[Self.dtype, _, _, address_space=.SHARED, ...],
+        strip: Int,
+        src: Pointer[Scalar[Self.dtype], _],
+    ):
+        """Copies this lane's chunk of `strip` from `src` into `dst`.
+
+        Args:
+            dst: Destination `(rows, cols)` LDS sub-tile, row-major.
+            strip: Strip index in `[0, num_strips)`.
+            src: This lane's source chunk, from `lane_row_col`.
+        """
+        comptime assert type_of(dst).static_stride[1] == 1
+        comptime assert type_of(dst).static_stride[0] == Self.cols
+        var dst_ptr = dst.ptr.unsafe_offset(strip * Self.sub_rows * Self.cols)
+        _global_load_to_lds[width=Self.chunk_width](
+            src.unsafe_address_space_cast[.GLOBAL](),
+            dst_ptr,
+        )
+
+    @staticmethod
+    @inline(.always)
+    def zero_strip(
+        dst: TileTensor[mut=True, Self.dtype, _, _, address_space=.SHARED, ...],
+        strip: Int,
+    ):
+        """Writes zeros where this lane's `load_strip` chunk would land.
+
+        Lets a lane whose row is not loaded leave a finite chunk behind:
+        `P = 0` times an fp8 NaN pattern in stale LDS is still NaN.
+
+        Args:
+            dst: Destination `(rows, cols)` LDS sub-tile, row-major.
+            strip: Strip index in `[0, num_strips)`.
+        """
+        comptime assert type_of(dst).static_stride[1] == 1
+        comptime assert type_of(dst).static_stride[0] == Self.cols
+        var dst_ptr = dst.ptr.unsafe_offset(
+            strip * Self.sub_rows * Self.cols
+            + Int(lane_id()) * Self.chunk_width
+        )
+        dst_ptr.unsafe_store[alignment=16](
+            SIMD[Self.dtype, Self.chunk_width](0)
+        )
+
+
 # ===----------------------------------------------------------------------=== #
 # LDS transposed reads
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def ds_read_tr16_b64_row(
     tile: TileTensor[_, _, address_space=.SHARED, ...],
 ) -> SIMD[tile.dtype, 4]:
@@ -245,7 +399,7 @@ def ds_read_tr16_b64_row(
         thread_layout
     ](lane_in_row)
     var offset = dist_result[2]
-    var ptr = tile.ptr + offset
+    var ptr = tile.ptr.unsafe_offset(offset)
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type=__mlir_type.`!llvm.ptr<3>`
@@ -264,7 +418,7 @@ def ds_read_tr16_b64_row(
     )
 
 
-@always_inline
+@inline(.always)
 def ds_read_tr16_b64_warp[
     mma_shape: IndexList[3],
 ](tile: TileTensor[_, _, address_space=.SHARED, ...],) -> SIMD[tile.dtype, 4]:
@@ -339,7 +493,7 @@ struct TiledMmaLoader[
     """
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_b[
         num_mmas: Int,
         simd_width: Int,
@@ -413,7 +567,7 @@ struct TiledMmaLoader[
         return result^
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_b_tr(
         tile: TileTensor[Self.in_type, _, address_space=.SHARED, ...],
     ) -> SIMD[Self.in_type, 8]:
@@ -448,14 +602,14 @@ struct TiledMmaLoader[
         return part_1.join(part_2)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_v_fp8_strip[
         BN: Int,
         BK: Int,
         bk_tile: Int,
         dt: Int,
     ](
-        v_base: UnsafePointer[
+        v_base: MutPointer[
             Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
         rel_key: Int,
@@ -497,7 +651,7 @@ struct TiledMmaLoader[
         comptime depth_offset = dt * MMA_M
         comptime blk = depth_offset // BK
         comptime d_in_blk = depth_offset % BK
-        var block_base = v_base + blk * BN * BK
+        var block_base = v_base.unsafe_offset(blk * BN * BK)
 
         # Match K's swizzle on V reads.  In `mla_kv_alias` mode K and V
         # share one SMEM image: K writes via `SubTileLoaderLDS.load`,
@@ -516,21 +670,22 @@ struct TiledMmaLoader[
         # required for the 8-byte `ds_read_tr8_b64` to land correctly.
         comptime simd_w = simd_width_of[Self.in_type]()
 
-        @always_inline
-        @__parameter
-        def _load_keys[key_base: Int]() -> SIMD[Self.in_type, 8]:
+        @inline(.always)
+        def _load_keys[key_base: Int]() {imm} -> SIMD[Self.in_type, 8]:
             var key = row_offset + key_base + rel_key + hw_key_shift
             var byte_offset = key * BK + d_in_blk + depth_base
-            comptime if Self.swizzle:
+            comptime if case .Some(swizzle_fn) = Self.swizzle:
                 # Decompose byte_offset = vec_idx * simd_w + sub_vec,
                 # permute vec_idx, then reassemble.
                 var vec_idx = byte_offset // simd_w
                 var sub_vec = byte_offset & (simd_w - 1)
-                var swizzled_vec = Self.swizzle.value()(vec_idx)
-                var addr = block_base + swizzled_vec * simd_w + sub_vec
+                var swizzled_vec = swizzle_fn(vec_idx)
+                var addr = block_base.unsafe_offset(
+                    swizzled_vec * simd_w
+                ).unsafe_offset(sub_vec)
                 return ds_read_tr8_b64(addr)
             else:
-                return ds_read_tr8_b64(block_base + byte_offset)
+                return ds_read_tr8_b64(block_base.unsafe_offset(byte_offset))
 
         var r0 = _load_keys[0]()
         var r1 = _load_keys[16]()
@@ -539,14 +694,14 @@ struct TiledMmaLoader[
         return r0.join(r1).join(r2.join(r3))
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_v_fp8_strip_16[
         BN: Int,
         block_width: Int,
         bk_tile: Int,
         dt: Int,
     ](
-        v_base: UnsafePointer[
+        v_base: MutPointer[
             Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
         key_group: Int,
@@ -628,7 +783,7 @@ struct TiledMmaLoader[
         comptime depth_offset = dt * MMA_M
         comptime blk = depth_offset // block_width
         comptime d_in_blk = depth_offset % block_width
-        var block_base = v_base + blk * BN * block_width
+        var block_base = v_base.unsafe_offset(blk * BN * block_width)
 
         comptime simd_w = simd_width_of[Self.in_type]()
         # Even lanes (is_odd=0) read the low-half-depth-byte octet
@@ -637,18 +792,19 @@ struct TiledMmaLoader[
         # depth bytes across the 16 lanes of the row.
         var depth_base = d_in_blk + is_odd * 8
 
-        @always_inline
-        @__parameter
-        def _load_keys[key_base: Int]() -> SIMD[Self.in_type, 8]:
+        @inline(.always)
+        def _load_keys[key_base: Int]() {imm} -> SIMD[Self.in_type, 8]:
             var key = row_offset + key_group * 32 + key_base + pair_idx
             var byte_offset = key * block_width + depth_base
-            comptime if Self.swizzle:
+            comptime if case .Some(swizzle_fn) = Self.swizzle:
                 var vec_idx, sub_vec = udivmod(byte_offset, simd_w)
-                var swizzled_vec = Self.swizzle.value()(vec_idx)
-                var addr = block_base + swizzled_vec * simd_w + sub_vec
+                var swizzled_vec = swizzle_fn(vec_idx)
+                var addr = block_base.unsafe_offset(
+                    swizzled_vec * simd_w
+                ).unsafe_offset(sub_vec)
                 return ds_read_tr8_b64(addr)
             else:
-                return ds_read_tr8_b64(block_base + byte_offset)
+                return ds_read_tr8_b64(block_base.unsafe_offset(byte_offset))
 
         var r0 = _load_keys[0]()
         var r1 = _load_keys[8]()
@@ -657,7 +813,7 @@ struct TiledMmaLoader[
         return r0.join(r1).join(r2.join(r3))
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _load_b_tile[
         tile_mma_shape: IndexList[3],
         k_tile_idx: Int,
@@ -707,18 +863,18 @@ struct TiledMmaLoader[
             ]().distribute_with_offset[thread_layout](lane_id())
             offset = sub_offset + Scalar[idx_type](dist_res[2])
 
-        comptime if Self.swizzle:
-            offset = Self.swizzle.value()(
+        comptime if case .Some(swizzle_fn) = Self.swizzle:
+            offset = swizzle_fn(
                 offset // Scalar[idx_type](simd_width)
             ) * Scalar[idx_type](simd_width)
-        comptime if Self.swizzle2:
-            offset = Self.swizzle2.value()(
+        comptime if case .Some(swizzle2_fn) = Self.swizzle2:
+            offset = swizzle2_fn(
                 offset // Scalar[idx_type](simd_width)
             ) * Scalar[idx_type](simd_width)
 
         return _load_from_lds[
             width=simd_width, imm_offset_bytes=imm_offset_bytes
-        ](src.ptr + offset)
+        ](src.ptr.unsafe_offset(offset))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -726,7 +882,7 @@ struct TiledMmaLoader[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _load_from_lds[
     dtype: DType,
     //,
@@ -734,7 +890,7 @@ def _load_from_lds[
     imm_offset_bytes: Int = 0,
     typed_imm_offset_bytes: Int = 0,
 ](
-    shared_ptr: UnsafePointer[Scalar[dtype], _, address_space=.SHARED],
+    shared_ptr: Pointer[Scalar[dtype], _, address_space=.SHARED],
 ) -> SIMD[
     dtype, width
 ]:
@@ -771,7 +927,7 @@ def _load_from_lds[
     """
     comptime if imm_offset_bytes != 0:
         comptime if dtype == .bfloat16 and width == 8:
-            var bf16_ptr = shared_ptr.bitcast[BFloat16]()
+            var bf16_ptr = shared_ptr.unsafe_bitcast[BFloat16]()
             var raw = ds_read_b128_imm_u32x4[offset_bytes=imm_offset_bytes](
                 bf16_ptr
             )
@@ -790,7 +946,7 @@ def _load_from_lds[
         typed_imm_offset_bytes % size_of[dtype]() == 0
     ), "_load_from_lds: typed_imm_offset_bytes must be a multiple of dtype size"
     comptime _offset_elts = typed_imm_offset_bytes // size_of[dtype]()
-    var shifted_ptr = shared_ptr + _offset_elts
+    var shifted_ptr = shared_ptr.unsafe_offset(_offset_elts)
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type=__mlir_type.`!llvm.ptr<3>`
@@ -876,7 +1032,7 @@ def _load_from_lds[
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
-        var shared_ptr_offset = shifted_ptr + 16
+        var shared_ptr_offset = shifted_ptr.unsafe_offset(16)
         var shared_ptr3_hi = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=__mlir_type.`!llvm.ptr<3>`
         ](shared_ptr_offset)
@@ -917,14 +1073,10 @@ def _load_from_lds[
 # layout); caller bitcasts.
 
 
-@always_inline
+@inline(.always)
 def ds_read_b128_imm_u32x4[
     offset_bytes: Int,
-](
-    base_ptr: UnsafePointer[BFloat16, _, address_space=.SHARED],
-) -> SIMD[
-    .uint32, 4
-]:
+](base_ptr: Pointer[BFloat16, _, address_space=.SHARED],) -> SIMD[.uint32, 4]:
     """Issues `ds_read_b128` with a comptime immediate offset and returns the
     loaded 128 bits as `SIMD[.uint32, 4]`.
 
@@ -969,7 +1121,7 @@ def ds_read_b128_imm_u32x4[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def load_lds_fragment[
     smem_layout: TensorLayout,
     reg_layout: TensorLayout,
@@ -977,7 +1129,7 @@ def load_lds_fragment[
     MMA_K: Int,
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](
-    smem_tile: SMemTile[mut=False, _, smem_layout, _],
+    smem_tile: SMemTile[mut=False, _, smem_layout, _, ...],
     reg_tile: RegTile[mut=True, smem_tile.dtype, reg_layout, _],
 ):
     """Load MMA fragments from SMEM to registers using hardware access pattern.
@@ -1075,15 +1227,15 @@ def load_lds_fragment[
                 var iter_base = m_idx * m_stride + k_idx * k_stride
                 var full_offset = iter_base + lane_offset
 
-                comptime if swizzle:
-                    full_offset = swizzle.value()(full_offset)
+                comptime if case .Some(swizzle_fn) = swizzle:
+                    full_offset = swizzle_fn(full_offset)
 
                 comptime frag_idx = m_idx * k_splits + k_idx
-                reg_ptr.store[width=lds_frag_width](
+                reg_ptr.unsafe_store(
                     frag_idx * _reg_stride,
                     rebind[FragElement](
                         _load_from_lds[width=lds_frag_width](
-                            smem_ptr + full_offset
+                            smem_ptr.unsafe_offset(full_offset)
                         )
                     ),
                 )
@@ -1092,13 +1244,15 @@ def load_lds_fragment[
             var iter_base = i * WARP_SIZE * lds_frag_width
             var full_offset = iter_base + lane_offset
 
-            comptime if swizzle:
-                full_offset = swizzle.value()(full_offset)
+            comptime if case .Some(swizzle_fn) = swizzle:
+                full_offset = swizzle_fn(full_offset)
 
-            reg_ptr.store[width=lds_frag_width](
+            reg_ptr.unsafe_store(
                 i * _reg_stride,
                 rebind[FragElement](
-                    _load_from_lds[width=lds_frag_width](smem_ptr + full_offset)
+                    _load_from_lds[width=lds_frag_width](
+                        smem_ptr.unsafe_offset(full_offset)
+                    )
                 ),
             )
 
@@ -1108,21 +1262,23 @@ def load_lds_fragment[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def smem_subtile[
     tile_rows: Int,
     tile_cols: Int,
     BN: Int,
     BK: Int,
     dtype: DType,
+    Engine: TensorEngine,
 ](
-    smem_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin, address_space=.SHARED],
+    smem_storage: Engine.StorageType[dtype, MutAnyOrigin, .SHARED],
     tile_row: Int,
     tile_col: Int,
 ) -> TileTensor[
     dtype,
     type_of(row_major[tile_rows, tile_cols]()),
     MutAnyOrigin,
+    Engine=Engine.OffsetResultType[TypeList.of[Int]()],
     address_space=.SHARED,
 ]:
     """Creates a flat TileTensor sub-view of a blocked SMEM layout.
@@ -1140,9 +1296,10 @@ def smem_subtile[
         BN: Number of rows per block (full block height).
         BK: Number of columns per block (full block width).
         dtype: Element data type.
+        Engine: `TensorEngine` of the SMEM storage handle.
 
     Args:
-        smem_ptr: Base pointer to the SMEM allocation.
+        smem_storage: Storage handle for the SMEM allocation.
         tile_row: Tile row index (0-based, in units of tile_rows).
         tile_col: Tile column index (0-based, in units of tile_cols).
 
@@ -1151,15 +1308,13 @@ def smem_subtile[
     """
     comptime block_size = BN * BK
     var offset = tile_row * tile_rows * BK + tile_col * block_size
-    return TileTensor[
-        dtype,
-        type_of(row_major[tile_rows, tile_cols]()),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ](smem_ptr + offset, row_major[tile_rows, tile_cols]())
+    return {
+        Engine.offset(smem_storage, Coord(offset)),
+        row_major[tile_rows, tile_cols](),
+    }
 
 
-@always_inline
+@inline(.always)
 def smem_mma_subtile_offset[
     mma_rows: Int,
     mma_cols: Int,
@@ -1188,15 +1343,16 @@ def smem_mma_subtile_offset[
     )
 
 
-@always_inline
+@inline(.always)
 def smem_mma_subtile[
     mma_rows: Int,
     mma_cols: Int,
     BN: Int,
     BK: Int,
     dtype: DType,
+    Engine: TensorEngine,
 ](
-    smem_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin, address_space=.SHARED],
+    smem_storage: Engine.StorageType[dtype, MutAnyOrigin, .SHARED],
     bk_tile: Int,
     k_sub: Int,
     mma_idx: Int,
@@ -1204,6 +1360,7 @@ def smem_mma_subtile[
     dtype,
     type_of(row_major[mma_rows, mma_cols]()),
     MutAnyOrigin,
+    Engine=Engine.OffsetResultType[TypeList.of[Int]()],
     address_space=.SHARED,
 ]:
     """Creates a flat TileTensor for an MMA-sized sub-tile in blocked SMEM.
@@ -1223,9 +1380,11 @@ def smem_mma_subtile[
         BN: Block height.
         BK: Block width.
         dtype: Element data type.
+        Engine: `TensorEngine` of the SMEM storage handle.
 
     Args:
-        smem_ptr: Base pointer to the SMEM allocation for this buffer stage.
+        smem_storage: Storage handle for the SMEM allocation for this
+            buffer stage.
         bk_tile: Which BK-tall row group (0..depth/BK-1).
         k_sub: Which MMA_K sub-row within the BK group (0..BK/MMA_K-1).
         mma_idx: Linear MMA tile index across the full depth dimension.
@@ -1236,12 +1395,10 @@ def smem_mma_subtile[
     var offset = smem_mma_subtile_offset[mma_rows, mma_cols, BN, BK](
         bk_tile, k_sub, mma_idx
     )
-    return TileTensor[
-        dtype,
-        type_of(row_major[mma_rows, mma_cols]()),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ](smem_ptr + offset, row_major[mma_rows, mma_cols]())
+    return {
+        Engine.offset(smem_storage, Coord(offset)),
+        row_major[mma_rows, mma_cols](),
+    }
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1279,10 +1436,10 @@ trait TileLoader(TrivialRegisterPassable):
     comptime tile_rows: Int
     comptime tile_cols: Int
 
-    @always_inline
+    @inline(.always)
     def load_tile(
         self,
-        dst: SMemTile[Self.dtype, _, _],
+        dst: SMemTile[Self.dtype, _, _, ...],
         m_offset: Int,
         k_offset: Int,
     ):
@@ -1420,7 +1577,7 @@ struct TileLoaderLDS[
     var m_anchor: Int
     var k_anchor: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         src: TileTensor[Self.dtype, ...],
@@ -1517,10 +1674,10 @@ struct TileLoaderLDS[
         self.thread_row = warp_row * Self.thread_rows + subtile_row
         self.thread_col = warp_col * Self.subtile_cols + subtile_col
 
-    @always_inline
+    @inline(.always)
     def load_tile(
         self,
-        dst: SMemTile[Self.dtype, _, _],
+        dst: SMemTile[Self.dtype, _, _, ...],
         m_offset: Int,
         k_offset: Int,
     ):
@@ -1694,10 +1851,10 @@ struct SubTileLoaderLDS[
     var bc: AMDBufferResource
     """The 128-bit buffer resource descriptor for DRAM access."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        gmem_tile: TileTensor[Self.dtype, Engine=DefaultEngine[], ...],
+        gmem_tile: TileTensor[Self.dtype, ...],
     ):
         """Create a loader from a DRAM tile.
 
@@ -1710,7 +1867,7 @@ struct SubTileLoaderLDS[
         """
         self.bc = make_amd_buffer_resource(gmem_tile)
 
-    @always_inline
+    @inline(.always)
     def load[
         hoist_scalar_offset: Bool = False,
     ](
@@ -1824,22 +1981,22 @@ struct SubTileLoaderLDS[
                 worker_idx + (m_sub_tile + worker_base) * WARP_SIZE
             )
             var swizzled_worker_idx = worker_idx_with_offset
-            comptime if Self.swizzle:
-                swizzled_worker_idx = Self.swizzle.value()(swizzled_worker_idx)
-            comptime if Self.swizzle2:
-                swizzled_worker_idx = Self.swizzle2.value()(swizzled_worker_idx)
+            comptime if case .Some(swizzle_fn) = Self.swizzle:
+                swizzled_worker_idx = swizzle_fn(swizzled_worker_idx)
+            comptime if case .Some(swizzle2_fn) = Self.swizzle2:
+                swizzled_worker_idx = swizzle2_fn(swizzled_worker_idx)
             var src_dist = src_partitions.vectorize[1, load_width]().distribute[
                 thread_layout
             ](umod(swizzled_worker_idx, WARP_SIZE))
-            var dst_ptr = dst_partitions.ptr.address_space_cast[.SHARED]()
+            var dst_ptr = dst_partitions.ptr
 
-            var desc_ptr_ = UnsafePointer[
+            var desc_ptr_ = MutPointer[
                 BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
             ].unsafe_dangling()
-            var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
-            var ptr_to_simd = UnsafePointer(to=self.bc.desc)
-            ptr_to_ptr[0] = ptr_to_simd.bitcast[
-                UnsafePointer[
+            var ptr_to_ptr = Pointer(to=desc_ptr_)
+            var ptr_to_simd = Pointer(to=self.bc.desc)
+            ptr_to_ptr[0] = ptr_to_simd.unsafe_bitcast[
+                MutPointer[
                     BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
                 ]
             ]()[0]
@@ -1998,10 +2155,10 @@ struct SubTileLoaderLDS_st_8x32[
     bit-ops, so the hand path is the default. `-D v227_layout=true`
     selects the Layout spelling on both sides; the default is the hand path."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        gmem_tile: TileTensor[Self.dtype, Engine=DefaultEngine[], ...],
+        gmem_tile: TileTensor[Self.dtype, ...],
     ):
         """Create a loader from a DRAM tile.
 
@@ -2011,7 +2168,7 @@ struct SubTileLoaderLDS_st_8x32[
         """
         self.bc = make_amd_buffer_resource(gmem_tile)
 
-    @always_inline
+    @inline(.always)
     def load(
         self,
         v_smem_slot: SMemTile[Self.dtype, ...],
@@ -2234,21 +2391,21 @@ struct SubTileLoaderLDS_st_8x32[
                     # lane*_bytes_per_thread). _bytes_per_thread == 16, matching
                     # the within-chunk lane stride the closed form assumes.
                     lds_warp_byte = Int32(_ci * 0x410)
-            var v_smem_warp_ptr = v_smem_base + lds_warp_byte // Int32(
-                size_of[Self.dtype]()
+            var v_smem_warp_ptr = v_smem_base.unsafe_offset(
+                lds_warp_byte // Int32(size_of[Self.dtype]())
             )
 
             var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
                 _type=__mlir_type.`!llvm.ptr<3>`
             ](v_smem_warp_ptr)
 
-            var desc_ptr_ = UnsafePointer[
+            var desc_ptr_ = MutPointer[
                 BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
             ].unsafe_dangling()
-            var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
-            var ptr_to_simd = UnsafePointer(to=self.bc.desc)
-            ptr_to_ptr[0] = ptr_to_simd.bitcast[
-                UnsafePointer[
+            var ptr_to_ptr = Pointer(to=desc_ptr_)
+            var ptr_to_simd = Pointer(to=self.bc.desc)
+            ptr_to_ptr[0] = ptr_to_simd.unsafe_bitcast[
+                MutPointer[
                     BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
                 ]
             ]()[0]
@@ -2319,7 +2476,7 @@ struct RegTileLoader[
     address the correct rows.
     """
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         gmem_tile: TileTensor[Self.dtype, ...],
@@ -2336,7 +2493,7 @@ struct RegTileLoader[
         self.bc = make_amd_buffer_resource(gmem_tile)
         self.base_ptr_as_int = Int(gmem_tile.ptr)
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         gmem_tile: TileTensor[Self.dtype, ...],
@@ -2368,7 +2525,7 @@ struct RegTileLoader[
         )
         self.base_ptr_as_int = Int(gmem_tile.ptr)
 
-    @always_inline
+    @inline(.always)
     def load(
         self,
         dst: TileTensor[mut=True, Self.dtype, _, _, address_space=.LOCAL, ...],
@@ -2419,10 +2576,9 @@ struct RegTileWriter[
     to DRAM via the pre-built descriptor; OOB lanes (past the recorded
     byte bound) are silently dropped by the hardware clamp.
 
-    Pure TileTensor implementation: uses TileTensor distribute_with_offset
-    directly (no LayoutTensor conversion). The distribute operation divides
-    shape by thread_shape and multiplies strides by thread_shape, producing
-    identical offsets to LayoutTensor's zipped_divide for flat 2D layouts.
+    Uses TileTensor distribute_with_offset directly. The distribute
+    operation divides shape by thread_shape and multiplies strides by
+    thread_shape, which matches `zipped_divide` for flat 2D layouts.
 
     A single `store[mfma32: Bool = False]` method handles both:
     - mfma32=False: Generic path using the src tile's own layout indexing
@@ -2438,7 +2594,7 @@ struct RegTileWriter[
     SIMD chunk that straddles an N boundary (last column block when
     `N % BN != 0`) will spill into the next row of the same buffer
     instead of being clipped. Use `RegTileEpilogue` instead for kernels
-    that need to support N-misaligned shapes (or a fused lambda).
+    that need to support N-misaligned shapes (or a fused closure).
 
     Parameters:
         dtype: Element data type for DRAM destination.
@@ -2453,7 +2609,7 @@ struct RegTileWriter[
     var base_ptr_as_int: Int
     """Integer address of the full DRAM tile base pointer."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, dst_base: TileTensor[...]):
         """Create a writer from the full DRAM output tile.
 
@@ -2467,7 +2623,7 @@ struct RegTileWriter[
         self.bc = make_amd_buffer_resource(dst_base)
         self.base_ptr_as_int = Int(dst_base.ptr)
 
-    @always_inline
+    @inline(.always)
     def store[
         mfma32: Bool = False
     ](
@@ -2512,6 +2668,11 @@ struct RegTileWriter[
         comptime dst_shape1 = type_of(dst_dist).static_shape[1]
         comptime dst_stride0 = type_of(dst_dist).static_stride[0]
         comptime dst_stride1 = type_of(dst_dist).static_stride[1]
+        # Source offsets index the register tile's flat storage.
+        var src_flat = src_tile.reshape(
+            row_major[type_of(src_tile).LayoutType.static_cosize]()
+        )
+        comptime src_align = align_of[src_tile.dtype]()
 
         comptime if mfma32:
             # 32×32 MFMA hardware register permutation.
@@ -2525,7 +2686,9 @@ struct RegTileWriter[
                     comptime dst_elem_offset = (
                         dr * dst_stride0 + dc * dst_stride1
                     )
-                    var data = src_tile.raw_load[width=elem_size](src_offset)
+                    var data = src_flat.load[
+                        width=elem_size, alignment=src_align
+                    ]((src_offset,))
                     self.bc.store(
                         base_offset + Int32(dst_elem_offset),
                         data.cast[Self.dtype](),
@@ -2540,7 +2703,9 @@ struct RegTileWriter[
                 comptime src_offset = sr * src_stride0 + sc * elem_size
                 comptime dr, dc = divmod(i, dst_shape1)
                 comptime dst_elem_offset = (dr * dst_stride0 + dc * dst_stride1)
-                var data = src_tile.raw_load[width=elem_size](src_offset)
+                var data = src_flat.load[width=elem_size, alignment=src_align](
+                    (src_offset,)
+                )
                 self.bc.store(
                     base_offset + Int32(dst_elem_offset),
                     data.cast[Self.dtype](),
@@ -2555,22 +2720,21 @@ struct RegTileWriter[
 struct RegTileEpilogue[
     c_type: DType,
     chunk_width: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](TrivialRegisterPassable):
-    """Per-lane MFMA epilogue writer with optional fused elementwise lambda.
+    """Per-lane MFMA epilogue writer with optional fused elementwise closure.
 
-    Encapsulates the per-lane `(m_global, n_global) → store / lambda`
+    Encapsulates the per-lane `(m_global, n_global) → store / closure`
     handoff at the end of an AMD matmul kernel. Each `store()` call
     writes one SIMD chunk of `chunk_width` columns at a single row:
     the natural shape of an AMD MFMA output fragment for one lane.
 
     Per-lane bound handling:
     - In-bounds chunk (`n + chunk_width <= n_total`): one SIMD store
-      or one lambda call.
+      or one closure call.
     - Partial chunk (`n < n_total < n + chunk_width`): per-element
       fallback. The SIMD-of-`chunk_width` store would otherwise spill
       into the next row of the buffer (where stride==N), so we degrade
-      to up to `chunk_width` scalar stores or scalar lambda calls,
+      to up to `chunk_width` scalar stores or scalar closure calls,
       each gated on `col < n_total`. This is what makes the writer
       correct for N-misaligned outputs.
     - Fully OOB column (`n >= n_total`): skip silently.
@@ -2578,18 +2742,17 @@ struct RegTileEpilogue[
     The caller is responsible for the M bound check before calling
     `store()`: a split-K matmul kernel passes a workspace row that
     differs from the logical output row, so the writer cannot derive
-    a single M bound that applies to both DRAM and lambda modes.
+    a single M bound that applies to both DRAM and closure modes.
 
-    With `elementwise_lambda_fn=None` writes go to DRAM at
-    `c_ptr + m * row_stride + n` directly (no buffer-resource clamp;
-    the partial-chunk fallback gates by `n_total` explicitly). With a
-    lambda set the lambda receives global `(m, n)` and the SIMD chunk;
-    DRAM is left untouched. Lambda mode therefore requires the caller
-    to pass `m` as the LOGICAL output row, incompatible with a
-    per-split workspace write. Kernels that use both split-K and a
-    fused lambda should not set the lambda on the per-split matmul
-    kernel; instead run a non-fused split-K and apply the lambda in
-    the reduce kernel that consumes the partials.
+    `store` writes to DRAM at `c_ptr + m * row_stride + n` directly
+    (no buffer-resource clamp; the partial-chunk fallback gates by
+    `n_total` explicitly). `store_with_epilogue_fn` and
+    `store_with_compute_fn` hand the closure global `(m, n)` and the
+    SIMD chunk, so they require the caller to pass `m` as the LOGICAL
+    output row, incompatible with a per-split workspace write. Kernels
+    that use both split-K and a fused closure should not fuse it into
+    the per-split matmul kernel; instead run a non-fused split-K and
+    apply the closure in the reduce kernel that consumes the partials.
 
     Parameters:
         c_type: Output element type.
@@ -2599,7 +2762,6 @@ struct RegTileEpilogue[
             elements but they are spread across non-contiguous columns,
             so callers should fan out into per-element calls
             (`chunk_width = 1`) instead.
-        elementwise_lambda_fn: Optional fused epilogue.
     """
 
     var c_ptr_as_int: Int
@@ -2615,7 +2777,7 @@ struct RegTileEpilogue[
     """N dimension of the output, used for the chunk-boundary
     detection and the per-element OOB gate."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, dst: TileTensor[mut=True, Self.c_type, ...]):
         """Build from the (mutable) destination DRAM tile.
 
@@ -2626,23 +2788,22 @@ struct RegTileEpilogue[
         For split-K matmul kernels: `dst` is the
         `(num_splits * M, N)` workspace; `m` in `store()` is the
         workspace row (`split_id * M + pid_m * BM + ...`). Callers
-        must keep `elementwise_lambda_fn` unset in that case: see
-        the struct doc.
+        must use plain `store` in that case: see the struct doc.
 
         Args:
             dst: Destination DRAM tile (must be mutable).
         """
         self.c_ptr_as_int = Int(dst.ptr)
-        self.row_stride = Int(dst.layout.stride[0]().value())
+        self.row_stride = Int(dst.dynamic_stride(0))
         self.n_total = Int(dst.dim[1]())
 
-    @always_inline
-    def _ptr(self) -> UnsafePointer[Scalar[Self.c_type], MutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.c_type], MutAnyOrigin](
+    @inline(.always)
+    def _ptr(self) -> MutPointer[Scalar[Self.c_type], MutAnyOrigin]:
+        return MutPointer[Scalar[Self.c_type], MutAnyOrigin](
             unsafe_from_address=self.c_ptr_as_int
         )
 
-    @always_inline
+    @inline(.always)
     def store(
         self,
         v: SIMD[Self.c_type, Self.chunk_width],
@@ -2654,41 +2815,114 @@ struct RegTileEpilogue[
 
         The caller has already checked the M bound. If the chunk
         straddles `n_total` (a partial block at the column boundary)
-        the writer falls back to per-element stores or lambda calls.
+        the writer falls back to per-element stores.
 
         Args:
             v: SIMD value to write (already cast to `Self.c_type`).
             m: Destination row (DRAM row for split-K workspace, or
-                logical output row for non-split-K / reduce-kernel
-                lambda mode).
+                logical output row for non-split-K).
             n: Destination starting column. Caller has typically
                 offset by `lane_group * chunk_width` already.
         """
         if n + Self.chunk_width <= self.n_total:
-            comptime if Bool(Self.elementwise_lambda_fn):
-                comptime epilogue_fn = Self.elementwise_lambda_fn.value()
-                epilogue_fn[
-                    alignment=align_of[SIMD[Self.c_type, Self.chunk_width]]()
-                ](IndexList[2](m, n), v)
-            else:
-                self._ptr().store[
-                    alignment=align_of[SIMD[Self.c_type, Self.chunk_width]]()
-                ](m * self.row_stride + n, v)
+            self._ptr().unsafe_store[
+                alignment=align_of[SIMD[Self.c_type, Self.chunk_width]]()
+            ](m * self.row_stride + n, v)
         elif n < self.n_total:
             for e in range(Self.chunk_width):
                 var col = n + e
                 if col < self.n_total:
-                    comptime if Bool(Self.elementwise_lambda_fn):
-                        comptime epilogue_fn = Self.elementwise_lambda_fn.value()
-                        epilogue_fn[alignment=align_of[Scalar[Self.c_type]]()](
-                            IndexList[2](m, col),
-                            SIMD[Self.c_type, 1](v[e]),
-                        )
-                    else:
-                        self._ptr()[m * self.row_stride + col] = v[e]
+                    self._ptr()[m * self.row_stride + col] = v[e]
+
+    @inline(.always)
+    def store_with_epilogue_fn[
+        EpilogueFnType: ElementwiseEpilogueFn
+    ](
+        self,
+        epilogue_fn: EpilogueFnType,
+        v: SIMD[Self.c_type, Self.chunk_width],
+        *,
+        m: Int,
+        n: Int,
+    ):
+        """Hand a SIMD chunk at `(m, n)` to `epilogue_fn` instead of dst.
+
+        Same bound handling as `store`. `m` must be the logical output
+        row.
+
+        Parameters:
+            EpilogueFnType: Type of `epilogue_fn`.
+
+        Args:
+            epilogue_fn: Stores each output chunk.
+            v: SIMD value to write (already cast to `Self.c_type`).
+            m: Logical output row.
+            n: Starting output column.
+        """
+        if n + Self.chunk_width <= self.n_total:
+            epilogue_fn[
+                Self.c_type,
+                Self.chunk_width,
+                alignment=align_of[SIMD[Self.c_type, Self.chunk_width]](),
+            ](Coord(m, n), v)
+        elif n < self.n_total:
+            for e in range(Self.chunk_width):
+                var col = n + e
+                if col < self.n_total:
+                    epilogue_fn[
+                        Self.c_type,
+                        1,
+                        alignment=align_of[Scalar[Self.c_type]](),
+                    ](Coord(m, col), v[e])
+
+    @inline(.always)
+    def store_with_compute_fn[
+        ComputeFnType: ElementwiseComputeFn
+    ](
+        self,
+        compute_fn: ComputeFnType,
+        v: SIMD[Self.c_type, Self.chunk_width],
+        *,
+        m: Int,
+        n: Int,
+    ):
+        """Write `compute_fn((m, n), v)` at `(m, n)` of dst.
+
+        Same bound handling as `store`. `m` must be the logical output
+        row.
+
+        Parameters:
+            ComputeFnType: Type of `compute_fn`.
+
+        Args:
+            compute_fn: Maps each output index and chunk to the value to
+                store.
+            v: SIMD value to transform (already cast to `Self.c_type`).
+            m: Logical output row.
+            n: Starting output column.
+        """
+        if n + Self.chunk_width <= self.n_total:
+            comptime chunk_alignment = align_of[
+                SIMD[Self.c_type, Self.chunk_width]
+            ]()
+            self._ptr().unsafe_store[alignment=chunk_alignment](
+                m * self.row_stride + n,
+                compute_fn[
+                    Self.c_type,
+                    Self.chunk_width,
+                    alignment=Self.chunk_width,
+                ]((m, n), v),
+            )
+        elif n < self.n_total:
+            for e in range(Self.chunk_width):
+                var col = n + e
+                if col < self.n_total:
+                    self._ptr()[m * self.row_stride + col] = compute_fn[
+                        Self.c_type, 1, alignment=1
+                    ]((m, col), SIMD[Self.c_type, 1](v[e]))[0]
 
 
-@always_inline
+@inline(.always)
 def _buffer_load_impl[
     thread_layout: Layout,
     num_threads: Int = thread_layout.size(),
@@ -2734,7 +2968,7 @@ def _buffer_load_impl[
         dst_layout: Layout controlling register storage order. Shape must
             match the per-thread fragment dimensions (M, N).
     """
-    var worker_idx = Int(lane_id()) if warp_scope else Int(thread_idx.x)
+    var worker_idx = Int(lane_id()) if warp_scope else thread_idx.x
 
     comptime if num_threads > thread_layout.size():
         if worker_idx >= thread_layout.size():
@@ -2748,15 +2982,21 @@ def _buffer_load_impl[
     comptime elem_size = type_of(src).element_size
     comptime M = type_of(dist).static_shape[0]
     comptime N = type_of(dist).static_shape[1]
-    comptime src_s0 = type_of(dist).static_stride[0]
-    comptime src_s1 = type_of(dist).static_stride[1]
+    # `src` may carry a runtime row stride (batched per-batch view), where
+    # `static_stride` is only a sentinel; read layout values (static ones fold).
+    var src_s0 = Int(dist.dynamic_stride(0))
+    var src_s1 = Int(dist.dynamic_stride(1))
     comptime dst_s0 = dst_layout.static_stride[0]
     comptime dst_s1 = dst_layout.static_stride[1]
+    # `dst_layout` places elem_size-wide vectors in dst's flat storage.
+    var dst_flat = dst.reshape(
+        row_major[dst_layout.static_cosize * elem_size]()
+    )
 
     comptime for i in range(M):
         comptime for j in range(N):
-            dst.raw_store[width=elem_size](
-                (i * dst_s0 + j * dst_s1) * elem_size,
+            dst_flat.store[alignment=align_of[dst.dtype]()](
+                ((i * dst_s0 + j * dst_s1) * elem_size,),
                 bc.load[dst.dtype, elem_size](
                     base_offset,
                     scalar_offset=Int32(i * src_s0 + j * src_s1),
@@ -2797,7 +3037,7 @@ struct RegTileWriterLDS[
     """
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def copy(
         dst: TileTensor[mut=True, _, _, _, address_space=.SHARED, ...],
         src: TileTensor[_, _, _, address_space=.LOCAL, ...],
@@ -2815,7 +3055,7 @@ struct RegTileWriterLDS[
         comptime num_busy_threads = Self.thread_layout.size()
         comptime elem_size = type_of(dst).element_size
 
-        var worker_idx = Int(thread_idx.x)
+        var worker_idx = thread_idx.x
 
         comptime if Self.num_threads > num_busy_threads:
             if worker_idx >= num_busy_threads:
@@ -2829,6 +3069,14 @@ struct RegTileWriterLDS[
         comptime dist_type = type_of(dst_dist)
         comptime DstVec = SIMD[dist_type.dtype, elem_size]
         comptime rank = dist_type.LayoutType.flat_rank
+        comptime dst_align = align_of[dist_type.dtype]()
+        var dst_flat = dst_dist.reshape(
+            row_major[dist_type.LayoutType.static_cosize]()
+        )
+        var src_flat = src.reshape(
+            row_major[type_of(src).LayoutType.static_cosize]()
+        )
+        comptime src_align = align_of[src.dtype]()
 
         # Row-major iteration order matches RegTileLoader's storage.
         # Handles both flat (rank 2) and hierarchical Coord layouts (rank 3).
@@ -2841,10 +3089,12 @@ struct RegTileWriterLDS[
                 comptime for j in range(R1):
                     comptime src_idx = i * R1 + j
                     comptime dst_off = i * s0 + j * s1
-                    dst_dist.raw_store[width=elem_size](
-                        dst_off,
+                    dst_flat.store[alignment=dst_align](
+                        (dst_off,),
                         rebind[DstVec](
-                            src.raw_load[width=elem_size](src_idx * elem_size)
+                            src_flat.load[width=elem_size, alignment=src_align](
+                                (src_idx * elem_size,)
+                            )
                         ),
                     )
         elif rank == 3:
@@ -2859,12 +3109,12 @@ struct RegTileWriterLDS[
                     comptime for k in range(R2):
                         comptime src_idx = i * R1 * R2 + j * R2 + k
                         comptime dst_off = i * s0 + j * s1 + k * s2
-                        dst_dist.raw_store[width=elem_size](
-                            dst_off,
+                        dst_flat.store[alignment=dst_align](
+                            (dst_off,),
                             rebind[DstVec](
-                                src.raw_load[width=elem_size](
-                                    src_idx * elem_size
-                                )
+                                src_flat.load[
+                                    width=elem_size, alignment=src_align
+                                ]((src_idx * elem_size,))
                             ),
                         )
         else:
@@ -2873,10 +3123,10 @@ struct RegTileWriterLDS[
             ), "RegTileWriterLDS.copy: unsupported flat_rank"
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def copy_blocked[
         block_cols: Int,
-    ](dst: SMemTile[mut=True, _, _, _], src: RegTile[dst.dtype, _, _]):
+    ](dst: SMemTile[mut=True, _, _, _, ...], src: RegTile[dst.dtype, _, _]):
         """Copy register tile to blocked_product SMEM layout.
 
         Handles structural mismatches between `thread_layout` and SMEM
@@ -2901,7 +3151,7 @@ struct RegTileWriterLDS[
         comptime data_cols = type_of(dst).static_shape[1]
         comptime simd_width = simd_width_of[dst.dtype]()
 
-        var worker_idx = Int(thread_idx.x)
+        var worker_idx = thread_idx.x
 
         comptime if Self.num_threads > Self.thread_layout.size():
             if worker_idx >= Self.thread_layout.size():
@@ -2935,8 +3185,7 @@ struct RegTileWriterLDS[
         # range, so swz(base + delta) == swz(base) + delta.
         var blk, col_in_blk = divmod(base_vcol, UInt32(cols_per_blk))
         var local_idx = base_row * UInt32(cols_per_blk) + col_in_blk
-        comptime if Self.swizzle:
-            comptime swizzle_fn = Self.swizzle.value()
+        comptime if case .Some(swizzle_fn) = Self.swizzle:
             local_idx = UInt32(swizzle_fn(Int(local_idx)))
 
         var base_offset = blk * UInt32(
@@ -2945,11 +3194,20 @@ struct RegTileWriterLDS[
 
         # Compile-time vector stride (above swizzle range for typical configs).
         comptime row_delta = tgr * cols_per_blk * simd_width
+        var dst_flat = dst.reshape(
+            row_major[type_of(dst).LayoutType.static_cosize]()
+        )
+        var src_flat = src.reshape(
+            row_major[type_of(src).LayoutType.static_cosize]()
+        )
+        comptime align = align_of[dst.dtype]()
 
         comptime for v in range(vectors_per_thread):
-            dst.raw_store[width=simd_width](
-                Int(base_offset + UInt32(v * row_delta)),
-                src.raw_load[width=simd_width](v * simd_width),
+            dst_flat.store[alignment=align](
+                (Int(base_offset + UInt32(v * row_delta)),),
+                src_flat.load[width=simd_width, alignment=align](
+                    (v * simd_width,)
+                ),
             )
 
 
@@ -2964,7 +3222,8 @@ comptime GMemTile[
     dtype: DType,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
-] = TileTensor[dtype, LayoutType, origin]
+    Engine: TensorEngine,
+] = TileTensor[dtype, LayoutType, origin, Engine=Engine]
 """Global memory tile. Alias for TileTensor in default (GENERIC) address space."""
 
 
@@ -2974,7 +3233,8 @@ comptime SMemTile[
     dtype: DType,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
-] = TileTensor[dtype, LayoutType, origin, address_space=.SHARED]
+    Engine: TensorEngine,
+] = TileTensor[dtype, LayoutType, origin, Engine=Engine, address_space=.SHARED]
 """Shared memory tile. Alias for TileTensor in SHARED address space."""
 
 
@@ -2996,7 +3256,7 @@ comptime RegTile[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def reg_alloc[
     LayoutType: TensorLayout,
     //,
@@ -3012,14 +3272,17 @@ def reg_alloc[
     ](layout)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def smem_alloc[
     LayoutType: TensorLayout,
     //,
     dtype: DType,
     alignment: Int = align_of[dtype](),
 ](var layout: LayoutType) -> SMemTile[
-    dtype, LayoutType, MutUntrackedOrigin
+    dtype,
+    LayoutType,
+    MutUntrackedOrigin,
+    DefaultEngine[element_width=1],
 ] where LayoutType.all_dims_known:
     """Stack-allocate a shared memory tile (SHARED address space) with the given layout.
     """

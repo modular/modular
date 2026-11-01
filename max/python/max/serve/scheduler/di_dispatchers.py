@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Dispatchers between the prefill and decode sides of disaggregated inference."""
+
 from __future__ import annotations
 
 import logging
@@ -40,6 +42,8 @@ DispatcherServer = ZmqRouterSocket[Request, Reply]
 
 
 class DispatcherClient(Generic[Request, Reply]):
+    """Client side of a dispatcher link, with one socket per destination."""
+
     def __init__(
         self,
         *,
@@ -53,6 +57,7 @@ class DispatcherClient(Generic[Request, Reply]):
         self._dealers: dict[str, ZmqDealerSocket[Request, Reply]] = {}
 
     def send_request_nowait(self, request: Request, dest_addr: str) -> None:
+        """Sends a request to a destination, opening its socket on first use."""
         if dest_addr not in self._dealers:
             self._dealers[dest_addr] = ZmqDealerSocket[Request, Reply](
                 endpoint=dest_addr,
@@ -63,6 +68,7 @@ class DispatcherClient(Generic[Request, Reply]):
         dealer.send_request_nowait(request)
 
     def recv_reply_nowait(self) -> Reply:
+        """Returns a pending reply, and raises ``queue.Empty`` when none is ready."""
         for dealer in self._dealers.values():
             try:
                 reply = dealer.recv_reply_nowait()
@@ -84,6 +90,8 @@ ReplyType = (
 
 
 class PrefillDispatcherServer(DispatcherServer[RequestType, ReplyType]):
+    """Prefill-side server that serves requests from the decode replicas."""
+
     def __init__(
         self,
         bind_addr: str,
@@ -113,6 +121,8 @@ class PrefillDispatcherServer(DispatcherServer[RequestType, ReplyType]):
 
 
 class DecodeDispatcherClient(DispatcherClient[RequestType, ReplyType]):
+    """Decode-side client that reaches the prefill dispatcher."""
+
     def __init__(self, bind_addr: str):
         logger.info(f"Starting Decode Dispatcher Client on {bind_addr}")
         super().__init__(

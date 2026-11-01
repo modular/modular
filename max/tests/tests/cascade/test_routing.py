@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
+from types import TracebackType
 
 import pytest
 from max.experimental.cascade import (
@@ -166,3 +167,42 @@ async def test_hybrid_rejects_unknown_hint() -> None:
     async with HybridRuntime({"cpu": _RecordingRuntime()}) as hybrid:
         with pytest.raises(ValueError, match="No worker pool"):
             await hybrid.deploy(_TpuWorker())
+
+
+class _CountingRuntime(_RecordingRuntime):
+    """Counts how many times it is opened and closed."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.opened = 0
+        self.closed = 0
+
+    async def __aenter__(self) -> _CountingRuntime:
+        self.opened += 1
+        await super().__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        self.closed += 1
+        return await super().__aexit__(exc_type, exc, tb)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_opens_and_closes_a_shared_runtime_once() -> None:
+    """A runtime used by two pools is opened and closed once and serves both."""
+    shared = _CountingRuntime()
+    async with HybridRuntime({"cpu": shared, "gpu": shared}) as hybrid:
+        await hybrid.deploy(_CpuWorker())
+        await hybrid.deploy(_GpuWorker())
+        assert shared.closed == 0
+    assert shared.opened == 1
+    assert shared.closed == 1
+    assert [type(w).__name__ for w in shared.deployed] == [
+        "_CpuWorker",
+        "_GpuWorker",
+    ]

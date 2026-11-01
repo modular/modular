@@ -20,7 +20,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
@@ -163,6 +163,7 @@ class Step3p5Config(Llama3Config):
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             model_config: Optional MAX model configuration override.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized Step3p5Config instance.
@@ -249,6 +250,7 @@ class Step3p5Config(Llama3Config):
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: The HuggingFace model configuration.
             model_config: Optional MAX model configuration override.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized Step3p5Config instance.

@@ -3,5 +3,5 @@
 // CHECK: "kgen.generator"
 // CHECK: funcTypeGenerator = !kgen.generator<() -> ()>
 kgen.generator @kernel() {
-  kgen.return
+  hlcf.return
 }

@@ -21,12 +21,12 @@ kgen.func @heap() -> !kgen.pointer<i16> {
   // CHECK: %[[BASE:.*]] = llvm.bitcast %[[ALLOC_LLVM]] : !llvm.ptr to !llvm.ptr
   // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
   // CHECK: %[[CST_EFBE:.*]] = llvm.mlir.constant(#M.dense_array<-17, -66> : vector<2xi8>)
-  // CHECK: llvm.store %[[CST_EFBE]], %[[P0]] {alignment = 32 :
+  // CHECK: llvm.store %[[CST_EFBE]], %[[P0]] <alignment = 32>
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
   %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<{[(#mem_heap, heap, [], [])], []}, 0, 0>>
   // CHECK: llvm.return %[[RESULT_TYPED]] : !llvm.ptr
-  kgen.return %0 : !kgen.pointer<i16>
+  hlcf.return %0 : !kgen.pointer<i16>
 }
 
 // CHECK-LABEL: llvm.func internal @stack
@@ -34,21 +34,21 @@ kgen.func @stack() {
   // CHECK: %[[ALLOC:.*]] = pop.stack_allocation 2 x i8 align 32
   // CHECK-NEXT: builtin.unrealized_conversion_cast %[[ALLOC]]
   %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<{[(#mem_stack, stack, [], [])], []}, 0, 0>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: llvm.func internal @persistent
 kgen.func @persistent() {
   // CHECK: pop.stack_allocation 2 x i8 align 8
   %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<{[(#variadic, persistent, [], [])], []}, 0, 0>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: llvm.func internal @stack_shared
 kgen.func @stack_shared() {
   // CHECK: %[[ALLOC:.*]] = pop.stack_allocation 2 x i8 align 32
   %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<{[(#mem_stack, stack, [], [])], []}, 0, 0>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: llvm.func internal @global
@@ -59,7 +59,7 @@ kgen.func @global() -> !kgen.pointer<i8> {
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
   %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[(#mem_global, const_global, [], [])], []}, 0, 2>>
   // CHECK: llvm.return %[[RESULT_TYPED]]
-  kgen.return %0 : !kgen.pointer<i8>
+  hlcf.return %0 : !kgen.pointer<i8>
 }
 
 // CHECK-LABEL: llvm.func internal @one_heap_use_only
@@ -80,7 +80,7 @@ kgen.func @one_heap_use_only() {
     (#bar1, heap, [], []),
     (#foo, stack, [], [])
   ], []}, 1, 0>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: llvm.func internal @pointer_to_pointer
@@ -104,7 +104,7 @@ kgen.func @pointer_to_pointer() {
     (#foo, stack, [(0, 1, 0)], []),
     (#bar, heap, [], [])
   ], []}, 0, 0>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: llvm.func internal @string
@@ -114,7 +114,7 @@ kgen.func @string() {
   // COM: Ensure `const_global` handle gets deduplicated.
   // CHECK: llvm.mlir.addressof [[MEM_STRING]] :
   %1 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[(#mem_string, const_global, [], []), (#mem_stack, stack, [], [])], []}, 0, 0>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: llvm.func internal @long
@@ -135,42 +135,42 @@ kgen.func @long() {
   // CHECK: %[[P3:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][20]
   // CHECK: %[[V3:.*]] = llvm.mlir.constant(0 : i8)
   // CHECK: llvm.store %[[V3]], %[[P3]]
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: llvm.func internal @ptr_inside_blob
 kgen.func @ptr_inside_blob() {
   // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASEPTR:.*]][0]
   // CHECK: %[[V0:.*]] = llvm.mlir.constant(#M.dense_array<0, 1, 2, 3> : vector<4xi8>)
-  // CHECK: llvm.store %[[V0]], %[[P0]]
+  // CHECK: llvm.store %[[V0]], %[[P0]] <alignment = 16>
 
   // CHECK: %[[P1:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][4]
   // CHECK: %[[V1:.*]] = llvm.mlir.constant(#M.dense_array<4, 5> : vector<2xi8>)
-  // CHECK: llvm.store %[[V1]], %[[P1]]
+  // CHECK: llvm.store %[[V1]], %[[P1]] <alignment = 4>
 
   // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][6]
   // CHECK: %[[V2:.*]] = llvm.getelementptr inbounds %{{.*}}[1]
-  // CHECK: llvm.store %[[V2]], %[[P2]]
+  // CHECK: llvm.store %[[V2]], %[[P2]] <alignment = 2>
 
   // COM: 8-byte pointer occupies [6, 7, 8, 9, 0, 1, 2, 3], so next is 4
 
   // CHECK: %[[P3:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][14]
   // CHECK: %[[V3:.*]] = llvm.mlir.constant(#M.dense_array<4, 5, 6, 7> : vector<4xi8>)
-  // CHECK: llvm.store %[[V3]], %[[P3]]
+  // CHECK: llvm.store %[[V3]], %[[P3]] <alignment = 2>
 
   // CHECK: %[[P4:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][18]
   // CHECK: %[[V4:.*]] = llvm.mlir.constant(#M.dense_array<8, 9> : vector<2xi8>)
-  // CHECK: llvm.store %[[V4]], %[[P4]]
+  // CHECK: llvm.store %[[V4]], %[[P4]] <alignment = 2>
 
   // CHECK: %[[P5:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][20]
   // CHECK: %[[V5:.*]] = llvm.mlir.constant(0 : i8)
-  // CHECK: llvm.store %[[V5]], %[[P5]]
+  // CHECK: llvm.store %[[V5]], %[[P5]] <alignment = 4>
 
   %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[
     (#large, stack, [(6, 1, 1)], []),
     (#bar, heap, [], [])
   ], []}, 0, 0>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK: llvm.mlir.global internal constant [[MEM_GLOBAL]](#M.dense_array<1, 2, 3, 4> : !M.array<4xi8>) {addr_space = 0 : i32, alignment = 32 : i64} : !llvm.array<4 x i8>
@@ -190,7 +190,7 @@ kgen.func @indirect_stack_ref() {
     (#large2, stack, [(6, 1, 1)], []),
     (#bar2, stack, [], [])
   ], []}, 0, 0>>
-  kgen.return
+  hlcf.return
 }
 }
 
@@ -215,7 +215,7 @@ kgen.func @compress_me() {
   // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(30 : i64)
   // CHECK: "llvm.intr.memset"(%[[P2]], %[[VAL]], %[[SIZE]]) <{isVolatile = false}>
   %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[(#compress_me, heap, [], [])], []}, 0, 0>>
-  kgen.return
+  hlcf.return
 }
 }
 
@@ -229,9 +229,43 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 kgen.func export @persistent_global() -> !kgen.pointer<i8, 2> {
   // CHECK: llvm.mlir.addressof @memory_blob{{.*}} : !llvm.ptr<2>
   %pointer = kgen.param.constant: pointer<i8, 2> = <#interp.memref<{[(#memory_handle, persistent, [], [], 2)], []}, 0, 0>>
-  kgen.return %pointer : !kgen.pointer<i8, 2>
+  hlcf.return %pointer : !kgen.pointer<i8, 2>
 }
 
 // CHECK: llvm.mlir.global internal @memory_blob{{.*}}(#M.dense_array<0, 0, 0, 0> : !M.array<4xi8>) {addr_space = 2 : i32, alignment = 16 : i64} : !llvm.array<4 x i8>
 
+}
+
+// -----
+
+// COM: A pointer region at the start of an over-aligned blob shifts the
+// COM: following stores off the blob's alignment. Each store may only assume
+// COM: the alignment its offset into the blob allows.
+#overaligned = #interp.memory_handle<32, "0x00000000000000000100000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000">
+#pointee = #interp.memory_handle<8, "0x0100000000000000">
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=256>} {
+// CHECK-LABEL: llvm.func internal @overaligned_after_pointer
+kgen.func @overaligned_after_pointer() {
+  // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %idx32, %idx64
+  // CHECK: %[[BASE_TYPED:.*]] = builtin.unrealized_conversion_cast %[[ALLOC]]
+  // CHECK: %[[BASE:.*]] = llvm.bitcast %[[BASE_TYPED]]
+
+  // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
+  // CHECK: llvm.store %{{.*}}, %[[P0]] <alignment = 32> : !llvm.ptr, !llvm.ptr
+
+  // CHECK: %[[P1:.*]] = llvm.getelementptr inbounds %[[BASE]][8]
+  // CHECK: llvm.store %{{.*}}, %[[P1]] <alignment = 8> : vector<32xi8>
+
+  // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASE]][40]
+  // CHECK: llvm.store %{{.*}}, %[[P2]] <alignment = 8> : vector<16xi8>
+
+  // CHECK: %[[P3:.*]] = llvm.getelementptr inbounds %[[BASE]][56]
+  // CHECK: llvm.store %{{.*}}, %[[P3]] <alignment = 8> : vector<8xi8>
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[
+    (#overaligned, heap, [(0, 1, 0)], []),
+    (#pointee, heap, [], [])
+  ], []}, 0, 0>>
+  hlcf.return
+}
 }

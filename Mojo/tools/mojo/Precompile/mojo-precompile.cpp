@@ -19,19 +19,18 @@
 #include "Cache/CachedTransform.h"
 #include "Init/Init.h"
 #include "Mojo/Compiler/KGENCompiler.h"
-#include "Mojo/LITDialect/LITAttrs.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/EntryPoint.h"
+#include "Mojo/Precompile/Precompile.h"
 #include "Mojo/Support/MojoPrecompiledFile.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Support/Compiler/Diags.h"
-#include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Config.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/OptionMarshalling.h"
 
 #include "Support/Filesystem/Paths.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -43,19 +42,15 @@
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Support/xxhash.h"
 
 #include <filesystem>
-#include <stack>
 #include <tuple>
 #include <utility>
 
@@ -67,118 +62,8 @@ using namespace M::KGEN;
 //===----------------------------------------------------------------------===//
 
 #define DRIVER_OPTIONS_PATH "Precompile/PrecompileOptions.inc"
+#include "Precompile/PrecompileOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct PrecompileOptTable : public llvm::opt::PrecomputedOptTable {
-  PrecompileOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
-};
-} // namespace
-
-/// This function takes a parsed `lit.package` op and creates  a new
-/// `lit.package` op. This new `lit.package` op is one that can be serialized
-/// into MLIR bytecode and written to disk, as a `.mojoc` file. The generated
-/// package retains the full post-parse IR, including function bodies, in its
-/// regions, filtering out ops unneeded once packaged (import ops under a
-/// package, doc-string source locations). It is suitable for importing into
-/// other Mojo programs, where bodies are materialized lazily on demand.
-static std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>
-buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
-  OwningOpRef<ModuleOp> packageModule =
-      ModuleOp::create(parsedPackageOp->getLoc());
-  auto b = OpBuilder::atBlockEnd(packageModule->getBody());
-
-  // Clone the relevant operations into the package.
-  std::stack<SmartVariant<Operation *, OpBuilder::InsertPoint>> worklist;
-
-  // Clone an op without its regions, and ensure that once that op is finished
-  // processing, we reset the OpBuilder's insert point to where it was before we
-  // walked the ops inside `op`.
-  auto cloneWithoutRegions = [&](auto op) {
-    // Save the insert point on the worklist stack first.
-    worklist.push(b.saveInsertionPoint());
-
-    auto clonedOp = b.cloneWithoutRegions(op);
-    clonedOp.getBodyRegion().push_back(new Block);
-    b.setInsertionPointToStart(clonedOp.getBody());
-    return clonedOp;
-  };
-
-  // Push the ops in `opList` onto the worklist, while preserving their original
-  // order.
-  auto pushOpsOntoWorklist = [&](auto opList) {
-    // Push onto a temporary stack so we can reverse it when we put it onto the
-    // worklist - this ensures the ops keep their original order.
-    std::stack<Operation *> tmp;
-    for (Operation &op : opList)
-      tmp.push(&op);
-
-    while (!tmp.empty()) {
-      worklist.emplace(tmp.top());
-      tmp.pop();
-    }
-  };
-
-  // Include any generated function thunks at the top-level. These are
-  // deduplicated when the package is imported.
-  for (auto func : theModule.getOps<LIT::FnOp>()) {
-    assert(func.getThunkKeyAttr() && "top-level function must be a thunk");
-    pushOpsOntoWorklist(MutableArrayRef(*func));
-  }
-  for (auto trait : theModule.getOps<LIT::TraitDeclOp>()) {
-    if (trait.getClosureSignature().has_value())
-      pushOpsOntoWorklist(MutableArrayRef(*trait));
-  }
-
-  // Clone the parsed package operation and push its ops onto the worklist.
-  LIT::PackageOp thePackage = cloneWithoutRegions(parsedPackageOp);
-  pushOpsOntoWorklist(parsedPackageOp.getOps());
-
-  while (!worklist.empty()) {
-    auto listFront = worklist.top();
-    worklist.pop();
-    if (isa<OpBuilder::InsertPoint>(listFront)) {
-      b.restoreInsertionPoint(cast<OpBuilder::InsertPoint>(listFront));
-      continue;
-    }
-    TypeSwitch<Operation *>(cast<Operation *>(listFront))
-        // Always clone and recurse in the case of a package, module, or struct.
-        .Case<LIT::PackageOp, LIT::FileModuleOp, LIT::StructDeclOp>(
-            [&](auto op) {
-              cloneWithoutRegions(op);
-              pushOpsOntoWorklist(op.getOps());
-            })
-        .Case([&](LIT::UnresolvedImportOp op) {
-          // Drop unresolved imports within packages that were used to lazily
-          // pull in nested modules. These aren't needed during packaging
-          // because everything is recursively resolved.
-          if (isa<LIT::PackageOp>(op->getParentOp()))
-            return;
-          b.clone(*op);
-        })
-        .Case([&](LIT::ImportOp op) {
-          // Drop resolved import ops within packages — they gate access
-          // during parsing but are not needed in the packaged bytecode.
-          if (isa<LIT::PackageOp>(op->getParentOp()))
-            return;
-          b.clone(*op);
-        })
-        // None of the cases matched? Just clone the op directly.
-        .Default([&](auto op) { b.clone(*op); });
-  }
-
-  // Process the package to strip out various information from the package.
-  thePackage.walk([&](LIT::ASTDeclInterface astDeclOp) {
-    // Strip out locations from doc strings, these aren't needed anymore.
-    auto docAttr = astDeclOp.getDocStringAttr();
-    if (docAttr && docAttr.getLocation())
-      astDeclOp.setDocStringAttr(LIT::DocStringAttr::get(docAttr.getString()));
-  });
-
-  return std::make_pair(std::move(packageModule), thePackage);
-}
 
 //===----------------------------------------------------------------------===//
 // parsePrecompileArgs
@@ -199,8 +84,12 @@ struct PrecompileArgs {
   std::string inputPath;
   /// The path to which to output a `.mojoc` file.
   std::string outputPath;
+  /// The options that the driver acts on itself.
+  DriverOptions driverOptions;
   /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
+  /// Parser options common to all Mojo builds.
+  FrontendOptions frontendOptions;
   /// The MLIR context used for compilation.
   MLIRContext ctx{MLIRContext::Threading::DISABLED};
 };
@@ -287,19 +176,9 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  if (auto err = parseCompilationOptions(
-          state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
-          options::OPT_I, /*optimizationLevelId=*/{}, /*debugLevelId=*/{},
-          /*sanitizeId=*/{}, /*sharedLibasan=*/{}, /*externalLibasan=*/{},
-          /*bitcodeLibs=*/{}, /*debugInfoLanguageId=*/{}, /*numThreadsId=*/{},
-          /*stdLibPath=*/{}, /*loopUnrollingWarnThresholdId=*/{},
-          /*elaborationErrorLimitId=*/{},
-          /*elaborationErrorIncludePreludeId=*/{},
-          /*elaborationErrorVerbose=*/{}, /*elaborationMaxDepth=*/{},
-          /*ignoreIncompatiblePrecompiledFileErrorsId=*/
-          options::OPT_ignore_incompatible_precompiled_file_errors,
-          /*fpModeId=*/{}, options::OPT_ignore_deprecated))
-    return err.takeError();
+  configureSourceMgr(state, pkgArgs.driverOptions, sourceMgr);
+  initializeCompilation(pkgArgs.ctx);
+  setWarningPolicy(state, pkgArgs.frontendOptions);
 
   // Precompiled files are built with the intention of being agnostic, so use
   // conservative compilation settings as a default.
@@ -307,188 +186,6 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
   pkgArgs.compileOptions.optimizationLevel = 0;
 
   return success();
-}
-
-//===----------------------------------------------------------------------===//
-// Helper function to write LLVM bitcode module to bytecode attribute
-//===----------------------------------------------------------------------===//
-
-/// Reads an LLVM bitcode file and returns it as a DenseResourceElementsAttr.
-/// Returns nullptr on failure.
-static DenseResourceElementsAttr
-writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, StringRef bitcodeFile) {
-  // Read the bitcode file
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> bufferOr =
-      llvm::MemoryBuffer::getFile(bitcodeFile);
-  if (!bufferOr)
-    return {};
-
-  // Get the buffer contents
-  llvm::MemoryBuffer &buffer = **bufferOr;
-  StringRef data = buffer.getBuffer();
-
-  // Hash the bitcode to generate a unique name
-  std::string resourceName =
-      "llvm_bitcode_" + llvm::utohexstr(xxh3_64bits(data),
-                                        /*LowerCase=*/true, /*Width=*/16);
-
-  // Create the resource attribute
-  return createResourceAttr(ctx, ArrayRef<char>(data.data(), data.size()),
-                            resourceName);
-}
-
-//===----------------------------------------------------------------------===//
-// buildPackage
-//===----------------------------------------------------------------------===//
-
-/// Given parsed module and package ops, builds a new module and package op. The
-/// newly build package op is suitable for serialization as MLIR bytecode; it
-/// may be written to a `.mojoc` file that can be deserialized and imported into
-/// Mojo programs.
-static ErrorOr<OwningOpRef<ModuleOp>>
-buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
-             LIT::PackageOp parsedPackageOp, AsyncRT::CPUDevice &cpuDevice) {
-  // Add the dependencies of the package to the package itself. Every top-level
-  // package other than the one being compiled is an imported precompiled
-  // dependency (in the precompile flow, dependencies are always provided as
-  // `.mojoc` files), so record each as a link dependency.
-  SmallVector<FlatSymbolRefAttr> dependencies;
-  for (LIT::PackageOp package : theModule.getOps<LIT::PackageOp>()) {
-    // A package is never its own link dependency, under either its parse-time
-    // (source directory) name or its output name: a recorded self-dependency
-    // dangles once the package is renamed for output.
-    if (package == parsedPackageOp ||
-        package.getSymName() == precompileArgs.sourceName ||
-        package.getSymName() == precompileArgs.name)
-      continue;
-    dependencies.push_back(FlatSymbolRefAttr::get(package.getSymNameAttr()));
-  }
-  if (!dependencies.empty()) {
-    parsedPackageOp.setDependenciesAttr(
-        LinkDependencyArrayAttr::get(theModule.getContext(), dependencies));
-  }
-
-  auto [packageModule, thePackage] =
-      buildPackageModule(theModule, parsedPackageOp);
-
-  // The package parses under its source directory's name so that absolute
-  // self-imports resolve to the package under compilation; the output name
-  // applies from here on: to symbol references and the recorded import paths
-  // that name the package (both re-resolved when the package is imported,
-  // under the output file's name), and to the debug-info source names that
-  // snapshot the package lineage.
-  if (precompileArgs.name != precompileArgs.sourceName) {
-    MLIRContext *ctx = theModule.getContext();
-    auto newName = StringAttr::get(ctx, precompileArgs.name);
-    auto sourceName = StringAttr::get(ctx, precompileArgs.sourceName);
-    // Qualified references rooted at the package resolve through the
-    // parser's scoping rather than MLIR symbol tables, so rewrite them
-    // directly rather than through SymbolTable::replaceAllSymbolUses.
-    //
-    // Only a reference's root names a package; its nested components name
-    // declarations within one, and a module nested in another package may
-    // share the source directory's name. Skip, or the replacer walks into
-    // those components and revisits each as a reference rooted at itself.
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement(
-        [&](SymbolRefAttr ref) -> std::pair<Attribute, WalkResult> {
-          if (ref.getRootReference() != sourceName)
-            return {ref, WalkResult::skip()};
-          return {SymbolRefAttr::get(newName, ref.getNestedReferences()),
-                  WalkResult::skip()};
-        });
-    // Debug-info source names snapshot the symbol lineage as plain strings at
-    // parse time, so the package appears in them as a name, not a symbol
-    // reference. Rewriting the parentless package root rebuilds every lineage
-    // chained from it; these live in scoped locations, hence replaceLocs.
-    // Source names for types and parameter values are rendered text, so
-    // package-rooted references inside them are substrings: rewrite the
-    // root token (its `::` terminator keeps longer names unmatched) wherever
-    // it roots a reference. Preceded by `::` it is instead a nested component
-    // of a reference rooted elsewhere, and names a module, not the package.
-    std::string sourceToken = "@" + precompileArgs.sourceName + "::";
-    std::string newToken = "@" + precompileArgs.name + "::";
-    auto rewriteNameText = [&](StringAttr str) -> StringAttr {
-      StringRef text = str.getValue();
-      if (!text.contains(sourceToken))
-        return str;
-      std::string rewritten;
-      for (size_t pos = text.find(sourceToken); pos != StringRef::npos;
-           pos = text.find(sourceToken)) {
-        StringRef prefix = text.take_front(pos);
-        rewritten += prefix;
-        rewritten += prefix.ends_with("::") ? sourceToken : newToken;
-        text = text.drop_front(pos + sourceToken.size());
-      }
-      rewritten += text;
-      return StringAttr::get(ctx, rewritten);
-    };
-    replacer.addReplacement([&](DebugInfo::SourceNameAttr attr)
-                                -> std::pair<Attribute, WalkResult> {
-      bool isPackageRoot =
-          attr.getKind() == DebugInfo::SourceNameKind::Package &&
-          !attr.getParent() && attr.getName() == sourceName;
-      StringAttr name =
-          isPackageRoot ? newName : rewriteNameText(attr.getName());
-      SmallVector<StringAttr> paramValues;
-      for (StringAttr value : attr.getParamValues())
-        paramValues.push_back(rewriteNameText(value));
-      if (name == attr.getName() &&
-          ArrayRef<StringAttr>(paramValues) == attr.getParamValues())
-        return {attr, WalkResult::advance()};
-      return {DebugInfo::SourceNameAttr::get(
-                  name, attr.getParamTypes(), attr.getArgTypes(), paramValues,
-                  attr.getParent(), attr.getKind(), attr.getDecorators()),
-              WalkResult::advance()};
-    });
-    // Recorded import paths are raw name components, and any import op form
-    // may carry one rooted at the package (a resolved import kept inside a
-    // file module, an unresolved import, a wildcard import). All re-resolve
-    // under the output file's name when the package is imported.
-    replacer.addReplacement(
-        [&](LIT::ImportPathAttr path) -> std::pair<Attribute, WalkResult> {
-          auto components = path.getComponents();
-          if (path.getRelativeLevel() != 0 || components.empty() ||
-              components.front() != sourceName)
-            return {path, WalkResult::advance()};
-          SmallVector<StringAttr> newComponents(components);
-          newComponents.front() = newName;
-          return {
-              LIT::ImportPathAttr::get(ctx, /*relativeLevel=*/0, newComponents),
-              WalkResult::advance()};
-        });
-    replacer.recursivelyReplaceElementsIn(*packageModule,
-                                          /*replaceAttrs=*/true,
-                                          /*replaceLocs=*/true,
-                                          /*replaceTypes=*/true);
-    mlir::SymbolTable::setSymbolName(thePackage, newName);
-  }
-
-  // Process bitcode libraries if any were specified
-  if (!precompileArgs.compileOptions.bitcodeLibs.empty()) {
-    SmallVector<DenseResourceElementsAttr> bitcodeAttrs;
-
-    for (const std::string &bitcodeFile :
-         precompileArgs.compileOptions.bitcodeLibs) {
-      DenseResourceElementsAttr bitcodeAttr =
-          writeLLVMBitcodeToDenseAttr(theModule.getContext(), bitcodeFile);
-      if (!bitcodeAttr)
-        return Error("failed to load bitcode library: " + bitcodeFile);
-      bitcodeAttrs.push_back(bitcodeAttr);
-    }
-
-    // Set the bitcode libraries on the package
-    thePackage.setExternLLVMBitcodeModulesAttr(
-        LIT::DenseResourceElementsArrayAttr::get(theModule.getContext(),
-                                                 bitcodeAttrs));
-  }
-
-  // Run various check passes now to propagate warnings and errors up to the
-  // user.
-  KGENCompiler compiler(*theModule.getContext(), precompileArgs.compileOptions);
-  if (failed(compiler.runCheckLITPipeline(theModule)))
-    return Error("errors occurred during compilation");
-  return std::move(packageModule);
 }
 
 //===----------------------------------------------------------------------===//
@@ -506,32 +203,28 @@ static int precompile(const State &subcommandState) {
 
   // Parse command line arguments.
   State state = subcommandState;
-  PrecompileOptTable options;
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
+  options::Table optTable;
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(optTable, options::helpTexts(), args))
+    return *exitCode;
 
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
-#include "Precompile/PrecompileOptionsHelpText.inc"
-    );
-  } else if (args.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
-#include "Precompile/PrecompileOptionsHelpHiddenText.inc"
-    );
+  PrecompileArgs precompileArgs;
+  {
+    DriverOptions &driverOptions = precompileArgs.driverOptions;
+    KGEN::FrontendOptions &frontendOptions = precompileArgs.frontendOptions;
+    KGEN::CompilationOptions &compilationOptions =
+        precompileArgs.compileOptions;
+    MarshallingErrors errors;
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
+#include "Precompile/PrecompileOptions.inc"
+#undef MOJO_OPTION_WITH_MARSHALLING
+    if (int result = state.rejectInvalidArguments(args, errors))
+      return result;
   }
 
-  if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format, options::OPT_disable_warnings,
-          options::OPT_werror, options::OPT_wno_error))
-    return result;
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
-    return result;
-
   llvm::SourceMgr sourceMgr;
-  sourceMgr.setDiagHandler(getDiagHandler(state.diagnosticFormat));
-  PrecompileArgs precompileArgs;
   if (auto err = parsePrecompileArgs(state, args, sourceMgr, precompileArgs))
     return state.reportError(err.getError());
 
@@ -561,28 +254,21 @@ static int precompile(const State &subcommandState) {
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &precompileArgs.ctx);
-  if (args.hasArg(options::OPT_bitcode_libs)) {
-    precompileArgs.compileOptions.bitcodeLibs = llvm::to_vector_of<std::string>(
-        args.getAllArgValues(options::OPT_bitcode_libs));
-  }
 
   ScopedMLIRWarningHandler warningHandler(
-      &precompileArgs.ctx, precompileArgs.compileOptions.disableWarnings,
-      precompileArgs.compileOptions.warningsAsErrors);
+      &precompileArgs.ctx, precompileArgs.frontendOptions.disableWarnings,
+      precompileArgs.frontendOptions.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
-      state, args, precompileArgs.compileOptions, &precompileArgs.ctx,
-      cpuDevice, options::OPT_diagnose_missing_doc_strings,
-      options::OPT_max_notes,
-      /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
-      options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit, options::OPT_export_fixit,
-      /*timingScope=*/nullptr,
-      [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
+      state, precompileArgs.driverOptions, /*tagEnvironment=*/false,
+      precompileArgs.compileOptions, precompileArgs.frontendOptions,
+      &precompileArgs.ctx, cpuDevice, /*timingScope=*/nullptr,
+      [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
             ctx, precompileArgs.inputPath, precompileArgs.sourceName, sourceMgr,
-            parserConfig, ts);
+            &precompileArgs.ctx, precompileArgs.compileOptions, parserOptions,
+            ts);
         return moduleOp;
       });
   if (failed(module))
@@ -592,17 +278,24 @@ static int precompile(const State &subcommandState) {
     // Only --experimental-fixit returns a null module (after applying fixes).
     // --experimental-export-fixit continues normal execution after writing
     // YAML.
-    assert(args.hasArg(options::OPT_fixit));
+    assert(precompileArgs.driverOptions.applyFixIts);
     return EXIT_SUCCESS;
   }
 
   // Build a new package op based off of the parsed package op. This new op is
   // suitable for serialization as MLIR bytecode.
-  auto builtOrErr =
-      buildPackage(precompileArgs, **module, packageOp, cpuDevice);
+  auto builtOrErr = buildPrecompiledPackage(
+      **module, packageOp, precompileArgs.sourceName, precompileArgs.name,
+      precompileArgs.compileOptions.bitcodeLibs);
   if (failed(builtOrErr))
     return state.reportError(builtOrErr.getError());
   OwningOpRef<ModuleOp> builtPackageModule = builtOrErr.takeValue();
+
+  // Run various check passes now to propagate warnings and errors up to the
+  // user.
+  KGENCompiler compiler(precompileArgs.ctx, precompileArgs.compileOptions);
+  if (failed(compiler.runCheckLITPipeline(**module)))
+    return state.reportError("errors occurred during compilation");
 
   // Write the new package op as serialized bytecode to the output file.
   if (failed(writePrecompiledFile(&**builtPackageModule, out->os())))

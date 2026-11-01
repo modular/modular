@@ -479,6 +479,11 @@ private:
 };
 raw_ostream &operator<<(raw_ostream &os, InitializerUValue value);
 
+/// Add the `__<kind>_literal__=None` marker keyword that selects a collection
+/// type's literal constructor, e.g. `__list_literal__` for `Array`.
+void addNoneLiteralMarker(CallOperands &operands, StringRef kwargName,
+                          IREmitter &emitter);
+
 /// Instances of InferredBaseAttrRefUValue represent an attribute reference
 /// whose base type is inferred from context, e.g. `.f64` in `foo(.f64)`, or a
 /// call of such a reference, e.g. `.hsb_to_rgb(...)` in

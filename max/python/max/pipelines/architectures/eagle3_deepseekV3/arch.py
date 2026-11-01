@@ -10,66 +10,56 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for the Eagle3 DeepSeek-V3 drafter."""
+
+from dataclasses import replace
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from ..deepseekV3 import weight_adapters as deepseekV3_weight_adapters
-from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
 from ..deepseekV3.model_config import DeepseekV3Config
-from .batch_processor import (
-    Eagle3DeepseekV3BatchProcessor,
-    Eagle3MHADeepseekV3BatchProcessor,
+from ..kimik2_5.weight_adapters import (
+    convert_eagle3_draft_state_dict,
+    convert_llama_eagle3_draft_state_dict,
 )
-from .mha_pipeline import Eagle3MHADeepseekV3Model
-from .model import Eagle3DeepseekV3Model
+from .model import (
+    Eagle3DeepseekV3DraftArchConfig,
+    Eagle3MHADeepseekV3DraftArchConfig,
+)
 
-eagle3_deepseekV3_arch = SupportedArchitecture(
-    name="Eagle3DeepseekV3ForCausalLM",
+# The MLA head's checkpoint names Kimi K2.5's fused Eagle3 architecture, so
+# spec decoding renames it to this one beside a DeepseekV3 target. It has
+# no pipeline model of its own.
+eagle3_deepseekV3_draft_arch = SupportedArchitecture(
+    name="Eagle3DeepseekV3DraftModel",
     task=PipelineTask.TEXT_GENERATION,
-    # TODO(MXSERV-7): Move ``austinpowers/Kimi-K2.5-NVFP4-DeepseekV3`` to
-    # the official Modular HF org so CI doesn't depend on a personal account.
-    example_repo_ids=[
-        "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3",
-    ],
+    example_repo_ids=["nvidia/Kimi-K2.5-Thinking-Eagle3"],
     default_encoding=DeepseekV3Config.DEFAULT_ENCODING,
-    supported_encodings={"bfloat16", "float8_e4m3fn", "float4_e2m1fnx2"},
+    supported_encodings=DeepseekV3Config.SUPPORTED_ENCODINGS,
+    # Split over the target's devices, as the target is.
     multi_gpu_supported=True,
-    pipeline_model=Eagle3DeepseekV3Model,
+    pipeline_model=None,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
-        WeightsFormat.safetensors: deepseekV3_weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.safetensors: convert_eagle3_draft_state_dict,
     },
-    batching=Eagle3DeepseekV3BatchProcessor,
-    supports_empty_batches=True,
-    requires_max_batch_context_length=True,
-    config=DeepseekV3Config,
-    memory_planner=DeepseekV3MemoryPlanner,
+    config=Eagle3DeepseekV3DraftArchConfig,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
 )
 
-eagle3_mha_deepseekV3_arch = SupportedArchitecture(
-    name="Eagle3MHADeepseekV3ForCausalLM",
-    task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=[
-        "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3",
-    ],
-    default_encoding=DeepseekV3Config.DEFAULT_ENCODING,
-    supported_encodings={"bfloat16", "float8_e4m3fn", "float4_e2m1fnx2"},
-    multi_gpu_supported=True,
-    pipeline_model=Eagle3MHADeepseekV3Model,
-    tokenizer=TextTokenizer,
-    context_type=TextContext,
-    default_weights_format=WeightsFormat.safetensors,
+# The Llama-style MHA head's checkpoint names Llama 3's Eagle3 draft, so
+# spec decoding renames it to this one beside a DeepseekV3 target.
+eagle3_mha_deepseekV3_draft_arch = replace(
+    eagle3_deepseekV3_draft_arch,
+    name="Eagle3MHADeepseekV3DraftModel",
+    example_repo_ids=["modularai/kimi-k2.5-eagle3"],
+    pipeline_model=None,
     weight_adapters={
-        WeightsFormat.safetensors: deepseekV3_weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.safetensors: convert_llama_eagle3_draft_state_dict,
     },
-    batching=Eagle3MHADeepseekV3BatchProcessor,
-    supports_empty_batches=True,
-    requires_max_batch_context_length=True,
-    config=DeepseekV3Config,
-    memory_planner=DeepseekV3MemoryPlanner,
+    config=Eagle3MHADeepseekV3DraftArchConfig,
 )

@@ -158,19 +158,10 @@ def swap_container_fields(mut v: Container[_]):
 # Tuple Types
 ##===----------------------------------------------------------------------===##
 
-# FIXME: Empty tuple `Tuple[]` cannot be spelled.
-
 
 # CHECK-LABEL: lit.fn @"returnTup0
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> []
 def returnTup0() -> Tuple[]:
-    # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
-    return ()
-
-
-# CHECK-LABEL: lit.fn @"returnTup0a
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> []
-def returnTup0a() -> ():
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 
@@ -231,12 +222,9 @@ def index_homogenous_tuple[idx: Int]():
     # CHECK-NEXT: lit.ref.store [[INTVAL]], %test1
     var test1: Int = tup[1]
 
-    # TODO(MOCO-4505): temporarily disabled for closure migration, re-enable
-    # later.
-    #
-    # C_HECK: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int idx{{.*}}(%tup)
-    # C_HECK-NEXT: %test2 = lit.var.decl "test2"
-    # C_HECK-NEXT: [[ELTREB:%.*]] = kgen.rebind [[ELTPTR]]
-    # C_HECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTREB]]
-    # C_HECK-NEXT: lit.ref.store [[INTVAL]], %test2
-    # var test2: Int = rebind[Int](tup[idx])
+    # CHECK: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int idx{{.*}}(%tup)
+    # CHECK-NEXT: %test2 = lit.var.decl "test2"
+    # CHECK-NEXT: [[ELTREB:%.*]] = kgen.rebind [[ELTPTR]]
+    # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTREB]]
+    # CHECK-NEXT: lit.ref.store [[INTVAL]], %test2
+    var test2: Int = tup[idx]

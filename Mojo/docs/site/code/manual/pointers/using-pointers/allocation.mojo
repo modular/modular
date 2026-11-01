@@ -17,7 +17,7 @@ from std.testing import assert_equal
 def inline_allocation() raises:
     # Include following line uncommented
     # from std.memory.alloc import alloc, dealloc, Layout
-    var allocation = alloc(Layout[Int](count=4))
+    var allocation = alloc(Layout[Int](length=4))
     # Use allocation
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
@@ -35,7 +35,7 @@ def raising_function(ptr: Pointer[Float64, _]) raises:
 
 
 def allocating_function() raises:
-    var data = alloc[Float64]({count = 64})
+    var data = alloc[Float64]({length = 64})
     # ...
     try:
         raising_function(data.unsafe_ptr())
@@ -46,12 +46,12 @@ def allocating_function() raises:
 
 
 def leaky_function() raises:
-    var data_ptr = alloc[Float64]({count = 64}).unsafe_leak()
+    var data_ptr = alloc[Float64]({length = 64}).unsafe_leak()
     # ...
     raising_function(data_ptr)
     dealloc(
         ThinAllocation(unsafe_owned_ptr=data_ptr).unsafe_with_layout(
-            {count = 64}
+            {length = 64}
         )
     )
 

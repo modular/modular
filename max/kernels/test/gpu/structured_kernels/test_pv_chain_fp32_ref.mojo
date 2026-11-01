@@ -66,7 +66,6 @@ Diagnosis on failure:
 from max.gpu import lane_id, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import AddressSpace
 from std.testing import assert_true
 
 from layout.tile_layout import row_major
@@ -102,13 +101,13 @@ comptime DEPTH = 128
 # --------------------------------------------------------------------------- #
 
 
-@always_inline
+@inline(.always)
 def _V_fp32(key: Int, depth: Int) -> Float32:
     # Smooth, distinct per (key, depth). Range ~[-0.3, 1.4].
     return (Float32(key) * 0.05 + Float32(depth) * 0.03 - 0.3) / 16.0
 
 
-@always_inline
+@inline(.always)
 def _P_fp32(key: Int, q: Int) -> Float32:
     # Post-softmax-like: small positives. Range ~[0.005, 0.1].
     return (Float32(key) * 0.001 + Float32(q) * 0.003 + 0.005) / 1.0
@@ -121,7 +120,7 @@ def _P_fp32(key: Int, q: Int) -> Float32:
 # --------------------------------------------------------------------------- #
 
 
-@always_inline
+@inline(.always)
 def _quantize[T: DType](v: Float32) -> Scalar[T]:
     comptime if T == .bfloat16:
         return rebind[Scalar[T]](BFloat16(v))
@@ -129,7 +128,7 @@ def _quantize[T: DType](v: Float32) -> Scalar[T]:
         return rebind[Scalar[T]](Float8_e4m3fn(v))
 
 
-@always_inline
+@inline(.always)
 def _dequant_to_f32[T: DType](v: Scalar[T]) -> Float32:
     return v.cast[.float32]()
 
@@ -159,10 +158,13 @@ def _dequant_to_f32[T: DType](v: Scalar[T]) -> Float32:
 def kernel_pv_chain[
     cfg: MhaConfigV2,
     T: DType,
+    src_v_subtile_origin: MutOrigin,
+    src_p_origin: MutOrigin,
+    dump_origin: MutOrigin,
 ](
-    src_v_subtile_ptr: MutPointer[Scalar[T], MutAnyOrigin],
-    src_p_ptr: MutPointer[Scalar[T], MutAnyOrigin],
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
+    src_v_subtile_ptr: MutPointer[Scalar[T], src_v_subtile_origin],
+    src_p_ptr: MutPointer[Scalar[T], src_p_origin],
+    dump_ptr: MutPointer[Float32, dump_origin],
 ):
     """Loads V from sub-tile-major SMEM, fills P per-lane from gmem,
     calls `mma_PV`, dumps per-lane FP32 accumulator to `dump_ptr`.
@@ -185,7 +187,7 @@ def kernel_pv_chain[
 
     # ---- V SMEM allocation + cooperative fill from gmem image -------------
     var v_smem = tt_stack_allocation[T, address_space=.SHARED](smem_layout_v)
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     comptime _smem_total = _V_SLOT_ROWS * _V_SUB_COLS
     var i = tid
     while i < _smem_total:
@@ -255,7 +257,7 @@ def kernel_pv_chain[
 
 
 def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
-    var dtype_name = "BF16" if T == DType.bfloat16 else "FP8"
+    var dtype_name = "BF16" if T == .bfloat16 else "FP8"
     print("--- test_pv_chain[", dtype_name, "] ---")
 
     comptime CFG = MhaConfigV2(
@@ -337,7 +339,15 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
                 host_p[key * Q_BLOCK_SIZE + q] = _quantize[T](_P_fp32(key, q))
 
     # ---- Launch the kernel ------------------------------------------------
-    ctx.enqueue_function[kernel_pv_chain[CFG, T]](
+    ctx.enqueue_function[
+        kernel_pv_chain[
+            CFG,
+            T,
+            origin_of(dev_v_subtile),
+            origin_of(dev_p),
+            origin_of(dev_dump),
+        ]
+    ](
         dev_v_subtile.unsafe_ptr(),
         dev_p.unsafe_ptr(),
         dev_dump.unsafe_ptr(),
@@ -424,24 +434,10 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
                         if diff > _tol:
                             if mismatches < 8:
                                 print(
-                                    "  MISMATCH lid=",
-                                    lid,
-                                    " n_out=",
-                                    n_out,
-                                    " m_out=",
-                                    m_out,
-                                    " k_local=",
-                                    k_local,
-                                    " depth=",
-                                    depth,
-                                    " q=",
-                                    q,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
-                                    " diff=",
-                                    diff,
+                                    t"  MISMATCH lid= {lid}  n_out= {n_out} "
+                                    t" m_out= {m_out}  k_local= {k_local} "
+                                    t" depth= {depth}  q= {q}  got= {got} "
+                                    t" expected= {expected}  diff= {diff}"
                                 )
                             mismatches += 1
 
@@ -451,17 +447,8 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         cos_sim = dot_got_ref / denom
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " cos_sim=",
-        cos_sim,
-        " worst@(depth=",
-        worst_depth,
-        " q=",
-        worst_q,
-        ")",
+        t"  mismatches= {mismatches}  max_diff= {max_diff}  cos_sim= {cos_sim} "
+        t" worst@(depth= {worst_depth}  q= {worst_q} )"
     )
 
     _ = dev_v_subtile^
@@ -482,13 +469,8 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         return True
     else:
         print(
-            "  FAILED (mismatches=",
-            mismatches,
-            " cos_sim=",
-            cos_sim,
-            " tol=",
-            _tol,
-            ")",
+            t"  FAILED (mismatches= {mismatches}  cos_sim= {cos_sim}  tol="
+            t" {_tol} )"
         )
         return False
 
@@ -509,8 +491,8 @@ def main() raises:
 
         print("=" * 60)
         print("Summary:")
-        print("  BF16 = ", "PASS" if ok_bf16 else "FAIL")
-        print("  FP8  = ", "PASS" if ok_fp8 else "FAIL")
+        print(t"  BF16 =  {"PASS" if ok_bf16 else "FAIL"}")
+        print(t"  FP8  =  {"PASS" if ok_fp8 else "FAIL"}")
         print("=" * 60)
 
         assert_true(ok_bf16, "BF16 PV chain test failed")

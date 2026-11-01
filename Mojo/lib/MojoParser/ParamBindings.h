@@ -78,15 +78,6 @@ public:
   /// Replace our bindings with another set.
   void operator=(ParamBindings &&other);
 
-  /// Create a (possibly partially unbound) set of bindings for the given type.
-  /// This can be used to initialize the binding set for methods. If the given
-  /// type is not a parametric user defined type, this returns empty bindings.
-  /// If the caller provides a known parent trait type, this will upcast the
-  /// given type to it.
-  static ParamBindings getForDeclaredType(ASTDecl &declScope, ASTType type,
-                                          const ExprNode *expr,
-                                          Type optionalParentTraitType = {});
-
   /// The overall expression this was formed for.
   const ExprNode *getExpr() const { return parameters.callExpr; }
   SMLoc getExprLoc() const;
@@ -104,6 +95,15 @@ public:
   /// Add a bound value for a keyword parameter binding. The caller is
   /// responsible for ensuring the keyword is not already present.
   void add(const ExprNode *expr, AnyValue value, StringAttr name);
+
+  /// Append the bindings in `other` after ours and adopt its binding kind.
+  void append(const ParamBindings &other);
+
+  /// Require `constraints` to be satisfied by the bindings, in addition to the
+  /// callee's own.
+  void addConstraints(ArrayRef<ConstraintAttr> constraints) {
+    llvm::append_range(additionalConstraints, constraints);
+  }
 
   /// Ensure the binding kind is at least the given kind.
   void relaxBindingKindTo(BindingKind kind) {
@@ -126,17 +126,6 @@ private:
   /// This contains the values that are bound into this parameter list.
   CallOperands parameters;
 
-  /// FIXME: When parameterization is rebuilt remove this field.
-  /// Store the passing kind of the original parameter so we can search the
-  /// corresponding defaults array.
-  SmallVector<PogMetadataAttr> ctadPogs;
-
-  /// FIXME: When parameterization is rebuilt remove this field.
-  /// The number of parameters declared for a type, if these are bindings for an
-  /// overload set on a method.
-  size_t numPosCtadParams = 0;
-  size_t numKwOnlyCtadParams = 0;
-
   /// This is a list of additional constraints that need to be satisfied by the
   /// bindings, consider:
   /// ```
@@ -158,17 +147,12 @@ void emitUnprovableConstraintsFromFitness(
 
 /// Utility function to perform substitutions of the bindings into the symbol
 /// for the given function declaration. It returns the resultant
-/// SymbolConstantAttr or produces an error message and returns null.
+/// function reference or produces an error message and returns null.
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl,
                                  const ParamBindings &unverifiedBindings);
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                  const VerifiedParamBindings &verifiedBindings,
                                  ASTDecl &useScope, SMLoc useLoc);
-
-// FIXME: we should create the correct signature upon constructing the trait.
-FnTypeGeneratorType substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, TraitSymbolAttr traitSymbol,
-    FnTypeGeneratorType desiredSignature, PValue selfPValue);
 
 } // namespace M::KGEN::LIT
 

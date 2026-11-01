@@ -14,6 +14,7 @@
 #ifndef KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
 #define KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
 
+include "Common/Marshalling.td"
 include "Support/Driver/DriverCommand.td"
 
 //===----------------------------------------------------------------------===//
@@ -23,72 +24,61 @@ include "Support/Driver/DriverCommand.td"
 def TargetOptionGroup : OptionGroup<"Target options">, Index<6>;
 
 defm target_triple : CommandOption<["--", "-"], "target-triple",
-  TargetOptionGroup, Index<1>, MetaVarName<"TRIPLE">,
-  HelpText<"Sets the compilation target triple. Defaults to the host target.">>;
+  TargetOptionGroup, MetaVarName<"TRIPLE">,
+  HelpText<"Sets the compilation target triple. Defaults to the host target.">>,
+  MarshallingInfoString<TargetArg<"triple">>;
 
 defm target_cpu : CommandOption<["--", "-"], "target-cpu",
-  TargetOptionGroup, Index<2>, MetaVarName<"CPU">,
-  HelpText<"Sets the compilation target CPU. Defaults to the host CPU.">>;
+  TargetOptionGroup, MetaVarName<"CPU">,
+  HelpText<"Sets the compilation target CPU. Defaults to the host CPU.">>,
+  MarshallingInfoString<TargetArg<"cpu">>;
 
 defm target_features : CommandOption<["--", "-"], "target-features",
-  TargetOptionGroup, Index<3>, MetaVarName<"FEATURES">,
+  TargetOptionGroup, MetaVarName<"FEATURES">,
   HelpText<"Sets the compilation target CPU features. Defaults to the host "
-           "features.">>;
+           "features.">>,
+  MarshallingInfoString<TargetArg<"features">>;
 
 defm target_abi : CommandOption<["--", "-"], "target-abi",
-  TargetOptionGroup, Index<4>, MetaVarName<"ABI">,
+  TargetOptionGroup, MetaVarName<"ABI">,
   HelpText<"Sets the target ABI name (e.g. `lp64d`), recorded as a "
-           "`target-abi` LLVM module flag. Unset by default.">>;
+           "`target-abi` LLVM module flag. Unset by default.">>,
+  MarshallingInfoString<TargetArg<"abi">>;
 
 defm march : CommandOption<["--", "-"], "march", TargetOptionGroup,
-  Index<5>, MetaVarName<"ARCHITECTURE">,
-  HelpText<"Sets the architecture for which to generate code.">>;
+  MetaVarName<"ARCHITECTURE">,
+  HelpText<"Sets the architecture for which to generate code.">>,
+  MarshallingInfoString<TargetArg<"march">>;
 
-defm mcpu : CommandOption<["--", "-"], "mcpu", TargetOptionGroup, Index<6>,
-  MetaVarName<"CPU">, HelpText<"Sets the CPU for which to generate code.">>;
+defm mcpu : CommandOption<["--", "-"], "mcpu", TargetOptionGroup,
+  MetaVarName<"CPU">, HelpText<"Sets the CPU for which to generate code.">>,
+  MarshallingInfoString<TargetArg<"mcpu">>;
 
 defm mtune : CommandOption<["--", "-"], "mtune", TargetOptionGroup,
-  Index<7>, MetaVarName<"TUNE">,
-  HelpText<"Sets the CPU for which to tune code.">>;
+  MetaVarName<"TUNE">,
+  HelpText<"Sets the CPU for which to tune code.">>,
+  MarshallingInfoString<TargetArg<"mtune">>;
 
 defm target_accelerator : CommandOption<["--", "-"], "target-accelerator",
-  TargetOptionGroup, Index<8>, MetaVarName<"ACCELERATOR">,
+  TargetOptionGroup, MetaVarName<"ACCELERATOR">,
   HelpText<"Sets the GPU or accelerator architecture for heterogeneous "
-           "computing (e.g., sm_90 for NVIDIA H100, gfx942 for AMD MI300).">>;
+           "computing (e.g., sm_90 for NVIDIA H100, gfx942 for AMD MI300).">>,
+  MarshallingInfoString<TargetArg<"accelerator">>;
 
 defm mcmodel: CommandOptionHidden<["--", "-"], "mcmodel",
-  TargetOptionGroup, Index<9>, MetaVarName<"MCMODEL">,
-  HelpText<"Sets the CodeModel for object file, i.e. small (default), medium or large.">>;
+  TargetOptionGroup, MetaVarName<"MCMODEL">,
+  HelpText<"Sets the CodeModel for object file, i.e. small (default), medium or large.">>,
+  MarshallingInfoString<TargetArg<"mcmodel">>;
 
 defm large_data_threshold: CommandOptionHidden<["--", "-"], "large-data-threshold",
-  TargetOptionGroup, Index<10>, MetaVarName<"LDT">,
-  HelpText<"Choose large data threshold for x86_64 medium code model.">>;
+  TargetOptionGroup, MetaVarName<"LDT">,
+  HelpText<"Choose large data threshold for x86_64 medium code model.">>,
+  MarshallingInfoString<TargetArg<"largeDataThreshold">>;
 
 defm relocation_model: CommandOptionHidden<["--", "-"], "relocation-model",
-  TargetOptionGroup, Index<11>, MetaVarName<"MODEL">,
+  TargetOptionGroup, MetaVarName<"MODEL">,
   HelpText<"Sets the relocation model. Supported values: `static`, `pic` "
-           "(default), `dynamic-no-pic`, `ropi`, `rwpi`, `ropi-rwpi`.">>;
-
-//===----------------------------------------------------------------------===//
-// Print Target Information Options
-//===----------------------------------------------------------------------===//
-
-def print_effective_target : Flag<["--"], "print-effective-target">,
-  Group<TargetOptionGroup>, Index<12>,
-  HelpText<"Print the effective target configuration after absorbing all "
-           "command-line flags and exit.">;
-
-def print_supported_targets : Flag<["--"], "print-supported-targets">,
-  Group<TargetOptionGroup>, Index<13>,
-  HelpText<"Print all available target names and exit.">;
-
-def print_supported_cpus : Flag<["--"], "print-supported-cpus">,
-  Group<TargetOptionGroup>, Index<14>,
-  HelpText<"Print valid CPU names for the specified target and exit. "
-           "Requires --target-triple.">;
-
-def print_supported_accelerators : Flag<["--"], "print-supported-accelerators">,
-  Group<TargetOptionGroup>, Index<15>,
-  HelpText<"Print all supported GPU and accelerator architectures and exit.">;
+           "(default), `dynamic-no-pic`, `ropi`, `rwpi`, `ropi-rwpi`.">>,
+  MarshallingInfoString<TargetArg<"relocationModel">>;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD

@@ -13,13 +13,16 @@
 """Test pipelines MLA attention layer."""
 
 import numpy as np
+from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flare_mla_prefill_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flare_mla_prefill_ragged
+from max.nn.legacy.kv_cache import (
+    MHAKVCacheParams,
+)
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
@@ -76,23 +79,12 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 input_row_offsets,
                 k_buffer,
                 v_buffer,
-                blocks,
-                cache_lengths,
-                lookup_table,
-                max_prompt_length,
-                max_cache_length,
-                _attention_dispatch_metadata,
+                *_kv_rest,
             ) = g.inputs
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                blocks.buffer,
-                cache_lengths.tensor,
-                lookup_table.tensor,
-                max_prompt_length.tensor,
-                max_cache_length.tensor,
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[4:]))[0]
             result = flare_mla_prefill_ragged(
                 kv_params,
                 input.tensor,
@@ -100,7 +92,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 v_buffer.tensor,
                 input_row_offsets.tensor,
                 input_row_offsets.tensor,  # actually buffer_row_offsets
-                cache_lengths.tensor,
+                kv_collection.cache_lengths,
                 kv_collection,
                 layer_idx,
                 MHAMaskVariant.CAUSAL_MASK,
@@ -142,7 +134,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         input_row_offsets.to(device),
         k_buffer_tensor.to(device),
         v_buffer_tensor.to(device),
-        *kv_runtime_inputs.flatten(),
+        *tree.leaves(kv_runtime_inputs),
     )[0]
     assert isinstance(result, Buffer)
 

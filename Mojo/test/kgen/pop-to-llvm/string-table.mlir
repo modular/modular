@@ -7,7 +7,7 @@
 kgen.generator @string_address<astr: !kgen.string>() -> !kgen.pointer<scalar<si8>> {
   //  kgen.param.declare concat_str: string = <str_concat("hello ", "world")>
   %0 = kgen.param.constant: !kgen.pointer<scalar<si8>> = <string_address(:!kgen.string astr)>
-  kgen.return %0 : !kgen.pointer<scalar<si8>>
+  hlcf.return %0 : !kgen.pointer<scalar<si8>>
 }
 
 
@@ -19,12 +19,12 @@ kgen.generator export @check_string_table() -> (!kgen.pointer<scalar<si8>>, !kge
     :() -> !kgen.pointer<scalar<si8>> @string_address<:!kgen.string value>)>
   // CHECK: llvm.mlir.addressof @[[STATIC_STRING]] :
   %1 = kgen.param.constant: string = <value>
-  kgen.return %0, %1 : !kgen.pointer<scalar<si8>>, !kgen.string
+  hlcf.return %0, %1 : !kgen.pointer<scalar<si8>>, !kgen.string
 }
 
 kgen.generator @string_address2(%arg0: !kgen.string) -> !kgen.pointer<scalar<si8>> {
   %0 = pop.string.address %arg0
-  kgen.return %0 : !kgen.pointer<scalar<si8>>
+  hlcf.return %0 : !kgen.pointer<scalar<si8>>
 }
 
 // CHECK-LABEL: llvm.func @check_string_table2
@@ -35,7 +35,7 @@ kgen.generator export @check_string_table2() -> (!kgen.pointer<scalar<si8>>, !kg
     :(!kgen.string) -> !kgen.pointer<scalar<si8>> @string_address2, value)>
   // CHECK: llvm.mlir.addressof @[[STATIC_STRING]] :
   %1 = kgen.param.constant: string = <value>
-  kgen.return %0, %1 : !kgen.pointer<scalar<si8>>, !kgen.string
+  hlcf.return %0, %1 : !kgen.pointer<scalar<si8>>, !kgen.string
 }
 
 

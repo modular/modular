@@ -80,7 +80,7 @@ struct MemoryUniqueMovable(Movable):
 
         # CHECK-NEXT: kgen.param.constant: none
         # CHECK-NEXT: lit.ownership.mark_destroyed %move
-        # CHECK-NEXT: kgen.return
+        # CHECK-NEXT: hlcf.return
 
 
 # This type is copyable/moveable.
@@ -107,7 +107,7 @@ def result_mem1(var a: MemoryUniqueMovable) -> MemoryUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"
     # CHECK-NEXT: kgen.param.constant: none
-    # CHECK-NEXT: kgen.return
+    # CHECK-NEXT: hlcf.return
     return a^
 
 
@@ -116,7 +116,7 @@ def result_mem3(var a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"{{.*}} deinit_mem{{.*}}byref_result
     # CHECK-NEXT: kgen.param.constant: none
-    # CHECK-NEXT: kgen.return
+    # CHECK-NEXT: hlcf.return
     return a^
 
 
@@ -152,14 +152,14 @@ struct RegMovableCopyable(ImplicitlyCopyable, RegisterPassable):
 def result_reg1(var a: RegUniqueMovable) -> RegUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume %a
-    # CHECK-NEXT: kgen.return [[AVAL]]
+    # CHECK-NEXT: hlcf.return [[AVAL]]
     return a^
 
 
 # CHECK-LABEL: lit.fn @"result_reg2
 def result_reg2(var a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
-    # CHECK-NEXT: kgen.return [[A]]
+    # CHECK-NEXT: hlcf.return [[A]]
     return a
 
 
@@ -167,7 +167,7 @@ def result_reg2(var a: RegMovableCopyable) -> RegMovableCopyable:
 def result_reg3(var a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
-    # CHECK-NEXT: kgen.return [[A]]
+    # CHECK-NEXT: hlcf.return [[A]]
     return a^
 
 
@@ -183,7 +183,7 @@ def result_reg4(var a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %x
     # CHECK-NEXT: [[RES:%.*]] = lit.load.consume %x
     # CHECK-NEXT: lifetime.end %x
-    # CHECK-NEXT: kgen.return [[RES]]
+    # CHECK-NEXT: hlcf.return [[RES]]
     return x^
 
 

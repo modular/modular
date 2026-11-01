@@ -75,11 +75,14 @@ def _get_files(bazel: Path, query: str) -> set[Path]:
 
 # Add more binary suffixes here if needed
 _BINARY_SUFFIXES = {
+    ".elf",
     ".eot",
     ".gif",
+    ".gz",
     ".ico",
     ".jpeg",
     ".jpg",
+    ".mp4",
     ".otf",
     ".png",
     ".ttf",

@@ -20,7 +20,7 @@ from layout.layout import (
     right_inverse,
     zipped_divide,
 )
-from layout.layout_tensor import _compute_distribute_layout
+from layout.layout import _compute_distribute_layout
 from layout.swizzle import Swizzle, make_swizzle
 from std.testing import assert_equal
 

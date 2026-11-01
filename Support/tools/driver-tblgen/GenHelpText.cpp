@@ -276,7 +276,32 @@ static bool genHelpText(raw_ostream &os, const llvm::RecordKeeper &records,
   return false;
 }
 
+/// Emits `options::helpTexts()`, which returns the help text and the hidden
+/// help text as an `M::HelpTexts`, for a tool that includes the result after
+/// `Support/Driver/OptTable.inc`.
+static bool genHelpTexts(raw_ostream &os, const llvm::RecordKeeper &records) {
+  os << "namespace {\n"
+        "namespace options {\n"
+        "/// The text that `--help` and `--help-hidden` print.\n"
+        "inline M::HelpTexts helpTexts() {\n"
+        "  return M::HelpTexts(\n";
+  if (genHelpText(os, records, /*includeHiddenOptions=*/false))
+    return true;
+  os << ",\n";
+  if (genHelpText(os, records, /*includeHiddenOptions=*/true))
+    return true;
+  os << ");\n"
+        "}\n"
+        "} // namespace options\n"
+        "} // namespace\n";
+  return false;
+}
+
 void M::registerGenHelpTextBackend(BackendRegistry &registry) {
+  registry.addBackend("gen-help-texts",
+                      "Generate a function that returns the help text and the "
+                      "hidden help text",
+                      genHelpTexts);
   registry.addBackend("gen-help-text",
                       "Generate help text as a C++ constant string",
                       [](raw_ostream &os, const llvm::RecordKeeper &records) {

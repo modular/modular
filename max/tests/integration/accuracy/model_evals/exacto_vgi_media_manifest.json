@@ -1,0 +1,3244 @@
+{
+  "dataset": "Seldon-Technologies/VGIBench",
+  "config": "default",
+  "split": "train",
+  "revision": "v1.0.1",
+  "publicBaseUrl": "https://vgi-bench-mirror.openrouter.ai",
+  "generatedAt": "2026-08-17T19:49:30.134Z",
+  "videoCount": 323,
+  "questionCount": 439,
+  "manifestHash": "872691450ddc053ae0b374f554ff8eb6b19fe379aab29e22ec6a0a7ef37bb738",
+  "videos": [
+    {
+      "videoId": "_-zi-NfJx0M",
+      "sourceUrl": "https://cdn.seldon.global/_-zi-NfJx0M_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "_-zi-NfJx0M.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/_-zi-NfJx0M.mp4",
+      "bytes": 43593595,
+      "contentType": "video/mp4",
+      "sha256": "bbfafa630db0afefb61b5d6b61d66d9732014511a6710c39156f661cbddd9faa"
+    },
+    {
+      "videoId": "_DfBChLpYd8",
+      "sourceUrl": "https://cdn.seldon.global/_DfBChLpYd8.mp4",
+      "sourceKind": "original",
+      "key": "_DfBChLpYd8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/_DfBChLpYd8.mp4",
+      "bytes": 36656592,
+      "contentType": "video/mp4",
+      "sha256": "40567e8b100b8b1132289e2d1c2d7337f2a1f7133e5214ae3c76742a119222fd"
+    },
+    {
+      "videoId": "_lIn6_rYBGQ",
+      "sourceUrl": "https://cdn.seldon.global/_lIn6_rYBGQ.mp4",
+      "sourceKind": "original",
+      "key": "_lIn6_rYBGQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/_lIn6_rYBGQ.mp4",
+      "bytes": 17508618,
+      "contentType": "video/mp4",
+      "sha256": "16a4fda34583c4ad54e1e84caa812785a82e7da9e350a916664b98a04ee7ccab"
+    },
+    {
+      "videoId": "_WbGGCJkUGE",
+      "sourceUrl": "https://cdn.seldon.global/_WbGGCJkUGE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "_WbGGCJkUGE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/_WbGGCJkUGE.mp4",
+      "bytes": 36898312,
+      "contentType": "video/mp4",
+      "sha256": "ee03f5c2d65601fe41f3373fd79fb263c81e74c1635ba223e501c7eba0380031"
+    },
+    {
+      "videoId": "_Wep0VVzBGU",
+      "sourceUrl": "https://cdn.seldon.global/_Wep0VVzBGU_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "_Wep0VVzBGU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/_Wep0VVzBGU.mp4",
+      "bytes": 44916215,
+      "contentType": "video/mp4",
+      "sha256": "14a5bf2a99b60632886dc60a9b1a5d12ccb1ea9ea3af193aa65ec71f34bb2315"
+    },
+    {
+      "videoId": "_WPIMsLk1P8",
+      "sourceUrl": "https://cdn.seldon.global/_WPIMsLk1P8_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "_WPIMsLk1P8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/_WPIMsLk1P8.mp4",
+      "bytes": 43062023,
+      "contentType": "video/mp4",
+      "sha256": "9e0b3226f02d7bc1b0fba469109e7af08c4ce76b6c72077aa0bdcc8bab2b71b3"
+    },
+    {
+      "videoId": "-bdp9KYg_Vs",
+      "sourceUrl": "https://cdn.seldon.global/-bdp9KYg_Vs.mp4",
+      "sourceKind": "original",
+      "key": "-bdp9KYg_Vs.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/-bdp9KYg_Vs.mp4",
+      "bytes": 37838893,
+      "contentType": "video/mp4",
+      "sha256": "d9d3a09e3c88207178614ebf72db6c67b2b9532b4bd52b9b314a8a472a9e9a4f"
+    },
+    {
+      "videoId": "-IFtTSyeFcE",
+      "sourceUrl": "https://cdn.seldon.global/-IFtTSyeFcE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "-IFtTSyeFcE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/-IFtTSyeFcE.mp4",
+      "bytes": 45068583,
+      "contentType": "video/mp4",
+      "sha256": "32aaf36514d55c862177dfb490b629fa71b93273489251f89c1cae9a8562059f"
+    },
+    {
+      "videoId": "-kceacuKaCk",
+      "sourceUrl": "https://cdn.seldon.global/-kceacuKaCk_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "-kceacuKaCk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/-kceacuKaCk.mp4",
+      "bytes": 38592057,
+      "contentType": "video/mp4",
+      "sha256": "bfddeaecdf87a3fbeeed8f8a910bd41a6a99531da48aa106deba2ce4d01b96b2"
+    },
+    {
+      "videoId": "-LvPEwj0Zxw",
+      "sourceUrl": "https://cdn.seldon.global/-LvPEwj0Zxw.mp4",
+      "sourceKind": "original",
+      "key": "-LvPEwj0Zxw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/-LvPEwj0Zxw.mp4",
+      "bytes": 31856321,
+      "contentType": "video/mp4",
+      "sha256": "c805689f349c91ffcdb8f4266de1c74c024021b5160554d3e44158e5bae860bd"
+    },
+    {
+      "videoId": "-pfTroYWnuQ",
+      "sourceUrl": "https://cdn.seldon.global/-pfTroYWnuQ_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "-pfTroYWnuQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/-pfTroYWnuQ.mp4",
+      "bytes": 38868222,
+      "contentType": "video/mp4",
+      "sha256": "d7f1516782bb63035867b4e8c275d210b38442d8da1c6a60422282fabaaea088"
+    },
+    {
+      "videoId": "006-shell-track-scene07",
+      "sourceUrl": "https://cdn.seldon.global/006-shell-track-scene07.mp4",
+      "sourceKind": "original",
+      "key": "006-shell-track-scene07.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/006-shell-track-scene07.mp4",
+      "bytes": 139706,
+      "contentType": "video/mp4",
+      "sha256": "530d4282b257687c9ab8b4cd24d4328b4c53524bb8971cfd781ae8874bf3ae91"
+    },
+    {
+      "videoId": "006-shell-track-scene10",
+      "sourceUrl": "https://cdn.seldon.global/006-shell-track-scene10.mp4",
+      "sourceKind": "original",
+      "key": "006-shell-track-scene10.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/006-shell-track-scene10.mp4",
+      "bytes": 131567,
+      "contentType": "video/mp4",
+      "sha256": "4aa169109326414277ed4e329fb27bcb63bc38634e5d2c552160387f835efc71"
+    },
+    {
+      "videoId": "007-dual-track-scene03",
+      "sourceUrl": "https://cdn.seldon.global/007-dual-track-scene03.mp4",
+      "sourceKind": "original",
+      "key": "007-dual-track-scene03.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/007-dual-track-scene03.mp4",
+      "bytes": 129482,
+      "contentType": "video/mp4",
+      "sha256": "fd650120dab8ce6020b411768f8843e7c62307ab2dfc2baad92fd2eab6b1656d"
+    },
+    {
+      "videoId": "011-occluder-transit-count-lite-scene01",
+      "sourceUrl": "https://cdn.seldon.global/011-occluder-transit-count-lite-scene01.mp4",
+      "sourceKind": "original",
+      "key": "011-occluder-transit-count-lite-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/011-occluder-transit-count-lite-scene01.mp4",
+      "bytes": 88720,
+      "contentType": "video/mp4",
+      "sha256": "b922fdc2f6e18c578e64a30edda83beb1d27b1a0eee04ef35ed30bfd2ad79b1d"
+    },
+    {
+      "videoId": "016-biological-motion-walker-count-v2-scene01",
+      "sourceUrl": "https://cdn.seldon.global/016-biological-motion-walker-count-v2-scene01.mp4",
+      "sourceKind": "original",
+      "key": "016-biological-motion-walker-count-v2-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/016-biological-motion-walker-count-v2-scene01.mp4",
+      "bytes": 209734,
+      "contentType": "video/mp4",
+      "sha256": "d51e3291b66639255c09a7ae44fdbcd06ec8ee20b82b486b7b9a631948fba140"
+    },
+    {
+      "videoId": "017-biological-motion-coordination-scramble-scene01",
+      "sourceUrl": "https://cdn.seldon.global/017-biological-motion-coordination-scramble-scene01.mp4",
+      "sourceKind": "original",
+      "key": "017-biological-motion-coordination-scramble-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/017-biological-motion-coordination-scramble-scene01.mp4",
+      "bytes": 206790,
+      "contentType": "video/mp4",
+      "sha256": "cb09a724809d87db14c7ff8b52916fde1cf47bbe06a51c4b6bf89ee14a70b641"
+    },
+    {
+      "videoId": "0ZmT69_VPs0",
+      "sourceUrl": "https://cdn.seldon.global/0ZmT69_VPs0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "0ZmT69_VPs0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/0ZmT69_VPs0.mp4",
+      "bytes": 34369639,
+      "contentType": "video/mp4",
+      "sha256": "837a0bacae51538edad5cdd61418fb10e038472e41b894651d88dc957aec7f2b"
+    },
+    {
+      "videoId": "15OD2Tvz28U",
+      "sourceUrl": "https://cdn.seldon.global/15OD2Tvz28U_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "15OD2Tvz28U.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/15OD2Tvz28U.mp4",
+      "bytes": 44927323,
+      "contentType": "video/mp4",
+      "sha256": "0dfe3458ef0d22274b697f98cf11f5aed2e182f0fcf7e92bd40372e101d9fd27"
+    },
+    {
+      "videoId": "173GcRmS37g",
+      "sourceUrl": "https://cdn.seldon.global/173GcRmS37g_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "173GcRmS37g.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/173GcRmS37g.mp4",
+      "bytes": 45487491,
+      "contentType": "video/mp4",
+      "sha256": "c0dd14f8b954b1d61d9997af1421aa5c37750ffcb186aa8c5a5e1f072ff25412"
+    },
+    {
+      "videoId": "182-anorthoscopic-slit-animal-count-scene01",
+      "sourceUrl": "https://cdn.seldon.global/182-anorthoscopic-slit-animal-count-scene01.mp4",
+      "sourceKind": "original",
+      "key": "182-anorthoscopic-slit-animal-count-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/182-anorthoscopic-slit-animal-count-scene01.mp4",
+      "bytes": 78225,
+      "contentType": "video/mp4",
+      "sha256": "125a0575f0a22fd9070af5a85002b9190d89dea2ba65ab4253593b4f83073b06"
+    },
+    {
+      "videoId": "185-cell-division-count-scene01",
+      "sourceUrl": "https://cdn.seldon.global/185-cell-division-count-scene01.mp4",
+      "sourceKind": "original",
+      "key": "185-cell-division-count-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/185-cell-division-count-scene01.mp4",
+      "bytes": 360592,
+      "contentType": "video/mp4",
+      "sha256": "db52b0e57aea1dbd3ca2978973b7449c226e87464c8d46268e7e8f32bb08e34d"
+    },
+    {
+      "videoId": "193-wheel-spin-direction-count-scene01",
+      "sourceUrl": "https://cdn.seldon.global/193-wheel-spin-direction-count-scene01.mp4",
+      "sourceKind": "original",
+      "key": "193-wheel-spin-direction-count-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/193-wheel-spin-direction-count-scene01.mp4",
+      "bytes": 844022,
+      "contentType": "video/mp4",
+      "sha256": "ebf9c303f595368c6fd1a21b36b6bca5885c6196b498f5691c144fad97631268"
+    },
+    {
+      "videoId": "194-transparent-motion-count-scene01",
+      "sourceUrl": "https://cdn.seldon.global/194-transparent-motion-count-scene01.mp4",
+      "sourceKind": "original",
+      "key": "194-transparent-motion-count-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/194-transparent-motion-count-scene01.mp4",
+      "bytes": 5253705,
+      "contentType": "video/mp4",
+      "sha256": "c7a65c9038f8b60e508d4f7625c6771c583619396ce4e722e6514154cbc6bfcf"
+    },
+    {
+      "videoId": "197-balloon-pop-count-scene01",
+      "sourceUrl": "https://cdn.seldon.global/197-balloon-pop-count-scene01.mp4",
+      "sourceKind": "original",
+      "key": "197-balloon-pop-count-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/197-balloon-pop-count-scene01.mp4",
+      "bytes": 131878,
+      "contentType": "video/mp4",
+      "sha256": "b3f1290e714d7453f9818142adc1cfdfb91c52449f274a86f143d3dfe003db7d"
+    },
+    {
+      "videoId": "1bdG7lnKmLo",
+      "sourceUrl": "https://cdn.seldon.global/1bdG7lnKmLo_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "1bdG7lnKmLo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/1bdG7lnKmLo.mp4",
+      "bytes": 44825818,
+      "contentType": "video/mp4",
+      "sha256": "52f6f6ea7d88992c01024eabe5d96a04d9883a31ab1f85638e23484c28123c93"
+    },
+    {
+      "videoId": "1KUFKoFZBTI",
+      "sourceUrl": "https://cdn.seldon.global/1KUFKoFZBTI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "1KUFKoFZBTI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/1KUFKoFZBTI.mp4",
+      "bytes": 44124806,
+      "contentType": "video/mp4",
+      "sha256": "5005e4fdb6f714419b9dba586d425ce78fec332213cb0f0b7cc598cf5256945b"
+    },
+    {
+      "videoId": "1PNIMwVzPRQ",
+      "sourceUrl": "https://cdn.seldon.global/1PNIMwVzPRQ.mp4",
+      "sourceKind": "original",
+      "key": "1PNIMwVzPRQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/1PNIMwVzPRQ.mp4",
+      "bytes": 34681378,
+      "contentType": "video/mp4",
+      "sha256": "df8dec9ecd2d451fee6a319b6ca239289263e459ce84967c32e01a5039878f51"
+    },
+    {
+      "videoId": "1rmi4j03f8s",
+      "sourceUrl": "https://cdn.seldon.global/1rmi4j03f8s_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "1rmi4j03f8s.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/1rmi4j03f8s.mp4",
+      "bytes": 45212707,
+      "contentType": "video/mp4",
+      "sha256": "ed038d4c8c3a33c59cc2723ecf0db009d84fc9522684b9b8c514bd238c4b8398"
+    },
+    {
+      "videoId": "201-reversal-count-scene01",
+      "sourceUrl": "https://cdn.seldon.global/201-reversal-count-scene01.mp4",
+      "sourceKind": "original",
+      "key": "201-reversal-count-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/201-reversal-count-scene01.mp4",
+      "bytes": 73932,
+      "contentType": "video/mp4",
+      "sha256": "eb20a701449a22aa691437e251adec9bdd0b95efb0223f0870cf3d9c4641bece"
+    },
+    {
+      "videoId": "202-reversal-count-reseed-scene01",
+      "sourceUrl": "https://cdn.seldon.global/202-reversal-count-reseed-scene01.mp4",
+      "sourceKind": "original",
+      "key": "202-reversal-count-reseed-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/202-reversal-count-reseed-scene01.mp4",
+      "bytes": 61524,
+      "contentType": "video/mp4",
+      "sha256": "8ab17e557813f26d194b74ab367fd06878f428263c9554cc14619afbc1a77a7c"
+    },
+    {
+      "videoId": "203-overtake-count-scene01",
+      "sourceUrl": "https://cdn.seldon.global/203-overtake-count-scene01.mp4",
+      "sourceKind": "original",
+      "key": "203-overtake-count-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/203-overtake-count-scene01.mp4",
+      "bytes": 61553,
+      "contentType": "video/mp4",
+      "sha256": "d18333b94daf306986d133410b3336e47d8749149cca10a6ac56c180b5e6ee07"
+    },
+    {
+      "videoId": "205-ground-touch-count-scene01",
+      "sourceUrl": "https://cdn.seldon.global/205-ground-touch-count-scene01.mp4",
+      "sourceKind": "original",
+      "key": "205-ground-touch-count-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/205-ground-touch-count-scene01.mp4",
+      "bytes": 86796,
+      "contentType": "video/mp4",
+      "sha256": "b51d314a4cb01bcce5ae3af42d72873bc9ab69c0f1983cb34fff4675b6a55f15"
+    },
+    {
+      "videoId": "206-collision-restitution-count-scene01",
+      "sourceUrl": "https://cdn.seldon.global/206-collision-restitution-count-scene01.mp4",
+      "sourceKind": "original",
+      "key": "206-collision-restitution-count-scene01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/206-collision-restitution-count-scene01.mp4",
+      "bytes": 63597,
+      "contentType": "video/mp4",
+      "sha256": "4bcc949bfaa63316a4570a474ba033613ee2ec5bbeba784d0601133b9548686b"
+    },
+    {
+      "videoId": "24ajxATEwD4",
+      "sourceUrl": "https://cdn.seldon.global/24ajxATEwD4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "24ajxATEwD4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/24ajxATEwD4.mp4",
+      "bytes": 45797571,
+      "contentType": "video/mp4",
+      "sha256": "4679179a6ab94b79dc115c7efba787da7d51e21d29e815ae9d26ea5d4ca146c0"
+    },
+    {
+      "videoId": "2E0whoLX7GA",
+      "sourceUrl": "https://cdn.seldon.global/2E0whoLX7GA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "2E0whoLX7GA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/2E0whoLX7GA.mp4",
+      "bytes": 45312676,
+      "contentType": "video/mp4",
+      "sha256": "0f74755291bdb638e9e4bdaf50edfe2201053042581961b55701387b5a7ae528"
+    },
+    {
+      "videoId": "2HV54j7UBPM",
+      "sourceUrl": "https://cdn.seldon.global/2HV54j7UBPM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "2HV54j7UBPM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/2HV54j7UBPM.mp4",
+      "bytes": 40354270,
+      "contentType": "video/mp4",
+      "sha256": "385e21bd07b9b61e16ac34faf7a20bc0d3a59add4adaffc0e76a5920199e3ace"
+    },
+    {
+      "videoId": "3a6qgYqavAo",
+      "sourceUrl": "https://cdn.seldon.global/3a6qgYqavAo_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "3a6qgYqavAo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/3a6qgYqavAo.mp4",
+      "bytes": 45566865,
+      "contentType": "video/mp4",
+      "sha256": "7a20ccc95083372d213a45a9abbd1b861422ef5a18f4007812f5d3a671ace046"
+    },
+    {
+      "videoId": "3vl1hd9vlqA",
+      "sourceUrl": "https://cdn.seldon.global/3vl1hd9vlqA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "3vl1hd9vlqA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/3vl1hd9vlqA.mp4",
+      "bytes": 44959878,
+      "contentType": "video/mp4",
+      "sha256": "2e2ef2f9ab9cf5267313b5a6a5b5e97e1cc31ea0e1b844be61bad7d2c0e8f6ca"
+    },
+    {
+      "videoId": "3ypPY9MT9_w",
+      "sourceUrl": "https://cdn.seldon.global/3ypPY9MT9_w_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "3ypPY9MT9_w.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/3ypPY9MT9_w.mp4",
+      "bytes": 22504284,
+      "contentType": "video/mp4",
+      "sha256": "c6a6a853f56cd9102f1f7efbd12ba3b5798a3c481b102b6a7a98227d3d1f2a1b"
+    },
+    {
+      "videoId": "3zaLl0kty20",
+      "sourceUrl": "https://cdn.seldon.global/3zaLl0kty20_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "3zaLl0kty20.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/3zaLl0kty20.mp4",
+      "bytes": 44445002,
+      "contentType": "video/mp4",
+      "sha256": "1042504824bafbe97bb48c72346fb1bcd73fc892f0cf85336853a752aa73f08d"
+    },
+    {
+      "videoId": "4AbyOqe7ggc",
+      "sourceUrl": "https://cdn.seldon.global/4AbyOqe7ggc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "4AbyOqe7ggc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/4AbyOqe7ggc.mp4",
+      "bytes": 45055186,
+      "contentType": "video/mp4",
+      "sha256": "6af889e5ae4e5e74ea72387e18455c0a1558bebb9613f677160c6477bc59fd0a"
+    },
+    {
+      "videoId": "4fCRKhS-Xvw",
+      "sourceUrl": "https://cdn.seldon.global/4fCRKhS-Xvw.mp4",
+      "sourceKind": "original",
+      "key": "4fCRKhS-Xvw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/4fCRKhS-Xvw.mp4",
+      "bytes": 32245836,
+      "contentType": "video/mp4",
+      "sha256": "4907601f75f14a0e468ebadc0485b7a8b1219ee69dee42f2d032a1c273e640c0"
+    },
+    {
+      "videoId": "4y-w0PJCyuI",
+      "sourceUrl": "https://cdn.seldon.global/4y-w0PJCyuI.mp4",
+      "sourceKind": "original",
+      "key": "4y-w0PJCyuI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/4y-w0PJCyuI.mp4",
+      "bytes": 22460840,
+      "contentType": "video/mp4",
+      "sha256": "f02364c1e38e66a928813812ed40d219c88ddf5c7775a0589fab944eda699f90"
+    },
+    {
+      "videoId": "4ZRIfMQjfro",
+      "sourceUrl": "https://cdn.seldon.global/4ZRIfMQjfro.mp4",
+      "sourceKind": "original",
+      "key": "4ZRIfMQjfro.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/4ZRIfMQjfro.mp4",
+      "bytes": 32278297,
+      "contentType": "video/mp4",
+      "sha256": "3d80d5de5d85996047f0b887522fd1e33153f5040df97e1bf34597deeeb3be23"
+    },
+    {
+      "videoId": "52g4o9COKWg",
+      "sourceUrl": "https://cdn.seldon.global/52g4o9COKWg_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "52g4o9COKWg.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/52g4o9COKWg.mp4",
+      "bytes": 44851984,
+      "contentType": "video/mp4",
+      "sha256": "36e4869108cde6eee3cf000c2e3e5b217636db6b1a9d3648c9fdf320abb81368"
+    },
+    {
+      "videoId": "5EEIlP3pmg4",
+      "sourceUrl": "https://cdn.seldon.global/5EEIlP3pmg4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "5EEIlP3pmg4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/5EEIlP3pmg4.mp4",
+      "bytes": 48893027,
+      "contentType": "video/mp4",
+      "sha256": "f2049f9680c1311d6faf1d7ce29c004978d42e9f502fb79e7089f76385acd303"
+    },
+    {
+      "videoId": "5Eez5innlqM",
+      "sourceUrl": "https://cdn.seldon.global/5Eez5innlqM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "5Eez5innlqM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/5Eez5innlqM.mp4",
+      "bytes": 37786571,
+      "contentType": "video/mp4",
+      "sha256": "47c02b166c507460959a039a5b3aa2c0166346b38c7f8aefcbbe98256940fc9c"
+    },
+    {
+      "videoId": "5EQ7eMpgHnA",
+      "sourceUrl": "https://cdn.seldon.global/5EQ7eMpgHnA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "5EQ7eMpgHnA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/5EQ7eMpgHnA.mp4",
+      "bytes": 27821090,
+      "contentType": "video/mp4",
+      "sha256": "1086dfa7c432e23c4e9a1a8709d8f8057b385446387cefd1f15de0b909174df8"
+    },
+    {
+      "videoId": "5sDnzE7lFm0",
+      "sourceUrl": "https://cdn.seldon.global/5sDnzE7lFm0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "5sDnzE7lFm0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/5sDnzE7lFm0.mp4",
+      "bytes": 42090701,
+      "contentType": "video/mp4",
+      "sha256": "8bf93ce65cf2986ebad30f4441701d1501b89a6fa0a9bd93086f4020ea4cf375"
+    },
+    {
+      "videoId": "5YG1hMaPWvc",
+      "sourceUrl": "https://cdn.seldon.global/5YG1hMaPWvc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "5YG1hMaPWvc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/5YG1hMaPWvc.mp4",
+      "bytes": 45161283,
+      "contentType": "video/mp4",
+      "sha256": "89bfebeb3208d90e9e5cf029e25d3a950d22922e9e676710bcbcf7545a8c6d3c"
+    },
+    {
+      "videoId": "62IesV8xlgY",
+      "sourceUrl": "https://cdn.seldon.global/62IesV8xlgY_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "62IesV8xlgY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/62IesV8xlgY.mp4",
+      "bytes": 45531131,
+      "contentType": "video/mp4",
+      "sha256": "14be94bbfd7063fe502d1e6be3117fbf66f2ba67206f0aa785c562be27daa4e9"
+    },
+    {
+      "videoId": "6clJWTTRWTE",
+      "sourceUrl": "https://cdn.seldon.global/6clJWTTRWTE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "6clJWTTRWTE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/6clJWTTRWTE.mp4",
+      "bytes": 43177996,
+      "contentType": "video/mp4",
+      "sha256": "820ec113d9ecfc25f9a46aca9f756535b92a12fb17154aad65ce94903e0359c8"
+    },
+    {
+      "videoId": "6FMKwCN2d5A",
+      "sourceUrl": "https://cdn.seldon.global/6FMKwCN2d5A_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "6FMKwCN2d5A.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/6FMKwCN2d5A.mp4",
+      "bytes": 44579403,
+      "contentType": "video/mp4",
+      "sha256": "3140f0e310fa499413b4b9c2a0d7a4f22050c2dbbeaa1d22b60a7cd18fdf86db"
+    },
+    {
+      "videoId": "6Zy5VLcEbZc",
+      "sourceUrl": "https://cdn.seldon.global/6Zy5VLcEbZc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "6Zy5VLcEbZc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/6Zy5VLcEbZc.mp4",
+      "bytes": 46395042,
+      "contentType": "video/mp4",
+      "sha256": "a0b75d3de9609e6b57dabdb91057215a5f73807f91164424b5684c23eb55e771"
+    },
+    {
+      "videoId": "705L35B9YWc",
+      "sourceUrl": "https://cdn.seldon.global/705L35B9YWc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "705L35B9YWc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/705L35B9YWc.mp4",
+      "bytes": 43600753,
+      "contentType": "video/mp4",
+      "sha256": "1b6128a1d8ffa3de4b1024f926d61a398259d0bf5935d3fd794e3439e907cabf"
+    },
+    {
+      "videoId": "76v0-1-dL_w",
+      "sourceUrl": "https://cdn.seldon.global/76v0-1-dL_w_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "76v0-1-dL_w.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/76v0-1-dL_w.mp4",
+      "bytes": 44522608,
+      "contentType": "video/mp4",
+      "sha256": "c946cb59b2e77c4881cc78982499beea30fd65a740f3c3b2e026744c0739df51"
+    },
+    {
+      "videoId": "7HvqOlOQD6s",
+      "sourceUrl": "https://cdn.seldon.global/7HvqOlOQD6s_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "7HvqOlOQD6s.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/7HvqOlOQD6s.mp4",
+      "bytes": 39818940,
+      "contentType": "video/mp4",
+      "sha256": "8dbdd17fead47db4ad5b426e212a75eb83d738d1e008ceefa9fb775c6edbf6a6"
+    },
+    {
+      "videoId": "7KkvrgMk8Us",
+      "sourceUrl": "https://cdn.seldon.global/7KkvrgMk8Us_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "7KkvrgMk8Us.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/7KkvrgMk8Us.mp4",
+      "bytes": 38921511,
+      "contentType": "video/mp4",
+      "sha256": "ea509edb7ddcc62c9892e74cbd72f3f95aa3b707491b9d5e4aa942308621b9ac"
+    },
+    {
+      "videoId": "86Kg6rhO7DU",
+      "sourceUrl": "https://cdn.seldon.global/86Kg6rhO7DU_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "86Kg6rhO7DU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/86Kg6rhO7DU.mp4",
+      "bytes": 43588540,
+      "contentType": "video/mp4",
+      "sha256": "f01bff3142c7b485b8597222c8242aa53dd615e8989883c3701759708ef6bf67"
+    },
+    {
+      "videoId": "8dD_lvwBs0c",
+      "sourceUrl": "https://cdn.seldon.global/8dD_lvwBs0c_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "8dD_lvwBs0c.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/8dD_lvwBs0c.mp4",
+      "bytes": 23022161,
+      "contentType": "video/mp4",
+      "sha256": "212d3186e42509829a6890d4e3c00a84cbabd80482ea62985e2f297682abc62b"
+    },
+    {
+      "videoId": "8M3c56RuElA",
+      "sourceUrl": "https://cdn.seldon.global/8M3c56RuElA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "8M3c56RuElA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/8M3c56RuElA.mp4",
+      "bytes": 43497618,
+      "contentType": "video/mp4",
+      "sha256": "4ae1a49458398e161e98f754293b6ab08c9d4f0afab6f4833d52c3603d20ed17"
+    },
+    {
+      "videoId": "8mXPiqoy2xI",
+      "sourceUrl": "https://cdn.seldon.global/8mXPiqoy2xI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "8mXPiqoy2xI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/8mXPiqoy2xI.mp4",
+      "bytes": 44429528,
+      "contentType": "video/mp4",
+      "sha256": "44a7386c9190ed8a4421c67b7941595ff337de00b0b4ce3cd56b5666b139550b"
+    },
+    {
+      "videoId": "8vDuIVlfeV0",
+      "sourceUrl": "https://cdn.seldon.global/8vDuIVlfeV0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "8vDuIVlfeV0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/8vDuIVlfeV0.mp4",
+      "bytes": 29185530,
+      "contentType": "video/mp4",
+      "sha256": "f427f7227ca668b0180db1c26fc82b6d69632e2d95b1eeae80c549c26fa712b2"
+    },
+    {
+      "videoId": "9CwkTQ6fR8k",
+      "sourceUrl": "https://cdn.seldon.global/9CwkTQ6fR8k_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "9CwkTQ6fR8k.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/9CwkTQ6fR8k.mp4",
+      "bytes": 24168038,
+      "contentType": "video/mp4",
+      "sha256": "482ee642150546bc66fdf2184d9408f2b0bb2c294a80a6815519b2340fe1c17c"
+    },
+    {
+      "videoId": "9JQcBjHOPEM",
+      "sourceUrl": "https://cdn.seldon.global/9JQcBjHOPEM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "9JQcBjHOPEM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/9JQcBjHOPEM.mp4",
+      "bytes": 28574393,
+      "contentType": "video/mp4",
+      "sha256": "993c549a2302d6e6dd57570a407365b762355b20d14f0833a11c402f6d809ce4"
+    },
+    {
+      "videoId": "9TsCbVWJvaY",
+      "sourceUrl": "https://cdn.seldon.global/9TsCbVWJvaY.mp4",
+      "sourceKind": "original",
+      "key": "9TsCbVWJvaY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/9TsCbVWJvaY.mp4",
+      "bytes": 30240732,
+      "contentType": "video/mp4",
+      "sha256": "c2d88510ca3c30f4a8a2b2b7df7f13bbb3aef595e2bc59c84eee2109496c01a0"
+    },
+    {
+      "videoId": "ABzE2jI3YpM",
+      "sourceUrl": "https://cdn.seldon.global/ABzE2jI3YpM.mp4",
+      "sourceKind": "original",
+      "key": "ABzE2jI3YpM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ABzE2jI3YpM.mp4",
+      "bytes": 46994542,
+      "contentType": "video/mp4",
+      "sha256": "a5b1d35242194ef2131f8c10562bd237ddb5b54ca61d5ae3236337bd7db97939"
+    },
+    {
+      "videoId": "AcgZyIjkbww",
+      "sourceUrl": "https://cdn.seldon.global/AcgZyIjkbww_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "AcgZyIjkbww.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/AcgZyIjkbww.mp4",
+      "bytes": 43575845,
+      "contentType": "video/mp4",
+      "sha256": "c3d143fc56f59927ac65edc7009c80afe42e32427ee475d8c6acc63df0243a6d"
+    },
+    {
+      "videoId": "Ads1B6_2Yjg",
+      "sourceUrl": "https://cdn.seldon.global/Ads1B6_2Yjg.mp4",
+      "sourceKind": "original",
+      "key": "Ads1B6_2Yjg.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Ads1B6_2Yjg.mp4",
+      "bytes": 31493869,
+      "contentType": "video/mp4",
+      "sha256": "715877d23d02c12473edb7e27aa3d57cb7798115dcd25c5ae5a7d8af7cb97750"
+    },
+    {
+      "videoId": "AFRL9dtUHeI",
+      "sourceUrl": "https://cdn.seldon.global/AFRL9dtUHeI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "AFRL9dtUHeI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/AFRL9dtUHeI.mp4",
+      "bytes": 36212156,
+      "contentType": "video/mp4",
+      "sha256": "bde47761cb778470c3c4351507373867e9de0d2f3d7a70221e9ea212acdbb3fa"
+    },
+    {
+      "videoId": "aJSK3HZlvnU",
+      "sourceUrl": "https://cdn.seldon.global/aJSK3HZlvnU_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "aJSK3HZlvnU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/aJSK3HZlvnU.mp4",
+      "bytes": 42386673,
+      "contentType": "video/mp4",
+      "sha256": "12e96231f156bc2259d74784fc2d37cc701dd3c6f7133658a8b09e8d3c5d6cc3"
+    },
+    {
+      "videoId": "AK-MqFtQNlA",
+      "sourceUrl": "https://cdn.seldon.global/AK-MqFtQNlA.mp4",
+      "sourceKind": "original",
+      "key": "AK-MqFtQNlA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/AK-MqFtQNlA.mp4",
+      "bytes": 32826053,
+      "contentType": "video/mp4",
+      "sha256": "498beee7f1bae2e6d79abc8f56593eb5d79125b60b94cdda68c55f91253aab75"
+    },
+    {
+      "videoId": "ao3nvWKX3PI",
+      "sourceUrl": "https://cdn.seldon.global/ao3nvWKX3PI.mp4",
+      "sourceKind": "original",
+      "key": "ao3nvWKX3PI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ao3nvWKX3PI.mp4",
+      "bytes": 28752556,
+      "contentType": "video/mp4",
+      "sha256": "a592ea69f985498a48bf3146a2c1f99460695ffb8db395345e54ef4013283f43"
+    },
+    {
+      "videoId": "ApVeaSnit6o",
+      "sourceUrl": "https://cdn.seldon.global/ApVeaSnit6o_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "ApVeaSnit6o.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ApVeaSnit6o.mp4",
+      "bytes": 29762076,
+      "contentType": "video/mp4",
+      "sha256": "b86792f7bc47d08cb7a3a1d9125f7f4060fda33b8885c5cdc767c215e057fc3f"
+    },
+    {
+      "videoId": "AtkGMIUU1LQ",
+      "sourceUrl": "https://cdn.seldon.global/AtkGMIUU1LQ_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "AtkGMIUU1LQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/AtkGMIUU1LQ.mp4",
+      "bytes": 43895732,
+      "contentType": "video/mp4",
+      "sha256": "37a2f47cc04315747ddd0e83dcaa0b1aafde243e359dae27cfdc6d365ba1871e"
+    },
+    {
+      "videoId": "AzmnaoVP8sk",
+      "sourceUrl": "https://cdn.seldon.global/AzmnaoVP8sk_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "AzmnaoVP8sk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/AzmnaoVP8sk.mp4",
+      "bytes": 41995584,
+      "contentType": "video/mp4",
+      "sha256": "a2619641512016a33ca84d6fe35fb90b04bbb5e4767edebff52476edfb04182d"
+    },
+    {
+      "videoId": "AZqlxluLJHY",
+      "sourceUrl": "https://cdn.seldon.global/AZqlxluLJHY.mp4",
+      "sourceKind": "original",
+      "key": "AZqlxluLJHY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/AZqlxluLJHY.mp4",
+      "bytes": 28111301,
+      "contentType": "video/mp4",
+      "sha256": "c257d560ac2e60153ccc22b96dd07f15dbbdb5f167ad641c121e0a4a24f151da"
+    },
+    {
+      "videoId": "b7FJfQDkMaw",
+      "sourceUrl": "https://cdn.seldon.global/b7FJfQDkMaw_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "b7FJfQDkMaw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/b7FJfQDkMaw.mp4",
+      "bytes": 43712843,
+      "contentType": "video/mp4",
+      "sha256": "2f621f0a2579ea51e14202438aa95bc425a87c66f0167a86b72a6b06a7edc292"
+    },
+    {
+      "videoId": "B84CgaPdixc",
+      "sourceUrl": "https://cdn.seldon.global/B84CgaPdixc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "B84CgaPdixc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/B84CgaPdixc.mp4",
+      "bytes": 38068490,
+      "contentType": "video/mp4",
+      "sha256": "7572156c2b2ef40bc1e2b3fab6e659cb5a9443c9731def499a197be650091b7e"
+    },
+    {
+      "videoId": "b9tchq2BGs8",
+      "sourceUrl": "https://cdn.seldon.global/b9tchq2BGs8_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "b9tchq2BGs8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/b9tchq2BGs8.mp4",
+      "bytes": 42650767,
+      "contentType": "video/mp4",
+      "sha256": "a21572704c1e7b3c095143e91803a4bfc628f1925a870f6d0f59ea38f0b45d72"
+    },
+    {
+      "videoId": "ba4XRxTLGn8",
+      "sourceUrl": "https://cdn.seldon.global/ba4XRxTLGn8_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "ba4XRxTLGn8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ba4XRxTLGn8.mp4",
+      "bytes": 44647945,
+      "contentType": "video/mp4",
+      "sha256": "d15734677efa010447f5d1363cec988f775a074ba4f5a61c11e1d98dbd5d6031"
+    },
+    {
+      "videoId": "BEIWgGUcz2o",
+      "sourceUrl": "https://cdn.seldon.global/BEIWgGUcz2o_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "BEIWgGUcz2o.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/BEIWgGUcz2o.mp4",
+      "bytes": 43084746,
+      "contentType": "video/mp4",
+      "sha256": "fc0f7291c69e5a637550adc496fb4071e6911be5257ca726ed31a87f62708f9a"
+    },
+    {
+      "videoId": "bmqyrYRSf_Q",
+      "sourceUrl": "https://cdn.seldon.global/bmqyrYRSf_Q_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "bmqyrYRSf_Q.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/bmqyrYRSf_Q.mp4",
+      "bytes": 42944307,
+      "contentType": "video/mp4",
+      "sha256": "cd4fd5f9bb4c967f098767b5568250ed95d32a5cbecf3825a994289b9c47ea73"
+    },
+    {
+      "videoId": "bn57d8VHYQA",
+      "sourceUrl": "https://cdn.seldon.global/bn57d8VHYQA.mp4",
+      "sourceKind": "original",
+      "key": "bn57d8VHYQA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/bn57d8VHYQA.mp4",
+      "bytes": 35828027,
+      "contentType": "video/mp4",
+      "sha256": "ad9caa69c74d1987427846e7cc87d47dc9b28c1efbcc26ef7d2d626687f3cdeb"
+    },
+    {
+      "videoId": "bTrreEsmHJo",
+      "sourceUrl": "https://cdn.seldon.global/bTrreEsmHJo_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "bTrreEsmHJo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/bTrreEsmHJo.mp4",
+      "bytes": 44729726,
+      "contentType": "video/mp4",
+      "sha256": "76474b9c428f5ce19dbe7d647c54789abdd0f4d51ee94775c11f43308a3fb4a5"
+    },
+    {
+      "videoId": "BUtn4HKAiBs",
+      "sourceUrl": "https://cdn.seldon.global/BUtn4HKAiBs_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "BUtn4HKAiBs.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/BUtn4HKAiBs.mp4",
+      "bytes": 44076518,
+      "contentType": "video/mp4",
+      "sha256": "5000417cd978dd532452f38b925be165faf6d8a5c4e307957801f036b5d659b5"
+    },
+    {
+      "videoId": "BVOQ2JTiktY",
+      "sourceUrl": "https://cdn.seldon.global/BVOQ2JTiktY_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "BVOQ2JTiktY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/BVOQ2JTiktY.mp4",
+      "bytes": 40673833,
+      "contentType": "video/mp4",
+      "sha256": "44bb3917d87332a33e6965e6cfd91edb33347d35ecfc8561dbfb4a2279f83615"
+    },
+    {
+      "videoId": "bXaPOjfEKro",
+      "sourceUrl": "https://cdn.seldon.global/bXaPOjfEKro_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "bXaPOjfEKro.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/bXaPOjfEKro.mp4",
+      "bytes": 45605550,
+      "contentType": "video/mp4",
+      "sha256": "603e6a787c8b1e8c8670f06de67e735eba3da09ca43ce89908105fc68326b63c"
+    },
+    {
+      "videoId": "BYjIIRpos0I",
+      "sourceUrl": "https://cdn.seldon.global/BYjIIRpos0I.mp4",
+      "sourceKind": "original",
+      "key": "BYjIIRpos0I.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/BYjIIRpos0I.mp4",
+      "bytes": 29526082,
+      "contentType": "video/mp4",
+      "sha256": "8d18bd58efc3f265e92317d991c210ff371dd8df0e9d5809501966584df985ae"
+    },
+    {
+      "videoId": "C-6DVd4c8Ws",
+      "sourceUrl": "https://cdn.seldon.global/C-6DVd4c8Ws_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "C-6DVd4c8Ws.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/C-6DVd4c8Ws.mp4",
+      "bytes": 44288069,
+      "contentType": "video/mp4",
+      "sha256": "27250e04ab467233834e80e1ba0792f096f7ff042b5c26a0a7a0670462ded612"
+    },
+    {
+      "videoId": "cE21YjuaB6o",
+      "sourceUrl": "https://cdn.seldon.global/cE21YjuaB6o_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "cE21YjuaB6o.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/cE21YjuaB6o.mp4",
+      "bytes": 39978943,
+      "contentType": "video/mp4",
+      "sha256": "4f64e437af0bd973b2420acbbd7c0325b148319512c613342c57dbba0b447153"
+    },
+    {
+      "videoId": "CfULu-5oAJQ",
+      "sourceUrl": "https://cdn.seldon.global/CfULu-5oAJQ_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "CfULu-5oAJQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/CfULu-5oAJQ.mp4",
+      "bytes": 35263101,
+      "contentType": "video/mp4",
+      "sha256": "32cc8a47c1488bd2b141df19539043578c82950fe1e33abd86842711b0220892"
+    },
+    {
+      "videoId": "cgCIKn17qYg",
+      "sourceUrl": "https://cdn.seldon.global/cgCIKn17qYg_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "cgCIKn17qYg.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/cgCIKn17qYg.mp4",
+      "bytes": 44934051,
+      "contentType": "video/mp4",
+      "sha256": "944989c0e3335242aa992df2f7019591e3792d548f358938b26546005a73eb41"
+    },
+    {
+      "videoId": "CiGdcIlnXb8",
+      "sourceUrl": "https://cdn.seldon.global/CiGdcIlnXb8_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "CiGdcIlnXb8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/CiGdcIlnXb8.mp4",
+      "bytes": 16435343,
+      "contentType": "video/mp4",
+      "sha256": "afed9a91272f88a7e4fdff7cf933aa121bda7e073f4f24a8d923502d593b3d54"
+    },
+    {
+      "videoId": "CmF4DHRhaXY",
+      "sourceUrl": "https://cdn.seldon.global/CmF4DHRhaXY_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "CmF4DHRhaXY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/CmF4DHRhaXY.mp4",
+      "bytes": 39241475,
+      "contentType": "video/mp4",
+      "sha256": "799d8ad2a79794e84a1985b1bb4e6864a24139d6659662562a209042124cb0a3"
+    },
+    {
+      "videoId": "Cnk9NQ8JpCs",
+      "sourceUrl": "https://cdn.seldon.global/Cnk9NQ8JpCs_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Cnk9NQ8JpCs.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Cnk9NQ8JpCs.mp4",
+      "bytes": 38917813,
+      "contentType": "video/mp4",
+      "sha256": "1747eaf50cea4eab9546f1dc935930076bab349811cb61ca51c0a42253cdf664"
+    },
+    {
+      "videoId": "collision-bench-level1-scene1",
+      "sourceUrl": "https://cdn.seldon.global/collision-bench-level1-scene1.mp4",
+      "sourceKind": "original",
+      "key": "collision-bench-level1-scene1.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/collision-bench-level1-scene1.mp4",
+      "bytes": 10881,
+      "contentType": "video/mp4",
+      "sha256": "92aa8f3a4cd99c9ad05a6f325cb6a2d3ca221afddb8ef5f0e5b6c3e1375e407a"
+    },
+    {
+      "videoId": "compression-bench-falling",
+      "sourceUrl": "https://cdn.seldon.global/compression-bench-falling.mp4",
+      "sourceKind": "original",
+      "key": "compression-bench-falling.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/compression-bench-falling.mp4",
+      "bytes": 3731129,
+      "contentType": "video/mp4",
+      "sha256": "c0d60089cc840e7c7dabb15151fafa69bdc5451d232d26e026404765637698d6"
+    },
+    {
+      "videoId": "compression-bench-fast",
+      "sourceUrl": "https://cdn.seldon.global/compression-bench-fast.mp4",
+      "sourceKind": "original",
+      "key": "compression-bench-fast.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/compression-bench-fast.mp4",
+      "bytes": 3336584,
+      "contentType": "video/mp4",
+      "sha256": "6d1c5b68bf82db293b2f14dedc7f886b0c7dc3abf96a51a3894de5cd421b3cd3"
+    },
+    {
+      "videoId": "compression-bench-inside-box",
+      "sourceUrl": "https://cdn.seldon.global/compression-bench-inside-box.mp4",
+      "sourceKind": "original",
+      "key": "compression-bench-inside-box.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/compression-bench-inside-box.mp4",
+      "bytes": 3518668,
+      "contentType": "video/mp4",
+      "sha256": "6ea4cd00d26d0570fc2821ead537219f67ea67d45a84697a82f2b8ed3d18be67"
+    },
+    {
+      "videoId": "compression-bench-shapes-100",
+      "sourceUrl": "https://cdn.seldon.global/compression-bench-shapes-100.mp4",
+      "sourceKind": "original",
+      "key": "compression-bench-shapes-100.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/compression-bench-shapes-100.mp4",
+      "bytes": 4369167,
+      "contentType": "video/mp4",
+      "sha256": "1fe97c671e1e50354d709f2c10e98bd81d358a5887647453eda032d029f10177"
+    },
+    {
+      "videoId": "compression-bench-wiggly-triangles",
+      "sourceUrl": "https://cdn.seldon.global/compression-bench-wiggly-triangles.mp4",
+      "sourceKind": "original",
+      "key": "compression-bench-wiggly-triangles.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/compression-bench-wiggly-triangles.mp4",
+      "bytes": 26988179,
+      "contentType": "video/mp4",
+      "sha256": "810e2a2e1dc4d0a0ad96868ea4bd6b5b80267833bf1ac542ec70617d2665081b"
+    },
+    {
+      "videoId": "crossing-bench-s01-safe-gap",
+      "sourceUrl": "https://cdn.seldon.global/crossing-bench-s01-safe-gap.mp4",
+      "sourceKind": "original",
+      "key": "crossing-bench-s01-safe-gap.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/crossing-bench-s01-safe-gap.mp4",
+      "bytes": 81595,
+      "contentType": "video/mp4",
+      "sha256": "c2149bf6a13aa29e47ec289cbbb0fd7b4e552817e13a237a379d463f1345fe84"
+    },
+    {
+      "videoId": "crossing-bench-s02-hit-lane4",
+      "sourceUrl": "https://cdn.seldon.global/crossing-bench-s02-hit-lane4.mp4",
+      "sourceKind": "original",
+      "key": "crossing-bench-s02-hit-lane4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/crossing-bench-s02-hit-lane4.mp4",
+      "bytes": 91333,
+      "contentType": "video/mp4",
+      "sha256": "df0508b9401b5a952c0fa250ce2b8b57feddcb7cbfaa5ec2292f2701ba94ed65"
+    },
+    {
+      "videoId": "crossing-bench-s03-safe-squeeze",
+      "sourceUrl": "https://cdn.seldon.global/crossing-bench-s03-safe-squeeze.mp4",
+      "sourceKind": "original",
+      "key": "crossing-bench-s03-safe-squeeze.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/crossing-bench-s03-safe-squeeze.mp4",
+      "bytes": 92907,
+      "contentType": "video/mp4",
+      "sha256": "aff2deff8c30d1887c7d17ca4369ee14c8b913e84b8ab95db5d64bff6eaaf628"
+    },
+    {
+      "videoId": "crossing-bench-s05-hit-lane3",
+      "sourceUrl": "https://cdn.seldon.global/crossing-bench-s05-hit-lane3.mp4",
+      "sourceKind": "original",
+      "key": "crossing-bench-s05-hit-lane3.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/crossing-bench-s05-hit-lane3.mp4",
+      "bytes": 94003,
+      "contentType": "video/mp4",
+      "sha256": "2a71043909a7ac88f338892f1ada428ae8a410390346cb33380d39a773ba8974"
+    },
+    {
+      "videoId": "crossing-bench-s06-hit-lane5b",
+      "sourceUrl": "https://cdn.seldon.global/crossing-bench-s06-hit-lane5b.mp4",
+      "sourceKind": "original",
+      "key": "crossing-bench-s06-hit-lane5b.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/crossing-bench-s06-hit-lane5b.mp4",
+      "bytes": 90074,
+      "contentType": "video/mp4",
+      "sha256": "62210b539a35cd72ce035df184118a40730959ccdcc4d908e9f909478efd25ab"
+    },
+    {
+      "videoId": "crossing-bench-s07-hit-lane4b",
+      "sourceUrl": "https://cdn.seldon.global/crossing-bench-s07-hit-lane4b.mp4",
+      "sourceKind": "original",
+      "key": "crossing-bench-s07-hit-lane4b.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/crossing-bench-s07-hit-lane4b.mp4",
+      "bytes": 87348,
+      "contentType": "video/mp4",
+      "sha256": "410843a8ac4fcc8eed2a0aa2a214053d967a59a17f0a43d400d170f0b1b800c3"
+    },
+    {
+      "videoId": "crossing-bench-s08-hit-lane4c",
+      "sourceUrl": "https://cdn.seldon.global/crossing-bench-s08-hit-lane4c.mp4",
+      "sourceKind": "original",
+      "key": "crossing-bench-s08-hit-lane4c.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/crossing-bench-s08-hit-lane4c.mp4",
+      "bytes": 82571,
+      "contentType": "video/mp4",
+      "sha256": "80b1cd7f6911b2afb28ed48ecda7c8848e90ea221e1e5964df897360cb5d957f"
+    },
+    {
+      "videoId": "crossing-bench-s09-hit-lane3b",
+      "sourceUrl": "https://cdn.seldon.global/crossing-bench-s09-hit-lane3b.mp4",
+      "sourceKind": "original",
+      "key": "crossing-bench-s09-hit-lane3b.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/crossing-bench-s09-hit-lane3b.mp4",
+      "bytes": 96026,
+      "contentType": "video/mp4",
+      "sha256": "8fc10ed974acd37f6915f0000d199aa4ec28cde95765164ee059e990c7b2db68"
+    },
+    {
+      "videoId": "cv2eqq46240",
+      "sourceUrl": "https://cdn.seldon.global/cv2eqq46240.mp4",
+      "sourceKind": "original",
+      "key": "cv2eqq46240.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/cv2eqq46240.mp4",
+      "bytes": 37040953,
+      "contentType": "video/mp4",
+      "sha256": "f60eda0ec66251773243fbfd5123bee2fc25504347d28e9cc45d8dcb594e3435"
+    },
+    {
+      "videoId": "DC-Xn2C_L1U",
+      "sourceUrl": "https://cdn.seldon.global/DC-Xn2C_L1U_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "DC-Xn2C_L1U.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/DC-Xn2C_L1U.mp4",
+      "bytes": 45080202,
+      "contentType": "video/mp4",
+      "sha256": "4db66df090bb33b895679870c47cf6cd1f392f315de29460072fad64daa5799b"
+    },
+    {
+      "videoId": "DggmPOTvn9w",
+      "sourceUrl": "https://cdn.seldon.global/DggmPOTvn9w_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "DggmPOTvn9w.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/DggmPOTvn9w.mp4",
+      "bytes": 42796236,
+      "contentType": "video/mp4",
+      "sha256": "a364feaf0a2cb6ef2b471eaae6d0ab6baae4e0320ccda10aa00fec831c952c40"
+    },
+    {
+      "videoId": "DkWIt97rIYE",
+      "sourceUrl": "https://cdn.seldon.global/DkWIt97rIYE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "DkWIt97rIYE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/DkWIt97rIYE.mp4",
+      "bytes": 39073587,
+      "contentType": "video/mp4",
+      "sha256": "3ac5e8d1fdcdf852cb363faf4cac07067ecacf5aa137e779bcb9853ddf3ed95c"
+    },
+    {
+      "videoId": "DtjbdKI_goY",
+      "sourceUrl": "https://cdn.seldon.global/DtjbdKI_goY.mp4",
+      "sourceKind": "original",
+      "key": "DtjbdKI_goY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/DtjbdKI_goY.mp4",
+      "bytes": 29544143,
+      "contentType": "video/mp4",
+      "sha256": "9474e6ed7bfdf061bb277cf7e2bb75841a7278aad5d8ffce71bca80334190930"
+    },
+    {
+      "videoId": "DVcEfH-a-5c",
+      "sourceUrl": "https://cdn.seldon.global/DVcEfH-a-5c_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "DVcEfH-a-5c.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/DVcEfH-a-5c.mp4",
+      "bytes": 41360489,
+      "contentType": "video/mp4",
+      "sha256": "d052e17aab22eeb34f845835000d2d678f7655f191fa25fd9539a4cd9865e004"
+    },
+    {
+      "videoId": "dxpUMcO04Bo",
+      "sourceUrl": "https://cdn.seldon.global/dxpUMcO04Bo.mp4",
+      "sourceKind": "original",
+      "key": "dxpUMcO04Bo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/dxpUMcO04Bo.mp4",
+      "bytes": 23570328,
+      "contentType": "video/mp4",
+      "sha256": "e085a3bcaa3774d4848cfadeb3b25ba7df48121500adc4a369b193ff8d3e6c71"
+    },
+    {
+      "videoId": "E14XS7CtJPI",
+      "sourceUrl": "https://cdn.seldon.global/E14XS7CtJPI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "E14XS7CtJPI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/E14XS7CtJPI.mp4",
+      "bytes": 44637963,
+      "contentType": "video/mp4",
+      "sha256": "14d5d82a7a0d4121b61fe585d3ee9305cf519832e1e894ae5ae513a0d220173f"
+    },
+    {
+      "videoId": "EauFBWpq75M",
+      "sourceUrl": "https://cdn.seldon.global/EauFBWpq75M_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "EauFBWpq75M.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/EauFBWpq75M.mp4",
+      "bytes": 44636843,
+      "contentType": "video/mp4",
+      "sha256": "7e9505c0863d216a028948df06dbcd405cd9c41ce6f49b1defcdb76f44bf3b8a"
+    },
+    {
+      "videoId": "EaVXgezNOE4",
+      "sourceUrl": "https://cdn.seldon.global/EaVXgezNOE4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "EaVXgezNOE4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/EaVXgezNOE4.mp4",
+      "bytes": 16578450,
+      "contentType": "video/mp4",
+      "sha256": "e510f6f30eebb31ff8f05bb6c0fd5b23978ab2da4155de9713866b98616d24ab"
+    },
+    {
+      "videoId": "edawMZhg3IA",
+      "sourceUrl": "https://cdn.seldon.global/edawMZhg3IA.mp4",
+      "sourceKind": "original",
+      "key": "edawMZhg3IA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/edawMZhg3IA.mp4",
+      "bytes": 33173951,
+      "contentType": "video/mp4",
+      "sha256": "e29d8ccc8120a885f8611ebf1cdbc307e12049612c53a64ccf9148fe1d5a2e82"
+    },
+    {
+      "videoId": "enIRgtCCcTo",
+      "sourceUrl": "https://cdn.seldon.global/enIRgtCCcTo_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "enIRgtCCcTo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/enIRgtCCcTo.mp4",
+      "bytes": 45069753,
+      "contentType": "video/mp4",
+      "sha256": "312fa6d245a7143d8a4a998c50eeff205a91a1eec0ab697627b1ba742e0a3ecf"
+    },
+    {
+      "videoId": "ESfKFlBxwEc",
+      "sourceUrl": "https://cdn.seldon.global/ESfKFlBxwEc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "ESfKFlBxwEc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ESfKFlBxwEc.mp4",
+      "bytes": 43670913,
+      "contentType": "video/mp4",
+      "sha256": "b42f5d86fa032877efae458377f283340c7d4493e979c34d5541e4abe956ee48"
+    },
+    {
+      "videoId": "Ew-3-8itpjc",
+      "sourceUrl": "https://cdn.seldon.global/Ew-3-8itpjc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Ew-3-8itpjc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Ew-3-8itpjc.mp4",
+      "bytes": 43952328,
+      "contentType": "video/mp4",
+      "sha256": "f33e85c1c4fd5aa339495f5008d3e808e587e5d3f7595f17676980e593b85dfd"
+    },
+    {
+      "videoId": "f05hmVVJJ-E",
+      "sourceUrl": "https://cdn.seldon.global/f05hmVVJJ-E_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "f05hmVVJJ-E.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/f05hmVVJJ-E.mp4",
+      "bytes": 33550234,
+      "contentType": "video/mp4",
+      "sha256": "6b77a276c066d00ab6e8276c0865eca17560e1404ff7620e4ee80d45f9551bd4"
+    },
+    {
+      "videoId": "fOnKo_Hole8",
+      "sourceUrl": "https://cdn.seldon.global/fOnKo_Hole8_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "fOnKo_Hole8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/fOnKo_Hole8.mp4",
+      "bytes": 38977043,
+      "contentType": "video/mp4",
+      "sha256": "c059e58e0dd0ae48dc4c90a0e808fcd7d1d695de05009bab26a2bb735ed0870b"
+    },
+    {
+      "videoId": "FU0csI7_oew",
+      "sourceUrl": "https://cdn.seldon.global/FU0csI7_oew_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "FU0csI7_oew.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/FU0csI7_oew.mp4",
+      "bytes": 43411108,
+      "contentType": "video/mp4",
+      "sha256": "f1159a362978bfe05b4155bd0a13f82dfdf369b6554191e18df6407254472543"
+    },
+    {
+      "videoId": "GG0hSKvdHtc",
+      "sourceUrl": "https://cdn.seldon.global/GG0hSKvdHtc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "GG0hSKvdHtc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/GG0hSKvdHtc.mp4",
+      "bytes": 45775746,
+      "contentType": "video/mp4",
+      "sha256": "d8d6d22690b23a970c5a6e8749b69f09c0c9696dbde3c54620e665ad3054ee68"
+    },
+    {
+      "videoId": "gk4Zyu5-W7Y",
+      "sourceUrl": "https://cdn.seldon.global/gk4Zyu5-W7Y_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "gk4Zyu5-W7Y.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/gk4Zyu5-W7Y.mp4",
+      "bytes": 44431519,
+      "contentType": "video/mp4",
+      "sha256": "2e4ab96a6bf242e9a64c6f710e43b20c122539e1ec8c1293099c4794666e93dd"
+    },
+    {
+      "videoId": "gKKJkQS4l8c",
+      "sourceUrl": "https://cdn.seldon.global/gKKJkQS4l8c_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "gKKJkQS4l8c.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/gKKJkQS4l8c.mp4",
+      "bytes": 46871732,
+      "contentType": "video/mp4",
+      "sha256": "1fb116e5d104d07e9a64163b8f98384b632173aafef5b6600e40d2946d10c7a9"
+    },
+    {
+      "videoId": "GpaNijzRaJI",
+      "sourceUrl": "https://cdn.seldon.global/GpaNijzRaJI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "GpaNijzRaJI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/GpaNijzRaJI.mp4",
+      "bytes": 47903925,
+      "contentType": "video/mp4",
+      "sha256": "281d55784313a6592f9e9251b45a43df2d6744912a18582320b1618cf5bf6e41"
+    },
+    {
+      "videoId": "GphgJjaKKhw",
+      "sourceUrl": "https://cdn.seldon.global/GphgJjaKKhw.mp4",
+      "sourceKind": "original",
+      "key": "GphgJjaKKhw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/GphgJjaKKhw.mp4",
+      "bytes": 15939465,
+      "contentType": "video/mp4",
+      "sha256": "e7f55dfc825e6754386a37fa38a55449924d79b89223c381cc5ac1e0d8c79f8d"
+    },
+    {
+      "videoId": "gQj0tILWLDo",
+      "sourceUrl": "https://cdn.seldon.global/gQj0tILWLDo_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "gQj0tILWLDo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/gQj0tILWLDo.mp4",
+      "bytes": 44738420,
+      "contentType": "video/mp4",
+      "sha256": "d757cfff7751d7b031b7b3e39796d927d1282f1c2cb0fcfb1ddd35d05a7566cd"
+    },
+    {
+      "videoId": "h4qbb-T9kyQ",
+      "sourceUrl": "https://cdn.seldon.global/h4qbb-T9kyQ_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "h4qbb-T9kyQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/h4qbb-T9kyQ.mp4",
+      "bytes": 45291372,
+      "contentType": "video/mp4",
+      "sha256": "bcc3a2573b4b49bd5b447198d590cb87629dde2eeb71c4562f54e635b6f6466a"
+    },
+    {
+      "videoId": "h9rjXKjoW48",
+      "sourceUrl": "https://cdn.seldon.global/h9rjXKjoW48_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "h9rjXKjoW48.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/h9rjXKjoW48.mp4",
+      "bytes": 42166100,
+      "contentType": "video/mp4",
+      "sha256": "d215cd765136974811c5343e8306ecfb6dd56d564419ee05e31dc18eb47c5ac5"
+    },
+    {
+      "videoId": "hA4yfpXeq8k",
+      "sourceUrl": "https://cdn.seldon.global/hA4yfpXeq8k_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "hA4yfpXeq8k.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/hA4yfpXeq8k.mp4",
+      "bytes": 43743674,
+      "contentType": "video/mp4",
+      "sha256": "08ad249b7f58fd79b87ea20aef7b4599ba10ebe95df143cd5cc48b03b1887b10"
+    },
+    {
+      "videoId": "hfba9dAT6xE",
+      "sourceUrl": "https://cdn.seldon.global/hfba9dAT6xE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "hfba9dAT6xE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/hfba9dAT6xE.mp4",
+      "bytes": 40148870,
+      "contentType": "video/mp4",
+      "sha256": "252d7af554b7d4ce66d41741e1a0f59735757e287b3a6775f0495d1327b78b4e"
+    },
+    {
+      "videoId": "HITf-_koVgs",
+      "sourceUrl": "https://cdn.seldon.global/HITf-_koVgs.mp4",
+      "sourceKind": "original",
+      "key": "HITf-_koVgs.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/HITf-_koVgs.mp4",
+      "bytes": 14272851,
+      "contentType": "video/mp4",
+      "sha256": "70bd54aba02eff7b9a0e49e12ca067c50344ccc399ab8b41bba3cdc9a674236b"
+    },
+    {
+      "videoId": "hYZn4W6OgcM",
+      "sourceUrl": "https://cdn.seldon.global/hYZn4W6OgcM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "hYZn4W6OgcM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/hYZn4W6OgcM.mp4",
+      "bytes": 38578010,
+      "contentType": "video/mp4",
+      "sha256": "84314636686e96f5ee2152e3930de701e5ee7fc84d2517f304e82f74d75568c2"
+    },
+    {
+      "videoId": "iagrrkPtbL4",
+      "sourceUrl": "https://cdn.seldon.global/iagrrkPtbL4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "iagrrkPtbL4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/iagrrkPtbL4.mp4",
+      "bytes": 43858941,
+      "contentType": "video/mp4",
+      "sha256": "6292008a277da83232496c418e9c1cf4a66edafcd7adef8374da77ab7502cd71"
+    },
+    {
+      "videoId": "Ic-wMMTCeEY",
+      "sourceUrl": "https://cdn.seldon.global/Ic-wMMTCeEY_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Ic-wMMTCeEY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Ic-wMMTCeEY.mp4",
+      "bytes": 44797806,
+      "contentType": "video/mp4",
+      "sha256": "6749f93a4dd5c44f9adc4bf3c6a7a54da2099c52ecbf87421f9c41ebb4327e0a"
+    },
+    {
+      "videoId": "IHfQTFmpBrg",
+      "sourceUrl": "https://cdn.seldon.global/IHfQTFmpBrg_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "IHfQTFmpBrg.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/IHfQTFmpBrg.mp4",
+      "bytes": 21244833,
+      "contentType": "video/mp4",
+      "sha256": "3b2c5bb9a3cb82b818903b074ec1ceb1ec5b5cf46a9527af885b659cdc59ad91"
+    },
+    {
+      "videoId": "iKYS1sWjXUo",
+      "sourceUrl": "https://cdn.seldon.global/iKYS1sWjXUo.mp4",
+      "sourceKind": "original",
+      "key": "iKYS1sWjXUo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/iKYS1sWjXUo.mp4",
+      "bytes": 49318651,
+      "contentType": "video/mp4",
+      "sha256": "a110684ef83752195c9cb1411fa192485c27dc4761ce3f16941400fda80a1eb0"
+    },
+    {
+      "videoId": "iMiNxfDGgKA",
+      "sourceUrl": "https://cdn.seldon.global/iMiNxfDGgKA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "iMiNxfDGgKA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/iMiNxfDGgKA.mp4",
+      "bytes": 39909041,
+      "contentType": "video/mp4",
+      "sha256": "8a1eb265b83326bfa9b13c10e3afa02a2d697c8875bbc4f59c13598d3e254e25"
+    },
+    {
+      "videoId": "iqCGUl8UEgg",
+      "sourceUrl": "https://cdn.seldon.global/iqCGUl8UEgg_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "iqCGUl8UEgg.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/iqCGUl8UEgg.mp4",
+      "bytes": 34323939,
+      "contentType": "video/mp4",
+      "sha256": "660f7c43f5774ec29143de41f2edde11d74659e3963e180404afd0e1504ae83f"
+    },
+    {
+      "videoId": "Je9oAUlhPCQ",
+      "sourceUrl": "https://cdn.seldon.global/Je9oAUlhPCQ.mp4",
+      "sourceKind": "original",
+      "key": "Je9oAUlhPCQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Je9oAUlhPCQ.mp4",
+      "bytes": 42228027,
+      "contentType": "video/mp4",
+      "sha256": "9949b3a7a2e400fc7dd417ab34b6dd3dcc86bc55a76cdf632e5c19c4148fc4ec"
+    },
+    {
+      "videoId": "jIFpIp1ABh0",
+      "sourceUrl": "https://cdn.seldon.global/jIFpIp1ABh0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "jIFpIp1ABh0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/jIFpIp1ABh0.mp4",
+      "bytes": 48170831,
+      "contentType": "video/mp4",
+      "sha256": "7ec4999e21f42f843daac9822fd363749016f5d9bb3ae385e032cf531b67024a"
+    },
+    {
+      "videoId": "jwGHbz_rHlA",
+      "sourceUrl": "https://cdn.seldon.global/jwGHbz_rHlA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "jwGHbz_rHlA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/jwGHbz_rHlA.mp4",
+      "bytes": 43144911,
+      "contentType": "video/mp4",
+      "sha256": "d6d4c5511b1ba6781085d94f62fcdf94dc29180877f24e48e149cbe901204043"
+    },
+    {
+      "videoId": "jxxV1ENn6_w",
+      "sourceUrl": "https://cdn.seldon.global/jxxV1ENn6_w_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "jxxV1ENn6_w.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/jxxV1ENn6_w.mp4",
+      "bytes": 40319958,
+      "contentType": "video/mp4",
+      "sha256": "a1a28940b82b69306b9812490301fde7fd271987589d248b29dca6912b9c8580"
+    },
+    {
+      "videoId": "k_RtdM5iVsw",
+      "sourceUrl": "https://cdn.seldon.global/k_RtdM5iVsw_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "k_RtdM5iVsw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/k_RtdM5iVsw.mp4",
+      "bytes": 25495188,
+      "contentType": "video/mp4",
+      "sha256": "0e39c92a1bd87795f9b39201301a5ef246f54cc9550881fab31339e87226262e"
+    },
+    {
+      "videoId": "k5eHSd-p3x0",
+      "sourceUrl": "https://cdn.seldon.global/k5eHSd-p3x0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "k5eHSd-p3x0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/k5eHSd-p3x0.mp4",
+      "bytes": 45386295,
+      "contentType": "video/mp4",
+      "sha256": "436088bc95b4e9bb63d9d23996222c7029f3ef9a3ca09d4e14e9fb36e971b5a8"
+    },
+    {
+      "videoId": "k7tByIgkytA",
+      "sourceUrl": "https://cdn.seldon.global/k7tByIgkytA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "k7tByIgkytA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/k7tByIgkytA.mp4",
+      "bytes": 43860779,
+      "contentType": "video/mp4",
+      "sha256": "acf06eadf0f167dbb75b5531c37ba1a82d2a4c64656e2d448379e829ddbe477f"
+    },
+    {
+      "videoId": "Ka6LgwqNAss",
+      "sourceUrl": "https://cdn.seldon.global/Ka6LgwqNAss_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Ka6LgwqNAss.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Ka6LgwqNAss.mp4",
+      "bytes": 44642542,
+      "contentType": "video/mp4",
+      "sha256": "1c1463822a7da0bc8ff1efed5178260e27d1fccc4730c0b975a6f3f609a991f6"
+    },
+    {
+      "videoId": "Ky8gUGTOjK4",
+      "sourceUrl": "https://cdn.seldon.global/Ky8gUGTOjK4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Ky8gUGTOjK4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Ky8gUGTOjK4.mp4",
+      "bytes": 24358563,
+      "contentType": "video/mp4",
+      "sha256": "5554d89ec2d086368eb2ad548938ce6ef415ea705950b48b2c1bf2effdd42c16"
+    },
+    {
+      "videoId": "kZY5sa6x4JM",
+      "sourceUrl": "https://cdn.seldon.global/kZY5sa6x4JM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "kZY5sa6x4JM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/kZY5sa6x4JM.mp4",
+      "bytes": 39179098,
+      "contentType": "video/mp4",
+      "sha256": "95be1388fcdd99a8794dd8cc6932f4e782517373fc06d3e52de666723d66edfd"
+    },
+    {
+      "videoId": "L_vajOPund0",
+      "sourceUrl": "https://cdn.seldon.global/L_vajOPund0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "L_vajOPund0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/L_vajOPund0.mp4",
+      "bytes": 43915289,
+      "contentType": "video/mp4",
+      "sha256": "bd4abbb20bfb9528b71352865e34d4c553d8ee5892974b2dc99558b6a74ef3e6"
+    },
+    {
+      "videoId": "LL4HcY4H8ms",
+      "sourceUrl": "https://cdn.seldon.global/LL4HcY4H8ms_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "LL4HcY4H8ms.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/LL4HcY4H8ms.mp4",
+      "bytes": 42667485,
+      "contentType": "video/mp4",
+      "sha256": "8b829ebc32bbb8fce89ec7acfa42c3c1a30cd4abbb86a474bf63940725ace3b7"
+    },
+    {
+      "videoId": "LqJrwChVqJs",
+      "sourceUrl": "https://cdn.seldon.global/LqJrwChVqJs_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "LqJrwChVqJs.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/LqJrwChVqJs.mp4",
+      "bytes": 42519717,
+      "contentType": "video/mp4",
+      "sha256": "84e2354e86ab0dae56f69df4a4627b7ee5f6b5e82db3aa36870405b9dfd0d300"
+    },
+    {
+      "videoId": "LqVAsPmLwD8",
+      "sourceUrl": "https://cdn.seldon.global/LqVAsPmLwD8_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "LqVAsPmLwD8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/LqVAsPmLwD8.mp4",
+      "bytes": 43256975,
+      "contentType": "video/mp4",
+      "sha256": "b011ed7dd52f4447a4d835d5ef15a550a1743e72ec4ddec8bfa45a1ea4a71404"
+    },
+    {
+      "videoId": "LTYi0KXbr0w",
+      "sourceUrl": "https://cdn.seldon.global/LTYi0KXbr0w_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "LTYi0KXbr0w.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/LTYi0KXbr0w.mp4",
+      "bytes": 18016579,
+      "contentType": "video/mp4",
+      "sha256": "45adeb439ce2303676419a98ed1c8863b23db30aa79e1d193d03d6c640c7e564"
+    },
+    {
+      "videoId": "LY96fR9UWWc",
+      "sourceUrl": "https://cdn.seldon.global/LY96fR9UWWc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "LY96fR9UWWc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/LY96fR9UWWc.mp4",
+      "bytes": 46208436,
+      "contentType": "video/mp4",
+      "sha256": "440447abaeb8c7d3647d1f5e39dd276a96a980cf779d25032bdc5d72f06e9a7e"
+    },
+    {
+      "videoId": "m04OrKjXsXM",
+      "sourceUrl": "https://cdn.seldon.global/m04OrKjXsXM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "m04OrKjXsXM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/m04OrKjXsXM.mp4",
+      "bytes": 39057971,
+      "contentType": "video/mp4",
+      "sha256": "7b1841fcea3cd0d029d4fc53b66add3728c2799d4fc43aa8fdeef4100fbb4df6"
+    },
+    {
+      "videoId": "Mi_fYfpycT0",
+      "sourceUrl": "https://cdn.seldon.global/Mi_fYfpycT0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Mi_fYfpycT0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Mi_fYfpycT0.mp4",
+      "bytes": 44926709,
+      "contentType": "video/mp4",
+      "sha256": "49cca140908d959cb4fae45d180cdfd54207a079d96ab4dde7400f240cc6fb94"
+    },
+    {
+      "videoId": "mIIzOaebMkw",
+      "sourceUrl": "https://cdn.seldon.global/mIIzOaebMkw_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "mIIzOaebMkw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/mIIzOaebMkw.mp4",
+      "bytes": 42607664,
+      "contentType": "video/mp4",
+      "sha256": "47f4def906c4cfb90463ef4527cd95fb559f6507d4e6d7dcf76d372ef4845f2e"
+    },
+    {
+      "videoId": "NavyU1AQoFc",
+      "sourceUrl": "https://cdn.seldon.global/NavyU1AQoFc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "NavyU1AQoFc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/NavyU1AQoFc.mp4",
+      "bytes": 27459727,
+      "contentType": "video/mp4",
+      "sha256": "3064ec220e52687a2524caecae39a4d192e3e21f20dd9cf7e42084a469e588f8"
+    },
+    {
+      "videoId": "njkUXNYFUzM",
+      "sourceUrl": "https://cdn.seldon.global/njkUXNYFUzM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "njkUXNYFUzM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/njkUXNYFUzM.mp4",
+      "bytes": 42960277,
+      "contentType": "video/mp4",
+      "sha256": "f7052fdcb03ee227efba75a8b3824f035f2716984ee4655c27260c09c1763793"
+    },
+    {
+      "videoId": "NVD6ztgmfMo",
+      "sourceUrl": "https://cdn.seldon.global/NVD6ztgmfMo_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "NVD6ztgmfMo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/NVD6ztgmfMo.mp4",
+      "bytes": 44205875,
+      "contentType": "video/mp4",
+      "sha256": "87dbb819a55c3d699422aa92ef2f1a4d6483c0c1db197c88d727589af82b7395"
+    },
+    {
+      "videoId": "NvPi5Nyv6oU",
+      "sourceUrl": "https://cdn.seldon.global/NvPi5Nyv6oU_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "NvPi5Nyv6oU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/NvPi5Nyv6oU.mp4",
+      "bytes": 44204663,
+      "contentType": "video/mp4",
+      "sha256": "0da630d81cfff5a011e607d451e120e87ec58aead0bfd77410be2c67145e23ad"
+    },
+    {
+      "videoId": "O0v1wVcRzes",
+      "sourceUrl": "https://cdn.seldon.global/O0v1wVcRzes_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "O0v1wVcRzes.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/O0v1wVcRzes.mp4",
+      "bytes": 41241966,
+      "contentType": "video/mp4",
+      "sha256": "6bc75f2cb039b1606a243e35af88c904f4ff3d2d824fda5b5cb7b70c98ccfcc4"
+    },
+    {
+      "videoId": "O2k_qwZA8HU",
+      "sourceUrl": "https://cdn.seldon.global/O2k_qwZA8HU.mp4",
+      "sourceKind": "original",
+      "key": "O2k_qwZA8HU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/O2k_qwZA8HU.mp4",
+      "bytes": 47048847,
+      "contentType": "video/mp4",
+      "sha256": "37766d4585e2c6b7d0aa35988fe6916b3e092850faa75af816b621a0738f1903"
+    },
+    {
+      "videoId": "O33OZs6a-vA",
+      "sourceUrl": "https://cdn.seldon.global/O33OZs6a-vA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "O33OZs6a-vA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/O33OZs6a-vA.mp4",
+      "bytes": 48772149,
+      "contentType": "video/mp4",
+      "sha256": "6bcb99630e81693f4906f5fbaaad088f292180ffd46d964b24a69df763572def"
+    },
+    {
+      "videoId": "ocp6Fwtn-3Y",
+      "sourceUrl": "https://cdn.seldon.global/ocp6Fwtn-3Y.mp4",
+      "sourceKind": "original",
+      "key": "ocp6Fwtn-3Y.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ocp6Fwtn-3Y.mp4",
+      "bytes": 47808007,
+      "contentType": "video/mp4",
+      "sha256": "dcde10f861cbf686cbdf5fe016b430425bc48740fb0336890f845917f523b6f1"
+    },
+    {
+      "videoId": "oEnHeO5K6-Q",
+      "sourceUrl": "https://cdn.seldon.global/oEnHeO5K6-Q_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "oEnHeO5K6-Q.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/oEnHeO5K6-Q.mp4",
+      "bytes": 30878643,
+      "contentType": "video/mp4",
+      "sha256": "6762af85ba56a872e69b12ce18389bd006d87e11121ddf8dcea0d942e0fdd5aa"
+    },
+    {
+      "videoId": "OLLPEpzAUTA",
+      "sourceUrl": "https://cdn.seldon.global/OLLPEpzAUTA.mp4",
+      "sourceKind": "original",
+      "key": "OLLPEpzAUTA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/OLLPEpzAUTA.mp4",
+      "bytes": 43773272,
+      "contentType": "video/mp4",
+      "sha256": "3f97ffa7ca8f6c07b1ed7ad80df8fbde20fc728a5d6847074a019b4bb33d8bc5"
+    },
+    {
+      "videoId": "OnH2-53h-Y0",
+      "sourceUrl": "https://cdn.seldon.global/OnH2-53h-Y0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "OnH2-53h-Y0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/OnH2-53h-Y0.mp4",
+      "bytes": 36411478,
+      "contentType": "video/mp4",
+      "sha256": "ea4afbf49f9882091bdec12e56027cc80f95587da578253ae5d2c19e80bfe00e"
+    },
+    {
+      "videoId": "organic-compression-bench-animals-moving",
+      "sourceUrl": "https://cdn.seldon.global/organic-compression-bench-animals-moving.mp4",
+      "sourceKind": "original",
+      "key": "organic-compression-bench-animals-moving.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/organic-compression-bench-animals-moving.mp4",
+      "bytes": 1159782,
+      "contentType": "video/mp4",
+      "sha256": "1f423ad266f9cdc3674fe0a571b607b65d5904f612dd15c68d1c80664562b765"
+    },
+    {
+      "videoId": "organic-compression-bench-big-instruments",
+      "sourceUrl": "https://cdn.seldon.global/organic-compression-bench-big-instruments.mp4",
+      "sourceKind": "original",
+      "key": "organic-compression-bench-big-instruments.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/organic-compression-bench-big-instruments.mp4",
+      "bytes": 1322181,
+      "contentType": "video/mp4",
+      "sha256": "08ab2321998c44d679e0dc8999bc5efe37e64c42bb4aec03bd6f898544f724c8"
+    },
+    {
+      "videoId": "organic-compression-bench-blobs-red",
+      "sourceUrl": "https://cdn.seldon.global/organic-compression-bench-blobs-red.mp4",
+      "sourceKind": "original",
+      "key": "organic-compression-bench-blobs-red.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/organic-compression-bench-blobs-red.mp4",
+      "bytes": 2589764,
+      "contentType": "video/mp4",
+      "sha256": "695cb6d8b0239f133aebf804fc79f7917c87c35c3b8c7ab6586371aa8aaa5c37"
+    },
+    {
+      "videoId": "organic-compression-bench-spiky-blue",
+      "sourceUrl": "https://cdn.seldon.global/organic-compression-bench-spiky-blue.mp4",
+      "sourceKind": "original",
+      "key": "organic-compression-bench-spiky-blue.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/organic-compression-bench-spiky-blue.mp4",
+      "bytes": 2449771,
+      "contentType": "video/mp4",
+      "sha256": "8d40548ef2199f5a2e747d935b587c34b4362dc0c0424199b96f0b4590bc2073"
+    },
+    {
+      "videoId": "organic-compression-bench-tinted-any",
+      "sourceUrl": "https://cdn.seldon.global/organic-compression-bench-tinted-any.mp4",
+      "sourceKind": "original",
+      "key": "organic-compression-bench-tinted-any.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/organic-compression-bench-tinted-any.mp4",
+      "bytes": 715736,
+      "contentType": "video/mp4",
+      "sha256": "71e8d474a472f3054ca1e79b1361b447eaabde975542c23b2e3391142aa7e3d3"
+    },
+    {
+      "videoId": "oU8NGOm-9VU",
+      "sourceUrl": "https://cdn.seldon.global/oU8NGOm-9VU_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "oU8NGOm-9VU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/oU8NGOm-9VU.mp4",
+      "bytes": 42759141,
+      "contentType": "video/mp4",
+      "sha256": "64cad5266365fe9f6b2ebfc7b48fa01bb7d6222acb0df4f053804c49da19e447"
+    },
+    {
+      "videoId": "oXpDku8-2j8",
+      "sourceUrl": "https://cdn.seldon.global/oXpDku8-2j8.mp4",
+      "sourceKind": "original",
+      "key": "oXpDku8-2j8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/oXpDku8-2j8.mp4",
+      "bytes": 37284649,
+      "contentType": "video/mp4",
+      "sha256": "ce9767e87f97518d75e2ae6392090f037c6d3037b9489a480b6ae82076aa9fea"
+    },
+    {
+      "videoId": "p4Hqqqmyf5o",
+      "sourceUrl": "https://cdn.seldon.global/p4Hqqqmyf5o_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "p4Hqqqmyf5o.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/p4Hqqqmyf5o.mp4",
+      "bytes": 43417930,
+      "contentType": "video/mp4",
+      "sha256": "a71cb35c1c858d31dd194ba0a5de0b6718468536a274c2ea6445bc2e235d107c"
+    },
+    {
+      "videoId": "perspective-bench-bridge-color",
+      "sourceUrl": "https://cdn.seldon.global/perspective-bench-bridge-color.mp4",
+      "sourceKind": "original",
+      "key": "perspective-bench-bridge-color.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/perspective-bench-bridge-color.mp4",
+      "bytes": 710995,
+      "contentType": "video/mp4",
+      "sha256": "bb2c64a8251666be5c43e441ca802fb4eae1ae1beb412404a4a555aaa6355fe5"
+    },
+    {
+      "videoId": "perspective-bench-not-touching",
+      "sourceUrl": "https://cdn.seldon.global/perspective-bench-not-touching.mp4",
+      "sourceKind": "original",
+      "key": "perspective-bench-not-touching.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/perspective-bench-not-touching.mp4",
+      "bytes": 736158,
+      "contentType": "video/mp4",
+      "sha256": "9940ed72f3b791479b2fbaf4ee27904b1a69acec4f4a0154ab6f966ae41469ab"
+    },
+    {
+      "videoId": "perspective-bench-odd-one-out",
+      "sourceUrl": "https://cdn.seldon.global/perspective-bench-odd-one-out.mp4",
+      "sourceKind": "original",
+      "key": "perspective-bench-odd-one-out.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/perspective-bench-odd-one-out.mp4",
+      "bytes": 655678,
+      "contentType": "video/mp4",
+      "sha256": "c6277efe3daed09605b525f68c09b1212cd273772fcb2055285eca5b71173310"
+    },
+    {
+      "videoId": "perspective-bench-odd-one-out-low",
+      "sourceUrl": "https://cdn.seldon.global/perspective-bench-odd-one-out-low.mp4",
+      "sourceKind": "original",
+      "key": "perspective-bench-odd-one-out-low.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/perspective-bench-odd-one-out-low.mp4",
+      "bytes": 583633,
+      "contentType": "video/mp4",
+      "sha256": "47550d083adf4d3570fcd6fba8a477c546d79c1cf11c55d434178c1a62e4e172"
+    },
+    {
+      "videoId": "perspective-bench-odd-one-out-low2",
+      "sourceUrl": "https://cdn.seldon.global/perspective-bench-odd-one-out-low2.mp4",
+      "sourceKind": "original",
+      "key": "perspective-bench-odd-one-out-low2.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/perspective-bench-odd-one-out-low2.mp4",
+      "bytes": 570079,
+      "contentType": "video/mp4",
+      "sha256": "47d7aad3134d3555b1d3bbd60a6bfec9bdbbf338b9d3f21c7348b6bf324bdfed"
+    },
+    {
+      "videoId": "perspective-bench-odd-one-out-rock",
+      "sourceUrl": "https://cdn.seldon.global/perspective-bench-odd-one-out-rock.mp4",
+      "sourceKind": "original",
+      "key": "perspective-bench-odd-one-out-rock.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/perspective-bench-odd-one-out-rock.mp4",
+      "bytes": 673324,
+      "contentType": "video/mp4",
+      "sha256": "55e42a3d7afbd65f59988be90e6e5b1bfb4b6be4714603525959d94ac731697a"
+    },
+    {
+      "videoId": "perspective-bench-odd-one-out-rock2",
+      "sourceUrl": "https://cdn.seldon.global/perspective-bench-odd-one-out-rock2.mp4",
+      "sourceKind": "original",
+      "key": "perspective-bench-odd-one-out-rock2.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/perspective-bench-odd-one-out-rock2.mp4",
+      "bytes": 602832,
+      "contentType": "video/mp4",
+      "sha256": "245cdf8b5877a35d5b226a4b7985ebc1dda59a2296fb158399325ff13abb2cdd"
+    },
+    {
+      "videoId": "perspective-bench-odd-one-out-side",
+      "sourceUrl": "https://cdn.seldon.global/perspective-bench-odd-one-out-side.mp4",
+      "sourceKind": "original",
+      "key": "perspective-bench-odd-one-out-side.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/perspective-bench-odd-one-out-side.mp4",
+      "bytes": 679630,
+      "contentType": "video/mp4",
+      "sha256": "943827205ab2d7eae84761553e945aff03f11dc2285daaadf15c0cdc551a6f82"
+    },
+    {
+      "videoId": "perspective-bench-pair-never-touch",
+      "sourceUrl": "https://cdn.seldon.global/perspective-bench-pair-never-touch.mp4",
+      "sourceKind": "original",
+      "key": "perspective-bench-pair-never-touch.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/perspective-bench-pair-never-touch.mp4",
+      "bytes": 867877,
+      "contentType": "video/mp4",
+      "sha256": "7d19ad33055d0d45bde521897aa9caec6291d33eb467eae71e4fd392a698cd49"
+    },
+    {
+      "videoId": "PFNyGaDgHLE",
+      "sourceUrl": "https://cdn.seldon.global/PFNyGaDgHLE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "PFNyGaDgHLE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/PFNyGaDgHLE.mp4",
+      "bytes": 44780762,
+      "contentType": "video/mp4",
+      "sha256": "3b69308a37cf4c92c95874f27bdf58ab4bcfaa201b4d863563ada9d8e48c9f74"
+    },
+    {
+      "videoId": "PkvKO8GchyE",
+      "sourceUrl": "https://cdn.seldon.global/PkvKO8GchyE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "PkvKO8GchyE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/PkvKO8GchyE.mp4",
+      "bytes": 45403902,
+      "contentType": "video/mp4",
+      "sha256": "d723bb80c6993d21ab63f7711ed2c6117645bc0ec633caab45d0d046a85f8510"
+    },
+    {
+      "videoId": "plZU-J_twuY",
+      "sourceUrl": "https://cdn.seldon.global/plZU-J_twuY_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "plZU-J_twuY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/plZU-J_twuY.mp4",
+      "bytes": 24594953,
+      "contentType": "video/mp4",
+      "sha256": "8810857151520d70fd60c9581708f31f2688f01cceac2927c12b1f36217fb82d"
+    },
+    {
+      "videoId": "pNH9LySHA8o",
+      "sourceUrl": "https://cdn.seldon.global/pNH9LySHA8o_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "pNH9LySHA8o.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/pNH9LySHA8o.mp4",
+      "bytes": 25739615,
+      "contentType": "video/mp4",
+      "sha256": "b5ddef3d93b097b5563c222c8cb1a9aec411f8e2b4af65a55546fb660c6d3d1e"
+    },
+    {
+      "videoId": "positional-memory-bench-mem02",
+      "sourceUrl": "https://cdn.seldon.global/positional-memory-bench-mem02.mp4",
+      "sourceKind": "original",
+      "key": "positional-memory-bench-mem02.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/positional-memory-bench-mem02.mp4",
+      "bytes": 228841,
+      "contentType": "video/mp4",
+      "sha256": "2d7c5fd293121240386183d05787a8946cbe922c847232c25f192c440af1b7cf"
+    },
+    {
+      "videoId": "positional-memory-bench-mem04",
+      "sourceUrl": "https://cdn.seldon.global/positional-memory-bench-mem04.mp4",
+      "sourceKind": "original",
+      "key": "positional-memory-bench-mem04.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/positional-memory-bench-mem04.mp4",
+      "bytes": 227866,
+      "contentType": "video/mp4",
+      "sha256": "a7597acfdf163b8f9029f3926dc5050aa914a4c1baa5b634921a7efb4602a26d"
+    },
+    {
+      "videoId": "positional-memory-bench-mem05",
+      "sourceUrl": "https://cdn.seldon.global/positional-memory-bench-mem05.mp4",
+      "sourceKind": "original",
+      "key": "positional-memory-bench-mem05.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/positional-memory-bench-mem05.mp4",
+      "bytes": 232140,
+      "contentType": "video/mp4",
+      "sha256": "241083784c5208c51333a9b769060680f3d427b4635ac5e017b58c54e3ea1159"
+    },
+    {
+      "videoId": "positional-memory-bench-mem07",
+      "sourceUrl": "https://cdn.seldon.global/positional-memory-bench-mem07.mp4",
+      "sourceKind": "original",
+      "key": "positional-memory-bench-mem07.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/positional-memory-bench-mem07.mp4",
+      "bytes": 230592,
+      "contentType": "video/mp4",
+      "sha256": "b6c0a587157a42626d6f025f96096e35970b29053047f013b30e198adf5ba9ec"
+    },
+    {
+      "videoId": "PP-BVM-GRp0",
+      "sourceUrl": "https://cdn.seldon.global/PP-BVM-GRp0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "PP-BVM-GRp0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/PP-BVM-GRp0.mp4",
+      "bytes": 44195604,
+      "contentType": "video/mp4",
+      "sha256": "b5e4ff5ce1b931179b928d9406f1490861f23a05ffdd16cf83558bd7c044345d"
+    },
+    {
+      "videoId": "PPj36rW9Pt4",
+      "sourceUrl": "https://cdn.seldon.global/PPj36rW9Pt4.mp4",
+      "sourceKind": "original",
+      "key": "PPj36rW9Pt4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/PPj36rW9Pt4.mp4",
+      "bytes": 42552356,
+      "contentType": "video/mp4",
+      "sha256": "07998fca829ae8966b1bd4120df2c285c8e73492354a35e0cc6c692b2dbc425f"
+    },
+    {
+      "videoId": "pwFGWUA1jFA",
+      "sourceUrl": "https://cdn.seldon.global/pwFGWUA1jFA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "pwFGWUA1jFA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/pwFGWUA1jFA.mp4",
+      "bytes": 44151155,
+      "contentType": "video/mp4",
+      "sha256": "36b0be45eab7c48e4de3bf706de521e950c320a2d2f4d139ad101dcf71893f46"
+    },
+    {
+      "videoId": "Q-Z1Kma276o",
+      "sourceUrl": "https://cdn.seldon.global/Q-Z1Kma276o_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Q-Z1Kma276o.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Q-Z1Kma276o.mp4",
+      "bytes": 42301421,
+      "contentType": "video/mp4",
+      "sha256": "fe46586c7572dcadf02ed51374e99d2b4205b5a261c7f5740705878d5deeef52"
+    },
+    {
+      "videoId": "q9PK0r_4KLw",
+      "sourceUrl": "https://cdn.seldon.global/q9PK0r_4KLw_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "q9PK0r_4KLw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/q9PK0r_4KLw.mp4",
+      "bytes": 45851551,
+      "contentType": "video/mp4",
+      "sha256": "7e4a94071f9552926db2209a66e7612b1019018b7083463d26888aa9122fcd43"
+    },
+    {
+      "videoId": "QDEqEwCbLaQ",
+      "sourceUrl": "https://cdn.seldon.global/QDEqEwCbLaQ_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "QDEqEwCbLaQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/QDEqEwCbLaQ.mp4",
+      "bytes": 45351262,
+      "contentType": "video/mp4",
+      "sha256": "be284fc654c40f3a60abd8ad13b68306d713519f168699f500cc8a3547e27e96"
+    },
+    {
+      "videoId": "QJ40A6UuGZk",
+      "sourceUrl": "https://cdn.seldon.global/QJ40A6UuGZk_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "QJ40A6UuGZk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/QJ40A6UuGZk.mp4",
+      "bytes": 39547350,
+      "contentType": "video/mp4",
+      "sha256": "fa7b1b05b09b29193e7fe8816369f3ec4c21fef4674a820e7c48262524e80d82"
+    },
+    {
+      "videoId": "QOFsWC4iMJY",
+      "sourceUrl": "https://cdn.seldon.global/QOFsWC4iMJY_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "QOFsWC4iMJY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/QOFsWC4iMJY.mp4",
+      "bytes": 44308788,
+      "contentType": "video/mp4",
+      "sha256": "b96e6562dba69340de3cc8f061307f6da3e406b417b15047b372091de80710b1"
+    },
+    {
+      "videoId": "qr4L1As1irI",
+      "sourceUrl": "https://cdn.seldon.global/qr4L1As1irI.mp4",
+      "sourceKind": "original",
+      "key": "qr4L1As1irI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/qr4L1As1irI.mp4",
+      "bytes": 28981482,
+      "contentType": "video/mp4",
+      "sha256": "d24bc7aafc205370cb749df8ea53522bcc2849ea4b27bfcf6e44b4dc11adcb5c"
+    },
+    {
+      "videoId": "QSMfjvORl5s",
+      "sourceUrl": "https://cdn.seldon.global/QSMfjvORl5s_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "QSMfjvORl5s.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/QSMfjvORl5s.mp4",
+      "bytes": 20386318,
+      "contentType": "video/mp4",
+      "sha256": "fbad92058e26296550384559c54b55f8cede8586520cf3f8ef1ff834fc1a8de4"
+    },
+    {
+      "videoId": "Qzzclqgp4DI",
+      "sourceUrl": "https://cdn.seldon.global/Qzzclqgp4DI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Qzzclqgp4DI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Qzzclqgp4DI.mp4",
+      "bytes": 43190594,
+      "contentType": "video/mp4",
+      "sha256": "bb1e6d9d5c1a4f71ffccf5e43fbabda4a3a3ae374500769c0155cbdd23c4af4c"
+    },
+    {
+      "videoId": "R1ul9iBhpVM",
+      "sourceUrl": "https://cdn.seldon.global/R1ul9iBhpVM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "R1ul9iBhpVM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/R1ul9iBhpVM.mp4",
+      "bytes": 45109506,
+      "contentType": "video/mp4",
+      "sha256": "9128e11701afe671261dcbd20c279a1d38edc008b4d29addf5676fbd9642edf5"
+    },
+    {
+      "videoId": "r2MdE5yhcik",
+      "sourceUrl": "https://cdn.seldon.global/r2MdE5yhcik.mp4",
+      "sourceKind": "original",
+      "key": "r2MdE5yhcik.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/r2MdE5yhcik.mp4",
+      "bytes": 42147020,
+      "contentType": "video/mp4",
+      "sha256": "022d36d606dc6d08b9eaefc3e3cddf990df52c2d80d6fe9e0868685677f06040"
+    },
+    {
+      "videoId": "R6dqQIn8SNk",
+      "sourceUrl": "https://cdn.seldon.global/R6dqQIn8SNk_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "R6dqQIn8SNk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/R6dqQIn8SNk.mp4",
+      "bytes": 29916761,
+      "contentType": "video/mp4",
+      "sha256": "8fa223702796fb3d4f8066b307694de6db405666760031aadacf0065cd7d1469"
+    },
+    {
+      "videoId": "r9IbVcqQGlc",
+      "sourceUrl": "https://cdn.seldon.global/r9IbVcqQGlc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "r9IbVcqQGlc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/r9IbVcqQGlc.mp4",
+      "bytes": 44132067,
+      "contentType": "video/mp4",
+      "sha256": "9a1bf9a8c19a39a480f6e5f5b5cb30b1a2f56bab57384c160eec087bd7ea82d6"
+    },
+    {
+      "videoId": "revolve-better-bench-s02",
+      "sourceUrl": "https://cdn.seldon.global/revolve-better-bench-s02.mp4",
+      "sourceKind": "original",
+      "key": "revolve-better-bench-s02.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/revolve-better-bench-s02.mp4",
+      "bytes": 28816,
+      "contentType": "video/mp4",
+      "sha256": "a04338fa1b9997fa0123b204018f4d618432943347e5cad7a0b725aab5e6fad5"
+    },
+    {
+      "videoId": "revolve-better-bench-s04",
+      "sourceUrl": "https://cdn.seldon.global/revolve-better-bench-s04.mp4",
+      "sourceKind": "original",
+      "key": "revolve-better-bench-s04.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/revolve-better-bench-s04.mp4",
+      "bytes": 27983,
+      "contentType": "video/mp4",
+      "sha256": "5de86339d22314998f23bb67278027c052e250934db2530244613e31020836ba"
+    },
+    {
+      "videoId": "revolve-better-bench-s06",
+      "sourceUrl": "https://cdn.seldon.global/revolve-better-bench-s06.mp4",
+      "sourceKind": "original",
+      "key": "revolve-better-bench-s06.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/revolve-better-bench-s06.mp4",
+      "bytes": 25136,
+      "contentType": "video/mp4",
+      "sha256": "2d00f2931b5e9642216f2dbbaee37f7e03a767ad66249a7db796b6a7d2d534db"
+    },
+    {
+      "videoId": "revolve-better-bench-s07",
+      "sourceUrl": "https://cdn.seldon.global/revolve-better-bench-s07.mp4",
+      "sourceKind": "original",
+      "key": "revolve-better-bench-s07.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/revolve-better-bench-s07.mp4",
+      "bytes": 27759,
+      "contentType": "video/mp4",
+      "sha256": "73a32510b8c5b102419661d1578b89ae9207f7346e4c3cbd38364eac63a28835"
+    },
+    {
+      "videoId": "revolve-better-bench-s10",
+      "sourceUrl": "https://cdn.seldon.global/revolve-better-bench-s10.mp4",
+      "sourceKind": "original",
+      "key": "revolve-better-bench-s10.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/revolve-better-bench-s10.mp4",
+      "bytes": 26255,
+      "contentType": "video/mp4",
+      "sha256": "f11bd06ac08004faadab7aa04683911c213b9f22ea44343227bf7fc019132bc3"
+    },
+    {
+      "videoId": "Rf0PUA9zENw",
+      "sourceUrl": "https://cdn.seldon.global/Rf0PUA9zENw_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Rf0PUA9zENw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Rf0PUA9zENw.mp4",
+      "bytes": 38277992,
+      "contentType": "video/mp4",
+      "sha256": "a6945199e3515135271c780adec63f628e06095bff0f7f77ab96ddbacb899e8f"
+    },
+    {
+      "videoId": "Rfmdnpwi7Bs",
+      "sourceUrl": "https://cdn.seldon.global/Rfmdnpwi7Bs.mp4",
+      "sourceKind": "original",
+      "key": "Rfmdnpwi7Bs.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Rfmdnpwi7Bs.mp4",
+      "bytes": 10788217,
+      "contentType": "video/mp4",
+      "sha256": "c3d757ea16f9d45ab49aa4fbfa4417d33bc96b2d3cefa98072affe609130d5a9"
+    },
+    {
+      "videoId": "rgrXZ1GQYBQ",
+      "sourceUrl": "https://cdn.seldon.global/rgrXZ1GQYBQ_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "rgrXZ1GQYBQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/rgrXZ1GQYBQ.mp4",
+      "bytes": 38599255,
+      "contentType": "video/mp4",
+      "sha256": "dc2421dc4a52f836264acb667ce35cefeec5abd425545bd44242b9c25388b682"
+    },
+    {
+      "videoId": "rPVbQdDUixE",
+      "sourceUrl": "https://cdn.seldon.global/rPVbQdDUixE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "rPVbQdDUixE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/rPVbQdDUixE.mp4",
+      "bytes": 46464466,
+      "contentType": "video/mp4",
+      "sha256": "3d3f63cd0ccb063185aa30018fe66b7b70c8d36c4688073bab6015158cbfe006"
+    },
+    {
+      "videoId": "runs-fresh-memory-10-r001-fresh-memory-10-q011",
+      "sourceUrl": "https://cdn.seldon.global/runs-fresh-memory-10-r001-fresh-memory-10-q011.mp4",
+      "sourceKind": "original",
+      "key": "runs-fresh-memory-10-r001-fresh-memory-10-q011.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-fresh-memory-10-r001-fresh-memory-10-q011.mp4",
+      "bytes": 15500,
+      "contentType": "video/mp4",
+      "sha256": "15c3a607250d12e8bb869d93edad90c3db38f7fcd8e9bcb3a413804d653c3e9c"
+    },
+    {
+      "videoId": "runs-motion-quality-r001-motion-quality-v1-q003",
+      "sourceUrl": "https://cdn.seldon.global/runs-motion-quality-r001-motion-quality-v1-q003.mp4",
+      "sourceKind": "original",
+      "key": "runs-motion-quality-r001-motion-quality-v1-q003.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-motion-quality-r001-motion-quality-v1-q003.mp4",
+      "bytes": 57378,
+      "contentType": "video/mp4",
+      "sha256": "27afd64066984b9312342d3ac90ad7ee18a01d9ceb6f2a72cc4cc6e893818cff"
+    },
+    {
+      "videoId": "runs-r001-public-live-q009",
+      "sourceUrl": "https://cdn.seldon.global/runs-r001-public-live-q009.mp4",
+      "sourceKind": "original",
+      "key": "runs-r001-public-live-q009.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-r001-public-live-q009.mp4",
+      "bytes": 128387,
+      "contentType": "video/mp4",
+      "sha256": "eb631da495a9f0c0047d7cd4e18b296ebe356a3acf251b69c8491adec24eb7d1"
+    },
+    {
+      "videoId": "runs-r001-public-live-q014",
+      "sourceUrl": "https://cdn.seldon.global/runs-r001-public-live-q014.mp4",
+      "sourceKind": "original",
+      "key": "runs-r001-public-live-q014.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-r001-public-live-q014.mp4",
+      "bytes": 99155,
+      "contentType": "video/mp4",
+      "sha256": "3542157ce0adb5abc40e969df25c6df86291bb32046c024f041649e7c8512793"
+    },
+    {
+      "videoId": "runs-r001-public-live-q017",
+      "sourceUrl": "https://cdn.seldon.global/runs-r001-public-live-q017.mp4",
+      "sourceKind": "original",
+      "key": "runs-r001-public-live-q017.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-r001-public-live-q017.mp4",
+      "bytes": 34674,
+      "contentType": "video/mp4",
+      "sha256": "08b302bf0c7d5774cfe4dc6e210a31e611e28529b25116dc389a10b14d4ca61e"
+    },
+    {
+      "videoId": "runs-r001-public-live-q053",
+      "sourceUrl": "https://cdn.seldon.global/runs-r001-public-live-q053.mp4",
+      "sourceKind": "original",
+      "key": "runs-r001-public-live-q053.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-r001-public-live-q053.mp4",
+      "bytes": 72781,
+      "contentType": "video/mp4",
+      "sha256": "79cfe8909800906cffd07989a2018948a56283a08ccd0ae65a2f3d1578d9f2ce"
+    },
+    {
+      "videoId": "runs-r002-public-live-v2-q002",
+      "sourceUrl": "https://cdn.seldon.global/runs-r002-public-live-v2-q002.mp4",
+      "sourceKind": "original",
+      "key": "runs-r002-public-live-v2-q002.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-r002-public-live-v2-q002.mp4",
+      "bytes": 147513,
+      "contentType": "video/mp4",
+      "sha256": "d392be30175f061c1e7335fe0be851a3a000a168b8fe8f25e22b41c16b6836c2"
+    },
+    {
+      "videoId": "runs-r002-public-live-v2-q014",
+      "sourceUrl": "https://cdn.seldon.global/runs-r002-public-live-v2-q014.mp4",
+      "sourceKind": "original",
+      "key": "runs-r002-public-live-v2-q014.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-r002-public-live-v2-q014.mp4",
+      "bytes": 175556,
+      "contentType": "video/mp4",
+      "sha256": "e52dc05ca70a279c7fb519ee7d5a8f156671ce513d2d4cd537943b834950a031"
+    },
+    {
+      "videoId": "runs-r003-public-live-v3-q025",
+      "sourceUrl": "https://cdn.seldon.global/runs-r003-public-live-v3-q025.mp4",
+      "sourceKind": "original",
+      "key": "runs-r003-public-live-v3-q025.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-r003-public-live-v3-q025.mp4",
+      "bytes": 175411,
+      "contentType": "video/mp4",
+      "sha256": "11f8e59d177f7cdcd242da32d275944be90ca16e87b30367c77c7ab97b36b47d"
+    },
+    {
+      "videoId": "runs-r003-public-live-v3-q040",
+      "sourceUrl": "https://cdn.seldon.global/runs-r003-public-live-v3-q040.mp4",
+      "sourceKind": "original",
+      "key": "runs-r003-public-live-v3-q040.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-r003-public-live-v3-q040.mp4",
+      "bytes": 184982,
+      "contentType": "video/mp4",
+      "sha256": "d627c4bb91d325fa27ac8a161b7dc633a3c96d7835fba74104fffbb710a965a1"
+    },
+    {
+      "videoId": "runs-r004-public-live-v4-q004",
+      "sourceUrl": "https://cdn.seldon.global/runs-r004-public-live-v4-q004.mp4",
+      "sourceKind": "original",
+      "key": "runs-r004-public-live-v4-q004.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-r004-public-live-v4-q004.mp4",
+      "bytes": 107073,
+      "contentType": "video/mp4",
+      "sha256": "f53d96c733b005e85cf1c3e38963594f8c57fb5da7d9b7400e4f1cab6290a2d6"
+    },
+    {
+      "videoId": "runs-strict-r001-strict-v2-restart-10-q003",
+      "sourceUrl": "https://cdn.seldon.global/runs-strict-r001-strict-v2-restart-10-q003.mp4",
+      "sourceKind": "original",
+      "key": "runs-strict-r001-strict-v2-restart-10-q003.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-strict-r001-strict-v2-restart-10-q003.mp4",
+      "bytes": 60828,
+      "contentType": "video/mp4",
+      "sha256": "05f0c705954139c15ec0f1aa099f7a148e765e33a29c3d742ce53fa0abc8ce5e"
+    },
+    {
+      "videoId": "runs-strict-r001-strict-v2-restart-10-q011",
+      "sourceUrl": "https://cdn.seldon.global/runs-strict-r001-strict-v2-restart-10-q011.mp4",
+      "sourceKind": "original",
+      "key": "runs-strict-r001-strict-v2-restart-10-q011.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-strict-r001-strict-v2-restart-10-q011.mp4",
+      "bytes": 27719,
+      "contentType": "video/mp4",
+      "sha256": "8c03ea47aea15815a0ee9970909d4cc6a58f09c007d18fb9d36b3a8e5761b921"
+    },
+    {
+      "videoId": "runs-strict-r003-motion-actual-1-q009",
+      "sourceUrl": "https://cdn.seldon.global/runs-strict-r003-motion-actual-1-q009.mp4",
+      "sourceKind": "original",
+      "key": "runs-strict-r003-motion-actual-1-q009.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-strict-r003-motion-actual-1-q009.mp4",
+      "bytes": 71452,
+      "contentType": "video/mp4",
+      "sha256": "0c586af48518448feac608775e4fb4e730a36860490c9f1049c13acd068aaa20"
+    },
+    {
+      "videoId": "runs-strict-r003-motion-actual-1-q019",
+      "sourceUrl": "https://cdn.seldon.global/runs-strict-r003-motion-actual-1-q019.mp4",
+      "sourceKind": "original",
+      "key": "runs-strict-r003-motion-actual-1-q019.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-strict-r003-motion-actual-1-q019.mp4",
+      "bytes": 23633,
+      "contentType": "video/mp4",
+      "sha256": "3715816a17d79b93fca28077451e28200713c1ed526937e68ff0cb2a3476159d"
+    },
+    {
+      "videoId": "runs-strict-r003-motion-actual-1-q027",
+      "sourceUrl": "https://cdn.seldon.global/runs-strict-r003-motion-actual-1-q027.mp4",
+      "sourceKind": "original",
+      "key": "runs-strict-r003-motion-actual-1-q027.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-strict-r003-motion-actual-1-q027.mp4",
+      "bytes": 17588,
+      "contentType": "video/mp4",
+      "sha256": "6b145f5550733e4895a4316f1d44b2ccc043d101c8662bd942a602aa111373e4"
+    },
+    {
+      "videoId": "runs-strict-r008-physics-rich-v3-fresh-memory-q003",
+      "sourceUrl": "https://cdn.seldon.global/runs-strict-r008-physics-rich-v3-fresh-memory-q003.mp4",
+      "sourceKind": "original",
+      "key": "runs-strict-r008-physics-rich-v3-fresh-memory-q003.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-strict-r008-physics-rich-v3-fresh-memory-q003.mp4",
+      "bytes": 33142,
+      "contentType": "video/mp4",
+      "sha256": "4d39ed2ac796c0ed6d5bada9a15c6caa66468d0831802d5df46539e03c0bb4e2"
+    },
+    {
+      "videoId": "runs-strict-r008-physics-rich-v3-fresh-memory-q006",
+      "sourceUrl": "https://cdn.seldon.global/runs-strict-r008-physics-rich-v3-fresh-memory-q006.mp4",
+      "sourceKind": "original",
+      "key": "runs-strict-r008-physics-rich-v3-fresh-memory-q006.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-strict-r008-physics-rich-v3-fresh-memory-q006.mp4",
+      "bytes": 41592,
+      "contentType": "video/mp4",
+      "sha256": "709b45bb4a7b2006e35c1d6ebfd02997a0c0dedfa5bf5867abf1d16015dc1add"
+    },
+    {
+      "videoId": "runs-strict-r008-physics-rich-v3-fresh-memory-q007",
+      "sourceUrl": "https://cdn.seldon.global/runs-strict-r008-physics-rich-v3-fresh-memory-q007.mp4",
+      "sourceKind": "original",
+      "key": "runs-strict-r008-physics-rich-v3-fresh-memory-q007.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-strict-r008-physics-rich-v3-fresh-memory-q007.mp4",
+      "bytes": 67008,
+      "contentType": "video/mp4",
+      "sha256": "74a9aa97dbcbb02363d73c8c698570dbf08ecebec22c2cf424f6338929c99370"
+    },
+    {
+      "videoId": "runs-strict-r008-physics-rich-v3-fresh-memory-q009",
+      "sourceUrl": "https://cdn.seldon.global/runs-strict-r008-physics-rich-v3-fresh-memory-q009.mp4",
+      "sourceKind": "original",
+      "key": "runs-strict-r008-physics-rich-v3-fresh-memory-q009.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/runs-strict-r008-physics-rich-v3-fresh-memory-q009.mp4",
+      "bytes": 71924,
+      "contentType": "video/mp4",
+      "sha256": "52da10d51fb98e3eb240a175a6d131dd554e8d5f1799383b3a54207096457bce"
+    },
+    {
+      "videoId": "RzUO0DqZ2UM",
+      "sourceUrl": "https://cdn.seldon.global/RzUO0DqZ2UM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "RzUO0DqZ2UM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/RzUO0DqZ2UM.mp4",
+      "bytes": 44981869,
+      "contentType": "video/mp4",
+      "sha256": "2878d3af1e3a2bb927154cb4f2ae62c4ece306502309909572e27c0b5a882b25"
+    },
+    {
+      "videoId": "S_beokDXiSE",
+      "sourceUrl": "https://cdn.seldon.global/S_beokDXiSE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "S_beokDXiSE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/S_beokDXiSE.mp4",
+      "bytes": 42481026,
+      "contentType": "video/mp4",
+      "sha256": "64442a615e62650a32ab6baadbce960411620d8712505553432d80a80765723b"
+    },
+    {
+      "videoId": "S7SZ9ALoePs",
+      "sourceUrl": "https://cdn.seldon.global/S7SZ9ALoePs_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "S7SZ9ALoePs.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/S7SZ9ALoePs.mp4",
+      "bytes": 44710970,
+      "contentType": "video/mp4",
+      "sha256": "fc64649d355ca2f63c495eaa9d7e6a4c333dbe53b80c63fae075ccd692c12e53"
+    },
+    {
+      "videoId": "S7uYZD2TCBk",
+      "sourceUrl": "https://cdn.seldon.global/S7uYZD2TCBk_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "S7uYZD2TCBk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/S7uYZD2TCBk.mp4",
+      "bytes": 39386335,
+      "contentType": "video/mp4",
+      "sha256": "712554134d1dae8d3d0f73e48a958ef139aa89204f2bd90c9e888e95bc399be1"
+    },
+    {
+      "videoId": "sB2izQl3C4s",
+      "sourceUrl": "https://cdn.seldon.global/sB2izQl3C4s_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "sB2izQl3C4s.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/sB2izQl3C4s.mp4",
+      "bytes": 37016531,
+      "contentType": "video/mp4",
+      "sha256": "500182b40b7c0ecd83efc12d33e5037999a618cb38e5691161bf80a78778cfc1"
+    },
+    {
+      "videoId": "shadow-bench-chess-01",
+      "sourceUrl": "https://cdn.seldon.global/shadow-bench-chess-01.mp4",
+      "sourceKind": "original",
+      "key": "shadow-bench-chess-01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/shadow-bench-chess-01.mp4",
+      "bytes": 591364,
+      "contentType": "video/mp4",
+      "sha256": "50e62ca5e46b3b920ee3b52c2ce224297aa8ce4b5e523c6cd0abf68f3678d758"
+    },
+    {
+      "videoId": "shadow-bench-count-01",
+      "sourceUrl": "https://cdn.seldon.global/shadow-bench-count-01.mp4",
+      "sourceKind": "original",
+      "key": "shadow-bench-count-01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/shadow-bench-count-01.mp4",
+      "bytes": 371891,
+      "contentType": "video/mp4",
+      "sha256": "fa8ca514abd65e08c8415ab94f568ead496e3aa7fd78fd90c600fcd0249a5422"
+    },
+    {
+      "videoId": "shadow-bench-pad-01",
+      "sourceUrl": "https://cdn.seldon.global/shadow-bench-pad-01.mp4",
+      "sourceKind": "original",
+      "key": "shadow-bench-pad-01.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/shadow-bench-pad-01.mp4",
+      "bytes": 499976,
+      "contentType": "video/mp4",
+      "sha256": "c02f9db66ce4d4095ca2141e087bd22c20942ab7b04af31f1bbb6ec862431cbd"
+    },
+    {
+      "videoId": "SvNTa-_p5cQ",
+      "sourceUrl": "https://cdn.seldon.global/SvNTa-_p5cQ_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "SvNTa-_p5cQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/SvNTa-_p5cQ.mp4",
+      "bytes": 23749403,
+      "contentType": "video/mp4",
+      "sha256": "8ef6edcaaabe520f141b1f3cf9ca890c3fbbd8e8724299760784dc1d990330b4"
+    },
+    {
+      "videoId": "Tc6xLuijLBg",
+      "sourceUrl": "https://cdn.seldon.global/Tc6xLuijLBg_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Tc6xLuijLBg.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Tc6xLuijLBg.mp4",
+      "bytes": 35390357,
+      "contentType": "video/mp4",
+      "sha256": "0ee161eb0d757dcd91077436cebe9ef38ad99a34de8b96d3452086af2c37766b"
+    },
+    {
+      "videoId": "tfQRcP8AVV0",
+      "sourceUrl": "https://cdn.seldon.global/tfQRcP8AVV0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "tfQRcP8AVV0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/tfQRcP8AVV0.mp4",
+      "bytes": 40200493,
+      "contentType": "video/mp4",
+      "sha256": "98721c15895127b0dd56e911a63104149188468cccb896e5ad46501a454c4b58"
+    },
+    {
+      "videoId": "ThQrFGgKvA4",
+      "sourceUrl": "https://cdn.seldon.global/ThQrFGgKvA4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "ThQrFGgKvA4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ThQrFGgKvA4.mp4",
+      "bytes": 45022668,
+      "contentType": "video/mp4",
+      "sha256": "290a54571a5b178854af175686a358f4c94ba36087fb7e3060407ff105f7c06a"
+    },
+    {
+      "videoId": "tqKGaqaQkNk",
+      "sourceUrl": "https://cdn.seldon.global/tqKGaqaQkNk.mp4",
+      "sourceKind": "original",
+      "key": "tqKGaqaQkNk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/tqKGaqaQkNk.mp4",
+      "bytes": 25921243,
+      "contentType": "video/mp4",
+      "sha256": "2084e51bc613206c903adf06415b10bce7198bfcd63b94eab70df6b750f72ce3"
+    },
+    {
+      "videoId": "tumJJED3TMk",
+      "sourceUrl": "https://cdn.seldon.global/tumJJED3TMk.mp4",
+      "sourceKind": "original",
+      "key": "tumJJED3TMk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/tumJJED3TMk.mp4",
+      "bytes": 10598555,
+      "contentType": "video/mp4",
+      "sha256": "06a24250a9c90f45277cc3bda754db9ffe5d9a4c94ea6473a319718ca603447a"
+    },
+    {
+      "videoId": "TWP0YpfvGvM",
+      "sourceUrl": "https://cdn.seldon.global/TWP0YpfvGvM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "TWP0YpfvGvM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/TWP0YpfvGvM.mp4",
+      "bytes": 44969233,
+      "contentType": "video/mp4",
+      "sha256": "27debf0cdb0b34fcfa4576601683dae94533e216142e58cf86f362dd8d41542e"
+    },
+    {
+      "videoId": "tzG_EIMKANY",
+      "sourceUrl": "https://cdn.seldon.global/tzG_EIMKANY_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "tzG_EIMKANY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/tzG_EIMKANY.mp4",
+      "bytes": 44677320,
+      "contentType": "video/mp4",
+      "sha256": "bca04261ac931566f2f6ca51ef5093ff3149b2d6b53171157474bc0a46470421"
+    },
+    {
+      "videoId": "ucM8hn4PdxM",
+      "sourceUrl": "https://cdn.seldon.global/ucM8hn4PdxM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "ucM8hn4PdxM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ucM8hn4PdxM.mp4",
+      "bytes": 43452132,
+      "contentType": "video/mp4",
+      "sha256": "13b7cb948f59b26a16db555b317f84503fed8f58ae11486cf6b064a43cb2c78a"
+    },
+    {
+      "videoId": "UKMmcUes7HU",
+      "sourceUrl": "https://cdn.seldon.global/UKMmcUes7HU_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "UKMmcUes7HU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/UKMmcUes7HU.mp4",
+      "bytes": 43437557,
+      "contentType": "video/mp4",
+      "sha256": "72a2501a3bb0be5013210dc499b52792c3f3e2400fb298423070313e7ce4c92f"
+    },
+    {
+      "videoId": "up93JljZxpw",
+      "sourceUrl": "https://cdn.seldon.global/up93JljZxpw_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "up93JljZxpw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/up93JljZxpw.mp4",
+      "bytes": 46164553,
+      "contentType": "video/mp4",
+      "sha256": "6cffd96c25d806fc3ba91ec4dddae6217cb207321047da69d89645902ba264e8"
+    },
+    {
+      "videoId": "Uraj1nN-rk8",
+      "sourceUrl": "https://cdn.seldon.global/Uraj1nN-rk8_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Uraj1nN-rk8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Uraj1nN-rk8.mp4",
+      "bytes": 42653250,
+      "contentType": "video/mp4",
+      "sha256": "9b79add921df969cdac6de1766f04ee8f045178cdd05b1faa0416524f25d7b88"
+    },
+    {
+      "videoId": "UuOzwZoLIgc",
+      "sourceUrl": "https://cdn.seldon.global/UuOzwZoLIgc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "UuOzwZoLIgc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/UuOzwZoLIgc.mp4",
+      "bytes": 22188996,
+      "contentType": "video/mp4",
+      "sha256": "3816ea98958e16bbaed9a01e5ed23de3d34361b5722dd877c48d2b6df8554850"
+    },
+    {
+      "videoId": "uuRLYvIHvCU",
+      "sourceUrl": "https://cdn.seldon.global/uuRLYvIHvCU_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "uuRLYvIHvCU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/uuRLYvIHvCU.mp4",
+      "bytes": 39639557,
+      "contentType": "video/mp4",
+      "sha256": "a8117f5f09da1b341b72f7e20ca43bd4675ce8cc009595e92f33723072ab6417"
+    },
+    {
+      "videoId": "vxsxXR0139g",
+      "sourceUrl": "https://cdn.seldon.global/vxsxXR0139g.mp4",
+      "sourceKind": "original",
+      "key": "vxsxXR0139g.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/vxsxXR0139g.mp4",
+      "bytes": 42177322,
+      "contentType": "video/mp4",
+      "sha256": "973a205ee112b5e0a14d4bfcfbfb5786c050c389a3c7c0bf82c680eb4b5f3734"
+    },
+    {
+      "videoId": "VzoLk1Vz5A4",
+      "sourceUrl": "https://cdn.seldon.global/VzoLk1Vz5A4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "VzoLk1Vz5A4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/VzoLk1Vz5A4.mp4",
+      "bytes": 45317514,
+      "contentType": "video/mp4",
+      "sha256": "77484e5c17d4543b45d685eb014a11f025d657a07d33ea39000925a558ba6e4a"
+    },
+    {
+      "videoId": "wkBc4eidYE4",
+      "sourceUrl": "https://cdn.seldon.global/wkBc4eidYE4.mp4",
+      "sourceKind": "original",
+      "key": "wkBc4eidYE4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/wkBc4eidYE4.mp4",
+      "bytes": 33693598,
+      "contentType": "video/mp4",
+      "sha256": "b28b4ea48e7ca37e65649f09b861f182023435d808ceacdc6317b61b21a290d9"
+    },
+    {
+      "videoId": "wr8giXFWhPw",
+      "sourceUrl": "https://cdn.seldon.global/wr8giXFWhPw_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "wr8giXFWhPw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/wr8giXFWhPw.mp4",
+      "bytes": 42921481,
+      "contentType": "video/mp4",
+      "sha256": "e838b6cd50e938dc1564dc3916734068905d7a11866b8b619dc01b6aea2e8e1a"
+    },
+    {
+      "videoId": "wTm-AOm5Ia8",
+      "sourceUrl": "https://cdn.seldon.global/wTm-AOm5Ia8.mp4",
+      "sourceKind": "original",
+      "key": "wTm-AOm5Ia8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/wTm-AOm5Ia8.mp4",
+      "bytes": 21270404,
+      "contentType": "video/mp4",
+      "sha256": "252ed7f7a68de530665419912b0566f582ee104b8a6596bd401ad4f1ab9ffe0a"
+    },
+    {
+      "videoId": "wxm8jTzU_8o",
+      "sourceUrl": "https://cdn.seldon.global/wxm8jTzU_8o_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "wxm8jTzU_8o.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/wxm8jTzU_8o.mp4",
+      "bytes": 33883456,
+      "contentType": "video/mp4",
+      "sha256": "758d463cf054b9cd915372663f786735ca208fccc4457d1825afab1fd4e6283b"
+    },
+    {
+      "videoId": "x_2GeaweJrI",
+      "sourceUrl": "https://cdn.seldon.global/x_2GeaweJrI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "x_2GeaweJrI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/x_2GeaweJrI.mp4",
+      "bytes": 47765240,
+      "contentType": "video/mp4",
+      "sha256": "a5f3a1e8aa260550e8367c86c2cc1a5957670a11a7fc796986293c11dfe6818b"
+    },
+    {
+      "videoId": "XDCarGDMmEE",
+      "sourceUrl": "https://cdn.seldon.global/XDCarGDMmEE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "XDCarGDMmEE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/XDCarGDMmEE.mp4",
+      "bytes": 43012964,
+      "contentType": "video/mp4",
+      "sha256": "790226aacd66577b5b4a14a3b48c6dccf4f0b45d63edc4557bd86a5f4d3ec1ba"
+    },
+    {
+      "videoId": "XIRXL5zeKyo",
+      "sourceUrl": "https://cdn.seldon.global/XIRXL5zeKyo_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "XIRXL5zeKyo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/XIRXL5zeKyo.mp4",
+      "bytes": 43392643,
+      "contentType": "video/mp4",
+      "sha256": "3232f65736b73ed40019093e8920b4d53449a2659a604ec9a53d29d3363d8cae"
+    },
+    {
+      "videoId": "XKrDUnZCmQQ",
+      "sourceUrl": "https://cdn.seldon.global/XKrDUnZCmQQ_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "XKrDUnZCmQQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/XKrDUnZCmQQ.mp4",
+      "bytes": 37021600,
+      "contentType": "video/mp4",
+      "sha256": "825572a94fa9563486548ec2be8b66fb61efdbb9edaf89dde5001192242f4476"
+    },
+    {
+      "videoId": "xNRbhl1Eh_4",
+      "sourceUrl": "https://cdn.seldon.global/xNRbhl1Eh_4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "xNRbhl1Eh_4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/xNRbhl1Eh_4.mp4",
+      "bytes": 44475671,
+      "contentType": "video/mp4",
+      "sha256": "73fd7bf6181cfb2fba7278cd4e9606fe3c11cbb393fa721223f7a29dcd7e5502"
+    },
+    {
+      "videoId": "xTIBG_KD8Bk",
+      "sourceUrl": "https://cdn.seldon.global/xTIBG_KD8Bk_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "xTIBG_KD8Bk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/xTIBG_KD8Bk.mp4",
+      "bytes": 36110015,
+      "contentType": "video/mp4",
+      "sha256": "94ff57d3a9a2dedaf33ea63b0d73c05cb3c9155d828726eb8cce9ad34a72697b"
+    },
+    {
+      "videoId": "xZG2KFtFVrk",
+      "sourceUrl": "https://cdn.seldon.global/xZG2KFtFVrk.mp4",
+      "sourceKind": "original",
+      "key": "xZG2KFtFVrk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/xZG2KFtFVrk.mp4",
+      "bytes": 49566674,
+      "contentType": "video/mp4",
+      "sha256": "34ae9b9fa36b966f08b5516c892e70ff0f038324a9fd46ccaec60e9d3a7ce83a"
+    },
+    {
+      "videoId": "y5ZPi3VhkVg",
+      "sourceUrl": "https://cdn.seldon.global/y5ZPi3VhkVg_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "y5ZPi3VhkVg.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/y5ZPi3VhkVg.mp4",
+      "bytes": 44703777,
+      "contentType": "video/mp4",
+      "sha256": "f731cba51baa455b305d4812006f52c88926b29f55d71ab902c04c3d295c86b3"
+    },
+    {
+      "videoId": "Y88HLT6fxAo",
+      "sourceUrl": "https://cdn.seldon.global/Y88HLT6fxAo_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "Y88HLT6fxAo.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/Y88HLT6fxAo.mp4",
+      "bytes": 41975950,
+      "contentType": "video/mp4",
+      "sha256": "e724c1a2dbd1d730e34c073a7c7a6b19abb2c6fb545c35d4e8ed6de38fc33393"
+    },
+    {
+      "videoId": "YAHwjTzFpiY",
+      "sourceUrl": "https://cdn.seldon.global/YAHwjTzFpiY_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "YAHwjTzFpiY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/YAHwjTzFpiY.mp4",
+      "bytes": 17923226,
+      "contentType": "video/mp4",
+      "sha256": "9c0b30be35518d0e4532dec0da47002b08d348ab604918c4dfa22aa569d6a9b9"
+    },
+    {
+      "videoId": "YAidMCnqsUg",
+      "sourceUrl": "https://cdn.seldon.global/YAidMCnqsUg_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "YAidMCnqsUg.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/YAidMCnqsUg.mp4",
+      "bytes": 39764280,
+      "contentType": "video/mp4",
+      "sha256": "4f973ad313365c968403dcdb539c16915188e8db27008065740fff4c3b4c0327"
+    },
+    {
+      "videoId": "youtube:_8GDNdCf9EE",
+      "sourceUrl": "https://cdn.seldon.global/_8GDNdCf9EE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:_8GDNdCf9EE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:_8GDNdCf9EE.mp4",
+      "bytes": 46255297,
+      "contentType": "video/mp4",
+      "sha256": "bec86e4f0e73e67b0ab7a3c3bf78de09c3e6831882f8f0bc3081b719df405d71"
+    },
+    {
+      "videoId": "youtube:-v2ZhcJcnBE",
+      "sourceUrl": "https://cdn.seldon.global/-v2ZhcJcnBE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:-v2ZhcJcnBE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:-v2ZhcJcnBE.mp4",
+      "bytes": 46210653,
+      "contentType": "video/mp4",
+      "sha256": "10de817b6eae490dfaeec16ebaf8f9354ea4496fcc8be166d3b96e7d08811c52"
+    },
+    {
+      "videoId": "youtube:0AREDL5CwFk",
+      "sourceUrl": "https://cdn.seldon.global/0AREDL5CwFk_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:0AREDL5CwFk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:0AREDL5CwFk.mp4",
+      "bytes": 43541412,
+      "contentType": "video/mp4",
+      "sha256": "dd61485cb3b04cfa696bbef3fd3fe1a0b9c9860c149f84306abd456eaa67042c"
+    },
+    {
+      "videoId": "youtube:7gGBsSrHTHw",
+      "sourceUrl": "https://cdn.seldon.global/7gGBsSrHTHw_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:7gGBsSrHTHw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:7gGBsSrHTHw.mp4",
+      "bytes": 44730409,
+      "contentType": "video/mp4",
+      "sha256": "cf88eb7d942bf00aab6e2f717ea66848205ca7cd866f7ef1ba73741ab2759133"
+    },
+    {
+      "videoId": "youtube:bx6_jj9RxhI",
+      "sourceUrl": "https://cdn.seldon.global/bx6_jj9RxhI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:bx6_jj9RxhI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:bx6_jj9RxhI.mp4",
+      "bytes": 41025392,
+      "contentType": "video/mp4",
+      "sha256": "9218f203939b11ea5f6cfda700632efe1bac90a2b0a07343ba77138d59322bb9"
+    },
+    {
+      "videoId": "youtube:C0n4Fmnht7c",
+      "sourceUrl": "https://cdn.seldon.global/C0n4Fmnht7c_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:C0n4Fmnht7c.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:C0n4Fmnht7c.mp4",
+      "bytes": 43908757,
+      "contentType": "video/mp4",
+      "sha256": "94bb983c5ab9f357bd986531fabc265cfb9863568f78fe77d34c420bfba61264"
+    },
+    {
+      "videoId": "youtube:DC-Xn2C_L1U",
+      "sourceUrl": "https://cdn.seldon.global/DC-Xn2C_L1U_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:DC-Xn2C_L1U.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:DC-Xn2C_L1U.mp4",
+      "bytes": 45080202,
+      "contentType": "video/mp4",
+      "sha256": "4db66df090bb33b895679870c47cf6cd1f392f315de29460072fad64daa5799b"
+    },
+    {
+      "videoId": "youtube:EKPA9_a2i_M",
+      "sourceUrl": "https://cdn.seldon.global/EKPA9_a2i_M_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:EKPA9_a2i_M.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:EKPA9_a2i_M.mp4",
+      "bytes": 41549458,
+      "contentType": "video/mp4",
+      "sha256": "fd2bb8a0ea1f5031ee4b0c0b08cf9f4fd016c72688eeaf4c8d73b03d6288cc98"
+    },
+    {
+      "videoId": "youtube:Ew-3-8itpjc",
+      "sourceUrl": "https://cdn.seldon.global/Ew-3-8itpjc_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:Ew-3-8itpjc.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:Ew-3-8itpjc.mp4",
+      "bytes": 43952328,
+      "contentType": "video/mp4",
+      "sha256": "f33e85c1c4fd5aa339495f5008d3e808e587e5d3f7595f17676980e593b85dfd"
+    },
+    {
+      "videoId": "youtube:gKKJkQS4l8c",
+      "sourceUrl": "https://cdn.seldon.global/gKKJkQS4l8c_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:gKKJkQS4l8c.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:gKKJkQS4l8c.mp4",
+      "bytes": 46871732,
+      "contentType": "video/mp4",
+      "sha256": "1fb116e5d104d07e9a64163b8f98384b632173aafef5b6600e40d2946d10c7a9"
+    },
+    {
+      "videoId": "youtube:GpaNijzRaJI",
+      "sourceUrl": "https://cdn.seldon.global/GpaNijzRaJI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:GpaNijzRaJI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:GpaNijzRaJI.mp4",
+      "bytes": 47903925,
+      "contentType": "video/mp4",
+      "sha256": "281d55784313a6592f9e9251b45a43df2d6744912a18582320b1618cf5bf6e41"
+    },
+    {
+      "videoId": "youtube:Hju_pkIqa28",
+      "sourceUrl": "https://cdn.seldon.global/Hju_pkIqa28_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:Hju_pkIqa28.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:Hju_pkIqa28.mp4",
+      "bytes": 44796486,
+      "contentType": "video/mp4",
+      "sha256": "f46af3db6cfe44860c397e51034446b3bebde2217825981263e19fdd774ba8f3"
+    },
+    {
+      "videoId": "youtube:hozLwnuIhW4",
+      "sourceUrl": "https://cdn.seldon.global/hozLwnuIhW4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:hozLwnuIhW4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:hozLwnuIhW4.mp4",
+      "bytes": 48268421,
+      "contentType": "video/mp4",
+      "sha256": "bca81b31b32471f9e35f16183bf24529c61584cf98c83e14a1bb16538c0b9905"
+    },
+    {
+      "videoId": "youtube:jgqJ_z2GwBs",
+      "sourceUrl": "https://cdn.seldon.global/jgqJ_z2GwBs_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:jgqJ_z2GwBs.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:jgqJ_z2GwBs.mp4",
+      "bytes": 44041248,
+      "contentType": "video/mp4",
+      "sha256": "68655cb47326164af0011a7670fae82d8d91e839018d0c5e01ad94b8841e483e"
+    },
+    {
+      "videoId": "youtube:JNspuZPfcG0",
+      "sourceUrl": "https://cdn.seldon.global/JNspuZPfcG0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:JNspuZPfcG0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:JNspuZPfcG0.mp4",
+      "bytes": 17896913,
+      "contentType": "video/mp4",
+      "sha256": "dbc1d2acde36871934f43bad304774628cd7caa9a3f28659831c379680c20867"
+    },
+    {
+      "videoId": "youtube:k5eHSd-p3x0",
+      "sourceUrl": "https://cdn.seldon.global/k5eHSd-p3x0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:k5eHSd-p3x0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:k5eHSd-p3x0.mp4",
+      "bytes": 45386295,
+      "contentType": "video/mp4",
+      "sha256": "436088bc95b4e9bb63d9d23996222c7029f3ef9a3ca09d4e14e9fb36e971b5a8"
+    },
+    {
+      "videoId": "youtube:lC7nnA-TydI",
+      "sourceUrl": "https://cdn.seldon.global/lC7nnA-TydI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:lC7nnA-TydI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:lC7nnA-TydI.mp4",
+      "bytes": 45139958,
+      "contentType": "video/mp4",
+      "sha256": "2f28d1608afd282d3837a7f7f6c3e4c4f6a6b111b1c3ac107dce6c459bf186ae"
+    },
+    {
+      "videoId": "youtube:N1tAGj6GhwI",
+      "sourceUrl": "https://cdn.seldon.global/N1tAGj6GhwI_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:N1tAGj6GhwI.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:N1tAGj6GhwI.mp4",
+      "bytes": 44345742,
+      "contentType": "video/mp4",
+      "sha256": "0bbd18dfd7dc17d1befab66798af691d7fa330a2d19e8c644949c55bb5a9b38e"
+    },
+    {
+      "videoId": "youtube:OcYHHxY4MM0",
+      "sourceUrl": "https://cdn.seldon.global/OcYHHxY4MM0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:OcYHHxY4MM0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:OcYHHxY4MM0.mp4",
+      "bytes": 47866009,
+      "contentType": "video/mp4",
+      "sha256": "4f3dc6ebec63f8e31bfb613fb4dcc4b047ee2403b5909193aa9f36a0db28eda3"
+    },
+    {
+      "videoId": "youtube:omYfLDlt-MA",
+      "sourceUrl": "https://cdn.seldon.global/omYfLDlt-MA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:omYfLDlt-MA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:omYfLDlt-MA.mp4",
+      "bytes": 44596861,
+      "contentType": "video/mp4",
+      "sha256": "1a61d57542da559c3026d90a896d0f7dc3e7268420d7ccd0c33f37e537f0731e"
+    },
+    {
+      "videoId": "youtube:P_VSL5Y9EkA",
+      "sourceUrl": "https://cdn.seldon.global/P_VSL5Y9EkA_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:P_VSL5Y9EkA.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:P_VSL5Y9EkA.mp4",
+      "bytes": 44708033,
+      "contentType": "video/mp4",
+      "sha256": "bf66a28ca94cca9e592f31cf72db579d36a0a1abe70171da003be8b15b58cd81"
+    },
+    {
+      "videoId": "youtube:QDEqEwCbLaQ",
+      "sourceUrl": "https://cdn.seldon.global/QDEqEwCbLaQ_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:QDEqEwCbLaQ.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:QDEqEwCbLaQ.mp4",
+      "bytes": 45351262,
+      "contentType": "video/mp4",
+      "sha256": "be284fc654c40f3a60abd8ad13b68306d713519f168699f500cc8a3547e27e96"
+    },
+    {
+      "videoId": "youtube:QkqoRmo5y90",
+      "sourceUrl": "https://cdn.seldon.global/QkqoRmo5y90_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:QkqoRmo5y90.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:QkqoRmo5y90.mp4",
+      "bytes": 39087788,
+      "contentType": "video/mp4",
+      "sha256": "568699546c17f4a68a88ea0ba007326d0e463fff4215d75124c65a6da222197d"
+    },
+    {
+      "videoId": "youtube:QWP4PVh4rUU",
+      "sourceUrl": "https://cdn.seldon.global/QWP4PVh4rUU_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:QWP4PVh4rUU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:QWP4PVh4rUU.mp4",
+      "bytes": 43561438,
+      "contentType": "video/mp4",
+      "sha256": "b2787b66e607aa9b25719a681701e1c46ac9cdcbac93ea2e0e32993c903578f3"
+    },
+    {
+      "videoId": "youtube:rPVbQdDUixE",
+      "sourceUrl": "https://cdn.seldon.global/rPVbQdDUixE_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:rPVbQdDUixE.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:rPVbQdDUixE.mp4",
+      "bytes": 46464466,
+      "contentType": "video/mp4",
+      "sha256": "3d3f63cd0ccb063185aa30018fe66b7b70c8d36c4688073bab6015158cbfe006"
+    },
+    {
+      "videoId": "youtube:rwAGGeOk4_Q",
+      "sourceUrl": "https://cdn.seldon.global/rwAGGeOk4_Q_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:rwAGGeOk4_Q.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:rwAGGeOk4_Q.mp4",
+      "bytes": 43595605,
+      "contentType": "video/mp4",
+      "sha256": "955e23ea3e712d50d0db10b1f849d9927ccbc403f11e6dbb522e90447f999407"
+    },
+    {
+      "videoId": "youtube:sSyzvRGgsNs",
+      "sourceUrl": "https://cdn.seldon.global/sSyzvRGgsNs_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:sSyzvRGgsNs.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:sSyzvRGgsNs.mp4",
+      "bytes": 28461925,
+      "contentType": "video/mp4",
+      "sha256": "c0dbcac2af99cb3185b383e416e1973503bf3b14c496b69ee254a03487d81f67"
+    },
+    {
+      "videoId": "youtube:t8KdMXdRZos",
+      "sourceUrl": "https://cdn.seldon.global/t8KdMXdRZos_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:t8KdMXdRZos.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:t8KdMXdRZos.mp4",
+      "bytes": 45218300,
+      "contentType": "video/mp4",
+      "sha256": "43c2910c4199a0ce5ee514c2b1c2f83caa38cbb8695753bca083d9afed171cc2"
+    },
+    {
+      "videoId": "youtube:ThQrFGgKvA4",
+      "sourceUrl": "https://cdn.seldon.global/ThQrFGgKvA4_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:ThQrFGgKvA4.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:ThQrFGgKvA4.mp4",
+      "bytes": 45022668,
+      "contentType": "video/mp4",
+      "sha256": "290a54571a5b178854af175686a358f4c94ba36087fb7e3060407ff105f7c06a"
+    },
+    {
+      "videoId": "youtube:Vv9Ouf_QH5s",
+      "sourceUrl": "https://cdn.seldon.global/Vv9Ouf_QH5s_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:Vv9Ouf_QH5s.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:Vv9Ouf_QH5s.mp4",
+      "bytes": 42807825,
+      "contentType": "video/mp4",
+      "sha256": "7388d853c43a8d8414eab17bdc0d1863a62b0d80b3900fcc1736fdbc0690bc61"
+    },
+    {
+      "videoId": "youtube:YHJ-BwPGom8",
+      "sourceUrl": "https://cdn.seldon.global/YHJ-BwPGom8_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "youtube:YHJ-BwPGom8.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/youtube:YHJ-BwPGom8.mp4",
+      "bytes": 44649828,
+      "contentType": "video/mp4",
+      "sha256": "d8fc080c72e889c064bf05dc627f0ad4025e47fe4ea91431af55f3c0fdaea613"
+    },
+    {
+      "videoId": "yOYyrG5LROY",
+      "sourceUrl": "https://cdn.seldon.global/yOYyrG5LROY_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "yOYyrG5LROY.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/yOYyrG5LROY.mp4",
+      "bytes": 44810911,
+      "contentType": "video/mp4",
+      "sha256": "2e8d353526c7a80823f71a97ad17276b6248b0abf7b68dedba68ea3c1bb39eb6"
+    },
+    {
+      "videoId": "YSJ61RiO7As",
+      "sourceUrl": "https://cdn.seldon.global/YSJ61RiO7As.mp4",
+      "sourceKind": "original",
+      "key": "YSJ61RiO7As.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/YSJ61RiO7As.mp4",
+      "bytes": 39147660,
+      "contentType": "video/mp4",
+      "sha256": "494ba6900dab227981583f62ae010efaec227296b93e03f79029943effba1ce1"
+    },
+    {
+      "videoId": "YVbbCnfwHlw",
+      "sourceUrl": "https://cdn.seldon.global/YVbbCnfwHlw_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "YVbbCnfwHlw.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/YVbbCnfwHlw.mp4",
+      "bytes": 40343598,
+      "contentType": "video/mp4",
+      "sha256": "d89a60109bc801a0e2183666a5041111f3de0801725ccd1cca62e548876f3c6b"
+    },
+    {
+      "videoId": "yXgxBRhjCgM",
+      "sourceUrl": "https://cdn.seldon.global/yXgxBRhjCgM_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "yXgxBRhjCgM.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/yXgxBRhjCgM.mp4",
+      "bytes": 39679432,
+      "contentType": "video/mp4",
+      "sha256": "dda57ca0b0d6023a92f89fae7cd30cb92a98d7e31a00cf96b6559a6b72d716cd"
+    },
+    {
+      "videoId": "z4HUqtWoGxU",
+      "sourceUrl": "https://cdn.seldon.global/z4HUqtWoGxU_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "z4HUqtWoGxU.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/z4HUqtWoGxU.mp4",
+      "bytes": 44100780,
+      "contentType": "video/mp4",
+      "sha256": "2ebef252eb2016e0b5be7ead636cfaf32a02279a6f2a8cc13d0f77db974aaac6"
+    },
+    {
+      "videoId": "zCLTR9yjKQ0",
+      "sourceUrl": "https://cdn.seldon.global/zCLTR9yjKQ0_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "zCLTR9yjKQ0.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/zCLTR9yjKQ0.mp4",
+      "bytes": 44687435,
+      "contentType": "video/mp4",
+      "sha256": "a8d276db78b4673e0afac804eb64f03af6d71f8366344f7421092c0ad3343826"
+    },
+    {
+      "videoId": "ZeWI-npqCis",
+      "sourceUrl": "https://cdn.seldon.global/ZeWI-npqCis_proxy_v2.mp4",
+      "sourceKind": "downscaled",
+      "key": "ZeWI-npqCis.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ZeWI-npqCis.mp4",
+      "bytes": 35697353,
+      "contentType": "video/mp4",
+      "sha256": "39d015251e563f33ef8a3d717ef8356e892f17a80dc4c04807cd8e569e8a6c66"
+    },
+    {
+      "videoId": "ZIWXWWcx-Mk",
+      "sourceUrl": "https://cdn.seldon.global/ZIWXWWcx-Mk.mp4",
+      "sourceKind": "original",
+      "key": "ZIWXWWcx-Mk.mp4",
+      "url": "https://vgi-bench-mirror.openrouter.ai/ZIWXWWcx-Mk.mp4",
+      "bytes": 21948497,
+      "contentType": "video/mp4",
+      "sha256": "3ff56bef0775b11baee6ee6ef23b00715e044c69bd3b6dc430941364ae51c34b"
+    }
+  ],
+  "unresolved": []
+}

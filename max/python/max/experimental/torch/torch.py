@@ -18,7 +18,7 @@ from __future__ import annotations
 import inspect
 import itertools
 import threading
-from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent import futures
 from functools import partial
 from pathlib import Path
@@ -216,10 +216,8 @@ class CustomOpLibrary:
         )
 
 
-ParametersDict = Mapping[str, bool | int | str | DType]
-ParameterKey = tuple[str, bool | int | str | DType]
-
-CompiledModelKey = tuple[Hashable, ...]
+ParametersDict = Mapping[str, bool | int | float | str | DType]
+ParameterKey = tuple[str, bool | int | float | str | DType]
 
 
 class CustomOp:
@@ -571,7 +569,7 @@ def graph_op(
     """A decorator to create PyTorch custom operations using MAX graph operations.
 
     This decorator allows you to define larger graphs using the functions in
-    :mod:`max.graph.ops` or :mod:`max.nn` modules and
+    :mod:`max.graph.ops` or :mod:`max.nn.legacy` modules and
     call them with PyTorch tensors, or integrate them into PyTorch modules.
     These custom ops can be called eagerly, and support compilation with
     ``torch.compile`` and the Inductor backend.

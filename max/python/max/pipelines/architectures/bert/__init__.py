@@ -13,12 +13,11 @@
 """BERT sentence transformer architecture for embeddings generation."""
 
 from .arch import bert_arch
-from .model import BertInputs, BertPipelineModel
+from .graph import BertModel
 from .model_config import BertModelConfig
 
 __all__ = [
-    "BertInputs",
+    "BertModel",
     "BertModelConfig",
-    "BertPipelineModel",
     "bert_arch",
 ]

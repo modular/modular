@@ -23,8 +23,8 @@ import time
 
 from max.driver import DeviceSpec
 from max.dtype import DType
-from max.experimental.compile_pool import ProcessCompilePool
 from max.graph import DeviceRef, Graph, TensorType
+from max.tensor.compile_pool import ProcessCompilePool
 
 with Graph(
     "addself",

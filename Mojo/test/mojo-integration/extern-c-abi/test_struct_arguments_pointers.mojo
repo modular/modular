@@ -30,7 +30,7 @@ struct PtrInt32Struct(TrivialRegisterPassable):
 
 
 def test_ptr_int32():
-    var p_alloc = alloc[Int32]({count = 1})
+    var p_alloc = alloc[Int32]({length = 1})
     var p = p_alloc.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
     p[] = 999
     var s = PtrInt32Struct(p, Int32(200))
@@ -59,11 +59,11 @@ struct ThreePtrStruct(TrivialRegisterPassable):
 
 
 def test_three_ptr():
-    var pa_alloc = alloc[Int32]({count = 1})
+    var pa_alloc = alloc[Int32]({length = 1})
     var pa = pa_alloc.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
-    var pb_alloc = alloc[Int32]({count = 1})
+    var pb_alloc = alloc[Int32]({length = 1})
     var pb = pb_alloc.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
-    var pc_alloc = alloc[Int32]({count = 1})
+    var pc_alloc = alloc[Int32]({length = 1})
     var pc = pc_alloc.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
     pa[] = 111
     pb[] = 222

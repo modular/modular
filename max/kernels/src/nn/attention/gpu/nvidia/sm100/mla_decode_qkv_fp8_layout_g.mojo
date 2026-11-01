@@ -30,7 +30,6 @@ SMEM layout (BN_QK=64, 5 stages):
   barriers:   (6N+11) fixed + output barriers
 """
 
-from std.collections import OptionalReg
 from std.math import ceildiv, exp2, log2, recip
 from std.math.constants import log2e
 from std.sys import size_of
@@ -42,8 +41,10 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.primitives.grid_controls import launch_dependent_grids
-from max.gpu.primitives.warp import _vote_nvidia_helper
+from max.gpu.primitives.grid_controls import (
+    PDL,
+)
+from max.gpu.primitives.warp import vote
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory, fence_async_view_proxy
@@ -64,7 +65,6 @@ from layout.tma_async import (
 )
 from layout import (
     ComptimeInt,
-    CoordLike,
     Layout,
     RowMajorLayout,
     TensorEngine,
@@ -90,6 +90,8 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
+    fp8_p_bias,
+    fp8_p_rescale_threshold,
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
@@ -253,7 +255,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     #   local_lo  = max(global_lo - kv_start_row, 0)
     #   tile_skip = local_lo // BN_QK
     @staticmethod
-    @always_inline
+    @inline(.always)
     def sliding_window_tile_skip(
         offset_position: OffsetPosition[
             Self.config,
@@ -280,7 +282,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     # Each lane owns one row x (BN_QK/4) cols register-resident; per-row
     # max/sum reduces in registers, then cross-warp via SMEM exchange.
     @staticmethod
-    @always_inline
+    @inline(.always)
     def Softmax_Layout_G[
         num_sp_stages: Int,
     ](
@@ -337,6 +339,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         comptime MaskName: String = Self.MaskType.name()
         comptime MaskTypeName: String = Self.MaskType.get_type_name()
         comptime assert Self.AccumType.is_floating_point()
+        comptime p_bias = fp8_p_bias[True](
+            Self.config.skip_correction_threshold
+        ).cast[Self.AccumType]()
         comptime assert (
             Self.BM == 32
         ), "Softmax_Layout_G requires BM=32 (1×4 datapath)."
@@ -437,7 +442,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             ](s_tmem_slot)
 
             comptime for _i in range(type_of(s_row_val).length):
-                s_row.raw_store(_i, s_row_val[_i])
+                s_row[_i] = s_row_val[_i]
             tcgen05_load_wait()
 
             s_cons.release()
@@ -499,7 +504,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # Per-row max: register-only reduce + 4-way SMEM consolidation.
             # Double-buffered to avoid the W-W race between N+1's write and
             # iteration N's read.
-            comptime rescale_threshold: Float32 = (
+            comptime rescale_threshold: Float32 = fp8_p_rescale_threshold[True](
                 Self.config.skip_correction_threshold
             )
             var buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
@@ -508,7 +513,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 type_of(smem_1d_layout),
                 MutAnyOrigin,
                 address_space=.SHARED,
-            ](max_smem + buf_offset, smem_1d_layout)
+            ](max_smem.unsafe_offset(buf_offset), smem_1d_layout)
             max_buf[lane_id] = current_max
             named_barrier[Int32(WARPGROUP_SIZE)](2)
             # Each lane reads the 4 col-quadrant partials for its row;
@@ -533,12 +538,13 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 scale_for_old_max = 1.0
                 new_max = mi
 
-            # exp2(s - new_max) + per-thread sum over the col-quadrant.
+            # exp2(s + p_offset) + per-thread sum over the col-quadrant.
             var float2_register = s_row.vectorize[2]()
             var float2_current_sum: SIMD[Self.AccumType, 2] = 0.0
+            var p_offset = p_bias - new_max
             comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
-                float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
+                float2_register[i] = exp2(element.fma(log2e_f32, p_offset))
                 float2_current_sum += float2_register[i]
 
             # Correction-scale write to TMEM (skip on the first processed
@@ -561,7 +567,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # into the warp's col-quadrant slot.
             p_prod.acquire()
             var p_stage = p_prod.stage_index()
-            var p_smem_stage = p_smem_ptr + p_stage * UInt32(Self.PStageElems)
+            var p_smem_stage = p_smem_ptr.unsafe_offset(
+                p_stage * UInt32(Self.PStageElems)
+            )
             # P swizzle MUST match `Self._ummapv_p_swizzle` (the PV MMA P
             # descriptor) — mismatch corrupts the P read.
             comptime _p_swizzle = (
@@ -605,9 +613,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         # Split-K LSE write — all 4 warps hold identical (mi, li); pick
         # `warp_in_wg == 0` as the single writer.
         comptime if Self.config.decoding_warp_split_k:
+            # li is a sum of exp2(s - p_ref).
+            var p_ref = mi - p_bias
             comptime if Self.fold_q:
-                var q_local = row // Self.config.num_q_heads
-                var head_local = row % Self.config.num_q_heads
+                var q_local, head_local = divmod(row, Self.config.num_q_heads)
                 if warp_in_wg == 0 and row < (
                     Self.q_len_fold * Self.config.num_q_heads
                 ):
@@ -616,7 +625,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         partial_lse = min_or_neg_inf[Self.AccumType]()
                     else:
                         partial_lse = (
-                            log2(max(li, Scalar[Self.AccumType](0))) + mi
+                            log2(max(li, Scalar[Self.AccumType](0))) + p_ref
                         )
                     var stride_batch = (
                         offset_position.max_seq_len * Self.config.num_q_heads
@@ -630,16 +639,14 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         + head_local
                     )
                     var lse_ptr = rebind[
-                        UnsafePointer[
-                            Scalar[Self.AccumType], origin=MutAnyOrigin
-                        ]
+                        MutPointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
                     ](lse_accum_split_ptr.value())
                     lse_ptr[lse_offset] = partial_lse
             else:
                 var head_idx = block_idx.x * Self.BM + row
                 if warp_in_wg == 0 and head_idx < Self.config.num_q_heads:
                     var partial_lse = (
-                        log2(max(li, Scalar[Self.AccumType](0))) + mi
+                        log2(max(li, Scalar[Self.AccumType](0))) + p_ref
                     )
                     var seq_idx = block_idx.y
                     var stride_batch = (
@@ -654,9 +661,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         + head_idx
                     )
                     var lse_ptr = rebind[
-                        UnsafePointer[
-                            Scalar[Self.AccumType], origin=MutAnyOrigin
-                        ]
+                        MutPointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
                     ](lse_accum_split_ptr.value())
                     lse_ptr[lse_offset] = partial_lse
 
@@ -724,7 +729,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 pack=False,
             ](o_tmem_base_LG)
             comptime for _i in range(per_warp_elems_LG):
-                o_row_subtile_LG.raw_store(_i, _o_ld_LG[_i])
+                o_row_subtile_LG[_i] = _o_ld_LG[_i]
             tcgen05_load_wait()
 
             # All 4 warps acquire/commit every slot for the 128-thread
@@ -756,7 +761,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     #   col = mma_round * BN_PV + slot * (BN_PV // 2) + half_idx * BK_PV
     # Layout G's per-warp stripes are contiguous (vs. interleaved in E).
     @staticmethod
-    @always_inline
+    @inline(.always)
     def Output_Store_Layout_G(
         out_pipeline: OutPipeline[
             num_out_stages=DecodeOutProducer[
@@ -803,7 +808,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var elect_mask = elect()
         var is_leader: Bool = elect_mask != 0
         var row: Int = offset_position.out_row_offset
-        var rows_to_store = rows_owned[Self.config](Int(block_idx.x))
+        var rows_to_store = rows_owned[Self.config](block_idx.x)
 
         # col = n * BN_PV + m * (BN_PV // 2) + k * BK_PV
         comptime slot_col_stride_LG: Int = Self.BN_PV // 2
@@ -828,7 +833,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         # Fold: BM=32 packs q_len_fold * num_q_heads rows;
                         # emit one TMA store per q_token.
                         comptime for q_local_LG in range(Self.q_len_fold):
-                            var q_stage_ptr_LG = stage_ptr_LG + (
+                            var q_stage_ptr_LG = stage_ptr_LG.unsafe_offset(
                                 q_local_LG
                                 * Self.config.num_q_heads
                                 * (Self.config.BN_PV // 4)
@@ -889,7 +894,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     # across the WG because all 4 warps see the same scale_value after
     # the softmax 4-way SMEM exchange.
     @staticmethod
-    @always_inline
+    @inline(.always)
     def Correction_Layout_G(
         tmem_addr: UInt32,
         o_bars: DecodeSM100MiscMBars[
@@ -963,7 +968,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             tcgen05_load_wait()
             c_cons.release()
             var scale_value = scale_value_tuple[0]
-            var change = _vote_nvidia_helper(scale_value < 1.0) != 0
+            var change = vote[.uint32](scale_value < 1.0) != 0
 
             comptime o_range = Self.config.depth // Self.BN_PV
             comptime o_stride = Self.BN_PV // 2
@@ -990,7 +995,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     ](o_tmem_subtile)
 
                     comptime for _i in range(per_warp_corr_elems):
-                        o_row_subtile.raw_store(_i, _o_ld_corr[_i])
+                        o_row_subtile[_i] = _o_ld_corr[_i]
                     tcgen05_load_wait()
 
                     var float2_register = o_row_subtile.vectorize[2]()
@@ -1003,7 +1008,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     var _o_st_corr = Array[_, per_warp_corr_elems](
                         fill_with_unrolled=lambda [i: Int]() -> Scalar[
                             Self.AccumType
-                        ]: o_row_subtile.raw_load(i)
+                        ]: o_row_subtile[i]
                     )
                     tcgen05_st[
                         datapaths=32,
@@ -1068,7 +1073,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             MaskType=Self.MaskType,
             SplitAccumType=Self.SplitAccumType,
         ],
-        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scales_ptr: MutPointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
             .int64,
             RowMajorLayout[ComptimeInt[3]],
@@ -1093,10 +1098,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             " and SlidingWindowCausalMask only."
         )
 
-        # Extract scalar launch args from the stable device buffer.
-        var batch_size = Int(scalar_args.raw_load(0))
-        var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = mla_decode_pack.num_partitions
+        var batch_size = Int(scalar_args[0])
+        var q_max_seq_len = Int(scalar_args[1])
+        var num_partitions = Int(mla_decode_pack.num_partitions)
 
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
@@ -1104,87 +1108,67 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var mask = mla_decode_pack.mask
         var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
-        var offset_position = OffsetPosition[
-            Self.config,
-            Self.KVLUTType,
-            Self.ragged,
-            Self._is_cache_length_accurate,
-            Self.ValidLengthType,
-            Self.config.decoding_warp_split_k,
-        ](
-            kv_lut,
-            rebind[
-                UnsafePointer[
-                    Scalar[Self.ValidLengthType.dtype],
-                    ImmutAnyOrigin,
-                    address_space=.GENERIC,
-                ]
-            ](valid_length.value()),
-            q_max_seq_len,
-            num_partitions,
-            batch_size,
-        )
 
-        # Early exit for split-K: CTAs with no work
-        comptime if Self.config.decoding_warp_split_k:
-            if offset_position.num_keys_this_split == 0:
-                comptime if Self.fold_q:
-                    # Fold owns all q_len_fold LSE slots; emit -inf per slot.
-                    comptime for q_local in range(Self.q_len_fold):
-                        Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
-                            offset_position.split_idx,
-                            offset_position.batch_idx,
-                            offset_position.max_seq_len,
-                            batch_size,
-                            lse_accum_split_ptr,
-                            seq_idx_fold=UInt32(q_local),
-                        )
-                else:
-                    Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
-                        offset_position.split_idx,
-                        offset_position.batch_idx,
-                        offset_position.max_seq_len,
-                        batch_size,
-                        lse_accum_split_ptr,
-                    )
-                return
-
-        # Sliding-window split-K: a CTA whose entire split lies below
-        # (causal_limit - W) has nothing to compute and must take the same
-        # -inf-LSE early-exit path as num_keys_this_split == 0.
-        comptime _sliding_window_mask: Bool = (
-            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
-        )
-        comptime if _sliding_window_mask and Self.config.decoding_warp_split_k:
-            var _num_k_tiles_total = ceildiv(
-                offset_position.num_keys_this_split, Self.BN_QK
+        with PDL[overlap_at_beginning=True]():
+            var offset_position = OffsetPosition[
+                Self.config,
+                Self.KVLUTType,
+                Self.ragged,
+                Self._is_cache_length_accurate,
+                Self.ValidLengthType,
+                Self.config.decoding_warp_split_k,
+            ](
+                kv_lut,
+                rebind[
+                    ImmPointer[
+                        Scalar[Self.ValidLengthType.dtype],
+                        ImmutAnyOrigin,
+                        address_space=.GENERIC,
+                    ]
+                ](valid_length.value()),
+                q_max_seq_len,
+                num_partitions,
+                batch_size,
             )
-            var _tile_skip = Self.sliding_window_tile_skip(offset_position)
-            if _tile_skip >= _num_k_tiles_total:
-                comptime if Self.fold_q:
-                    comptime for q_local in range(Self.q_len_fold):
+
+            # Early exit for split-K: CTAs with no work
+            comptime if Self.config.decoding_warp_split_k:
+                if offset_position.num_keys_this_split == 0:
+                    comptime if Self.fold_q:
+                        # Fold owns all q_len_fold LSE slots; emit -inf per slot.
+                        comptime for q_local in range(Self.q_len_fold):
+                            Self.Common_MLA_Op.pdl_early_exit[
+                                fold_q=Self.fold_q
+                            ](
+                                offset_position.split_idx,
+                                offset_position.batch_idx,
+                                offset_position.max_seq_len,
+                                batch_size,
+                                lse_accum_split_ptr,
+                                seq_idx_fold=UInt32(q_local),
+                            )
+                    else:
                         Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
                             offset_position.split_idx,
                             offset_position.batch_idx,
                             offset_position.max_seq_len,
                             batch_size,
                             lse_accum_split_ptr,
-                            seq_idx_fold=UInt32(q_local),
                         )
-                else:
-                    Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
-                        offset_position.split_idx,
-                        offset_position.batch_idx,
-                        offset_position.max_seq_len,
-                        batch_size,
-                        lse_accum_split_ptr,
-                    )
-                return
+                    return
 
-        # Early exit for ragged: skip blocks beyond actual sequence length
-        comptime if Self.ragged:
-            if block_idx.y >= offset_position.seq_len:
-                comptime if Self.config.decoding_warp_split_k:
+            # Sliding-window split-K: a CTA whose entire split lies below
+            # (causal_limit - W) has nothing to compute and must take the same
+            # -inf-LSE early-exit path as num_keys_this_split == 0.
+            comptime _sliding_window_mask: Bool = (
+                Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+            )
+            comptime if _sliding_window_mask and Self.config.decoding_warp_split_k:
+                var _num_k_tiles_total = ceildiv(
+                    offset_position.num_keys_this_split, Self.BN_QK
+                )
+                var _tile_skip = Self.sliding_window_tile_skip(offset_position)
+                if _tile_skip >= _num_k_tiles_total:
                     comptime if Self.fold_q:
                         comptime for q_local in range(Self.q_len_fold):
                             Self.Common_MLA_Op.pdl_early_exit[
@@ -1205,206 +1189,238 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                             batch_size,
                             lse_accum_split_ptr,
                         )
+                    return
 
-                return
+            # Early exit for ragged: skip blocks beyond actual sequence length
+            comptime if Self.ragged:
+                if block_idx.y >= offset_position.seq_len:
+                    comptime if Self.config.decoding_warp_split_k:
+                        comptime if Self.fold_q:
+                            comptime for q_local in range(Self.q_len_fold):
+                                Self.Common_MLA_Op.pdl_early_exit[
+                                    fold_q=Self.fold_q
+                                ](
+                                    offset_position.split_idx,
+                                    offset_position.batch_idx,
+                                    offset_position.max_seq_len,
+                                    batch_size,
+                                    lse_accum_split_ptr,
+                                    seq_idx_fold=UInt32(q_local),
+                                )
+                        else:
+                            Self.Common_MLA_Op.pdl_early_exit[
+                                fold_q=Self.fold_q
+                            ](
+                                offset_position.split_idx,
+                                offset_position.batch_idx,
+                                offset_position.max_seq_len,
+                                batch_size,
+                                lse_accum_split_ptr,
+                            )
 
-        # SMEM allocation: Q FP8, KV stages, P stages, max/li, barriers.
-        var q_smem = external_memory[
-            Scalar[Self.fp8_type],
-            address_space=.SHARED,
-            alignment=128,
-            name="mha_dynamic_shared_memory",
-        ]()
-        var kv_smem = q_smem + Self.BlockElems * Self.NumQKBlocks
-        comptime kv_total_stages = Self.config.num_kv_stages
-        var p_smem = kv_smem + Self.KVStageElems * kv_total_stages
-        comptime p_total_stages = Self.num_stages
+                    return
 
-        # Output SMEM aliases KV SMEM (same as Layout E).
-        var out_smem_start = kv_smem
-        var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
-
-        var max_smem = (p_smem + Self.PStageElems * p_total_stages).bitcast[
-            Scalar[Self.AccumType]
-        ]()
-        var li_smem = max_smem + 2 * WARPGROUP_SIZE
-
-        # Barrier layout (6N+11 fixed, N=num_kv_stages):
-        # bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
-        var mbar_base: MBarType = (
-            (li_smem + WARPGROUP_SIZE)
-            .bitcast[SharedMemBarrier]()
-            .as_unsafe_any_origin()
-        )
-
-        var mbar_q: MBarType = mbar_base
-        var mbar_kv_base: MBarType = mbar_base + 1
-
-        var kv_pipeline = KVPipelineGeneric[
-            num_kv_stages=Self.config.num_kv_stages,
-            num_qk_stages=1,
-            num_producer=1,
-            num_consumer=2,
-        ](mbar_kv_base)
-
-        mbar_base = mbar_kv_base + kv_pipeline.num_mbars()
-        var s_bars = DecodeSM100MiscMBars[
-            num_stages=Self.num_stages,
-            num_producer=1,
-            num_consumer=WARPGROUP_SIZE,
-        ](mbar_base)
-        mbar_base = s_bars.end()
-        var p_bars = DecodeSM100MiscMBars[
-            num_stages=Self.num_stages,
-            num_producer=WARPGROUP_SIZE,
-            num_consumer=1,
-        ](mbar_base)
-        mbar_base = p_bars.end()
-        var o_bars = DecodeSM100MiscMBars[
-            num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
-        ](mbar_base)
-        mbar_base = o_bars.end()
-        var c_bars = DecodeSM100MiscMBars[
-            num_stages=1,
-            num_producer=WARPGROUP_SIZE,
-            num_consumer=WARPGROUP_SIZE,
-        ](mbar_base)
-        mbar_base = c_bars.end()
-        var corr_done_bars = DecodeSM100MiscMBars[
-            num_stages=2,
-            num_producer=WARPGROUP_SIZE,
-            num_consumer=WARPGROUP_SIZE,
-        ](mbar_base)
-        mbar_base = corr_done_bars.end()
-        comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
-        var out_pipeline = OutPipeline[
-            num_out_stages=OutPipeType.num_out_stages,
-            num_producer=WARPGROUP_SIZE,
-            num_consumer=1,
-        ](mbar_base)
-        mbar_base += out_pipeline.num_mbars()
-
-        # TMEM column map (matches Layout E):
-        #   TMEM_O      = 0     (PV accumulator)
-        #   TMEM_S0..S5 = 256..447
-        #   CORR_SCALE  = 448
-        #   CORR_LI     = 449
-        var warp_idx = UInt32(warp_id[broadcast=True]())
-        var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
-        var is_leader = elect() != 0
-
-        # Init: warp 8 inits barriers, warp 9 allocates TMEM.
-        if warp_idx == 8:
-            if is_leader:
-                mbar_q[].init(1)
-                kv_pipeline.init()
-                s_bars.init()
-                p_bars.init()
-                o_bars.init()
-                c_bars.init()
-                out_pipeline.init()
-                corr_done_bars.init()
-                q_tma.prefetch_descriptor()
-                k_tma.prefetch_descriptor()
-                o_tma.prefetch_descriptor()
-        elif warp_idx == 9:
-            tcgen05_alloc[Self.config.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
+            # SMEM allocation: Q FP8, KV stages, P stages, max/li, barriers.
+            var q_smem = external_memory[
+                Scalar[Self.fp8_type],
+                address_space=.SHARED,
+                alignment=128,
+                name="mha_dynamic_shared_memory",
+            ]()
+            var kv_smem = q_smem.unsafe_offset(
+                Self.BlockElems * Self.NumQKBlocks
             )
-        barrier()
+            comptime kv_total_stages = Self.config.num_kv_stages
+            var p_smem = kv_smem.unsafe_offset(
+                Self.KVStageElems * kv_total_stages
+            )
+            comptime p_total_stages = Self.num_stages
 
-        # Warpgroup dispatch (3-WG layout, same as Layout E):
-        #   warps 0-3  softmax + per-warp output SMEM write
-        #   warps 4-7  correction
-        #   warp  8    TMA load
-        #   warp  9    MMA QK
-        #   warp 10    MMA PV
-        #   warp 11    output TMA store
-        if warp_idx < 4:
-            warpgroup_reg_alloc[num_reg_softmax]()
-            Self.Softmax_Layout_G[num_sp_stages=Self.num_stages,](
-                ptr_tmem_addr[0],
-                s_bars,
-                p_bars,
-                p_smem.as_unsafe_any_origin(),
-                max_smem.as_unsafe_any_origin(),
-                li_smem.as_unsafe_any_origin(),
-                out_smem.as_unsafe_any_origin(),
-                c_bars,
-                corr_done_bars,
-                out_pipeline,
-                offset_position,
-                scale,
-                mask,
-                prompt_idx=UInt32(offset_position.batch_idx),
-                lse_accum_split_ptr=lse_accum_split_ptr,
-                batch_size=batch_size,
+            # Output SMEM aliases KV SMEM (same as Layout E).
+            var out_smem_start = kv_smem
+            var out_smem = out_smem_start.unsafe_bitcast[
+                Scalar[Self.output_type]
+            ]()
+
+            var max_smem = (
+                p_smem.unsafe_offset(Self.PStageElems * p_total_stages)
+            ).unsafe_bitcast[Scalar[Self.AccumType]]()
+            var li_smem = max_smem.unsafe_offset(2 * WARPGROUP_SIZE)
+
+            # Barrier layout (6N+11 fixed, N=num_kv_stages):
+            # bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
+            var mbar_base: MBarType = (
+                (li_smem.unsafe_offset(WARPGROUP_SIZE))
+                .unsafe_bitcast[SharedMemBarrier]()
+                .as_unsafe_any_origin()
             )
-        elif warp_idx >= 4 and warp_idx < 8:
-            warpgroup_reg_alloc[num_reg_correction]()
-            Self.Correction_Layout_G(
-                ptr_tmem_addr[0],
-                o_bars,
-                c_bars,
-                corr_done_bars,
-                offset_position,
-            )
-        else:
-            warpgroup_reg_dealloc[num_reg_other]()
+
+            var mbar_q: MBarType = mbar_base
+            var mbar_kv_base: MBarType = mbar_base.unsafe_offset(1)
+
+            var kv_pipeline = KVPipelineGeneric[
+                num_kv_stages=Self.config.num_kv_stages,
+                num_qk_stages=1,
+                num_producer=1,
+                num_consumer=2,
+            ](mbar_kv_base)
+
+            mbar_base = mbar_kv_base.unsafe_offset(kv_pipeline.num_mbars())
+            var s_bars = DecodeSM100MiscMBars[
+                num_stages=Self.num_stages,
+                num_producer=1,
+                num_consumer=WARPGROUP_SIZE,
+            ](mbar_base)
+            mbar_base = s_bars.end()
+            var p_bars = DecodeSM100MiscMBars[
+                num_stages=Self.num_stages,
+                num_producer=WARPGROUP_SIZE,
+                num_consumer=1,
+            ](mbar_base)
+            mbar_base = p_bars.end()
+            var o_bars = DecodeSM100MiscMBars[
+                num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
+            ](mbar_base)
+            mbar_base = o_bars.end()
+            var c_bars = DecodeSM100MiscMBars[
+                num_stages=1,
+                num_producer=WARPGROUP_SIZE,
+                num_consumer=WARPGROUP_SIZE,
+            ](mbar_base)
+            mbar_base = c_bars.end()
+            var corr_done_bars = DecodeSM100MiscMBars[
+                num_stages=2,
+                num_producer=WARPGROUP_SIZE,
+                num_consumer=WARPGROUP_SIZE,
+            ](mbar_base)
+            mbar_base = corr_done_bars.end()
+            comptime OutPipeType = DecodeOutProducer[
+                Self.output_type, Self.config
+            ]
+            var out_pipeline = OutPipeline[
+                num_out_stages=OutPipeType.num_out_stages,
+                num_producer=WARPGROUP_SIZE,
+                num_consumer=1,
+            ](mbar_base)
+            mbar_base = mbar_base.unsafe_offset(out_pipeline.num_mbars())
+
+            # TMEM column map (matches Layout E):
+            #   TMEM_O      = 0     (PV accumulator)
+            #   TMEM_S0..S5 = 256..447
+            #   CORR_SCALE  = 448
+            #   CORR_LI     = 449
+            var warp_idx = UInt32(warp_id[broadcast=True]())
+            var ptr_tmem_addr = (mbar_base).unsafe_bitcast[UInt32]()
+            var is_leader = elect() != 0
+
+            # Init: warp 8 inits barriers, warp 9 allocates TMEM.
             if warp_idx == 8:
-                Self.load(
-                    q_tma,
-                    k_tma,
-                    kv_lut,
-                    q_smem.as_unsafe_any_origin(),
-                    kv_smem.as_unsafe_any_origin(),
-                    mbar_q,
-                    kv_pipeline,
-                    offset_position,
-                )
+                if is_leader:
+                    mbar_q[].init(1)
+                    kv_pipeline.init()
+                    s_bars.init()
+                    p_bars.init()
+                    o_bars.init()
+                    c_bars.init()
+                    out_pipeline.init()
+                    corr_done_bars.init()
+                    q_tma.prefetch_descriptor()
+                    k_tma.prefetch_descriptor()
+                    o_tma.prefetch_descriptor()
             elif warp_idx == 9:
-                Self.mmaQK(
+                tcgen05_alloc[Self.config.cta_group](
+                    ptr_tmem_addr, Self.config.sm100_tmem_cols
+                )
+            barrier()
+
+            # Warpgroup dispatch (3-WG layout, same as Layout E):
+            #   warps 0-3  softmax + per-warp output SMEM write
+            #   warps 4-7  correction
+            #   warp  8    TMA load
+            #   warp  9    MMA QK
+            #   warp 10    MMA PV
+            #   warp 11    output TMA store
+            if warp_idx < 4:
+                warpgroup_reg_alloc[num_reg_softmax]()
+                Self.Softmax_Layout_G[num_sp_stages=Self.num_stages,](
                     ptr_tmem_addr[0],
-                    q_smem.as_unsafe_any_origin(),
-                    kv_smem.as_unsafe_any_origin(),
-                    mbar_q,
                     s_bars,
-                    kv_pipeline,
-                    offset_position,
-                )
-            elif warp_idx == 10:
-                Self.mmaPV(
-                    ptr_tmem_addr[0],
-                    kv_smem.as_unsafe_any_origin(),
-                    p_smem.as_unsafe_any_origin(),
                     p_bars,
-                    o_bars,
-                    kv_pipeline,
-                    offset_position,
-                )
-            elif warp_idx == 11:
-                Self.Output_Store_Layout_G(
-                    out_pipeline,
+                    p_smem.as_unsafe_any_origin(),
+                    max_smem.as_unsafe_any_origin(),
+                    li_smem.as_unsafe_any_origin(),
                     out_smem.as_unsafe_any_origin(),
-                    o_tma,
+                    c_bars,
+                    corr_done_bars,
+                    out_pipeline,
+                    offset_position,
+                    scale,
+                    mask,
+                    prompt_idx=UInt32(offset_position.batch_idx),
+                    lse_accum_split_ptr=lse_accum_split_ptr,
+                    batch_size=batch_size,
+                )
+            elif warp_idx >= 4 and warp_idx < 8:
+                warpgroup_reg_alloc[num_reg_correction]()
+                Self.Correction_Layout_G(
+                    ptr_tmem_addr[0],
+                    o_bars,
+                    c_bars,
+                    corr_done_bars,
                     offset_position,
                 )
-        barrier()
+            else:
+                warpgroup_reg_dealloc[num_reg_other]()
+                if warp_idx == 8:
+                    Self.load(
+                        q_tma,
+                        k_tma,
+                        kv_lut,
+                        q_smem.as_unsafe_any_origin(),
+                        kv_smem.as_unsafe_any_origin(),
+                        mbar_q,
+                        kv_pipeline,
+                        offset_position,
+                    )
+                elif warp_idx == 9:
+                    Self.mmaQK(
+                        ptr_tmem_addr[0],
+                        q_smem.as_unsafe_any_origin(),
+                        kv_smem.as_unsafe_any_origin(),
+                        mbar_q,
+                        s_bars,
+                        kv_pipeline,
+                        offset_position,
+                    )
+                elif warp_idx == 10:
+                    Self.mmaPV(
+                        ptr_tmem_addr[0],
+                        kv_smem.as_unsafe_any_origin(),
+                        p_smem.as_unsafe_any_origin(),
+                        p_bars,
+                        o_bars,
+                        kv_pipeline,
+                        offset_position,
+                    )
+                elif warp_idx == 11:
+                    Self.Output_Store_Layout_G(
+                        out_pipeline,
+                        out_smem.as_unsafe_any_origin(),
+                        o_tma,
+                        offset_position,
+                    )
+            barrier()
 
-        # PDL: Signal that this CTA is done
-        comptime if Self.config.decoding_warp_split_k:
-            launch_dependent_grids()
-
-        if warp_idx == 9:
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
-            tcgen05_dealloc[Self.config.cta_group](
-                ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-            )
+            if warp_idx == 9:
+                tcgen05_release_allocation_lock[Self.config.cta_group]()
+                tcgen05_dealloc[Self.config.cta_group](
+                    ptr_tmem_addr[0], Self.config.sm100_tmem_cols
+                )
 
     # Load: TMA Q (FP8) and TMA KV (FP8). Cloned from the Layout E sibling;
     # TMA descriptors are config-driven so the BM=32 shapes flow through.
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load(
         q_tma: QOTMATile[
             dtype=Self.kv_type,
@@ -1459,7 +1475,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             num_k_tiles -= _tile_skip
 
         var kv_prod = DecodeKVProducer[Self.kv_type, Self.config](
-            kv_pipeline, kv_smem.bitcast[Scalar[Self.kv_type]]()
+            kv_pipeline, kv_smem.unsafe_bitcast[Scalar[Self.kv_type]]()
         )
         var elect_mask = elect()
         var is_leader = elect_mask != 0
@@ -1479,16 +1495,17 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     Self.BM * Self.config.q_depth * Self.fp8_bytes_per_element
                 )
             )
-            comptime q_elems = type_of(q_tma).tile_shape[0] * type_of(
-                q_tma
-            ).tile_shape[1]
+            comptime q_elems = (
+                type_of(q_tma).tile_shape.element_types[0].static_value
+                * type_of(q_tma).tile_shape.element_types[1].static_value
+            )
             comptime q_tt_layout = tt_row_major[q_elems]()
             var q_smem_tensor = TileTensor[
                 Self.kv_type,
                 type_of(q_tt_layout),
                 MutAnyOrigin,
                 address_space=.SHARED,
-            ](q_smem.bitcast[Scalar[Self.kv_type]](), q_tt_layout)
+            ](q_smem.unsafe_bitcast[Scalar[Self.kv_type]](), q_tt_layout)
             q_tma.async_copy(q_smem_tensor, mbar_q[], (0, row))
 
         # First KV tile.
@@ -1508,7 +1525,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         kv_prod.commit_step()
         kv_row += UInt32(Self.BN_QK)
 
-        # Wait for Q TMA. Q arrives as FP8, ready for MMA.
+        # Gates only this warp; mmaQK waits on mbar_q itself before reading Q.
         mbar_q[].wait(0)
 
         var tile_idx: Int = 1
@@ -1539,7 +1556,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
 
     # MMA QK: Q(FP8) x K(FP8) -> S(TMEM). M=32, N=64, K=576 (18 K-mmas).
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaQK(
         tmem_addr: UInt32,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -1595,6 +1612,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var k_descriptor = Self.UMMAQKTSS.descriptor_k_block(kv_smem)
         comptime stage_stride_in_bytes = Self.KVStageElems * Self.fp8_bytes_per_element
 
+        # Q and K0 land on separate barriers; K0 arriving says nothing about Q.
+        mbar_q[].wait(0)
+
         var tile_idx: Int = 0
         while tile_idx < num_k_tiles:
             s_prod.acquire()
@@ -1619,7 +1639,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
 
     # MMA PV: P(FP8) x V(FP8) -> O(TMEM). M=32, N=256, K=64 (2 K-mmas).
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaPV(
         tmem_addr: UInt32,
         kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],

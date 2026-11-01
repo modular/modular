@@ -30,6 +30,7 @@ from max.gpu import (
     grid_dim,
     thread_idx,
 )
+from max.gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH
 from max.gpu.sync import barrier
 from max.gpu.sync import named_barrier
 from .lamport import LAMPORT_SENTINEL_U32, Lamport, LamportGeneration
@@ -105,7 +106,7 @@ saturate NVLink bandwidth.
 """
 
 
-@always_inline
+@inline(.always)
 def circular_add[n: Int](x: Int, y: Int) -> Int:
     """Addition modulo n, assuming 0 <= x < n and 0 <= y < n.
 
@@ -216,12 +217,13 @@ struct Signal:
 
     var lamport_state: StaticTuple[Scalar[Self.flag_t], 4]
     """Device-resident state for the in-kernel Lamport generation advance:
-    `[flag, prev_num_elements, arrival, reserved]`.
+    `[flag, prev_num_packs, arrival, reserved]`.
 
     - `flag`: monotonically-increasing generation counter (read at kernel entry,
       advanced once per call in the grid-barrier epilogue).
-    - `prev_num_elements`: previous call's element count = this call's
-      `clear_size`.
+    - `prev_num_packs`: previous call's written extent in 16-byte packs = this
+      call's clear extent (dtype-independent, so mixed-dtype call sequences on
+      one signal buffer clear exactly what was written).
     - `arrival`: per-call block-arrival counter for the exactly-once advance.
     - reserved: pads to 16 bytes so `lamport_region` stays 16-byte aligned (the
       128-bit atomic stores require it).
@@ -248,7 +250,41 @@ struct Signal:
     barrier-based collectives on the same signal buffer.
     """
 
-    @always_inline
+    @staticmethod
+    @inline(.always)
+    def unsafe_ptr_from(
+        mut signal_buffer: DeviceBuffer[.uint8],
+    ) -> MutPointer[Signal, MutAnyOrigin]:
+        """Reinterprets a rank's signal buffer as a `Signal` pointer.
+
+        The collectives take their `rank_sigs` as `Signal` pointers while the
+        host allocates each rank's buffer as raw bytes, so every call site
+        assembling a `rank_sigs` array otherwise repeats this same cast.
+
+        The borrow is mutable because `DeviceBuffer.unsafe_ptr` ties the
+        returned pointer's mutability to it, and a collective writes through
+        `rank_sigs`.
+
+        Args:
+            signal_buffer: This rank's signal buffer, at least
+                `size_of[Signal]()` bytes and already passed through
+                `init_signal_buffer`.
+
+        Returns:
+            A pointer to the buffer's storage, typed as `Signal`.
+
+        Safety:
+            The returned pointer's origin is erased, so it does not keep
+            `signal_buffer` alive. The buffer must outlive every collective
+            launched against the pointer.
+        """
+        return (
+            signal_buffer.unsafe_ptr()
+            .unsafe_bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
+
+    @inline(.always)
     def lamport_state_ptr(
         mut self,
     ) -> MutPointer[Scalar[Self.flag_t], MutAnyOrigin]:
@@ -260,11 +296,11 @@ struct Signal:
         """
         return (
             Pointer(to=self.lamport_state)
-            .bitcast[Scalar[Self.flag_t]]()
+            .unsafe_bitcast[Scalar[Self.flag_t]]()
             .as_unsafe_any_origin()
         )
 
-    @always_inline
+    @inline(.always)
     def lamport_region_ptr[
         dtype: DType
     ](mut self) -> MutPointer[Scalar[dtype], MutAnyOrigin]:
@@ -278,7 +314,7 @@ struct Signal:
         """
         return (
             Pointer(to=self.lamport_region)
-            .bitcast[Scalar[dtype]]()
+            .unsafe_bitcast[Scalar[dtype]]()
             .as_unsafe_any_origin()
         )
 
@@ -332,17 +368,20 @@ def init_signal_buffer(
     _lamport_init(signal_buffer, ctx)
 
 
-@always_inline
+@inline(.always)
 def _multi_gpu_barrier[
     ngpus: Int,
     is_start: Bool,
     need_fence: Bool = False,
     *,
+    sync_after_wait: Bool = False,
+    arrive: Bool = True,
+    wait: Bool = True,
     named_barrier_threads: Int = 0,
     named_barrier_id: Int = 1,
     domain_id: Int = 0,
 ](
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     self_sg: MutPointer[Signal, MutAnyOrigin],
     my_rank: Int,
 ):
@@ -355,6 +394,22 @@ def _multi_gpu_barrier[
         need_fence: Whether memory fence is needed.
             If True, uses release/acquire semantics.
             If False, uses volatile memory operations for faster communication.
+        sync_after_wait: Whether the block syncs again after the wait on the
+            peers' flags. Only the first `ngpus` threads spin on those flags,
+            so without this the other warps leave the barrier while the peers
+            may still be reading this GPU's buffers. Set it when a PDL release
+            (`launch_dependent_grids` or the `PDL` exit) follows the end
+            barrier: the dependent could otherwise overwrite those buffers
+            before the peers are done. It is a whole-block `barrier()` and is
+            rejected together with `named_barrier_threads`, which only orders
+            its own participants. It is a no-op on targets without PDL, where
+            nothing releases a dependent early.
+        arrive: Whether this call posts the arrival flag to the peers. An end
+            barrier splits into `arrive=True, wait=False` right after the last
+            read of the peers' buffers and `arrive=False, wait=True` later, so
+            the wait overlaps whatever the kernel does in between. The two
+            halves must be called by the same threads, in this order.
+        wait: Whether this call waits for the peers' arrival flags.
         named_barrier_threads: When > 0, use a named barrier scoped to this
             many threads instead of a CTA-wide `barrier()` (PTX `bar.sync 0`).
         named_barrier_id: Hardware named-barrier id (0..15). Only used when
@@ -367,7 +422,8 @@ def _multi_gpu_barrier[
             full-world bank on a shared `Signal` buffer.
 
     Args:
-        rank_sigs: Signal pointers for all GPUs.
+        rank_sigs: Signal pointers for the `ngpus` ranks in this barrier's
+            domain, indexed by domain-local rank.
         self_sg: Signal pointer for current GPU.
         my_rank: Current GPU rank.
 
@@ -387,7 +443,12 @@ def _multi_gpu_barrier[
         0 <= domain_id < NUM_BARRIER_DOMAINS
     ), "domain_id out of range for barrier counter banks"
 
-    comptime if not is_start:
+    comptime assert arrive or wait, "a barrier call must arrive or wait"
+    comptime assert not is_start or (
+        arrive and wait
+    ), "the start barrier cannot be split"
+
+    comptime if not is_start and arrive:
         comptime if named_barrier_threads > 0:
             named_barrier[Int32(named_barrier_threads)](Int32(named_barrier_id))
         else:
@@ -396,6 +457,10 @@ def _multi_gpu_barrier[
     comptime assert not (
         need_fence and is_start
     ), "Start barrier should not need fence"
+    comptime assert not (sync_after_wait and named_barrier_threads > 0), (
+        "sync_after_wait is a whole-block barrier; a named barrier cannot"
+        " order the warps that do not take part in it"
+    )
     comptime flag_t = Signal.flag_t
     # Linearise block_idx
     var bid = (
@@ -419,13 +484,15 @@ def _multi_gpu_barrier[
             MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS
         )
         var internal_counter_ptr = (
-            self_sg.bitcast[Scalar[flag_t]]()
-            + self_domain_offset
-            + bid * MAX_GPUS
-            + my_gpu
+            self_sg.unsafe_bitcast[Scalar[flag_t]]()
+            .unsafe_offset(self_domain_offset)
+            .unsafe_offset(bid * MAX_GPUS)
+            .unsafe_offset(my_gpu)
         )
-        var val = internal_counter_ptr[] + 1
-        internal_counter_ptr[] = val
+        var val = internal_counter_ptr[]
+        comptime if arrive:
+            val += 1
+            internal_counter_ptr[] = val
 
         # peer_counter follows the whole self_counter array
         comptime peer_counter_offset = size_of[
@@ -444,22 +511,23 @@ def _multi_gpu_barrier[
 
         # this line should compute &rank_sigs[my_gpu]->peer_counter[domain_id][val % 2][bid][my_rank]
         var peer_counter_ptr = (
-            rank_sigs[my_gpu].bitcast[Scalar[flag_t]]()
-            + peer_counter_offset
-            + peer_domain_offset
-            + (val % 2) * (MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS)
-            + bid * MAX_GPUS
-            + my_rank
+            rank_sigs[my_gpu]
+            .unsafe_bitcast[Scalar[flag_t]]()
+            .unsafe_offset(peer_counter_offset)
+            .unsafe_offset(peer_domain_offset)
+            .unsafe_offset((val % 2) * (MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS))
+            .unsafe_offset(bid * MAX_GPUS)
+            .unsafe_offset(my_rank)
         )
         # this line should compute
         # &self_sg->peer_counter[domain_id][val % 2][bid][my_gpu]
         var self_counter_ptr = (
-            self_sg.bitcast[Scalar[flag_t]]()
-            + peer_counter_offset
-            + peer_domain_offset
-            + (val % 2) * (MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS)
-            + bid * MAX_GPUS
-            + my_gpu
+            self_sg.unsafe_bitcast[Scalar[flag_t]]()
+            .unsafe_offset(peer_counter_offset)
+            .unsafe_offset(peer_domain_offset)
+            .unsafe_offset((val % 2) * (MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS))
+            .unsafe_offset(bid * MAX_GPUS)
+            .unsafe_offset(my_gpu)
         )
 
         # Write the expected counter value to peer and wait for correct value from
@@ -468,22 +536,28 @@ def _multi_gpu_barrier[
         # instead of the lighter weight volatile loop used for nvidia GPUs.
         comptime if need_fence or is_amd_gpu():
             # broadcast the value to all peers that I reached the barrier
-            Atomic[Scalar[flag_t]].store[ordering=Ordering.RELEASE](
-                peer_counter_ptr, val
-            )
-            while (
-                Atomic[Scalar[flag_t]].load[ordering=Ordering.ACQUIRE](
-                    self_counter_ptr
+            comptime if arrive:
+                Atomic[Scalar[flag_t]].store[ordering=Ordering.RELEASE](
+                    peer_counter_ptr, val
                 )
-                != val
-            ):
-                pass
+            comptime if wait:
+                while (
+                    Atomic[Scalar[flag_t]].load[ordering=Ordering.ACQUIRE](
+                        self_counter_ptr
+                    )
+                    != val
+                ):
+                    pass
         else:
-            peer_counter_ptr.store[volatile=True](val)
-            while self_counter_ptr.load[volatile=True]() != val:
-                pass
+            comptime if arrive:
+                peer_counter_ptr.unsafe_store[volatile=True](val)
+            comptime if wait:
+                while self_counter_ptr.unsafe_load[volatile=True]() != val:
+                    pass
 
-    comptime if is_start or need_fence:
+    comptime if wait and (
+        is_start or need_fence or (sync_after_wait and _SUPPORT_PDL_LAUNCH)
+    ):
         comptime if named_barrier_threads > 0:
             named_barrier[Int32(named_barrier_threads)](Int32(named_barrier_id))
         else:

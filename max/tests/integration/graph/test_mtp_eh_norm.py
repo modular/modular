@@ -34,9 +34,11 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Module, RMSNorm
-from max.nn.kernels import mtp_eh_norm
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn.legacy import Module, RMSNorm
+from max.nn.legacy.kernels import mtp_eh_norm
+from max.nn.legacy.transformer.distributed_transformer import (
+    forward_sharded_layers,
+)
 from test_common.graph_utils import gpu_warp_size
 from torch.utils.dlpack import from_dlpack
 

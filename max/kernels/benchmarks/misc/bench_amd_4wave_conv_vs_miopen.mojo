@@ -35,6 +35,7 @@ from layout import Coord, TileTensor, row_major
 
 from nn.conv.conv import conv_miopen
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
+from std.math import align_up
 
 
 def _permute_filter_frsc_to_rscf_host[
@@ -60,10 +61,6 @@ def _permute_filter_frsc_to_rscf_host[
                     dst_ptr[dst_idx] = src_ptr[src_idx]
 
 
-def _round_up(x: Int, mod: Int) -> Int:
-    return ((x + mod - 1) // mod) * mod
-
-
 def _bench_one[
     N_batch: Int,
     H: Int,
@@ -87,7 +84,7 @@ def _bench_one[
     comptime W_out = (W + 2 * pad_w - S) // stride_w + 1
     comptime M_total = N_batch * H_out * W_out
     comptime K_real = R * S * C_in
-    comptime K_padded = _round_up(K_real, 256)
+    comptime K_padded = align_up(K_real, 256)
     comptime flops = 2 * M_total * K_real * C_out
 
     # Path classification (matches the comptime branches inside
@@ -232,39 +229,10 @@ def _bench_one[
     var ratio = tflops_cv / tflops_mio
 
     print(
-        "| ",
-        label,
-        " | NHWC=",
-        N_batch,
-        "x",
-        H,
-        "x",
-        W,
-        "x",
-        C_in,
-        " | RxS=",
-        R,
-        "x",
-        S,
-        " stride=",
-        stride_h,
-        " pad=",
-        pad_h,
-        " | Cout=",
-        C_out,
-        " | M=",
-        M_total,
-        " K=",
-        K_real,
-        " | ",
-        path,
-        " | conv ",
-        tflops_cv,
-        " | miopen ",
-        tflops_mio,
-        " | ",
-        ratio,
-        " |",
+        t"|  {label}  | NHWC= {N_batch} x {H} x {W} x {C_in}  | RxS= {R} x {S} "
+        t" stride= {stride_h}  pad= {pad_h}  | Cout= {C_out}  | M= {M_total} "
+        t" K= {K_real}  |  {path}  | conv  {tflops_cv}  | miopen  {tflops_mio} "
+        t" |  {ratio}  |"
     )
 
     keep(output_4wave_dev.unsafe_ptr())

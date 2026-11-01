@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+"""KServe inference routes."""
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 

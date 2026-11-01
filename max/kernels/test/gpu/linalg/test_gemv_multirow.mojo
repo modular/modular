@@ -15,22 +15,22 @@
 The wide-N shallow-K M=1 GEMV path packs several output rows into one warp to
 escape the CTA launch-rate ceiling. The reduction per row is unchanged, so the
 new kernel must reproduce the one-row kernel bit for bit, including under an
-epilogue lambda and for an N that does not divide the row tile.
+epilogue closure and for an N that does not divide the row tile.
 """
 
 from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 
-from max.gpu import WARP_SIZE, global_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu import global_idx
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.gemv import (
     _GEMV_MULTIROW_ROWS,
     gemv_kernel_vector,
+    gemv_kernel_vector_compute_fn,
     gemv_kernel_vector_multirow,
+    gemv_kernel_vector_multirow_compute_fn,
 )
-from linalg.utils import elementwise_epilogue_type
-from std.utils import IndexList
 
 
 def _fill[
@@ -70,25 +70,17 @@ def test_matches_one_row_kernel[
     c_type: DType, dtype: DType, N: Int, K: Int, *, with_epilogue: Bool = False
 ](ctx: DeviceContext, seed: Int) raises:
     """Runs both kernels on the same inputs and requires identical outputs."""
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
-    comptime check_bounds_k = K % (WARP_SIZE * simd_width) != 0
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
+    comptime check_bounds_k = K % (warp_size * simd_width) != 0
     comptime rows_per_warp = _GEMV_MULTIROW_ROWS
     comptime warps_per_block = 8
     # The one-row launch the dispatch performs today.
-    comptime one_row_block_dim = min(align_up(K // simd_width, WARP_SIZE), 1024)
+    comptime one_row_block_dim = min(align_up(K // simd_width, warp_size), 1024)
 
     print(
-        "N",
-        N,
-        "K",
-        K,
-        c_type,
-        "seed",
-        seed,
-        "rows_per_warp",
-        rows_per_warp,
-        "epilogue",
-        with_epilogue,
+        t"N {N} K {K} {c_type} seed {seed} rows_per_warp"
+        t" {rows_per_warp} epilogue {with_epilogue}"
     )
 
     var w_dev = ctx.enqueue_create_buffer[dtype](N * K)
@@ -102,84 +94,129 @@ def test_matches_one_row_kernel[
     _fill_launch[dtype](act_dev, K, seed + 1, ctx)
     _fill_launch[c_type](bias_dev, N, seed + 2, ctx)
 
-    var w = TileTensor[mut=False](w_dev, row_major(Coord(Idx[N], Idx[K])))
-    var act = TileTensor[mut=False](act_dev, row_major(Coord(Idx[1], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(Idx[1], Idx[N])))
-    var bias = TileTensor[mut=False](bias_dev, row_major(Coord(Idx[1], Idx[N])))
+    var w = TileTensor[mut=False](w_dev, row_major(Idx[N], Idx[K]))
+    var act = TileTensor[mut=False](act_dev, row_major(Idx[1], Idx[K]))
+    var c = TileTensor(c_dev, row_major(Idx[1], Idx[N]))
+    var bias = TileTensor[mut=False](bias_dev, row_major(Idx[1], Idx[N]))
 
-    @__parameter
-    @always_inline
-    @__copy_capture(c, bias)
+    @inline(.always)
     def bias_epilogue[
-        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c.store[width=width](
-            (idx[0], idx[1]),
-            val.cast[c_type]()
-            + bias.load[width=width](Coord(idx)).cast[c_type](),
-        )
-
-    comptime epilogue = Optional[elementwise_epilogue_type](
-        bias_epilogue
-    ) if with_epilogue else None
-
-    comptime one_row_kernel = gemv_kernel_vector[
-        c_type,
-        dtype,
-        dtype,
-        type_of(c).LayoutType,
-        type_of(w).LayoutType,
-        type_of(act).LayoutType,
-        type_of(c).Engine,
-        type_of(w).Engine,
-        type_of(act).Engine,
-        simd_width=simd_width,
-        transpose_b=True,
-        elementwise_lambda_fn=epilogue,
-        check_bounds=check_bounds_k,
-    ]
-    comptime multirow_kernel = gemv_kernel_vector_multirow[
-        c_type,
-        dtype,
-        dtype,
-        type_of(c).LayoutType,
-        type_of(w).LayoutType,
-        type_of(act).LayoutType,
-        type_of(c).Engine,
-        type_of(w).Engine,
-        type_of(act).Engine,
-        simd_width=simd_width,
-        rows_per_warp=rows_per_warp,
-        transpose_b=True,
-        elementwise_lambda_fn=epilogue,
-        check_bounds=check_bounds_k,
-    ]
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var bias} -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val + bias.load[width=width](idx).cast[_dtype]()
 
     # Distinct sentinels: a row no kernel writes shows up as a mismatch.
     c_dev.enqueue_fill(Scalar[c_type](1))
-    ctx.enqueue_function[one_row_kernel](
-        c,
-        w,
-        act,
-        Int32(N),
-        Int32(1),
-        Int32(K),
-        grid_dim=ceildiv(N, one_row_block_dim // WARP_SIZE),
-        block_dim=one_row_block_dim,
-    )
+    comptime if with_epilogue:
+        comptime one_row_kernel = gemv_kernel_vector_compute_fn[
+            c_type,
+            dtype,
+            dtype,
+            type_of(c).LayoutType,
+            type_of(w).LayoutType,
+            type_of(act).LayoutType,
+            type_of(c).Engine,
+            type_of(w).Engine,
+            type_of(act).Engine,
+            type_of(bias_epilogue),
+            simd_width=simd_width,
+            transpose_b=True,
+            check_bounds=check_bounds_k,
+        ]
+        ctx.enqueue_function[one_row_kernel](
+            c,
+            w,
+            act,
+            Int32(N),
+            Int32(1),
+            Int32(K),
+            host_args=(bias_epilogue,),
+            grid_dim=ceildiv(N, one_row_block_dim // warp_size),
+            block_dim=one_row_block_dim,
+        )
+    else:
+        comptime one_row_kernel = gemv_kernel_vector[
+            c_type,
+            dtype,
+            dtype,
+            type_of(c).LayoutType,
+            type_of(w).LayoutType,
+            type_of(act).LayoutType,
+            type_of(c).Engine,
+            type_of(w).Engine,
+            type_of(act).Engine,
+            simd_width=simd_width,
+            transpose_b=True,
+            check_bounds=check_bounds_k,
+        ]
+        ctx.enqueue_function[one_row_kernel](
+            c,
+            w,
+            act,
+            Int32(N),
+            Int32(1),
+            Int32(K),
+            grid_dim=ceildiv(N, one_row_block_dim // warp_size),
+            block_dim=one_row_block_dim,
+        )
     ctx.enqueue_copy(ref_host, c_dev)
 
     c_dev.enqueue_fill(Scalar[c_type](-1))
-    ctx.enqueue_function[multirow_kernel](
-        c,
-        w,
-        act,
-        Int32(N),
-        Int32(1),
-        Int32(K),
-        grid_dim=ceildiv(N, rows_per_warp * warps_per_block),
-        block_dim=WARP_SIZE * warps_per_block,
-    )
+    comptime if with_epilogue:
+        comptime multirow_kernel = gemv_kernel_vector_multirow_compute_fn[
+            c_type,
+            dtype,
+            dtype,
+            type_of(c).LayoutType,
+            type_of(w).LayoutType,
+            type_of(act).LayoutType,
+            type_of(c).Engine,
+            type_of(w).Engine,
+            type_of(act).Engine,
+            type_of(bias_epilogue),
+            simd_width=simd_width,
+            rows_per_warp=rows_per_warp,
+            transpose_b=True,
+            check_bounds=check_bounds_k,
+        ]
+        ctx.enqueue_function[multirow_kernel](
+            c,
+            w,
+            act,
+            Int32(N),
+            Int32(1),
+            Int32(K),
+            host_args=(bias_epilogue,),
+            grid_dim=ceildiv(N, rows_per_warp * warps_per_block),
+            block_dim=warp_size * warps_per_block,
+        )
+    else:
+        comptime multirow_kernel = gemv_kernel_vector_multirow[
+            c_type,
+            dtype,
+            dtype,
+            type_of(c).LayoutType,
+            type_of(w).LayoutType,
+            type_of(act).LayoutType,
+            type_of(c).Engine,
+            type_of(w).Engine,
+            type_of(act).Engine,
+            simd_width=simd_width,
+            rows_per_warp=rows_per_warp,
+            transpose_b=True,
+            check_bounds=check_bounds_k,
+        ]
+        ctx.enqueue_function[multirow_kernel](
+            c,
+            w,
+            act,
+            Int32(N),
+            Int32(1),
+            Int32(K),
+            grid_dim=ceildiv(N, rows_per_warp * warps_per_block),
+            block_dim=warp_size * warps_per_block,
+        )
     ctx.enqueue_copy(new_host, c_dev)
     ctx.synchronize()
 
@@ -200,12 +237,13 @@ def test_matches_host_reference[
     Inputs are small integers, so the f32 accumulation is exact and the host
     result is independent of summation order.
     """
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
-    comptime check_bounds_k = K % (WARP_SIZE * simd_width) != 0
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
+    comptime check_bounds_k = K % (warp_size * simd_width) != 0
     comptime rows_per_warp = _GEMV_MULTIROW_ROWS
     comptime warps_per_block = 8
 
-    print("N", N, "K", K, c_type, "host reference, rows", rows_per_warp)
+    print(t"N {N} K {K} {c_type} host reference, rows {rows_per_warp}")
 
     var w_dev = ctx.enqueue_create_buffer[dtype](N * K)
     var act_dev = ctx.enqueue_create_buffer[dtype](K)
@@ -218,9 +256,9 @@ def test_matches_host_reference[
     _fill_launch[dtype, integral=True](act_dev, K, 13, ctx)
     c_dev.enqueue_fill(Scalar[c_type](-1))
 
-    var w = TileTensor[mut=False](w_dev, row_major(Coord(Idx[N], Idx[K])))
-    var act = TileTensor[mut=False](act_dev, row_major(Coord(Idx[1], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(Idx[1], Idx[N])))
+    var w = TileTensor[mut=False](w_dev, row_major(Idx[N], Idx[K]))
+    var act = TileTensor[mut=False](act_dev, row_major(Idx[1], Idx[K]))
+    var c = TileTensor(c_dev, row_major(Idx[1], Idx[N]))
 
     comptime multirow_kernel = gemv_kernel_vector_multirow[
         c_type,
@@ -245,7 +283,7 @@ def test_matches_host_reference[
         Int32(1),
         Int32(K),
         grid_dim=ceildiv(N, rows_per_warp * warps_per_block),
-        block_dim=WARP_SIZE * warps_per_block,
+        block_dim=warp_size * warps_per_block,
     )
 
     ctx.enqueue_copy(w_host, w_dev)

@@ -14,21 +14,19 @@
 # to build this file if running into linking issues with large PTX kernels.
 
 from std.sys import (
-    align_of,
     bit_width_of,
-    has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major, coord_to_index_list
 from layout._fillers import arange as arange, random
 from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
 from linalg.utils_gpu import MatmulConfig
-from test_utils import ulp_distance
+from test_utils.math import ulp_distance
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -37,13 +35,10 @@ from std.utils.index import Index
 
 comptime epilogue_func_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
-    dtype, width
-]
+](IndexList[2], IndexList[2], SIMD[dtype, width]) thin -> SIMD[dtype, width]
 
 
-@__parameter
-@always_inline
+@inline(.always)
 def epilogue_test_fn[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](
@@ -68,8 +63,8 @@ def epilogue_test_fn[
 def select_max_ulp_distance[
     lambda_fn: Optional[epilogue_func_type]
 ](max_ulp_distance: Optional[Int]) -> Int:
-    if max_ulp_distance:
-        return max_ulp_distance.value()
+    if case .Some(max_ulp_distance) = max_ulp_distance:
+        return max_ulp_distance
     else:
         comptime if lambda_fn:
             return 4
@@ -114,24 +109,22 @@ def test[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(m, Idx[K.value()])),
+        row_major(m, Idx[K.value()]),
     )
     var b_host = TileTensor(
         b_host_ptr,
         row_major(
-            Coord(
-                Idx[N.value() if transpose_b else K.value()],
-                Idx[K.value() if transpose_b else N.value()],
-            )
+            Idx[N.value() if transpose_b else K.value()],
+            Idx[K.value() if transpose_b else N.value()],
         ),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
     var c_host_ref = TileTensor(
         c_host_ref_ptr,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
 
     # Device allocations
@@ -142,24 +135,22 @@ def test[
 
     var a_device = TileTensor(
         a_device_buffer,
-        row_major(Coord(m, Idx[K.value()])),
+        row_major(m, Idx[K.value()]),
     )
     var b_device = TileTensor(
         b_device_buffer,
         row_major(
-            Coord(
-                Idx[N.value() if transpose_b else K.value()],
-                Idx[K.value() if transpose_b else N.value()],
-            )
+            Idx[N.value() if transpose_b else K.value()],
+            Idx[K.value() if transpose_b else N.value()],
         ),
     )
     var c_device = TileTensor(
         c_device_buffer,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
     var c_device_ref = TileTensor(
         c_device_ref_buffer,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
 
     # Initialize matmul operands
@@ -182,52 +173,49 @@ def test[
     ctx.enqueue_copy(c_device_buffer, c_host_ptr)
     ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
 
-    @__parameter
-    @always_inline
-    @__copy_capture(c_device, m, n)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        var update_val: SIMD[_dtype, width] = val
+    comptime if case .Some(func) = lambda_fn:
 
-        comptime if lambda_fn:
-            comptime func = lambda_fn.value()
-            update_val = func(idx, (m, n), update_val)
-        c_device.store_linear[alignment=alignment * size_of[dtype]()](
-            idx, rebind[SIMD[dtype, width]](update_val)
-        )
+        def compute_fn[
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[_dtype, width]) {var m, var n} -> SIMD[
+            _dtype, width
+        ]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            return func(
+                IndexList[2](Int(idx[0]), Int(idx[1])),
+                (m, n),
+                val,
+            )
 
-    comptime if lambda_fn:
-        comptime if config:
+        comptime if case .Some(cfg) = config:
             multistage_gemm[
                 transpose_b=transpose_b,
-                config=config.value(),
-                elementwise_lambda_fn=epilogue_fn,
+                config=cfg,
             ](
                 c_device,
                 a_device,
                 b_device,
+                compute_fn,
                 ctx,
             )
         else:
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=epilogue_fn,
             ](
                 c_device,
                 a_device,
                 b_device,
+                compute_fn,
                 ctx,
             )
     else:
-        comptime if config:
+        comptime if case .Some(cfg) = config:
             multistage_gemm[
                 transpose_b=transpose_b,
-                config=config.value(),
+                config=cfg,
             ](
                 c_device,
                 a_device,
@@ -256,16 +244,15 @@ def test[
         transpose_b=transpose_b,
     )
 
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
-    @always_inline
+    @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
         var val = c_device_ref.load[width=simd_width](idx0)
 
         var update_val = val
 
-        comptime if lambda_fn:
-            comptime element_lambda = lambda_fn.value()
+        comptime if case .Some(element_lambda) = lambda_fn:
             update_val = element_lambda(
                 rebind[IndexList[2]](coord_to_index_list(idx0)), (m, n), val
             )
@@ -332,6 +319,11 @@ def main() raises:
         test[.float32, N=Int(4096), K=Int(11008)](ctx, 23, 4096, 11008)
         test[.float32, N=Int(4096), K=Int(12288)](ctx, 67, 4096, 12288)
         test[.float32, N=Int(4096), K=Int(4096)](ctx, 555, 4096, 4096)
+        # The split-K outlier rows, one M per row.
+        for m in [1, 37, 67, 131]:
+            test[.float32, transpose_b=True, N=Int(512), K=Int(5120)](
+                ctx, m, 512, 5120
+            )
 
         print("===> bfloat16-float32 mma")
         test[
@@ -344,8 +336,8 @@ def main() raises:
                 .bfloat16,
                 transpose_b=True,
             ](
-                block_tile_shape=Index(64, 128, 64),
-                warp_tile_shape=Index(16, 128, 64),
+                block_tile_shape=(Int(64), Int(128), Int(64)),
+                warp_tile_shape=(Int(16), Int(128), Int(64)),
                 num_pipeline_stages=3,
             ),
             N=Int(128),
@@ -363,8 +355,18 @@ def main() raises:
         ](ctx, 1024, 5120, 3072)
         test[.bfloat16, N=Int(3072), K=Int(32768)](ctx, 1024, 3072, 32768)
         test[.bfloat16, N=Int(3072), K=Int(3072)](ctx, 1024, 3072, 3072)
+        # On SM100 these (N, K) take the SM100 GEMM at M 1 instead of GEMV.
+        test[.bfloat16, transpose_b=True, N=Int(32768), K=Int(1280)](
+            ctx, 1, 32768, 1280
+        )
+        test[.bfloat16, transpose_b=True, N=Int(4096), K=Int(1280)](
+            ctx, 1, 4096, 1280
+        )
+        test[.bfloat16, transpose_b=True, N=Int(4096), K=Int(1280)](
+            ctx, 3, 4096, 1280
+        )
 
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu():
             test[
                 .bfloat16,
                 transpose_b=True,
@@ -374,8 +376,8 @@ def main() raises:
                     .bfloat16,
                     transpose_b=True,
                 ](
-                    block_tile_shape=Index(16, 64, 64),
-                    warp_tile_shape=Index(16, 64, 32),
+                    block_tile_shape=(Int(16), Int(64), Int(64)),
+                    warp_tile_shape=(Int(16), Int(64), Int(32)),
                     num_pipeline_stages=3,
                     num_k_partitions=1,
                     num_warp_k_partitions=2,
@@ -392,8 +394,8 @@ def main() raises:
                     .bfloat16,
                     transpose_b=True,
                 ](
-                    block_tile_shape=Index(32, 64, 32),
-                    warp_tile_shape=Index(16, 64, 32),
+                    block_tile_shape=(Int(32), Int(64), Int(32)),
+                    warp_tile_shape=(Int(16), Int(64), Int(32)),
                     num_pipeline_stages=3,
                     num_k_partitions=1,
                     num_warp_k_partitions=4,
@@ -420,6 +422,24 @@ def main() raises:
         # Our default split-k reduction precision is output precision. For
         # bfloat16, we need a larger tolerance since the reference may reduce
         # in float32.
+        test[
+            .bfloat16,
+            arange_a=True,
+            transpose_b=True,
+            lambda_fn=epilogue_test_fn,
+            config=MatmulConfig[
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
+                transpose_b=True,
+            ](
+                block_tile_shape=(Int(64), Int(128), Int(64)),
+                warp_tile_shape=(Int(16), Int(128), Int(64)),
+                num_pipeline_stages=3,
+            ),
+            N=Int(128),
+            K=Int(128),
+        ](ctx, 100, 128, 128)
         test[
             .bfloat16,
             transpose_b=True,
@@ -510,4 +530,12 @@ def main() raises:
         )
         test[.bfloat16, transpose_b=True, N=Int(514), K=Int(4096)](
             ctx, 32, 514, 4096
+        )
+
+        print("===> bfloat16 small N")
+        test[.bfloat16, transpose_b=True, N=Int(32), K=Int(5120)](
+            ctx, 3, 32, 5120
+        )
+        test[.bfloat16, transpose_b=True, N=Int(128), K=Int(512)](
+            ctx, 5, 128, 512
         )

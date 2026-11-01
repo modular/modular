@@ -17,6 +17,7 @@ from max.gpu.primitives.warp import vote, shuffle_idx
 from max.gpu.primitives.id import lane_id
 from std.bit import pop_count, count_trailing_zeros
 from std.atomic import Atomic
+from std.math import ceildiv
 
 
 # ========================== CONFIGURATION ==========================
@@ -24,7 +25,7 @@ comptime BLOCK_DIM = 256
 
 
 # ========================== DEVICE FUNCTIONS ==========================
-@always_inline
+@inline(.always)
 def cond(val: UInt32) -> Bool:
     """Filter: keep only even numbers.
 
@@ -39,9 +40,9 @@ def cond(val: UInt32) -> Bool:
 
 # ========================== KERNEL CODE ==========================
 def filter_kernel(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    output_size: UnsafePointer[UInt32, MutAnyOrigin],
+    input: ImmPointer[UInt32, ImmUntrackedOrigin],
+    output: MutPointer[UInt32, MutUntrackedOrigin],
+    output_size: MutPointer[UInt32, MutUntrackedOrigin],
     N: UInt32,
 ):
     """Figure 12.4: Unstable filter using cooperative groups pattern.
@@ -107,7 +108,7 @@ def main() raises:
             h_size[0] = UInt32(0)
 
         # Launch kernel
-        var num_blocks = (N + BLOCK_DIM - 1) // BLOCK_DIM
+        var num_blocks = ceildiv(N, BLOCK_DIM)
         print(
             (
                 "Launching unstable filter kernel with cooperative groups (Fig"

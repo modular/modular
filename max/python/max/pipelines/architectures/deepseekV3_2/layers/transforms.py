@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Hadamard transform used by the DeepSeek-V3.2 sparse attention."""
+
 from __future__ import annotations
 
 import math
@@ -22,12 +24,12 @@ from max.graph import DeviceRef, TensorValue, ops
 
 
 def hadamard(n: int, dtype: type[Any] = int) -> npt.NDArray[Any]:
-    """
-    Source: https://github.com/scipy/scipy/blob/v1.17.0/scipy/linalg/_special_matrices.py#L230-L284
-    Construct an Hadamard matrix.
+    """Constructs an n-by-n Hadamard matrix.
 
-    Constructs an n-by-n Hadamard matrix, using Sylvester's
-    construction. `n` must be a power of 2.
+    The matrix is built with Sylvester's construction, and ``n`` must be a
+    power of 2. Adapted from
+    https://github.com/scipy/scipy/blob/v1.17.0/scipy/linalg/\
+_special_matrices.py#L230-L284.
 
     Parameters
     ----------
@@ -36,16 +38,16 @@ def hadamard(n: int, dtype: type[Any] = int) -> npt.NDArray[Any]:
     dtype : dtype, optional
         The data type of the array to be constructed.
 
-    Returns
+    Returns:
     -------
     H : (n, n) ndarray
         The Hadamard matrix.
 
-    Notes
+    Notes:
     -----
     .. versionadded:: 0.8.0
 
-    Examples
+    Examples:
     --------
     >>> from scipy.linalg import hadamard
     >>> hadamard(2, dtype=complex)
@@ -58,7 +60,6 @@ def hadamard(n: int, dtype: type[Any] = int) -> npt.NDArray[Any]:
            [ 1, -1, -1,  1]])
 
     """
-
     # This function is a slightly modified version of the
     # function contributed by Ivo in ticket #675.
 

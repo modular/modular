@@ -35,7 +35,8 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
+    PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
     KVCacheParams,
     MLAAttnKey,
@@ -95,8 +96,8 @@ def paged_kv_cache_inputs(
         ValueError: If ``params`` names more than one device, if the batch is
             empty, if the two length sequences disagree in length, or if the
             batch needs more pages than ``total_num_pages``.
-        NotImplementedError: If ``params`` asks for speculative decoding or
-            per-layer buffers, whose extra inputs this helper does not build.
+        NotImplementedError: If ``params`` asks for speculative decoding,
+            whose extra inputs this helper does not build.
     """
     if params.n_devices != 1:
         raise ValueError(
@@ -104,10 +105,10 @@ def paged_kv_cache_inputs(
             f"{params.n_devices}. Use PagedKVCacheManager for a distributed "
             "cache."
         )
-    if params.speculative_method is not None or params.per_layer_buffers:
+    if params.speculative_method is not None:
         raise NotImplementedError(
-            "paged_kv_cache_inputs does not build the draft or per-layer KV "
-            "inputs; use PagedKVCacheManager for those."
+            "paged_kv_cache_inputs does not build the draft KV inputs; use "
+            "PagedKVCacheManager for those."
         )
     if not prompt_lens:
         raise ValueError("prompt_lens must not be empty")
@@ -167,6 +168,7 @@ def paged_kv_cache_inputs(
     )
     for batch_idx, req_blocks in enumerate(blocks):
         lookup_table[batch_idx, : len(req_blocks)] = req_blocks
+    lookup_table_buffer = Buffer.from_numpy(lookup_table).to(device)
 
     # The decode kernels pick their grid from the batch shape, and the packing
     # differs per attention flavor (MHA / MLA / MSA), so let the params pack it.
@@ -179,13 +181,25 @@ def paged_kv_cache_inputs(
         cache_lengths=Buffer.from_numpy(np.array(cache_lengths, np.uint32)).to(
             device
         ),
-        lookup_table=Buffer.from_numpy(lookup_table).to(device),
+        lookup_table=lookup_table_buffer,
         # Both length scalars are declared CPU-resident graph inputs.
         max_prompt_length=Buffer.from_numpy(
             np.array([max_prompt_length], np.uint32)
         ),
         max_cache_length=Buffer.from_numpy(
             np.array([max_cache_length], np.uint32)
+        ),
+        # These buffers are packed, so the kernels take the sentinel.
+        page_stride=Buffer.from_numpy(np.array([PACKED_PAGE_STRIDE], np.int64)),
+        scales_page_stride=(
+            Buffer.from_numpy(np.array([PACKED_PAGE_STRIDE], np.int64))
+            if kv_scales is not None
+            else None
+        ),
+        # Scales share the values' block-id space, so they reuse the lookup
+        # table. Present exactly when the scales are.
+        scales_lookup_table=(
+            lookup_table_buffer if kv_scales is not None else None
         ),
         kv_scales=kv_scales,
         attention_dispatch_metadata=attn_key.pack_into_buffer(

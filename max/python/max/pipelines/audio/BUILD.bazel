@@ -20,9 +20,9 @@ modular_py_library(
     # target is built in isolation, for the circularity described above.
     tags = ["no-mypy"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/request",

@@ -28,6 +28,8 @@ MODULE_PATH = _WORKSPACE / "oss/modular/bazel/common.MODULE.bazel"
 BEGIN_MARKER = "# BEGIN GENERATED LOGIT_VERIFICATION GOLDEN HTTP_FILES"
 END_MARKER = "# END GENERATED LOGIT_VERIFICATION GOLDEN HTTP_FILES"
 
+_PUBLIC_S3_PREFIX = "s3://modular-bazel-artifacts-public/"
+
 
 def s3_to_https(s3_url: str) -> str:
     """Convert s3://bucket/key to https://bucket.s3.amazonaws.com/key."""
@@ -77,7 +79,9 @@ def main() -> None:
     seen: dict[str, tuple[str, str, str]] = {}  # name -> (name, sha256, url)
     for pipeline_config in LOGIT_VERIFICATION_CONFIG.pipelines.values():
         goldens = pipeline_config.pregenerated_torch_goldens
-        if not goldens:
+        # http_file fetches unauthenticated, and this file is published, so
+        # only public-bucket goldens belong in it.
+        if not goldens or not goldens.tar_file.startswith(_PUBLIC_S3_PREFIX):
             continue
         https_url = s3_to_https(goldens.tar_file)
         sha256 = extract_sha256_from_url(https_url)

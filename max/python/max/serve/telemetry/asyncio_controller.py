@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Telemetry controller that records measurements on an asyncio task."""
+
 from __future__ import annotations
 
 import asyncio
@@ -33,14 +35,16 @@ if sys.version_info >= (3, 13):
 else:
 
     class QueueShutDown(Exception):
-        pass
+        """The telemetry queue was shut down."""
 
 
 class NotStarted(Exception):
-    pass
+    """The telemetry consumer was used before it started."""
 
 
 class AsyncioMetricClient(MetricClient):
+    """Metric client that enqueues measurements for an asyncio consumer."""
+
     def __init__(self, q: asyncio.Queue[MaxMeasurement]) -> None:
         self.q = q
 
@@ -51,6 +55,7 @@ class AsyncioMetricClient(MetricClient):
         )
 
     def send_measurement(self, m: MaxMeasurement) -> None:
+        """Enqueues a measurement for the consumer."""
         try:
             self.q.put_nowait(m)
         except queue.Full:
@@ -62,11 +67,12 @@ class AsyncioMetricClient(MetricClient):
         self,
         settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        """Returns the factory that starts this client in another process."""
         return start_asyncio_consumer
 
 
 class AsyncioTelemetryController:
-    """Execute a sync function asynchronously
+    """Execute a sync function asynchronously.
 
     Use an asyncio Queue & Task to asynchronously commit metric measurements
     """
@@ -76,11 +82,13 @@ class AsyncioTelemetryController:
         self.task: asyncio.Task[object] | None = None
 
     def start(self) -> None:
+        """Starts the consumer task."""
         if self.task is not None:
             raise Exception("task already started")
         self.task = asyncio.create_task(self._consume(self.q))
 
     async def shutdown(self, timeout_s: float = 2.0) -> None:
+        """Drains the queue and stops the consumer task."""
         if sys.version_info >= (3, 13):
             self.q.shutdown()
 
@@ -98,6 +106,7 @@ class AsyncioTelemetryController:
             self.task = None
 
     def Client(self) -> AsyncioMetricClient:
+        """Returns a client bound to this controller's queue."""
         if self.task is None:
             raise NotStarted(
                 "AsyncioTelemetryController task not started. Cannot enqueue work."
@@ -139,5 +148,6 @@ class AsyncioTelemetryController:
 
 @asynccontextmanager
 async def start_asyncio_consumer() -> AsyncGenerator[AsyncioMetricClient, None]:
+    """Runs the asyncio metric consumer for the caller's scope."""
     async with AsyncioTelemetryController() as controller:
         yield controller.Client()

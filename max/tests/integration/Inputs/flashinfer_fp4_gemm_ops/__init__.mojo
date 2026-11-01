@@ -23,7 +23,7 @@ from extensibility import InputTensor, OutputTensor, ManagedTensorSlice
 from std.utils import IndexList
 
 from max.gpu.host import DeviceContext
-from max.gpu.host._nvidia_cuda import CUstream
+from max.gpu.host import CUstream
 
 from .dlpack import DLTensor
 from .tvm_ffi import SafeFunction, TVMFFIAny, take_latest_error

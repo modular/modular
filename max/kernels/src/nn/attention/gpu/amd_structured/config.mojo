@@ -23,7 +23,6 @@ Matches amd/mha.mojo config target:
 
 from std.math.uutils import umod, ufloordiv
 from max.gpu import block_idx, lane_id
-from std.utils import IndexList
 from nn.attention.mha_utils import MHAConfig
 
 
@@ -39,7 +38,7 @@ comptime _MHA_DECODE_WIDE_MMA_K = 64
 comptime _MHA_DECODE_FOLD_WM = 16
 
 
-@always_inline
+@inline(.always)
 def mha_decode_fold_wide_mma[
     dtype: DType, num_heads: Int, group: Int, q_seq_len: Int
 ]() -> Bool:
@@ -81,7 +80,7 @@ def mha_decode_fold_wide_mma[
     )
 
 
-@always_inline
+@inline(.always)
 def _mha_decode_fold_warp_m[
     dtype: DType, num_heads: Int, group: Int, S: Int
 ]() -> Int:
@@ -128,7 +127,7 @@ comptime _MHA_DECODE_WIDE_TILE_ROWS = 4 * _MHA_DECODE_WIDE_MMA_M
 comptime _MHA_DECODE_PAD_MIN_ROWS = 48
 
 
-@always_inline
+@inline(.always)
 def mha_decode_fold_tile_q_seq_len[
     dtype: DType, num_heads: Int, group: Int, q_seq_len: Int
 ]() -> Int:
@@ -166,14 +165,14 @@ def mha_decode_fold_tile_q_seq_len[
     return q_seq_len
 
 
-@always_inline
+@inline(.always)
 def decode_mma_shape[
     dtype: DType,
     depth: Int,
     num_heads: Int,
     mla_mode: Bool = False,
     fold_wide_mma: Bool = False,
-]() -> IndexList[3]:
+]() -> Tuple[Int, Int, Int]:
     """Return the MFMA shape the gfx950 decode kernels use for this shape.
 
     Split out of `AMDStructuredConfig.get_mma_shape` so host-side dispatch can
@@ -196,7 +195,7 @@ def decode_mma_shape[
     # The MHA token fold's wide arm overrides the depth rule below: it keeps P
     # in registers, which needs a 32-row MFMA.
     comptime if fold_wide_mma:
-        return IndexList[3](
+        return (
             _MHA_DECODE_WIDE_MMA_M,
             _MHA_DECODE_WIDE_MMA_M,
             _MHA_DECODE_WIDE_MMA_K,
@@ -208,10 +207,10 @@ def decode_mma_shape[
         # query heads). Otherwise prefer `16x16x128` when `depth % 128 == 0`
         # and fall back to `32x32x64` for full M-dim utilization.
         comptime if (mla_mode and num_heads <= 16) or depth % 128 == 0:
-            return IndexList[3](16, 16, 128)
-        return IndexList[3](32, 32, 64)
+            return (16, 16, 128)
+        return (32, 32, 64)
     # BF16 decode: 16x16x32 regardless of depth.
-    return IndexList[3](16, 16, 32)
+    return (16, 16, 32)
 
 
 @fieldwise_init
@@ -248,7 +247,7 @@ struct AMDStructuredConfig[
     )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def heads_per_tile() -> Int:
         # MLA: tile spans `BM` heads of the single latent kv (block_idx.y is
         # the tile idx). MHA: tile spans `group` heads of one kv head
@@ -256,37 +255,37 @@ struct AMDStructuredConfig[
         return Self.config.block_m() if Self.mla_mode else Self.group
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def q_head_idx() -> Int:
         comptime if Self.token_gen:
             comptime mma_shape = Self.get_mma_shape()
             var lane_in_row = umod(lane_id(), mma_shape[0])
-            return Int(block_idx.y) * Self.heads_per_tile() + lane_in_row
+            return block_idx.y * Self.heads_per_tile() + lane_in_row
         else:
             return block_idx.x
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def q_tile_idx() -> Int:
         comptime if Self.token_gen:
             # MLA decode tiles queries across block_idx.y; MHA decode keeps
             # all queries of the kv-head in block 0.
-            return Int(block_idx.y) if Self.mla_mode else 0
+            return block_idx.y if Self.mla_mode else 0
         else:
-            return Int(block_idx.y)
+            return block_idx.y
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def kv_head_idx() -> Int:
         comptime if Self.token_gen:
             # MLA decode: single latent kv head at index 0.
-            return 0 if Self.mla_mode else Int(block_idx.y)
+            return 0 if Self.mla_mode else block_idx.y
         else:
             return ufloordiv(Self.q_head_idx(), Self.group)
 
     @staticmethod
-    @always_inline
-    def get_mma_shape() -> IndexList[3]:
+    @inline(.always)
+    def get_mma_shape() -> Tuple[Int, Int, Int]:
         comptime if Self.token_gen:
             return decode_mma_shape[
                 Self.config.dtype,
@@ -305,11 +304,11 @@ struct AMDStructuredConfig[
             ]()
         # FP8 prefill: 32x32x64.  BF16 prefill: 32x32x16.
         comptime if Self.config.dtype.is_float8():
-            return IndexList[3](32, 32, 64)
-        return IndexList[3](32, 32, 16)
+            return (32, 32, 64)
+        return (32, 32, 16)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_q_offset[q_depth: Int]() -> UInt32:
         comptime if Self.token_gen and Self.mla_mode:
             # MLA decode: `BM` queries per tile along block_idx.y.
@@ -328,6 +327,6 @@ struct AMDStructuredConfig[
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_output_offset[output_depth: Int]() -> UInt32:
         return Self.get_q_offset[output_depth]()

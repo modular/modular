@@ -1,0 +1,32 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""DeepSeek-V4-Flash mixture-of-experts architecture for text generation."""
+
+from .arch import deepseekV4_arch
+from .model import DeepseekV4BatchProcessor, DeepseekV4Inputs, DeepseekV4Model
+from .model_config import DeepseekV4Config, KVLeafSpec
+from .reasoning import DeepseekV4ReasoningParser
+from .tokenizer import DeepseekV4Tokenizer
+from .tool_parser import DeepseekV4ToolParser
+
+__all__ = [
+    "DeepseekV4BatchProcessor",
+    "DeepseekV4Config",
+    "DeepseekV4Inputs",
+    "DeepseekV4Model",
+    "DeepseekV4ReasoningParser",
+    "DeepseekV4Tokenizer",
+    "DeepseekV4ToolParser",
+    "KVLeafSpec",
+    "deepseekV4_arch",
+]

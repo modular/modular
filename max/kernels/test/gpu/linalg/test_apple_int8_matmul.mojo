@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Correctness tests for the Apple M5 int8 W8A8 matmul (`int8_matmul.mojo`).
 
-Three stages, all gated on Apple M5 (`compute_capability == 5`):
+Three stages, all gated on Apple M5 (`compute_capability >= 5`):
 
 - Stage 1 (`_run_gemm_vs_quant_ref`): the W8A8 GEMM+dequant kernel vs an fp32
   reference that applies the IDENTICAL symmetric-absmax int8 quant to A and B,
@@ -93,7 +93,7 @@ def _run_gemm_vs_quant_ref[
     name: String,
     i32_override: Optional[Bool] = None,
 ) raises:
-    print("== stage1", name, M, "x", N, "x", K, "bias", with_bias)
+    print(t"== stage1 {name} {M} x {N} x {K} bias {with_bias}")
 
     var af = ctx.enqueue_create_host_buffer[.float32](M * K)
     var bf = ctx.enqueue_create_host_buffer[.float32](N * K)
@@ -123,13 +123,11 @@ def _run_gemm_vs_quant_ref[
     ctx.enqueue_copy(bsd, bsc)
     ctx.enqueue_copy(biasd, bias_h)
 
-    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_immut()
-    var b_tt = TileTensor(bd.unsafe_ptr(), row_major(N, K)).as_immut()
-    var as_tt = TileTensor(asd.unsafe_ptr(), row_major(M)).as_immut()
-    var bs_tt = TileTensor(bsd.unsafe_ptr(), row_major(N)).as_immut()
-    var bias_tt = TileTensor(
-        biasd.unsafe_ptr(), row_major(max(N, 1))
-    ).as_immut()
+    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_imm()
+    var b_tt = TileTensor(bd.unsafe_ptr(), row_major(N, K)).as_imm()
+    var as_tt = TileTensor(asd.unsafe_ptr(), row_major(M)).as_imm()
+    var bs_tt = TileTensor(bsd.unsafe_ptr(), row_major(N)).as_imm()
+    var bias_tt = TileTensor(biasd.unsafe_ptr(), row_major(max(N, 1))).as_imm()
     var c_tt = TileTensor(cd.unsafe_ptr(), row_major(M, N))
 
     enqueue_apple_int8_matmul[c_type=.bfloat16, has_bias=with_bias](
@@ -165,7 +163,7 @@ def _run_gemm_vs_quant_ref[
                 expected
             ):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", expected)
+                    print(t"FAIL: {i} {j} got {got} exp {expected}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -189,7 +187,7 @@ def _run_act_quant(ctx: DeviceContext, M: Int, K: Int, name: String) raises:
     var sd = ctx.enqueue_create_buffer[.float32](M)
     ctx.enqueue_copy(ad, af)
 
-    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_imm()
     var q_tt = TileTensor(qd.unsafe_ptr(), row_major(M, K))
     var s_tt = TileTensor(sd.unsafe_ptr(), row_major(M))
     enqueue_apple_int8_quantize_activation[.bfloat16](q_tt, a_tt, s_tt, ctx)
@@ -212,14 +210,14 @@ def _run_act_quant(ctx: DeviceContext, M: Int, K: Int, name: String) raises:
         var exp_scale = amax / 127.0 if amax != 0.0 else Float32(0)
         if abs(s_h[i] - exp_scale) > Float32(1e-6) * (exp_scale + 1.0):
             if pass_:
-                print("FAIL scale row", i, "got", s_h[i], "exp", exp_scale)
+                print(t"FAIL scale row {i} got {s_h[i]} exp {exp_scale}")
             pass_ = False
         var mult = 127.0 / amax if amax != 0.0 else Float32(0)
         for j in range(K):
             var qi = Int(round(Float32(af[i * K + j]) * mult))
             if Int(q_h[i * K + j]) != qi:
                 if pass_:
-                    print("FAIL q", i, j, "got", Int(q_h[i * K + j]), "exp", qi)
+                    print(t"FAIL q {i} {j} got {Int(q_h[i * K + j])} exp {qi}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -234,7 +232,7 @@ def _run_act_quant(ctx: DeviceContext, M: Int, K: Int, name: String) raises:
 def _run_end_to_end(
     ctx: DeviceContext, M: Int, N: Int, K: Int, name: String
 ) raises:
-    print("== stage3 e2e", name, M, "x", N, "x", K)
+    print(t"== stage3 e2e {name} {M} x {N} x {K}")
 
     var af = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var bf = ctx.enqueue_create_host_buffer[.float32](N * K)
@@ -258,19 +256,17 @@ def _run_end_to_end(
     ctx.enqueue_copy(bd, bq)
     ctx.enqueue_copy(bsd, bsc)
 
-    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_imm()
     var aq_tt = TileTensor(aqd.unsafe_ptr(), row_major(M, K))
     var as_tt = TileTensor(asd.unsafe_ptr(), row_major(M))
     enqueue_apple_int8_quantize_activation[.bfloat16](aq_tt, a_tt, as_tt, ctx)
 
-    var b_tt = TileTensor(bd.unsafe_ptr(), row_major(N, K)).as_immut()
-    var bs_tt = TileTensor(bsd.unsafe_ptr(), row_major(N)).as_immut()
-    var bias_tt = TileTensor(
-        biasd.unsafe_ptr(), row_major(max(N, 1))
-    ).as_immut()
+    var b_tt = TileTensor(bd.unsafe_ptr(), row_major(N, K)).as_imm()
+    var bs_tt = TileTensor(bsd.unsafe_ptr(), row_major(N)).as_imm()
+    var bias_tt = TileTensor(biasd.unsafe_ptr(), row_major(max(N, 1))).as_imm()
     var c_tt = TileTensor(cd.unsafe_ptr(), row_major(M, N))
     enqueue_apple_int8_matmul[c_type=.bfloat16, has_bias=False](
-        c_tt, aq_tt.as_immut(), b_tt, as_tt.as_immut(), bs_tt, bias_tt, ctx
+        c_tt, aq_tt.as_imm(), b_tt, as_tt.as_imm(), bs_tt, bias_tt, ctx
     )
 
     # Read back the device-quantized A + scales for the reference.
@@ -301,7 +297,7 @@ def _run_end_to_end(
                 expected
             ):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", expected)
+                    print(t"FAIL: {i} {j} got {got} exp {expected}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -363,8 +359,8 @@ def test_end_to_end(ctx: DeviceContext) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     test_gemm(ctx)
     test_act_quant(ctx)

@@ -35,13 +35,13 @@ slot reads back as 0 and the bug hides.
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 from max.gpu import block_idx, thread_idx
-from std.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from layout import Coord, TileTensor, row_major
 from nn.sampling import topk_sampling_from_prob, topk_topp_sampling_from_prob
 from std.testing import assert_true
 from std.utils import IndexList
 from std.utils.numerics import inf, nan, neg_inf
+from std.utils.index import Index
 
 comptime DTYPE = DType.float32
 comptime IDX = DType.int64
@@ -72,7 +72,7 @@ def check_degenerate_row(
     top_p: Float32,
 ) raises:
     var batch_size = len(row_kind)
-    var in_shape = IndexList[2](batch_size, n)
+    var in_shape = Index(batch_size, n)
     var in_layout = row_major(Coord(in_shape))
 
     var d_in = ctx.enqueue_create_buffer[DTYPE](in_shape.flattened_length())
@@ -109,12 +109,12 @@ def check_degenerate_row(
     var seed_t = (
         TileTensor(seed_buf, row_major(batch_size))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
     var temp_t = (
         TileTensor(temp_buf, row_major(batch_size))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
 
     ctx.enqueue_function[poison_lds_kernel[2048]](
@@ -135,7 +135,7 @@ def check_degenerate_row(
     with d_out.map_to_host() as h_out:
         for b in range(batch_size):
             var v = Int(h_out[b])
-            print("  ", name, "row", b, "kind", row_kind[b], "-> id", v)
+            print(t"   {name} row {b} kind {row_kind[b]} -> id {v}")
             assert_true(
                 v >= 0 and v < n,
                 String("sampled index out of range in ")
@@ -165,7 +165,7 @@ def check_degenerate_row_probs(
     exceeds the initial pivot, so the fallback slot is read unwritten.
     """
     var batch_size = len(row_kind)
-    var in_shape = IndexList[2](batch_size, n)
+    var in_shape = Index(batch_size, n)
     var in_layout = row_major(Coord(in_shape))
 
     var d_in = ctx.enqueue_create_buffer[DTYPE](in_shape.flattened_length())
@@ -187,7 +187,7 @@ def check_degenerate_row_probs(
         for b in range(batch_size):
             h_out[b] = Scalar[IDX](-7)
 
-    var in_t = TileTensor(d_in, in_layout).as_immut()
+    var in_t = TileTensor(d_in, in_layout).as_imm()
     var out_t = TileTensor(d_out, row_major(batch_size))
 
     ctx.enqueue_function[poison_lds_kernel[2048]](
@@ -202,7 +202,7 @@ def check_degenerate_row_probs(
     with d_out.map_to_host() as h_out:
         for b in range(batch_size):
             var v = Int(h_out[b])
-            print("  ", name, "row", b, "kind", row_kind[b], "-> id", v)
+            print(t"   {name} row {b} kind {row_kind[b]} -> id {v}")
             assert_true(
                 v >= 0 and v < n,
                 String("sampled index out of range in ")

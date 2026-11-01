@@ -10,12 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Layer normalization modules for Flux2."""
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 
 class LayerNorm(Module):
@@ -72,6 +73,7 @@ class LayerNorm(Module):
         return gamma, beta
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Normalizes ``x``, scaling by its affine parameters when it has them."""
         gamma, beta = self._affine_params(x)
         if self.keep_dtype:
             return ops.layer_norm(
@@ -91,6 +93,8 @@ class LayerNorm(Module):
 
 
 class AdaLayerNormContinuous(Module):
+    """Layer norm whose scale and shift come from the conditioning vector."""
+
     def __init__(
         self,
         embedding_dim: int,

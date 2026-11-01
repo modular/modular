@@ -53,7 +53,7 @@ def unsafe_parallel_memcpy[
     if count == 0:
         return
 
-    @always_inline
+    @inline(.always)
     def _parallel_copy(thread_id: Int) {imm}:
         var begin = count_per_task * thread_id
         var end = min(
@@ -121,8 +121,8 @@ def parallel_memcpy[
     dtype: DType
 ](
     *,
-    dest: OptionalPointer[mut=True, Scalar[dtype], _],
-    src: OptionalPointer[Scalar[dtype], _],
+    dest: Optional[MutPointer[Scalar[dtype], _]],
+    src: Optional[Pointer[Scalar[dtype], _]],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -157,8 +157,8 @@ def parallel_memcpy[
     dtype: DType,
 ](
     *,
-    dest: OptionalPointer[mut=True, Scalar[dtype], _],
-    src: OptionalPointer[Scalar[dtype], _],
+    dest: Optional[MutPointer[Scalar[dtype], _]],
+    src: Optional[Pointer[Scalar[dtype], _]],
     count: Int,
 ):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.

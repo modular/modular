@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling safetensors adapter: prefix strip, skip the audio tower, few
-reshapes."""
+"""Inkling safetensors adapter: prefix strip, skip the audio tower, few reshapes."""
 
 from __future__ import annotations
 
@@ -19,11 +18,13 @@ import logging
 import re
 
 import numpy as np
-from max.driver import Buffer
+from max.driver import Buffer, bfloat16_as_uint16_to_float32
 from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData, Weights
 from transformers import AutoConfig
+
+from .layers.moe import padded_router_rows
 
 logger = logging.getLogger("max.pipelines")
 
@@ -34,7 +35,7 @@ _FP4_E2M1_MAX = 6.0
 _TEXT = "model.llm."
 _VISION = "model.visual."
 _SKIP = {
-    "model.mtp.": "MTP draft heads, which this architecture does not implement",
+    "model.mtp.": "MTP depths, which load as their own draft",
     "model.audio.": "the audio tower, which this architecture does not serve",
 }
 
@@ -98,6 +99,21 @@ def _sink_down(data: WeightData, name: str) -> WeightData:
     )
 
 
+def _pad_router_rows(data: WeightData, name: str) -> WeightData:
+    """Pads the gate weight up to the row count the graph declares."""
+    rows, hidden = (int(d) for d in data.shape)
+    padded = padded_router_rows(rows)
+    if padded == rows:
+        return _rename(data, name)
+    byte_rows = _as_bytes(data)
+    return _from_bytes(
+        np.pad(byte_rows, ((0, padded - rows), (0, 0))),
+        data,
+        [padded, hidden],
+        name,
+    )
+
+
 def _as_float32(data: WeightData) -> np.ndarray:
     """Widens a float weight to float32 on the host.
 
@@ -106,8 +122,7 @@ def _as_float32(data: WeightData) -> np.ndarray:
     """
     buf = data.to_buffer()
     if data.dtype == DType.bfloat16:
-        bits = buf.view(DType.uint16).to_numpy().astype(np.uint32)
-        return (bits << 16).view(np.float32)
+        return bfloat16_as_uint16_to_float32(buf.view(DType.uint16).to_numpy())
     return buf.to_numpy().astype(np.float32)
 
 
@@ -165,6 +180,8 @@ def _convert(name: str, data: WeightData) -> dict[str, WeightData]:
     if rest.endswith("shared_experts.shared_w2_weight"):
         target = f"{prefix}shared_experts.down_proj.weight"
         return {target: _sink_down(data, target)}
+    if rest.endswith("mlp.gate.weight"):
+        return {rest: _pad_router_rows(data, rest)}
     if rest.endswith(".input_amax"):
         target = rest[: -len(".input_amax")] + ".input_scale"
         return {target: _input_scale(data, target)}

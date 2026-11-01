@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.tensor import Tensor
 
 
 class Gemma4VisionPooler(Module[..., Tensor]):
@@ -38,6 +38,7 @@ class Gemma4VisionPooler(Module[..., Tensor]):
     def forward(
         self, hidden_states: Tensor, pool_gather_index: Tensor
     ) -> Tensor:
+        """Pools each image's patch features into one vector."""
         original_dtype = hidden_states.dtype
         h = hidden_states.cast(DType.float32)
 

@@ -146,11 +146,10 @@ not format-inherent).
 
 The kernel is exposed as the graph op `mo.matmul.weight.only.block.scaled.apple`
 (`graph_compiler/builtin_kernels/linalg.mojo`), gated on `is_gpu[target]()` and
-`has_apple_gpu_accelerator()`. The op signature mirrors the existing W4A16
-sibling `mo.matmul.mxfp4.dequant.fp8` (bf16 `a`, packed-uint8 `b`, rank-2
-`b_scales`, no `a_scales`, no `tensor_sf`) rather than the NVFP4
-`mo.matmul.dynamic.block.scaled` op, whose FP4-`a` + rank-5-scale shape is
-hard-gated to SM100.
+`has_apple_gpu_accelerator()`. The op signature is a W4A16 one (bf16 `a`,
+packed-uint8 `b`, rank-2 `b_scales`, no `a_scales`, no `tensor_sf`) rather than
+the NVFP4 `mo.matmul.dynamic.block.scaled` op, whose FP4-`a` + rank-5-scale
+shape is hard-gated to SM100.
 
 On the Python side, `nn/quant_ops.py::_matmul_float4` takes an Apple branch
 (`_is_apple_gpu()`) that passes bf16 `x` and rank-2 weight scales straight

@@ -22,7 +22,7 @@ from threading import Thread
 from typing import Any
 
 import numpy as np
-from _transfer_engine_helpers import kv_memory
+from _transfer_engine_helpers import every_leaf, kv_memory
 from max.driver import CPU, Buffer
 from max.pipelines.kv_cache import KVTransferEngine
 
@@ -67,7 +67,11 @@ def test_notification_delivery_is_prompt() -> None:
         src_idxs = [0, 1, 2]
         dst_idxs = [0, 1, 2]
         transfer_req = engine.initiate_send_transfer(
-            remote_md, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
+            remote_md,
+            every_leaf(remote_md, src_idxs),
+            every_leaf(remote_md, dst_idxs),
+            src_replica_idx=0,
+            dst_replica_idx=0,
         )
         transfer_queue.put(transfer_req)
 

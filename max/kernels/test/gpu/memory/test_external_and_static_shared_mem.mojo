@@ -11,18 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.sys import size_of
 from std.sys.info import align_of
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu import thread_idx
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 
 def test_external_shared_mem(ctx: DeviceContext) raises:
-    def dynamic_smem_kernel(data: MutPointer[Float32, MutAnyOrigin]):
+    def dynamic_smem_kernel[
+        data_origin: MutOrigin
+    ](data: MutPointer[Float32, data_origin]):
         var sram = unsafe_stack_allocation[
             16,
             Float32,
@@ -38,7 +42,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
         barrier()
         data[thread_idx.x] = dynamic_sram[thread_idx.x] + sram[thread_idx.x]
 
-    var res_host_ptr = alloc[Float32](16)
+    var res_host_ptr = unsafe_alloc[Float32](16)
     var res_device = ctx.enqueue_create_buffer[.float32](16)
 
     for i in range(16):
@@ -46,13 +50,10 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(res_device, res_host_ptr)
 
-    comptime kernel_func = dynamic_smem_kernel
-    ctx.enqueue_function[kernel_func, dump_llvm=True](
+    comptime kernel_func = dynamic_smem_kernel[origin_of(res_device)]
+    ctx.enqueue_function[kernel_func](
+        GridBlockLaunchConfig(grid_dim=1, block_dim=16, shared_mem_bytes=24960),
         res_device,
-        grid_dim=1,
-        block_dim=16,
-        shared_mem_bytes=24960,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(24960),
     )
 
     ctx.enqueue_copy(res_host_ptr, res_device)
@@ -62,9 +63,61 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
         assert_equal(res_host_ptr[i], Float32(2 * i))
 
     _ = res_device
-    res_host_ptr.free()
+    res_host_ptr.unsafe_free()
+
+
+# Above CUDA's 48 KB default cap on dynamic shared memory.
+comptime LARGE_SMEM_BYTES = 64 * 1024
+
+
+def large_dynamic_smem_kernel(data: MutPointer[Float32, MutUntrackedOrigin]):
+    comptime last = LARGE_SMEM_BYTES // size_of[Float32]() - 16
+    var dynamic_sram = external_memory[
+        Float32,
+        address_space=.SHARED,
+        alignment=align_of[Float32](),
+    ]()
+    dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
+    dynamic_sram[last + thread_idx.x] = Float32(thread_idx.x)
+    barrier()
+    data[thread_idx.x] = (
+        dynamic_sram[thread_idx.x] + dynamic_sram[last + thread_idx.x]
+    )
+
+
+def test_external_shared_mem_above_default_limit(ctx: DeviceContext) raises:
+    # Before sm_70, no NVIDIA block can opt in above 48 KB of shared memory.
+    comptime info = DeviceContext.default_device_info
+    comptime if (
+        info.shared_memory_per_multiprocessor <= LARGE_SMEM_BYTES
+        or (info.api == "cuda" and info.compute < 7.0)
+    ):
+        print(
+            (
+                "skipping test_external_shared_mem_above_default_limit: a"
+                " block on this device cannot use"
+            ),
+            LARGE_SMEM_BYTES,
+            "bytes",
+        )
+    else:
+        var res_device = ctx.enqueue_create_buffer[.float32](16)
+        res_device.enqueue_fill(0)
+        var config = GridBlockLaunchConfig(
+            grid_dim=1, block_dim=16, shared_mem_bytes=LARGE_SMEM_BYTES
+        )
+
+        ctx.enqueue_function[large_dynamic_smem_kernel](config, res_device)
+
+        var res_host_ptr = unsafe_alloc[Float32](16)
+        ctx.enqueue_copy(res_host_ptr, res_device)
+        ctx.synchronize()
+        for i in range(16):
+            assert_equal(res_host_ptr[i], Float32(2 * i))
+        res_host_ptr.unsafe_free()
 
 
 def main() raises:
     with DeviceContext() as ctx:
         test_external_shared_mem(ctx)
+        test_external_shared_mem_above_default_limit(ctx)

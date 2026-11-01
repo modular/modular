@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//GraphCompiler:__subpackages__",
+])
+
+modular_cc_binary(
+    name = "safetensor",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//GraphCompiler:DeviceDriver",
+        "//GraphCompiler:SafeTensor",
+        "//Support:CommonCLOptions",
+    ],
+)

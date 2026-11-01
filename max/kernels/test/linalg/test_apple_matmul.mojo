@@ -22,6 +22,7 @@ import std.benchmark
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tensor_engine import DefaultEngine
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
 from linalg.matmul.cpu import matmul as _matmul_cpu
@@ -32,7 +33,6 @@ from linalg.packing import (
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
 )
-from linalg.utils import elementwise_epilogue_type
 from std.testing import assert_almost_equal, assert_true
 
 from std.utils.index import IndexList
@@ -105,7 +105,7 @@ def test_matmul[
     c_type: DType,
     transpose_b: Bool,
     b_packed: Bool,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     c: TileTensor[
         mut=True,
@@ -140,8 +140,8 @@ def test_matmul[
     k: Int,
     kernel_type_m: Int,
 ) raises -> Int:
-    var c1_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
-    var golden_shape = row_major(Coord(m, n))
+    var c1_ptr = unsafe_alloc[Scalar[c_type]](m * n, alignment=alignment)
+    var golden_shape = row_major(m, n)
     var golden = TileTensor[Engine=DefaultEngine[element_width=1]](
         c1_ptr, golden_shape
     )
@@ -167,31 +167,36 @@ def test_matmul[
             else:
                 pack_transposed_b_ndbuffer[a_type, c_type](b, bp)
 
-    @always_inline
+    @inline(.always)
+    def add_constant_compute_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return val + some_constant
+
+    @inline(.always)
     def bench_fn_matmul() raises {var}:
         if kernel_type_m != 0:
-            _matmul_cpu[
-                transpose_b=transpose_b,
-                b_packed=b_packed,
-                elementwise_lambda_fn=epilogue_fn,
-            ](
-                c,
-                a,
-                bp,
-                kernel_type_m,
-            )
+            comptime if has_epilogue:
+                _matmul_cpu[transpose_b=transpose_b, b_packed=b_packed](
+                    c, a, bp, add_constant_compute_fn, kernel_type_m
+                )
+            else:
+                _matmul_cpu[transpose_b=transpose_b, b_packed=b_packed](
+                    c, a, bp, kernel_type_m
+                )
         else:
-            matmul[
-                transpose_b=transpose_b,
-                b_packed=b_packed,
-                elementwise_lambda_fn=epilogue_fn,
-            ](c, a, bp)
+            comptime if has_epilogue:
+                matmul[transpose_b=transpose_b, b_packed=b_packed](
+                    c, a, bp, add_constant_compute_fn
+                )
+            else:
+                matmul[transpose_b=transpose_b, b_packed=b_packed](c, a, bp)
 
     bench_fn_matmul()
 
     comptime if do_benchmarking:
         var matmul_perf = bench_run(bench_fn_matmul)
-        std.benchmark.keep(c[Coord(Idx[0], Idx[0])])
+        std.benchmark.keep(c[Idx[0], Idx[0]])
         print(
             "Apple Matmul GFLOP/s for (M, N, K) = (",
             m,
@@ -201,7 +206,7 @@ def test_matmul[
             1e-9 * (Float64((2 * m * k * n)) / matmul_perf.mean()),
         )
 
-    comptime if epilogue_fn:
+    comptime if has_epilogue:
         gemm_naive_elementwise[transpose_b](
             a, b, golden, m, n, k, some_constant
         )
@@ -232,7 +237,7 @@ def test_matmul[
                     ),
                 )
 
-    c1_ptr.free()
+    c1_ptr.unsafe_free()
     return errors
 
 
@@ -250,11 +255,11 @@ def test_matmul[
     var errors: Int
     var kernel_type_m = m if mixed_kernels else 0
 
-    var a_ptr = alloc[Scalar[a_type]](m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type]](k * n, alignment=alignment)
+    var a_ptr = unsafe_alloc[Scalar[a_type]](m * k, alignment=alignment)
+    var b_ptr = unsafe_alloc[Scalar[b_type]](k * n, alignment=alignment)
     var b = TileTensor(
         b_ptr,
-        row_major(Coord(n, k) if transpose_b else Coord(k, n)),
+        row_major(n, k) if transpose_b else row_major(k, n),
     )
 
     var padded_n_k: IndexList[2]
@@ -276,9 +281,11 @@ def test_matmul[
         padded_n_k[0] if b_packed or (not b_packed and transpose_b) else k
     )
 
-    var c0_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
+    var c0_ptr = unsafe_alloc[Scalar[c_type]](m * n, alignment=alignment)
 
-    var bp_ptr = alloc[Scalar[b_type]](padded_k * padded_n, alignment=alignment)
+    var bp_ptr = unsafe_alloc[Scalar[b_type]](
+        padded_k * padded_n, alignment=alignment
+    )
 
     var bp = TileTensor(bp_ptr, row_major(padded_k, padded_n))
     var a = TileTensor(a_ptr, row_major(m, k))
@@ -300,58 +307,31 @@ def test_matmul[
         for j in range(n):
             c[i, j] = 0
 
-    @__parameter
-    @always_inline
-    @__copy_capture(c)
-    def epilogue_fn[
-        _type: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_type, width]) -> None:
-        c.store(Coord(idx), rebind[SIMD[c_type, width]](val + some_constant))
-
-    comptime if has_epilogue_fusion:
-        errors = test_matmul[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,  # transpose_b
-            b_packed,  # b_packed
-            epilogue_fn,
-        ](
-            c,
-            a,
-            b,
-            bp,
-            m,
-            n,
-            k,
-            m if mixed_kernels else 0,
-        )
-    else:
-        errors = test_matmul[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,  # transpose_b
-            b_packed,  # b_packed
-            None,
-        ](
-            c,
-            a,
-            b,
-            bp,
-            m,
-            n,
-            k,
-            m if mixed_kernels else 0,
-        )
+    errors = test_matmul[
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,  # transpose_b
+        b_packed,  # b_packed
+        has_epilogue_fusion,
+    ](
+        c,
+        a,
+        b,
+        bp,
+        m,
+        n,
+        k,
+        m if mixed_kernels else 0,
+    )
     if errors > 0:
         return
     print("Success")
 
-    a_ptr.free()
-    b_ptr.free()
-    bp_ptr.free()
-    c0_ptr.free()
+    a_ptr.unsafe_free()
+    b_ptr.unsafe_free()
+    bp_ptr.unsafe_free()
+    c0_ptr.unsafe_free()
 
 
 def test_shapes[
@@ -361,7 +341,6 @@ def test_shapes[
     b_packed: Bool,
     mixed_kernels: Bool,
 ]() raises:
-    @__parameter
     def test_shapes_helper[
         transpose_b: Bool = False
     ](m: Int, n: Int, k: Int) raises:
@@ -494,10 +473,10 @@ def test_batched_matmul[
     comptime assert a.flat_rank == 3
     comptime assert b.flat_rank == 3
     comptime assert c.flat_rank == 3
-    var golden_ptr = alloc[Scalar[c.dtype]](
+    var golden_ptr = unsafe_alloc[Scalar[c.dtype]](
         batches * m * n, alignment=alignment
     )
-    var golden_shape = row_major(Coord(batches, m, n))
+    var golden_shape = row_major(batches, m, n)
     var golden = TileTensor(golden_ptr, golden_shape)
 
     for batch in range(batches):
@@ -516,29 +495,23 @@ def test_batched_matmul[
                 c[batch, i, j] = 0
                 golden[batch, i, j] = 0
 
-    @__parameter
-    @always_inline
-    @__copy_capture(c)
-    def epilogue_fn[
+    @inline(.always)
+    def compute_fn[
         _type: DType,
         width: SIMDLength,
-        rank: Int,
         *,
-        alignment: Int = 1,
-    ](coords: IndexList[rank], val: SIMD[_type, width],) -> None:
-        c.store_linear(
-            rebind[IndexList[3]](coords),
-            rebind[SIMD[c.dtype, width]](val + some_constant),
-        )
+        alignment: Int,
+    ](coords: Coord, val: SIMD[_type, width]) -> SIMD[_type, width]:
+        comptime assert coords.rank == 3
+        return val + some_constant
 
-    @always_inline
+    @inline(.always)
     def bench_fn_batched_matmul() raises {var}:
         comptime if has_lambda:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=False,
-                elementwise_epilogue_fn=epilogue_fn,
-            ](c, a, b)
+            ](c, a, b, compute_fn)
         else:
             batched_matmul[
                 transpose_a=False,
@@ -549,7 +522,7 @@ def test_batched_matmul[
 
     comptime if do_benchmarking:
         var batched_matmul_perf = bench_run(bench_fn_batched_matmul)
-        std.benchmark.keep(c[Coord(Idx[0], Idx[0], Idx[0])])
+        std.benchmark.keep(c[Idx[0], Idx[0], Idx[0]])
         print(
             "Apple Batched Matmul GFLOP/s for (BATCHES, M, N, K) = (",
             batches,
@@ -599,7 +572,7 @@ def test_batched_matmul[
         ),
     )
 
-    golden_ptr.free()
+    golden_ptr.unsafe_free()
 
 
 def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
@@ -607,13 +580,13 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     comptime a_type = DType.float32
     comptime b_type = DType.float32
 
-    var c_ptr = alloc[Scalar[c_type]](batch * m * n, alignment=alignment)
-    var a_ptr = alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
+    var c_ptr = unsafe_alloc[Scalar[c_type]](batch * m * n, alignment=alignment)
+    var a_ptr = unsafe_alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
+    var b_ptr = unsafe_alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
 
-    var c_shape = row_major(Coord(batch, m, n))
-    var a_shape = row_major(Coord(batch, m, k))
-    var b_shape = row_major(Coord(batch, k, n))
+    var c_shape = row_major(batch, m, n)
+    var a_shape = row_major(batch, m, k)
+    var b_shape = row_major(batch, k, n)
     var c = TileTensor(c_ptr, c_shape)
     var a = TileTensor(a_ptr, a_shape)
     var b = TileTensor(b_ptr, b_shape)
@@ -621,9 +594,9 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     test_batched_matmul[False](c, a, b, batch, m, n, k)
     test_batched_matmul[True](c, a, b, batch, m, n, k)
 
-    c_ptr.free()
-    b_ptr.free()
-    a_ptr.free()
+    c_ptr.unsafe_free()
+    b_ptr.unsafe_free()
+    a_ptr.unsafe_free()
 
 
 def test_batched_matmul() raises:

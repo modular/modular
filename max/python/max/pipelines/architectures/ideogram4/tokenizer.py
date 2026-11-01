@@ -207,6 +207,7 @@ class Ideogram4Tokenizer(PixelGenerationTokenizer):
         use_secondary: bool = False,
         images: list[PIL.Image.Image] | None = None,
     ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]]:
+        """Encodes the prompt, optionally with the secondary encoder."""
         delegate = self.delegate
 
         def _encode_fn(prompt_str: str) -> Any:
@@ -240,6 +241,7 @@ class Ideogram4Tokenizer(PixelGenerationTokenizer):
         request: OpenResponsesRequest,
         input_image: PIL.Image.Image | None = None,
     ) -> PixelContext:
+        """Opens a request context, holding the input image for an edit run."""
         prompt = self._retrieve_prompt(request)
         if not prompt:
             raise ValueError("Prompt must be a non-empty string.")

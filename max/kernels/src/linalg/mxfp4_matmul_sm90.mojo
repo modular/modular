@@ -18,7 +18,7 @@ Activations (BF16) are cast to FP8 on-the-fly.
 
 from max.gpu.host import DeviceContext
 from std.sys.info import _accelerator_arch
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from .mxfp4_dequant import dequant_mxfp4, _cast_bf16_to_fp8
 from .matmul.gpu import _matmul_gpu

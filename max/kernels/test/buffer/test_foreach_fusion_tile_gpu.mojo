@@ -54,7 +54,7 @@ struct AddFusionTile(ElementwiseFusionTile):
     var a: TileTensor[.float32, FullLayout, MutUntrackedOrigin]
     var b: TileTensor[.float32, FullLayout, MutUntrackedOrigin]
 
-    @always_inline
+    @inline(.always)
     def compute[
         dtype: DType,
         rank: Int,
@@ -94,9 +94,9 @@ struct AddFusionTile(ElementwiseFusionTile):
         # already one, so only `rhs` needs a generic view. Add writes into `dst`
         # in place and returns it.
         var rhs_g = TileTensor(
-            rhs._storage.address_space_cast[.GENERIC]().unsafe_origin_cast[
-                MutAnyOrigin
-            ](),
+            rhs._storage.unsafe_address_space_cast[
+                .GENERIC
+            ]().unsafe_origin_cast[MutAnyOrigin](),
             dst.layout,
         )
         return Add.elementwise[dtype, LayoutType](dst, rhs_g)
@@ -130,9 +130,9 @@ def test_foreach_fusion_tile_add(ctx: DeviceContext) raises:
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, M, N]()
     var out_mts = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](out_dev.unsafe_ptr(), IndexList[2](M, N))
+    ](out_dev.unsafe_ptr(), (M, N))
 
-    foreach_fusion_tile[target="gpu", tile_shape=IndexList[2](TM, TN)](
+    foreach_fusion_tile[target="gpu", tile_shape=(Int(TM), Int(TN))](
         out_mts, elem, ctx
     )
 

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps LFM2 checkpoint names onto the MAX tree."""
 
 from __future__ import annotations
 
@@ -31,6 +32,7 @@ def convert_lfm2_safetensor_state_dict(
     state_dict: dict[str, Weights],
     **unused_kwargs,
 ) -> dict[str, WeightData]:
+    """Maps the checkpoint's tensor names onto the MAX tree."""
     mapped: dict[str, WeightData] = {}
     for name, value in state_dict.items():
         max_name = name

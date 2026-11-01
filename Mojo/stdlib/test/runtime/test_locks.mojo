@@ -27,7 +27,7 @@ def test_basic_lock() raises:
     comptime maxI = 100
     comptime maxJ = 100
 
-    async def inc(mut blockingLock: BlockingSpinLock) {mut}:
+    __async def inc(mut blockingLock: BlockingSpinLock) {mut}:
         with BlockingScopedLock(blockingLock):
             rawCounter += 1
             _ = counter.fetch_add(1)

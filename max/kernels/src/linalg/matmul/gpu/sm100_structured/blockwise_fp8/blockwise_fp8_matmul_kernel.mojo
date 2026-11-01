@@ -40,9 +40,15 @@ from max.gpu.memory import (
     fence_mbarrier_init,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
 from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
 from layout import (
+    Coord,
     Layout,
     DefaultEngine,
     TensorLayout,
@@ -122,10 +128,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     # Cluster shape (for LLVM metadata)
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     # B-scale N-direction block size (independent of BK_kernel).
     n_scale_granularity: Int = 128,
     b_scales_engine: TensorEngine = DefaultEngine[element_width=1],
+    pdl_level: PDLLevel = PDLLevel(),
 ]:
     """Blockwise FP8 matmul kernel with register-based accumulation.
 
@@ -148,6 +155,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         n_scale_granularity: B-scales N-direction block size in elements
             (defaults to 128).
         b_scales_engine: Engine of the B-scales `TileTensor`.
+        pdl_level: Programmatic dependent launch level. Above `PDLLevel.OFF`
+            the load warp waits for the predecessor grid immediately before
+            its first TMA load of A and the A-scales, and the MMA warp
+            releases dependent grids once its main loop is done (defaults to
+            `PDLLevel()`, which is off).
     """
 
     # ========== Derived Constants (from config) ==========
@@ -309,7 +321,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -329,11 +345,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = StructuredTileScheduler[
         num_stages=Self.num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
-            Self.config.cluster_shape[0],
-            Self.config.cluster_shape[1],
-            Self.config.cluster_shape[2],
-        ),
+        cluster_shape=Self.config.cluster_shape,
         block_swizzle_size=Self.config.block_swizzle_size,
         rasterize_order=Self.config.raster_order,
     ]
@@ -413,7 +425,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime accum_dims = get_accumulator_dims[
         c_smem_dim1=Self.OutputN,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         cta_group=Self.cta_group,
     ]()
 
@@ -423,7 +439,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.accum_dims[1],
         Self.is_lower_required,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         Self.CLUSTER_SIZE,
         Self.n_scale_granularity,
     ]
@@ -437,7 +457,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.accum_dims[0],
         Self.accum_dims[1],
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         is_lower_frag_required=Self.is_lower_required,
         cta_group=Self.cta_group,
         num_output_stages=Self.num_output_stages,
@@ -448,7 +472,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Load Input Tiles ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_input_tiles[
         a_tma_origin: ImmOrigin,
         b_tma_origin: ImmOrigin,
@@ -533,11 +557,15 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             # Peer CTA slicing using TileTensor pattern (ptr + layout)
             var a_peer_tile = type_of(a_tile)(
-                a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                a_tile._storage.unsafe_offset(
+                    peer_m_rank * Self.a_tma_load_size
+                ),
                 a_tile.layout,
             )
             var b_peer_tile = type_of(b_tile)(
-                b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                b_tile._storage.unsafe_offset(
+                    peer_rank_m * Self.b_tma_load_size
+                ),
                 b_tile.layout,
             )
 
@@ -564,7 +592,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== MMA Operation ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma[
         tiles_origin: MutOrigin,
         //,
@@ -629,7 +657,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Static Helper Methods ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def init_barriers(
         ctx: Self.Context,
         a_tma_op: Self.ATmaOp,
@@ -705,8 +733,14 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Kernel Entry Point ==========
 
     @staticmethod
-    @always_inline
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @inline(.always)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -732,7 +766,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         var a_tiles = smem.a_tiles()
         var b_tiles = smem.b_tiles()
@@ -806,6 +840,15 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             ](Pointer(to=a_scales_tma_op))
 
             var producer = input_pipeline.producer()
+
+            # A and the A-scales are written by the predecessor grid (the
+            # activation quantizer); B and the B-scales are weights. Everything
+            # above this point is host-provided or CTA-local, so it overlaps
+            # the predecessor's tail. The MMA and epilogue warps only consume
+            # tiles this warp loads, so they need no wait of their own.
+            comptime if Self.pdl_level > PDLLevel.OFF:
+                wait_on_dependent_grids()
+
             for current in load_iter:
                 scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
 
@@ -866,6 +909,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                         # Release resources (compiler enforces these calls)
                         input_tiles^.release()
                         mma_stage^.release()
+
+            # Every MMA has been issued; a dependent grid's own wait still
+            # blocks until this grid completes and its stores are visible.
+            comptime if Self.pdl_level > PDLLevel.OFF:
+                launch_dependent_grids()
 
             # Wait for epilogue and deallocate TMEM
             mma_handle^.release()

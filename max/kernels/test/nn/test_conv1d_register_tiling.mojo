@@ -17,7 +17,7 @@ from std.sys import simd_width_of
 
 from layout import Coord, TileTensor, Idx, row_major
 from nn.conv.conv import conv1d_update_wo_tile
-from nn.conv.conv_utils import ConvShape
+from nn.conv.conv_utils import ConvShape, NoConvEpilogue
 from std.testing import assert_equal
 
 from std.utils.index import Index
@@ -98,6 +98,7 @@ def conv1d_register_tiling(
         conv_shape,
         0,
         wo,
+        NoConvEpilogue(),
     )
 
 
@@ -121,10 +122,14 @@ def test_conv1d_register_tiling() raises:
     var w = wo * stride_w - pad_left
 
     # FRSCf
-    var filter_ptr = filter._storage + f_tile_offset * R * S * C
+    var filter_ptr = filter._storage.unsafe_offset(f_tile_offset * R * S * C)
     # NHWC
-    var input_ptr = input._storage + c_tile_offset + C * w
-    var output_ptr = output._storage + f_tile_offset + F * (wo)
+    var input_ptr = input._storage.unsafe_offset(c_tile_offset).unsafe_offset(
+        C * w
+    )
+    var output_ptr = output._storage.unsafe_offset(f_tile_offset).unsafe_offset(
+        F * (wo)
+    )
 
     conv1d_register_tiling(
         output_ptr,

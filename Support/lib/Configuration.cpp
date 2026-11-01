@@ -384,7 +384,8 @@ void Config::parseModularDebugEnv() {
         llvm::StringRef key = tokenRef.substr(0, eq);
         llvm::StringRef value = tokenRef.substr(eq + 1);
         if (key == "assert-level" || key == "op-log-level" ||
-            key == "print-style" || key == "ir-output-dir") {
+            key == "print-style" || key == "ir-output-dir" ||
+            key == "uninitialized-read-mode") {
           setGlobalValue(("max-debug." + key).str(), value.str());
         } else {
           llvm::errs() << "MODULAR_DEBUG: unknown option '" << key
@@ -399,7 +400,7 @@ void Config::parseModularDebugEnv() {
       } else if (llvm::is_contained({"nan-check", "uninitialized-read-check",
                                      "device-sync-mode", "stack-trace-on-error",
                                      "stack-trace-on-crash",
-                                     "source-tracebacks"},
+                                     "source-tracebacks", "pre-jit"},
                                     tokenRef)) {
         setGlobalValue(("max-debug." + tokenRef).str(), "true");
       } else {

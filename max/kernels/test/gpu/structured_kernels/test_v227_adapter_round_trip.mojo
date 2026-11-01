@@ -51,12 +51,11 @@ both `W` and `R`). `V_LAYOUT = row_major[2, 4, 32]`: 2 K-strips x 4
 depth-tiles x 32 FP8 elts/fragment per lane.
 """
 
-from max.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
+from max.gpu import lane_id, warp_id
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.sync import s_waitcnt
-from std.memory import AddressSpace
-from std.sys.intrinsics import readfirstlane
+from max.gpu.intrinsics import readfirstlane
 from std.testing import assert_equal
 
 from layout import ComptimeInt, Coord, MixedLayout, TileTensor
@@ -115,7 +114,7 @@ comptime _V_TILE_ELTS = KV_BLOCK * DEPTH  # 16384 — the logical V tile.
 # write/read both preserve exactly; the `+1` keeps every cell nonzero so
 # an accidental zero-fill (a scrambled write landing out of the read
 # window) is caught rather than silently matching a zeroed slot.
-@always_inline
+@inline(.always)
 def _pattern_fp8(key: Int, depth: Int) -> Float8_e4m3fn:
     return Float8_e4m3fn(Float32(((key + depth) % 7) + 1))
 
@@ -139,10 +138,14 @@ def _pattern_fp8(key: Int, depth: Int) -> Float8_e4m3fn:
 # from BOTH slots and dumps both fragment sets to global. The host asserts
 # they are bit-identical: `W∘R == (W_ours ∘ R_ours)` over the slot.
 # --------------------------------------------------------------------------- #
-def kernel_v227_round_trip(
-    v_src_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_v227_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_ref_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
+def kernel_v227_round_trip[
+    v_src_origin: MutOrigin,
+    dump_v227_origin: MutOrigin,
+    dump_ref_origin: MutOrigin,
+](
+    v_src_ptr: MutPointer[Float8_e4m3fn, v_src_origin],
+    dump_v227_ptr: MutPointer[Float8_e4m3fn, dump_v227_origin],
+    dump_ref_ptr: MutPointer[Float8_e4m3fn, dump_ref_origin],
 ):
     # DRAM V tile: tight (KV_BLOCK, DEPTH) row-major, stride (DEPTH, 1).
     # Matches the canonical v227 closed-form case (key = global_row,
@@ -151,7 +154,7 @@ def kernel_v227_round_trip(
         Coord[ComptimeInt[KV_BLOCK], ComptimeInt[DEPTH]].element_types,
         Coord[ComptimeInt[DEPTH], ComptimeInt[1]].element_types,
     ]
-    var v_src = TileTensor[.float8_e4m3fn, v_src_layout, MutAnyOrigin](
+    var v_src = TileTensor[.float8_e4m3fn, v_src_layout, v_src_origin](
         v_src_ptr, v_src_layout()
     )
 
@@ -235,7 +238,13 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
             for depth_v in range(DEPTH):
                 host_src[key * DEPTH + depth_v] = _pattern_fp8(key, depth_v)
 
-    ctx.enqueue_function[kernel_v227_round_trip](
+    ctx.enqueue_function[
+        kernel_v227_round_trip[
+            origin_of(dev_src),
+            origin_of(dev_dump_v227),
+            origin_of(dev_dump_ref),
+        ]
+    ](
         dev_src.unsafe_ptr(),
         dev_dump_v227.unsafe_ptr(),
         dev_dump_ref.unsafe_ptr(),
@@ -257,21 +266,11 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
                     nonzero_seen += 1
                 if v227_f32 != ref_f32:
                     if mismatches < 8:
-                        var lid = idx // _PER_LANE
-                        var rem = idx % _PER_LANE
-                        var frag = rem // _FRAG_ELTS
-                        var f = rem % _FRAG_ELTS
+                        var lid, rem = divmod(idx, _PER_LANE)
+                        var frag, f = divmod(rem, _FRAG_ELTS)
                         print(
-                            "  MISMATCH lid=",
-                            lid,
-                            " frag=",
-                            frag,
-                            " f=",
-                            f,
-                            " v227=",
-                            v227_f32,
-                            " ref=",
-                            ref_f32,
+                            t"  MISMATCH lid= {lid}  frag= {frag}  f= {f} "
+                            t" v227= {v227_f32}  ref= {ref_f32}"
                         )
                     mismatches += 1
 

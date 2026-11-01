@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Smoke tests for methods on `max.experimental.tensor.Tensor`.
+"""Smoke tests for methods on `max.tensor.Tensor`.
 
 These tests exercise each expected op at least once with real data and kernels.
 They don't otherwise make any attempt at coverage, edge cases, or correctness.
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 
 def test_matmul() -> None:

@@ -28,7 +28,7 @@ from std.random import random_ui64
 from std.sys.intrinsics import llvm_intrinsic
 
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     BlockScaledMatmulAMD,
@@ -61,7 +61,7 @@ def block_scaled_matmul_ref(
     var N = Int(N_dev)
     var K = Int(K_dev)
 
-    @always_inline
+    @inline(.always)
     def cast_fp4x2_to_fp32x2[
         byte_select: Int
     ](packed: Int32, scale: Float32) -> SIMD[.float32, 2]:
@@ -78,11 +78,11 @@ def block_scaled_matmul_ref(
 
     var k_groups = K // MXFP4_SF_VECTOR_SIZE
 
-    var am_scales_ptr = a_scales_ptr + m * k_groups
-    var bn_scales_ptr = b_scales_ptr + n * k_groups
+    var am_scales_ptr = a_scales_ptr.unsafe_offset(m * k_groups)
+    var bn_scales_ptr = b_scales_ptr.unsafe_offset(n * k_groups)
 
-    var am_ptr = a_ptr + m * (K // 2)
-    var bn_ptr = b_ptr + n * (K // 2)
+    var am_ptr = a_ptr.unsafe_offset(m * (K // 2))
+    var bn_ptr = b_ptr.unsafe_offset(n * (K // 2))
 
     var accum = SIMD[.float32, 2](0)
 
@@ -91,16 +91,16 @@ def block_scaled_matmul_ref(
         var b_scale = bn_scales_ptr[ko].cast[.float32]()
 
         for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[.int32, 1](am_ptr.load[width=4](ki))
-            var b_data = bitcast[.int32, 1](bn_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](am_ptr.unsafe_load[width=4](ki))
+            var b_data = bitcast[.int32, 1](bn_ptr.unsafe_load[width=4](ki))
 
             comptime for byte_select in range(4):
                 accum += cast_fp4x2_to_fp32x2[byte_select](
                     a_data, a_scale
                 ) * cast_fp4x2_to_fp32x2[byte_select](b_data, b_scale)
 
-        am_ptr += MXFP4_SF_VECTOR_SIZE // 2
-        bn_ptr += MXFP4_SF_VECTOR_SIZE // 2
+        am_ptr = am_ptr.unsafe_offset(MXFP4_SF_VECTOR_SIZE // 2)
+        bn_ptr = bn_ptr.unsafe_offset(MXFP4_SF_VECTOR_SIZE // 2)
 
     c_ptr[m * N + n] = accum.reduce_add()
 
@@ -153,28 +153,8 @@ def test_mxfp4_matmul[
     comptime assert BN % WN == 0, "BN must be divisible by WN"
 
     print(
-        M_static,
-        "x",
-        N_static,
-        "x",
-        K_static,
-        " [BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK=",
-        BK_ELEMS,
-        " WM=",
-        WM,
-        " WN=",
-        WN,
-        " MMA=",
-        MMA_M,
-        "x",
-        MMA_N,
-        "x",
-        MMA_K,
-        "]",
+        t"{M_static} x {N_static} x {K_static}  [BM= {BM}  BN= {BN}  BK="
+        t" {BK_ELEMS}  WM= {WM}  WN= {WN}  MMA= {MMA_M} x {MMA_N} x {MMA_K} ]"
     )
 
     comptime input_dtype = DType.uint8
@@ -228,11 +208,11 @@ def test_mxfp4_matmul[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor(a_dev, a_shape).as_immut()
-    var b_tt = TileTensor(b_dev, b_shape).as_immut()
+    var a_tt = TileTensor(a_dev, a_shape).as_imm()
+    var b_tt = TileTensor(b_dev, b_shape).as_imm()
     var c_tt = TileTensor(c_dev, c_shape)
-    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_immut()
-    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_immut()
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_imm()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_imm()
 
     # --- Direct launch with explicit tile params ---
     comptime Kernel = BlockScaledMatmulAMD[
@@ -317,22 +297,8 @@ def test_mxfp4_matmul_split_k[
     accumulation and the reduce-kernel sum/cast.
     """
     print(
-        M_static,
-        "x",
-        N_static,
-        "x",
-        K_static,
-        " [split-K num_splits=",
-        num_splits,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        "]",
+        t"{M_static} x {N_static} x {K_static}  [split-K num_splits="
+        t" {num_splits}  BM= {BM}  BN= {BN}  BK= {BK_ELEMS}  WN= {WN} ]"
     )
 
     comptime input_dtype = DType.uint8
@@ -386,11 +352,11 @@ def test_mxfp4_matmul_split_k[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor(a_dev, a_shape).as_immut()
-    var b_tt = TileTensor(b_dev, b_shape).as_immut()
+    var a_tt = TileTensor(a_dev, a_shape).as_imm()
+    var b_tt = TileTensor(b_dev, b_shape).as_imm()
     var c_tt = TileTensor(c_dev, c_shape)
-    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_immut()
-    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_immut()
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_imm()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_imm()
 
     # --- Split-K launch (workspace + reduce path) ---
     _launch_block_scaled_split_k[

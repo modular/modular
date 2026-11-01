@@ -23,4 +23,4 @@ from .conv_config import Conv2dConfig, Conv2dProblemShape
 from .conv2d import conv2d_fprop, im2col
 
 # Re-export epilogue lambda type for bias/activation fusion
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import ElementwiseComputeFn

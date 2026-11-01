@@ -20,7 +20,7 @@ from layout.tile_layout import row_major
 from layout.coord import Idx, Coord
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
 
@@ -39,27 +39,11 @@ def test_prefill[
     use_causal_mask: Bool = True,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_prefill",
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "qkv_type:",
-        qkv_type,
-        "rope_type:",
-        rope_type,
-        "output_type:",
-        output_type,
-        "depth:",
-        depth,
-        "kv_depth:",
-        kv_depth,
-        "cache_depth:",
-        cache_depth,
-        "cache_num_heads:",
-        cache_num_heads,
+        t"test_mla_prefill batch_size: {batch_size} seq_len:"
+        t" {seq_len} num_keys: {num_keys} qkv_type: {qkv_type} rope_type:"
+        t" {rope_type} output_type: {output_type} depth: {depth} kv_depth:"
+        t" {kv_depth} cache_depth: {cache_depth} cache_num_heads:"
+        t" {cache_num_heads}"
     )
 
     var q_size = batch_size * seq_len * num_heads * depth
@@ -124,25 +108,21 @@ def test_prefill[
     # Q_scale has shape [batch_size * seq_len, 1]
     var q_bf16 = TileTensor(
         q_bf16_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size * seq_len, Idx[num_heads], Idx[depth])),
+        row_major(batch_size * seq_len, Idx[num_heads], Idx[depth]),
     )
     var q_nope = TileTensor(
         q_nope_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * seq_len, Idx[num_heads], Idx[kv_depth]),
     )
     var q_rope = TileTensor(
         q_rope_ptr.unsafe_ptr(),
         row_major(
-            Coord(
-                batch_size * seq_len,
-                Idx[num_heads],
-                Idx[(depth - kv_depth)],
-            )
+            batch_size * seq_len, Idx[num_heads], Idx[(depth - kv_depth)]
         ),
     )
     var q_scale = TileTensor(
         q_scale_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size * seq_len, Idx[1])),
+        row_major(batch_size * seq_len, Idx[1]),
     )
 
     # =============================== K inputs =============================== #
@@ -152,15 +132,15 @@ def test_prefill[
     # K_scale has shape [batch_size * num_keys, 1]
     var k_bf16 = TileTensor(
         k_bf16_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
     )
     var k = TileTensor(
         k_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
     )
     var k_scale = TileTensor(
         k_scale_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size * num_keys, Idx[1])),
+        row_major(batch_size * num_keys, Idx[1]),
     )
 
     # =============================== V inputs =============================== #
@@ -170,11 +150,11 @@ def test_prefill[
     # V_scale has shape [num_heads, batch_size * num_keys, 1]
     var v_bf16 = TileTensor(
         v_bf16_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
     )
     var v = TileTensor(
         v_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
     )
 
     # =============================== Cache inputs =============================== #
@@ -184,30 +164,16 @@ def test_prefill[
     # Cache does not have a scale tensor, it will be scaled by k_nope scale.
     var cache_bf16 = TileTensor(
         cache_bf16_ptr.unsafe_ptr(),
-        row_major(
-            Coord(
-                batch_size,
-                num_keys,
-                Idx[cache_num_heads],
-                Idx[cache_depth],
-            )
-        ),
+        row_major(batch_size, num_keys, Idx[cache_num_heads], Idx[cache_depth]),
     )
     var cache = TileTensor(
         cache_ptr.unsafe_ptr(),
-        row_major(
-            Coord(
-                batch_size,
-                num_keys,
-                Idx[cache_num_heads],
-                Idx[cache_depth],
-            )
-        ),
+        row_major(batch_size, num_keys, Idx[cache_num_heads], Idx[cache_depth]),
     )
 
     var output = TileTensor(
         output_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * seq_len, Idx[num_heads], Idx[kv_depth]),
     )
 
     # compute q_scale and quantize q, q is per token scaled
@@ -216,7 +182,7 @@ def test_prefill[
             var q_max = Float32(-1e10)
             for h in range(num_heads):
                 for d in range(depth):
-                    var q_abs = abs(q_bf16[Coord(i * seq_len + j, h, d)]).cast[
+                    var q_abs = abs(q_bf16[i * seq_len + j, h, d]).cast[
                         DType.float32
                     ]()
                     q_max = max(q_max, q_abs)
@@ -229,17 +195,17 @@ def test_prefill[
         for j in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth):
-                    var q_bf16_value = q_bf16[Coord(i * seq_len + j, h, d)]
-                    var q_scale_value = q_scale[
-                        Coord(i * seq_len + j, Idx[0])
-                    ].cast[.bfloat16]()
+                    var q_bf16_value = q_bf16[i * seq_len + j, h, d]
+                    var q_scale_value = q_scale[i * seq_len + j, Idx[0]].cast[
+                        .bfloat16
+                    ]()
                     if d < kv_depth:
-                        q_nope[Coord(i * seq_len + j, h, d)] = (
+                        q_nope[i * seq_len + j, h, d] = (
                             q_bf16_value / q_scale_value
                         ).cast[qkv_type]()
 
                     else:
-                        q_rope[Coord(i * seq_len + j, h, d - kv_depth)] = (
+                        q_rope[i * seq_len + j, h, d - kv_depth] = (
                             q_bf16_value / q_scale_value
                         ).cast[rope_type]()
 
@@ -249,7 +215,7 @@ def test_prefill[
             var k_max = Float32(-1e10)
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var k_abs = abs(k_bf16[Coord(i * num_keys + j, h, d)]).cast[
+                    var k_abs = abs(k_bf16[i * num_keys + j, h, d]).cast[
                         DType.float32
                     ]()
                     k_max = max(k_max, k_abs)
@@ -261,11 +227,11 @@ def test_prefill[
         for j in range(num_keys):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var k_bf16_value = k_bf16[Coord(i * num_keys + j, h, d)]
-                    var k_scale_value = k_scale[
-                        Coord(i * num_keys + j, Idx[0])
-                    ].cast[.bfloat16]()
-                    k[Coord(i * num_keys + j, h, d)] = (
+                    var k_bf16_value = k_bf16[i * num_keys + j, h, d]
+                    var k_scale_value = k_scale[i * num_keys + j, Idx[0]].cast[
+                        .bfloat16
+                    ]()
+                    k[i * num_keys + j, h, d] = (
                         k_bf16_value / k_scale_value
                     ).cast[qkv_type]()
 
@@ -273,23 +239,21 @@ def test_prefill[
         for j in range(num_keys):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var v_bf16_value = v_bf16[Coord(i * num_keys + j, h, d)]
-                    v[Coord(i * num_keys + j, h, d)] = (v_bf16_value).cast[
-                        qkv_type
-                    ]()
+                    var v_bf16_value = v_bf16[i * num_keys + j, h, d]
+                    v[i * num_keys + j, h, d] = (v_bf16_value).cast[qkv_type]()
 
     # cache stays in bf16, but it gets divided by k_scale to convert into fp8 domain
     for i in range(batch_size):
         for j in range(num_keys):
             for h in range(cache_num_heads):
                 for d in range(cache_depth):
-                    var cache_bf16_value = cache_bf16[Coord(i, j, h, d)]
-                    var k_scale_value = k_scale[
-                        Coord(i * num_keys + j, Idx[0])
-                    ].cast[.bfloat16]()
-                    cache[Coord(i, j, h, d)] = (
-                        cache_bf16_value / k_scale_value
-                    ).cast[rope_type]()
+                    var cache_bf16_value = cache_bf16[i, j, h, d]
+                    var k_scale_value = k_scale[i * num_keys + j, Idx[0]].cast[
+                        .bfloat16
+                    ]()
+                    cache[i, j, h, d] = (cache_bf16_value / k_scale_value).cast[
+                        rope_type
+                    ]()
 
     var q_nope_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_nope_size)
     var q_rope_device_ptr = ctx.enqueue_create_buffer[rope_type](q_rope_size)
@@ -309,58 +273,47 @@ def test_prefill[
 
     var q_nope_device = TileTensor(
         q_nope_device_ptr,
-        row_major(Coord(batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * seq_len, Idx[num_heads], Idx[kv_depth]),
     )
 
     var q_rope_device = TileTensor(
         q_rope_device_ptr,
         row_major(
-            Coord(
-                batch_size * seq_len,
-                Idx[num_heads],
-                Idx[(depth - kv_depth)],
-            )
+            batch_size * seq_len, Idx[num_heads], Idx[(depth - kv_depth)]
         ),
     )
     var q_scale_device = TileTensor(
         q_scale_device_ptr,
-        row_major(Coord(batch_size * seq_len, Idx[1])),
+        row_major(batch_size * seq_len, Idx[1]),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(Coord(batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
     )
     var k_scale_device = TileTensor(
         k_scale_device_ptr,
-        row_major(Coord(batch_size * num_keys, Idx[1])),
+        row_major(batch_size * num_keys, Idx[1]),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(Coord(batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
     )
     var cache_device = TileTensor(
         cache_device_ptr,
-        row_major(
-            Coord(
-                batch_size,
-                num_keys,
-                Idx[cache_num_heads],
-                Idx[cache_depth],
-            )
-        ),
+        row_major(batch_size, num_keys, Idx[cache_num_heads], Idx[cache_depth]),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(Coord(batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
+        row_major(batch_size * seq_len, Idx[num_heads], Idx[kv_depth]),
     )
 
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Coord(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr,
-        row_major(Coord(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     ctx.enqueue_copy(q_nope_device_ptr, q_nope_ptr)
@@ -395,7 +348,7 @@ def test_prefill[
 
     var dangling_valid_length = TileTensor(
         MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-        row_major(Coord(Idx[0])),
+        row_major(Idx[0]),
     )
 
     var k_ref_host_ptr = ctx.enqueue_create_host_buffer[.bfloat16](
@@ -410,25 +363,11 @@ def test_prefill[
 
     var k_ref_host = TileTensor(
         k_ref_host_ptr.unsafe_ptr(),
-        row_major(
-            Coord(
-                batch_size,
-                num_keys,
-                Idx[num_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(batch_size, num_keys, Idx[num_heads], Idx[depth]),
     )
     var v_ref_host = TileTensor(
         v_ref_host_ptr.unsafe_ptr(),
-        row_major(
-            Coord(
-                batch_size,
-                num_keys,
-                Idx[num_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(batch_size, num_keys, Idx[num_heads], Idx[depth]),
     )
 
     # Build a faithful reference using the SAME quantized data the kernel
@@ -439,35 +378,22 @@ def test_prefill[
     )
     var q_ref_host = TileTensor(
         q_ref_host_ptr.unsafe_ptr(),
-        row_major(
-            Coord(
-                batch_size,
-                seq_len,
-                Idx[num_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(batch_size, seq_len, Idx[num_heads], Idx[depth]),
     )
 
     # Q_ref = [q_nope_fp8 * q_scale | q_rope_bf16 * q_scale]
     for b in range(batch_size):
         for s in range(seq_len):
-            var qs = q_scale[Coord(b * seq_len + s, Idx[0])].cast[
-                DType.bfloat16
-            ]()
+            var qs = q_scale[b * seq_len + s, Idx[0]].cast[DType.bfloat16]()
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    q_ref_host[Coord(b, s, h, d)] = (
-                        q_nope[Coord(b * seq_len + s, h, d)].cast[
-                            DType.bfloat16
-                        ]()
+                    q_ref_host[b, s, h, d] = (
+                        q_nope[b * seq_len + s, h, d].cast[DType.bfloat16]()
                         * qs
                     )
                 for d in range(depth - kv_depth):
-                    q_ref_host[Coord(b, s, h, d + kv_depth)] = (
-                        q_rope[Coord(b * seq_len + s, h, d)].cast[
-                            DType.bfloat16
-                        ]()
+                    q_ref_host[b, s, h, d + kv_depth] = (
+                        q_rope[b * seq_len + s, h, d].cast[DType.bfloat16]()
                         * qs
                     )
 
@@ -476,31 +402,24 @@ def test_prefill[
     # V_ref = v_fp8 dequantized to BF16 (no scaling)
     for b in range(batch_size):
         for s in range(num_keys):
-            var ks = k_scale[Coord(b * num_keys + s, Idx[0])].cast[
-                DType.bfloat16
-            ]()
+            var ks = k_scale[b * num_keys + s, Idx[0]].cast[DType.bfloat16]()
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    k_ref_host[Coord(b, s, h, d)] = (
-                        k[Coord(b * num_keys + s, h, d)].cast[.bfloat16]() * ks
+                    k_ref_host[b, s, h, d] = (
+                        k[b * num_keys + s, h, d].cast[.bfloat16]() * ks
                     )
-                    v_ref_host[Coord(b, s, h, d)] = v[
-                        Coord(b * num_keys + s, h, d)
-                    ].cast[.bfloat16]()
+                    v_ref_host[b, s, h, d] = v[b * num_keys + s, h, d].cast[
+                        .bfloat16
+                    ]()
 
     for b in range(batch_size):
         for s in range(num_keys):
             for h in range(num_heads):
                 for d in range(depth - kv_depth):
-                    k_ref_host[Coord(b, s, h, d + kv_depth)] = cache_bf16[
-                        Coord(
-                            b,
-                            s,
-                            Idx[0],
-                            cache_depth - (depth - kv_depth) + d,
-                        )
+                    k_ref_host[b, s, h, d + kv_depth] = cache_bf16[
+                        b, s, Idx[0], cache_depth - (depth - kv_depth) + d
                     ]
-                    v_ref_host[Coord(b, s, h, d + kv_depth)] = 0
+                    v_ref_host[b, s, h, d + kv_depth] = 0
 
     var q_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](q_size)
     var k_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](
@@ -519,62 +438,41 @@ def test_prefill[
 
     var q_ref_4d_device = TileTensor(
         q_ref_device_ptr,
-        row_major(Coord(batch_size, seq_len, Idx[num_heads], Idx[depth])),
+        row_major(batch_size, seq_len, Idx[num_heads], Idx[depth]),
     )
     var k_ref_device = TileTensor(
         k_ref_device_ptr,
-        row_major(
-            Coord(
-                batch_size,
-                num_keys,
-                Idx[num_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(batch_size, num_keys, Idx[num_heads], Idx[depth]),
     )
     var v_ref_device = TileTensor(
         v_ref_device_ptr,
-        row_major(
-            Coord(
-                batch_size,
-                num_keys,
-                Idx[num_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(batch_size, num_keys, Idx[num_heads], Idx[depth]),
     )
     var output_ref_device = TileTensor(
         output_ref_device_ptr,
-        row_major(
-            Coord(
-                batch_size,
-                seq_len,
-                Idx[num_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(batch_size, seq_len, Idx[num_heads], Idx[depth]),
     )
 
     var output_ref_host = TileTensor(
         output_ref_host_ptr.unsafe_ptr(),
-        row_major(Coord(batch_size, seq_len, Idx[num_heads], Idx[depth])),
+        row_major(batch_size, seq_len, Idx[num_heads], Idx[depth]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_device.as_immut().as_unsafe_any_origin()
+    var k_ref_operand = TileTensorMHAOperand(
+        k_ref_device.as_imm().as_unsafe_any_origin()
     )
-    var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_device.as_immut().as_unsafe_any_origin()
+    var v_ref_operand = TileTensorMHAOperand(
+        v_ref_device.as_imm().as_unsafe_any_origin()
     )
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_ref_4d_device.to_layout_tensor(),
+        q_ref_4d_device,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
-        dangling_valid_length.to_layout_tensor(),
+        output_ref_device,
+        dangling_valid_length,
         scale,
         batch_size,
         seq_len,
@@ -592,8 +490,8 @@ def test_prefill[
         for j in range(seq_len):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var lhs = output[Coord(i * seq_len + j, h, d)]
-                    var rhs = output_ref_host[Coord(i, j, h, d)]
+                    var lhs = output[i * seq_len + j, h, d]
+                    var rhs = output_ref_host[i, j, h, d]
                     if abs(lhs - rhs) > 5e-2:
                         print("[", i, j, h, d, "]", lhs, rhs, lhs / rhs)
                     assert_almost_equal(

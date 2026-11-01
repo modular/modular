@@ -12,27 +12,33 @@
 # ===----------------------------------------------------------------------=== #
 """Unit tests for the Apple GPU matmul kernels.
 
-Covers two paths:
+Covers three paths:
 
 - The 8x8 `simdgroup_matrix` GEMM (`gemm_kernel_apple_8x8`), the M1-M4 dispatch
   path in `_matmul_gpu`. These tests run on any Apple GPU.
 - The M5 hardware-MMA simdgroup-tiled kernel (`AppleM5MatMul.run` /
-  `enqueue_apple_matmul`), which requires `compute_capability() == 5`. This
+  `enqueue_apple_matmul`), which requires `compute_capability() >= 5`. This
   includes the split-K path (`enqueue_apple_matmul_split_k` and the
   `force_split_k` flag), folded in here from the former `test_apple_split_k`.
+- The M5 small-batch GEMV (`apple/gemv.mojo`), which `_matmul_gpu` routes
+  `transpose_b` bf16/fp16 matmuls with 2 <= M <= 8 to. Its reference is an
+  fp32 host sum over the same 16-bit inputs, so only summation order and the
+  output rounding differ; the tolerance is the output type's half-ulp plus an
+  order term proportional to `sum_k |x * w|`.
 """
 
 from std.collections import Optional
-from std.random import random_si64
+from std.random import random_float64, random_si64, seed
 from max.gpu import WARP_SIZE
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.sys.info import _accelerator_arch
-from std.utils import IndexList
 
-from layout import TileTensor, Idx
+from layout import Coord, TileTensor, Idx
 from layout.tile_layout import row_major
 
+from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.apple import gemm_kernel_apple_8x8
+from linalg.matmul.gpu.apple.gemv import enqueue_apple_gemv_config
 from linalg.matmul.gpu.apple.matmul_kernel import (
     AppleM5MatMul,
     enqueue_apple_matmul,
@@ -61,16 +67,20 @@ def _launch[
     var b_rows = N if transpose_b else K
     var b_cols = K if transpose_b else N
     var c_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var b_tt = TileTensor(
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
-    ).as_immut()
+    ).as_imm()
     enqueue_apple_matmul[
         in_type=a_type, c_type=c_type, transpose_b=transpose_b
     ](c_tt, a_tt, b_tt, ctx)
 
 
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    no_compute_fn,
+    no_epilogue_fn,
+)
+from std.math import ceildiv
 
 
 def _host_matmul_nn[
@@ -92,7 +102,7 @@ def _host_matmul_nn[
     return acc
 
 
-@always_inline
+@inline(.always)
 def _within_tol[c_type: DType](got: Float32, exp: Float32) -> Bool:
     """Standard mixed tolerance: ``|got - exp| <= atol + rtol * |exp|``.
 
@@ -124,7 +134,7 @@ def _run_8x8_case[
     clean and ragged M/N (the kernel bounds-checks edge subtiles); K is a
     multiple of 16, matching the dispatch gate.
     """
-    print("==", name, M, "x", N, "x", K, "NT=" + String(transpose_b))
+    print(t"== {name} {M} x {N} x {K} {"NT=" + String(transpose_b)}")
     comptime BM = 64
     comptime BN = 64
     comptime NSG = 4
@@ -144,10 +154,10 @@ def _run_8x8_case[
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var b_tt = TileTensor(
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
-    ).as_immut()
+    ).as_imm()
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
     comptime kernel = gemm_kernel_apple_8x8[
@@ -172,7 +182,8 @@ def _run_8x8_case[
         Int32(M),
         Int32(N),
         Int32(K),
-        grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
+        host_args=(no_epilogue_fn, no_compute_fn),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NSG * WARP_SIZE,),
     )
 
@@ -198,7 +209,7 @@ def _run_8x8_case[
             var got = Float32(d_host[i * N + j])
             if not _within_tol[c_type](got, exp):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "expected", exp)
+                    print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -208,14 +219,14 @@ def _run_8x8_case[
 def _run_8x8_bias_case[
     a_type: DType, c_type: DType, transpose_b: Bool
 ](ctx: DeviceContext, M: Int, N: Int, K: Int, name: String) raises:
-    """`gemm_kernel_apple_8x8` with a bias-add `elementwise_lambda_fn`, checked
-    against an fp32 host reference.
+    """`gemm_kernel_apple_8x8` with a bias-add `compute_fn`, checked against
+    an fp32 host reference.
 
-    Exercises the epilogue store path (`elementwise_lambda_fn` branch), and
+    Exercises the closure store path (`has_compute_fn` branch), and
     uses odd/ragged shapes to cover the epilogue at edge subtiles as well as
     the interior.
     """
-    print("==", name, M, "x", N, "x", K, "NT=" + String(transpose_b))
+    print(t"== {name} {M} x {N} x {K} {"NT=" + String(transpose_b)}")
     comptime BM = 64
     comptime BN = 64
     comptime NSG = 4
@@ -240,28 +251,24 @@ def _run_8x8_bias_case[
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(bias_dev, bias_host)
 
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var b_tt = TileTensor(
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
-    ).as_immut()
+    ).as_imm()
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
-    var row_stride = N  # output is row_major(M, N)
 
-    @__parameter
-    @always_inline
-    @__copy_capture(d_ptr, bias_ptr, row_stride)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
-        # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
-        var bias = (bias_ptr + coords[1]).load[width=w]()
-        var v_c = rebind[SIMD[c_type, w]](val)
-        (d_ptr + coords[0] * row_stride + coords[1]).store[alignment=alignment](
-            v_c + bias
-        )
+    @inline(.always)
+    def bias_add[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        # Kernel invokes with `dt == c_type`; rebind to add the c_type bias.
+        var bias = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
+        return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + bias)
 
     comptime kernel = gemm_kernel_apple_8x8[
         c_type,
@@ -274,9 +281,8 @@ def _run_8x8_bias_case[
         type_of(a_tt).Engine,
         type_of(b_tt).Engine,
         transpose_b,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            bias_epilogue
-        ),
+        ComputeFnType=type_of(bias_add),
+        has_compute_fn=True,
         BLOCK_M=BM,
         BLOCK_N=BN,
         NUM_SIMDGROUPS=NSG,
@@ -288,7 +294,8 @@ def _run_8x8_bias_case[
         Int32(M),
         Int32(N),
         Int32(K),
-        grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
+        host_args=(no_epilogue_fn, bias_add),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NSG * WARP_SIZE,),
     )
 
@@ -316,7 +323,7 @@ def _run_8x8_bias_case[
             var got = Float32(d_host[i * N + j])
             if not _within_tol[c_type](got, exp):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "expected", exp)
+                    print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -383,14 +390,8 @@ def test_morton_decode_2d() raises:
         var got = _MM.morton_decode_2d(UInt32(i))
         if got[0] != exp_m[i] or got[1] != exp_n[i]:
             print(
-                "FAIL: flat",
-                i,
-                "got",
-                got[0],
-                got[1],
-                "expected",
-                exp_m[i],
-                exp_n[i],
+                t"FAIL: flat {i} got {got[0]} {got[1]} expected"
+                t" {exp_m[i]} {exp_n[i]}"
             )
             pass_ = False
     if not pass_:
@@ -420,28 +421,12 @@ def test_morton_decode_2d_rect() raises:
         var m = Int(got[0])
         var n = Int(got[1])
         if m < 0 or m >= 2 or n < 0 or n >= 16:
-            print(
-                "FAIL: 2x16 flat=",
-                i,
-                "decoded m=",
-                m,
-                "n=",
-                n,
-                "out of range",
-            )
+            print(t"FAIL: 2x16 flat= {i} decoded m= {m} n= {n} out of range")
             pass_ = False
             continue
         var slot = m * 16 + n
         if seen_2x16[slot]:
-            print(
-                "FAIL: 2x16 flat=",
-                i,
-                "decoded m=",
-                m,
-                "n=",
-                n,
-                "(duplicate)",
-            )
+            print(t"FAIL: 2x16 flat= {i} decoded m= {m} n= {n} (duplicate)")
             pass_ = False
         seen_2x16[slot] = True
 
@@ -453,28 +438,12 @@ def test_morton_decode_2d_rect() raises:
         var m = Int(got[0])
         var n = Int(got[1])
         if m < 0 or m >= 16 or n < 0 or n >= 2:
-            print(
-                "FAIL: 16x2 flat=",
-                i,
-                "decoded m=",
-                m,
-                "n=",
-                n,
-                "out of range",
-            )
+            print(t"FAIL: 16x2 flat= {i} decoded m= {m} n= {n} out of range")
             pass_ = False
             continue
         var slot = m * 2 + n
         if seen_16x2[slot]:
-            print(
-                "FAIL: 16x2 flat=",
-                i,
-                "decoded m=",
-                m,
-                "n=",
-                n,
-                "(duplicate)",
-            )
+            print(t"FAIL: 16x2 flat= {i} decoded m= {m} n= {n} (duplicate)")
             pass_ = False
         seen_16x2[slot] = True
 
@@ -486,17 +455,8 @@ def test_morton_decode_2d_rect() raises:
         var got_sq = _MM.morton_decode_2d(UInt32(i))
         if got_rect[0] != got_sq[0] or got_rect[1] != got_sq[1]:
             print(
-                "FAIL: 4x4 flat=",
-                i,
-                "rect=(",
-                got_rect[0],
-                ",",
-                got_rect[1],
-                ") square=(",
-                got_sq[0],
-                ",",
-                got_sq[1],
-                ")",
+                t"FAIL: 4x4 flat= {i} rect=( {got_rect[0]} , {got_rect[1]} )"
+                t" square=( {got_sq[0]} , {got_sq[1]} )"
             )
             pass_ = False
 
@@ -506,15 +466,8 @@ def test_morton_decode_2d_rect() raises:
         var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(0), UInt32(4))
         if Int(got[0]) != 0 or Int(got[1]) != i:
             print(
-                "FAIL: 1x16 flat=",
-                i,
-                "got=(",
-                got[0],
-                ",",
-                got[1],
-                ") expected=(0,",
-                i,
-                ")",
+                t"FAIL: 1x16 flat= {i} got=( {got[0]} , {got[1]} ) expected=(0,"
+                t" {i} )"
             )
             pass_ = False
 
@@ -524,15 +477,8 @@ def test_morton_decode_2d_rect() raises:
         var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(4), UInt32(0))
         if Int(got[0]) != i or Int(got[1]) != 0:
             print(
-                "FAIL: 16x1 flat=",
-                i,
-                "got=(",
-                got[0],
-                ",",
-                got[1],
-                ") expected=(",
-                i,
-                ",0)",
+                t"FAIL: 16x1 flat= {i} got=( {got[0]} , {got[1]} ) expected=("
+                t" {i} ,0)"
             )
             pass_ = False
 
@@ -589,7 +535,7 @@ def test_kernel_single_tile_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -644,7 +590,7 @@ def test_kernel_single_tile_k128_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(1.0):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -704,7 +650,7 @@ def test_kernel_64x64x17_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -759,7 +705,7 @@ def test_kernel_256x256x16_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -786,7 +732,11 @@ def _host_matmul_nt[
 
 
 def _run_split_k_case[
-    in_type: DType, c_type: DType, transpose_b: Bool
+    in_type: DType,
+    c_type: DType,
+    transpose_b: Bool,
+    *,
+    compute: Bool = False,
 ](
     ctx: DeviceContext,
     M: Int,
@@ -803,12 +753,13 @@ def _run_split_k_case[
     launches `enqueue_apple_matmul_split_k` with that explicit split count;
     otherwise launches `enqueue_apple_matmul` with `force_split_k` (the single
     unified entry forcing the split-K route, even on shapes that would not
-    auto-route). Flat 1.0 abs tolerance (inputs in [-2, 2]).
+    auto-route). With `compute`, a `compute_fn` adds a per-column bias that
+    the kernel stores. Flat 1.0 abs tolerance (inputs in [-2, 2]).
     """
     if splits > 0:
-        print("==", name, M, "x", N, "x", K, "split=", splits)
+        print(t"== {name} {M} x {N} x {K} split= {splits}")
     else:
-        print("==", name, M, "x", N, "x", K, "force_split_k")
+        print(t"== {name} {M} x {N} x {K} force_split_k")
     var b_rows = N if transpose_b else K
     var b_cols = K if transpose_b else N
 
@@ -825,24 +776,79 @@ def _run_split_k_case[
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var b_tt = TileTensor(
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
-    ).as_immut()
+    ).as_imm()
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
-
-    if splits > 0:
-        enqueue_apple_matmul_split_k[
-            in_type=in_type, c_type=c_type, transpose_b=transpose_b
-        ](d_tt, a_tt, b_tt, ctx, splits)
-    else:
-        enqueue_apple_matmul[
-            in_type=in_type, c_type=c_type, transpose_b=transpose_b
-        ](d_tt, a_tt, b_tt, ctx, force_split_k)
-
     var d_host = ctx.enqueue_create_host_buffer[c_type](M * N)
-    ctx.enqueue_copy(d_host, d_dev)
-    ctx.synchronize()
+
+    comptime if compute:
+        var bias_host = ctx.enqueue_create_host_buffer[c_type](N)
+        for j in range(N):
+            bias_host[j] = random_si64(Int64(-2), Int64(2)).cast[c_type]()
+        var bias_dev = ctx.enqueue_create_buffer[c_type](N)
+        ctx.enqueue_copy(bias_dev, bias_host)
+        var bias_ptr = bias_dev.unsafe_ptr()
+
+        @inline(.always)
+        def bias_add[
+            dt: DType, w: SIMDLength, *, alignment: Int
+        ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
+            comptime assert (
+                coords.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[
+                width=w
+            ]()
+            return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + b)
+
+        if splits > 0:
+            enqueue_apple_matmul_split_k[
+                in_type=in_type,
+                c_type=c_type,
+                transpose_b=transpose_b,
+                has_compute_fn=True,
+            ](d_tt, a_tt, b_tt, ctx, splits, compute_fn=bias_add)
+        else:
+            enqueue_apple_matmul[
+                in_type=in_type,
+                c_type=c_type,
+                transpose_b=transpose_b,
+                has_compute_fn=True,
+            ](d_tt, a_tt, b_tt, ctx, force_split_k, compute_fn=bias_add)
+        ctx.enqueue_copy(d_host, d_dev)
+        ctx.synchronize()
+        _ = bias_dev^
+        _check_split_k_result[in_type, c_type, transpose_b](
+            a_host.unsafe_ptr(),
+            b_host.unsafe_ptr(),
+            d_host.unsafe_ptr(),
+            bias_host.as_span(),
+            M,
+            N,
+            K,
+        )
+    else:
+        if splits > 0:
+            enqueue_apple_matmul_split_k[
+                in_type=in_type, c_type=c_type, transpose_b=transpose_b
+            ](d_tt, a_tt, b_tt, ctx, splits)
+        else:
+            enqueue_apple_matmul[
+                in_type=in_type, c_type=c_type, transpose_b=transpose_b
+            ](d_tt, a_tt, b_tt, ctx, force_split_k)
+        ctx.enqueue_copy(d_host, d_dev)
+        ctx.synchronize()
+        _check_split_k_result[in_type, c_type, transpose_b](
+            a_host.unsafe_ptr(),
+            b_host.unsafe_ptr(),
+            d_host.unsafe_ptr(),
+            Span[Scalar[c_type], ImmStaticOrigin](),
+            M,
+            N,
+            K,
+        )
 
     # DRIV-199 workaround: keep device buffers alive past `synchronize`, else
     # ASAP destruction frees them mid-kernel and the suite flakes.
@@ -850,18 +856,34 @@ def _run_split_k_case[
     _ = b_dev^
     _ = d_dev^
 
+
+def _check_split_k_result[
+    in_type: DType, c_type: DType, transpose_b: Bool
+](
+    a_ptr: ImmPointer[Scalar[in_type], ...],
+    b_ptr: ImmPointer[Scalar[in_type], ...],
+    d_ptr: ImmPointer[Scalar[c_type], ...],
+    bias: Span[Scalar[c_type], _],
+    M: Int,
+    N: Int,
+    K: Int,
+) raises:
+    """Checks `D` against an fp32 host matmul plus `bias[j]` when `bias` is
+    non-empty. Flat 1.0 abs tolerance (inputs in [-2, 2])."""
     var pass_ = True
     for i in range(M):
         for j in range(N):
             var exp = _host_matmul_nt[in_type, in_type](
-                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+                a_ptr, b_ptr, M, N, K, i, j
             ) if transpose_b else _host_matmul_nn[in_type, in_type](
-                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+                a_ptr, b_ptr, M, N, K, i, j
             )
-            var got = Float32(d_host[i * N + j])
+            if len(bias) > 0:
+                exp += Float32(bias[j])
+            var got = Float32(d_ptr[i * N + j])
             if abs(got - exp) > Float32(1.0):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", exp)
+                    print(t"FAIL: {i} {j} got {got} exp {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -917,7 +939,7 @@ def test_kernel_128x128x32_nt_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -977,7 +999,7 @@ def test_kernel_ragged_100x200x33_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1043,7 +1065,7 @@ def test_kernel_ragged_100x200x32_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1110,7 +1132,7 @@ def test_kernel_ragged_100x200x32_nt_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1176,7 +1198,7 @@ def test_kernel_M20_N80_K16_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1202,7 +1224,7 @@ def _run_partial_m_nt_case[
       region and is caught. This is the OOB-write risk the guard relaxation
       hinges on (`_bounded_store` row-gating + the `row_base >= M` early return).
     """
-    print("==", name, M, "x", N, "x", K, "NT")
+    print(t"== {name} {M} x {N} x {K} NT")
     comptime GUARD = 64  # >= the full [M, 64) partial-tile extent for any M<64.
     var rows = M + GUARD
 
@@ -1251,14 +1273,14 @@ def _run_partial_m_nt_case[
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL valid:", i, j, "got", got, "expected", exp)
+                print(t"FAIL valid: {i} {j} got {got} expected {exp}")
                 pass_ = False
     # (b) guard rows [M, rows) untouched (still the -1e30 sentinel).
     for i in range(M, rows):
         for j in range(N):
             var got = d_host[i * N + j]
             if got != Float32(-1.0e30):
-                print("FAIL guard-write: row", i, "col", j, "got", got)
+                print(t"FAIL guard-write: row {i} col {j} got {got}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1334,7 +1356,7 @@ def test_kernel_128x128x32_nn_bf16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1397,7 +1419,7 @@ def test_kernel_ragged_100x200x64_nn_bf16_clamp_chain(
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1452,7 +1474,7 @@ def test_kernel_128x128x32_nn_fp32(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.01):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1503,7 +1525,7 @@ def test_enqueue_helper_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1559,7 +1581,7 @@ def test_kernel_128_nn_fp16_fp16_no_lambda(ctx: DeviceContext) raises:
             # Compare in fp32 space; tolerance allows for fp16 downcast.
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1614,14 +1636,14 @@ def test_kernel_128_nn_fp16_bf16_no_lambda(ctx: DeviceContext) raises:
             )
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.bfloat16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
     print("PASS")
 
 
-@always_inline
+@inline(.always)
 def _run_bias_epilogue_test[
     in_type: DType,
     c_type: DType,
@@ -1661,19 +1683,18 @@ def _run_bias_epilogue_test[
     var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @__parameter
-    @always_inline
-    @__copy_capture(d_ptr, bias_ptr)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
-        # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
-        var b = (bias_ptr + coords[1]).load[width=w]()
-        var v_c = rebind[SIMD[c_type, w]](val)
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](v_c + b)
+    @inline(.always)
+    def bias_add[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        # Kernel invokes with `dt == c_type`; rebind to add the c_type bias.
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
+        return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + b)
 
     # Mojo `comptime if` does not lift `var` bindings out of branches, so
     # inline both enqueue calls.
@@ -1683,20 +1704,16 @@ def _run_bias_epilogue_test[
             in_type=in_type,
             c_type=c_type,
             transpose_b=True,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                bias_epilogue
-            ),
-        ](d_tt, a_tt, b_tt, ctx)
+            has_compute_fn=True,
+        ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_add)
     else:
         var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(K, N))
         enqueue_apple_matmul[
             in_type=in_type,
             c_type=c_type,
             transpose_b=False,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                bias_epilogue
-            ),
-        ](d_tt, a_tt, b_tt, ctx)
+            has_compute_fn=True,
+        ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_add)
 
     var d_host = ctx.enqueue_create_host_buffer[c_type](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -1725,7 +1742,7 @@ def _run_bias_epilogue_test[
                 var exp = acc + Float32(bias_host[j])
                 var got = Float32(d_host[i * N + j])
                 if not _within_tol[c_type](got, exp):
-                    print("FAIL:", i, j, "got", got, "expected", exp)
+                    print(t"FAIL: {i} {j} got {got} expected {exp}")
                     pass_ = False
             else:
                 var acc = _host_matmul_nn[in_type, in_type](
@@ -1740,7 +1757,7 @@ def _run_bias_epilogue_test[
                 var exp = acc + Float32(bias_host[j])
                 var got = Float32(d_host[i * N + j])
                 if not _within_tol[c_type](got, exp):
-                    print("FAIL:", i, j, "got", got, "expected", exp)
+                    print(t"FAIL: {i} {j} got {got} expected {exp}")
                     pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1748,8 +1765,7 @@ def _run_bias_epilogue_test[
 
 
 def test_kernel_128_nt_fp16_fp16_bias_epilogue(ctx: DeviceContext) raises:
-    """Bias-add via `elementwise_lambda_fn` — exercises column-coord propagation.
-    """
+    """Bias-add via `compute_fn` — exercises column-coord propagation."""
     _run_bias_epilogue_test[.float16, .float16, True](
         ctx, "test_kernel_128_nt_fp16_fp16_bias_epilogue"
     )
@@ -1860,7 +1876,7 @@ def test_kernel_128_nt_fp32_fp32_bias_epilogue(ctx: DeviceContext) raises:
 def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     ctx: DeviceContext,
 ) raises:
-    """ReLU composed into `elementwise_lambda_fn` — mirrors MXF-369's
+    """ReLU composed into `compute_fn` — mirrors MXF-369's
     `compute_lambda_wrapper` composition.
     """
     print("== test_kernel_128_nt_fp16_fp16_relu_compose_epilogue")
@@ -1885,26 +1901,21 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(N, K))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
-
-    @__parameter
-    @always_inline
-    @__copy_capture(d_ptr)
-    def relu_compose_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
-        var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var relu_val = max(v_fp16, SIMD[.float16, w](0))
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](relu_val)
+    @inline(.always)
+    def relu_compose[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) -> SIMD[dt, w]:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        return max(val, SIMD[dt, w](0))
 
     enqueue_apple_matmul[
         in_type=.float16,
         c_type=.float16,
         transpose_b=True,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            relu_compose_epilogue
-        ),
-    ](d_tt, a_tt, b_tt, ctx)
+        has_compute_fn=True,
+    ](d_tt, a_tt, b_tt, ctx, compute_fn=relu_compose)
 
     var d_host = ctx.enqueue_create_host_buffer[.float16](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -1925,7 +1936,7 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
             var exp = max(acc, Float32(0))
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1935,7 +1946,7 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
 def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     ctx: DeviceContext,
 ) raises:
-    """Chained bias-then-ReLU composed into one `elementwise_lambda_fn`."""
+    """Chained bias-then-ReLU composed into one `compute_fn`."""
     print("== test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue")
     comptime M = 128
     comptime N = 128
@@ -1965,31 +1976,26 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(N, K))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @__parameter
-    @always_inline
-    @__copy_capture(d_ptr, bias_ptr)
-    def bias_relu_compose_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
+    @inline(.always)
+    def bias_relu_compose[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + coords[1]).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
         var biased = v_fp16 + b
-        var activated = max(biased, SIMD[.float16, w](0))
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](
-            activated
-        )
+        return rebind[SIMD[dt, w]](max(biased, SIMD[.float16, w](0)))
 
     enqueue_apple_matmul[
         in_type=.float16,
         c_type=.float16,
         transpose_b=True,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            bias_relu_compose_epilogue
-        ),
-    ](d_tt, a_tt, b_tt, ctx)
+        has_compute_fn=True,
+    ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_relu_compose)
 
     var d_host = ctx.enqueue_create_host_buffer[.float16](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -2011,7 +2017,7 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
             var exp = max(acc + Float32(bias_host[j]), Float32(0))
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -2021,7 +2027,8 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
 def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     ctx: DeviceContext,
 ) raises:
-    """Bounded epilogue + lambda — proves OOB rows/cols never invoke the lambda.
+    """Bounded store + `compute_fn` at ragged M/N/K — OOB rows/cols are never
+    stored.
     """
     print("== test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue")
     comptime M = 100
@@ -2052,29 +2059,25 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(N, K))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @__parameter
-    @always_inline
-    @__copy_capture(d_ptr, bias_ptr)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
+    @inline(.always)
+    def bias_add[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + coords[1]).load[width=w]()
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](
-            v_fp16 + b
-        )
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
+        return rebind[SIMD[dt, w]](v_fp16 + b)
 
     enqueue_apple_matmul[
         in_type=.float16,
         c_type=.float16,
         transpose_b=True,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            bias_epilogue
-        ),
-    ](d_tt, a_tt, b_tt, ctx)
+        has_compute_fn=True,
+    ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_add)
 
     var d_host = ctx.enqueue_create_host_buffer[.float16](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -2096,7 +2099,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
             var exp = acc + Float32(bias_host[j])
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -2153,7 +2156,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn(ctx: DeviceContext) raises:
             )
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -2163,8 +2166,8 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn(ctx: DeviceContext) raises:
 def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     ctx: DeviceContext,
 ) raises:
-    """Lambda epilogue, non-mult-of-4 N (130): exercises the unaligned store
-    stride through the user-lambda path.
+    """`compute_fn`, non-mult-of-4 N (130): exercises the unaligned store
+    stride through the closure path.
     """
     print("== test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue")
     comptime M = 64
@@ -2195,27 +2198,25 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(K, N))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @__parameter
-    @always_inline
-    @__copy_capture(d_ptr, bias_ptr)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
-        var b = (bias_ptr + coords[1]).load[width=w]()
+    @inline(.always)
+    def bias_add[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
         var v_c = rebind[SIMD[.float16, w]](val)
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](v_c + b)
+        return rebind[SIMD[dt, w]](v_c + b)
 
     enqueue_apple_matmul[
         in_type=.float16,
         c_type=.float16,
         transpose_b=False,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            bias_epilogue
-        ),
-    ](d_tt, a_tt, b_tt, ctx)
+        has_compute_fn=True,
+    ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_add)
 
     var d_host = ctx.enqueue_create_host_buffer[.float16](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -2237,11 +2238,382 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
             var exp = acc + Float32(bias_host[j])
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
     print("PASS")
+
+
+# ===----------------------------------------------------------------------=== #
+# Small-batch GEMV (`apple/gemv.mojo`, the M = 2..8 dispatch path; Apple M5)
+# ===----------------------------------------------------------------------=== #
+
+comptime _GEMV_SENTINEL = -12345.0
+
+
+def _gemv_fill_random[
+    dtype: DType
+](buf: HostBuffer[dtype], count: Int, scale: Float64 = 1.0):
+    for i in range(count):
+        buf[i] = Scalar[dtype]((random_float64() * 2.0 - 1.0) * scale)
+
+
+def _gemv_fill_hash[dtype: DType](buf: HostBuffer[dtype], count: Int):
+    """Fills `buf` with values in [-1, 1) that differ from element to element.
+
+    Cheaper than `_gemv_fill_random` at billions of elements, and a read from
+    the wrong offset still lands on a different value.
+    """
+    for i in range(count):
+        var h = (UInt64(i) * UInt64(0x9E3779B97F4A7C15)) >> 48
+        buf[i] = Scalar[dtype](Float64(Int(h)) / 32768.0 - 1.0)
+
+
+def _gemv_check[
+    in_type: DType, c_type: DType
+](
+    got: HostBuffer[c_type],
+    act: HostBuffer[in_type],
+    weight: HostBuffer[in_type],
+    m: Int,
+    rows_alloc: Int,
+    n: Int,
+    k: Int,
+    name: String,
+    col_step: Int = 1,
+    tail_cols: Int = 0,
+) raises:
+    """Checks rows `[0, m)` against the host sum and rows past `m` untouched.
+
+    Only columns `j` with `j % col_step == 0` or `j >= n - tail_cols` are
+    checked, which keeps the host sum affordable at the largest N.
+    """
+    comptime rel = Float32(2.0**-8) if c_type != DType.float32 else Float32(
+        1e-6
+    )
+    var bad = 0
+    for i in range(m):
+        for j in range(n):
+            if j % col_step != 0 and j < n - tail_cols:
+                continue
+            var acc = Float32(0)
+            var mag = Float32(0)
+            for kk in range(k):
+                var p = (
+                    act[i * k + kk].cast[.float32]()
+                    * weight[j * k + kk].cast[.float32]()
+                )
+                acc += p
+                mag += abs(p)
+            var y = got[i * n + j].cast[.float32]()
+            # Negated so a NaN output, which fails every comparison, fails.
+            if not (abs(y - acc) <= rel * abs(acc) + Float32(1e-5) * mag):
+                if bad < 5:
+                    print(t"  FAIL {name} m {i} n {j} got {y} exp {acc}")
+                bad += 1
+    for i in range(m * n, rows_alloc * n):
+        if got[i] != Scalar[c_type](_GEMV_SENTINEL):
+            if bad < 5:
+                print("  FAIL", name, "wrote past M at flat index", i)
+            bad += 1
+    if bad:
+        raise Error(String(name, ": ", bad, " mismatches"))
+
+
+def _run_gemv_case[
+    in_type: DType,
+    c_type: DType,
+    N: Int,
+    K: Int,
+    *,
+    tile_m: Int,
+    rows_per_warp: Int,
+    tile_k: Int = 8,
+    unroll: Int = 2,
+    compute: Bool = False,
+](ctx: DeviceContext, m: Int, name: String) raises:
+    """Runs one launch configuration at `[m, N, K]` and checks it.
+
+    With `compute`, a `compute_fn` adds a per-column bias and the kernel
+    stores the result; the bias is subtracted before the check, which
+    verifies the `(row, col)` coordinates the kernel hands the closure.
+    """
+    print(t"== {name} m {m} n {N} k {K}")
+    var act_h = ctx.enqueue_create_host_buffer[in_type](m * K)
+    var w_h = ctx.enqueue_create_host_buffer[in_type](N * K)
+    var bias_h = ctx.enqueue_create_host_buffer[.float32](N)
+    var c_h = ctx.enqueue_create_host_buffer[c_type](tile_m * N)
+    _gemv_fill_random(act_h, m * K)
+    _gemv_fill_random(w_h, N * K)
+    _gemv_fill_random(bias_h, N, 4.0)
+    for i in range(tile_m * N):
+        c_h[i] = Scalar[c_type](_GEMV_SENTINEL)
+
+    var act_d = ctx.enqueue_create_buffer[in_type](m * K)
+    var w_d = ctx.enqueue_create_buffer[in_type](N * K)
+    var bias_d = ctx.enqueue_create_buffer[.float32](N)
+    var c_d = ctx.enqueue_create_buffer[c_type](tile_m * N)
+    ctx.enqueue_copy(act_d, act_h)
+    ctx.enqueue_copy(w_d, w_h)
+    ctx.enqueue_copy(bias_d, bias_h)
+    ctx.enqueue_copy(c_d, c_h)
+
+    var a_tt = TileTensor(act_d, row_major(m, Idx[K])).as_imm()
+    var w_tt = TileTensor(w_d, row_major(Idx[N], Idx[K])).as_imm()
+    var c_tt = TileTensor(c_d, row_major(m, Idx[N]))
+    var bias_ptr = bias_d.unsafe_ptr()
+
+    @inline(.always)
+    def bias_add_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var bias_ptr} -> SIMD[
+        dtype, width
+    ]:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        var col = Int(coords[1])
+        var out = val.cast[.float32]() + bias_ptr.unsafe_load[width=width](col)
+        return out.cast[dtype]()
+
+    comptime if compute:
+        enqueue_apple_gemv_config[
+            tile_m=tile_m,
+            rows_per_warp=rows_per_warp,
+            tile_k=tile_k,
+            unroll=unroll,
+            has_compute_fn=True,
+        ](c_tt, a_tt, w_tt, ctx, compute_fn=bias_add_fn)
+    else:
+        enqueue_apple_gemv_config[
+            tile_m=tile_m,
+            rows_per_warp=rows_per_warp,
+            tile_k=tile_k,
+            unroll=unroll,
+        ](c_tt, a_tt, w_tt, ctx)
+    ctx.enqueue_copy(c_h, c_d)
+    ctx.synchronize()
+    comptime if compute:
+        for i in range(m):
+            for j in range(N):
+                c_h[i * N + j] -= bias_h[j].cast[c_type]()
+    _gemv_check[in_type, c_type](c_h, act_h, w_h, m, tile_m, N, K, name)
+    print("  PASS")
+
+
+def test_gemv_configs(ctx: DeviceContext) raises:
+    """Each launch parameter on its own, at small N and K."""
+    seed(0)
+    _run_gemv_case[.bfloat16, .float32, 256, 512, tile_m=1, rows_per_warp=1](
+        ctx, 1, "r1"
+    )
+    _run_gemv_case[.bfloat16, .float32, 256, 512, tile_m=1, rows_per_warp=2](
+        ctx, 1, "r2"
+    )
+    _run_gemv_case[.bfloat16, .float32, 256, 512, tile_m=1, rows_per_warp=4](
+        ctx, 1, "r4"
+    )
+    _run_gemv_case[
+        .bfloat16, .float32, 256, 512, tile_m=1, rows_per_warp=2, unroll=4
+    ](ctx, 1, "r2 u4")
+    _run_gemv_case[
+        .bfloat16, .float32, 256, 512, tile_m=1, rows_per_warp=1, tile_k=16
+    ](ctx, 1, "r1 k16")
+    _run_gemv_case[.bfloat16, .bfloat16, 256, 512, tile_m=1, rows_per_warp=2](
+        ctx, 1, "bf16 out"
+    )
+    _run_gemv_case[.float16, .float16, 256, 512, tile_m=1, rows_per_warp=2](
+        ctx, 1, "fp16"
+    )
+
+
+def test_gemv_ragged(ctx: DeviceContext) raises:
+    """Ragged N, K below one warp stride, and partial unrolls."""
+    seed(1)
+    _run_gemv_case[.bfloat16, .float32, 203, 512, tile_m=1, rows_per_warp=4](
+        ctx, 1, "ragged n"
+    )
+    _run_gemv_case[.bfloat16, .float32, 64, 520, tile_m=1, rows_per_warp=2](
+        ctx, 1, "k 520"
+    )
+    _run_gemv_case[.bfloat16, .float32, 64, 40, tile_m=1, rows_per_warp=2](
+        ctx, 1, "k < stride"
+    )
+    _run_gemv_case[.bfloat16, .float32, 128, 128, tile_m=1, rows_per_warp=1](
+        ctx, 1, "k 128"
+    )
+    # K chunk counts that leave 0, 1 and unroll - 1 chunks after the
+    # unrolled loop.
+    _run_gemv_case[
+        .bfloat16, .float32, 32, 256 * 5, tile_m=1, rows_per_warp=2, unroll=4
+    ](ctx, 1, "u4 rem1")
+    _run_gemv_case[
+        .bfloat16, .float32, 32, 256 * 7, tile_m=1, rows_per_warp=2, unroll=4
+    ](ctx, 1, "u4 rem3")
+
+
+def test_gemv_small_batch(ctx: DeviceContext) raises:
+    """M in 2..4 on the multi-row launches, including M below `tile_m`."""
+    seed(2)
+    _run_gemv_case[.bfloat16, .float32, 256, 512, tile_m=2, rows_per_warp=1](
+        ctx, 2, "m2"
+    )
+    _run_gemv_case[.bfloat16, .float32, 256, 512, tile_m=4, rows_per_warp=2](
+        ctx, 4, "m4"
+    )
+    _run_gemv_case[.bfloat16, .float32, 203, 520, tile_m=4, rows_per_warp=2](
+        ctx, 3, "m3 of 4"
+    )
+    _run_gemv_case[.bfloat16, .bfloat16, 256, 512, tile_m=4, rows_per_warp=1](
+        ctx, 4, "m4 bf16 out"
+    )
+
+
+def test_gemv_compute_fn(ctx: DeviceContext) raises:
+    """`compute_fn` at ragged N and M below `tile_m`."""
+    seed(4)
+    _run_gemv_case[
+        .bfloat16, .float32, 203, 512, tile_m=4, rows_per_warp=2, compute=True
+    ](ctx, 3, "compute_fn m3 of 4")
+    _run_gemv_case[
+        .float16, .float32, 256, 1024, tile_m=8, rows_per_warp=1, compute=True
+    ](ctx, 8, "compute_fn fp16 m8")
+
+
+def test_gemv_large_shapes(ctx: DeviceContext) raises:
+    """Narrow N, short K, long K, and K below the dispatch floor."""
+    seed(3)
+    _run_gemv_case[.bfloat16, .bfloat16, 576, 7168, tile_m=1, rows_per_warp=2](
+        ctx, 1, "narrow n"
+    )
+    _run_gemv_case[
+        .bfloat16, .bfloat16, 18432, 1536, tile_m=1, rows_per_warp=2
+    ](ctx, 1, "short k")
+    _run_gemv_case[
+        .bfloat16, .bfloat16, 7168, 12288, tile_m=1, rows_per_warp=2
+    ](ctx, 1, "long k")
+    _run_gemv_case[.bfloat16, .bfloat16, 12288, 128, tile_m=1, rows_per_warp=2](
+        ctx, 1, "k 128"
+    )
+
+
+def _run_gemv_dispatch_case[
+    N: Int,
+    K: Int,
+    *,
+    in_type: DType = .bfloat16,
+    c_type: DType = .float32,
+    bias: Bool = False,
+    sampled: Bool = False,
+](ctx: DeviceContext, m: Int, name: String) raises:
+    """Runs `_matmul_gpu[transpose_b=True]` at `[m, N, K]` and checks it.
+
+    With `bias`, a compute epilogue adds a per-column bias to the output, which checks the `(row, col)` coordinates the kernel
+    hands the epilogue. With `sampled`, the weight gets the hash fill and the
+    host reference checks every 1021st column plus the last 256.
+    """
+    print(t"== dispatch {name} m {m} n {N} k {K} bias {bias}")
+    var act_h = ctx.enqueue_create_host_buffer[in_type](m * K)
+    var w_h = ctx.enqueue_create_host_buffer[in_type](N * K)
+    var bias_h = ctx.enqueue_create_host_buffer[.float32](N)
+    var c_h = ctx.enqueue_create_host_buffer[c_type](m * N)
+    _gemv_fill_random(act_h, m * K)
+    comptime if sampled:
+        _gemv_fill_hash(w_h, N * K)
+    else:
+        _gemv_fill_random(w_h, N * K)
+    _gemv_fill_random(bias_h, N, 4.0)
+    for i in range(m * N):
+        c_h[i] = Scalar[c_type](_GEMV_SENTINEL)
+
+    var act_d = ctx.enqueue_create_buffer[in_type](m * K)
+    var w_d = ctx.enqueue_create_buffer[in_type](N * K)
+    var bias_d = ctx.enqueue_create_buffer[.float32](N)
+    var c_d = ctx.enqueue_create_buffer[c_type](m * N)
+    ctx.enqueue_copy(act_d, act_h)
+    ctx.enqueue_copy(w_d, w_h)
+    ctx.enqueue_copy(bias_d, bias_h)
+    ctx.enqueue_copy(c_d, c_h)
+
+    var a_tt = TileTensor(act_d, row_major(m, Idx[K])).as_imm()
+    var w_tt = TileTensor(w_d, row_major(Idx[N], Idx[K])).as_imm()
+    var c_tt = TileTensor(c_d, row_major(m, Idx[N]))
+
+    var bias_tt = TileTensor(bias_d, row_major(Idx[N])).as_imm()
+
+    @inline(.always)
+    def bias_compute[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_tt} -> SIMD[dt, w]:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        var b = bias_tt.load[width=w, alignment=alignment]((coords[1],))
+        return (val.cast[.float32]() + b).cast[dt]()
+
+    comptime if bias:
+        _matmul_gpu[transpose_b=True](c_tt, a_tt, w_tt, bias_compute, ctx)
+    else:
+        _matmul_gpu[transpose_b=True](c_tt, a_tt, w_tt, ctx)
+    ctx.enqueue_copy(c_h, c_d)
+    ctx.synchronize()
+    _ = act_d^
+    _ = w_d^
+    _ = bias_d^
+    _ = c_d^
+
+    comptime if bias:
+        for i in range(m):
+            for j in range(N):
+                c_h[i * N + j] -= bias_h[j].cast[c_type]()
+    comptime if sampled:
+        _gemv_check[in_type, c_type](
+            c_h, act_h, w_h, m, m, N, K, name, col_step=1021, tail_cols=256
+        )
+    else:
+        _gemv_check[in_type, c_type](c_h, act_h, w_h, m, m, N, K, name)
+    print("  PASS")
+
+
+def test_gemv_dispatch(ctx: DeviceContext) raises:
+    """`_matmul_gpu` at every M the GEMV serves, and at its M boundaries.
+
+    M = 1 and M = 9 take the split-K GEMV and the tiled matmul; they are here
+    so a boundary change that breaks either neighbour fails this suite too.
+    """
+    seed(4)
+    for m in [1, 2, 3, 4, 5, 8, 9]:
+        _run_gemv_dispatch_case[256, 1024](ctx, m, "small")
+    _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 1, "bias m1")
+    _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 3, "bias m3")
+    _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 8, "bias m8")
+    # Past the GEMV, the bias epilogue reaches the tiled matmul's
+    # `epilogue_fn` store path.
+    _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 9, "bias m9 tiled")
+    _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 100, "bias m100 tiled")
+    # K below the GEMV's K floor stays on the tiled matmul. At K = 512 the
+    # floor depends on M: M = 4 takes the GEMV and M = 8 the tiled matmul.
+    _run_gemv_dispatch_case[256, 128](ctx, 4, "k128")
+    _run_gemv_dispatch_case[256, 512](ctx, 4, "k512 m4")
+    _run_gemv_dispatch_case[256, 512](ctx, 8, "k512 m8")
+    _run_gemv_dispatch_case[576, 7168](ctx, 2, "narrow n")
+    _run_gemv_dispatch_case[3584, 7168](ctx, 4, "k 2n")
+    _run_gemv_dispatch_case[7168, 3584](ctx, 8, "n 2k")
+    _run_gemv_dispatch_case[18432, 1536](ctx, 4, "short k")
+    _run_gemv_dispatch_case[256, 1024, c_type=.bfloat16](ctx, 4, "bf16 out")
+    # fp16 takes the same route as bf16.
+    for m in [1, 2, 5, 8, 9]:
+        _run_gemv_dispatch_case[256, 1024, in_type=.float16, c_type=.float16](
+            ctx, m, "fp16"
+        )
+    _run_gemv_dispatch_case[3584, 7168, in_type=.float16](ctx, 4, "fp16 k 2n")
+    _run_gemv_dispatch_case[256, 1024, in_type=.float16, bias=True](
+        ctx, 3, "fp16 bias m3"
+    )
+    # lm_head, the largest weight: the last rows sit past 2^30 elements.
+    for m in [2, 5, 8]:
+        _run_gemv_dispatch_case[163840, 7168, sampled=True](ctx, m, "lm_head")
 
 
 def main() raises:
@@ -2283,7 +2655,7 @@ def main() raises:
         ctx, 65, 129, 64, "8x8 bf16 nt odd-mn"
     )
 
-    # Bias-add `elementwise_lambda_fn` epilogue (clean interior, odd NT edges,
+    # Bias-add `compute_fn` (clean interior, odd NT edges,
     # and the NN odd-N load edge combined with the epilogue store).
     _run_8x8_bias_case[.bfloat16, .bfloat16, True](
         ctx, 128, 128, 64, "8x8 bias nt"
@@ -2308,10 +2680,10 @@ def main() raises:
     )
 
     # M5 hardware-MMA path (`AppleM5MatMul` / `enqueue_apple_matmul`): Apple M5.
-    if ctx.compute_capability() != 5:
+    if ctx.compute_capability() < 5:
         print(
             "SKIP: M5 hardware-MMA matmul tests require Apple M5"
-            " (compute_capability == 5)"
+            " (compute_capability >= 5)"
         )
         return
     test_kernel_single_tile_nn_fp16(ctx)
@@ -2390,3 +2762,36 @@ def main() raises:
     _run_split_k_case[.float16, .bfloat16, True](
         ctx, 96, 160, 2048, "force nt large-k", force_split_k=True
     )
+    # Value closures through the split-K reduce.
+    _run_split_k_case[.float16, .float32, False, compute=True](
+        ctx, 100, 200, 2048, "splitk compute_fn ragged", splits=4
+    )
+    _run_split_k_case[.bfloat16, .float16, True, compute=True](
+        ctx, 96, 96, 3072, "splitk compute_fn nt", splits=4
+    )
+    # fp16 out: a bf16 `compute_fn` rounds twice (the C store, then the bias
+    # add), and at |C| ~ 256 one bf16 ulp is 2.0, past the 1.0 tolerance.
+    _run_split_k_case[.float16, .float16, True, compute=True](
+        ctx, 96, 160, 2048, "force compute_fn nt", force_split_k=True
+    )
+    # `compute_fn` on the single-pass tiled route: interior, ragged M/N/K,
+    # and an N that is not a multiple of 4 (the width-1 edge store).
+    _run_split_k_case[.float16, .float32, True, compute=True](
+        ctx, 128, 128, 128, "tiled compute_fn nt"
+    )
+    _run_split_k_case[.bfloat16, .bfloat16, False, compute=True](
+        ctx, 128, 128, 128, "tiled compute_fn nn bf16"
+    )
+    _run_split_k_case[.float16, .float16, True, compute=True](
+        ctx, 100, 100, 97, "tiled compute_fn ragged"
+    )
+    _run_split_k_case[.float16, .float16, False, compute=True](
+        ctx, 64, 130, 64, "tiled compute_fn odd-n"
+    )
+
+    test_gemv_configs(ctx)
+    test_gemv_ragged(ctx)
+    test_gemv_small_batch(ctx)
+    test_gemv_compute_fn(ctx)
+    test_gemv_large_shapes(ctx)
+    test_gemv_dispatch(ctx)

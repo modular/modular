@@ -28,7 +28,6 @@ from ._cpython import (
     Py_file_input,
     Py_ssize_t,
     PyMethodDef,
-    PyObjectPtr,
 )
 from .python_object import PythonObject
 
@@ -91,7 +90,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             to=cpython
         ).unsafe_origin_cast[ImmStaticOrigin]()
 
-    @always_inline
+    @inline(.always)
     def cpython(self) -> ref[ImmStaticOrigin] CPython:
         """Handle to the low-level C API of the CPython interpreter present in
         the current process.
@@ -313,7 +312,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             # Safety: `module` pointer lives long enough because its reference
             #   argument.
             module._obj_ptr,
-            functions.as_unsafe_any_origin(),
+            functions,
         )
         if errno == -1:
             raise cpy.unsafe_get_error()
@@ -343,7 +342,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var errno = cpy.PyModule_AddObjectRef(
             module._obj_ptr,
-            name.as_c_string_slice().ptr().as_unsafe_any_origin(),
+            name.as_c_string_span().ptr(),
             value._obj_ptr,
         )
         if errno == -1:
@@ -471,7 +470,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             _ = cpy.PyTuple_SetItem(tup_ptr, i, values[i].steal_data())
         return PythonObject(from_owned=tup_ptr)
 
-    @no_inline
+    @inline(.never)
     def as_string_slice(self, obj: PythonObject) -> StringSlice[ImmutAnyOrigin]:
         """Return a string representing the given Python object.
 

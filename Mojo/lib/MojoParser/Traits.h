@@ -34,11 +34,8 @@ class MojoInflightDiag;
 /// of decls must also be checked here too. This logic is left for the caller so
 /// optimizations is possible when the struct is already known to conform to
 /// certain ancestors. On success, the `ConformanceOp` will be populated.
-LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
-                                        TraitSymbolAttr parent,
-                                        std::optional<MojoInflightDiag> &diag,
-                                        ConformanceOp op,
-                                        ASTDecl &conformanceDecl);
+LogicalResult verifyAndBuildConformance(ConformanceASTDecl &conformanceDecl,
+                                        std::optional<MojoInflightDiag> &diag);
 
 /// Canonicalize the list of symbols that form a trait composition.
 void canonicalizeTraitCompositionSymbols(
@@ -56,6 +53,18 @@ SmallVector<ConstraintAttr> canonicalizeTraitSymbolsAndConstraints(
 SmallVector<TraitSymbolAttr>
 reduceTraitCompositionSymbols(SharedState &shared,
                               ArrayRef<TraitSymbolAttr> symbols);
+
+/// Return the universal parametric closure trait symbol of a trait composition,
+/// or null if `trait` is null or contains no such symbol.
+///
+/// FIXME: what if there are multiple closure traits? We need to be more clever
+/// to line them up.
+TraitSymbolAttr extractClosureSymbol(SharedState &shared, TraitType trait);
+
+// TODO: we need a proper design to support this correctly.
+LogicalResult checkAtMostOneClosureTrait(SharedState &shared,
+                                         ArrayRef<TraitSymbolAttr> symbols,
+                                         SMLoc loc, SourceRange range = {});
 
 /// Given a type expression and scope-level assumptions, compute the effective
 /// trait bound implied by any `conforms_to(type, Trait)` constraints.

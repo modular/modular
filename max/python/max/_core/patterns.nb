@@ -1,0 +1,141 @@
+# nanobind can't add a @classmethod annotation
+max._core.dtype.DType.from_numpy:
+    \from numpy import dtype
+    @classmethod
+    def from_numpy(cls, dtype: numpy.dtype) -> DType:
+        \doc
+
+# Needs an import
+max._core.driver.Buffer._iterate_indices:
+    \from collections.abc import Generator
+    def _iterate_indices(self) -> Generator[Sequence[int]]: ...
+
+# Since we define `bool` as a value in the class, we need to
+# specify __builtins__.bool as return types, otherwise
+# mypy gets confused.
+max._core.dtype.DType.is_(.*):
+    def is_\1(self) -> __builtins__.bool:
+        \doc
+
+max._core.engine.__prefix__:
+    \from max._core_types.driver import DLPackArray
+    \from max._core.driver import Buffer
+
+    InputType = DLPackArray | Buffer | int | float | bool
+
+max._core.engine.Model.reload:
+    \from typing import Mapping, Any
+    def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
+
+# The C++ binding takes `nb::dict`; override the stub to accept the more
+# permissive `Mapping[str, Any]` so callers can pass any mapping type.
+max._core.engine.InferenceSession._load_all:
+    \from typing import Mapping, Any
+    \from max._core.mlrt import AsyncValue
+    def _load_all(self, compiled: AsyncValue[CompiledModels], weights_registry: Mapping[str, Any]) -> list[Model]: ...
+
+max._core.engine.InferenceSession.debug:
+    debug: DebugConfig
+
+max._core.__prefix__:
+    import enum
+
+    from max.mlir import Context, Location
+    from max.mlir import Value as MlirValue
+
+max._core._RelocationModel:
+    class _RelocationModel(enum.Enum): # type: ignore
+        pass
+
+max._core.__suffix__:
+    __version__: str
+
+# Dialects
+# Manually duplicated due to https://github.com/wjakob/nanobind/pull/1235#issuecomment-3633220074
+
+# Many of the generated overloads for constructors are more specialized in
+# C++ than they are in Python. For example, `int32_t` and `int64_t` and `size_t`
+# all map to `int` in Python typing. It may not always be clear which of these
+# overloads will be run for a given set of inputs (though in most cases it's the first one)
+# but we disable mypy errors for shadowed overloads.
+
+# DiagnosticHandlers aren't a thing that Python can reasonably provided. In most cases
+# these are automatically provided, but there are a few custom verifiers not covered yet.
+# This binding prevents errors in those cases.
+
+max._core.dialects.kgen.__prefix__:
+    # C++ overloads on different int types look the same in Python, ignore these
+    # mypy: disable-error-code="overload-cannot-match"
+
+    \from collections.abc import Callable, Sequence
+    \from typing import Protocol
+    \from max.mlir import Context, Location
+    DiagnosticHandler = Callable
+
+max._core.dialects.m.__prefix__:
+    # C++ overloads on different int types look the same in Python, ignore these
+    # mypy: disable-error-code="overload-cannot-match"
+
+    \from collections.abc import Sequence
+    \from typing import Protocol
+    \from max.mlir import Context, Location
+
+max._core.dialects.mosh.__prefix__:
+    # C++ overloads on different int types look the same in Python, ignore these
+    # mypy: disable-error-code="overload-cannot-match"
+
+    \from collections.abc import Sequence
+    \from typing import Protocol
+    \from max.mlir import Context, Location
+
+max._core.dialects.builtin.__prefix__:
+    # C++ overloads on different int types look the same in Python, ignore these
+    # mypy: disable-error-code="overload-cannot-match"
+
+    \from collections.abc import Callable, Sequence
+    \from typing import Protocol
+    \from max.mlir import Context, Location
+    DiagnosticHandler = Callable
+
+max._core.dialects.builtin.passes.__prefix__:
+    # C++ overloads on different int types look the same in Python, ignore these
+    # mypy: disable-error-code="overload-cannot-match"
+
+    \from collections.abc import Sequence
+    \from typing import Protocol
+    \from max.mlir import Context, Location
+
+max._core.dialects.mo.__prefix__:
+    # C++ overloads on different int types look the same in Python, ignore these
+    # mypy: disable-error-code="overload-cannot-match"
+
+    \from collections.abc import Sequence
+    \from typing import Protocol
+    \from max.mlir import Context, Location
+
+max._core.dialects.mo.passes.__prefix__:
+    # C++ overloads on different int types look the same in Python, ignore these
+    # mypy: disable-error-code="overload-cannot-match"
+
+    \from collections.abc import Sequence
+    \from typing import Protocol
+    \from max.mlir import Context, Location
+
+max._core.dialects.rmo.__prefix__:
+    # C++ overloads on different int types look the same in Python, ignore these
+    # mypy: disable-error-code="overload-cannot-match"
+
+    \from collections.abc import Sequence
+    \from typing import Protocol
+    \from max.mlir import Context, Location
+
+# DiagnosticHandler not necessary here, but for some reason our stubgen setup and ruff are conflicting,
+# so just working around.
+max._core.dialects.rmo.passes.__prefix__:
+    # C++ overloads on different int types look the same in Python, ignore these
+    # mypy: disable-error-code="overload-cannot-match"
+
+    \from collections.abc import Callable, Sequence
+    \from typing import Protocol
+    \from max.mlir import Context, Location
+    DiagnosticHandler = Callable

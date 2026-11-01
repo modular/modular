@@ -20,14 +20,13 @@ from max.driver import (
     CPU,
     Accelerator,
     Buffer,
-    DevicePinnedBuffer,
     Usage,
     accelerator_api,
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, SymbolicDim, TensorType, ops
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 KERNEL_DURATION_SEC = 3
 CPU_WORK_DURATION_SEC = 1
@@ -98,39 +97,23 @@ def test_overlap(enable_overlap: bool, expected_elapsed_time: int) -> None:
     sleep_duration = Buffer(dtype=DType.float64, shape=[1], device=CPU())
     sleep_duration.to_numpy().fill(KERNEL_DURATION_SEC)
 
-    # Allocate buffers before timing region
-    if not enable_overlap:
-        # Allocate regular pinned buffers for non-overlap case
-        a_pinned = Buffer(
-            dtype=DType.int8, shape=[size], device=device, usage=Usage.STAGING
-        )
-        a_pinned.to_numpy().fill(1)
-        b_pinned = Buffer(
-            dtype=DType.int8, shape=[size], device=device, usage=Usage.STAGING
-        )
-        b_pinned.to_numpy().fill(2)
-        c_pinned = Buffer(
-            dtype=DType.int8, shape=[size], device=device, usage=Usage.STAGING
-        )
-        d_pinned = Buffer(
-            dtype=DType.int8, shape=[size], device=device, usage=Usage.STAGING
-        )
-    else:
-        # Allocate DevicePinnedBuffer for overlap case
-        a_pinned = DevicePinnedBuffer(
-            dtype=DType.int8, shape=[size], device=device
-        )
-        a_pinned.to_numpy().fill(1)
-        b_pinned = DevicePinnedBuffer(
-            dtype=DType.int8, shape=[size], device=device
-        )
-        b_pinned.to_numpy().fill(2)
-        c_pinned = DevicePinnedBuffer(
-            dtype=DType.int8, shape=[size], device=device
-        )
-        d_pinned = DevicePinnedBuffer(
-            dtype=DType.int8, shape=[size], device=device
-        )
+    # Allocate buffers before timing region. The overlap path matches
+    # production: untracked, ordered only by explicit synchronization.
+    usage = Usage.STAGING | Usage.UNTRACKED if enable_overlap else Usage.STAGING
+    a_pinned = Buffer(
+        dtype=DType.int8, shape=[size], device=device, usage=usage
+    )
+    a_pinned.to_numpy().fill(1)
+    b_pinned = Buffer(
+        dtype=DType.int8, shape=[size], device=device, usage=usage
+    )
+    b_pinned.to_numpy().fill(2)
+    c_pinned = Buffer(
+        dtype=DType.int8, shape=[size], device=device, usage=usage
+    )
+    d_pinned = Buffer(
+        dtype=DType.int8, shape=[size], device=device, usage=usage
+    )
 
     t0 = time.monotonic()
 

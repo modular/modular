@@ -29,14 +29,12 @@ from .compile import codegen_unreachable
 from .debug import breakpointhook
 from .info import (
     CompilationTarget,
-    Vendor,
+    current_accelerator,
+    Endian,
     align_of,
     bit_width_of,
     has_accelerator,
-    has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
-    has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_apple_gpu,
     is_big_endian,

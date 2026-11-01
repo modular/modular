@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Token budget accounting for the batch constructors."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -73,6 +75,7 @@ class TokenBudget(ABC):
         allow_chunking: bool,
         applicable_types: list[RequestType],
         min_chunk_tokens: int = 0,
+        align_tokens: int = 0,
     ) -> None:
         """Initialize a generic token budget.
 
@@ -85,6 +88,8 @@ class TokenBudget(ABC):
             applicable_types: Request types that this budget applies to. If the
                 active or incoming request type is not in this list, the budget
                 is effectively a no-op for that context.
+            align_tokens: When > 0, a context-encoding cut moves back to a
+                multiple of this many tokens. 0 disables the alignment.
             min_chunk_tokens: When > 0, a split never creates a piece
                 (chunk or remainder) smaller than this: the cut moves
                 earlier to protect the remainder, and contexts with no
@@ -97,6 +102,7 @@ class TokenBudget(ABC):
         self.applicable_types = applicable_types
         self.min_chunk_tokens = min_chunk_tokens
         """Floor on the size of any split piece (0 = no floor)."""
+        self.align_tokens = align_tokens
 
         self.used = 0
         """Number of tokens currently consumed from this budget."""
@@ -106,6 +112,48 @@ class TokenBudget(ABC):
     def remaining(self) -> int:
         """Return the remaining token capacity for this budget."""
         return self.capacity - self.used
+
+    def boundary_cut(
+        self, context: TextContext, cut: int, request_type: RequestType
+    ) -> int | None:
+        """Returns a shorter ``cut`` ending on a boundary, or ``None``.
+
+        ``None`` when alignment is off, this is not context encoding, or no
+        earlier boundary falls inside ``cut``.
+        """
+        if self.align_tokens <= 0 or request_type is not RequestType.CE:
+            return None
+        processed = context.tokens.processed_length
+        end = processed + cut
+        aligned_end = end - (end % self.align_tokens)
+        if aligned_end <= processed or aligned_end == end:
+            return None
+        return aligned_end - processed
+
+    @abstractmethod
+    def fits_whole(
+        self,
+        context: TextContext,
+        request_type: RequestType,
+        reserve: int = 0,
+        active_length: int | None = None,
+    ) -> bool:
+        """Returns whether the context fits without being refused or cut.
+
+        Never mutates the context, unlike :meth:`status_after_context`. A
+        context that fits may still be cut back to an alignment boundary.
+
+        Args:
+            context: The context to check.
+            request_type: The type of request being checked.
+            reserve: Tokens to read as already charged.
+            active_length: Tokens to read as the context's active window,
+                for a context its next ``alloc`` will grow or shrink.
+                ``None`` reads the window it has now.
+
+        Returns:
+            Whether the budget takes the context whole.
+        """
 
     @abstractmethod
     def status_after_context(
@@ -206,6 +254,34 @@ class TokenBudgetCollection:
                 return status
         return BudgetStatus.BUDGET_AVAILABLE
 
+    def fits_whole(
+        self,
+        context: TextContext,
+        request_type: RequestType,
+        reserve: int = 0,
+        active_length: int | None = None,
+    ) -> bool:
+        """Returns whether every budget takes the context as it is.
+
+        Never mutates the context, unlike :meth:`status_after_context`.
+
+        Args:
+            context: The context to check.
+            request_type: The type of request being checked.
+            reserve: Tokens to read as already charged.
+            active_length: Tokens to read as the context's active window,
+                as :meth:`TokenBudget.fits_whole` reads it.
+
+        Returns:
+            Whether every budget takes the context whole.
+        """
+        return all(
+            token_budget.fits_whole(
+                context, request_type, reserve, active_length
+            )
+            for token_budget in self.token_budgets
+        )
+
     def add_to_budget(
         self,
         context: TextContext,
@@ -219,6 +295,15 @@ class TokenBudgetCollection:
         """
         for token_budget in self.token_budgets:
             token_budget.add_to_budget(context, request_type)
+
+    def reserve(self, tokens: int) -> None:
+        """Charges every budget for tokens that no context accounts for.
+
+        Args:
+            tokens: The number of tokens to charge.
+        """
+        for token_budget in self.token_budgets:
+            token_budget.used += tokens
 
 
 class ActiveTokenBudget(TokenBudget):
@@ -234,10 +319,85 @@ class ActiveTokenBudget(TokenBudget):
     :attr:`used`, and :meth:`remaining`.
     """
 
+    def __init__(
+        self,
+        capacity: int,
+        allow_chunking: bool,
+        applicable_types: list[RequestType],
+        min_chunk_tokens: int = 0,
+        align_tokens: int = 0,
+        max_context_tokens: int = 0,
+    ) -> None:
+        """Initialize an active-token budget.
+
+        Args:
+            capacity: Maximum number of active tokens that may be consumed by
+                this budget.
+            allow_chunking: Whether this budget is permitted to shrink
+                :class:`TextContext` instances via ``context.chunk`` in
+                order to fit within the remaining capacity.
+            applicable_types: Request types that this budget applies to.
+            min_chunk_tokens: When > 0, a split never creates a piece
+                (chunk or remainder) smaller than this: the cut moves
+                earlier to protect the remainder, and contexts with no
+                legal cut point are refused. 0 disables the floor.
+            align_tokens: When > 0, a context-encoding cut moves back to a
+                multiple of this many tokens. 0 disables the alignment.
+            max_context_tokens: When > 0, a single context may take at most
+                this many tokens from the budget in one step, so one long
+                prefill cannot claim the whole batch budget. Only enforced
+                when ``allow_chunking`` is set, since the cap is applied by
+                chunking. 0 disables the cap.
+        """
+        super().__init__(
+            capacity=capacity,
+            allow_chunking=allow_chunking,
+            applicable_types=applicable_types,
+            min_chunk_tokens=min_chunk_tokens,
+            align_tokens=align_tokens,
+        )
+
+        self.max_context_tokens = max_context_tokens
+        """Per-context ceiling on tokens drawn from this budget in one step (0 = no cap)."""
+
     @property
     def remaining(self) -> int:
         """Return the remaining active-token capacity for this budget."""
         return self.capacity - self.used
+
+    def fits_whole(
+        self,
+        context: TextContext,
+        request_type: RequestType,
+        reserve: int = 0,
+        active_length: int | None = None,
+    ) -> bool:
+        """Returns whether the active window fits without a cut.
+
+        The window counts against what is left after ``reserve``, and
+        against the per-context cap when chunking is on.
+
+        Args:
+            context: The context to check.
+            request_type: The type of request being checked.
+            reserve: Tokens to read as already charged.
+            active_length: Tokens to read as the active window in place of
+                the context's own.
+
+        Returns:
+            Whether the window fits whole.
+        """
+        if (
+            self.active_request_type not in self.applicable_types
+            and request_type not in self.applicable_types
+        ):
+            return True
+        if active_length is None:
+            active_length = context.tokens.active_length
+        limit = self.remaining - reserve
+        if self.max_context_tokens > 0 and self.allow_chunking:
+            limit = min(limit, self.max_context_tokens)
+        return 0 < active_length <= limit
 
     def status_after_context(
         self,
@@ -268,7 +428,8 @@ class ActiveTokenBudget(TokenBudget):
             A :class:`BudgetStatus` indicating if and how the context fits:
 
             * :data:`BudgetStatus.BUDGET_AVAILABLE` - context fits with room
-              remaining.
+              remaining, including when ``max_context_tokens`` cut it short
+              but the batch budget still has capacity.
             * :data:`BudgetStatus.BUDGET_REACHED` - context fits exactly or
               brings the budget to its limit.
             * :data:`BudgetStatus.BUDGET_EXHAUSTED` - context cannot be
@@ -291,10 +452,31 @@ class ActiveTokenBudget(TokenBudget):
         if tokens_remaining <= 0:
             return BudgetStatus.BUDGET_EXHAUSTED
 
-        # Fits without any modification.
-        if context.tokens.active_length == tokens_remaining:
-            return BudgetStatus.BUDGET_REACHED
-        elif context.tokens.active_length < tokens_remaining:
+        # A per-request ceiling stops one long prefill from claiming the whole
+        # budget, so short requests still fit in the same batch.
+        limit = tokens_remaining
+        if self.max_context_tokens > 0 and self.allow_chunking:
+            limit = min(limit, self.max_context_tokens)
+
+        # Which limit this request runs up against: the budget, or the cap.
+        # Taken from `limit`, not the final cut size, because the floor and
+        # alignment shrink the cut as well.
+        status_at_limit = (
+            BudgetStatus.BUDGET_REACHED
+            if limit >= tokens_remaining
+            else BudgetStatus.BUDGET_AVAILABLE
+        )
+
+        # Fits without any modification, apart from a cut back to a boundary.
+        if context.tokens.active_length <= limit:
+            aligned = self.boundary_cut(
+                context, context.tokens.active_length, request_type
+            )
+            if aligned is not None:
+                context.tokens.chunk(aligned)
+                return BudgetStatus.BUDGET_AVAILABLE
+            if context.tokens.active_length == limit:
+                return status_at_limit
             return BudgetStatus.BUDGET_AVAILABLE
 
         # Would exceed the remaining capacity.
@@ -305,16 +487,19 @@ class ActiveTokenBudget(TokenBudget):
         # Try to shrink the active window so that it fits. The min-chunk
         # floor moves the cut earlier to protect the remainder, or refuses
         # the split when no legal cut point exists.
-        chunk_size = tokens_remaining
+        chunk_size = limit
         if self.min_chunk_tokens > 0:
             active_length = context.tokens.active_length
             if active_length - chunk_size < self.min_chunk_tokens:
                 chunk_size = active_length - self.min_chunk_tokens
             if chunk_size < self.min_chunk_tokens:
                 return BudgetStatus.BUDGET_EXHAUSTED
+        aligned = self.boundary_cut(context, chunk_size, request_type)
+        if aligned is not None and aligned >= self.min_chunk_tokens:
+            chunk_size = aligned
         try:
             context.tokens.chunk(chunk_size)
-            return BudgetStatus.BUDGET_REACHED
+            return status_at_limit
         except ValueError:
             return BudgetStatus.BUDGET_EXHAUSTED
 
@@ -393,6 +578,34 @@ class TotalContextTokenBudget(TokenBudget):
         """Return the remaining total-context capacity for this budget."""
         return self.capacity - self.used
 
+    def fits_whole(
+        self,
+        context: TextContext,
+        request_type: RequestType,
+        reserve: int = 0,
+        active_length: int | None = None,
+    ) -> bool:
+        """Returns whether the whole context fits the budget.
+
+        An alloc moves where the active window starts but never the end of
+        the context, which is all this budget charges, so ``active_length``
+        is not read.
+
+        Args:
+            context: The context to check.
+            request_type: The type of request being checked.
+            reserve: Tokens to read as already charged.
+            active_length: Not read, since this budget charges the whole
+                context.
+
+        Returns:
+            Whether the aligned context length fits.
+        """
+        if request_type not in self.applicable_types:
+            return True
+        total_length = self.align_up(len(context.tokens), self.cost_alignment)
+        return total_length <= self.remaining - reserve
+
     def status_after_context(
         self,
         context: TextContext,
@@ -419,7 +632,6 @@ class TotalContextTokenBudget(TokenBudget):
             * :data:`BudgetStatus.BUDGET_EXHAUSTED` - context cannot be
               accommodated within the remaining capacity.
         """
-
         if request_type not in self.applicable_types:
             return BudgetStatus.BUDGET_AVAILABLE
 

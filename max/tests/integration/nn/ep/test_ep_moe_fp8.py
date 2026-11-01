@@ -29,10 +29,10 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.moe import MoEGate, MoEQuantized
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.quant_config import (
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.moe import MoEGate, MoEQuantized
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -180,7 +180,6 @@ def test_ep_moe_fp8(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
         quant_config=fp8_config,
     )
@@ -230,7 +229,7 @@ def test_ep_moe_fp8(
 
         outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
 
-        graph.output(*outputs)
+        graph.output(outputs)
 
     # Compile and execute
     compiled = session.load(graph, weights_registry=moe.state_dict())

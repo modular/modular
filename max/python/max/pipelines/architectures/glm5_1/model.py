@@ -29,3 +29,8 @@ class Glm5_1Model(DeepseekV3_2Model):
     """
 
     model_config_cls: ClassVar[type[Any]] = Glm5_1Config
+
+    # Without allreduce, attention reduce-scatters tokens across the TP ranks
+    # before the expert dispatch, which is the layout GLM-5.3's recipe serves.
+    # Exporters pick the matching EP backend from it.
+    ep_dispatch_token_layout: ClassVar[str] = "tp_sharded"

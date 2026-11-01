@@ -224,19 +224,19 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
 }
 
 LogicalResult LoadOp::verify() {
-  AtomicOrdering ordering = getOrdering();
-  if (ordering != AtomicOrdering::NOT_ATOMIC) {
-    bool isKnownInvariat = false;
+  if (isAtomic()) {
+    bool isKnownInvariant = false;
     if (auto boolAttr = ::dyn_cast<BoolAttr>(getIsInvariantAttr()))
-      isKnownInvariat = boolAttr.getValue();
-    if ((isVolatile().has_value() && *isVolatile()) || isKnownInvariat)
+      isKnownInvariant = boolAttr.getValue();
+    if ((isVolatile().has_value() && *isVolatile()) || isKnownInvariant)
       return emitOpError(
           "invalid combination of volatile or invariant with atomic load");
   }
 
-  if (ordering == AtomicOrdering::NOT_ATOMIC && getSyncscope())
+  if (!isAtomic() && getSyncscope())
     return emitOpError("cannot specify syncscope without an atomic load");
 
+  AtomicOrdering ordering = getOrdering();
   if (llvm::is_contained(
           {AtomicOrdering::RELEASE, AtomicOrdering::ACQUIRE_RELEASE},
           ordering)) {
@@ -273,15 +273,15 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
 }
 
 LogicalResult StoreOp::verify() {
-  AtomicOrdering ordering = getOrdering();
-  if (ordering != AtomicOrdering::NOT_ATOMIC) {
+  if (isAtomic()) {
     if (auto volatileVal = isVolatile(); volatileVal && *volatileVal)
       return emitOpError("volatile stores cannot be atomic");
   }
 
-  if (ordering == AtomicOrdering::NOT_ATOMIC && getSyncscope())
+  if (!isAtomic() && getSyncscope())
     return emitOpError("cannot specify syncscope without an atomic store");
 
+  AtomicOrdering ordering = getOrdering();
   if (llvm::is_contained(
           {AtomicOrdering::ACQUIRE, AtomicOrdering::ACQUIRE_RELEASE},
           ordering)) {

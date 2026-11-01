@@ -65,6 +65,7 @@ def _text_tokenizer(max_length: int | None = MAX_LENGTH) -> TextTokenizer:
     tokenizer.delegate = _StubDelegate()
     tokenizer.max_length = max_length
     tokenizer._eos_token_ids = {0}
+    tokenizer._token_id_bound = len(tokenizer.delegate)
     return tokenizer
 
 

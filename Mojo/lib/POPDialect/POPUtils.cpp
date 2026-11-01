@@ -21,6 +21,7 @@
 #include "Mojo/Interpreter/InterpreterState.h"
 #include "Mojo/Interpreter/ParametricInterpreterState.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/POPDialect/POPAttrs.h"
 #include "mlir/IR/Builders.h"
 
@@ -31,20 +32,6 @@ using namespace POP;
 /// Get the value of a scalar index-like parameter value.
 /// This is a temporary helper utility during the Int->SIMD unification project.
 /// After it's done, we should remove the IntegerAttr case.
-ErrorOr<int64_t> POP::getScalarIndexValue(TypedAttr value) {
-  if (auto intAttr = dyn_cast<IntegerAttr>(value))
-    return intAttr.getInt();
-  if (auto simdAttr = dyn_cast<KGEN::SIMDAttr>(value)) {
-    ArrayRef<DTypeValue> values = simdAttr.getValues();
-    if (values.size() != 1)
-      return Error("expected a scalar SIMD value");
-    if (!values.front().getDType().isIndex())
-      return Error("expected an index-typed SIMD value");
-    return values.front().getIndexVal();
-  }
-  return Error("expected an integer or scalar SIMD");
-}
-
 // verifyConversionCast / foldCastToBuiltin / foldCastFromBuiltin migrated to
 // KGENUtils.h/cpp.
 
@@ -334,7 +321,7 @@ static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
                                           Attribute len, Location loc,
                                           State &state) {
   ErrorOr<int64_t> lenOr =
-      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(len));
+      KGEN::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(len));
   if (lenOr.isError())
     return ErrorTree(loc, "interpreting memcpy 3nd operand len is not "
                           "interpreted correctly");

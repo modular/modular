@@ -35,7 +35,7 @@ comptime FP6_BYTES_PER_GROUP = 3
 
 
 @fieldwise_init
-struct FP6Format(Equatable, TrivialRegisterPassable):
+struct FP6Format(EnumLike, Equatable, TrivialRegisterPassable):
     """Selects between the two OCP MX FP6 element encodings.
 
     The numeric parameters returned by the accessors below are the entire
@@ -47,6 +47,27 @@ struct FP6Format(Equatable, TrivialRegisterPassable):
 
     comptime E2M3 = Self(0)
     comptime E3M2 = Self(1)
+
+    comptime _enum_case_names = ParameterList.of[
+        "E2M3".value,
+        "E3M2".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "FP6Format has no payload"
 
     def __init__(out self, value: Int):
         self._value = Int32(value)
@@ -235,7 +256,7 @@ comptime E3M2_TO_FLOAT32 = SIMD[.float32, 64](
 )
 
 
-@always_inline
+@inline(.always)
 def fp6_reference_table[fmt: FP6Format]() -> SIMD[.float32, 64]:
     """Returns the hand-written decode table for `fmt`.
 
@@ -251,7 +272,7 @@ def fp6_reference_table[fmt: FP6Format]() -> SIMD[.float32, 64]:
         return E3M2_TO_FLOAT32
 
 
-@always_inline
+@inline(.always)
 def decode_fp6_to_f32[
     width: SIMDLength, //, fmt: FP6Format
 ](code: SIMD[.uint8, width]) -> SIMD[.float32, width]:
@@ -274,8 +295,9 @@ def decode_fp6_to_f32[
     - The sign bit (code bit 5) is OR'd into float32 bit 31 after the select,
       so `-0` decodes to `0x80000000` and matches the table's `-0.0`.
 
-    Unlike `decode_e2m1_to_f32_inject` in `fp4_utils`, this never forms a
-    denormal float32 intermediate, so it is correct on flush-to-zero targets.
+    Unlike an exponent-injection decode in float32 (see `decode_e2m1_to_f16`
+    in `fp4_utils`), this never forms a denormal float32 intermediate, so it is
+    correct on flush-to-zero targets.
 
     Parameters:
         width: SIMD width (lane count) of the code vector.
@@ -311,7 +333,7 @@ def decode_fp6_to_f32[
     return bitcast[.float32](sign | magnitude)
 
 
-@always_inline
+@inline(.always)
 def decode_fp6_to_bf16[
     width: SIMDLength, //, fmt: FP6Format
 ](code: SIMD[.uint8, width]) -> SIMD[.bfloat16, width]:
@@ -334,7 +356,7 @@ def decode_fp6_to_bf16[
     return decode_fp6_to_f32[fmt](code).cast[.bfloat16]()
 
 
-@always_inline
+@inline(.always)
 def encode_f32_to_fp6[
     width: SIMDLength, //, fmt: FP6Format
 ](x: SIMD[.float32, width]) -> SIMD[.uint8, width]:
@@ -405,7 +427,7 @@ def encode_f32_to_fp6[
     return (sign | min(code, Bits(max_code))).cast[.uint8]()
 
 
-@always_inline
+@inline(.always)
 def compute_mxfp6_even_scale[
     fmt: FP6Format
 ](max_val: Float32) -> Float8_e8m0fnu:
@@ -440,7 +462,7 @@ def compute_mxfp6_even_scale[
     return bitcast[.float8_e8m0fnu](UInt8(scale_exp))
 
 
-@always_inline
+@inline(.always)
 def pack_fp6_x4(code: SIMD[.uint8, 4]) -> UInt32:
     """Packs four FP6 codes into the low 24 bits of a word, element 0 lowest.
 
@@ -469,7 +491,7 @@ def pack_fp6_x4(code: SIMD[.uint8, 4]) -> UInt32:
     return c[0] | (c[1] << 6) | (c[2] << 12) | (c[3] << 18)
 
 
-@always_inline
+@inline(.always)
 def unpack_fp6_x32(fragment: SIMD[.uint8, 32]) -> SIMD[.uint8, 32]:
     """Unpacks the 24 payload bytes of a 32-byte fragment into 32 FP6 codes.
 
@@ -498,7 +520,7 @@ def unpack_fp6_x32(fragment: SIMD[.uint8, 32]) -> SIMD[.uint8, 32]:
     return codes
 
 
-@always_inline
+@inline(.always)
 def unpack_fp6_x4(packed: UInt32) -> SIMD[.uint8, 4]:
     """Unpacks a 24-bit group into four FP6 codes, the inverse of `pack_fp6_x4`.
 

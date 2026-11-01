@@ -15,7 +15,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from std.collections import Dict
-from std.hashlib import default_comp_time_hasher
+from std.hash import default_comp_time_hasher
 
 # COM: testing MemoryBlob refCount in the interpreter
 # COM: where to create the alias of the Dict, we have

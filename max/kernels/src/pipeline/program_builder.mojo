@@ -25,6 +25,7 @@ Contains:
 """
 
 from std.collections import Array, List
+from std.math import divmod
 
 from .config import PipelineConfig, ScheduleConfig, SchedulingStrategy
 from .dependency_graph import LoopBody, OpNode
@@ -99,18 +100,18 @@ def _construct_mma_blocks(
 
         while op_idx < num_ops:
             var op = body.ops[order[op_idx]].op
-            if op.role == OpRole.COMPUTE:
-                mma_op = op
-                op_idx += 1
-                break
-            elif op.role == OpRole.FRAGMENT_LOAD:
-                pre_ops.append(op)
-            elif op.role == OpRole.GLOBAL_LOAD:
-                global_loads.append(op)
+            match op.role:
+                case .COMPUTE:
+                    mma_op = op
+                    op_idx += 1
+                    break
+                case .FRAGMENT_LOAD:
+                    pre_ops.append(op)
+                case .GLOBAL_LOAD:
+                    global_loads.append(op)
             op_idx += 1
 
-        var pos_in_partition = block_idx % bph
-        var partition_idx = block_idx // bph
+        var partition_idx, pos_in_partition = divmod(block_idx, bph)
         var pre_op_0 = pre_ops[0] if len(pre_ops) >= 1 else OpDesc.none()
         var pre_op_1 = pre_ops[1] if len(pre_ops) >= 2 else OpDesc.none()
         var gl0 = global_loads[0] if len(global_loads) >= 1 else OpDesc.none()
@@ -193,14 +194,14 @@ def _construct_mma_blocks(
                 var scanned_mmas = 0
                 while scan_idx < num_ops and scanned_mmas < bph - 1:
                     var sop = body.ops[order[scan_idx]].op
-                    if sop.role == OpRole.COMPUTE:
-                        scanned_mmas += 1
-                    elif (
-                        sop.role == OpRole.FRAGMENT_LOAD
-                        and sop.stage != partition_idx
-                    ):
-                        top_drain_needed = True
-                        break
+                    match sop.role:
+                        case .COMPUTE:
+                            scanned_mmas += 1
+                        case .FRAGMENT_LOAD if sop.stage != partition_idx:
+                            top_drain_needed = True
+                            break
+                        case _:
+                            pass
                     scan_idx += 1
 
         var entry_wait = OpDesc.none()
@@ -652,11 +653,11 @@ def _verify_block_completeness(program: PipelineProgram, num_blocks: Int):
     for i in range(num_blocks):
         debug_assert(
             program.blocks[i].mma.is_present(),
-            "verify_schedule: block " + String(i) + " has no MMA op",
+            String(t"verify_schedule: block {i} has no MMA op"),
         )
         debug_assert(
             program.blocks[i].mma.role == OpRole.COMPUTE,
-            "verify_schedule: block " + String(i) + " MMA op has wrong role",
+            String(t"verify_schedule: block {i} MMA op has wrong role"),
         )
 
 
@@ -696,12 +697,10 @@ def _verify_wait_count_bounds(
                     )
                 debug_assert(
                     wait_lgkm_first <= gl_lgkm,
-                    "verify_schedule: wait_lgkm_first ("
-                    + String(wait_lgkm_first)
-                    + ") > block 0 global lgkm ("
-                    + String(gl_lgkm)
-                    + ") in half "
-                    + String(half),
+                    String(
+                        t"verify_schedule: wait_lgkm_first ({wait_lgkm_first}) "
+                        t"> block 0 global lgkm ({gl_lgkm}) in half {half}"
+                    ),
                 )
 
     debug_assert(
@@ -734,12 +733,10 @@ def _verify_distribution_invariant(
             )
             debug_assert(
                 count == max_globals,
-                "verify_schedule: block "
-                + String(i)
-                + " has "
-                + String(count)
-                + " globals, expected "
-                + String(max_globals),
+                String(
+                    t"verify_schedule: block {i} has {count} globals, expected "
+                    t"{max_globals}"
+                ),
             )
 
 
@@ -767,22 +764,20 @@ def _verify_stage_consistency(program: PipelineProgram, config: PipelineConfig):
             if block.pre_op_0.is_present():
                 debug_assert(
                     block.pre_op_0.stage == expected_stage,
-                    "verify_schedule: block "
-                    + String(half * bph + b)
-                    + " pre_op_0 stage="
-                    + String(block.pre_op_0.stage)
-                    + " expected="
-                    + String(expected_stage),
+                    String(
+                        t"verify_schedule: block {half * bph + b} pre_op_0 "
+                        t"stage={block.pre_op_0.stage} expected="
+                        t"{expected_stage}"
+                    ),
                 )
             if block.pre_op_1.is_present():
                 debug_assert(
                     block.pre_op_1.stage == expected_stage,
-                    "verify_schedule: block "
-                    + String(half * bph + b)
-                    + " pre_op_1 stage="
-                    + String(block.pre_op_1.stage)
-                    + " expected="
-                    + String(expected_stage),
+                    String(
+                        t"verify_schedule: block {half * bph + b} pre_op_1 "
+                        t"stage={block.pre_op_1.stage} expected="
+                        t"{expected_stage}"
+                    ),
                 )
 
 
@@ -838,10 +833,10 @@ def _verify_completion_coverage(
                 has_completion = True
         debug_assert(
             has_completion,
-            "verify_schedule: half "
-            + String(half)
-            + " has no completion load (stage != half)"
-            + " — wait_vm would drain nothing, race condition",
+            String(
+                t"verify_schedule: half {half} has no completion load (stage !="
+                t" half) — wait_vm would drain nothing, race condition"
+            ),
         )
 
 
@@ -909,14 +904,13 @@ def _verify_warp_stagger_lds_safety(
                         continue
                     debug_assert(
                         fl.stage != gl.stage,
-                        "verify_schedule: cross-block LDS race — block "
-                        + String(base + i)
-                        + " prefetch writes stage "
-                        + String(gl.stage)
-                        + " which block "
-                        + String(base + i + 1)
-                        + " reads via fragment load. Use max_globals=0"
-                        + " or increase num_k_mmas to add latency.",
+                        String(
+                            t"verify_schedule: cross-block LDS race — block "
+                            t"{base + i} prefetch writes stage {gl.stage} which"
+                            t" block {base + i + 1} reads via fragment load. "
+                            t"Use max_globals=0 or increase num_k_mmas to add "
+                            t"latency."
+                        ),
                     )
 
 
@@ -968,10 +962,10 @@ def verify_schedule(
 
     debug_assert(
         len(program.blocks) == num_blocks,
-        "verify_schedule: expected "
-        + String(num_blocks)
-        + " blocks, got "
-        + String(len(program.blocks)),
+        String(
+            t"verify_schedule: expected {num_blocks} blocks, got "
+            t"{len(program.blocks)}"
+        ),
     )
 
     _verify_block_completeness(program, num_blocks)
@@ -1030,18 +1024,19 @@ def build_kernel_program(
 
     # Schedule.
     var order = List[Int]()
-    if sched.scheduling == SchedulingStrategy.CSP:
-        order = optimal_schedule_with_halves(
-            ldg,
-            max_globals_per_block=config.block_sizing.max_globals,
-            lds_contention_penalty=sched.lds_contention_penalty,
-            max_vgpr=sched.max_vgpr,
-        )
-    elif sched.scheduling == SchedulingStrategy.GREEDY:
-        order = greedy_schedule(ldg)
-    else:
-        for i in range(len(body)):
-            order.append(i)
+    match sched.scheduling:
+        case .CSP:
+            order = optimal_schedule_with_halves(
+                ldg,
+                max_globals_per_block=config.block_sizing.max_globals,
+                lds_contention_penalty=sched.lds_contention_penalty,
+                max_vgpr=sched.max_vgpr,
+            )
+        case .GREEDY:
+            order = greedy_schedule(ldg)
+        case .IDENTITY:
+            for i in range(len(body)):
+                order.append(i)
 
     # Build program (with placeholder waits — will be patched if auto_waits).
     var effective_sched = sched
@@ -1385,18 +1380,20 @@ def mma_block_interleave[
 
     for i in range(N):
         var op = logical.ops[i]
-        if op.role == OpRole.GLOBAL_LOAD:
-            globals[n_g] = op
-            n_g += 1
-        elif op.role == OpRole.FRAGMENT_LOAD and op.channel == 0:
-            frag_a[n_fa] = op
-            n_fa += 1
-        elif op.role == OpRole.FRAGMENT_LOAD and op.channel == 1:
-            frag_b[n_fb] = op
-            n_fb += 1
-        elif op.role == OpRole.COMPUTE:
-            mmas[n_m] = op
-            n_m += 1
+        match op.role:
+            case .GLOBAL_LOAD:
+                globals[n_g] = op
+                n_g += 1
+            case .FRAGMENT_LOAD:
+                if op.channel == 0:
+                    frag_a[n_fa] = op
+                    n_fa += 1
+                elif op.channel == 1:
+                    frag_b[n_fb] = op
+                    n_fb += 1
+            case .COMPUTE:
+                mmas[n_m] = op
+                n_m += 1
 
     # Track which M-tile rows and N-tile cols have been seen.
     var seen_m = Array[Int, N](fill=0)
@@ -1494,14 +1491,15 @@ def mma_block_interleave_list(
 
     for i in range(n):
         var op = logical[i]
-        if op.role == OpRole.GLOBAL_LOAD:
-            globals.append(op)
-        elif op.role == OpRole.FRAGMENT_LOAD and op.channel == 0:
-            frag_a.append(op)
-        elif op.role == OpRole.FRAGMENT_LOAD and op.channel == 1:
-            frag_b.append(op)
-        elif op.role == OpRole.COMPUTE:
-            mmas.append(op)
+        match op.role:
+            case .GLOBAL_LOAD:
+                globals.append(op)
+            case .FRAGMENT_LOAD if op.channel == 0:
+                frag_a.append(op)
+            case .FRAGMENT_LOAD if op.channel == 1:
+                frag_b.append(op)
+            case .COMPUTE:
+                mmas.append(op)
 
     # Track which M-tile rows and N-tile cols have been seen.
     var seen_m = List[Bool]()

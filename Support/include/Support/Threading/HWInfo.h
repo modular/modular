@@ -139,9 +139,6 @@ size_t getNumLogicalCores();
 /// not known, will return the total number of physical cores.
 size_t getNumPerformanceCores();
 
-/// Returns the set of local MAC addresses.
-std::vector<std::string> localMACs();
-
 /// Describes CPU limits in an OS-agnostic way.
 struct CPULimits {
   /// Unfortunately, millicores are a canonical way of representing the limit,

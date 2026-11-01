@@ -42,11 +42,12 @@ import numpy as np
 
 # torch is a caller-supplied dep, see BUILD.bazel
 import torch  # type: ignore[import-not-found]
+from max import tree
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen2_5vl.nn.decoder import (
     Qwen25VLDecoderAttentionWithRope,
 )
@@ -64,6 +65,8 @@ from testbed.registry import register_harness
 
 @dataclass
 class Qwen25VLAttentionStaticParams(AttentionStaticParams):
+    """Static parameters for the Qwen2.5-VL attention harness."""
+
     rope_theta: float = 1000000.0
     mrope_section: list[int] = field(default_factory=lambda: [16, 24, 24])
 
@@ -84,14 +87,17 @@ class Qwen25VLAttentionHarness(
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the Qwen2.5-VL harness."""
         return Qwen25VLAttentionStaticParams
 
     @staticmethod
     def dynamic_params_type() -> type:
+        """Returns ``AttentionDynamicParams`` as the per-shape type."""
         return AttentionDynamicParams
 
     @property
     def name(self) -> str:
+        """Returns the registered harness name, ``qwen2_5vl_attention``."""
         return "qwen2_5vl_attention"
 
     def __init__(
@@ -125,6 +131,7 @@ class Qwen25VLAttentionHarness(
         )
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the Qwen2.5-VL attention graph with paged KV inputs."""
         p = self.static_params
         hidden_size = p.hidden_size
         n_heads = p.n_heads
@@ -209,9 +216,7 @@ class Qwen25VLAttentionHarness(
             ),
         ) as graph:
             inputs, input_row_offsets, position_ids, *kv_cache = graph.inputs
-            kv_collection = kv_params.unflatten_kv_inputs(
-                iter(kv_cache)
-            ).inputs[0]
+            kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
             freqs_cis = rope.freqs_cis.to(device_ref)
             graph.output(
@@ -229,6 +234,7 @@ class Qwen25VLAttentionHarness(
         return graph, layer.state_dict()
 
     def build_and_compile(self) -> CompiledLayerBundle:
+        """Compiles the attention graph through the runner's session."""
         graph, weights_registry = self.build_graph()
         compiled = self.session.load(graph, weights_registry=weights_registry)
         return CompiledLayerBundle(
@@ -242,6 +248,17 @@ class Qwen25VLAttentionHarness(
         bundle: CompiledLayerBundle,
         dynamic_params: AttentionDynamicParams,
     ) -> tuple[list[Buffer], list[TextContext]]:
+        """Builds the per-shape inputs and claims the KV cache blocks.
+
+        Each sequence in the batch gets a ``TextContext`` that the KV cache
+        manager claims and allocates. The execute args hold the hidden
+        states, the row offsets, the mRoPE position ids, and the KV runtime
+        inputs.
+
+        Returns:
+            The execute args and the batch contexts released by
+            ``cleanup_inputs``.
+        """
         device = bundle.device
         p = self.static_params
         total_len = dynamic_params.ctx_len + dynamic_params.seq_len
@@ -289,7 +306,7 @@ class Qwen25VLAttentionHarness(
             input_tensor,
             row_offsets,
             position_ids_buf,
-            *kv_runtime.flatten(),
+            *tree.leaves(kv_runtime),
         ]
 
         return execute_args, batch
@@ -299,15 +316,18 @@ class Qwen25VLAttentionHarness(
         bundle: CompiledLayerBundle,
         context: list[TextContext],
     ) -> None:
+        """Releases the KV cache blocks claimed for each context."""
         for ctx in context:
             self._kv_manager.release(ctx)
 
     def cuda_graph_eligible(
         self, dynamic_params: AttentionDynamicParams
     ) -> bool:
+        """Returns whether the shape decodes one token per sequence."""
         return dynamic_params.seq_len == 1
 
     def torch_reference_layer(self, device: str = "cuda") -> torch.nn.Module:
+        """Raises because mRoPE decoder attention has no torch reference."""
         raise NotImplementedError(
             "Correctness testing not supported for Qwen2.5VL attention "
             "(no trivial HF reference for mRoPE decoder attention)"
@@ -319,6 +339,7 @@ class Qwen25VLAttentionHarness(
         dynamic_params: AttentionDynamicParams,
         device: str = "cuda",
     ) -> list[Any]:
+        """Raises because mRoPE decoder attention has no torch reference."""
         raise NotImplementedError(
             "Correctness testing not supported for Qwen2.5VL attention"
         )

@@ -1,0 +1,53 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_arch_registration",
+    size = "medium",
+    srcs = ["test_arch_registration.py"],
+    # The architectures the pairing resolves to are imported by the registry,
+    # not the test.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/dspark_qwen3",
+        "//max/python/max/pipelines/architectures/nemotron_h",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/dspark_qwen3",
+        "//max/python/max/pipelines/architectures/nemotron_h",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_draft_config",
+    size = "medium",
+    srcs = ["test_draft_config.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/dspark_qwen3",
+    ],
+)
+
+modular_py_test(
+    name = "test_weight_adapters",
+    size = "small",
+    srcs = ["test_weight_adapters.py"],
+    # Import-bound: pulling the pipelines stack outruns the 300s budget on the
+    # shared BuildBuddy macOS workers. Nothing here is macOS-incompatible, so
+    # skip the CI job rather than the platform.
+    tags = ["skip-ci-macos"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/dspark_qwen3",
+        requirement("numpy"),
+    ],
+)

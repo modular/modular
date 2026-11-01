@@ -52,7 +52,28 @@ def _extract_linker_variables(ctx):
         else:
             system_libs.append(x)
 
-    return linker_driver, system_libs, env, cc_toolchain.all_files
+    return linker_driver, system_libs, env, cc_toolchain
+
+def _runtime_link_files(ctx, cc_toolchain):
+    """Toolchain files a test reads when it links Mojo while running.
+
+    Derived by subtraction rather than by listing tools: everything the
+    toolchain declares, minus the sysroot files only a compile reads. Naming
+    the tools instead means every tool the link path reaches indirectly -- the
+    driver script, the clang it execs, the resource directory compiler-rt
+    lives in -- is one someone has to remember, and a missing one surfaces at
+    test runtime as a link or spawn failure far from here.
+
+    The two halves overlap (usr/lib is in both), so a file is dropped only
+    when the compile half claims it and the link half does not.
+    """
+    link = {f: None for f in ctx.attr._sysroot_link_files[DefaultInfo].files.to_list()}
+    compile_only = {
+        f: None
+        for f in ctx.attr._sysroot_compile_files[DefaultInfo].files.to_list()
+        if f not in link
+    }
+    return depset([f for f in cc_toolchain.all_files.to_list() if f not in compile_only])
 
 def _mojo_test_environment_implementation(ctx):
     mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
@@ -133,7 +154,7 @@ def _mojo_test_environment_implementation(ctx):
         fail("CompilerRT library not found")
 
     # NOTE: env should probably be used here but can't be passed through directly, right now it is only ZERO_AR_DATE
-    linker_driver, system_libs, _, extra_files = _extract_linker_variables(ctx)
+    linker_driver, system_libs, _, cc_toolchain = _extract_linker_variables(ctx)
     if ctx.attr.short_path:
         linker_driver = linker_driver.replace("external/", "../")
     new_system_libs = []
@@ -155,7 +176,8 @@ def _mojo_test_environment_implementation(ctx):
         PyInfo(transitive_sources = depset()),  # Requirement of py_test
         DefaultInfo(
             runfiles = ctx.runfiles(
-                transitive_files = depset(transitive = [transitive_mojodeps] + transitive_files + [extra_files]),
+                transitive_files = depset(transitive = [transitive_mojodeps] + transitive_files +
+                                                       [_runtime_link_files(ctx, cc_toolchain)]),
             ).merge_all(transitive_runfiles),
         ),
         platform_common.TemplateVariableInfo({
@@ -182,6 +204,14 @@ mojo_test_environment = rule(
         "short_path": attr.bool(default = True),
         "data": attr.label_list(
             providers = [MojoInfo],
+        ),
+        "_sysroot_compile_files": attr.label(
+            doc = "Sysroot files a compile reads; a runtime link does not stage these.",
+            default = "//bazel/internal/cc-toolchain:sysroot_compile_files",
+        ),
+        "_sysroot_link_files": attr.label(
+            doc = "Sysroot files a link reads, kept even where the compile half also claims them.",
+            default = "//bazel/internal/cc-toolchain:sysroot_link_files",
         ),
         "_link_extra_lib": attr.label(
             default = "@bazel_tools//tools/cpp:link_extra_lib",

@@ -142,9 +142,7 @@ public:
       bool elaborationErrorIncludePrelude = false,
       ErrorVerboseLevel elaborationErrorVerbose = kSimpleParams,
       unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max(),
-      DebugInfoLanguage debugInfoLanguage = kLangMojo,
-      std::string searchPaths = "",
-      SmallVector<std::string> extraSearchPaths = {});
+      DebugInfoLanguage debugInfoLanguage = kLangMojo);
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -219,9 +217,10 @@ public:
   /// text (.ll) for all targets.
   /// --emit=asm and --emit=llvm are mutually exclusive, so only one value is
   /// ever active at a time.
+  /// A kind set here is produced in addition to the kind each kernel embeds,
+  /// so the toolchain behind that embedded kind still runs even when the host
+  /// output is discarded.
   EmitAs offloadOutputKind = EmitAs::ASM;
-  std::string searchPaths;
-  SmallVector<std::string> extraSearchPaths;
 
   // File paths to external bitcode libraries specified via command line.
   SmallVector<std::string> bitcodeLibs;
@@ -255,16 +254,6 @@ public:
   // Maximum number of threads to be used by AsyncRT. 0 means use all available.
   size_t numThreads = 0;
 
-  bool disableWarnings = false;
-  bool warningsAsErrors = false;
-  bool warnOnUnstableAPIs = false;
-  bool ignoreIncompatiblePrecompiledFileErrors = false;
-
-  /// Qualified names (e.g. `Foo.bar`, or just `some_fn` for a top-level
-  /// declaration) of `@deprecated` declarations whose deprecation warning
-  /// should be suppressed, set via `--ignore-deprecated`.
-  SmallVector<std::string> ignoredDeprecations;
-
   // Extra handle name to separate cache base between mojo, kgen, kgen-opt,
   // to avoid internal test cache pruning races caused by different binary IDs.
   // Set default value to be "mojo", will be overwritten with other tool names
@@ -274,16 +263,44 @@ public:
   void setDefaultCPU();
 };
 
-// Return true if target triple is `air64-`
-bool isMetalTriple(const llvm::Triple &triple);
-
 // Return true if `triple` is a registered GPU target.
 bool isGPUTriple(const llvm::Triple &triple);
+
+// Return true if `triple` is the registered Metal target.
+bool isMetalTriple(const llvm::Triple &triple);
 
 // Whether the standalone module should export all symbols (GPU targets do, so
 // offloaded kernels resolve by symbol at runtime).
 bool overrideExported(const llvm::Triple &triple);
 bool overrideExported(const CompilationOptions &options);
+
+/// Applies one offload group's emission options to `options`, the way every
+/// offload compile needs them regardless of how its artifact is produced: the
+/// `contract=fast|off` fp-mode item is pulled out of `emissionOptions` and
+/// applied on top of `hostFpMode`; `target-abi` is pulled into `targetABI`
+/// while staying in the option string, which identifies the offload in debug
+/// output and cache keys; and the filtered options plus `linkOptions` are
+/// recorded. Returns the offending item if an fp-mode item is malformed.
+inline std::optional<std::string>
+applyOffloadEmissionOptions(llvm::StringRef emissionOptions,
+                            llvm::StringRef linkOptions, FpMode hostFpMode,
+                            CompilationOptions &options) {
+  options.fpMode = hostFpMode;
+  std::string filtered;
+  if (std::optional<std::string> badItem =
+          splitFpModeEmissionOptions(emissionOptions, options.fpMode, filtered))
+    return badItem;
+
+  options.targetABI.clear();
+  llvm::SmallVector<llvm::StringRef> items;
+  llvm::StringRef(filtered).split(items, ',', /*MaxSplit=*/-1,
+                                  /*KeepEmpty=*/false);
+  applyTargetABIEmissionOptions(items, options.targetABI);
+
+  options.emissionOptions = filtered;
+  options.emissionLinkOptions = linkOptions.str();
+  return std::nullopt;
+}
 
 } // namespace M::KGEN
 

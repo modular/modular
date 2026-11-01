@@ -21,4 +21,4 @@ def main():
     var tensor = TileTensor(data, row_major[3, 3]())
 
     # CHECK: The input dimension must be divisible by the input count
-    _ = tensor.as_immut().split[2]()
+    _ = tensor.as_imm().split[2]()

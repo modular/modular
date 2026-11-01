@@ -27,7 +27,7 @@ def issue1242():
     var decorator: Int
 
     @decorator # expected-error {{cannot use a dynamic value in decorator}}
-    def on_message() capturing: pass
+    def on_message(): pass
 
 @invalid_dec # expected-error {{use of unknown declaration 'invalid_dec'}}
 def unknown_decorator(): pass
@@ -60,7 +60,8 @@ def some_fn():
 def some_fn_2():
         # expected-error @below {{decorator must be followed by a definition on the next line; remove any blank lines between them}}
         @decorator
-    if True: # expected-error {{unknown tokens at the end of a declaration}}
+    # expected-error @+1 {{statement indentation must match the rest of the block; adjust to align}}
+    if True: # expected-warning {{'if' condition always evaluates to 'True'; 'else' branch is unreachable}}
         pass
 
 @decorator[]  # expected-error {{invalid expression in decorator}}
@@ -89,6 +90,51 @@ def bad_always_inline_2():
 
 @always_inline("no_debug")  # expected-error {{'@always_inline' operand must be "nodebug" or "builtin"}}
 def bad_always_inline_3():
+    pass
+
+# ===----------------------------------------------------------------------=== #
+# @inline
+# ===----------------------------------------------------------------------=== #
+
+@inline  # expected-error {{'@inline' decorator takes exactly 1 argument, found 0}}
+def bad_inline_1():
+    pass
+
+@inline(.always, .never)  # expected-error {{'@inline' decorator takes exactly 1 argument, found 2}}
+def bad_inline_2():
+    pass
+
+@inline(99)  # expected-error {{cannot implicitly convert 'IntLiteral[99]' value to 'InlineLevel'}}
+def bad_inline_3():
+    pass
+
+# COM: 3 is the compiler's AlwaysBuiltin, which needs @always_inline("builtin").
+@inline(3)  # expected-error {{cannot implicitly convert 'IntLiteral[3]' value to 'InlineLevel'}}
+def bad_inline_4():
+    pass
+
+@inline("always")  # expected-error {{'@inline' argument must be an InlineLevel, not a string; use '.always', '.nodebug', '.never' or '.automatic'}}
+def bad_inline_5():
+    pass
+
+@inline(level=.always)  # expected-error {{'@inline' argument must be positional}}
+def bad_inline_6():
+    pass
+
+# COM: Decorators are applied bottom-up, so the upper one is the one rejected.
+@no_inline  # expected-error {{function has conflicting inline level from a previous '@inline' decorator}}
+@inline(.always)
+def bad_inline_7():
+    pass
+
+@inline(.never)  # expected-error {{function has conflicting inline level from a previous '@inline' decorator}}
+@inline(.always)
+def bad_inline_8():
+    pass
+
+@always_inline  # expected-error {{function has conflicting inline level from a previous '@inline' decorator}}
+@inline(.never)
+def bad_inline_9():
     pass
 
 # ===----------------------------------------------------------------------=== #
@@ -244,31 +290,6 @@ def llvm_arg_meta_wrong_type[x: Int](a: Int, b: Int):
 @__llvm_arg_metadata(c, myMeta)
 def llvm_arg_meta_wrong_name[x: Int](a: Int, b: Int):
     pass
-
-# ===----------------------------------------------------------------------=== #
-# Closure decorators
-# ===----------------------------------------------------------------------=== #
-
-def outer_function():
-    @__copy_capture  # expected-error {{'@__copy_capture' must have arguments}}
-    @__parameter()  # expected-error {{'@__parameter' cannot have arguments}}
-    def copy_capture_no_args_1():
-        pass
-
-    @__copy_capture()  # expected-error {{'@__copy_capture' must have arguments}}
-    @__parameter("abc")  # expected-error {{'@__parameter' cannot have arguments}}
-    def copy_capture_no_args_2():
-        pass
-
-    @__move_capture  # expected-error {{'@__move_capture' must have arguments}}
-    @__parameter
-    def move_capture_no_args_1():
-        pass
-
-    @__move_capture()  # expected-error {{'@__move_capture' must have arguments}}
-    @__parameter
-    def move_capture_no_args_2():
-        pass
 
 # ===----------------------------------------------------------------------=== #
 # Struct decorators

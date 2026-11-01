@@ -13,7 +13,7 @@
 """Random ops tests on simulated GPU mesh (single GPU, 4 virtual devices)."""
 
 from max.driver import Accelerator
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from functional._random_ops import RandomTests
 

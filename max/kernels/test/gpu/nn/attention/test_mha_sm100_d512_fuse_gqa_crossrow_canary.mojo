@@ -19,7 +19,7 @@ of `group` consecutive physical `m_row` values collapse onto ONE sequence
 position, but distinct HEADS within that group, and -- whenever `group < 32`
 -- distinct SEQUENCE POSITIONS, land in the same 32-lane warp. The online-
 softmax lazy-rescale gate in `softmax_warp.mojo`'s main loop
-(`if _vote_nvidia_helper(diff < rescale_threshold) != 0:`) is a warp-wide
+(`if vote[.uint32](diff < rescale_threshold) != 0:`) is a warp-wide
 ANY-ballot over this per-thread predicate -- the same pattern fixed for the
 SM100 FA4 dense-GQA kernel in PR #98402 and for MLA decode's MTP-fold in this
 PR. One row's growth can force a sibling row (a different head and/or a
@@ -60,7 +60,6 @@ from max.gpu.host import DeviceContext, HostBuffer
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
-from std.utils.numerics import nan
 
 
 def _run_d512_fuse_gqa[
@@ -158,15 +157,8 @@ def test_d512_fuse_gqa_crossrow_canary[
     var num_keys = seq_len
     var observed = seq_len - 16  # score_row of the last BM tile, m_row=0
     print(
-        "  [d512 fuse_gqa crossrow canary] qkv_type=",
-        String(qkv_type),
-        " seq_len=",
-        seq_len,
-        " observed_row=",
-        observed,
-        " seed=",
-        rng_seed,
-        sep="",
+        t"  [d512 fuse_gqa crossrow canary]"
+        t" qkv_type={String(qkv_type)} seq_len={seq_len} observed_row={observed} seed={rng_seed}"
     )
 
     var q_clean = ctx.enqueue_create_host_buffer[qkv_type](seq_len * row_w)
@@ -220,13 +212,7 @@ def test_d512_fuse_gqa_crossrow_canary[
         if o_poison[base + i] != o_poison[base + i]:  # NaN != NaN
             any_nan = True
     print(
-        "     observed-row mismatches=",
-        mismatches,
-        "/",
-        row_w,
-        "  has_nan=",
-        any_nan,
-        sep="",
+        t"     observed-row mismatches={mismatches}/{row_w}  has_nan={any_nan}"
     )
     assert_equal(
         mismatches,

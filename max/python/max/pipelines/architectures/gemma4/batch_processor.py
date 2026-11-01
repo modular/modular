@@ -18,19 +18,31 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer, copy_pinned_to_destinations
-from max.dtype import DType
+from max import tree
+from max.driver import Buffer, Device
+from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputsInterface
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
+from max.pipelines.context import ImageMetadata
+from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
+    RAGGED_INPUT_ROW_OFFSETS,
+    RAGGED_INPUT_TOKENS,
     BatchProcessor,
+    BatchProcessorRuntime,
     process_ragged_kv_outputs,
-    ragged_kv_symbolic_inputs,
+    ragged_token_descriptors,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.profiler import traced
 
+from .batch_vision_inputs import (
+    VisionRawInputs,
+    create_empty_embeddings,
+    pack_uncached_images,
+)
 from .context import Gemma4Context
 from .model_config import Gemma4ForConditionalGenerationConfig
 
@@ -44,6 +56,19 @@ class Gemma4BatchProcessor(
     """Ragged batching with optional vision inputs for Gemma4 models."""
 
     _config: Gemma4ForConditionalGenerationConfig | None = None
+    _vision_model: Model | None = None
+    _empty_embeddings: list[Buffer] | None = None
+
+    def __init__(
+        self,
+        config: ArchConfig,
+        runtime: BatchProcessorRuntime,
+    ) -> None:
+        super().__init__(config, runtime, ragged_token_descriptors(runtime))
+        # The vision encoder reads only the config's vision half, which the
+        # HuggingFace config fixes before the language model finalizes.
+        if isinstance(config, Gemma4ForConditionalGenerationConfig):
+            self._config = config
 
     def bind_model_state(
         self,
@@ -60,23 +85,94 @@ class Gemma4BatchProcessor(
         """
         self._config = config
 
+    def bind_vision_encoder(
+        self, *, vision_model: Model, session: InferenceSession
+    ) -> None:
+        """Wire the compiled vision encoder."""
+        del session
+        self._vision_model = vision_model
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[tuple[Gemma4Context, Sequence[ImageMetadata]]],
+        devices: list[Device],
+    ) -> VisionRawInputs | None:
+        """Pack the pipeline-selected uncached image pixels to device.
+
+        Runs in the pipeline's prep-ahead window (pinned host-to-device copy)
+        so it overlaps the prior batch.
+        """
+        assert self._config is not None
+        assert self._config.vision_config is not None
+        return pack_uncached_images(
+            selection,
+            devices,
+            self._config.vision_config.pooling_kernel_size,
+            self._config.unquantized_dtype,
+        )
+
+    def vision_execute(
+        self,
+        selection: Sequence[tuple[Gemma4Context, Sequence[ImageMetadata]]],
+        devices: list[Device],
+        packed: VisionRawInputs | None,
+    ) -> VisionEncodeResult:
+        """Run the vision encoder on the pixels packed by ``pack_vision_inputs``.
+
+        Returns embeddings only; the pipeline derives per-image counts from its
+        selection. When ``pack_vision_inputs`` had no packable patches
+        (``packed is None``), returns an empty result so the pipeline assembles
+        from the cache.
+        """
+        if packed is None:
+            return VisionEncodeResult(
+                embeddings=self.empty_vision_embeddings(devices)
+            )
+        if self._vision_model is None:
+            raise ValueError(
+                "This checkpoint is served text-only (no vision encoder"
+                " is loaded); image and video inputs are not supported."
+            )
+        return VisionEncodeResult(
+            embeddings=self._vision_model(
+                *packed.patches_flat,
+                *packed.pixel_position_ids,
+                *packed.cu_seqlens,
+                *packed.pool_gather_index,
+                packed.max_seq_len,
+            )
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device zero-row image embeddings for cached / text-only batches.
+
+        Cached: hit on every text-only / decode step, so it must not allocate
+        per call.
+        """
+        if self._empty_embeddings is None:
+            assert self._config is not None
+            self._empty_embeddings = create_empty_embeddings(
+                devices,
+                self._config.text_config.hidden_size,
+                self._config.unquantized_dtype,
+            )
+        return self._empty_embeddings
+
     def get_symbolic_inputs(
         self,
         *,
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
-        return ragged_kv_symbolic_inputs(
-            kv_params=kv_params,
-            device_refs=device_refs,
-            include_signal_buffers=True,
-        )
+        """The graph inputs' shapes, as symbols plus the KV cache params."""
+        assert self.input_tree is not None, "the model binds its inputs first"
+        return tree.leaves(self.input_tree)
 
     @traced
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Gemma4Context]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Gemma3MultiModalModelInputs:
         """Prepare inputs for the first execution pass."""
@@ -88,61 +184,30 @@ class Gemma4BatchProcessor(
 
         assert kv_cache_inputs is not None
 
-        devices = self.runtime.devices
-        dev = devices[0]
-        pinned = not dev.is_host
-
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
 
-        # Fresh pinned host staging every step (never reused) so the next
-        # overlap step's host writes can't clobber the in-flight H2D copy.
-        # Device buffers are cached and reused so captured graphs replay in
-        # place.
-        host_buffer_cls = DevicePinnedBuffer if pinned else Buffer
-        host_tokens: Buffer = host_buffer_cls(
-            dtype=DType.int64, shape=(total_seq_len,), device=dev
-        )
-        host_row_offsets: Buffer = host_buffer_cls(
-            dtype=DType.uint32, shape=(batch_size + 1,), device=dev
-        )
-
-        device_tokens = self._device_input_allocator.alloc(
-            name="ragged_input_tokens",
-            dtype=DType.int64,
-            shape=(total_seq_len,),
-            device=dev,
-        )
-        device_row_offsets = [
-            self._device_input_allocator.alloc(
-                name="ragged_input_row_offsets",
-                dtype=DType.uint32,
-                shape=(batch_size + 1,),
-                device=device,
+        with self._stager.stage() as staging:
+            host_tokens, (device_tokens,) = staging.get(
+                RAGGED_INPUT_TOKENS, (total_seq_len,)
             )
-            for device in devices
-        ]
+            host_row_offsets, (device_row_offsets,) = staging.get(
+                RAGGED_INPUT_ROW_OFFSETS, (batch_size + 1,)
+            )
+            np.cumsum(
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
+                dtype=np.uint32,
+                out=host_row_offsets.to_numpy(),
+            )
+            if context_batch:
+                np.concatenate(
+                    [ctx.tokens.active for ctx in context_batch],
+                    out=host_tokens.to_numpy(),
+                )
 
         return_n_logits_buf = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
         )
-
-        row_offsets_np = host_row_offsets.to_numpy()
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=row_offsets_np,
-        )
-
-        tokens_np = host_tokens.to_numpy()
-        if context_batch:
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=tokens_np,
-            )
-
-        copy_pinned_to_destinations(host_tokens, [device_tokens])
-        copy_pinned_to_destinations(host_row_offsets, device_row_offsets)
 
         return Gemma3MultiModalModelInputs(
             tokens=device_tokens,
@@ -155,6 +220,7 @@ class Gemma4BatchProcessor(
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
     ) -> ModelOutputs:
+        """Unpacks the graph outputs into ragged KV results."""
         return process_ragged_kv_outputs(
             outputs,
             return_logits=self.runtime.return_logits,

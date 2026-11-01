@@ -23,7 +23,7 @@ from max.driver import Accelerator, Buffer, __unsafe_pack_py_host_func
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 
 def _build_launch_graph(device_ref: DeviceRef) -> Graph:

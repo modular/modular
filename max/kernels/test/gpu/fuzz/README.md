@@ -55,6 +55,8 @@ python3 max/kernels/test/gpu/fuzz/fuzz.py --replay-corpus --timeout 30
 
 Confirmed failures and their shrunk specs are recorded under `corpus/<target>/`
 with their expected verdict, and the replay gate re-runs them deterministically.
+Entries whose target can't build on the local GPU (for example a B200-only
+target on MI355) are reported as `SKIP` rather than failing the replay.
 
 The orchestrator only writes an entry for a non-PASS verdict, so a `_pass_`
 entry is always hand-written: an anchor asserting a representative boundary
@@ -64,6 +66,46 @@ Note the corpus is exempted from the unreferenced-files lint by a pattern in
 `bazel/internal/find_unreferenced_files.py`, and that lint also rejects an
 unused pattern — so emptying the corpus entirely means dropping the exemption
 in the same change.
+
+## Sliced all-gather
+
+The `allgather_rows_slice` target requires peer-to-peer (P2P) access across at
+least two GPUs. Pass a comma-separated device list with `--gpu`; a single index
+still selects one device for other targets. Corpus replay skips collective
+entries when the selected list is too short, and an explicitly selected
+collective reports an error instead.
+
+```bash
+python3 max/kernels/test/gpu/fuzz/fuzz.py --target allgather_rows_slice \
+    --gpu 0,1 --oracle ref --budget 24 --seed 12345
+python3 max/kernels/test/gpu/fuzz/fuzz.py --target allgather_rows_slice \
+    --gpu 0,1 --oracle memcheck --budget 16
+python3 max/kernels/test/gpu/fuzz/fuzz.py --target allgather_rows_slice \
+    --gpu 0,1 --replay-corpus
+```
+
+Every oracle compares output bits with the original host source slices,
+including NaN payloads, signed zeros, infinities, and subnormals. Each output
+starts with the complement of its expected bits, so missing writes fail.
+The target varies row blocks, column widths, repeated launches, and device
+launch order while reusing signals across nonempty, empty, and nonempty
+views of the same allocations. Generation includes empty shards and
+16 KiB copy-chunk boundaries.
+
+The spec encodes rows as `rows_per_rank` and columns as `col_units`.
+Columns equal `(8 / gcd(8, max(1, rows_per_rank))) * (col_units + 1)` for
+16-bit elements, so every generated or shrunk case has divisible rows and
+16-byte-aligned blocks. `repeats` means additional launches after the first;
+`order` selects forward, reverse, or rotating device order. `data_seed`
+controls raw input bits.
+
+The default build uses two GPUs and bfloat16. Build with
+`--mojocopt=-D --mojocopt=slice_allgather_gpus=4` or `=8` to test larger
+collectives, and `--mojocopt=-D --mojocopt=slice_allgather_fp16=1` for float16.
+Then run with `--no-build` and the matching device list. Finish each campaign
+before rebuilding the same target. Corpus anchors describe the default build.
+Run this manual target on a multi-GPU machine outside the single-GPU
+nightly lanes.
 
 ## Oracles
 
@@ -133,7 +175,8 @@ parameter the kernel specializes on is a `-D` define rather than a spec field.
 Build the target by name with the define, then run with `--no-build`:
 
 ```bash
-./bazelw build //max/kernels/test/gpu/fuzz:fuzz_topk_topp_sampling_dist.mojo.test \
+./bazelw build \
+    //max/kernels/test/gpu/fuzz:fuzz_topk_topp_sampling_dist.mojo.test \
     --mojocopt=-D --mojocopt=ttsd_bf16=1 --curses=no --noshow_progress
 python3 max/kernels/test/gpu/fuzz/fuzz.py --target topk_topp_sampling_dist \
     --oracle ref --no-build --budget 24
@@ -145,10 +188,11 @@ under `draft_proposal: sampled`, which switches `sampling_logits_dtype` for the
 whole sampling path. The in-source default is `float32`, so the bfloat16 arm
 only gets covered when it is built explicitly.
 
-| Define        | Target                    | Effect             |
-|---------------|---------------------------|--------------------|
-| `ttsd_bf16=1` | `topk_topp_sampling_dist` | bfloat16 logits in |
-| `ttmp_bf16=1` | `topk_topp_masked_probs`  | bfloat16 logits in |
+| Define          | Target                    | Effect                         |
+|-----------------|---------------------------|--------------------------------|
+| `ttsd_bf16=1`   | `topk_topp_sampling_dist` | bfloat16 logits in             |
+| `ttmp_bf16=1`   | `topk_topp_masked_probs`  | bfloat16 logits in             |
+| `argsort_i64=1` | `argsort`                 | int64 keys instead of float32. |
 
 The corpus records a spec, not a build config, so a replay entry always runs
 under the in-source default. Alternate configs belong in a live sweep, not the
@@ -183,11 +227,14 @@ design's non-gating → gating rollout:
 - **Presubmit (gating, fast, deterministic):** build the fuzz targets, then run
   the corpus-replay gate. Same seed/spec → same verdict, so it never flakes; it
   fails only when a verdict drifts (a regression, a fixed bug whose corpus entry
-  needs updating, or a broken oracle).
+  needs updating, or a broken oracle). Entries for closed-source kernels, whose
+  targets live in `//Kernels/test/fuzz`, are skipped where that package is
+  absent; in the internal repo, add `//Kernels/test/fuzz:all` to the build.
 
   ```bash
   ./bazelw build //max/kernels/test/gpu/fuzz:all
-  python3 max/kernels/test/gpu/fuzz/fuzz.py --replay-corpus --no-build --timeout 30
+  python3 max/kernels/test/gpu/fuzz/fuzz.py \
+      --replay-corpus --no-build --timeout 30
   ```
 
 - **Nightly (non-gating / notify-only, slow):** a time-boxed live search per

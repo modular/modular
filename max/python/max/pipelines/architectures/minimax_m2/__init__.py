@@ -11,6 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""The MiniMax-M2 architecture.
+
+A decoder-only MoE model that extends the Llama 3 architecture.
+"""
+
 from .arch import minimax_m2_arch
 from .model import MiniMaxM2Inputs, MiniMaxM2Model
 from .model_config import MiniMaxM2Config

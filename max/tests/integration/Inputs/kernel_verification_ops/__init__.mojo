@@ -13,7 +13,7 @@
 
 import extensibility
 from max.gpu.host import DeviceContext
-from max.gpu.host.device_context import DeviceExternalFunction
+from max.gpu.host import DeviceExternalFunction
 from max.gpu import global_idx
 from std.math import ceildiv
 from std.os import abort, getenv
@@ -22,6 +22,7 @@ from extensibility import (
     DynamicTensor,
     VariadicTensors,
     InputTensor,
+    Tensor,
     OutputTensor,
     InputVariadicTensors,
 )
@@ -45,10 +46,21 @@ struct MyAdd:
 
 @extensibility.register_shape_function("my_add")
 def my_add_shape(
-    x: InputTensor,
-    y: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+    y: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"
+
+
+@extensibility.register("my_add_cpu_api", type="cpu", api="cpu")
+struct MyAddCpuApi:
+    @staticmethod
+    def execute(
+        output: OutputTensor,
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        y: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    ):
+        output[0] = x[0] + y[0]
 
 
 @extensibility.register("op_with_device_context")
@@ -64,8 +76,8 @@ struct OpWidthDeviceContext:
 
 @extensibility.register_shape_function("op_with_device_context")
 def op_with_device_context_shape(
-    x: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"
 
 
@@ -83,8 +95,8 @@ struct OpWithMultipleOutputs:
 
 @extensibility.register_shape_function("op_with_multiple_outputs")
 def op_with_multiple_outputs_shape(
-    x: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"
 
 
@@ -174,9 +186,9 @@ struct BinaryKernelWithRaises:
 
 @extensibility.register_shape_function("binary_kernel_with_raises")
 def binary_kernel_with_raises_shape(
-    x: InputTensor,
-    y: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+    y: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"
 
 
@@ -258,7 +270,7 @@ struct ExternalCubinVecAdd:
         comptime assert target == "gpu"
         var gpu_ctx = ctx
 
-        var external_func: DeviceExternalFunction
+        var external_func: DeviceExternalFunction[]
         with open(getenv("CUBIN_PATH"), "r") as file:
             var cubin_data = file.read_bytes()
 
@@ -272,7 +284,7 @@ struct ExternalCubinVecAdd:
 
         var length = output.dim_size(0)
         var block_dim = 32
-        var grid_dim = (length + block_dim - 1) // block_dim
+        var grid_dim = ceildiv(length, block_dim)
 
         # Execute the external cubin kernel
         gpu_ctx.enqueue_function(

@@ -41,7 +41,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.sampling import stochastic_acceptance_sampler
+from max.nn.legacy.sampling import stochastic_acceptance_sampler
 
 VOCAB_SIZE = 1024
 NUM_STEPS = 4

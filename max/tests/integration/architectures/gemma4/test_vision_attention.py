@@ -35,7 +35,7 @@ import math
 from types import SimpleNamespace
 
 import torch
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     VISION_EMBED_HIDDEN_SIZE,
     VISION_NUM_HEADS,
     VISION_RMS_NORM_EPS,

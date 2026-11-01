@@ -1,0 +1,225 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Memory planner for GLM-5.3-Flash.
+
+Two costs sit outside the framework's default KV accounting, and either can be
+the binding constraint depending on context length:
+
+* **The KDA state pools.** 146 MiB per sequence at float32 -- 136 MiB of
+  recurrent state plus 9.6 MiB of conv state across 34 layers -- and
+  *independent of context length*. Below roughly 12K context this dominates a
+  sequence's cost and caps concurrency before the KV pool fills.
+* **The 4x mHC residual widening.** A prefill chunk of ``T`` tokens holds
+  ``T * hc_mult * hidden_size`` elements per live residual tensor, so the chunk
+  size that fits a given activation budget drops by roughly ``hc_mult``
+  relative to a single-stream model of the same width -- 268 MB at ``T`` =
+  8192. Folded in here rather than discovered as an out-of-memory error at the
+  first long prefill.
+
+On gfx950 a third cost appears: the ``kda_chunk`` prefill launch allocates its
+workspaces on every call, outside the graph memory planner, so
+:func:`amd_kda_chunk_workspace_bytes` reserves them here instead.
+
+Everything the V3 family already accounts for -- the MLA up-projection, the
+expert-parallel routing buffers and the persistent EP SHMEM buffers -- comes
+from :class:`~..deepseekV3.memory_planner.DeepseekV3MemoryPlanner`, which this
+extends rather than replaces. Deriving from :class:`PagedMemoryPlanner`
+instead reserved nothing for any of them, because that base returns ``0``.
+
+Above roughly 12K context the KV cache dominates instead: 11 KiB per token
+across the 11 sparse-MLA layers, 11.8 GB for a 1M-token sequence.
+
+The vision tower adds a replica per device beyond the checkpoint's one copy,
+and its own activations.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Any
+
+from max.driver import Device
+from max.graph import DeviceRef
+from max.nn.legacy.state_space.kimi_delta import amd_kda_chunk_workspace_bytes
+from max.pipelines.lib import PipelineConfig
+from transformers import AutoConfig
+from typing_extensions import override
+
+from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
+from .image_processor import Glm5NextImageProcessor
+from .model_config import Glm5NextConfig
+from .nn.visual_transformer import Glm5NextVisionTransformer
+
+__all__ = ["Glm5NextMemoryPlanner"]
+
+# Peak live activation per patch inside the vision tower, in units of the
+# tower's hidden width in bytes. A block holds the bfloat16 gate and up
+# projections at 4x the width, the float32 q and k the rotary embedding
+# upcasts, and the residual, about 40 widths in all; rounded up.
+_VISION_PEAK_HIDDEN_WIDTHS_PER_PATCH = 48
+
+
+def _vision_tower_bytes(config: Glm5NextConfig) -> int:
+    """Bytes of one tower replica, read off the module the model builds."""
+    if config.vision_config is None:
+        return 0
+    tower = Glm5NextVisionTransformer(config.vision_config, DeviceRef.CPU())
+    return sum(
+        math.prod(weight.shape.static_dims) * weight.dtype.size_in_bytes
+        for weight in tower.raw_state_dict().values()
+    )
+
+
+class Glm5NextMemoryPlanner(DeepseekV3MemoryPlanner):
+    """Adds the KDA state pools and the widened mHC residual to V3's estimate."""
+
+    _always_signal_buffers = True
+
+    _inferred_max_batch_size: int | None = None
+    """The batch size :meth:`infer_max_batch_size` chose, which planning does
+    not write back to ``runtime.max_batch_size`` before it asks
+    :meth:`estimate_activation_memory`."""
+
+    @override
+    def estimate_weights_size(self, pipeline_config: PipelineConfig) -> int:
+        """Adds a vision tower replica on every device but the first.
+
+        The checkpoint carries one copy of the tower, which the base estimate
+        already counts.
+        """
+        config = self._config
+        assert isinstance(config, Glm5NextConfig)
+        replicas = len(config.devices) - 1
+        return super().estimate_weights_size(
+            pipeline_config
+        ) + replicas * _vision_tower_bytes(config)
+
+    @override
+    def infer_max_batch_size(
+        self,
+        pipeline_config: PipelineConfig,
+        devices: list[Device],
+        weights_size: int,
+    ) -> int | None:
+        """Infers a memory-safe default ``max_batch_size``.
+
+        The framework's default inference assumes per-request GPU cost is the
+        KV cache alone, which understates GLM-5.3-Flash by 146 MiB per
+        sequence and OOMs on short-context traffic.
+        """
+        config = self._config
+        assert isinstance(config, Glm5NextConfig)
+        inferred = config.infer_optimal_batch_size(
+            devices,
+            weights_size=weights_size,
+            device_memory_utilization=(
+                pipeline_config.model.kv_cache.device_memory_utilization
+            ),
+        )
+        self._inferred_max_batch_size = inferred
+        return inferred
+
+    @override
+    def estimate_activation_memory(
+        self,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Adds the mHC residual, the vision tower and gfx950 chunk workspaces.
+
+        The conv and recurrent pools are leaves of the multi-cache, so the
+        cache allocation already pays for their pages --
+        :meth:`~.model_config.Glm5NextConfig.per_request_state_bytes` reads
+        the same leaves the pool is built from. Reserving them here as well
+        would subtract one request's state twice and shrink the cache by that
+        much, which is why the sibling Qwen3.5 planner reserves nothing for
+        it either.
+
+        What is left is the mHC residual, which is genuinely an activation:
+        ``hc_mult`` copies of the hidden state, live for the whole stack and
+        owned by no cache. It is replicated, so it is sized from the whole
+        batch. The EP dispatch buffers are not: the feed-forward sublayer
+        splits the token axis, which is what makes the inherited per-rank
+        estimate right without an override here. The vision tower's
+        activations are :meth:`_vision_activation_bytes`.
+
+        On gfx950 the ``kda_chunk`` prefill workspaces are an activation too;
+        see :func:`amd_kda_chunk_workspace_bytes`.
+        """
+        config = self._config
+        assert isinstance(config, Glm5NextConfig)
+
+        runtime = pipeline_config.runtime
+        residual_bytes = (
+            runtime.max_batch_input_tokens * config.activation_bytes_per_token()
+        )
+        chunk_workspace_bytes = amd_kda_chunk_workspace_bytes(
+            num_heads=config.linear_num_heads,
+            head_dim=config.linear_head_dim,
+            lower_bound=config.linear_lower_bound,
+            state_dtype=config.state_dtype,
+            decode_only=runtime.pipeline_role == "decode_only",
+            max_batch_input_tokens=runtime.max_batch_input_tokens,
+            enable_chunked_prefill=runtime.enable_chunked_prefill,
+            max_batch_size=(
+                runtime.max_batch_size or self._inferred_max_batch_size
+            ),
+            max_length=pipeline_config.model.max_length,
+        )
+        return (
+            super().estimate_activation_memory(
+                pipeline_config, huggingface_config
+            )
+            + residual_bytes
+            + self._vision_activation_bytes(pipeline_config)
+            + chunk_workspace_bytes
+        )
+
+    def _vision_activation_bytes(self, pipeline_config: PipelineConfig) -> int:
+        """The tower's peak activations, summed over its replicas.
+
+        Added to the decoder's rather than overlapped with it: under the
+        overlap scheduler a batch's encode can run while the previous batch's
+        forward still holds its activations. The model chunks an encode at
+        ``max_batch_input_tokens`` output rows but never splits an image, so
+        one encode is at most the larger of that and the largest image.
+        """
+        config = self._config
+        assert isinstance(config, Glm5NextConfig)
+        vision_config = config.vision_config
+        if vision_config is None:
+            return 0
+        rows = max(
+            pipeline_config.runtime.max_batch_input_tokens,
+            Glm5NextImageProcessor().max_image_tokens,
+        )
+        patches = rows * vision_config.spatial_merge_size**2
+        return (
+            len(config.devices)
+            * patches
+            * vision_config.hidden_size
+            * _VISION_PEAK_HIDDEN_WIDTHS_PER_PATCH
+        )
+
+    def describe(self) -> dict[str, Any]:
+        """Returns the per-sequence costs, for logging a capacity decision."""
+        config = self._config
+        assert isinstance(config, Glm5NextConfig)
+        return {
+            "kda_layers": len(config.kda_layers),
+            "sparse_attention_layers": len(config.sparse_attention_layers),
+            "state_bytes_per_request": config.per_request_state_bytes(),
+            "state_dtype": str(config.state_dtype),
+            "residual_bytes_per_token": config.activation_bytes_per_token(),
+            "mla_latent_width": config.mla_head_dim,
+        }

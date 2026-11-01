@@ -16,8 +16,12 @@
 # creates a transpose inside their python API. Kineto can exclude the transpose
 # and extract the matmul time.
 
+import hashlib
 import os
+import re
+import shutil
 import sys
+import tempfile
 from collections.abc import Callable
 from typing import Any
 
@@ -47,6 +51,60 @@ def setup_ninja_path() -> None:
                 )
     except ImportError:
         pass  # ninja not available, flashinfer import will fail separately
+
+
+def _is_pkgutil_stub(path: str) -> bool:
+    with open(path) as f:
+        return "extend_path" in f.read()
+
+
+def setup_cutlass_dsl() -> None:
+    """Makes the `cutlass` package importable under Bazel.
+
+    nvidia-cutlass-dsl 4.8 splits `cutlass` across its libs-core, libs-base and
+    libs-cu12 wheels, and pip unpacks them into one directory. Bazel keeps each
+    wheel in its own tree and gives the shared packages pkgutil stub
+    ``__init__.py`` files, but `cutlass._mlir._mlir_libs` looks for its native
+    library next to its own ``__init__.py``, so the trees cannot just share a
+    ``__path__``. This links them into one merged tree, as pip would, with
+    each real ``__init__.py`` taking precedence over the stubs, and puts it
+    first on ``sys.path``. The tree is cached in the temp directory, keyed on
+    the wheel paths. Call it before importing flashinfer or
+    flash_attn.cute.
+    """
+    if "cutlass" in sys.modules:
+        return
+    roots = [p for p in sys.path if os.path.isdir(os.path.join(p, "cutlass"))]
+    if len(roots) < 2:
+        return
+    key = hashlib.sha256("\0".join(roots).encode()).hexdigest()[:16]
+    merged = os.path.join(tempfile.gettempdir(), f"cutlass_dsl_merged_{key}")
+    if not os.path.isdir(merged):
+        staging = tempfile.mkdtemp(prefix="cutlass_dsl_")
+        for root in roots:
+            for dirpath, _, filenames in os.walk(os.path.join(root, "cutlass")):
+                rel = os.path.relpath(dirpath, root)
+                os.makedirs(os.path.join(staging, rel), exist_ok=True)
+                for name in filenames:
+                    src = os.path.join(dirpath, name)
+                    dst = os.path.join(staging, rel, name)
+                    if os.path.lexists(dst):
+                        if name != "__init__.py" or _is_pkgutil_stub(src):
+                            continue
+                        os.remove(dst)
+                    os.symlink(src, dst)
+            # The runtime library is found by walking up from `cutlass` to a
+            # sibling `cu<N>/lib`, so link the CUDA flavor directories too.
+            parent = os.path.dirname(root)
+            for name in os.listdir(parent):
+                dst = os.path.join(staging, name)
+                if re.fullmatch(r"cu\d+", name) and not os.path.lexists(dst):
+                    os.symlink(os.path.join(parent, name), dst)
+        try:
+            os.rename(staging, merged)
+        except OSError:
+            shutil.rmtree(staging)  # A concurrent process built it first.
+    sys.path.insert(0, merged)
 
 
 def bench(

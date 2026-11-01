@@ -18,30 +18,38 @@ import functools
 import logging
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import functional as F
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.norm import RMSNorm
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.embedding import Embedding
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.norm import RMSNorm
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
+    GraphRole,
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
-    ModuleV3PipelineModel,
     PipelineConfig,
+    PipelineModel,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    embedding_ragged_symbolic_inputs,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.tensor import default_dtype
 from typing_extensions import override
 
 from .batch_processor import Qwen3EmbeddingModuleV3BatchProcessor
+from .inputs import Qwen3EmbeddingInputs
 from .layers import (
     Qwen3AttentionNoCache,
     Qwen3Embedding,
@@ -53,21 +61,7 @@ from .model_config import Qwen3EmbeddingConfig
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass
-class Qwen3EmbeddingInputs(ModelInputs):
-    """Input structure for Qwen3 embedding models."""
-
-    tokens: Buffer
-    """Input token IDs [total_seq_len]"""
-
-    input_row_offsets: Buffer
-    """Row offsets for ragged tensors [batch_size + 1]"""
-
-    return_n_logits: Buffer
-    """Number of logits to return (kept for interface compatibility)"""
-
-
-class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
+class Qwen3EmbeddingModel(PipelineModel[TextContext, None]):
     """Qwen3 embedding pipeline model without KV caching (V3 eager API).
 
     Optimized for embedding generation with:
@@ -84,6 +78,9 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
 
     model: Callable[..., Any]
     """Compiled model callable."""
+
+    _checkpoint: dict[str, Any]
+    """The checkpoint weights, kept for :meth:`graph_specs`."""
 
     def __init__(
         self,
@@ -107,17 +104,19 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             adapter=adapter,
             return_logits=return_logits,
             memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
-        self.model = self.load_model()
+        self.load_graphs(session)
+        # The compiled encoder keeps the weights it needs.
+        del self._checkpoint
+        self.model = self.compiled_modules[GraphRole.ENCODER]
 
     @override
     def _load_state_dict(self) -> dict[str, Any]:
-        return parse_state_dict_from_weights(
-            self.pipeline_config,
-            self.weights,
-            self.adapter,
-            hf_config=self._hf_config_for_weights(),
+        self._checkpoint = parse_state_dict_from_weights(
+            self.pipeline_config, self.weights, self.adapter
         )
+        return self._checkpoint
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> None:
         del state_dict
@@ -141,6 +140,24 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             for k, v in state_dict.items()
         }
 
+    def graph_specs(self, model_config: None) -> dict[str, GraphSpec]:
+        """Returns the encoder, built from the checkpoint weights."""
+        weights = self._prepare_state_dict(self._checkpoint, model_config)
+        with F.lazy(), default_dtype(self.dtype):
+            nn_model = self._instantiate_module(model_config)
+        return {
+            GraphRole.ENCODER: GraphSpec(
+                nn_model,
+                type(nn_model).__qualname__,
+                tuple(
+                    embedding_ragged_symbolic_inputs(
+                        device_refs=self.device_refs
+                    )
+                ),
+                weights=weights,
+            )
+        }
+
     def _instantiate_module(self, model_config: Any) -> Qwen3Embedding:
         del model_config
         huggingface_config = self.huggingface_config
@@ -156,7 +173,7 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
         rope = RotaryEmbedding(
             dim=huggingface_config.hidden_size,
             n_heads=huggingface_config.num_attention_heads,
-            theta=huggingface_config.rope_theta,
+            theta=get_rope_theta(huggingface_config),
             max_seq_len=self.max_seq_len,
             device=self.devices[0],
             head_dim=head_dim,

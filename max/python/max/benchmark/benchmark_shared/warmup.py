@@ -126,7 +126,9 @@ def systematic_probability_proportional_to_size(
     k: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Pick ``k`` distinct indices into ``weights`` with inclusion probability
+    """Pick ``k`` distinct indices into ``weights``.
+
+    Each index is included with probability
     ``min(1, k * weights[i] / sum(weights))``.
 
     Algorithm (systematic PPS with iterated-cap handling):

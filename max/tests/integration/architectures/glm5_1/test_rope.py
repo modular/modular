@@ -21,7 +21,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_glm import GlmMoeDsaConfig
 from torch_reference.modeling_glm import (

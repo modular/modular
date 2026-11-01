@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn.rotary_embedding import (
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )

@@ -17,7 +17,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import Linear
+from max.nn.legacy import Linear
 from torch import nn
 
 ACCURACY_RTOL = 1e-3

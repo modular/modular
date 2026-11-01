@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import FrozenInstanceError, dataclass
 from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
@@ -27,7 +27,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVConnectorConfigInterface,
     KVConnectorType,
@@ -43,6 +43,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
     ArchConfigWithKVCache,
+    ModelOutputConfig,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from pydantic import ValidationError
@@ -365,6 +366,13 @@ class TestArchConfigWithAttentionKVCache:
         assert config.cache_dtype == DType.bfloat16
 
 
+def test_model_output_config_is_frozen() -> None:
+    outputs = ModelOutputConfig()
+    field_name = "target_layer_ids"
+    with pytest.raises(FrozenInstanceError):
+        setattr(outputs, field_name, (1, 3))
+
+
 def test_to_params_replication_disabled_by_default() -> None:
     """Without the config flag, wide TP still raises the strict error."""
     kv_cache_config = KVCacheConfig()
@@ -424,6 +432,13 @@ def test_kv_connector_config_disk_budget_bounds() -> None:
     assert KVConnectorConfig().disk_offload_max_gb is None
     with pytest.raises(ValidationError, match="disk_offload_max_gb"):
         KVConnectorConfig(disk_offload_max_gb=-1)
+
+
+def test_kv_connector_config_h2d_onload_lanes() -> None:
+    assert KVConnectorConfig().num_h2d_onload_lanes == 1
+    assert KVConnectorConfig(num_h2d_onload_lanes=2).num_h2d_onload_lanes == 2
+    with pytest.raises(ValidationError, match="num_h2d_onload_lanes"):
+        KVConnectorConfig(num_h2d_onload_lanes=0)
 
 
 def test_kv_cache_config_model_copy_update() -> None:

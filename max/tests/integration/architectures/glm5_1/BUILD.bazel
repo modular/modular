@@ -6,6 +6,7 @@ load(
     "modular_py_test",
     "requirement",
 )
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -48,6 +49,75 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_format_spec",
+    srcs = ["test_format_spec.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/weights",
+    ],
+)
+
+modular_py_test(
+    name = "test_memory_planner",
+    srcs = ["test_memory_planner.py"],
+    tags = ["skip-external-ci"],
+    # Needs mega_ffn.ep_fused_plan (fused EP MoE), registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/architectures/unified_mtp_glm5_2",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_modulev3_nvfp4_kv",
+    srcs = ["test_modulev3_nvfp4_kv.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/architectures/unified_mtp_glm5_2_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_chat_template",
+    srcs = ["test_chat_template.py"],
+    data = [
+        "//max/tests/integration/architectures/glm5_1/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/glm5_1/testdata",
+    },
+    ignore_extra_deps = [
+        requirement("jinja2"),  # Required by transformers' chat-template renderer
+    ],
+    # tokenizers is a transitive dependency of transformers but doesn't have
+    # an unversioned bazel alias, so we need to ignore its unresolved imports
+    ignore_unresolved_imports = [
+        "tokenizers.Tokenizer",
+        "tokenizers.models.WordLevel",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "test_tokenizer",
     srcs = ["test_tokenizer.py"],
     deps = [
@@ -61,6 +131,10 @@ modular_py_test(
     srcs = glob(
         ["**/test_*.py"],
         exclude = [
+            "test_chat_template.py",
+            "test_format_spec.py",
+            "test_memory_planner.py",
+            "test_modulev3_nvfp4_kv.py",
             "test_tokenizer.py",
             "test_tool_parser.py",
         ],
@@ -78,6 +152,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -85,11 +160,12 @@ modular_py_test(
     deps = [
         ":torch_reference",
         "//max/python/max:_core",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",

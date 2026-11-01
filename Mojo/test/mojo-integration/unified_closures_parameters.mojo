@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 %mojo %s 8 string | FileCheck %s
 # RUN: %mojo %s 8 string | FileCheck %s
 
 from std.sys import argv
@@ -94,7 +95,7 @@ struct Sphere(Coord):
         print("sphere:", self.theta, ",", self.phi)
 
 
-def hasParamVariadic[C: def[*TT: Coord](* args: * TT)](impl: C, x: Int):
+def hasParamVariadic[C: def[*TT: Coord](*args: *TT)](impl: C, x: Int):
     var state1 = Sphere(x, x)
     var state2 = Cartesian(x, x)
     impl(state1, state2)

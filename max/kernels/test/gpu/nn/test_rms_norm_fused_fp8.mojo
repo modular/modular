@@ -195,18 +195,16 @@ def test_dynamic[
 
     var in_ptr = in_device.unsafe_ptr()
 
-    @__copy_capture(in_ptr)
-    @always_inline
-    @__parameter
+    @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
+        width: Int
+    ](coords: Coord) {var in_ptr, var shape} -> SIMD[in_dtype, width]:
         var linear_idx = Int(0)
         var stride = 1
-        for i in reversed(range(_rank)):
-            linear_idx += idx[i] * stride
+        comptime for i in reversed(range(rank)):
+            linear_idx += Int(coords[i]) * stride
             stride *= shape[i]
-        return in_ptr.load[width=width, alignment=width](linear_idx)
+        return in_ptr.unsafe_load[width=width, alignment=width](linear_idx)
 
     var out_tile = TileTensor(out_device, row_major(Coord(shape)))
     var scale_tile = TileTensor(scales_device, row_major(Coord(scale_shape)))
@@ -216,10 +214,10 @@ def test_dynamic[
         out_dtype,
         scales_dtype,
         rank,
-        input_fn,
         target="gpu",
     ](
-        shape,
+        input_fn,
+        Coord(shape),
         out_tile,
         gamma_tensor,
         epsilon,
@@ -254,12 +252,8 @@ def test_dynamic[
         raise Error("Higher rank tensor test failed")
 
     print(
-        "✓ Rank-",
-        rank,
-        " tensor test passed (dynamic, weight_offset=",
-        weight_offset,
-        ") ",
-        shape,
+        t"✓ Rank- {rank}  tensor test passed (dynamic, weight_offset="
+        t" {weight_offset} )  {shape}"
     )
 
 

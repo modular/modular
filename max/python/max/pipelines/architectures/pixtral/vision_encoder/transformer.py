@@ -10,22 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Pixtral's vision transformer."""
 
 from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from .attention import Attention
 
 
 class MLP(Module):
-    """
-    Simple multi-layer perceptron composed of three linear layers.
+    """Simple multi-layer perceptron composed of three linear layers.
+
     Uses Gelu activation function.
     """
 
@@ -53,6 +53,7 @@ class MLP(Module):
         )
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Runs the SwiGLU feed-forward over ``x``."""
         return self.down_proj(ops.silu(self.gate_proj(x)) * self.up_proj(x))  # type: ignore
 
 
@@ -87,6 +88,7 @@ class TransformerBlock(Module):
         attention_mask: TensorValueLike,
         position_embeddings: tuple[TensorValue, TensorValue],
     ) -> TensorValue:
+        """Runs the block's attention, then its MLP."""
         residual_multiplier = ops.constant(
             self.residual_multiplier, x.dtype, device=DeviceRef.CPU()
         )
@@ -109,6 +111,7 @@ class TransformerBlock(Module):
 
 class Transformer(Module):
     """Transformer model consisting of TransformerBlock layers.
+
     The input is embeddings created using convolution followed by normalization.
 
     The differences between this transformer and other decoder model transformers:
@@ -138,6 +141,7 @@ class Transformer(Module):
         position_embeddings: tuple[TensorValue, TensorValue],
         **kwargs,
     ):
+        """Runs the encoder stack over the patch embeddings."""
         h = patch_embeds
 
         for _, layer in enumerate(self.layers):

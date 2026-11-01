@@ -183,7 +183,6 @@ elapsed and either `max_runtime_secs` OR `max_iters` is achieved.
 import std.format._utils as fmt
 
 from std.time import time_function
-from std.testing import assert_true
 from std.utils.numerics import max_finite, min_finite
 
 
@@ -237,7 +236,7 @@ struct Batch(TrivialRegisterPassable, Writable):
             ")",
         )
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this `Batch` to a writer.
 
@@ -268,14 +267,15 @@ struct Unit:
 
     @staticmethod
     def _divisor(unit: String) -> Int:
-        if unit == Unit.ns:
-            return 1
-        elif unit == Unit.us:
-            return 1_000
-        elif unit == Unit.ms:
-            return 1_000_000
-        else:
-            return 1_000_000_000
+        match unit:
+            case Unit.ns:
+                return 1
+            case Unit.us:
+                return 1_000
+            case Unit.ms:
+                return 1_000_000
+            case _:
+                return 1_000_000_000
 
 
 # ===-----------------------------------------------------------------------===#
@@ -391,15 +391,15 @@ struct Report(Copyable, Defaultable):
             "-" * 80,
             "Benchmark Report (" + unit + ")",
             "-" * 80,
-            "Mean: " + String(self.mean(unit)),
-            "Total: " + String(self.duration(unit)),
-            "Iters: " + String(self.iters()),
+            String(t"Mean: {self.mean(unit)}"),
+            String(t"Total: {self.duration(unit)}"),
+            String(t"Iters: {self.iters()}"),
             "Warmup Total: "
             + String(
                 Float64(self.warmup_duration) / Float64(Unit._divisor(unit))
             ),
-            "Fastest Mean: " + String(self.min(unit)),
-            "Slowest Mean: " + String(self.max(unit)),
+            String(t"Fastest Mean: {self.min(unit)}"),
+            String(t"Slowest Mean: {self.max(unit)}"),
             "",
         ]
         return "\n".join(lines)
@@ -503,9 +503,9 @@ def run(
         If the operation fails.
     """
 
-    @always_inline
+    @inline(.always)
     def benchmark_fn(num_iters: Int) raises {f} -> Int:
-        @always_inline
+        @inline(.always)
         def iter_fn() raises {num_iters, f}:
             for _ in range(num_iters):
                 f()
@@ -524,7 +524,7 @@ def run(
     )
 
 
-@always_inline
+@inline(.always)
 def _run_impl(opts: _RunOptions) raises -> Report:
     var report = Report()
 
@@ -622,7 +622,7 @@ def _is_significant_measurement(
     return False
 
 
-@always_inline
+@inline(.always)
 def _run_impl_fixed(
     timing_fn: Some[def(Int) raises -> Int], fixed_iterations: Int
 ) raises -> Report:

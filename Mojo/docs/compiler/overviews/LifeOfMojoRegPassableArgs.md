@@ -279,7 +279,7 @@ in this example because the function isn't generic, and after elaboration, we
 get the same IR, you can see this with
 
 ```text
-kgen-opt -verify-parameters -lower-semantic-cf -check-lifetimes -verify-parameters -lower-lit -eliminate-dead-symbols -outline-closures -elaborate-generators`
+kgen-opt -verify-parameters -lower-semantic-cf -check-lifetimes -verify-parameters -lower-lit -eliminate-dead-symbols -elaborate-generators`
 ```
 
 > Note: I'm eliding unrelated optimization passes for clarity here.
@@ -474,7 +474,7 @@ and three types:
 
 ```bash
 kgen-translate -import-mojo x.mojo | kgen-opt -verify-parameters -lower-semantic-cf -check-lifetimes -verify-parameters > x.mlir
-kgen-opt -lower-lit -eliminate-dead-symbols -outline-closures -elaborate-generators x.mlir | less
+kgen-opt -lower-lit -eliminate-dead-symbols -elaborate-generators x.mlir | less
 ```
 
 We get something like this:

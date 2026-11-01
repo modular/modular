@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Register the Flux 2 ``ModuleV3`` pixel-generation architecture."""
+
 from __future__ import annotations
 
 from max.graph.weights import WeightsFormat

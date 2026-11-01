@@ -55,20 +55,14 @@ from std.memory import bitcast
 from std.random import random_ui64, seed
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
-from std.testing import assert_true
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from std.utils import StaticTuple
-from layout import Coord, Idx, TileTensor
+from layout import Idx, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.matmul.gpu.amd import Shuffler
-from linalg.fp6_utils import (
-    FP6Format,
-    decode_fp6_to_f32,
-    fp6_reference_table,
-    unpack_fp6_x32,
-)
+from linalg.fp6_utils import FP6Format, decode_fp6_to_f32, unpack_fp6_x32
 from linalg.fp6_quantization import quantize_mxfp6_amd
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     mxfp6_block_scaled_matmul_amd,
@@ -158,7 +152,7 @@ def _pack_fp6(
                 packed[unsafe_offset=byte + 1] |= UInt8(code >> (8 - shift))
 
 
-@always_inline
+@inline(.always)
 def _e8m0(bits: UInt8) -> Float64:
     """Decodes an E8M0 scale byte to `2^(bits - 127)` in float64."""
     var exponent = Int(bits) - 127
@@ -248,10 +242,10 @@ def _mxfp6_matmul_ref[
         var fb = SIMD[.uint8, 32](0)
         comptime for chunk in range(3):
             fa = fa.insert[offset=chunk * 8](
-                a_ptr.load[width=8](a_base + chunk * 8)
+                a_ptr.unsafe_load[width=8](a_base + chunk * 8)
             )
             fb = fb.insert[offset=chunk * 8](
-                b_ptr.load[width=8](b_base + chunk * 8)
+                b_ptr.unsafe_load[width=8](b_base + chunk * 8)
             )
 
         var av = decode_fp6_to_f32[fmt](unpack_fp6_x32(fa)) * a_scale
@@ -392,27 +386,15 @@ def run_case[
         elif abs(got - want) > rel_tol * Float64(mag_host[i]):
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "] got=",
-                    got,
-                    " want=",
-                    want,
-                    " mag=",
-                    Float64(mag_host[i]),
+                    t"      [ {i // N} , {i % N} ] got= {got}  want= {want} "
+                    t" mag= {Float64(mag_host[i])}"
                 )
             mismatches += 1
 
     if unwritten > 0 or mismatches > 0:
         print(
-            "    FAIL ",
-            mismatches,
-            " wrong, ",
-            unwritten,
-            " unwritten, of ",
-            M * N,
+            t"    FAIL  {mismatches}  wrong,  {unwritten}  unwritten, of "
+            t" {M * N}"
         )
         return False
     if data_pattern != DATA_ZERO and not saw_nonzero:
@@ -431,8 +413,8 @@ def run_case_preb[
 ) raises -> Bool:
     """Same shapes and reference as `run_case`, but drives
     `mxfp6_block_scaled_matmul_amd[preshuffled_b=True]`: B and its scales are
-    preshuffled once (untimed, mirroring the load-time cost
-    `preshuffle_block_scaled_b_dense` pays in production) before the call.
+    preshuffled once (untimed, mirroring the one-time cost
+    `preshuffle_block_scaled_b` pays at model init) before the call.
 
     Only valid for `M > DECODE_M_MAX` (64): the dispatcher silently takes the
     row-major decode path for smaller M regardless of `preshuffled_b`, so
@@ -474,9 +456,7 @@ def run_case_preb[
     # static weight.
     var b_sf_pre = ctx.enqueue_create_host_buffer[DType.uint8](N * K_SCALES)
     ctx.synchronize()
-    var b_sf_tt = TileTensor(
-        b_sf, row_major(Coord(Idx[1], Idx[N], Idx[K_SCALES]))
-    )
+    var b_sf_tt = TileTensor(b_sf, row_major(Idx[1], Idx[N], Idx[K_SCALES]))
     _ = Shuffler[1].preshuffle_scale_4d[MN=N, K_SCALES=K_SCALES](
         b_sf_tt, b_sf_pre
     )
@@ -581,27 +561,15 @@ def run_case_preb[
         elif abs(got - want) > rel_tol * Float64(mag_host[i]):
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "] got=",
-                    got,
-                    " want=",
-                    want,
-                    " mag=",
-                    Float64(mag_host[i]),
+                    t"      [ {i // N} , {i % N} ] got= {got}  want= {want} "
+                    t" mag= {Float64(mag_host[i])}"
                 )
             mismatches += 1
 
     if unwritten > 0 or mismatches > 0:
         print(
-            "    FAIL ",
-            mismatches,
-            " wrong, ",
-            unwritten,
-            " unwritten, of ",
-            M * N,
+            t"    FAIL  {mismatches}  wrong,  {unwritten}  unwritten, of "
+            t" {M * N}"
         )
         return False
     if data_pattern != DATA_ZERO and not saw_nonzero:
@@ -621,21 +589,9 @@ def _report[
 ) raises -> Int:
     """Runs one case and returns 1 if it failed, so callers can tally."""
     print(
-        "  ",
-        "E2M3" if fmt == FP6Format.E2M3 else "E3M2",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        " splits=",
-        num_splits,
-        " out=",
-        out_dtype,
-        " data=",
-        data_pattern,
-        " scale=",
-        scale_pattern,
+        t"   {'E2M3' if fmt == FP6Format.E2M3 else 'E3M2'} {M} x {N} x {K} "
+        t" splits= {num_splits}  out= {out_dtype}  data= {data_pattern}  scale="
+        t" {scale_pattern}"
     )
     var ok = run_case[fmt, N, K, out_dtype, num_splits](
         ctx, M, data_pattern, scale_pattern
@@ -653,19 +609,9 @@ def _report_preb[
 ) raises -> Int:
     """Runs one `preshuffled_b=True` case and returns 1 if it failed."""
     print(
-        "  ",
-        "E2M3" if fmt == FP6Format.E2M3 else "E3M2",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        " preshuffled_b out=",
-        out_dtype,
-        " data=",
-        data_pattern,
-        " scale=",
-        scale_pattern,
+        t"   {'E2M3' if fmt == FP6Format.E2M3 else 'E3M2'} {M} x {N} x {K} "
+        t" preshuffled_b out= {out_dtype}  data= {data_pattern}  scale="
+        t" {scale_pattern}"
     )
     var ok = run_case_preb[fmt, N, K, out_dtype](
         ctx, M, data_pattern, scale_pattern
@@ -732,6 +678,12 @@ def test_production_shapes(ctx: DeviceContext) raises -> Int:
         bad += _report[fmt, 2048, 7168](ctx, m, DATA_RANDOM, SCALE_VARY)
     for m in [1, 17, 73, 129]:
         bad += _report[fmt, 4096, 7168](ctx, m, DATA_RANDOM, SCALE_VARY)
+    # M3's two decode-dominant dense shapes, at M values either side of the
+    # narrow-M band boundary: M <= 16 takes the BM=16 split-K tile, M > 16 the
+    # BM=48 one, so both branches of that dispatch are executed here.
+    for m in [1, 8, 16, 17, 64]:
+        bad += _report[fmt, 2560, 6144](ctx, m, DATA_RANDOM, SCALE_VARY)
+        bad += _report[fmt, 6144, 2048](ctx, m, DATA_RANDOM, SCALE_VARY)
     # Widest N and deepest K: maximum DRAM and scale volume against a single
     # real row, with the rest of the block OOB.
     bad += _report[fmt, 18432, 7168](ctx, 1, DATA_RANDOM, SCALE_VARY)
@@ -934,13 +886,13 @@ def test_quantizer_feeds_matmul[
         ctx,
         TileTensor(a_q, row_major((M, Idx[K_BYTES]))),
         TileTensor(a_sf, row_major((M, Idx[K_SCALES]))),
-        TileTensor(a_bf_d, row_major((M, Idx[K]))).as_immut(),
+        TileTensor(a_bf_d, row_major((M, Idx[K]))).as_imm(),
     )
     quantize_mxfp6_amd[fmt](
         ctx,
         TileTensor(b_q, row_major[N, K_BYTES]()),
         TileTensor(b_sf, row_major[N, K_SCALES]()),
-        TileTensor(b_bf_d, row_major[N, K]()).as_immut(),
+        TileTensor(b_bf_d, row_major[N, K]()).as_imm(),
     )
 
     var c_d = ctx.enqueue_create_buffer[.float32](M * N)
@@ -1000,16 +952,8 @@ def test_quantizer_feeds_matmul[
         print("    FAIL quantized-input reference is all zero")
         bad += 1
     print(
-        "    ",
-        "PASS" if bad == 0 else "FAIL",
-        " quantizer->matmul ",
-        fmt_name,
-        " M=",
-        M,
-        " N=",
-        N,
-        " K=",
-        K,
+        t"     {'PASS' if bad == 0 else 'FAIL'}  quantizer->matmul "
+        t" {fmt_name}  M= {M}  N= {N}  K= {K}"
     )
 
     _ = a_bf_d^

@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+# Metrics and the per-process OpenTelemetry setup, an add-on for whoever
+# serves cascade rather than part of its core interfaces.
+modular_py_library(
+    name = "telemetry",
+    srcs = glob(["*.py"]),
+    deps = [
+        "//max/python/max/support:telemetry",
+        requirement("opentelemetry-api"),
+        requirement("opentelemetry-exporter-otlp-proto-http"),
+        requirement("opentelemetry-sdk"),
+        requirement("prometheus-client"),
+    ],
+)

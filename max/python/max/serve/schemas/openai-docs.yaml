@@ -149,9 +149,12 @@ paths:
                             ignored by others.
                         num_images:
                           type: integer
-                          description: Number of images to generate per request.
+                          description: |
+                            Number of images to generate per request, from 1
+                            to 4.
                           default: 1
                           minimum: 1
+                          maximum: 4
                         strength:
                           type: number
                           description: |
@@ -976,6 +979,102 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/decisions:
+    post:
+      operationId: createDecisions
+      summary: Create decisions
+      description: |
+        Scores a set of options for each question and returns a probability
+        for each option, without generating text. MAX derives these
+        probabilities from the model's next-token scores at the answer
+        position. Each question is evaluated independently in its own prompt.
+        Any text-generation model with a chat template can serve this endpoint.
+        If the checkpoint includes `decider_config.json`, MAX uses the
+        decider prompt format.
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/decisions \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "Qwen/Qwen3.5-2B",
+                "input": "I was charged twice for order A-104. Please refund one.",
+                "questions": [
+                  {
+                    "id": "team",
+                    "type": "choice",
+                    "question": "Which team should handle this?",
+                    "options": [
+                      {"name": "billing", "description": "Charges and refunds"},
+                      {"name": "technical", "description": "Bugs and outages"}
+                    ]
+                  },
+                  {"id": "refund", "type": "yes_no", "question": "Is a refund requested?"}
+                ]
+              }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDecisionsRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateDecisionsResponse'
+        '400':
+          description: |
+            The server or model can't answer the request. For example, the
+            model ID is unknown, an answer label isn't a single token, a
+            prompt exceeds the context length, the request turns on thinking,
+            `prompt_format_version` doesn't match the server's version, a
+            decider model gets more than 10 options, or the server uses
+            speculative decoding, LoRA, or variable logits.
+        '422':
+          description: |
+            The request body doesn't match the schema. For example, a text
+            field is blank, two questions share an `id`, two options share a
+            name, the body has an unknown field, or the request has more than
+            64 questions.
+
+  /v1/systemone:
+    post:
+      operationId: createSystemOne
+      summary: Create System One answers
+      description: |
+        Answers System One `noul` (yes/no), `choice`, and `score` questions
+        using the same scoring path as `/v1/decisions`. This endpoint
+        lets System One clients use a MAX server without changing their
+        request format. Any model that supports `/v1/decisions` also
+        supports this endpoint, which uses the model's default temperature.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemOneRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemOneResponse'
+        '400':
+          description: |
+            The server or model can't answer the request. For example, the
+            model ID is unknown, an answer label isn't a single token, a
+            prompt exceeds the context length, or the server uses speculative
+            decoding, LoRA, or variable logits.
+        '422':
+          description: |
+            The request body doesn't match the schema. For example, a question
+            type is unknown, a question has too many options or levels, or the
+            request has more than 64 questions.
+
   /v1/audio/speech:
     post:
       operationId: createSpeech
@@ -1111,6 +1210,143 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/load_lora_adapter:
+    post:
+      operationId: loadLoraAdapter
+      summary: Load a LoRA adapter
+      description: |
+        Loads a LoRA adapter from a local path into a serving instance
+        started with the `--enable-lora` argument. After the adapter loads,
+        its name appears in the [models list](/rest-api/list-models) and
+        you can pass it as the `model` value in inference requests.
+
+        For adapter requirements, such as supported base models, weight
+        format, and layer targets, see the
+        [LoRA adapters guide](/serve/lora-adapters).
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/load_lora_adapter \
+              -H "Content-Type: application/json" \
+              -d '{
+                    "lora_name": "example",
+                    "lora_path": "/path/to/lora-adapter"
+                  }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoadLoraAdapterRequest'
+      responses:
+        '200':
+          description: |
+            The adapter loaded. Loading a name that is already in use
+            from the same path also returns `200`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoraAdapterResponse'
+              examples:
+                success:
+                  summary: Adapter loaded
+                  value:
+                    status: "success"
+                    message: "LoRA adapter 'example' loaded successfully"
+        '400':
+          description: |
+            The adapter path does not exist locally, the adapter directory
+            is invalid, or the request body is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: |
+            An adapter with the same name is already loaded from a
+            different path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: An internal error prevented the adapter from loading.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: |
+            The serving instance was started without LoRA enabled.
+            Restart it with `--enable-lora`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/unload_lora_adapter:
+    post:
+      operationId: unloadLoraAdapter
+      summary: Unload a LoRA adapter
+      description: |
+        Unloads a previously loaded LoRA adapter by name. Unloading removes
+        the adapter from the [models list](/rest-api/list-models), and
+        inference requests that name it fail.
+
+        For the workflow around loading and unloading adapters, see the
+        [LoRA adapters guide](/serve/lora-adapters).
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/unload_lora_adapter \
+              -H "Content-Type: application/json" \
+              -d '{
+                    "lora_name": "example"
+                  }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnloadLoraAdapterRequest'
+      responses:
+        '200':
+          description: The adapter unloaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoraAdapterResponse'
+              examples:
+                success:
+                  summary: Adapter unloaded
+                  value:
+                    status: "success"
+                    message: "LoRA adapter 'example' unloaded successfully"
+        '400':
+          description: The request body is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No adapter with that name is loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: An internal error prevented the adapter from unloading.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: |
+            The serving instance was started without LoRA enabled.
+            Restart it with `--enable-lora`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/models:
     get:
       operationId: listModels
@@ -1233,12 +1469,14 @@ components:
             `max_completion_tokens` takes precedence (no error is raised).
         reasoning_effort:
           type: string
+          enum: [none, minimal, low, medium, high, xhigh, max]
           description: |
             Controls how much effort the model spends on reasoning. Set to
-            `none` to disable thinking, or `low`, `medium`, or `high` to
-            control the trade-off between speed and reasoning depth. If the
-            request also includes `reasoning.effort`, this field takes
-            precedence.
+            `none` to disable thinking, or `minimal`, `low`, `medium`,
+            `high`, `xhigh`, or `max` to control the trade-off between speed
+            and reasoning depth. How a level is applied depends on the
+            model's chat template. If the request also includes
+            `reasoning.effort`, this field takes precedence.
         thinking:
           type: object
           required:
@@ -1265,11 +1503,12 @@ components:
               description: Whether to enable reasoning.
             effort:
               type: string
+              enum: [none, minimal, low, medium, high, xhigh, max]
               description: |
                 Controls reasoning effort when `reasoning.enabled` is not set.
-                Set to `none` to disable thinking, or `low`, `medium`, or
-                `high` to enable reasoning at the specified level. Ignored
-                when `enabled` is explicitly set.
+                Set to `none` to disable thinking, or `minimal`, `low`,
+                `medium`, `high`, `xhigh`, or `max` to enable reasoning at the
+                specified level. Ignored when `enabled` is explicitly set.
             max_tokens:
               type: integer
               description: Accepted for client compatibility. Not used by MAX Serve.
@@ -1280,6 +1519,16 @@ components:
           type: boolean
           description: |
             Whether to return log probabilities of the output tokens or not.
+        return_token_ids:
+          type: boolean
+          default: false
+          description: |
+            If `true`, adds `token_ids` and `prompt_token_ids` to each
+            choice. `token_ids` contains the generated token IDs, and
+            `prompt_token_ids` contains the prompt token IDs after the chat
+            template is applied. When streaming, each chunk's `token_ids`
+            contains only that chunk's new tokens, and `prompt_token_ids`
+            appears only once.
         cache_salt:
           type: string
           maxLength: 512
@@ -1579,6 +1828,20 @@ components:
         message:
           $ref: '#/components/schemas/ChatCompletionMessage'
           description: The chat completion message
+        token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The generated token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
+        prompt_token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The prompt token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
 
     CreateCompletionRequest:
       type: object
@@ -1618,6 +1881,15 @@ components:
           minimum: 0
           description: |
             Include the log probabilities on the logprobs most likely tokens.
+        return_token_ids:
+          type: boolean
+          default: false
+          description: |
+            If `true`, adds `token_ids` and `prompt_token_ids` to each
+            choice. `token_ids` contains the generated token IDs, and
+            `prompt_token_ids` contains the prompt token IDs. When streaming,
+            each chunk's `token_ids` contains only that chunk's new tokens,
+            and `prompt_token_ids` appears only once.
 
     CreateCompletionResponse:
       type: object
@@ -1667,6 +1939,20 @@ components:
           type: string
           enum: [stop, length, content_filter, null]
           description: The reason the completion finished
+        token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The generated token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
+        prompt_token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The prompt token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
 
     CreateEmbeddingRequest:
       type: object
@@ -1702,6 +1988,344 @@ components:
           type: string
           description: |
             A unique identifier representing your end-user.
+
+    CreateDecisionsRequest:
+      type: object
+      required:
+        - input
+        - questions
+      properties:
+        input:
+          description: |
+            The text to evaluate, specified as a string, JSON object, or JSON
+            array. The value can't be blank. MAX serializes objects and arrays
+            as JSON in the prompt.
+          oneOf:
+            - type: string
+            - type: object
+            - type: array
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 64
+          description: |
+            The questions to answer. Specify 1 to 64 questions, each with a
+            unique `id`. A `choice` question must have 2 to 26 options, and a
+            `score` question must have 2 to 10 levels. Decider models support
+            at most 10 options per `choice` question.
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/DecisionChoiceQuestion'
+              - $ref: '#/components/schemas/DecisionScoreQuestion'
+              - $ref: '#/components/schemas/DecisionYesNoQuestion'
+            discriminator:
+              propertyName: type
+              mapping:
+                choice: '#/components/schemas/DecisionChoiceQuestion'
+                score: '#/components/schemas/DecisionScoreQuestion'
+                yes_no: '#/components/schemas/DecisionYesNoQuestion'
+        temperature:
+          type: number
+          exclusiveMinimum: 0
+          description: |
+            The softmax temperature used to calculate `probabilities`. Higher
+            values distribute probability more evenly across candidates, while
+            lower values concentrate probability on the most likely candidate.
+            This parameter doesn't affect `label_mass`. If omitted, chat models
+            use `1.0`, and decider models use the per-question-type temperatures
+            defined in `decider_config.json`.
+        chat_template_kwargs:
+          type: object
+          description: |
+            Additional arguments to pass to the model's chat template. MAX merges
+            these arguments with the default values. MAX always disables thinking
+            and returns `400` if this parameter enables it. Decider models don't
+            use chat templates and return `400` if this parameter is specified
+            with any value.
+        prompt_format_version:
+          type: integer
+          description: |
+            The prompt format version the request expects. Set it to detect a
+            server whose prompt wording differs from the one you tested. The
+            chat format is version 1, and the decider format is version 2. If
+            the value doesn't match the server's version, MAX returns `400`.
+        return_prompt_token_ids:
+          type: boolean
+          default: false
+          description: |
+            Whether to add `prompt_token_ids` and `label_token_ids` to each
+            answer so you can reproduce the scores offline. Decider models can
+            return `400` for `score` questions because they score each level
+            as a separate prompt.
+        model:
+          type: string
+          description: |
+            The ID of the model to use. Defaults to the served model. An
+            unknown ID returns `400`.
+
+    DecisionChoiceQuestion:
+      type: object
+      required: [id, type, question, options]
+      properties:
+        id:
+          type: string
+          description: |
+            A unique ID for the question. The response uses it as the key in
+            `answers`.
+        type: {type: string, enum: [choice]}
+        question:
+          description: |
+            The question to answer, as a string, JSON object, or JSON array.
+            It can't be blank.
+        options:
+          type: array
+          minItems: 2
+          maxItems: 26
+          items:
+            type: object
+            required: [name]
+            properties:
+              name:
+                type: string
+                description: |
+                  The option name, which the response uses as a key in
+                  `probabilities` and as the value of `choice`. Names must be
+                  unique, ignoring case and surrounding whitespace, and can't
+                  contain line breaks or control characters.
+              description:
+                description: |
+                  An optional description of the option, as a string, JSON
+                  object, or JSON array.
+
+    DecisionScoreQuestion:
+      type: object
+      required: [id, type, question, levels]
+      properties:
+        id:
+          type: string
+          description: |
+            A unique ID for the question. The response uses it as the key in
+            `answers`.
+        type: {type: string, enum: [score]}
+        question:
+          description: |
+            The question to answer, as a string, JSON object, or JSON array.
+            It can't be blank.
+        levels:
+          type: array
+          minItems: 2
+          maxItems: 10
+          description: |
+            The level descriptions, in order. MAX labels the first level 0,
+            the second level 1, and so on.
+
+    DecisionYesNoQuestion:
+      type: object
+      required: [id, type, question]
+      properties:
+        id:
+          type: string
+          description: |
+            A unique ID for the question. The response uses it as the key in
+            `answers`.
+        type: {type: string, enum: [yes_no]}
+        question:
+          description: |
+            The question to answer, as a string, JSON object, or JSON array.
+            It can't be blank.
+        yes:
+          description: An optional description of what makes the answer yes.
+        "no":
+          description: An optional description of what makes the answer no.
+
+    SystemOneRequest:
+      type: object
+      required: [state, model, questions]
+      properties:
+        state:
+          description: |
+            The text that the questions are about, as a string, JSON object,
+            or JSON array. It can be empty.
+        model:
+          type: string
+          description: |
+            The ID of the model to use. An unknown ID returns `400`.
+        questions:
+          type: object
+          minProperties: 1
+          maxProperties: 64
+          description: Questions keyed by their ID.
+          additionalProperties:
+            oneOf:
+              - $ref: '#/components/schemas/SystemOneNoulQuestion'
+              - $ref: '#/components/schemas/SystemOneChoiceQuestion'
+              - $ref: '#/components/schemas/SystemOneScoreQuestion'
+            discriminator:
+              propertyName: type
+              mapping:
+                noul: '#/components/schemas/SystemOneNoulQuestion'
+                choice: '#/components/schemas/SystemOneChoiceQuestion'
+                score: '#/components/schemas/SystemOneScoreQuestion'
+        chat_template_kwargs:
+          type: object
+          description: |
+            Extra arguments for the model's chat template, merged over the
+            defaults. MAX always turns thinking off and returns `400` if the
+            request turns it on. Decider models don't use a chat template and
+            return `400` for any value.
+
+    SystemOneNoulQuestion:
+      type: object
+      required: [type]
+      properties:
+        type: {type: string, enum: [noul]}
+        instructions:
+          description: What to decide.
+        criteria:
+          type: object
+          properties:
+            "true": {description: What makes the answer yes.}
+            "false": {description: What makes the answer no.}
+
+    SystemOneChoiceQuestion:
+      type: object
+      required: [type, criteria]
+      properties:
+        type: {type: string, enum: [choice]}
+        instructions:
+          description: What to decide.
+        criteria:
+          type: object
+          minProperties: 1
+          maxProperties: 26
+          description: |
+            Maps each option name to its description, in label order A-Z.
+          additionalProperties: {}
+
+    SystemOneScoreQuestion:
+      type: object
+      required: [type, criteria]
+      properties:
+        type: {type: string, enum: [score]}
+        instructions:
+          description: What to decide.
+        criteria:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: Level descriptions, scored from 0 in order.
+
+    SystemOneResponse:
+      type: object
+      required: [model, answers, usage]
+      properties:
+        model: {type: string}
+        answers:
+          type: object
+          description: |
+            Answers keyed by question ID. A `noul` answer includes `noul`, the
+            probability of yes. A `choice` answer includes `choice`,
+            `confidence`, and `probabilities`. A `score` answer includes
+            `score`, `confidence`, `legend`, and `probabilities`. Every answer
+            also includes `type` and `x_label_mass`, the model's total
+            next-token probability across the answer labels.
+          additionalProperties:
+            type: object
+            required: [type, x_label_mass]
+            properties:
+              type: {type: string, enum: [noul, choice, score]}
+              x_label_mass: {type: number}
+        usage:
+          type: object
+          required: [input_tokens, output_tokens]
+          properties:
+            input_tokens: {type: integer}
+            output_tokens:
+              type: integer
+              description: Always 0 because the endpoint doesn't generate text.
+
+    CreateDecisionsResponse:
+      type: object
+      required: [object, model, prompt_format_version, answers, usage]
+      properties:
+        object:
+          type: string
+          enum: [decisions]
+        model:
+          type: string
+        prompt_format_version:
+          type: integer
+        answers:
+          type: object
+          description: Answers keyed by question `id`.
+          additionalProperties:
+            type: object
+            required: [type, probabilities, label_mass]
+            properties:
+              type:
+                type: string
+                enum: [choice, score, yes_no]
+              probabilities:
+                type: object
+                additionalProperties:
+                  type: number
+                description: |
+                  The probability of each candidate, keyed by option name,
+                  level index, or `yes` and `no`. The values sum to 1. They
+                  come from a softmax over the label scores, so they rank the
+                  candidates against each other. They don't measure how
+                  likely the answer is to be correct.
+              label_mass:
+                type: number
+                description: |
+                  The model's total next-token probability across the answer
+                  labels at the answer position. A value near 1 means the
+                  model answered with a label. A low value means the model
+                  wanted to respond with something else.
+              choice:
+                type: string
+                description: |
+                  The most probable option name. Present for `choice`
+                  questions.
+              score:
+                type: number
+                description: |
+                  The probability-weighted average of the level indices,
+                  where the first level is 0. Present for `score` questions.
+              prompt_token_ids:
+                type: array
+                items: {type: integer}
+                description: |
+                  The token IDs of the scored prompt. Present when
+                  `return_prompt_token_ids` is `true`.
+              label_token_ids:
+                type: array
+                items: {type: integer}
+                description: |
+                  The token ID of each candidate in `probabilities`, in the
+                  same order. Present when `return_prompt_token_ids` is
+                  `true`.
+        usage:
+          type: object
+          required: [prompt_tokens, completion_tokens, total_tokens]
+          properties:
+            prompt_tokens:
+              type: integer
+              description: |
+                The total prompt tokens across all scored prompts. MAX scores
+                each question as its own prompt.
+            completion_tokens:
+              type: integer
+              description: Always 0 because the endpoint doesn't generate text.
+            total_tokens:
+              type: integer
+            prompt_tokens_details:
+              type: object
+              description: Present when prefix caching is enabled.
+              properties:
+                cached_tokens:
+                  type: integer
+                  description: Prompt tokens served from the prefix cache.
 
     CreateEmbeddingResponse:
       type: object
@@ -1849,3 +2473,47 @@ components:
           type: string
           enum: [ok, unavailable]
           description: The health status of the service
+    LoadLoraAdapterRequest:
+      type: object
+      description: |
+        Request to load a LoRA adapter into a serving instance started
+        with the `--enable-lora` argument.
+      required:
+        - lora_name
+        - lora_path
+      properties:
+        lora_name:
+          type: string
+          description: |
+            Name that identifies the adapter in inference requests.
+        lora_path:
+          type: string
+          description: |
+            Local path to the adapter directory. Remote repositories
+            are not supported.
+    UnloadLoraAdapterRequest:
+      type: object
+      description: |
+        Request to unload a previously loaded LoRA adapter.
+      required:
+        - lora_name
+      properties:
+        lora_name:
+          type: string
+          description: |
+            Name of the adapter to unload, as given to
+            `POST /v1/load_lora_adapter`.
+    LoraAdapterResponse:
+      type: object
+      description: |
+        Result of a LoRA adapter load or unload request.
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          description: The result of the operation.
+        message:
+          type: string
+          description: A human-readable status message.

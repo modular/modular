@@ -358,12 +358,6 @@ TEST_RESOURCES = {
             "memory": 2448,
         },
     },
-    "//max/tests/integration/kv_cache:test_print_kv_cache": {
-        "default": {
-            "cpu": 2,
-            "memory": 13339,
-        },
-    },
     "//max/tests/integration/kv_cache:test_rms_norm_key_cache": {
         "default": {
             "cpu": 2,
@@ -474,12 +468,6 @@ TEST_RESOURCES = {
             "memory": 935,
         },
     },
-    "//max/tests/integration/architectures/whisper:whisper": {
-        "default": {
-            "cpu": 2,
-            "memory": 935,
-        },
-    },
     "//max/tests/integration/accuracy:test_compare_tensors": {
         "default": {
             "memory": 2370,
@@ -536,12 +524,6 @@ TEST_RESOURCES = {
         "default": {
             "cpu": 2,
             "memory": 1268,
-        },
-    },
-    "//max/tests/tests/_core_mojo:tests": {
-        "default": {
-            "cpu": 3,
-            "memory": 625,
         },
     },
     "//max/tests/tests/driver:test_device": {

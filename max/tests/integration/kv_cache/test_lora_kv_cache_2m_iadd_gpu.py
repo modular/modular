@@ -15,16 +15,16 @@
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import kv_cache_ragged_2m_iadd
-from max.nn.kv_cache import (
+from max.nn.legacy.kernels import kv_cache_ragged_2m_iadd
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
-    PagedCacheValues,
 )
 from test_common.simple_kv_cache import (
     block_ids_for_batch,
@@ -144,12 +144,6 @@ def run_kv_cache_2m_iadd(
         devices=[device_ref],
     )
 
-    # The cache starts zeroed, which iadd needs since it adds to what is
-    # already there.
-    kv_runtime_inputs = paged_kv_cache_inputs(
-        kv_params, prompt_lens, total_num_pages=16
-    )
-
     kv_symbolic_inputs = kv_params.flattened_kv_inputs()
 
     with Graph(
@@ -165,13 +159,7 @@ def run_kv_cache_2m_iadd(
         kv_input, row_offsets, end_idx, batch_len, *kv_inputs = graph.inputs
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-        kv_collection = PagedCacheValues(
-            kv_blocks=kv_inputs[0].buffer,
-            cache_lengths=kv_inputs[1].tensor,
-            lookup_table=kv_inputs[2].tensor,
-            max_prompt_length=kv_inputs[3].tensor,
-            max_cache_length=kv_inputs[4].tensor,
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
 
         kv_cache_ragged_2m_iadd(
             kv_params=kv_params,
@@ -185,6 +173,13 @@ def run_kv_cache_2m_iadd(
         graph.output(ops.constant(0, DType.int32, device=DeviceRef.CPU()))
 
     compiled = session.load(graph)
+
+    # Allocated after the load: a precompile record run compiles the graph in
+    # a CPU build action and stops at the first device allocation. The cache
+    # starts zeroed, which iadd needs since it adds to what is already there.
+    kv_runtime_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=16
+    )
 
     # Prepare inputs
     input_row_offsets = np.array(
@@ -202,7 +197,7 @@ def run_kv_cache_2m_iadd(
         Buffer.from_numpy(input_row_offsets).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        *kv_runtime_inputs.flatten(),
+        *tree.leaves(kv_runtime_inputs),
     )
 
     k_caches = dump_kv_cache_to_torch(

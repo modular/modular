@@ -2,6 +2,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load(":modular_clang_tidy_test.bzl", "modular_clang_tidy_test")
+load(":overlay.bzl", "overlay_includes", "overlay_srcs")
 
 def modular_cc_library(
         name,
@@ -51,14 +52,14 @@ def modular_cc_library(
         extra_includes.append(default_strip_include_prefix)
     cc_library(
         name = name,
-        hdrs = hdrs,
+        hdrs = overlay_srcs(hdrs),
         deps = deps + internal_deps,
-        srcs = srcs,
+        srcs = overlay_srcs(srcs),
         data = data,
         copts = copts,
         strip_include_prefix = strip_include_prefix,
         additional_compiler_inputs = additional_compiler_inputs,
-        includes = includes + extra_includes,
+        includes = overlay_includes(includes + extra_includes),
         include_prefix = include_prefix,
         visibility = visibility,
         tags = tags,

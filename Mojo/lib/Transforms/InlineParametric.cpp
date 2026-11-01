@@ -41,6 +41,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 /// Insert a new parameter declaration into all nested declaration scopes.
 static void propagateNewDecls(ArrayRef<ParamDeclAttr> newDecls,
@@ -218,7 +220,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   }
 
   /// Since the callee might contain nested parameter scopes (e.g.
-  /// `kgen.param.if`), we recursively walk them and mangle parameter
+  /// `hlcf.comptime.if`), we recursively walk them and mangle parameter
   /// definitions.
   auto mangleDef = [&mangler, &needsMangling, &topLevelGraph](
                        const ParamDefinition &def, Region *scopeRegion,
@@ -233,17 +235,10 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     });
     cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
 
-    // At this point, the only nested ops that declares parameters in their
-    // scope are ParamDeclareRegionOp and ParamForOp, whose declarations need
-    // special treatment.
+    // At this point, the only nested op that declares parameters in its scope
+    // is HLCF::ComptimeForOp, whose declaration needs special treatment.
     if (needsMangling) {
-      if (auto regionDecl = dyn_cast<ParamDeclareRegionOp>(cloned)) {
-        SmallVector<ParamDeclAttr> newInputDecls;
-        for (ParamDeclAttr decl : regionDecl.getInputParams())
-          newInputDecls.emplace_back(mangler.mangleDecl(decl, needsMangling));
-        regionDecl.setInputParams(newInputDecls);
-        newDecls.append(newInputDecls);
-      } else if (auto paramFor = dyn_cast<ParamForOp>(cloned)) {
+      if (auto paramFor = dyn_cast<HLCF::ComptimeForOp>(cloned)) {
         ParamDeclAttr newDecl =
             mangler.mangleDecl(paramFor.getParamDecl(), needsMangling);
         paramFor.setParamDeclAttr(newDecl);
@@ -444,7 +439,11 @@ struct ParametricInliningGraphNode
     : public CallGraphNodeBase<ParametricInliningGraphNode, GeneratorOp,
                                CallOp> {
   explicit ParametricInliningGraphNode(GeneratorOp func)
-      : CallGraphNodeBase(func), level(func.getInlineLevel()),
+      // An `@inline(expr)` that elaboration has not folded yet arrives as
+      // Automatic, whose threshold is 0, so this pass leaves it alone. Such a
+      // function is inlined later by AutomaticInline, once the level is known.
+      : CallGraphNodeBase(func),
+        level(inlineLevelOrAutomatic(func.getInlineLevel())),
         calleeParamGraph(func.getBodyRegion()) {}
   ParametricInliningGraphNode(ParametricInliningGraphNode &&other)
       : CallGraphNodeBase(other.func), level(other.level),
@@ -499,7 +498,7 @@ struct ParametricInliningGraph
 
   /// Only inline functions that satisfy the inlining level.
   bool shouldInline(ParametricInliningGraphNode *node) const {
-    assert(node->level == node->func.getInlineLevel());
+    assert(node->level == inlineLevelOrAutomatic(node->func.getInlineLevel()));
 
     // Even if we've not been told to, inline some 'always_inline' functions if
     // they're not too big.
@@ -598,7 +597,7 @@ uint64_t ParametricInliningGraph::getInlineThreshold(InlineLevel level,
 
 uint64_t ParametricInliningGraph::getNumOperations(
     ParametricInliningGraphNode *node) const {
-  // Estimated trip count of the `param.for` loop.
+  // Estimated trip count of the `comptime.for` loop.
   const uint64_t avgLoopIters =
       *KGENPassCLOptions::parametricInlineEstimatedLoopTripCount();
 
@@ -608,7 +607,7 @@ uint64_t ParametricInliningGraph::getNumOperations(
       return 0;
     uint64_t count = 0;
     operation->walk([&](Operation *op) {
-      if (auto loop = dyn_cast<ParamForOp>(op)) {
+      if (auto loop = dyn_cast<HLCF::ComptimeForOp>(op)) {
         // At this point trip count is not known, therefore use some heuristic
         // to estimate number of iterations.
         uint64_t loopSize = 0;

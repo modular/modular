@@ -12,13 +12,46 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for rms_norm."""
 
-from max._core.dialects import builtin, kgen, mo
+import numpy as np
+from max._core import graph as _graph
+from max._core.dialects import builtin, kgen, m, mo
+from max.driver import CPU, Buffer
 from max.dtype import DType
 
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
-from .constant import constant
+
+
+def _float32_attr(value: float) -> m.ArrayElementsAttr:
+    """Builds the rank-0 ``f32`` attribute RMS norm ops take for their scalars.
+
+    A builtin ``FloatAttr`` would not survive ``max._core``'s bytecode
+    serialization: it static-links its own LLVM and rejects ``APFloat``
+    semantics owned by libmax (GEX-4052).
+
+    Args:
+        value: The scalar to store.
+
+    Returns:
+        A rank-0 ``f32`` ``#M.dense_array`` holding ``value``.
+    """
+    buffer = Buffer.from_numpy(np.array(value, dtype=np.float32))
+    attr_type = TensorType(DType.float32, [], device=DeviceRef.CPU())
+    return _graph.array_attr(buffer, attr_type.to_mlir())
+
+
+def _float32_attr_value(attr: builtin.ElementsAttr) -> float:
+    """Reads back the scalar an :func:`_float32_attr` attribute holds.
+
+    Args:
+        attr: A rank-0 ``f32`` attribute.
+
+    Returns:
+        The stored value.
+    """
+    buffer = _graph._buffer_from_constant_attr(attr, DType.float32, [], CPU())
+    return float(buffer.to_numpy())
 
 
 def rms_norm(
@@ -113,8 +146,8 @@ def rms_norm(
         ),
         input=input,
         weight=weight,
-        epsilon=constant(epsilon, DType.float32, DeviceRef.CPU()),
-        weight_offset=constant(weight_offset, input.dtype, DeviceRef.CPU()),
+        epsilon=_float32_attr(epsilon),
+        weight_offset=_float32_attr(weight_offset),
         multiply_before_cast=builtin.BoolAttr(multiply_before_cast),
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor

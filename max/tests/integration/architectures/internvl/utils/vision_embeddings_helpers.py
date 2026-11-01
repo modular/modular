@@ -13,6 +13,8 @@
 
 """Helper functions for InternVL vision embeddings tests."""
 
+from collections.abc import Sequence
+
 import numpy as np
 import torch
 from internvl_impl.configuration_intern_vit import (
@@ -23,7 +25,7 @@ from internvl_impl.modeling_intern_vit import (
 )
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.internvl.internvl import InternVisionEmbeddings
 from max.pipelines.architectures.internvl.model_config import InternVLConfig
@@ -63,68 +65,58 @@ def generate_torch_outputs(
     return output
 
 
-def generate_max_outputs(
-    pixel_values: torch.Tensor,
+def patchify_pixel_values(
+    pixel_values: torch.Tensor, patch_size: int
+) -> torch.Tensor:
+    """Converts NCHW pixel values to the patched layout MAX expects, on CPU."""
+    # numpy has no bfloat16, so go through float32.
+    pixel_values_np = pixel_values.permute(0, 2, 3, 1).cpu().float().numpy()
+    patches = np.stack(
+        [
+            extract_patches_from_image(img, patch_size=patch_size)
+            for img in pixel_values_np
+        ]
+    )
+    return torch.from_numpy(patches).to(dtype=torch.bfloat16).contiguous()
+
+
+def build_max_embeddings(
     internvl_config: InternVLConfig,
     embeddings_weights: dict[str, torch.Tensor],
+    input_shape: Sequence[int],
     dtype: DType,
-    device: Device,
-) -> torch.Tensor:
-    """Generate outputs using MAX InternVisionEmbeddings implementation."""
-    is_gpu = isinstance(device, Accelerator)
-    device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
-    pixel_values = pixel_values.cuda() if is_gpu else pixel_values.cpu()
+) -> Model:
+    """Compiles the MAX InternVisionEmbeddings graph.
 
-    # Convert from PyTorch's NCHW to MAX's NHWC format
-    pixel_values = pixel_values.permute(0, 2, 3, 1).contiguous()
-
-    # Extract shape information
-    batch_size = pixel_values.shape[0]
-
-    # Convert to numpy for processing
-    # Convert to float32 first since numpy doesn't support bfloat16
-    pixel_values_np = pixel_values.cpu().float().numpy()
-
-    # Split each image in the batch into patches.
-    all_patches = []
-    for i in range(batch_size):
-        img = pixel_values_np[i]
-        patches = extract_patches_from_image(
-            img, patch_size=internvl_config.vision_config.patch_size
-        )
-        all_patches.append(patches)
-
-    # Stack all patches - shape: (batch_size, height_patches, width_patches, channels, patch_size, patch_size)
-    pixel_values_np = np.stack(all_patches)
-
-    # Convert back to torch tensor and move to device
-    pixel_values = (
-        torch.from_numpy(pixel_values_np).to(dtype=torch.bfloat16).cuda()
-    ).contiguous()
-
+    Nothing here touches the device, so `precompile_mefs` can record the
+    compile on a CPU worker.
+    """
+    device_ref = DeviceRef.GPU()
     max_weights = convert_hf_to_max_weights(embeddings_weights)
 
-    # Create MAX embeddings
     embeddings = InternVisionEmbeddings(internvl_config, device=device_ref)
-
-    # Load weights
     embeddings.load_state_dict(
         state_dict=max_weights,
         strict=True,
     )
 
-    session = InferenceSession(devices=[device])
+    session = InferenceSession(devices=[Accelerator()])
 
-    input_type = TensorType(dtype, shape=pixel_values.shape, device=device_ref)
+    input_type = TensorType(dtype, shape=input_shape, device=device_ref)
 
     with Graph("InternVisionEmbeddings", input_types=(input_type,)) as graph:
         x = graph.inputs[0]
         output = embeddings(x.tensor)
         graph.output(output)
 
-    compiled = session.load(graph, weights_registry=embeddings.state_dict())
+    return session.load(graph, weights_registry=embeddings.state_dict())
 
-    # Execute the model and get the first result
-    result = compiled.execute(Buffer.from_dlpack(pixel_values).to(device))
-    max_tensor = result[0]
-    return from_dlpack(max_tensor)
+
+def execute_max_embeddings(
+    compiled: Model, patched_pixel_values: torch.Tensor, device: Device
+) -> torch.Tensor:
+    """Runs the compiled MAX InternVisionEmbeddings on patched pixel values."""
+    result = compiled.execute(
+        Buffer.from_dlpack(patched_pixel_values).to(device)
+    )
+    return from_dlpack(result[0])

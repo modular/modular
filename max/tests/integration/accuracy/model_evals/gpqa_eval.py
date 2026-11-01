@@ -19,8 +19,9 @@ The scoring core (:func:`grade`), the deterministic option shuffle
 an injected client, so they unit-test without a server or network. Shared
 scaffolding lives in :mod:`eval_common`.
 
-GPQA-diamond is gated on HuggingFace; the eval prints a ``::warning::`` and
-exits 0 when the HF token lacks access.
+GPQA-diamond is gated on HuggingFace; the eval exits nonzero when the HF
+token lacks access. ``--dataset-file`` reads a local copy of the dataset's
+``gpqa_diamond.csv`` instead, which needs no HF token.
 
 Run locally against a server on ``localhost:8000``::
 
@@ -40,6 +41,7 @@ killed/crashed run keeps everything already finished. To debug specific rows
 
 from __future__ import annotations
 
+import json
 import random
 from typing import Any
 
@@ -50,12 +52,16 @@ from eval_common import (
     DEFAULT_SYSTEM_PROMPT,
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
+    dump_config,
     exact_match_score,
     expand_repeats,
     load_gated,
     make_client,
     parse_mcq_letter,
+    prepare_out_dir,
+    response_fields,
+    resumable_config,
     run_parallel,
     select_rows,
     stable_seed,
@@ -141,9 +147,7 @@ def infer(
     )
     prompt = f"{GPQA_INSTRUCTION}\n\n{question}\n\n{options_str}"
     messages = build_messages(prompt, root_preamble, system_prompt)
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(model, messages, params)
-    )
+    resp = chat_completion(client, model, messages, params)
     choice = resp.choices[0]
     correct, predicted = grade(choice.message.content, correct_letter)
     return {
@@ -157,11 +161,18 @@ def infer(
         "completion_tokens": (
             resp.usage.completion_tokens if resp.usage else 0
         ),
+        **response_fields(choice),
     }
 
 
-def load_gpqa_dataset() -> list[dict[str, Any]]:
-    """Loads the gated ``idavidrein/gpqa`` diamond split, skipping on no access."""
+def load_gpqa_dataset(dataset_file: str | None = None) -> list[dict[str, Any]]:
+    """Loads the GPQA-diamond split from ``dataset_file`` or the gated HF repo.
+
+    The HF repo's ``gpqa_diamond`` config is that same CSV, so both sources
+    go through the same ``csv`` builder and yield identical rows.
+    """
+    if dataset_file:
+        return list(load_dataset("csv", data_files=dataset_file, split="train"))
     return load_gated(
         lambda: list(
             load_dataset("idavidrein/gpqa", "gpqa_diamond", split="train")
@@ -181,6 +192,7 @@ def run_eval(
     root_preamble: str,
     system_prompt: str,
     out_dir: str | None = None,
+    resume: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Runs GPQA-diamond over ``indexed_dataset`` with ``repeats``.
 
@@ -199,7 +211,14 @@ def run_eval(
     )
 
     def fn(item: tuple[int, int, dict[str, Any]]) -> dict[str, Any]:
-        return infer(client, model, item, params, root_preamble, system_prompt)
+        return infer(
+            client,
+            model,
+            item,
+            params,
+            root_preamble,
+            system_prompt,
+        )
 
     def on_error(
         item: tuple[int, int, dict[str, Any]], exc: Exception
@@ -209,12 +228,19 @@ def run_eval(
             "prompt_index": qi,
             "repeat_index": rep,
             "question": q["Question"][:120],
+            "correct_letter": prepare_options(q, params.seed)[1],
             "error": str(exc),
             "correct": False,
         }
 
     results, errors = run_parallel(
-        samples, fn, on_error, workers, "GPQA-diamond", out_dir=out_dir
+        samples,
+        fn,
+        on_error,
+        workers,
+        "GPQA-diamond",
+        out_dir=out_dir,
+        resume=resume,
     )
     return results, exact_match_score(results, len(samples), errors)
 
@@ -241,6 +267,15 @@ def run_eval(
     "Mutually exclusive with --sample-size — use this to re-run exactly the "
     "rows that errored or looked wrong last time.",
 )
+@click.option(
+    "--dataset-file",
+    envvar="GPQA_DATASET_FILE",
+    show_envvar=True,
+    default=None,
+    help="Local copy of the HF dataset's gpqa_diamond.csv to read instead of "
+    "downloading the gated dataset from HuggingFace. The env var reaches "
+    "callers that wrap this eval, such as gpqa_logit_gate.",
+)
 @click.option("--repeats", type=int, default=5, help="Repeats per question.")
 @click.option(
     "--seed",
@@ -257,6 +292,7 @@ def run_eval(
 @click.option("--max-tokens", type=int, default=98304, show_default=True)
 @click.option("--temperature", type=float, default=1.0, show_default=True)
 @click.option("--top-p", type=float, default=0.95, show_default=True)
+@click.option("--chat-template-kwargs", default=None)
 @click.option(
     "--root-preamble",
     default=DEFAULT_ROOT_PREAMBLE,
@@ -270,11 +306,18 @@ def run_eval(
     default="GPQA",
     help="Prefix for the GITHUB_ENV metric keys the job summary reads.",
 )
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Keep the finished rows already in --out-dir and run only the rest. "
+    "Refuses when they were produced with different options.",
+)
 def main(
     base_url: str,
     model: str,
     sample_size: int | None,
     row_ids: str | None,
+    dataset_file: str | None,
     repeats: int,
     seed: int | None,
     workers: int,
@@ -282,15 +325,38 @@ def main(
     max_tokens: int,
     temperature: float,
     top_p: float,
+    chat_template_kwargs: str | None,
     root_preamble: str,
     system_prompt: str,
     metric_prefix: str,
+    resume: bool,
 ) -> None:
     """Runs GPQA-diamond against a running OpenAI-compatible server and scores it."""
+    prepare_out_dir(
+        out_dir,
+        resumable_config(click.get_current_context().params),
+        resume,
+    )
     client = make_client(base_url)
-    indexed_dataset = select_rows(load_gpqa_dataset(), sample_size, row_ids)
+    dataset = load_gpqa_dataset(dataset_file)
+    indexed_dataset = select_rows(dataset, sample_size, row_ids)
     params = GenParams(
-        max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        seed=seed,
+        chat_template_kwargs=(
+            json.loads(chat_template_kwargs) if chat_template_kwargs else None
+        ),
+    )
+    dump_config(
+        out_dir,
+        base_url,
+        params,
+        indexed_dataset,
+        dataset,
+        system_prompt=system_prompt,
+        root_preamble=root_preamble,
     )
     results, summary = run_eval(
         client,
@@ -302,6 +368,7 @@ def main(
         root_preamble,
         system_prompt,
         out_dir=out_dir,
+        resume=resume,
     )
     write_outputs(
         out_dir, results, summary, metric_prefix, label="GPQA-diamond"

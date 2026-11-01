@@ -16,11 +16,15 @@
 These mirror `GraphCompiler/test/mo-opt/MAPDialect/Transforms/FuseMutableLoads/`'s
 cases with real ops rather than the MLIR suite's `sampler.apply_penalties`
 opaque kernel, so each case here also proves numeric correctness on the
-mutated buffer, not just IR shape. Not env-gated: the new MAP-dialect system
-doesn't yet fuse every one of these shapes (a Mojo-codegen gap for a load
-fused via a new chain, an undiagnosed failure, and a crash -- see
-`GEX-4140`'s exclusion list, which covers this file), so this runs under the
-legacy pipeline, where every case here already fuses.
+mutated buffer, not just IR shape. Every shape here fuses and computes
+correctly.
+
+The four write-back cases were once expected to fail under the new fusion
+system, on the reading that it merely left the store unfused. It did worse than
+that: the store was dropped and the buffer never written, because `mogg.kernel`
+modelled no memory effects, so a kernel whose only effect was the store had no
+reason to survive DCE. With the effects carried and the output fuser
+retargeting the store to its buffer, all four pass.
 
 Every case in this file uses ``ops.buffer_load``/``ops.buffer_store`` around a
 plain elementwise/view op -- `mo.add`, `mo.negative`, `mo.abs`, a static
@@ -220,4 +224,38 @@ def test_slice_producer_fuses(session: InferenceSession) -> None:
     (out,) = model.execute(Buffer.from_numpy(buf_np))
     np.testing.assert_allclose(
         out.to_numpy(), -buf_np[2:8:2, 2:8:2], rtol=1e-5, atol=1e-5
+    )
+
+
+def test_mutable_store_consumer_fuses(session: InferenceSession) -> None:
+    """`buffer_store(buf, reduce.max(x, axis))` fuses the store into the
+    reduction's epilogue, writing the buffer directly rather than
+    materializing an intermediate tensor. Mirrors
+    `mutable_store_consumer_fused` in `epilogue_fusion_mutable_store.mlir`.
+    """
+    with Graph(
+        "mutable_store_consumer_fuses",
+        input_types=[
+            TensorType(DType.float32, [4, 4], device=DeviceRef.CPU()),
+            BufferType(DType.float32, [1, 4], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x = graph.inputs[0].tensor
+        buf = graph.inputs[1].buffer
+        ops.buffer_store(buf, ops.max(x, axis=0))
+        graph.output()
+
+    model = session.load(graph)
+    assert _fused(
+        model.kernel_summaries, r"mo\.reduce\.max.*mo\.mutable\.store"
+    ), model.kernel_summaries
+
+    x_np = np.random.randn(4, 4).astype(np.float32)
+    buf_input = Buffer.from_numpy(np.zeros((1, 4), dtype=np.float32))
+    model.execute(Buffer.from_numpy(x_np), buf_input)
+    np.testing.assert_allclose(
+        buf_input.to_numpy(),
+        np.max(x_np, axis=0, keepdims=True),
+        rtol=1e-5,
+        atol=1e-5,
     )

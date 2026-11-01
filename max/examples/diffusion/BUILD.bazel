@@ -100,7 +100,6 @@ modular_py_binary(
         "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("pillow"),
-        requirement("sentencepiece"),
         requirement("torch"),  # for test
     ],
 )

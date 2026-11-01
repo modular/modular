@@ -23,43 +23,62 @@ from __future__ import annotations
 
 import enum
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
     Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager, EPConfig
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module, SubgraphInput
-from max.nn.linear import ColumnParallelLinear, Linear
-from max.nn.moe import MoE, MoEQuantized, forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import forward_sequential_layers
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import ColumnParallelLinear, Linear
+from max.nn.legacy.moe import (
+    MoE,
+    MoEQuantized,
+    SigmoidTopKRouter,
+    forward_moe_sharded_layers,
+)
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    ReturnHiddenStates,
+    forward_sequential_layers,
+    logits_outputs,
+)
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
+from max.tree import Tree
 
 from .layers.attention import MiniMaxM2Attention
-from .layers.moe_gate import MiniMaxM2TopKRouter
 from .layers.rotary_embedding import MiniMaxM2RotaryEmbedding
 from .model_config import MiniMaxM2Config
 
@@ -233,7 +252,7 @@ class MiniMaxM2TransformerBlock(Module):
             num_experts_per_token=config.num_experts_per_tok,
             moe_dim=config.intermediate_size,
             gate_cls=functools.partial(
-                MiniMaxM2TopKRouter,
+                SigmoidTopKRouter,
                 norm_topk_prob=config.norm_topk_prob,
                 gate_dtype=config.gate_dtype or config.dtype,
                 correction_bias_dtype=(
@@ -525,7 +544,7 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
         ep_inputs: list[Value[Any]] | None = None,
         data_parallel_splits: TensorValue | None = None,
         host_input_row_offsets: TensorValue | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Forward pass through the model.
 
         Args:
@@ -568,10 +587,8 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             # hidden states in the full [S, H] layout, so this path is shared.)
             pass
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
-            values: list[SubgraphInput] = [
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
@@ -615,7 +632,9 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             self.lm_head(norm_last_token, signal_buffers)[0],
             DType.float32,
         )
-        return (last_logits,)
+        return logits_outputs(
+            last_logits, None, None, ReturnHiddenStates.NONE, []
+        )
 
     def input_types(
         self, kv_params: KVCacheParamInterface
@@ -636,10 +655,10 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
         kv_inputs = kv_params.get_symbolic_inputs()
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         # Input layout (must match MiniMaxM2Inputs.buffers and the graph-input
-        # unpacking in model.py):
+        # unpacking in `trace`):
         #   tokens, input_row_offsets, return_n_logits,
         #   [data_parallel_splits, host_input_row_offsets]  (DP attention only),
         #   *signals, *kv,
@@ -673,3 +692,80 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             all_inputs += list(self.ep_manager.input_types())
 
         return tuple(all_inputs)
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits them into
+        the batch, the data-parallel splits, a signal buffer per device, the
+        KV cache and the expert-parallel buffers.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.devices)
+        ep_enabled = self.config.ep_config is not None
+
+        def forward(*inputs: Value[Any]) -> DecoderOutputs:
+            inputs_iter = iter(inputs)
+            tokens = next(inputs_iter)
+            input_row_offsets = next(inputs_iter)
+            return_n_logits = next(inputs_iter)
+
+            data_parallel_splits = None
+            host_input_row_offsets = None
+            # Gate on the same predicate input_types used to declare these, so
+            # the declaration and this unpacking stay in lockstep.
+            if self.dp_attention:
+                data_parallel_splits = next(inputs_iter).tensor
+                host_input_row_offsets = next(inputs_iter).tensor
+
+            signal_buffers = [
+                next(inputs_iter).buffer for _ in range(n_devices)
+            ]
+            num_kv_inputs = len(self.kv_params.flattened_kv_inputs())
+            kv_inputs = [next(inputs_iter) for _ in range(num_kv_inputs)]
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(iter(kv_inputs)),
+                leaf=KVCacheInputsPerDevice,
+            )
+            # The remaining inputs, if any, are the EP communication buffers.
+            ep_inputs = list(inputs_iter) if ep_enabled else None
+
+            return self(
+                tokens.tensor,
+                kv_collections,
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+                signal_buffers,
+                ep_inputs,
+                data_parallel_splits,
+                host_input_row_offsets,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

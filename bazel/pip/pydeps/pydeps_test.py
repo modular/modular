@@ -13,11 +13,67 @@
 
 import json
 import os
+import re
 import sys
+import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from import_dependency_compare import check_dependencies_against_imports
 from python_module import PythonModule
+
+_ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def clean_text(text: str) -> str:
+    """Strip ANSI color codes for raw XML compliance."""
+    return _ANSI_RE.sub("", text)
+
+
+def write_junit_xml(
+    target_label: str, failure_text: str | None, duration: float
+) -> None:
+    """Emit a minimal JUnit ``test.xml`` to ``$XML_OUTPUT_FILE``.
+
+    When a test does not write its own XML, Bazel spawns a second action to
+    synthesize one from the test log. Writing it ourselves avoids that extra
+    action across the ~700 ``pydeps_test`` targets. No-op when the variable is
+    unset (e.g. running the script directly outside ``bazel test``).
+    """
+    xml_path = os.environ.get("XML_OUTPUT_FILE")
+    if not xml_path:
+        return
+
+    # Ensure target directory exists.
+    dirname = os.path.dirname(xml_path)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
+
+    testsuite = ET.Element(
+        "testsuite",
+        name=target_label,
+        tests="1",
+        failures="1" if failure_text else "0",
+        errors="0",
+        time=f"{duration:.3f}",
+    )
+    testcase = ET.SubElement(
+        testsuite,
+        "testcase",
+        name="pydeps",
+        classname=target_label,
+        time=f"{duration:.3f}",
+    )
+
+    if failure_text:
+        failure = ET.SubElement(
+            testcase, "failure", message="pydeps check failed"
+        )
+        failure.text = clean_text(failure_text)
+
+    ET.ElementTree(testsuite).write(
+        xml_path, encoding="utf-8", xml_declaration=True
+    )
 
 
 def _rerender_label(label: str) -> str:
@@ -37,6 +93,8 @@ def _rerender_label(label: str) -> str:
 
 
 def main() -> int:
+    start_time = time.monotonic()
+
     # Mapping from source files to target labels
     deps_info: dict[PythonModule, str] = {}
     no_src_deps: set[str] = set()
@@ -99,24 +157,38 @@ def main() -> int:
 
     result = 0
 
+    # Accumulate the same diagnostics we print to stdout so we can also embed
+    # them in the JUnit XML failure body.
+    failure_lines: list[str] = []
+
+    def report(line: str) -> None:
+        print(line)
+        failure_lines.append(line)
+
     if unresolved_imports:
-        print(
+        report(
             f"{_rerender_label(target_label)} has imports that could not be mapped to dependencies. "
             "These are likely coming from transitive dependencies that need to be explicitly declared. "
             "If these imports are optional at runtime, consider adding them to the `ignore_unresolved_imports` attribute of the target."
         )
         for imp in unresolved_imports:
-            print(f"  {imp}")
+            report(f"  {imp}")
         result = 1
 
     if unused_deps:
-        print(
+        report(
             f"{_rerender_label(target_label)} has unused dependencies. "
             "If these are actually necessary at runtime, consider also adding them to the `ignore_extra_deps` attribute of the target."
         )
         for dep in unused_deps:
-            print(f"  {_rerender_label(dep)}")
+            report(f"  {_rerender_label(dep)}")
         result = 1
+
+    write_junit_xml(
+        _rerender_label(target_label),
+        "\n".join(failure_lines) if failure_lines else None,
+        time.monotonic() - start_time,
+    )
 
     return result
 

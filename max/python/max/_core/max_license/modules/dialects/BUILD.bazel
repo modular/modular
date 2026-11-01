@@ -1,0 +1,113 @@
+load("//bazel:api.bzl", "modular_nanobind_library")
+
+package(default_visibility = ["//max:consumers"])
+
+# Read by the `mlir_nanobind` call sites that generate the `.cpp.inc`s the
+# `*.cpp` here include. Those live in the packages owning each dialect's
+# TableGen, not here.
+exports_files(
+    ["allowlist.txt"],
+    visibility = [
+        "//GraphCompiler:__pkg__",
+        "//Mojo:__pkg__",
+        "//Support:__pkg__",
+        "//max/python/max/_core/max_license:__pkg__",
+    ],
+)
+
+modular_nanobind_library(
+    name = "Builtin",
+    srcs = [
+        "builtin.cpp",
+        "//max/python/max/_core/max_license:BuiltinDialectNanobindInc",
+    ],
+    # Most of the code is generated
+    tags = ["no-clang-tidy"],
+    deps = [
+        "//Support:NanobindUtils",
+        "//max/lib/max_license:max",
+        "//max/python/max/_core/max_license:GraphPython",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_nanobind_library(
+    name = "KGEN",
+    srcs = [
+        "kgen.cpp",
+        "//Mojo:KGENDialectNanobindInc",
+    ],
+    # Most of the code is generated
+    tags = ["no-clang-tidy"],
+    deps = [
+        "//Mojo:KGENDialect",
+        "//Support:NanobindUtils",
+        "//max/lib/max_license:max",
+        "//max/python/max/_core/max_license:GraphPython",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_nanobind_library(
+    name = "M",
+    srcs = [
+        "m.cpp",
+        "//Support:MDialectNanobindInc",
+    ],
+    deps = [
+        "//Support:NanobindUtils",
+        "//max/lib/max_license:max",
+        "//max/python/max/_core/max_license:GraphPython",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_nanobind_library(
+    name = "MO",
+    srcs = [
+        "mo.cpp",
+        "//GraphCompiler:MODialectNanobindInc",
+    ],
+    # Most of the code is generated
+    tags = ["no-clang-tidy"],
+    deps = [
+        "//Support:NanobindUtils",
+        "//max/lib/max_license:max",
+        "//max/python/max/_core/max_license:GraphPython",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_nanobind_library(
+    name = "MOSH",
+    srcs = [
+        "mosh.cpp",
+        "//max/python/max/_core/max_license:MOSHDialectNanobindInc",
+    ],
+    # Most of the code is generated
+    tags = ["no-clang-tidy"],
+    deps = [
+        "//Support:NanobindUtils",
+        "//max/lib/max_license:max",
+        "//max/python/max/_core/max_license:GraphPython",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_nanobind_library(
+    name = "RMO",
+    srcs = [
+        "rmo.cpp",
+        "//GraphCompiler:RMODialectNanobindInc",
+    ],
+    # Most of the code is generated
+    tags = ["no-clang-tidy"],
+    deps = [
+        "//Support:NanobindUtils",
+        "//max/lib/max_license:max",
+        "//max/python/max/_core/max_license:GraphPython",
+        "@llvm-project//mlir:IR",
+    ],
+)

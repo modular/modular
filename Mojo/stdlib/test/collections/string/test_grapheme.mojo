@@ -386,9 +386,9 @@ def _assert_reverse_matches(s: StringSlice) raises:
 def test_next_back_ascii() raises:
     var s = StringSlice("abc")
     var iter = s.graphemes()
-    assert_equal(iter.next_back().value(), "c")
-    assert_equal(iter.next_back().value(), "b")
-    assert_equal(iter.next_back().value(), "a")
+    assert_equal(iter.next_back(), Optional[StaticString]("c"))
+    assert_equal(iter.next_back(), Optional[StaticString]("b"))
+    assert_equal(iter.next_back(), Optional[StaticString]("a"))
     assert_true(iter.next_back() is None)
 
 
@@ -399,10 +399,10 @@ def test_next_back_empty() raises:
 
 def test_peek_back_does_not_advance() raises:
     var iter = StringSlice("abc").graphemes()
-    assert_equal(iter.peek_back().value(), "c")
-    assert_equal(iter.peek_back().value(), "c")
-    assert_equal(iter.next_back().value(), "c")
-    assert_equal(iter.peek_back().value(), "b")
+    assert_equal(iter.peek_back(), Optional[StaticString]("c"))
+    assert_equal(iter.peek_back(), Optional[StaticString]("c"))
+    assert_equal(iter.next_back(), Optional[StaticString]("c"))
+    assert_equal(iter.peek_back(), Optional[StaticString]("b"))
 
 
 def test_next_back_combining_mark() raises:
@@ -447,9 +447,9 @@ def test_next_back_crlf_single_grapheme() raises:
     # CR+LF must remain a single grapheme cluster on backward scan.
     var slc = StringSlice("a\r\nb")
     var iter = slc.graphemes()
-    assert_equal(iter.next_back().value(), "b")
-    assert_equal(iter.next_back().value(), "\r\n")
-    assert_equal(iter.next_back().value(), "a")
+    assert_equal(iter.next_back(), Optional[StaticString]("b"))
+    assert_equal(iter.next_back(), Optional[StaticString]("\r\n"))
+    assert_equal(iter.next_back(), Optional[StaticString]("a"))
 
 
 def test_next_back_indic_conjunct() raises:
@@ -467,11 +467,11 @@ def test_next_back_indic_conjunct() raises:
 def test_alternating_next_and_next_back() raises:
     # "abcde" -> a, e, b, d, c when alternating.
     var iter = StringSlice("abcde").graphemes()
-    assert_equal(iter.next().value(), "a")
-    assert_equal(iter.next_back().value(), "e")
-    assert_equal(iter.next().value(), "b")
-    assert_equal(iter.next_back().value(), "d")
-    assert_equal(iter.next().value(), "c")
+    assert_equal(iter.next(), Optional[StaticString]("a"))
+    assert_equal(iter.next_back(), Optional[StaticString]("e"))
+    assert_equal(iter.next(), Optional[StaticString]("b"))
+    assert_equal(iter.next_back(), Optional[StaticString]("d"))
+    assert_equal(iter.next(), Optional[StaticString]("c"))
     assert_true(iter.next() is None)
     assert_true(iter.next_back() is None)
 
@@ -605,9 +605,9 @@ def test_grapheme_indices_crlf() raises:
 
 def test_nth_grapheme_ascii() raises:
     var s = StringSlice("abc")
-    assert_equal(s.graphemes().nth(0).value(), "a")
-    assert_equal(s.graphemes().nth(1).value(), "b")
-    assert_equal(s.graphemes().nth(2).value(), "c")
+    assert_equal(s.graphemes().nth(0), Optional[StaticString]("a"))
+    assert_equal(s.graphemes().nth(1), Optional[StaticString]("b"))
+    assert_equal(s.graphemes().nth(2), Optional[StaticString]("c"))
     assert_true(s.graphemes().nth(3) is None)
     assert_true(s.graphemes().nth(99) is None)
 

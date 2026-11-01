@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Pydantic models for the batch job request format."""
+
 from __future__ import annotations
 
 import logging

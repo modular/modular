@@ -18,11 +18,11 @@ sharded attention paths are deferred to a multi-device follow-up.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.norm import LayerNorm
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.norm import LayerNorm
+from max.tensor import Tensor
 
 from .layers import Flux2Attention, Flux2FeedForward, Flux2ParallelSelfAttention
 

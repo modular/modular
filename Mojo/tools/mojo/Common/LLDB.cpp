@@ -28,6 +28,7 @@
 #endif
 
 #define DRIVER_OPTIONS_PATH "Debug/DebugOptions.inc"
+#define DRIVER_OPTIONS_ENUM_ONLY
 #include "Support/Driver/OptTable.inc"
 
 using namespace M;

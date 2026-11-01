@@ -143,10 +143,10 @@ def run_masked_probs(
         top_p_val=1.0,
         top_k_arr=TileTensor(top_k_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         top_p_arr=TileTensor(top_p_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
     )
 
     var probs_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
@@ -201,7 +201,7 @@ def run_sampling_dist(
 
     # Exercise both the masked and unmasked paths.
     var min_p_t = (
-        TileTensor(min_p_dev, row_major(rows)).as_unsafe_any_origin().as_immut()
+        TileTensor(min_p_dev, row_major(rows)).as_unsafe_any_origin().as_imm()
     )
     var min_p_arg = Optional(min_p_t)
     if min_p == 0.0:
@@ -216,13 +216,13 @@ def run_sampling_dist(
         d,
         rng_seed=TileTensor(seed_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         top_k_arr=TileTensor(top_k_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         top_p_arr=TileTensor(top_p_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         min_p=min_p_arg,
         out_dist=TileTensor(
             dist_dev, row_major(rows, d)

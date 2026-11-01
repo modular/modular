@@ -24,6 +24,12 @@
 #include "llvm/ADT/StringMap.h"
 
 #include <filesystem>
+#include <type_traits>
+
+namespace M::KGEN {
+class DedupContext;
+class KGENParamPrinter;
+} // namespace M::KGEN
 
 // Pull in the dialect definition.
 #include "Mojo/KGENDialect/KGENDialect.h.inc"
@@ -34,6 +40,18 @@ void registerKGENCommandLineOptions();
 
 template <typename TypeT>
 void KGENDialect::registerMnemonicType() {
+  static_assert(
+      std::is_same_v<typename TypeT::ImplType, mlir::TypeStorage> ||
+          requires(const TypeT type, AsmPrinter &p, KGENParamPrinter &printer) {
+            type.printWith(p, printer);
+          },
+      "a type with parameters must implement ParamPrintableTypeInterface, or "
+      "be registered with registerMnemonicTypeWithoutParamPrinter");
+  registerMnemonicTypeWithoutParamPrinter<TypeT>();
+}
+
+template <typename TypeT>
+void KGENDialect::registerMnemonicTypeWithoutParamPrinter() {
   registerPrettyType(
       TypeT::getMnemonic(), +[](AsmParser &p) { return TypeT::parse(p); },
       mlir::TypeID::get<TypeT>(),

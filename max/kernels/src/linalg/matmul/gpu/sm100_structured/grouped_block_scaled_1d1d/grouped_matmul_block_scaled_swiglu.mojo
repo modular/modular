@@ -17,16 +17,19 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 
-from linalg.fp4_utils import block_scaled_umma_kind, is_w4a8_operand_pair
+from linalg.fp4_utils import block_scaled_umma_kind
+from linalg.swiglu_activation import swiglu, swiglu_activation_type
 from .grouped_matmul_swiglu_nvfp4 import grouped_matmul_swiglu_nvfp4_dispatch
 from .grouped_matmul_swiglu_mxfp8 import grouped_matmul_swiglu_mxfp8_dispatch
+from ..structured_kernels.row_scales import NullRowScales, RowScales
 
 
 def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
-    clamp_activation: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
+    RowScalesT: RowScales = NullRowScales,
 ](
     c: TileTensor,
     c_swiglu_scales: TileTensor,
@@ -42,23 +45,23 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
-    alpha: Float32 = Float32(0.0),
-    limit: Float32 = Float32(0.0),
+    a_row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Dispatches grouped block-scaled matmul with fused SwiGLU by dtype.
 
-    Routes NVFP4 inputs to `grouped_matmul_swiglu_nvfp4_dispatch` and
-    MXFP8 inputs to `grouped_matmul_swiglu_mxfp8_dispatch` based on the
-    `a`/`a_scales` dtypes. See those entry points for the per-format
-    contract.
+    Routes NVFP4 inputs to `grouped_matmul_swiglu_nvfp4_dispatch`, and
+    MXFP8 and W4A8 (MXFP8 tokens, MXFP4 weights) inputs to
+    `grouped_matmul_swiglu_mxfp8_dispatch`, based on the operand and
+    `a_scales` dtypes. See those entry points for the per-format contract.
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
         target: Target device (unused, for MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
-        clamp_activation: Activation flavor. `False` for plain SwiGLU
-            (`silu(g)·u`), `True` for the clamped `swigluoai` form. When
-            `True`, pass the `alpha`/`limit` runtime args.
+        activation: Gated activation applied in the fused epilogue, selected
+            at compile time (defaults to `swiglu`).
+        RowScalesT: Per-row input scales type. Defaults to the no-op
+            `NullRowScales`; only NVFP4 supports others.
 
     Args:
         c: Packed SwiGLU output tensor. NVFP4: packed `uint8`, shape
@@ -74,6 +77,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
         b: Pre-permuted weight with the σ permutation already applied
             on its N axis. NVFP4: `uint8`, shape `(num_experts, 2D,
             K/2)`. MXFP8: `float8_e4m3fn`, shape `(num_experts, 2D, K)`.
+            W4A8: packed `uint8` E2M1, shape `(num_experts, 2D, K/2)`.
         a_scales: A's 5D scale tile. NVFP4: `FP8-E4M3`. MXFP8: `E8M0`.
         b_scales: B's 6D scale tile, with the matching σ permutation
             already applied on its N axis.
@@ -93,31 +97,25 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
         estimated_total_m: Estimated total non-padded token count,
             used to size the BF16 scratch buffer.
         ctx: Device context.
-        alpha: Runtime α for the clamped activation. Ignored when
-            `clamp_activation=False`. For `swigluoai` models pass the
-            HF config `swiglu_alpha` value.
-        limit: Runtime L for the clamped activation. Ignored when
-            `clamp_activation=False`. For `swigluoai` models pass the
-            HF config `swiglu_limit` value.
+        a_row_scales: Per-row input scales, one per `a` row (NVFP4 only).
     """
 
-    # Neither fused epilogue builds the padded FP4 TMA copy that a packed B
-    # needs, so the mixed pair has to be rejected here rather than inferred
-    # into `kind::mxf8f6f4` and silently fed unpadded weights.
-    comptime assert not is_w4a8_operand_pair[a.dtype, b.dtype](), (
-        "the fused SwiGLU epilogue does not support W4A8; run the plain"
-        " grouped block-scaled matmul and fuse separately"
-    )
+    # The W4A8 pair infers `kind::mxf8f6f4` and takes the MXFP8 path, whose
+    # launcher builds the padded FP4 TMA copy for the packed weights.
     comptime scaling_kind = block_scaled_umma_kind[
         a.dtype, b.dtype, a_scales.dtype
     ]()
+    comptime assert (
+        not RowScalesT.Enabled or scaling_kind == UMMAKind.KIND_MXF4NVF4
+    ), "per-row input scales are only supported for NVFP4"
 
     comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
         grouped_matmul_swiglu_nvfp4_dispatch[
             transpose_b=transpose_b,
             target=target,
             pdl_level=pdl_level,
-            clamp_activation=clamp_activation,
+            activation=activation,
+            RowScalesT=RowScalesT,
         ](
             c,
             c_swiglu_scales,
@@ -133,15 +131,14 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
             num_active_experts,
             estimated_total_m,
             ctx,
-            alpha,
-            limit,
+            a_row_scales,
         )
     elif scaling_kind == UMMAKind.KIND_MXF8F6F4:
         grouped_matmul_swiglu_mxfp8_dispatch[
             transpose_b=transpose_b,
             target=target,
             pdl_level=pdl_level,
-            clamp_activation=clamp_activation,
+            activation=activation,
         ](
             c,
             c_swiglu_scales,
@@ -156,8 +153,6 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
             num_active_experts,
             estimated_total_m,
             ctx,
-            alpha,
-            limit,
         )
     else:
         raise Error(t"Unsupported scaling kind: {scaling_kind}")

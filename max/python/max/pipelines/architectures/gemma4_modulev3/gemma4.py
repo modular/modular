@@ -15,23 +15,25 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor
-from max.nn.kv_cache import (
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.quant_linear import (
+    QuantizedMLP,
+    tensor_parallel_mlp,
+)
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma3_modulev3.layers.scaled_word_embedding import (
     ScaledEmbedding,
 )
@@ -39,6 +41,9 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
+from max.pipelines.speculative.driver import gather_variable_rows
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from .layers.attention import Gemma4Attention
 from .layers.rms_norm import Gemma4RMSNorm
@@ -57,7 +62,14 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         super().__init__()
         text_config = config.text_config
         self.mesh = mesh
-        self.dtype = config.dtype
+        # Under NVFP4, config.dtype is packed uint8; rope freqs_cis and
+        # the attention path must run in the checkpoint's unquantized
+        # dtype (BF16), matching the graph arch's unquantized_dtype.
+        self.dtype = (
+            config.unquantized_dtype
+            if text_config.quant_config is not None
+            else config.dtype
+        )
         device = mesh.devices[0]
 
         self.rope_local = RotaryEmbedding(
@@ -107,6 +119,7 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
             kv_params_by_type[layer_type_key] = kv_params_leaf
 
         layer_type_counts = {"sliding_attention": 0, "full_attention": 0}
+        quant_config = text_config.quant_config
         layers = []
         for i in range(text_config.num_hidden_layers):
             layer_type = text_config.layer_types[i]
@@ -114,14 +127,56 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
             layer_idx_in_cache = layer_type_counts[layer_type]
             layer_type_counts[layer_type] += 1
 
+            # Per-layer quantization: modelopt's ignore globs can exempt
+            # individual MLPs or attentions (the first-party NVFP4
+            # checkpoint keeps every self_attn BF16). Quantized MLPs use
+            # the shared ModuleV3 quant layers, whose concat-based gate/up
+            # fusion is exact because modelopt emits one shared global
+            # scale per fused group.
+            nvfp4_config = (
+                quant_config
+                if quant_config is not None and quant_config.is_nvfp4
+                else None
+            )
+            attn_quantized = (
+                nvfp4_config is not None
+                and i in nvfp4_config.attn_quantized_layers
+            )
+
+            mlp: Module[[Tensor], Tensor]
+            if (
+                nvfp4_config is not None
+                and i in nvfp4_config.mlp_quantized_layers
+            ):
+                quantized_mlp = QuantizedMLP(
+                    hidden_dim=text_config.hidden_size,
+                    feed_forward_length=text_config.intermediate_size,
+                    activation_function=text_config.hidden_activation,
+                    quant_config=nvfp4_config,
+                )
+                if mesh.num_devices > 1:
+                    # col_parallel/row_parallel mark the gate/up/down
+                    # weights' sharding intent; QuantizedMLP.forward's
+                    # matmuls pick up the matching sharding rules.
+                    quantized_mlp = tensor_parallel_mlp(quantized_mlp)
+                mlp = quantized_mlp
+            else:
+                mlp = MLP(
+                    hidden_dim=text_config.hidden_size,
+                    feed_forward_length=text_config.intermediate_size,
+                    activation_function=text_config.hidden_activation,
+                )
+
             layers.append(
                 Gemma4TransformerBlock(
                     attention=Gemma4Attention(
                         rope_global=self.rope_global,
                         rope_local=self.rope_local,
                         num_attention_heads=text_config.num_attention_heads,
-                        num_key_value_heads=text_config.num_key_value_heads,
-                        num_global_key_value_heads=text_config.num_global_key_value_heads,
+                        num_key_value_heads=(text_config.num_key_value_heads),
+                        num_global_key_value_heads=(
+                            text_config.num_global_key_value_heads
+                        ),
                         attention_k_eq_v=text_config.attention_k_eq_v,
                         hidden_size=text_config.hidden_size,
                         kv_params=kv_params_by_type[layer_type],
@@ -129,12 +184,9 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
                         is_sliding=is_sliding,
                         qk_norm_eps=text_config.rms_norm_eps,
                         local_window_size=text_config.sliding_window,
+                        quant_config=(quant_config if attn_quantized else None),
                     ),
-                    mlp=MLP(
-                        hidden_dim=text_config.hidden_size,
-                        feed_forward_length=text_config.intermediate_size,
-                        activation_function=text_config.hidden_activation,
-                    ),
+                    mlp=mlp,
                     hidden_size=text_config.hidden_size,
                     rms_norm_eps=text_config.rms_norm_eps,
                 )
@@ -145,6 +197,7 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
             for i in range(text_config.num_hidden_layers)
         ]
         self.return_logits = text_config.return_logits
+        self.return_hidden_states = text_config.return_hidden_states
 
     def _compute_logits(self, h: Tensor) -> Tensor:
         if self.tie_word_embeddings:
@@ -160,6 +213,7 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         return outputs
 
     def prepare_freq_cis(self, mesh: DeviceMesh) -> None:
+        """Computes the rotary frequencies for the global and local rope."""
         self.rope_global.freqs_cis = self.rope_global.freqs_cis.cast(
             self.dtype
         ).to(mesh)
@@ -177,10 +231,22 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         image_embeddings: Tensor,
         image_token_indices: Tensor,
     ) -> tuple[Tensor, ...]:
-        tokens = tokens.to(self.mesh)
-        input_row_offsets = input_row_offsets.to(self.mesh)
-        image_embeddings = image_embeddings.to(self.mesh)
-        image_token_indices = image_token_indices.to(self.mesh)
+        """Runs the text model over the tokens and image embeddings."""
+        # Stage on every device with one collective each. A plain transfer
+        # per device lowers to mgp.buffer.device_to_device wrapped in
+        # mgp.device_wait on both sides (a host-enqueued cross-device stream
+        # wait), which is illegal inside device-graph capture
+        # (CUDA_ERROR_STREAM_CAPTURE_MERGE). The broadcast lowers to a
+        # signal-buffer kernel instead. Mirrors the V2 model's staging
+        # (gemma4/model.py:389-394).
+        tokens = F.distributed_broadcast(tokens, self.mesh)
+        input_row_offsets = F.distributed_broadcast(
+            input_row_offsets, self.mesh
+        )
+        image_embeddings = F.distributed_broadcast(image_embeddings, self.mesh)
+        image_token_indices = F.distributed_broadcast(
+            image_token_indices, self.mesh
+        )
         h = self.embed_tokens(tokens)
         self.prepare_freq_cis(self.mesh)
 
@@ -203,6 +269,9 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
                 kv_by_type[self._layer_kv_key[idx]],
                 input_row_offsets=input_row_offsets,
             )
+
+        if self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+            return self._verify_outputs(h, input_row_offsets, return_n_logits)
 
         last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
         last_logits = self._compute_logits(self.norm(last_h))
@@ -242,6 +311,25 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
             ret_val += (logits, offsets)
         return ret_val
 
+    def _verify_outputs(
+        self, h: Tensor, input_row_offsets: Tensor, return_n_logits: Tensor
+    ) -> tuple[Tensor, ...]:
+        """Returns the outputs a spec-decode verify reads.
+
+        That is the variable logits, then each device's normalized hidden
+        state at every row, which the MTP assistant reads. The logits read
+        the same normalized rows, so the norm runs once over the window.
+        """
+        norm_h = self.norm(h)
+        last_logits = self._compute_logits(
+            F.gather(norm_h, input_row_offsets[1:] - 1, axis=0)
+        )
+        var_h, offsets = gather_variable_rows(
+            norm_h, input_row_offsets, return_n_logits, self.mesh
+        )
+        logits = self._compute_logits(var_h)
+        return (last_logits, logits, offsets, *norm_h.local_shards)
+
 
 class Gemma4(Module[..., tuple[Tensor, ...]]):
     """Top-level wrapper: unflattens the two-cache KV tree, delegates."""
@@ -256,6 +344,7 @@ class Gemma4(Module[..., tuple[Tensor, ...]]):
         self.language_model = Gemma4TextModel(config, mesh)
         self.config = config
         self.kv_params = kv_params
+        self.mesh = mesh
 
     def forward(
         self,
@@ -266,17 +355,19 @@ class Gemma4(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
+        """Runs the decoder and the vision tower together."""
         assert isinstance(self.kv_params, MultiKVCacheParams)
         kv_inputs = iter(x._graph_value for x in variadic_args)
         sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(
             kv_inputs
         )
-        sliding_kv = PagedCacheValues.from_upstream(
-            sliding_inputs, tokens.mapping
-        )
-        global_kv = PagedCacheValues.from_upstream(
-            global_inputs, tokens.mapping
-        )
+        # Each device owns a whole KV cache, so the shards are replicated
+        # over the TP mesh rather than sharded over it. tokens.mapping would
+        # be wrong here: the primary inputs are broadcast, not distributed,
+        # so their mapping is single-device.
+        kv_mapping = DeviceMapping.replicated(self.mesh)
+        sliding_kv = PagedCacheValues.from_upstream(sliding_inputs, kv_mapping)
+        global_kv = PagedCacheValues.from_upstream(global_inputs, kv_mapping)
         return self.language_model(
             tokens,
             sliding_kv,

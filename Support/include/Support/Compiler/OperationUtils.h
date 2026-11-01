@@ -45,9 +45,12 @@ bool isCIdentifier(StringRef ident);
 /// Return the nearest parent operation of the block of the given kind.
 template <typename OpT>
 OpT getBlockParentOfType(Block *block) {
-  if (auto op = dyn_cast<OpT>(block->getParentOp()))
+  Operation *parent = block->getParentOp();
+  if (!parent)
+    return OpT();
+  if (auto op = dyn_cast<OpT>(parent))
     return op;
-  return block->getParentOp()->getParentOfType<OpT>();
+  return parent->getParentOfType<OpT>();
 }
 
 /// Preorder walker that walks the op/region/block hierarchy, and can invoke

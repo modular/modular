@@ -1,0 +1,203 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------===##
+
+# MHA / GQA ragged paged flash attention (`flash_attention[ragged=True]`)
+# at the llama 3.1 / 3.2 / 3.3-70B serving shapes, as a sweep: one process
+# per params group, every `$` parameter a comma list. The comptime
+# geometry (heads, head dim, page size) is pinned per group, because the
+# benchmark reads it through `-D` defines. The arms the benchmark does
+# expand itself would run in one executable.
+#
+# Usage:
+#   kbench bench_kv_cache_ragged_flash_attention_paged.yaml --timeout-secs 600
+#   kbench bench_kv_cache_ragged_flash_attention_paged.yaml \
+#     --param batch_size:"[250]" --param seq_len:"[1]"
+
+name: bench_kv_cache_ragged_flash_attention_paged
+file: $KERNEL_BENCHMARKS_ROOT/sweep/bench_kv_cache_ragged_flash_attention_paged.mojo
+sweep: true
+
+params:
+
+# llama3.3.70b shapes (TP=4, production serving)
+# Minimal fixed-param block so the dashboard can match BQ specs for this model.
+# BQ specs include: num_q_heads=16/num_kv_heads=2/head_dim=128/model=llama3.3.70b/tp=4
+# The pinned axes are the old benchmark's defaults, the one cell its block ran.
+- num_q_heads: 16
+  num_kv_heads: 2
+  head_dim: 128
+  $batch_size: [1]
+  $seq_len: [1]
+  $cache_len: [1]
+  metadata:
+    MODEL: llama3.3.70b
+
+# llama3.1 token generation: one new token per sequence over a warm cache.
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 16
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 64
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 256
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+# llama3.1 prefill: a chunk of new tokens over an empty cache.
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 16
+  $seq_len: [256, 512]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 64
+  $seq_len: [256, 512]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 256
+  $seq_len: [256, 512]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+# llama3.2 token generation.
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 16
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2
+
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 64
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2
+
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 256
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2
+
+# llama3.2 prefill.
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 16
+  $seq_len: [215, 1024]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2
+
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 64
+  $seq_len: [215, 1024]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2
+
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 256
+  $seq_len: [215, 1024]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2

@@ -16,7 +16,7 @@ import os
 
 import numpy as np
 import pytest
-from _transfer_engine_helpers import kv_memory
+from _transfer_engine_helpers import every_leaf, kv_memory
 from max.driver import CPU, Accelerator
 from max.driver.buffer import Buffer
 from max.dtype import DType
@@ -66,8 +66,8 @@ def test_initiate_send_transfer() -> None:
     # ok
     _ = engine_1.initiate_send_transfer(
         engine_2.metadata,
-        src_idxs=[2, 1],
-        dst_idxs=[1, 0],
+        src_idxs=every_leaf(engine_2.metadata, [2, 1]),
+        dst_idxs=every_leaf(engine_2.metadata, [1, 0]),
         src_replica_idx=0,
         dst_replica_idx=0,
     )
@@ -76,8 +76,8 @@ def test_initiate_send_transfer() -> None:
     with pytest.raises(ValueError):
         _ = engine_1.initiate_send_transfer(
             engine_2.metadata,
-            src_idxs=[100],
-            dst_idxs=[1],
+            src_idxs=every_leaf(engine_2.metadata, [100]),
+            dst_idxs=every_leaf(engine_2.metadata, [1]),
             src_replica_idx=0,
             dst_replica_idx=0,
         )
@@ -86,8 +86,8 @@ def test_initiate_send_transfer() -> None:
     with pytest.raises(ValueError):
         _ = engine_1.initiate_send_transfer(
             engine_2.metadata,
-            src_idxs=[2, 0],
-            dst_idxs=[100, 0],
+            src_idxs=every_leaf(engine_2.metadata, [2, 0]),
+            dst_idxs=every_leaf(engine_2.metadata, [100, 0]),
             src_replica_idx=0,
             dst_replica_idx=0,
         )
@@ -96,8 +96,8 @@ def test_initiate_send_transfer() -> None:
     with pytest.raises(ValueError):
         _ = engine_1.initiate_send_transfer(
             engine_2.metadata,
-            src_idxs=[2],
-            dst_idxs=[-1],
+            src_idxs=every_leaf(engine_2.metadata, [2]),
+            dst_idxs=every_leaf(engine_2.metadata, [-1]),
             src_replica_idx=0,
             dst_replica_idx=0,
         )
@@ -106,8 +106,8 @@ def test_initiate_send_transfer() -> None:
     with pytest.raises(ValueError):
         _ = engine_1.initiate_send_transfer(
             engine_2.metadata,
-            src_idxs=[2],
-            dst_idxs=[0, 1],
+            src_idxs=every_leaf(engine_2.metadata, [2]),
+            dst_idxs=every_leaf(engine_2.metadata, [0, 1]),
             src_replica_idx=0,
             dst_replica_idx=0,
         )
@@ -116,8 +116,8 @@ def test_initiate_send_transfer() -> None:
     with pytest.raises(ValueError):
         _ = engine_1.initiate_send_transfer(
             engine_2.metadata,
-            src_idxs=[2, 1],
-            dst_idxs=[0, 0],
+            src_idxs=every_leaf(engine_2.metadata, [2, 1]),
+            dst_idxs=every_leaf(engine_2.metadata, [0, 0]),
             src_replica_idx=0,
             dst_replica_idx=0,
         )
@@ -211,7 +211,7 @@ def test_replicas_must_have_same_tp_degree() -> None:
 
 
 def test_replicas_must_have_same_total_num_pages() -> None:
-    """All groups must agree on total_num_pages, read off the buffers."""
+    """Every replica of a group must agree on its total_num_pages."""
     t2 = Buffer(DType.int8, (20,), device=CPU())  # 2 pages of 10 bytes
     t3 = Buffer(DType.int8, (30,), device=CPU())  # 3 pages of 10 bytes
 
@@ -244,8 +244,8 @@ def test_replica_idx_validation() -> None:
     # Valid src_replica_idx=0, dst_replica_idx=0
     _ = engine_1.initiate_send_transfer(
         engine_2.metadata,
-        src_idxs=[0],
-        dst_idxs=[1],
+        src_idxs=every_leaf(engine_2.metadata, [0]),
+        dst_idxs=every_leaf(engine_2.metadata, [1]),
         src_replica_idx=0,
         dst_replica_idx=0,
     )
@@ -253,8 +253,8 @@ def test_replica_idx_validation() -> None:
     # Valid src_replica_idx=1, dst_replica_idx=1
     _ = engine_1.initiate_send_transfer(
         engine_2.metadata,
-        src_idxs=[0],
-        dst_idxs=[2],
+        src_idxs=every_leaf(engine_2.metadata, [0]),
+        dst_idxs=every_leaf(engine_2.metadata, [2]),
         src_replica_idx=1,
         dst_replica_idx=1,
     )
@@ -263,8 +263,8 @@ def test_replica_idx_validation() -> None:
     with pytest.raises(ValueError, match=r"src_replica_idx .* must be between"):
         _ = engine_1.initiate_send_transfer(
             engine_2.metadata,
-            src_idxs=[0],
-            dst_idxs=[1],
+            src_idxs=every_leaf(engine_2.metadata, [0]),
+            dst_idxs=every_leaf(engine_2.metadata, [1]),
             src_replica_idx=-1,
             dst_replica_idx=0,
         )
@@ -273,8 +273,8 @@ def test_replica_idx_validation() -> None:
     with pytest.raises(ValueError, match=r"src_replica_idx .* must be between"):
         _ = engine_1.initiate_send_transfer(
             engine_2.metadata,
-            src_idxs=[0],
-            dst_idxs=[1],
+            src_idxs=every_leaf(engine_2.metadata, [0]),
+            dst_idxs=every_leaf(engine_2.metadata, [1]),
             src_replica_idx=2,
             dst_replica_idx=0,
         )

@@ -18,26 +18,26 @@ from std.sys import stderr
 
 
 def _init_global_runtime() -> (
-    OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+    Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
 ):
     return external_call[
         "KGEN_CompilerRT_AsyncRT_GetOrCreateCPUDevice",
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
     ]()
 
 
 def _destroy_global_runtime(
-    ptr: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+    ptr: Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
 ):
     """Destroy the global runtime if ever used."""
     external_call["KGEN_CompilerRT_AsyncRT_ReleaseCPUDevice", NoneType](ptr)
 
 
-@always_inline
+@inline(.always)
 def _ensure_runtime_init():
     var current_runtime = external_call[
         "KGEN_CompilerRT_AsyncRT_GetCurrentCPUDevice",
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
     ]()
     if current_runtime:
         return
@@ -107,8 +107,8 @@ def __wrap_and_execute_raising_main[
         main_func()
     except e:
         var stack_trace = e.get_stack_trace()
-        if stack_trace:
-            print(stack_trace.value(), file=stderr)
+        if case .Some(stack_trace) = stack_trace:
+            print(stack_trace, file=stderr)
         else:
             print(
                 (

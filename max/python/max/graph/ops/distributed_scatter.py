@@ -46,7 +46,7 @@ def distributed_scatter(
 
         from max.dtype import DType
         from max.graph import DeviceRef, Graph, TensorType, ops
-        from max.nn import Signals
+        from max.nn.legacy import Signals
 
         # Data-parallel size 2, tensor-parallel size 2, across 4 GPUs
         devices = [DeviceRef.GPU(id=i) for i in range(4)]

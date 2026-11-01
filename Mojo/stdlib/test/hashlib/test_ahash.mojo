@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib._ahash import AHasher, hash_seeded, hash_seeded_bytes
+from std.hash._ahash import AHasher, hash_seeded, hash_seeded_bytes
 
 from std.memory import unsafe_memset_zero
 from test_utils import (
@@ -61,19 +61,19 @@ def test_hash_byte_array() raises:
 
 def test_avalanche() raises:
     # test that values which differ just in one bit,
-    # produce significatly different hash values
+    # produce significantly different hash values
     var data = Array[UInt8, 256](fill={})
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
-    hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
-    hashes1.append(hash[hasher1](data.unsafe_ptr(), 256))
+    hashes0.append(hash_bytes[hasher0](data))
+    hashes1.append(hash_bytes[hasher1](data))
 
     for i in range(256):
         unsafe_memset_zero(data.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         data[i >> 3] = UInt8(v)
-        hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
-        hashes1.append(hash[hasher1](data.unsafe_ptr(), 256))
+        hashes0.append(hash_bytes[hasher0](data))
+        hashes1.append(hash_bytes[hasher1](data))
 
     for i in range(len(hashes0)):
         var diff = dif_bits(hashes0[i], hashes1[i])
@@ -96,8 +96,8 @@ def test_trailing_zeros() raises:
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
     for i in range(1, 9):
-        hashes0.append(hash[hasher0](data.unsafe_ptr(), i))
-        hashes1.append(hash[hasher1](data.unsafe_ptr(), i))
+        hashes0.append(hash_bytes[hasher0](Span(data)[:i]))
+        hashes1.append(hash_bytes[hasher1](Span(data)[:i]))
 
     for i in range(len(hashes0)):
         var diff = dif_bits(hashes0[i], hashes1[i])
@@ -119,8 +119,8 @@ def test_seeded_zero_matches_unseeded() raises:
     var data = Array[UInt8, 256](fill={})
 
     assert_equal(
-        hash_seeded_bytes(data.unsafe_ptr(), 256, seed0),
-        hash[hasher0](data.unsafe_ptr(), 256),
+        hash_seeded_bytes(data, seed0),
+        hash_bytes[hasher0](data),
     )
     assert_equal(hash_seeded(a, seed0), hash[hasher0](a))
 
@@ -131,15 +131,15 @@ def test_seeded_diffusion() raises:
     var data = Array[UInt8, 256](fill={})
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
-    hashes0.append(hash_seeded_bytes(data.unsafe_ptr(), 256, seed0))
-    hashes1.append(hash_seeded_bytes(data.unsafe_ptr(), 256, seed1))
+    hashes0.append(hash_seeded_bytes(data, seed0))
+    hashes1.append(hash_seeded_bytes(data, seed1))
 
     for i in range(256):
         unsafe_memset_zero(data.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         data[i >> 3] = UInt8(v)
-        hashes0.append(hash_seeded_bytes(data.unsafe_ptr(), 256, seed0))
-        hashes1.append(hash_seeded_bytes(data.unsafe_ptr(), 256, seed1))
+        hashes0.append(hash_seeded_bytes(data, seed0))
+        hashes1.append(hash_seeded_bytes(data, seed1))
 
     for i in range(len(hashes0)):
         var diff = dif_bits(hashes0[i], hashes1[i])
@@ -202,7 +202,7 @@ def test_hash_simd_values() raises:
     def hash(value: SIMD) -> UInt64:
         var hasher = hasher0()
         hasher._update_with_simd(value)
-        return hasher^.finish()
+        return hasher.finish()
 
     assert_equal(hash(Float16(1.5)), 17170570249477226196)
     assert_equal(hash(Float32(1.5)), 13132675331935815936)

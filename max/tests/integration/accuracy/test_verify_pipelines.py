@@ -22,9 +22,8 @@ from verify_pipelines import main as verify_main
 @click.option(
     "--override-pipeline-golden-location",
     "override_pipeline_golden_location",
-    required=True,
     default=None,
-    help="Override pregenerated_golden_path for a pipeline. Format: PIPELINE_NAME:/path/to/golden.tar.gz",
+    help="Override pregenerated_golden_path for a pipeline. Format: PIPELINE_NAME:/path/to/golden.tar.gz. Defaults to the config's golden.",
 )
 @click.option("--devices", default="gpu", help="Devices to run on")
 @click.option("--no-aws", "no_aws", is_flag=True, default=False)
@@ -34,7 +33,7 @@ from verify_pipelines import main as verify_main
 def main(
     pipeline: str,
     devices: str,
-    override_pipeline_golden_location: str,
+    override_pipeline_golden_location: str | None,
     no_aws: bool,
     find_tolerances: bool,
 ) -> None:
@@ -54,13 +53,16 @@ def main(
         pipeline,
         "--devices",
         devices,
-        "--override-pipeline-golden-location",
-        override_pipeline_golden_location,
         "--report",
         report_txt_path,
         "--store-verdicts-json",
         verdicts_json_path,
     ]
+    if override_pipeline_golden_location is not None:
+        args += [
+            "--override-pipeline-golden-location",
+            override_pipeline_golden_location,
+        ]
     if find_tolerances:
         args.append("--find-tolerances")
     verify_main(args, standalone_mode=True)

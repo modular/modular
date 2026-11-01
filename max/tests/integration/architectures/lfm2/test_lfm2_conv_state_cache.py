@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Regression tests for ``ConvStateCache`` buffer concatenation.
+"""Regression tests for ``ConvStateStore`` buffer concatenation.
 
 Covers the bfloat16 path that previously failed with
 ``RuntimeError: Unsupported dtype in DLTensor`` because
@@ -23,7 +23,7 @@ from __future__ import annotations
 import numpy as np
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.pipelines.architectures.lfm2.model import (
+from max.pipelines.architectures.lfm2.conv_state import (
     _cat_buffers,
     _split_buffer_dim0,
 )

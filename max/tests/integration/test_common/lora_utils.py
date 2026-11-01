@@ -28,7 +28,6 @@ from max.pipelines import (
     TextTokenizer,
 )
 from max.pipelines.lib import KVCacheConfig, LoRAConfig, MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from safetensors.torch import save_file
 from transformers import AutoConfig
@@ -240,31 +239,6 @@ def create_pipeline_config_with_lora(
     )
 
 
-def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
-    """Create a base pipeline configuration without LoRA.
-
-    Args:
-        model_path: Path to the base model
-
-    Returns:
-        PipelineConfig: Base configuration without LoRA
-    """
-    return PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=model_path,
-                    quantization_encoding="bfloat16",  # Use bfloat16 for GPU
-                    device_specs=[DeviceSpec(device_type="gpu", id=0)],
-                    kv_cache=KVCacheConfig(),
-                    max_length=512,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_batch_size=4),
-    )
-
-
 def create_pipeline_with_lora(
     lora_paths: list[str],
     prefer_module_v3: bool = False,
@@ -311,6 +285,7 @@ def create_tokenizer(
         mock_model_config.huggingface_config = hf_config
         pipeline_config = NonCallableMock(spec=PipelineConfig)
         pipeline_config.model = mock_model_config
+        pipeline_config.tokenizer_impl = None
 
     return TextTokenizer(
         model_path,

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Autoencoder configuration for the FLUX ``ModuleV3`` pipeline."""
+
 from typing import Any
 
 from max.driver import Device
@@ -22,6 +24,8 @@ from pydantic import Field
 
 
 class AutoencoderKLConfigBase(MAXModelConfigBase):
+    """Settings shared by every autoencoder in the FLUX family."""
+
     in_channels: int = 3
     out_channels: int = 3
     down_block_types: list[str] = Field(default_factory=list, max_length=4)
@@ -44,6 +48,8 @@ class AutoencoderKLConfigBase(MAXModelConfigBase):
 
 
 class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
+    """Autoencoder settings for the Flux 2 latent space."""
+
     patch_size: tuple[int, int] = (2, 2)
     batch_norm_eps: float = 1e-4
     batch_norm_momentum: float = 0.1

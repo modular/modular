@@ -13,33 +13,40 @@
 """Defines the MPNet V3 pipeline model.
 
 Implementation is based on MPNetModel from the transformers library,
-using the V3 eager API (max.experimental.nn).
+using the V3 eager API (max.nn).
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
+    GraphRole,
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
-    ModuleV3PipelineModel,
     PipelineConfig,
+    PipelineModel,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    padded_encoder_symbolic_inputs,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.tensor import default_dtype
 
 from .batch_processor import MPNetModuleV3BatchProcessor
 from .graph import MPNetModel
+from .inputs import MPNetInputs
 from .model_config import MPNetConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -47,21 +54,18 @@ logger = logging.getLogger("max.pipelines")
 PAD_VALUE = 1
 
 
-@dataclass
-class MPNetInputs(ModelInputs):
-    """Input tensors for the MPNet model."""
+class MPNetPipelineModel(PipelineModel[TextContext, MPNetConfig]):
+    """The MPNet pipeline model."""
 
-    next_tokens_batch: Buffer
-    attention_mask: Buffer
-
-
-class MPNetPipelineModel(ModuleV3PipelineModel[TextContext]):
     model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
     batch_processor_cls: ClassVar[type[MPNetModuleV3BatchProcessor]] = (
         MPNetModuleV3BatchProcessor
     )
 
     model: Callable[..., Any]
+
+    _checkpoint: dict[str, Any]
+    """The checkpoint weights, kept for :meth:`graph_specs`."""
 
     def __init__(
         self,
@@ -87,9 +91,13 @@ class MPNetPipelineModel(ModuleV3PipelineModel[TextContext]):
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.model = self.load_model()
+        self.load_graphs(session)
+        # The compiled encoder keeps the weights it needs.
+        del self._checkpoint
+        self.model = self.compiled_modules[GraphRole.ENCODER]
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the encoder and returns its outputs."""
         assert isinstance(model_inputs, MPNetInputs)
         model_outputs = self.model(
             model_inputs.next_tokens_batch, model_inputs.attention_mask
@@ -97,6 +105,10 @@ class MPNetPipelineModel(ModuleV3PipelineModel[TextContext]):
         result = model_outputs[0].driver_tensor
         assert isinstance(result, Buffer)
         return ModelOutputs(logits=result)
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        self._checkpoint = super()._load_state_dict()
+        return self._checkpoint
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> MPNetConfig:
         del state_dict
@@ -127,3 +139,19 @@ class MPNetPipelineModel(ModuleV3PipelineModel[TextContext]):
         nn_model = MPNetModel(model_config)
         nn_model.to(self.devices[0])
         return nn_model
+
+    def graph_specs(self, model_config: MPNetConfig) -> dict[str, GraphSpec]:
+        """Returns the encoder, built from the checkpoint weights."""
+        weights = self._prepare_state_dict(self._checkpoint, model_config)
+        with F.lazy(), default_dtype(self.dtype):
+            nn_model = self._instantiate_module(model_config)
+        return {
+            GraphRole.ENCODER: GraphSpec(
+                nn_model,
+                type(nn_model).__qualname__,
+                tuple(
+                    padded_encoder_symbolic_inputs(device_refs=self.device_refs)
+                ),
+                weights=weights,
+            )
+        }

@@ -14,7 +14,7 @@
 # Benchmarks three SM100 (Blackwell) BF16 matmul+epilogue variants head-to-head:
 #
 #   1. plain         — bare _matmul_gpu (no epilogue tensor)
-#   2. compute_lambda_bias — epilogue tensor applied via elementwise_compute_lambda_fn
+#   2. compute_lambda_bias — epilogue tensor applied via a compute closure
 #   3. tma_bias      — epilogue tensor passed as a TMA epilogue parameter to _matmul_gpu
 #
 # Only runs on SM100+ (B200) GPUs; prints a warning and exits on other hardware.
@@ -57,7 +57,6 @@ from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
     fused_bias_residual_matmul_dispatch_sm100,
 )
-from std.utils import IndexList
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +151,7 @@ def _check_verification_result[
     )
 
     var result_host_alloc = alloc[Float32](
-        {count = NUM_BLOCKS * 5}
+        {length = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
@@ -249,9 +248,10 @@ def bench_matmul_tma_epilogue[
     # Initialize epilogue tensor with values in a narrow range (same as test files use rand).
     cb_epilogue.init_on_device(init_type, ctx)
 
-    @__copy_capture(cb_a, cb_b, cb_c, cb_epilogue)
-    @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {var cb_a, var cb_b, var cb_c, var cb_epilogue, imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -273,27 +273,26 @@ def bench_matmul_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @__parameter
-            @always_inline
-            @__copy_capture(tensor_c, tensor_epilogue)
+            @inline(.always)
             def epilogue_lambda[
                 _dtype: DType,
                 width: SIMDLength,
                 *,
-                alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+                alignment: Int,
+            ](idx: Coord, val: SIMD[_dtype, width]) {var} -> SIMD[
                 _dtype, width
             ]:
-                var epi_val = tensor_epilogue.load[width=width](
-                    Coord(idx[0], idx[1])
-                ).cast[_dtype]()
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                var epi_val = tensor_epilogue.load[width=width](idx).cast[
+                    _dtype
+                ]()
                 return val + epi_val
 
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                elementwise_compute_lambda_fn=epilogue_lambda,
-            ](tensor_c, tensor_a, tensor_b, ctx)
+            _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+                tensor_c, tensor_a, tensor_b, epilogue_lambda, ctx
+            )
 
         else:  # "tma_bias"
             # Build epilogue TileTensor with RowMajorLayout[Int64, Int64] to
@@ -301,9 +300,9 @@ def bench_matmul_tma_epilogue[
             # returns Int which mismatches; use Int64 directly.
             var epi_m = Int64(epilogue_shape[0].value())
             var epi_n = Int64(epilogue_shape[1].value())
-            var epilogue_for_gpu = TileTensor(
-                tensor_epilogue.ptr, row_major(Coord(epi_m, epi_n))
-            ).as_immut()
+            var epilogue_for_gpu = tensor_epilogue.reshape(
+                row_major(epi_m, epi_n)
+            ).as_imm()
             fused_bias_residual_matmul_dispatch_sm100[transpose_b=transpose_b,](
                 tensor_c,
                 tensor_a,
@@ -312,16 +311,13 @@ def bench_matmul_tma_epilogue[
                 ctx,
             )
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
 
     var bench_name = String(
@@ -329,11 +325,11 @@ def bench_matmul_tma_epilogue[
         " (dtype=",
         String(dtype),
         ") : ",
-        Int(shape_c[0].value()),
+        Int(shape_c[0]),
         "_dynamic x ",
-        Int(shape_c[1].value()),
+        Int(shape_c[1]),
         " x ",
-        Int(shape_a[1].value()),
+        Int(shape_a[1]),
     )
 
     if run_benchmark:
@@ -346,9 +342,9 @@ def bench_matmul_tma_epilogue[
         kernel_launch(ctx, 0)
 
     if verify:
-        var M = Int(shape_c[0].value())
-        var N = Int(shape_c[1].value())
-        var K = Int(shape_a[1].value())
+        var M = Int(shape_c[0])
+        var N = Int(shape_c[1])
+        var K = Int(shape_a[1])
         var c_size = M * N
         var a_size = M * K
         var b_size = N * K  # transpose_b=True → B is N×K
@@ -393,34 +389,33 @@ def bench_matmul_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @__parameter
-            @always_inline
-            @__copy_capture(epilogue_ver_nd)
+            @inline(.always)
             def ver_epilogue_lambda[
                 _dtype: DType,
                 width: SIMDLength,
                 *,
-                alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+                alignment: Int,
+            ](idx: Coord, val: SIMD[_dtype, width]) {var} -> SIMD[
                 _dtype, width
             ]:
-                var epi_val = epilogue_ver_nd.load[width=width](
-                    Coord(idx[0], idx[1])
-                ).cast[_dtype]()
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                var epi_val = epilogue_ver_nd.load[width=width](idx).cast[
+                    _dtype
+                ]()
                 return val + epi_val
 
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                elementwise_compute_lambda_fn=ver_epilogue_lambda,
-            ](c_kernel_nd, a_ver_nd, b_ver_nd, ctx)
+            _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+                c_kernel_nd, a_ver_nd, b_ver_nd, ver_epilogue_lambda, ctx
+            )
 
         else:
             var epi_m = Int64(epilogue_shape[0].value())
             var epi_n = Int64(epilogue_shape[1].value())
             var epilogue_for_ver = TileTensor(
-                epilogue_ver_dev.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
-            ).as_immut()
+                epilogue_ver_dev.unsafe_ptr(), row_major(epi_m, epi_n)
+            ).as_imm()
             fused_bias_residual_matmul_dispatch_sm100[transpose_b=transpose_b,](
                 c_kernel_nd,
                 a_ver_nd,
@@ -432,11 +427,11 @@ def bench_matmul_tma_epilogue[
         comptime if variant != "plain":
             # Add epilogue tensor to reference output on the host.
             var epilogue_host_alloc = alloc[Scalar[dtype]](
-                {count = c_size}
+                {length = c_size}
             ).into_managed()
             var epilogue_host = epilogue_host_alloc.unsafe_ptr()
             var c_ref_host_alloc = alloc[Scalar[dtype]](
-                {count = c_size}
+                {length = c_size}
             ).into_managed()
             var c_ref_host = c_ref_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(epilogue_host, epilogue_ver_dev)

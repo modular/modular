@@ -47,8 +47,12 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.kv_cache import (
+    MHAKVCacheParams,
+    PagedCacheValues,
+    packed_page_stride,
+)
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3_5.batch_processor import (
     Qwen3_5BatchProcessor,
 )
@@ -236,6 +240,9 @@ def test_freqs_table_matches_transformers(grid: tuple[int, int, int]) -> None:
             },
         )
     )
+    # Serial MKL VML warmup; see pytorch/pytorch#188792 (fix: #188791).
+    torch.cos(torch.ones(1))
+    torch.sin(torch.ones(1))
     cos, sin = hf_rope(torch.zeros(1, dtype=torch.float32), positions)
 
     table = _max_freqs_table(positions.squeeze(1).numpy())
@@ -462,13 +469,6 @@ def _batcher_without_mrope() -> Qwen3_5BatchProcessor:
             model=SimpleNamespace(data_parallel_degree=1)
         ),
     )
-    batcher._state_cache = SimpleNamespace(
-        claim=lambda request_id: None,
-        slot_idx_for=lambda request_ids, prealloc: prealloc,
-        conv_pools=[],
-        rec_pools=[],
-    )
-    batcher._slot_idx_prealloc = []
     batcher._mrope_enabled = False
     return batcher
 
@@ -581,6 +581,7 @@ def test_fp8_attention_takes_per_token_freq_rows() -> None:
                 lookup_table.tensor,
                 max_prompt_length.tensor,
                 max_cache_length.tensor,
+                page_stride=packed_page_stride(kv_blocks.buffer),
                 attention_dispatch_metadata=dispatch_metadata.tensor,
             ),
             freqs_cis.tensor,

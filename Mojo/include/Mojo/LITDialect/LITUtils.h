@@ -45,6 +45,7 @@ class ErrorOr;
 
 namespace KGEN {
 class FnEffects;
+class KGENParamPrinter;
 class ParamDeclAttr;
 class ParamDeclRefAttr;
 class ParamIndexRefAttr;
@@ -95,6 +96,8 @@ TypedAttr getEmptyStructValue(Type type);
 /// without quotes. This prints "kgen style" not user style.
 ParseResult parseOriginParamValue(AsmParser &p, TypedAttr &result);
 void printOriginParamValue(AsmPrinter &p, TypedAttr value);
+void printOriginParamValue(AsmPrinter &p, TypedAttr value,
+                           KGEN::KGENParamPrinter &printer);
 inline void printOriginParamValue(AsmPrinter &p, Operation *, TypedAttr value) {
   printOriginParamValue(p, value);
 }
@@ -365,8 +368,8 @@ private:
 /// Determine whether an assumption proves or disproves a proposition.
 ///
 /// An internally inconsistent assumption proves the proposition vacuously.
-/// Top-level `eq` facts in the assumption are closed under symmetry and
-/// transitivity via union-find, so e.g. `(A == C) ∧ (B == C)` proves `A == B`.
+/// Canonicalization folds identity, conformance, and negation, so
+/// `(A == C) ∧ (B == C)` proves `A == B`.
 TriBool isPropositionImplied(TypedAttr proposition, TypedAttr assumption);
 
 /// Returns true if `assumption` implies `proposition`.

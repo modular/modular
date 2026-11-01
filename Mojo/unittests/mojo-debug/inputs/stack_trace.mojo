@@ -17,11 +17,12 @@ struct Foo[X: TrivialRegisterPassable, Y: TrivialRegisterPassable]:
         pass
 
     def getParametrized[T: TrivialRegisterPassable](self, val: T) -> T:
-        @__parameter
         def nested_function(z: T) -> T:
             return z  # breakpoint
 
-        return nested_function(val)
+        var result = nested_function(val)
+        stop_tail_call()
+        return result
 
     def getFloat(self, x: Float32, y: Int) -> Float32:
         var tmp = self.getParametrized[Float32](Float32(4.125 + x + Float32(y)))

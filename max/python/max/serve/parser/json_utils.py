@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Finds and parses a JSON value embedded in free-form model output."""
+
 import json
 from typing import Any
 

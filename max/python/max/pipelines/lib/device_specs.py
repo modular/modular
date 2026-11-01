@@ -31,7 +31,7 @@ def normalize_device_specs_input(value: str | list[int]) -> DeviceHandle:
     """Normalize device input into either a string or list of ints.
 
     Args:
-        value: The value provided as a string (e.g., "cpu", "gpu", "gpu:0,1,2")
+        value: The value provided as a string (such as "cpu", "gpu", "gpu:0,1,2")
 
     Returns:
         ``"cpu"``, ``"gpu"``, ``"gpu:all"`` (every visible GPU), or a non-empty

@@ -169,9 +169,8 @@ private:
 
             // Exclude direct uses but not uses within expressions. e.g.
             // foo<x+step, step>
-            for (auto [param, decl] :
-                 llvm::zip(call.getCallee().getParamValues(),
-                           oldFunction.getInputParams())) {
+            for (auto [param, decl] : llvm::zip(call.getParamValues(),
+                                                oldFunction.getInputParams())) {
               auto asRef = dyn_cast<ParamDeclRefAttr>(param);
               // A direct pass through of the same parameter doesn't count.
               if (!asRef || asRef.getName() != decl.getName() ||
@@ -186,11 +185,16 @@ private:
       // Don't scan the input parameters on the function since they obviously
       // will include a hit.
       if (op == oldFunction) {
-        walker.walk(oldFunction.getLLVMMetadataArray());
+        walker.walk(oldFunction.getFnAttrs());
 
         // The linkage name might contain parameter references.
         if (auto linkageName = oldFunction.getLinkageNameAttr())
           walker.walk(linkageName);
+        // So might a deferred `@inline` expression, which is the only use of
+        // its parameter until the elaborator folds it.
+        if (TypedAttr level = oldFunction.getInlineLevelAttr();
+            level && !inlineLevelOf(level))
+          walker.walk(level);
         // Most function attrs will only contain false positives, types on the
         // arguments / results are the real source of truth.
         walker.walk(oldFunction.getDecoratorsAttr());
@@ -234,8 +238,7 @@ private:
     newParams.clear();
     newOperands.clear();
 
-    for (auto [idx, inParam] :
-         llvm::enumerate(oldCall.getCallee().getParamValues())) {
+    for (auto [idx, inParam] : llvm::enumerate(oldCall.getParamValues())) {
       if (!unusedParamsIndex[idx])
         newParams.push_back(inParam);
     }
@@ -246,7 +249,7 @@ private:
         newOperands.push_back(operand);
       }
     }
-    auto symbol = SymbolConstantAttr::get(
+    auto symbol = FuncSymbolGenerator::get(
         flatSym,
         newFunc.getFuncTypeGenerator().getSpecializedGenerator(
             newParams, &*evaluationContext, oldCall.getLoc()),
@@ -567,16 +570,14 @@ void RemoveUnusedParams::runOnOperation() {
     newFunc.setSymName((Twine(newFunc.getSymName()) + "_REMOVED_ARG").str());
     symTab.insert(newFunc);
 
-    // Update LLVM per-arg metadata.
-    if (ArrayRef<Attribute> oldLLVMArgMetadata =
-            newFunc.getLLVMArgMetadataArray().getValue();
-        !oldLLVMArgMetadata.empty()) {
-      SmallVector<Attribute> llvmArgMetadata;
-      for (unsigned i = 0, e = oldLLVMArgMetadata.size(); i < e; ++i)
+    // Update LLVM per-arg attributes.
+    if (ArrayRef<Attribute> oldFnArgAttrs = newFunc.getFnArgAttrs().getValue();
+        !oldFnArgAttrs.empty()) {
+      SmallVector<Attribute> fnArgAttrs;
+      for (unsigned i = 0, e = oldFnArgAttrs.size(); i < e; ++i)
         if (!unusedArgs[i])
-          llvmArgMetadata.emplace_back(oldLLVMArgMetadata[i]);
-      newFunc.setLLVMArgMetadataArrayAttr(
-          mlir::ArrayAttr::get(ctx, llvmArgMetadata));
+          fnArgAttrs.emplace_back(oldFnArgAttrs[i]);
+      newFunc.setFnArgAttrsAttr(mlir::ArrayAttr::get(ctx, fnArgAttrs));
     }
 
     // The DISubroutineType of the function may reference unused parameters.

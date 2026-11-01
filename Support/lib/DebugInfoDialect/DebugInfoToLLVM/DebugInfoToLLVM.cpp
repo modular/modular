@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
+#include "Support/Compiler/DirectConversion.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -609,26 +610,6 @@ static void removeUnsupportedDebugValues(Operation *op) {
 }
 
 void DebugInfoToLLVMPass::runOnOperation() {
-  // Configure dialect conversion.
-  mlir::ConversionTarget target(getContext());
-  target.addIllegalDialect<DebugInfoDialect>();
-  target.addLegalOp<LLVM::DbgValueOp>();
-
-  // Unknown operations are legal if they don't have debug info attached.
-  target.markUnknownOpDynamicallyLegal([](Operation *op) -> bool {
-    auto hasDIAttr = [](Location loc) -> bool {
-      return !!loc->findInstanceOf<mlir::FusedLocWith<DebugInfo::DIAttr>>();
-    };
-    if (hasDIAttr(op->getLoc()))
-      return false;
-    for (Region &region : op->getRegions())
-      for (Block &block : region)
-        for (BlockArgument arg : block.getArguments())
-          if (hasDIAttr(arg.getLoc()))
-            return false;
-    return true;
-  });
-
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());
   mlir::LLVMTypeConverter typeConverter(&getContext(), options);
@@ -655,8 +636,13 @@ void DebugInfoToLLVMPass::runOnOperation() {
   // Legalize DebugValues.
   removeUnsupportedDebugValues(getOperation());
 
-  if (failed(mlir::applyPartialConversion(getOperation(), target,
-                                          std::move(patterns))))
+  // The driver never hands its root to the patterns.
+  replacer.replaceElementsIn(getOperation());
+
+  // Direct conversion: these patterns rewrite attributes/locations in place
+  // or 1:1-replace debug ops; no SSA type conversion is involved.
+  if (failed(M::applyDirectConversion(getOperation(), /*typeConverter=*/nullptr,
+                                      std::move(patterns))))
     return signalPassFailure();
 
   // Massage DebugInfo after conversion.

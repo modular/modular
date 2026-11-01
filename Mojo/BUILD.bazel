@@ -1,18 +1,5 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load(
-    "//bazel:api.bzl",
-    "copy_files",
-    "dialect_checksum",
-    "gentbl_cc_library",
-    "gentbl_mlir_dialect",
-    "gentbl_modular_passes",
-    "mlir_nanobind",
-    "modular_cc_library",
-    "modular_py_binary",
-    "modular_shared_library",
-    "pkg_files",
-    "td_library",
-)
+load("//bazel:api.bzl", "copy_files", "dialect_checksum", "modular_cc_library", "modular_py_binary", "modular_shared_library", "pkg_files")
 load(
     "//bazel:config.bzl",
     "ALLOW_UNUSED_TAG",
@@ -21,6 +8,7 @@ load(
     "KERNEL_PROFILING_LOCAL_DEFINES",
     "TOP_LEVEL_TAG",
 )
+load("//bazel:tablegen.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "mlir_nanobind", "td_library")
 
 # gazelle:default_visibility //Mojo:consumers
 
@@ -36,11 +24,11 @@ package_group(
         "//Mojo/docs/site/...",
         "//bazel/...",
         "//docs/...",
-        "//max/python/max/_core/internal/...",
+        "//max/docs/site/...",
+        "//max/python/max/_core/max_license/...",
         "//max/tests/internal/API/c/...",  # Only when testing internally
         "//oss/modular/bazel/...",
-        "//oss/modular/docs/...",
-        "//oss/modular/max/python/max/_core/internal/...",  # Only when testing internally
+        "//oss/modular/max/python/max/_core/max_license/...",  # Only when testing internally
         "//plugins/...",
         "//utils/...",
     ],
@@ -57,6 +45,7 @@ pkg_files(
     name = "docs",
     srcs = [
         ":CODialect.doc",
+        ":DEPGRAPHDialect.doc",
         ":HLCFDialect.doc",
         ":INTERPDialect.doc",
         ":KGENDialect.doc",
@@ -126,10 +115,57 @@ modular_cc_library(
 )
 
 td_library(
-    name = "HLCFDialectTdFiles",
-    srcs = glob(["include/Mojo/HLCFDialect/*.td"]),
+    name = "DepGraphDialectTdFiles",
+    srcs = glob(["include/Mojo/DepGraphDialect/*.td"]),
     includes = ["include"],
     deps = [
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:OpBaseTdFiles",
+    ],
+)
+
+gentbl_mlir_dialect(
+    name = "DepGraphDialectIncGen",
+    dialect = "depgraph",
+    td_file = "include/Mojo/DepGraphDialect/DepGraph.td",
+    deps = [
+        ":DepGraphDialectTdFiles",
+    ],
+)
+
+modular_cc_library(
+    name = "DepGraphDialect",
+    srcs = glob(["lib/DepGraphDialect/*.cpp"]),
+    hdrs = glob(["include/Mojo/DepGraphDialect/*.h"]),
+    deps = [
+        ":DepGraphDialectIncGen",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+    ],
+)
+
+td_library(
+    name = "HLCFInterfacesTdFiles",
+    srcs = ["include/Mojo/HLCFDialect/HLCFInterfaces.td"],
+    includes = ["include"],
+    deps = [
+        "@llvm-project//mlir:OpBaseTdFiles",
+    ],
+)
+
+td_library(
+    name = "HLCFDialectTdFiles",
+    srcs = glob(
+        ["include/Mojo/HLCFDialect/*.td"],
+        exclude = ["include/Mojo/HLCFDialect/HLCFInterfaces.td"],
+    ),
+    includes = ["include"],
+    deps = [
+        ":HLCFInterfacesTdFiles",
+        # HLCF ops use KGEN types (e.g. BoolScalar). KGEN depends only on
+        # HLCFInterfacesTdFiles, not this target, so there is no TD cycle.
+        ":KGENDialectTdFiles",
         ":InterpreterTdFiles",
         "//Support:MTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
@@ -204,8 +240,7 @@ gentbl_cc_library(
     tblgen = "@llvm-project//mlir:mlir-tblgen",
     td_file = "include/Mojo/HLCFDialect/HLCFInterfaces.td",
     deps = [
-        ":HLCFDialectIncGen",
-        ":HLCFDialectTdFiles",
+        ":HLCFInterfacesTdFiles",
     ],
 )
 
@@ -232,11 +267,14 @@ td_library(
     srcs = glob(["include/Mojo/KGENDialect/*.td"]),
     includes = ["include"],
     deps = [
-        ":HLCFDialectTdFiles",
+        # FunctionLike verify calls HLCF::verifyControlFlow — interfaces only,
+        # not HLCF ops.
+        ":HLCFInterfacesTdFiles",
         ":InterpreterTdFiles",
         "//Support:DebugInfoTdFiles",
         "//Support:MTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
         "@llvm-project//mlir:FunctionInterfacesTdFiles",
         "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
     ],
@@ -245,7 +283,7 @@ td_library(
 mlir_nanobind(
     name = "KGENDialectNanobindInc",
     srcs = glob(["include/Mojo/KGENDialect/*.td"]),
-    allowlist = "//max/python/max/_core/internal/modules/dialects:allowlist.txt",
+    allowlist = "//max/python/max/_core/max_license/modules/dialects:allowlist.txt",
     output_dir = "include/Mojo/KGENDialect/Nanobind",
     deps = [
         ":KGENDialectTdFiles",
@@ -257,7 +295,7 @@ gentbl_mlir_dialect(
     dialect = "kgen",
     td_file = "include/Mojo/KGENDialect/KGEN.td",
     deps = [
-        ":HLCFDialectTdFiles",
+        ":HLCFInterfacesTdFiles",
         ":InterpreterTdFiles",
         ":KGENDialectTdFiles",
         ":KGENEnumsIncGen",
@@ -839,6 +877,19 @@ modular_cc_library(
     ],
 )
 
+# The ODS-generated enums (e.g. EmitAs) without the rest of the dialect
+# headers, whose header target drags tool-level link dependencies.
+modular_cc_library(
+    name = "KGENEnums.headers",
+    hdrs = ["include/Mojo/KGENDialect/KGENEnums.h"],
+    tags = ["no-clang-tidy-headers"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":KGENEnumsIncGen",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
 modular_cc_library(
     name = "KGENDialect.headers",
     hdrs = glob(["include/Mojo/KGENDialect/*.h"]),
@@ -878,6 +929,7 @@ modular_cc_library(
         "//AsyncRT:CompilerSupport",
         "//Support:ADT",
         "//Support:DebugInfoDialect",
+        "//Support:HashUtils",
         "//Support:IPInt",
         "//Support:MDialect",
         "@llvm-project//mlir:LLVMDialect",
@@ -896,11 +948,15 @@ modular_cc_library(
         "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
     }),
     tags = ["no-clang-tidy-headers"],
-    visibility = ["//visibility:private"],
+    visibility = [
+        "//Mojo:consumers",
+        "//Mojo:plugin_consumers",
+    ],
     deps = [
         ":KGENPassesIncGen",
         "//AsyncRT:Runtime",
         "//Support:CommonCLOptions",
+        "//Support:Driver",
     ],
 )
 
@@ -979,7 +1035,7 @@ modular_shared_library(
     visibility = [
         "//Mojo:consumers",
         "//Mojo/stdlib/std:__pkg__",
-        "//Mojo/test/internal/profiling:__pkg__",
+        "//Mojo/test/max_license/profiling:__pkg__",
         "//Mojo/test/tracy:__pkg__",
         "//mojo/stdlib/std:__pkg__",
     ],
@@ -1032,7 +1088,6 @@ modular_cc_library(
         "//Support:ProfilingRanges",
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:ConversionPasses",
         "@llvm-project//mlir:IR",
         "@xxhash",
     ],
@@ -1113,6 +1168,7 @@ modular_cc_library(
         "//Mojo:plugin_consumers",
     ],
     deps = [
+        ":KGENEnums.headers",
         ":Support",
         "//Support:Configuration",
         "@llvm-project//llvm:Support",
@@ -1152,10 +1208,12 @@ modular_cc_library(
         ":ObjectCompiler.headers",  # For MetalAddressSpace.h
         ":TargetLowering",
         ":ToolCommon",
+        "//Support:Compiler",
         "//Support:DebugInfoTransforms",
         "@llvm-project//llvm:Support",  # For llvm/ADT/Triple.h
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:NVVMToLLVM",
     ],
     # TargetLowering implementations self-register via a static initializer and
     # aren't referenced directly, so the linker would drop them. Force them to
@@ -1165,7 +1223,10 @@ modular_cc_library(
 
 modular_cc_library(
     name = "Transforms",
-    srcs = glob(["lib/Transforms/*.cpp"]),
+    srcs = glob([
+        "lib/Transforms/*.cpp",
+        "lib/Transforms/*.h",
+    ]),
     deps = [
         ":CODialect",
         ":HLCFDialect",
@@ -1181,12 +1242,15 @@ modular_cc_library(
         "//Support:Context",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoTransforms",
+        "@llvm-project//mlir:ArithDialect",
         "@llvm-project//mlir:CAPIIRHeaders",
         "@llvm-project//mlir:CAPITransformsHeaders",
         "@llvm-project//mlir:IndexDialect",
         "@llvm-project//mlir:NVVMDialect",
         "@llvm-project//mlir:ROCDLDialect",
+        "@llvm-project//mlir:SCFDialect",
         "@llvm-project//mlir:TransformUtils",
+        "@llvm-project//mlir:UBDialect",
     ],
 )
 
@@ -1360,6 +1424,7 @@ modular_cc_library(
         "//Support:CacheLog",
         "//Support:Context",
         "@llvm-project//mlir:BytecodeWriter",
+        "@llvm-project//mlir:ROCDLTarget",
     ],
     # TargetBackend implementations self-register via a
     # static initializer and aren't referenced directly, so the linker would
@@ -1380,8 +1445,10 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
     deps = [
         ":Compiler",
+        ":DepGraphDialect",
         ":DialectChecksum",
         ":ToolCommon",
+        "//Support:Base",
     ],
 )
 
@@ -1396,8 +1463,19 @@ modular_cc_library(
         ":MojoParser",
         # DocGen.cpp uses getMojoVersionString() for the JSON version wrapper.
         "//Config",
-        # DocGen.h exposes DiagnosticFormat in the DocGenConfig struct.
+        # DocGen.h exposes DiagnosticFormat in generateMojoDocJSON.
         "//Support:Driver",
+    ],
+)
+
+modular_cc_library(
+    name = "Precompile",
+    srcs = glob(["lib/Precompile/*.cpp"]),
+    hdrs = glob(["include/Mojo/Precompile/*.h"]),
+    deps = [
+        ":LITDialect",
+        "//Support:Compiler",
+        "//Support:DebugInfoDialect",
     ],
 )
 
@@ -1449,6 +1527,7 @@ modular_cc_library(
     ],
     deps = [
         ":CODialect",
+        ":DepGraphDialect",
         ":ExecutionEngine",
         ":HLCFDialect",
         ":Interpreter",
@@ -1461,16 +1540,18 @@ modular_cc_library(
         "//Support:CommonCLOptions",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
+        "//Support:Driver",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
         "@llvm-project//mlir:BytecodeWriter",
-        "@llvm-project//mlir:ConversionPasses",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:IndexToLLVM",
         "@llvm-project//mlir:LLVMIRTransforms",
         "@llvm-project//mlir:LLVMToLLVMIRTranslation",
         "@llvm-project//mlir:NVVMToLLVMIRTranslation",
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:ROCDLToLLVMIRTranslation",
+        "@llvm-project//mlir:ReconcileUnrealizedCasts",
     ],
 )
 
@@ -1611,6 +1692,7 @@ dialect_checksum(
     srcs = [
         ":CODialectTdFiles",
         ":HLCFDialectTdFiles",
+        ":HLCFInterfacesTdFiles",
         ":InterpreterTdFiles",
         ":KGENDialectTdFiles",
         ":LITDialectTdFiles",

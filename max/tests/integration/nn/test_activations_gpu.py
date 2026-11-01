@@ -22,13 +22,13 @@ Parametrized over available backends. CPU is always exercised; the
 file remains importable on CPU-only hosts.
 """
 
-import max.experimental.functional as F
+import max.functional as F
 import numpy as np
 import pytest
 import torch
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device, default_dtype
+from max.tensor import Tensor, default_device, default_dtype
 
 _DEVICE_PARAMS = [pytest.param(CPU, id="cpu")]
 if accelerator_count() > 0:

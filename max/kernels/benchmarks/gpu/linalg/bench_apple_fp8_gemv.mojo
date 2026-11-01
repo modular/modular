@@ -100,13 +100,11 @@ def _bench_fp8_shape(
     ctx.enqueue_copy(w_fp8_dev, w_fp8_host)
     ctx.enqueue_copy(w_bf16_dev, w_bf16_host)
 
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_immut()
-    var w_fp8_tt = TileTensor(
-        w_fp8_dev.unsafe_ptr(), row_major(n, k)
-    ).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_imm()
+    var w_fp8_tt = TileTensor(w_fp8_dev.unsafe_ptr(), row_major(n, k)).as_imm()
     var w_bf16_tt = TileTensor(
         w_bf16_dev.unsafe_ptr(), row_major(n, k)
-    ).as_immut()
+    ).as_imm()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(m, n))
 
     # --- bf16 decode matmul (2 bytes/weight): the baseline the model runs. ---
@@ -145,13 +143,13 @@ def _bench_fp8_shape(
     # --- materialize+dense (fp8 -> transient bf16 [N,K] -> dense bf16 MMA): the
     # M>1 narrow-N route as it dispatches today. Moves ~5*N*K bytes. ---
     for _ in range(warmup):
-        _enqueue_apple_fp8_materialize_dense[.float32, None](
+        _enqueue_apple_fp8_materialize_dense[.float32](
             out_tt, act_tt, w_fp8_tt, m, n, k, ctx
         )
         ctx.synchronize()
     var t_mat = perf_counter()
     for _ in range(hot):
-        _enqueue_apple_fp8_materialize_dense[.float32, None](
+        _enqueue_apple_fp8_materialize_dense[.float32](
             out_tt, act_tt, w_fp8_tt, m, n, k, ctx
         )
     ctx.synchronize()
@@ -165,31 +163,10 @@ def _bench_fp8_shape(
     )  # useful-weight denom (exposes waste)
 
     print(
-        "  ",
-        name,
-        " N=",
-        n,
-        " K=",
-        k,
-        " M=",
-        m,
-        ":  bf16 ",
-        bf16_sec * 1e6,
-        "us (",
-        bf16_gbs,
-        "GB/s) | tiled-fp8 ",
-        tiled_sec * 1e6,
-        "us (",
-        tiled_gbs,
-        "GB/s, ",
-        bf16_sec / tiled_sec,
-        "x bf16) | materialize ",
-        mat_sec * 1e6,
-        "us (",
-        mat_gbs,
-        "GB/s, ",
-        bf16_sec / mat_sec,
-        "x bf16)",
+        t"   {name}  N= {n}  K= {k}  M= {m} :  bf16  {bf16_sec * 1e6} us ("
+        t" {bf16_gbs} GB/s) | tiled-fp8  {tiled_sec * 1e6} us ("
+        t" {tiled_gbs} GB/s,  {bf16_sec / tiled_sec} x bf16) | materialize "
+        t" {mat_sec * 1e6} us ( {mat_gbs} GB/s,  {bf16_sec / mat_sec} x bf16)"
     )
 
     # --- fp8 W8A16 GEMV (M=1 only; a rank-1 update wastes the simdgroup MMA). --
@@ -208,13 +185,8 @@ def _bench_fp8_shape(
         var gemv_sec = (perf_counter() - t_gemv) / Float64(hot)
         var gemv_gbs = wbytes / (gemv_sec * 1e9)
         print(
-            "        (M=1 gemv ",
-            gemv_sec * 1e6,
-            "us (",
-            gemv_gbs,
-            "GB/s, ",
-            bf16_sec / gemv_sec,
-            "x bf16))",
+            t"        (M=1 gemv  {gemv_sec * 1e6} us ( {gemv_gbs} GB/s, "
+            t" {bf16_sec / gemv_sec} x bf16))"
         )
 
     _ = act_host^
@@ -231,8 +203,8 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 required (compute_capability == 5)")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 required (compute_capability >= 5)")
         return
 
     print("== bench_apple_fp8_gemv (decode M in {1, 32}; warmup=25, hot=50)")
@@ -241,7 +213,7 @@ def main() raises:
     )
     # (N, K, name). in_proj/mlp_up are wide-N (n>k); out_proj/mlp_down narrow-N.
     for m in [1, 32]:
-        print("  -- M =", m, "--")
+        print(t"  -- M = {m} --")
         _bench_fp8_shape(17504, 3136, m, "mamba_in_proj ", ctx)
         _bench_fp8_shape(3136, 7680, m, "mamba_out_proj", ctx)
         _bench_fp8_shape(12544, 3136, m, "mlp_up        ", ctx)

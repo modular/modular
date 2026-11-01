@@ -13,7 +13,7 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
-"""Bindings for the xgrammar grammar engine (CPU subset)."""
+"""Provides bindings for the xgrammar grammar engine (CPU subset)."""
 
 import enum
 from collections.abc import Sequence
@@ -127,4 +127,6 @@ class GrammarMatcher:
     def stop_token_ids(self) -> list[int]: ...
 
 def get_bitmask_size(vocab_size: int) -> int:
-    """Number of int32 words in a packed bitmask for the given vocab size."""
+    """
+    Returns the number of ``int32`` words in a packed bitmask for the given vocabulary size.
+    """

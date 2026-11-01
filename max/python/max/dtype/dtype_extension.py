@@ -106,11 +106,22 @@ class finfo:
     """
 
     bits: int
+    """Number of bits used to store one value of this dtype."""
+
     eps: float
+    """Smallest number that satisfies ``1.0 + eps != 1.0``."""
+
     max: float
+    """Largest representable finite value."""
+
     min: float
+    """Most negative representable finite value."""
+
     tiny: float
+    """Smallest positive normal value."""
+
     dtype: DType
+    """The floating-point dtype these properties describe."""
 
     def __init__(self, dtype: DType):
         if not dtype.is_float():

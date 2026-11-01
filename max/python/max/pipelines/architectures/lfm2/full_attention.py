@@ -32,19 +32,19 @@ from collections.abc import Callable, Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.attention.attention_with_rope import _compute_shard_range
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     matmul_kv_cache_ragged,
     rms_norm_key_cache,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 
 class LFM2FullAttention(Module, Shardable):
@@ -60,7 +60,7 @@ class LFM2FullAttention(Module, Shardable):
     The unfused KV path is used when attn_output_gate=True because
     fused_qkv_ragged_matmul computes KV offsets from n_heads * head_dim and
     would mis-split a doubled Q projection.  K and V are written to the paged
-    cache via :func:`~max.nn.kernels.matmul_kv_cache_ragged` instead.
+    cache via :func:`~max.nn.legacy.kernels.matmul_kv_cache_ragged` instead.
     """
 
     def __init__(
@@ -164,6 +164,7 @@ class LFM2FullAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """The attention's sharding strategy, or ``None``."""
         return self._sharding_strategy
 
     @sharding_strategy.setter

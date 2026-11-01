@@ -74,7 +74,9 @@ Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (n
 def test_profiled_region_runs_cprofile_when_not_under_nsys() -> None:
     """Outside the nsys child, profiled_region still emits a cProfile table."""
     backend = ProfileBackend(
-        nsys_available=False, nvidia_gpu_present=False, cudart_loadable=False
+        nsys_available=False,
+        nvidia_gpu_present=False,
+        cuda_driver_loadable=False,
     )
     out = io.StringIO()
     called = []
@@ -93,7 +95,9 @@ def test_profiled_region_dumps_cprofile_when_env_var_set(
     instead of being rendered inline. This is how the nsys child defers
     cProfile rendering to the parent."""
     backend = ProfileBackend(
-        nsys_available=False, nvidia_gpu_present=False, cudart_loadable=False
+        nsys_available=False,
+        nvidia_gpu_present=False,
+        cuda_driver_loadable=False,
     )
     dump_path = str(tmp_path / "out.cprofile")
     out = io.StringIO()
@@ -156,7 +160,9 @@ def test_render_cprofile_from_dump_roundtrips_a_real_profile(
 def test_maybe_reexec_explains_no_nsys() -> None:
     """When nsys is unavailable, maybe_reexec_under_nsys prints the hint."""
     backend = ProfileBackend(
-        nsys_available=False, nvidia_gpu_present=False, cudart_loadable=True
+        nsys_available=False,
+        nvidia_gpu_present=False,
+        cuda_driver_loadable=True,
     )
     out = io.StringIO()
     maybe_reexec_under_nsys(backend=backend, out=out)
@@ -166,21 +172,21 @@ def test_maybe_reexec_explains_no_nsys() -> None:
 def test_maybe_reexec_explains_no_gpu() -> None:
     """nsys installed but no NVIDIA GPU prints the no-GPU hint."""
     backend = ProfileBackend(
-        nsys_available=True, nvidia_gpu_present=False, cudart_loadable=True
+        nsys_available=True, nvidia_gpu_present=False, cuda_driver_loadable=True
     )
     out = io.StringIO()
     maybe_reexec_under_nsys(backend=backend, out=out)
     assert "no NVIDIA GPU detected" in out.getvalue()
 
 
-def test_maybe_reexec_explains_no_libcudart() -> None:
-    """nsys + GPU present but libcudart missing prints the libcudart hint."""
+def test_maybe_reexec_explains_no_libcuda() -> None:
+    """nsys + GPU present but libcuda missing prints the libcuda hint."""
     backend = ProfileBackend(
-        nsys_available=True, nvidia_gpu_present=True, cudart_loadable=False
+        nsys_available=True, nvidia_gpu_present=True, cuda_driver_loadable=False
     )
     out = io.StringIO()
     maybe_reexec_under_nsys(backend=backend, out=out)
-    assert "libcudart could not be loaded" in out.getvalue()
+    assert "libcuda could not be loaded" in out.getvalue()
 
 
 def test_inject_trace_flags_empty_args() -> None:
@@ -234,7 +240,7 @@ def test_inject_trace_flags_strips_user_trace_file_equals() -> None:
 def test_maybe_reexec_no_op_when_already_under_nsys() -> None:
     """Inside the nsys child, the helper must do nothing and return."""
     backend = ProfileBackend(
-        nsys_available=True, nvidia_gpu_present=True, cudart_loadable=True
+        nsys_available=True, nvidia_gpu_present=True, cuda_driver_loadable=True
     )
     with unittest.mock.patch.dict(
         os.environ,
@@ -248,7 +254,9 @@ def test_maybe_reexec_no_op_when_already_under_nsys() -> None:
 def test_maybe_reexec_no_op_when_no_gpu_capture() -> None:
     """No NVIDIA GPU or no nsys → return without re-exec or exit."""
     backend = ProfileBackend(
-        nsys_available=False, nvidia_gpu_present=False, cudart_loadable=False
+        nsys_available=False,
+        nvidia_gpu_present=False,
+        cuda_driver_loadable=False,
     )
     maybe_reexec_under_nsys(backend=backend)
 
@@ -256,7 +264,7 @@ def test_maybe_reexec_no_op_when_no_gpu_capture() -> None:
 def test_maybe_reexec_runs_child_and_exits() -> None:
     """When GPU-capable, we spawn nsys, render summary, and sys.exit."""
     backend = ProfileBackend(
-        nsys_available=True, nvidia_gpu_present=True, cudart_loadable=True
+        nsys_available=True, nvidia_gpu_present=True, cuda_driver_loadable=True
     )
     out = io.StringIO()
 
@@ -291,7 +299,7 @@ def test_maybe_reexec_renders_cprofile_dump_before_nsys_summary(
     the --profile output sits cleanly after the normal generate output.
     """
     backend = ProfileBackend(
-        nsys_available=True, nvidia_gpu_present=True, cudart_loadable=True
+        nsys_available=True, nvidia_gpu_present=True, cuda_driver_loadable=True
     )
     nsys_rep = str(tmp_path / "p.nsys-rep")
     cprofile_dump = nsys_rep + ".cprofile"
@@ -561,7 +569,9 @@ def test_profiled_region_propagates_user_exceptions() -> None:
     """An exception raised inside the region is not swallowed; the cProfile
     summary still prints because we hit the finally branch."""
     backend = ProfileBackend(
-        nsys_available=False, nvidia_gpu_present=False, cudart_loadable=False
+        nsys_available=False,
+        nvidia_gpu_present=False,
+        cuda_driver_loadable=False,
     )
     out = io.StringIO()
     with pytest.raises(RuntimeError, match="boom"):

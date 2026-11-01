@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
-from std.sys.info import _TargetType
+from std.sys.info import CompilationTarget
 
 from max.algorithm.backend.gpu.reduction import reduce_launch
 from max.benchmark import bencher_iter_custom
@@ -23,9 +23,9 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout
-from max.gpu.host import DeviceContext, get_gpu_target
-from std.memory import dealloc
+from layout import Coord, TileTensor, row_major
+from max.gpu.host import DeviceContext
+from std.memory import Layout as AllocLayout, dealloc
 from internal_utils import (
     CacheBustingBuffer,
     get_defined_shape,
@@ -36,29 +36,37 @@ from std.testing import assert_equal
 from std.utils import IndexList, StaticTuple
 
 
-def align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
+def align_of_simd[dtype: DType, simd_target: CompilationTarget]() -> Int:
     # TODO: move this utility function to a module.
     comptime pack_size = simd_width_of[dtype, target=simd_target]()
     return align_of[SIMD[dtype, pack_size]]()
 
 
 def run_reduce[
-    reduce_fn: def[dtype: DType, width: SIMDLength](
+    ReduceFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing[_] -> SIMD[dtype, width],
+    ) -> SIMD[dtype, width],
+    //,
     dtype: DType,
     rank: Int,
     num_reductions: Int = 1,
     cache_busting: Bool = True,
     *,
     axis: Int,
-](mut m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
+](
+    mut m: Bench,
+    shape: IndexList[rank],
+    reduce_fn: ReduceFnType,
+    ctx: DeviceContext,
+) raises:
     print("run_reduce", shape)
 
     var out_shape = shape
     out_shape[axis] = 1
     comptime init: Scalar[dtype] = Scalar[dtype](0.0)
-    comptime align = align_of_simd[dtype, simd_target=get_gpu_target()]()
+    comptime align = align_of_simd[dtype, simd_target=ctx.target]()
 
     var in_size = shape.flattened_length()
     var out_size = in_size // shape[axis]
@@ -66,8 +74,10 @@ def run_reduce[
     var cb_in = CacheBustingBuffer[dtype](in_size, align, ctx, cache_busting)
 
     # Allocate & initialize host data
-    var expected_vals_alloc = alloc[Scalar[dtype]](
-        {count = out_size, alignment = align}
+    var expected_vals_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=.of_bytes[align]()](
+            length=out_size
+        )
     ).into_managed()
     var expected_vals = expected_vals_alloc.unsafe_ptr()
 
@@ -80,66 +90,62 @@ def run_reduce[
             Scalar[dtype](shape[axis]) * Scalar[dtype](1)
         )
 
-    var res_buffer = ctx.enqueue_create_buffer[dtype](in_size)
+    var res_buffer = ctx.enqueue_create_buffer[dtype](out_size)
 
-    comptime res_layout = Layout.row_major[rank]()
-    var res_device = LayoutTensor[dtype, res_layout](
-        res_buffer.unsafe_ptr(), RuntimeLayout[res_layout].row_major(out_shape)
+    var res_device = TileTensor(res_buffer, row_major(out_size)).reshape(
+        Coord(out_shape)
     )
 
     ctx.enqueue_copy(cb_in.device_buffer(), in_host)
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {var reduce_fn} -> SIMD[
+        dtype, width
+    ]:
         comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
         return reduce_fn[dtype, width](lhs, rhs)
 
-    @__copy_capture(res_device)
-    @__parameter
     def output_fn[
-        _dtype: DType, width: SIMDLength, _rank: Int
-    ](
-        coords: IndexList[_rank],
-        val: StaticTuple[SIMD[_dtype, width], num_reductions],
-    ):
-        res_device.store[width=width](
-            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
+        _dtype: DType, width: SIMDLength
+    ](coords: Coord, val: StaticTuple[SIMD[_dtype, width], num_reductions]) {
+        var res_device
+    }:
+        res_device.store[alignment=align_of[dtype]()](
+            coords,
+            rebind[SIMD[dtype, width]](val[0]),
         )
 
     def kernel_launch(
         ctx: DeviceContext, iteration: Int
     ) raises {mut cb_in, mut res_device, imm}:
-        var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
+        var input_tile = TileTensor(
             cb_in.offset_ptr(iteration),
-            RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
+            row_major(Coord(shape)),
         )
 
-        @__copy_capture(input_lt)
-        @__parameter
         def input_fn[
             dtype: DType,
             width: Int,
-            _rank: Int,
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        ](coords: Coord) {var input_tile} -> SIMD[dtype, width]:
             return rebind[SIMD[dtype, width]](
-                input_lt.load[width=width](rebind[IndexList[rank]](coords))
+                input_tile.load[width=width, alignment=align_of[dtype]()](
+                    coords
+                )
             )
 
-        reduce_launch[
-            num_reductions,
+        reduce_launch[reduce_dim=axis](
+            shape,
+            StaticTuple[_, num_reductions](init),
             input_fn,
             output_fn,
             reduce_wrapper,
-            rank,
-            dtype,
-            reduce_dim=axis,
-        ](shape, StaticTuple[_, num_reductions](init), ctx)
+            ctx,
+        )
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
@@ -174,7 +180,6 @@ def run_reduce[
     _ = res_host^
 
 
-@__parameter
 def reduce_add[
     dtype: DType,
     width: SIMDLength,
@@ -195,9 +200,10 @@ def main() raises:
     var m = Bench()
     with DeviceContext() as ctx:
         comptime dims = shape
-        run_reduce[reduce_add, dtype, cache_busting=cache_busting, axis=axis](
+        run_reduce[dtype, cache_busting=cache_busting, axis=axis](
             m,
             dims,
+            reduce_add,
             ctx,
         )
 

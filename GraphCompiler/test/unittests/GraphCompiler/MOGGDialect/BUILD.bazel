@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_cc_test(
+    name = "MOGGDialectTests",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//GraphCompiler:MGPDialect",
+        "//GraphCompiler:MODialect",
+        "//GraphCompiler:MOGGDialect",
+        "//GraphCompiler:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)

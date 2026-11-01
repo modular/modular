@@ -36,11 +36,11 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def __init__(out self):
-        self.data = alloc[Int8]({count = self.num_cells}).into_thin()
+        self.data = alloc[Int8]({length = self.num_cells}).into_thin()
         unsafe_memset_zero(self.data.unsafe_ptr(), self.num_cells)
 
     def __init__(out self, *, copy: Self):
-        self.data = alloc[Int8]({count = self.num_cells}).into_thin()
+        self.data = alloc[Int8]({length = self.num_cells}).into_thin()
         unsafe_memcpy(
             dest=self.data.unsafe_ptr(),
             src=copy.data.unsafe_ptr(),
@@ -49,7 +49,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
         # The lifetime of `existing` continues unchanged
 
     def __deinit__(deinit self):
-        dealloc(self.data^.unsafe_with_layout({count = Self.num_cells}))
+        dealloc(self.data^.unsafe_with_layout({length = Self.num_cells}))
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -57,8 +57,8 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
 
     @staticmethod
     def random(seed: Optional[Int] = None) -> Self:
-        if seed:
-            random.seed(seed.value())
+        if case .Some(seed) = seed:
+            random.seed(seed)
         else:
             random.seed()
 

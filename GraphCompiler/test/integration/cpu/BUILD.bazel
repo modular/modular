@@ -1,0 +1,91 @@
+load("@mojo//:mojo.bzl", "INTERNAL_KERNEL_MOJOPKGS")
+load("//bazel:api.bzl", "lit_tests", "requirement")
+
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
+# Shared test data filegroup to avoid duplicate source errors when multiple
+# lit_tests targets need the same files. The find_duplicate_srcs.py checker
+# ignores filegroup rules.
+filegroup(
+    name = "test_data",
+    testonly = True,
+    srcs = glob(["**/*.mojo"]),
+)
+
+# External data files needed for custom_substitutions - must be direct dependencies
+# for $(rlocationpath) to resolve them.
+_COMMON_DATA = [
+    ":test_data",
+    "//GraphCompiler/test/kernels:testing_kernels",
+    "//GraphCompiler/test/utils/test-helper:test_vs_numpy.py",
+]
+
+# Common configuration shared across all lit_tests targets
+_COMMON_CUSTOM_SUBSTITUTIONS = {
+    "%kernel_api_test_lib": "$(rlocationpath //GraphCompiler/test/kernels:testing_kernels)",
+    "%kernel_api_test_pkg": "$(rlocationpath //GraphCompiler/test/kernels:testing_kernels)",
+    "%mo_vs_numpy_py": "$(rlocationpath //GraphCompiler/test/utils/test-helper:test_vs_numpy.py)",
+    "mo-opt": "$(rlocationpath //GraphCompiler/tools/mo-opt)",
+    "mojo": "$(rlocationpath //Mojo/tools/mojo)",
+    "mojo-lldb": "$(rlocationpath //Mojo:mojo-lldb)",
+    "mt": "$(rlocationpath //GraphCompiler/tools/mt)",
+}
+
+_COMMON_MOJO_DEPS = [
+    "//max:builtin_kernels",
+    "//max:builtin_primitives",
+    "//max:extensibility",
+] + INTERNAL_KERNEL_MOJOPKGS
+
+_COMMON_TOOLS = [
+    "//GraphCompiler/tools/mo-opt",
+    "//GraphCompiler/tools/mt",
+    "//Mojo:mojo-lldb",
+    "//Mojo/tools/mojo",
+]
+
+_COMMON_DEPS = [
+    requirement("numpy"),
+    "//GraphCompiler/test/utils/test-helper:test_vs_numpy",
+]
+
+lit_tests(
+    name = "tests",
+    size = "enormous",
+    srcs = glob(
+        ["**/*.mlir"],
+        exclude = [
+            "**/*-gpu.mlir",
+            "OptimizationPatterns/matmul_packb.mlir",
+        ],
+    ),
+    custom_substitutions = _COMMON_CUSTOM_SUBSTITUTIONS,
+    data = _COMMON_DATA,
+    # GEX-4343: tests hang intermittently on aarch64 (m7g, ubsan). Passes
+    # finish in under 200s, so fail at 300s instead of the 800s eternal
+    # timeout
+    env = select({
+        "//:asan_linux_aarch64": {},
+        "//:linux_aarch64": {"LIT_OPTS": "--timeout=300"},
+        "//conditions:default": {},
+    }),
+    mojo_deps = _COMMON_MOJO_DEPS,
+    tools = _COMMON_TOOLS,
+    deps = _COMMON_DEPS + [requirement("psutil")],
+)
+
+# Intermittently returns wrong results on AVX2-only x86 (the public CI's AMD
+# EPYC 7763); SDLC-4781. Still runs internally.
+lit_tests(
+    name = "matmul_packb_tests",
+    size = "large",
+    srcs = ["OptimizationPatterns/matmul_packb.mlir"],
+    custom_substitutions = _COMMON_CUSTOM_SUBSTITUTIONS,
+    data = _COMMON_DATA,
+    mojo_deps = _COMMON_MOJO_DEPS,
+    tags = ["skip-external-ci"],
+    tools = _COMMON_TOOLS,
+    deps = _COMMON_DEPS,
+)

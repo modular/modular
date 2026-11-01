@@ -50,42 +50,42 @@ comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 comptime FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
-def kernel(x: MutPointer[Int, MutAnyOrigin]):
+def kernel[x_origin: MutOrigin](x: MutPointer[Int, x_origin]):
     x[0] = thread_idx.x
 
 
-def kernel_laneid(x: MutPointer[Int, MutAnyOrigin]):
+def kernel_laneid[x_origin: MutOrigin](x: MutPointer[Int, x_origin]):
     x[0] = lane_id()
 
 
 def kernel_exp[
-    dtype: DType
-](x: MutPointer[Scalar[dtype], MutAnyOrigin]) where dtype.is_floating_point():
+    dtype: DType, x_origin: MutOrigin
+](x: MutPointer[Scalar[dtype], x_origin]) where dtype.is_floating_point():
     x[0] = exp(x[0])
 
 
-def kernel_shuffle_down(x: MutPointer[UInt32, MutAnyOrigin]):
+def kernel_shuffle_down[x_origin: MutOrigin](x: MutPointer[UInt32, x_origin]):
     var val = x[0]
     var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
     x[0] = shuffle_down(mask, val, offset)
 
 
-def kernel_shuffle_up(x: MutPointer[UInt32, MutAnyOrigin]):
+def kernel_shuffle_up[x_origin: MutOrigin](x: MutPointer[UInt32, x_origin]):
     var val = x[0]
     var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
     x[0] = shuffle_up(mask, val, offset)
 
 
-def kernel_shuffle_xor(x: MutPointer[UInt32, MutAnyOrigin]):
+def kernel_shuffle_xor[x_origin: MutOrigin](x: MutPointer[UInt32, x_origin]):
     var val = x[0]
     var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
     x[0] = shuffle_xor(mask, val, offset)
 
 
-def kernel_shuffle_idx(x: MutPointer[UInt32, MutAnyOrigin]):
+def kernel_shuffle_idx[x_origin: MutOrigin](x: MutPointer[UInt32, x_origin]):
     var val = x[0]
     var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
@@ -93,25 +93,27 @@ def kernel_shuffle_idx(x: MutPointer[UInt32, MutAnyOrigin]):
 
 
 def kernel_cast[
-    dtype: DType, target: DType
+    dtype: DType, target: DType, x_origin: ImmOrigin, y_origin: MutOrigin
 ](
-    x: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    y: MutPointer[Scalar[target], MutAnyOrigin],
+    x: ImmPointer[Scalar[dtype], x_origin],
+    y: MutPointer[Scalar[target], y_origin],
 ):
     y[0] = x[0].cast[target]()
 
 
 def parametric[
-    f: def(MutPointer[Int, MutAnyOrigin]) thin -> None
-](ptr: MutPointer[Int, MutAnyOrigin]):
+    ptr_origin: MutOrigin, f: def(MutPointer[Int, ptr_origin]) thin -> None
+](ptr: MutPointer[Int, ptr_origin]):
     f(ptr)
 
 
 # from https://rocm.blogs.amd.com/software-tools-optimization/amdgcn-isa/README.html#naive-load-and-store
-def load_store(
+def load_store[
+    input_origin: ImmOrigin, output_origin: MutOrigin
+](
     n: Int,
-    input: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, input_origin],
+    output: MutPointer[Float32, output_origin],
 ):
     var tid = thread_idx.x + block_dim.x * grid_dim.x
     output[tid] = input[tid]
@@ -122,7 +124,7 @@ def test_shuffle_compile() raises:
     print("== test_shuffle_compile")
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %5 = tail call range(i32 0, 64) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = add i32 %5, %3
     # CHECK: %7 = icmp ult i32 %6, 64
     # CHECK: %8 = select i1 %7, i32 %3, i32 0
@@ -131,51 +133,52 @@ def test_shuffle_compile() raises:
     # CHECK: %11 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %10, i32 %3)
     print(
         _compile_code[
-            kernel_shuffle_down, target=MI300X_TARGET, emission_kind="llvm-opt"
+            kernel_shuffle_down[MutUntrackedOrigin],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
         ]()
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %5 = tail call range(i32 0, 64) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = sub i32 %5, %3
-    # CHECK: %7 = and i32 %5, 64
-    # CHECK: %8 = icmp slt i32 %6, %7
-    # CHECK: %9 = select i1 %8, i32 %5, i32 %6
-    # CHECK: %10 = shl i32 %9, 2
-    # CHECK: %11 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %10, i32 %3)
+    # CHECK: %7 = icmp slt i32 %6, 0
+    # CHECK: %8 = select i1 %7, i32 %5, i32 %6
+    # CHECK: %9 = shl i32 %8, 2
+    # CHECK: %10 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %9, i32 %3)
     print(
         _compile_code[
-            kernel_shuffle_up, target=MI300X_TARGET, emission_kind="llvm-opt"
+            kernel_shuffle_up[MutUntrackedOrigin],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
         ]()
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
-    # CHECK: %6 = xor i32 %5, %3
-    # CHECK: %7 = and i32 %5, 64
-    # CHECK: %8 = add nuw nsw i32 %7, 64
-    # CHECK: %9 = icmp ult i32 %6, %8
-    # CHECK: %10 = select i1 %9, i32 %6, i32 %5
-    # CHECK: %11 = shl i32 %10, 2
-    # CHECK: %12 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %11, i32 %3)
+    # CHECK: %5 = tail call range(i32 0, 64) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %6 = icmp ult i32 %3, 64
+    # CHECK: %7 = select i1 %6, i32 %3, i32 0
+    # CHECK: %8 = xor i32 %5, %7
+    # CHECK: %9 = shl i32 %8, 2
+    # CHECK: %10 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %9, i32 %3)
     print(
         _compile_code[
-            kernel_shuffle_xor, target=MI300X_TARGET, emission_kind="llvm-opt"
+            kernel_shuffle_xor[MutUntrackedOrigin],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
         ]()
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
-    # CHECK: %6 = and i32 %5, 64
-    # CHECK: %7 = or i32 %6, %3
-    # CHECK: %8 = shl i32 %7, 2
-    # CHECK: %9 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %8, i32 %3)
+    # CHECK: %4 = shl i32 %3, 2
+    # CHECK: %5 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %4, i32 %3)
     print(
         _compile_code[
-            kernel_shuffle_idx, target=MI300X_TARGET, emission_kind="llvm-opt"
+            kernel_shuffle_idx[MutUntrackedOrigin],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
         ]()
     )
 
@@ -190,7 +193,9 @@ def test_cast_fp32_bf16_compile() raises:
     # CHECK: tail call i32 asm "v_cndmask_b32 $0, $1, $2, $3"
     print(
         _compile_code[
-            kernel_cast[.float32, DType.bfloat16],
+            kernel_cast[
+                .float32, .bfloat16, ImmUntrackedOrigin, MutUntrackedOrigin
+            ],
             target=MI300X_TARGET,
             emission_kind="llvm-opt",
         ]()
@@ -204,7 +209,7 @@ def test_exp_f32_compile() raises:
     # CHECK: tail call float @llvm.amdgcn.exp2.f32(float %4)
     print(
         _compile_code[
-            kernel_exp[.float32],
+            kernel_exp[.float32, MutUntrackedOrigin],
             target=MI300X_TARGET,
             emission_kind="llvm-opt",
         ]()
@@ -218,7 +223,7 @@ def test_exp_f16_compile() raises:
     # CHECK: tail call half @llvm.amdgcn.exp2.f16(half %4)
     print(
         _compile_code[
-            kernel_exp[.float16],
+            kernel_exp[.float16, MutUntrackedOrigin],
             target=MI300X_TARGET,
             emission_kind="llvm-opt",
         ]()
@@ -230,10 +235,12 @@ def test_laneid_compile() raises:
     print("== test_laneid_compile")
 
     # CHECK: %3 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %4 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
+    # CHECK: %4 = tail call range(i32 0, 64) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
     print(
         _compile_code[
-            kernel_laneid, target=MI300X_TARGET, emission_kind="llvm-opt"
+            kernel_laneid[MutUntrackedOrigin],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
         ]()
     )
 
@@ -254,17 +261,22 @@ def test_barrier_compile() raises:
 def test_threadid_compile() raises:
     print("== test_threadid_compile")
 
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
+    # CHECK: .amdgcn_target "amdgpu9.42-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
-    print(_compile_code[kernel, target=MI300X_TARGET]())
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
+    print(_compile_code[kernel[MutUntrackedOrigin], target=MI300X_TARGET]())
+    # CHECK: .amdgcn_target "amdgpu9.42-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
-    print(_compile_code[parametric[kernel], target=MI300X_TARGET]())
+    print(
+        _compile_code[
+            parametric[MutUntrackedOrigin, kernel[MutUntrackedOrigin]],
+            target=MI300X_TARGET,
+        ]()
+    )
     # CHECK: ; ModuleID =
     # CHECK: llvm.amdgcn.workitem.id.x
     print(
         _compile_code[
-            parametric[kernel],
+            parametric[MutUntrackedOrigin, kernel[MutUntrackedOrigin]],
             target=MI300X_TARGET,
             emission_kind="llvm",
         ]()
@@ -276,11 +288,15 @@ def test_threadid_compile() raises:
     # CHECK: getelementptr inbounds nuw i8, ptr addrspace(4) %[[VAR]], i64 12
     print(
         _compile_code[
-            load_store, target=MI300X_TARGET, emission_kind="llvm-opt"
+            load_store[ImmUntrackedOrigin, MutUntrackedOrigin],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
         ]()
     )
 
-    _ = _compile_code[load_store, target=MI300X_TARGET]()
+    _ = _compile_code[
+        load_store[ImmUntrackedOrigin, MutUntrackedOrigin], target=MI300X_TARGET
+    ]()
 
 
 # CHECK-LABEL: test_schedule_barrier_compile
@@ -347,7 +363,7 @@ def test_ds_read_tr16_b64_compile() raises:
 
     def test_kernel[dtype: DType]():
         var x = MutPointer[
-            Scalar[dtype], MutAnyOrigin, address_space=.SHARED
+            Scalar[dtype], MutUntrackedOrigin, address_space=.SHARED
         ].unsafe_dangling()
         var y = ds_read_tr16_b64(x)
         y[0] = y[0] + 1
@@ -389,7 +405,7 @@ def test_ds_read_tr8_b64_compile() raises:
 
     def test_kernel[dtype: DType]():
         var x = MutPointer[
-            Scalar[dtype], MutAnyOrigin, address_space=.SHARED
+            Scalar[dtype], MutUntrackedOrigin, address_space=.SHARED
         ].unsafe_dangling()
         var y = ds_read_tr8_b64(x)
         y[0] = y[0] + 1
@@ -426,10 +442,10 @@ def test_permlane_compile() raises:
         keep(val_swap_16)
         keep(val_swap_32)
 
-    # CHECK: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
-    # CHECK: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
-    # CHECK: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
-    # CHECK: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK-DAG: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK-DAG: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK-DAG: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK-DAG: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
     print(
         _compile_code[
             test_kernel[.float32],
@@ -500,30 +516,33 @@ def test_waitcnt_compile() raises:
 def test_nt_load_compile() raises:
     print("== test_nt_load_compile")
 
-    def kernel(x: ImmPointer[Float32, ImmutAnyOrigin]):
-        var ptr = x + thread_idx.x * 4
-        var val = ptr.load[width=4, non_temporal=True]()
+    def kernel[x_origin: ImmOrigin](x: ImmPointer[Float32, x_origin]):
+        var ptr = x.unsafe_offset(thread_idx.x * 4)
+        var val = ptr.unsafe_load[width=4, non_temporal=True]()
         keep(val)
 
     # CHECK: global_load_dwordx4 {{.*}} nt
-    print(_compile_code[kernel, target=MI355X_TARGET]())
+    print(_compile_code[kernel[ImmUntrackedOrigin], target=MI355X_TARGET]())
 
 
 # CHECK-LABEL: test_nt_store_compile
 def test_nt_store_compile() raises:
     print("== test_nt_store_compile")
 
-    def kernel(
-        x: ImmPointer[Float32, ImmutAnyOrigin],
-        y: MutPointer[Float32, MutAnyOrigin],
-    ):
-        var ptr_in = x + thread_idx.x * 4
-        var ptr_out = y + thread_idx.x * 4
-        var val = ptr_in.load[width=4]()
-        ptr_out.store[non_temporal=True](val)
+    def kernel[
+        x_origin: ImmOrigin, y_origin: MutOrigin
+    ](x: ImmPointer[Float32, x_origin], y: MutPointer[Float32, y_origin],):
+        var ptr_in = x.unsafe_offset(thread_idx.x * 4)
+        var ptr_out = y.unsafe_offset(thread_idx.x * 4)
+        var val = ptr_in.unsafe_load[width=4]()
+        ptr_out.unsafe_store[non_temporal=True](val)
 
     # CHECK: global_store_dwordx4 {{.*}} nt
-    print(_compile_code[kernel, target=MI355X_TARGET]())
+    print(
+        _compile_code[
+            kernel[ImmUntrackedOrigin, MutUntrackedOrigin], target=MI355X_TARGET
+        ]()
+    )
 
 
 def main() raises:

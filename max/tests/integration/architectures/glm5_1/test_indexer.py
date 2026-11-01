@@ -19,11 +19,12 @@ import math
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn import (
+from max.nn.legacy import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -31,13 +32,12 @@ from max.nn import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kv_cache import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
-    PagedCacheValues,
 )
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.deepseekV3_2.layers import Indexer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -227,13 +227,6 @@ def run_max_indexer(
         ),
     )
 
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # A NoPE indexer never reads ``freqs_cis``, so the table stays full width
     # and simply goes unused.
     rope = RotaryEmbedding(
@@ -279,18 +272,13 @@ def run_max_indexer(
         qr_in = graph.inputs[1].tensor
         input_row_offsets_in = graph.inputs[2].tensor
 
-        indexer_k_collection = PagedCacheValues(
-            kv_blocks=graph.inputs[3].buffer,
-            cache_lengths=graph.inputs[4].tensor,
-            lookup_table=graph.inputs[5].tensor,
-            max_prompt_length=graph.inputs[6].tensor,
-            max_cache_length=graph.inputs[7].tensor,
-            kv_scales=graph.inputs[8].buffer,
-        )
+        indexer_k_collection = kv_params.unflatten_kv_inputs(
+            iter(graph.inputs[3:])
+        )[0]
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-        result = indexer(
+        result, _ = indexer(
             x_in,
             qr_in,
             rope.freqs_cis[:seq_len],
@@ -298,11 +286,22 @@ def run_max_indexer(
             indexer_k_collection,
             layer_idx,
             mask_variant,
+            write_logical=True,
         )
+        assert result is not None
 
         graph.output(result)
 
+    # Compile before the KV cache manager allocates device memory, so that the
+    # precompile_mefs record run reaches the load on a virtual device.
     compiled = session.load(graph, weights_registry=indexer.state_dict())
+
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
 
     prompt_lens = [seq_len] * batch_size
     batch_contexts = []
@@ -312,7 +311,7 @@ def run_max_indexer(
         kv_manager.alloc(context)
         batch_contexts.append(context)
 
-    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts])[0]
 
     x_flat = x.view(-1, dim)
     qr_flat = qr.view(-1, q_lora_rank)
@@ -337,7 +336,7 @@ def run_max_indexer(
         x_device,
         qr_device,
         input_row_offsets_device,
-        *kv_inputs.flatten(),
+        *tree.leaves(kv_inputs),
     )
 
     output_tensor = from_dlpack(output_result[0])
@@ -369,10 +368,10 @@ def test_indexer_no_mask(
     rope_dim: int,
 ) -> None:
     total_seq_len = batch_size * seq_len
-    torch_output = run_torch_indexer(x, qr, state_dict, rope_dim=rope_dim)
     max_output = run_max_indexer(
         x, qr, input_row_offsets, state_dict, rope_dim=rope_dim
     )
+    torch_output = run_torch_indexer(x, qr, state_dict, rope_dim=rope_dim)
 
     assert max_output.shape[0] == total_seq_len, (
         f"Expected first dimension {total_seq_len}, got {max_output.shape[0]}"
@@ -413,9 +412,6 @@ def test_indexer_causal_mask(
     rope_dim: int,
 ) -> None:
     total_seq_len = batch_size * seq_len
-    torch_output = run_torch_indexer(
-        x, qr, state_dict, mask=True, rope_dim=rope_dim
-    )
     max_output = run_max_indexer(
         x,
         qr,
@@ -423,6 +419,9 @@ def test_indexer_causal_mask(
         state_dict,
         MHAMaskVariant.CAUSAL_MASK,
         rope_dim=rope_dim,
+    )
+    torch_output = run_torch_indexer(
+        x, qr, state_dict, mask=True, rope_dim=rope_dim
     )
 
     assert max_output.shape[0] == total_seq_len, (

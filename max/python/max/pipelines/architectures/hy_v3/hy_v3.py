@@ -21,35 +21,52 @@ and one always-on shared expert.
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     ops,
 )
-from max.nn.comm import Allreduce, Signals
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module, SubgraphInput
-from max.nn.linear import MLP as DenseMLP
-from max.nn.linear import ColumnParallelLinear, Linear
-from max.nn.moe import MoE, forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import forward_sequential_layers
-from max.nn.transformer.distributed_transformer import (
+from max.graph import Module as GraphModule
+from max.nn.legacy.comm import Allreduce, Signals
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP as DenseMLP
+from max.nn.legacy.linear import ColumnParallelLinear, Linear
+from max.nn.legacy.moe import MoE, forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    ReturnHiddenStates,
+    forward_sequential_layers,
+    logits_outputs,
+)
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
+from max.tree import Tree
 
 from .layers.attention import HYV3Attention
 from .layers.moe_gate import HYV3TopKRouter
@@ -211,6 +228,7 @@ class HYV3TransformerBlock(Module):
         input_row_offsets: list[TensorValue],
         ep_inputs: list[TensorValue | BufferValue] | None = None,
     ) -> list[TensorValue]:
+        """Runs the block over its sharded hidden states."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_outs = [
             shard(
@@ -351,7 +369,8 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
         ep_inputs: list[TensorValue | BufferValue] | None = None,
         data_parallel_splits: TensorValue | None = None,
         host_input_row_offsets: TensorValue | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         freqs_cis_list = [
@@ -375,10 +394,8 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
                 data_parallel_splits,
             )
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
-            values: list[SubgraphInput] = [
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
@@ -423,11 +440,14 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
             self.lm_head(norm_last_token, signal_buffers)[0],
             DType.float32,
         )
-        return (last_logits,)
+        return logits_outputs(
+            last_logits, None, None, ReturnHiddenStates.NONE, []
+        )
 
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in :meth:`__call__`'s order."""
         device_ref = self.devices[0]
 
         tokens_type = TensorType(
@@ -465,7 +485,7 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
 
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         ep_input_types: list[TensorType | BufferType] = []
         if self.ep_manager is not None:
@@ -476,4 +496,79 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
             + signal_buffer_types
             + flattened_kv_types
             + ep_input_types
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits them into
+        the batch, the data-parallel splits, a signal buffer per device, the
+        KV cache and the expert-parallel buffers.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.devices)
+
+        def forward(*inputs: Value[Any]) -> DecoderOutputs:
+            inputs_iter = iter(inputs)
+            tokens = next(inputs_iter)
+            input_row_offsets = next(inputs_iter)
+            return_n_logits = next(inputs_iter)
+            data_parallel_splits = None
+            host_input_row_offsets = None
+            if self.config.data_parallel_degree > 1:
+                data_parallel_splits = next(inputs_iter).tensor
+                host_input_row_offsets = next(inputs_iter).tensor
+
+            signal_buffers = [
+                next(inputs_iter).buffer for _ in range(n_devices)
+            ]
+            num_kv_inputs = len(self.kv_params.flattened_kv_inputs())
+            kv_inputs = [next(inputs_iter) for _ in range(num_kv_inputs)]
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(iter(kv_inputs)),
+                leaf=KVCacheInputsPerDevice,
+            )
+            ep_inputs: list[TensorValue | BufferValue] = []
+            for value in inputs_iter:
+                assert isinstance(value, TensorValue | BufferValue)
+                ep_inputs.append(value)
+
+            return self(
+                tokens.tensor,
+                kv_collections,
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+                signal_buffers,
+                ep_inputs,
+                data_parallel_splits,
+                host_input_row_offsets,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
         )

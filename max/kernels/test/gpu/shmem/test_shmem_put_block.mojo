@@ -13,14 +13,17 @@
 # RUN: %mojo %s
 from max.gpu import block_dim, block_idx, global_idx
 from std.memory import Pointer, alloc
+from std.memory.alloc import unsafe_alloc
 from std.ffi import c_size_t
 from shmem import *
 from std.testing import assert_equal
 
 
-def set_and_shift_kernel(
-    send_data: Pointer[Float32, MutAnyOrigin],
-    recv_data: Pointer[Float32, MutAnyOrigin],
+def set_and_shift_kernel[
+    send_origin: MutOrigin, recv_origin: MutOrigin
+](
+    send_data: Pointer[Float32, send_origin],
+    recv_data: Pointer[Float32, recv_origin],
     num_elems: Int,
     mype: Int32,
     npes: Int32,
@@ -41,15 +44,15 @@ def set_and_shift_kernel(
 
     if use_nbi == 1:
         shmem_put_nbi[SHMEMScope.block](
-            recv_data + block_offset,
-            send_data + block_offset,
+            recv_data.unsafe_offset(block_offset),
+            send_data.unsafe_offset(block_offset),
             c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
     else:
         shmem_put[SHMEMScope.block](
-            recv_data + block_offset,
-            send_data + block_offset,
+            recv_data.unsafe_offset(block_offset),
+            send_data.unsafe_offset(block_offset),
             c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
@@ -71,7 +74,9 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
 
     ctx.barrier_all()
 
-    ctx.enqueue_function[set_and_shift_kernel](
+    ctx.enqueue_function[
+        set_and_shift_kernel[origin_of(send_data), origin_of(recv_data)]
+    ](
         send_data,
         recv_data,
         num_elems,
@@ -82,7 +87,7 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
         block_dim=threads_per_block,
     )
 
-    var host = alloc[Float32](num_elems)
+    var host = unsafe_alloc[Float32](num_elems)
     recv_data.enqueue_copy_to(host)
 
     # The completion of the non-blocking version of `shmem_put` is
@@ -100,7 +105,7 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
             String(t"unexpected value on PE: {mype} at idx: {i}"),
         )
 
-    print("[", mype, "of", npes, "] run complete. use_nbi=", use_nbi)
+    print(t"[ {mype} of {npes} ] run complete. use_nbi= {use_nbi}")
 
 
 def main() raises:

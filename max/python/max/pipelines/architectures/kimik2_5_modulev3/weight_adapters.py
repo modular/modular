@@ -20,20 +20,14 @@ Maps HuggingFace checkpoint keys to the MAX module state_dict keys for:
 Two top-level adapters correspond to the two architectures in ``arch.py``:
 
 - :func:`convert_kimik2_5_safetensor_state_dict` —
-  ``KimiK25ForConditionalGeneration`` (e.g. nvidia/Kimi-K2.5-NVFP4).
+  ``KimiK25ForConditionalGeneration`` (such as nvidia/Kimi-K2.5-NVFP4).
   Uses ``mm_projector.*`` projector naming; drops ``.k_scale``/``.v_scale``.
 - :func:`convert_kimivl_safetensor_state_dict` —
-  ``KimiVLForConditionalGeneration`` (e.g. moonshotai/Kimi-VL-A3B).
+  ``KimiVLForConditionalGeneration`` (such as moonshotai/Kimi-VL-A3B).
   Uses ``multi_modal_projector.*`` projector naming.
 
 Both adapters share :func:`_convert_merged_state_dict`, which processes
 vision and language keys in a single loop over the raw checkpoint.
-
-For MXFP4 checkpoints the model calls
-:func:`~max.pipelines.weights.mxfp4_preshuffle.preshuffle_mxfp4_b_experts`
-on the post-adapter state dict to lay expert ``B`` bytes out in
-``Shuffler.b_5d_grouped_layout`` for the AMD preb grouped-matmul kernel.
-The preshuffle is pure-numpy on CPU.
 """
 
 from __future__ import annotations
@@ -122,9 +116,8 @@ def _convert_merged_state_dict(
     Vision keys (``vision_tower.*``, ``mm_projector.*``,
     ``multi_modal_projector.*``) are renamed and cast to bfloat16.
     Language-model keys (``language_model.*``) are delegated to the DeepseekV3
-    ModuleV3 adapter, which performs the bf16 / FP8-block / NVFP4 weight-name
-    remapping the shared language tower requires (raw-MLA ``.weight`` strip,
-    ``.weight.data`` / ``.weight.weight_scale`` packing, ``mlp.gate`` router
+    ModuleV3 adapter, which performs the weight-name remapping the shared
+    language tower requires (raw-MLA ``.weight`` strip, ``mlp.gate`` router
     rename, MTP pruning, and kv-scale drop). All other keys are ignored.
 
     Args:
@@ -179,6 +172,7 @@ def convert_kimik2_5_safetensor_state_dict(
     Args:
         state_dict: Raw checkpoint as dict from weight name to :class:`Weights`.
         huggingface_config: HuggingFace config (required for MTP pruning).
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         State dict with ``vision_encoder.*`` and ``language_model.*`` keys
@@ -209,6 +203,7 @@ def convert_kimivl_safetensor_state_dict(
     Args:
         state_dict: Raw checkpoint as dict from weight name to :class:`Weights`.
         huggingface_config: HuggingFace config (required for MTP pruning).
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         State dict with ``vision_encoder.*`` and ``language_model.*`` keys
@@ -255,6 +250,7 @@ def convert_eagle3_draft_state_dict(
 
     Args:
         state_dict: Raw Eagle3 checkpoint.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         State dict with keys matching ``Eagle3KimiK25`` module hierarchy.

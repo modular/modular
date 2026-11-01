@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -I=%S/inputs %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I%S/inputs %s | FileCheck %s
 
 # An explicit import from a package must make *all* extensions re-exported by
 # the package's wildcard imports visible, not just those from the wildcard

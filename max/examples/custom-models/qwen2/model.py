@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/serve-custom-model-architectures.mdx
+# DOC: develop/serve-custom-model-architectures.mdx
 
 from __future__ import annotations
 
 from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
+from max.nn.legacy import ReturnLogits
 from max.pipelines.architectures.llama3.model import Llama3Model
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig

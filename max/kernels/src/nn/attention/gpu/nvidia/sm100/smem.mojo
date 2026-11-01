@@ -78,9 +78,13 @@ struct SM100AttentionSMem[
     qkv_dtype: DType,
     rope_dtype_: Optional[DType],
     scale_dtype_: Optional[DType],
+    cross_p: Bool,
     //,
     config: FA4Config[
-        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
+        qkv_dtype,
+        rope_dtype_=rope_dtype_,
+        scale_dtype_=scale_dtype_,
+        cross_p=cross_p,
     ],
     *,
     use_order_barriers: Bool = EnableForcedOrdering,
@@ -97,13 +101,16 @@ struct SM100AttentionSMem[
         rope_dtype_: Element type of Q and K rope (unset when there is no rope).
         scale_dtype_: Element type of the per-token scale used for Q and K
             (unset when there is no per-token scaling).
+        cross_p: Cross-stage P for this instantiation
+            (`FA4Config.cross_p`).
         config: FA4 configuration (tile sizes, depths, staging counts, etc.).
         use_order_barriers: Whether forced-ordering barriers are allocated.
     """
 
     # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. Fall back to
-    # `qkv_dtype` when unset so the type is always well-formed; presence is
-    # signalled by `rope_dt_size`/`_scale_dt_size` being 0.
+    # `qkv_dtype` when unset so the type is always well-formed; scale presence
+    # is signalled by `_scale_dt_size` being 0, and an unset rope dtype stores
+    # any rope region at `qkv_dtype` (see `FA4Config.rope_dtype_size`).
     comptime rope_dtype = Self.rope_dtype_.or_else(Self.qkv_dtype)
     comptime scale_dtype = Self.scale_dtype_.or_else(Self.qkv_dtype)
 
@@ -112,9 +119,7 @@ struct SM100AttentionSMem[
 
     comptime _qkv_dt_size: Int = size_of[Self.qkv_dtype]()
 
-    comptime rope_dt_size: Int = (
-        size_of[Self.rope_dtype_.value()]() if Self.rope_dtype_ else 0
-    )
+    comptime rope_dt_size: Int = Self.config.rope_dtype_size
     comptime q_byte_offset: Int = 0
     # Q_nope SMEM region: width is the non-rope Q/K depth (`padded_nope_depth`),
     # which differs from the V/output depth when v_head_dim != qk_nope.
@@ -318,11 +323,10 @@ struct SM100AttentionSMem[
 
     # ---- construction --------------------------------------------------------
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Obtain the base pointer from the kernel's dynamic shared memory."""
 
-        comptime assert Self.rope_dtype_ or Self.rope_depth == 0
         self.base = external_memory[
             UInt8,
             address_space=.SHARED,
@@ -332,28 +336,30 @@ struct SM100AttentionSMem[
 
     # ---- accessors -----------------------------------------------------------
 
-    @always_inline
+    @inline(.always)
     def misc_mbars(self) -> Self.MiscMBarsType:
         """Return the FA4MiscMBars wrapper over the mbarrier region."""
         return Self.MiscMBarsType(
-            (self.base + Self.mbar_byte_offset).bitcast[SharedMemBarrier]()
+            self.base.unsafe_offset(Self.mbar_byte_offset).unsafe_bitcast[
+                SharedMemBarrier
+            ]()
         )
 
-    @always_inline
+    @inline(.always)
     def q_smem(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the Q region (offset 0)."""
-        return (self.base + Self.q_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.q_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def q_rope_smem(self) -> SharedMemPointer[Scalar[Self.rope_dtype]]:
         """Base of the Q rope region (after Q nope in smem)."""
-        return (self.base + Self.q_rope_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.q_rope_byte_offset).unsafe_bitcast[
             Scalar[Self.rope_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def o_smem[
         output_type: DType
     ](self) -> SharedMemPointer[Scalar[output_type]]:
@@ -362,16 +368,18 @@ struct SM100AttentionSMem[
         Parameters:
             output_type: Element type to reinterpret the Q region as.
         """
-        return (self.base + Self.q_byte_offset).bitcast[Scalar[output_type]]()
+        return self.base.unsafe_offset(Self.q_byte_offset).unsafe_bitcast[
+            Scalar[output_type]
+        ]()
 
-    @always_inline
+    @inline(.always)
     def k_smem_base(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the K region (first stage, offset = kv_byte_offset)."""
-        return (self.base + Self.kv_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.kv_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def v_smem_base(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the V region (stage 0).
 
@@ -380,37 +388,39 @@ struct SM100AttentionSMem[
         Shared mode: Returns the same pointer as k_smem_base() since
         K_nope and V share the same buffer.
         """
-        return (self.base + Self.v_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.v_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def rope_smem_base(self) -> SharedMemPointer[Scalar[Self.rope_dtype]]:
         """Base of the rope region (shared mode only)."""
-        return (self.base + Self.rope_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.rope_byte_offset).unsafe_bitcast[
             Scalar[Self.rope_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def correction_smem(self) -> SharedMemPointer[Float32]:
         """Base of the correction region (BM Float32 elements)."""
-        return (self.base + Self.correction_byte_offset).bitcast[Float32]()
+        return self.base.unsafe_offset(
+            Self.correction_byte_offset
+        ).unsafe_bitcast[Float32]()
 
-    @always_inline
+    @inline(.always)
     def q_scale_smem(self) -> SharedMemPointer[Scalar[Self.scale_dtype]]:
         """Base of the q_scale region (BM elements)."""
-        return (self.base + Self.q_scale_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.q_scale_byte_offset).unsafe_bitcast[
             Scalar[Self.scale_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def k_scale_smem(self) -> SharedMemPointer[Scalar[Self.scale_dtype]]:
         """Base of the k_scale region (num_k_scale_bufs * BN elements)."""
-        return (self.base + Self.k_scale_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.k_scale_byte_offset).unsafe_bitcast[
             Scalar[Self.scale_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def p_smem(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the shared-key P staging region (0-sized when off).
 
@@ -432,11 +442,11 @@ struct SM100AttentionSMem[
             "the shared-key P region must be 16 B aligned; the P@V"
             " A-descriptor truncates a misaligned base instead of failing"
         )
-        return (self.base + Self.p_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.p_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def ws_exchange_smem(self) -> SharedMemPointer[Float32]:
         """Base of the shared-key cross-warp exchange region (0-sized off).
 
@@ -444,24 +454,30 @@ struct SM100AttentionSMem[
         parity `p` owns `[(wg*2 + p) * WARPGROUP_SIZE, +WARPGROUP_SIZE)`;
         `fa4_ws_exchange4` does that indexing.
         """
-        return (self.base + Self.ws_exchange_byte_offset).bitcast[Float32]()
+        return self.base.unsafe_offset(
+            Self.ws_exchange_byte_offset
+        ).unsafe_bitcast[Float32]()
 
-    @always_inline
+    @inline(.always)
     def tmem_addr_ptr(self) -> SharedMemPointer[UInt32]:
         """Pointer to the single UInt32 storing the TMEM address."""
-        return (self.base + Self.tmem_addr_byte_offset).bitcast[UInt32]()
+        return self.base.unsafe_offset(
+            Self.tmem_addr_byte_offset
+        ).unsafe_bitcast[UInt32]()
 
-    @always_inline
+    @inline(.always)
     def blasst_vote_smem(self) -> SharedMemPointer[UInt8]:
         """Base of the BLASST per-warp skip-vote region (0-sized when off).
 
         Slot `(wg*2 + phase)*4 + warp_in_wg` holds softmax warp `warp_in_wg`'s
         skip vote for warp group `wg` at S-consumer phase `phase`.
         """
-        return (self.base + Self.blasst_vote_byte_offset).bitcast[UInt8]()
+        return self.base.unsafe_offset(
+            Self.blasst_vote_byte_offset
+        ).unsafe_bitcast[UInt8]()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def smem_size() -> Int:
         """Total dynamic shared memory bytes required."""
         return (

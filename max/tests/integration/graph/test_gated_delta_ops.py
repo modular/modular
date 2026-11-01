@@ -93,6 +93,8 @@ def test_gated_delta_conv1d_fwd_shapes_and_in_place(
             out_types=[
                 TensorType(DType.float32, [total_seq_len, conv_dim], device=gpu)
             ],
+            # Required even though the Mojo struct parameter has a default.
+            parameters={"write_state": True},
         )
         graph.output(results[0])
 

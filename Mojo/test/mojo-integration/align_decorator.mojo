@@ -154,7 +154,7 @@ def test_heap_allocation_alignment() raises:
     allocations should respect the @align decorator.
     """
     # Allocate on heap - should be 64-byte aligned
-    var heap_ptr_alloc = alloc[CacheAligned]({count = 1}).into_managed()
+    var heap_ptr_alloc = alloc[CacheAligned]({length = 1}).into_managed()
     var heap_ptr = heap_ptr_alloc.unsafe_ptr()
     var heap_addr = Int(heap_ptr)
     assert_true(
@@ -163,7 +163,7 @@ def test_heap_allocation_alignment() raises:
     dealloc(heap_ptr_alloc^)
 
     # Large alignment on heap
-    var page_ptr_alloc = alloc[PageAligned]({count = 1}).into_managed()
+    var page_ptr_alloc = alloc[PageAligned]({length = 1}).into_managed()
     var page_ptr = page_ptr_alloc.unsafe_ptr()
     var page_addr = Int(page_ptr)
     assert_true(
@@ -223,7 +223,7 @@ def test_generic_stack_allocation() raises:
 def test_array_alignment() raises:
     """Test array allocation alignment behavior."""
     # Allocate array - base pointer should be 64-byte aligned
-    var arr_alloc = alloc[CacheAligned]({count = 4}).into_managed()
+    var arr_alloc = alloc[CacheAligned]({length = 4}).into_managed()
     var arr: Pointer[
         CacheAligned, origin_of(arr_alloc)
     ] = arr_alloc.unsafe_ptr()
@@ -440,9 +440,9 @@ def test_optional_alignment() raises:
 
     # Verify we can access the value correctly
     assert_equal(container.other, 99, "other field should have value 99")
-    if container.opt:
+    if case .Some(opt) = container.opt:
         assert_equal(
-            container.opt.value().value,
+            opt.value,
             42,
             "opt.value().value should be 42",
         )

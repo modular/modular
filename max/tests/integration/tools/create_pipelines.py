@@ -626,6 +626,9 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             torch_dtype=torch_dtype,
             trust_remote_code=True,
         )
+        # The logits recorder runs after the generation config's processors,
+        # and MAX's logits carry no repetition penalty.
+        model.generation_config.repetition_penalty = 1.0
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     def run_torch_text_generation(
@@ -800,46 +803,6 @@ class KimiK2_5PipelineOracle(_KimiK2_5BaseOracle):
         return test_data.KIMIK2_5_REQUESTS + text_only_requests
 
 
-class KimiK2_6PipelineOracle(KimiK2_5PipelineOracle):
-    """Pipeline oracle for Kimi-K2.6-NVFP4 (vLLM only).
-
-    K2.6 reuses the Kimi-K2.5 MAX architecture — same TEXT+IMAGE modalities,
-    parsers, and tokenizer (see ``architectures/kimik2_5/arch.py``, which lists
-    K2.6 as an example repo). It therefore inherits K2.5's vLLM golden setup
-    verbatim: multimodal (``KIMIK2_5_REQUESTS``) + text inputs and the vision
-    ``_vllm_extra_kwargs`` (``mm_encoder_tp_mode`` / ``limit_mm_per_prompt`` on
-    the ``vision_chunk`` mm-data key).
-
-    The MAX pipeline runs in TP+EP mode (``data_parallel_degree=1``,
-    ``ep_size=8``, ``ep_use_allreduce=True``) to match the served K2.6
-    deployment, rather than the K2.5 base oracle's DP+EP (``dp=8``) layout. This
-    create_max_pipeline override is adapted from PR #86438.
-    """
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        config = pipelines.PipelineArgs.from_flat_kwargs(
-            device_specs=device_specs,
-            quantization_encoding=encoding,
-            model_path=self.model_path,
-            max_length=4096,
-            trust_remote_code=self.trust_remote_code,
-            max_batch_input_tokens=4096,
-            ep_size=8,
-            data_parallel_degree=1,
-            ep_use_allreduce=True,
-        )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            PipelineConfig.from_args(config)
-        )
-        assert isinstance(pipeline, TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
-
-
 class KimiK2_7PipelineOracle(KimiK2_5PipelineOracle):
     """Pipeline oracle for Kimi-K2.7-Code-NVFP4 (vLLM only).
 
@@ -872,148 +835,6 @@ class KimiK2_7PipelineOracle(KimiK2_5PipelineOracle):
             ep_size=8,
             data_parallel_degree=1,
             ep_use_allreduce=True,
-        )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            PipelineConfig.from_args(config)
-        )
-        assert isinstance(pipeline, TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
-
-
-class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
-    """Oracle for the text-only DeepseekV3 conversion of Kimi-K2.5-NVFP4.
-
-    The checkpoint is the original ``nvidia/Kimi-K2.5-NVFP4`` weights with the
-    vision stack stripped, MTP layer dropped, and key prefixes rewritten so
-    the file loads via the standard DeepseekV3 pipeline. Underlying tensor
-    bytes are bit-identical to the upstream Kimi NVFP4 checkpoint, so MAX
-    DeepseekV3 logits should match vLLM's at NVFP4 quantization noise levels.
-    """
-
-    # Bump back to the default NUM_STEPS once EP-MoE + full-logits-return
-    # mode no longer trips CUDA_ERROR_ILLEGAL_ADDRESS in
-    # ``max/kernels/src/shmem/ep_comm.mojo``. With ``num_steps=10`` the run
-    # aborts during the second decode step.
-    num_steps = 1
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        return [
-            MockTextGenerationRequest.text_only(prompt)
-            for prompt in test_data.SHORT_TEXT_PROMPTS
-        ]
-
-
-class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
-    """Pipeline oracle for AMD MXFP4 Kimi K2.5."""
-
-    def __init__(self, model_path: str) -> None:
-        super().__init__()
-        self.model_path = model_path
-        self.trust_remote_code = True
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {"gpu": ["float4_e2m1fnx2"]}
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        text_only_requests = [
-            MockTextGenerationRequest.with_messages(
-                prompt=prompt,
-                messages=[{"role": "user", "content": prompt}],
-                is_multimodal=False,
-            )
-            for prompt in test_data.SHORT_TEXT_PROMPTS
-        ]
-        return test_data.KIMIK2_5_REQUESTS + text_only_requests
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        gpu_count = max(
-            1, sum(1 for d in device_specs if d.device_type == "gpu")
-        )
-        config = pipelines.PipelineArgs.from_flat_kwargs(
-            device_specs=device_specs,
-            quantization_encoding=encoding,
-            model_path=self.model_path,
-            max_length=4096,
-            trust_remote_code=self.trust_remote_code,
-            max_batch_input_tokens=4096,
-            ep_size=gpu_count,
-            data_parallel_degree=gpu_count,
-        )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            PipelineConfig.from_args(config)
-        )
-        assert isinstance(pipeline, TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device | str,
-    ) -> TorchModelAndDataProcessor:
-        raise NotImplementedError(
-            "Kimi K2.5 is 1T params (MoE) — torch golden generation is not"
-            " practical. Use --framework vllm instead."
-        )
-
-    def create_vllm_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device_specs: list[driver.DeviceSpec],
-    ) -> VLLMPipeline:
-        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
-        # vLLM's kimi_k25 plugin exposes its multimodal input under the
-        # vision_chunk modality, so the image must be keyed and limited under
-        # vision_chunk to reach the model.
-        return VLLMPipeline(
-            model_path=self.model_path,
-            trust_remote_code=self.trust_remote_code,
-            encoding=encoding,
-            tensor_parallel_size=max(1, gpu_count),
-            extra_kwargs={
-                "mm_encoder_tp_mode": "data",
-                "limit_mm_per_prompt": {"vision_chunk": 1},
-            },
-            mm_data_key="vision_chunk",
-        )
-
-
-class KimiK2_5DeepseekV3LocalPathPipelineOracle(
-    KimiK2_5DeepseekV3PipelineOracle
-):
-    """DeepseekV3 Kimi-K2.5-NVFP4 oracle loading weights from a local path.
-
-    Identical to :class:`KimiK2_5DeepseekV3PipelineOracle` in every respect
-    except that ``model_path`` is an absolute filesystem path (weights are
-    pre-staged on a dedicated runner).
-    """
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        config = pipelines.PipelineArgs(
-            model_path=self.model_path,
-            quantization_encoding=encoding,
-            device_specs=device_specs,
-            max_length=4096,
-            trust_remote_code=self.trust_remote_code,
-            data_parallel_degree=8,
-            runtime=pipelines.PipelineRuntimeConfig(
-                max_batch_input_tokens=4096,
-                ep_size=8,
-            ),
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             PipelineConfig.from_args(config)
@@ -1737,6 +1558,10 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "meta-models/Muse-Glimmer-30B": GenericOracle(
+        model_path="meta-models/Muse-Glimmer-30B",
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "microsoft/Phi-3.5-mini-instruct": GenericOracle(
         model_path="microsoft/Phi-3.5-mini-instruct",
         device_encoding_map={
@@ -1766,6 +1591,14 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={
             "gpu": ["float32", "bfloat16"],
         },
+    ),
+    "LiquidAI/LFM3-1.7B": GenericOracle(
+        model_path="LiquidAI/LFM3-1.7B",
+        config_params={"max_length": 8192, "trust_remote_code": True},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "LiquidAI/LFM3-VL-2B": Qwen3VLPipelineOracle(
+        model_path="LiquidAI/LFM3-VL-2B"
     ),
     "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
         model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
@@ -2064,6 +1897,15 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
+    "modularai/SmolLM-135M-Instruct-FP32": GenericOracle(
+        model_path="modularai/SmolLM-135M-Instruct-FP32",
+        config_params={
+            "max_length": 2048,
+        },
+        device_encoding_map={
+            "cpu": ["float32"],
+        },
+    ),
     "HuggingFaceTB/SmolLM2-360M-Instruct": LoRAOracle(
         model_path="HuggingFaceTB/SmolLM2-360M-Instruct",
         lora_repo_id="fausap/peft-smollm2-lora-gtx1660",
@@ -2217,6 +2059,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "nvidia/Kimi-K2.7-Code-NVFP4": KimiK2_7PipelineOracle(
         "nvidia/Kimi-K2.7-Code-NVFP4"
     ),
+    # `transformers` cannot load Laguna S-2.1's mixed NVFP4/BF16 experts and
+    # the BF16 source is 236 GB, so the reference side has to be a vLLM golden.
+    "poolside/Laguna-S-2.1-NVFP4": GenericOracle(
+        model_path="poolside/Laguna-S-2.1-NVFP4",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     # Trimmed MiniMax-M3 (dense-only layers) for logit verification. The prompts
     # are pinned and apply_chat_template is off so the input_ids match those the
     # reference logits were generated from.
@@ -2309,5 +2158,26 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "device_memory_utilization": 0.9,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    # transformers cannot load the NVFP4 checkpoint, so the torch reference
+    # is the BF16 checkpoint it was quantized from, and the quantization error
+    # lands in the logit_verification_config.yaml tolerances. MAX runs the
+    # ModuleV3 path like the smoke-test recipe, but keeps the default BF16 KV
+    # cache rather than the recipe's FP8 one, so only the weight quantization
+    # differs from the reference. The context and batch are capped like the
+    # Nano entry above so the paged KV cache and the per-slot SSM state pool
+    # stay small. Tensor parallelism comes from the device list: the yaml
+    # entry runs on the 2x B200 job (gpu:0,1), so MAX runs at TP=2.
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4": NemotronHOracle(
+        model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        torch_model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        config_params={
+            "max_length": 8192,
+            "max_batch_size": 8,
+            "trust_remote_code": True,
+            "device_memory_utilization": 0.9,
+            "prefer_module_v3": True,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
 }

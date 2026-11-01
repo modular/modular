@@ -10,22 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The LLaVA decoder stack."""
+
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
 from max.graph import ops
-from max.nn.kv_cache import (
+from max.nn import Module
+from max.nn.embedding import Embedding
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from ...llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
 
@@ -33,6 +35,8 @@ from ...llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
 class Transformer(
     Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
 ):
+    """The LLaVA decoder stack."""
+
     def __init__(
         self,
         dim: int,

@@ -41,11 +41,11 @@
 // which returns NULL on a major it does not support (the shim then treats
 // the plugin as absent). Bump MAJOR on any breaking layout or semantic
 // change; bump MINOR when appending fields to M_ProfilerPluginAPI. A shim
-// must not read fields beyond the plugin's structSize — the 1.0 shim reads
-// no appended fields, so it carries no such check yet — which is what lets
-// newer shims degrade gracefully against older plugins and vice versa.
+// must not read fields beyond the plugin's structSize (see
+// M_PROFILER_API_HAS), which is what lets newer shims degrade gracefully
+// against older plugins and vice versa.
 #define M_PROFILER_ABI_MAJOR 1
-#define M_PROFILER_ABI_MINOR 0
+#define M_PROFILER_ABI_MINOR 2
 
 // Filename the shim probes when MODULAR_PROFILER_PLUGIN does not name an
 // explicit path: next to the host DSO first, then the default dlopen search.
@@ -111,7 +111,26 @@ typedef struct M_ProfilerPluginAPI {
   void (*rangeEnd)(void);
   // Names the calling thread's track in the trace; must run on that thread.
   void (*registerCurrentThread)(void);
+
+  // ABI 1.1. Asks for an event-triggered step-window burst; `reason` need
+  // not be NUL-terminated. Returns whether a burst opened.
+  bool (*requestBurst)(const char *reason, size_t reasonLen);
+
+  // ABI 1.2.
+  // Attaches a top-level metadata field to the live trace. The first value
+  // set for a key in a trace wins; later calls for it are cheap no-ops. The
+  // value is inserted into the trace JSON verbatim, so it must be valid JSON
+  // needing no escapes. Dropped when no trace is live.
+  void (*setTraceMetadata)(const char *key, size_t keyLen, const char *value,
+                           size_t valueLen);
 } M_ProfilerPluginAPI;
+
+// True iff `api` (a plugin's table) is long enough to carry `field` and sets
+// it: the check a shim makes before calling any field appended after 1.0.
+#define M_PROFILER_API_HAS(api, field)                                         \
+  ((api)->structSize >=                                                        \
+       offsetof(M_ProfilerPluginAPI, field) + sizeof((api)->field) &&          \
+   (api)->field != NULL)
 
 // The single symbol libMAXProfilerPlugin.so exports. Returns NULL when
 // shimABIMajor is unsupported. The first successful call performs the

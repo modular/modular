@@ -143,7 +143,7 @@ def unsound_generic_call[
 # (all_conforms_to[Copyable]()) can't be proven.
 
 
-# CHECK: argument type 'Tuple[types]' does not conform to trait 'Copyable'
+# CHECK: argument type 'Tuple[*values]' does not conform to trait 'Copyable'
 def unsound_variadic_call[*types: Movable](t: Tuple[*types]):
     needs_copyable(t)
 

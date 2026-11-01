@@ -191,7 +191,7 @@ allocate it. Use `dealloc()` to free the allocation and its associated memory.
 
 ```mojo
 from std.memory.alloc import alloc, dealloc, Layout
-var allocation = alloc(Layout[Int](count=4))
+var allocation = alloc(Layout[Int](length=4))
 # Use allocation
 var ptr = allocation.unsafe_ptr()
 for i in range(4):
@@ -201,7 +201,7 @@ for i in range(4):
 dealloc(allocation^)
 ```
 
-You can also write the allocation above as `alloc[Int]({count = 4})`.
+You can also write the allocation above as `alloc[Int]({length = 4})`.
 
 Because `Allocation` is an explicitly-destroyed type, you must deallocate it
 before it goes out of scope.
@@ -215,16 +215,14 @@ valid, non-null pointer pointing to the allocated space. The allocated space is
 
 To initialize allocated memory, `Pointer` provides the
 [`unsafe_write()`](/docs/std/memory/pointer/Pointer/#unsafe_write)
-method, which moves a value into the pointer's memory location:
+method, which writes a value into the pointer's memory location:
 
 ```mojo no-test
 str_ptr.unsafe_write(my_string^)
 ```
 
-Note that to move the value, you usually need to add the transfer sigil (`^`),
-unless the value is an
-[implicitly copyable](/docs/std/traits/copyable/ImplicitlyCopyable/) type (like
-`Int`) or a newly-constructed, "owned" value:
+To transfer the value's ownership, use the transfer sigil (`^`) unless the
+value is unowned, such as newly constructed or newly copied:
 
 ```mojo
 str_ptr.unsafe_write("Owned string")
@@ -280,7 +278,7 @@ pointer calls lifecycle methods on the existing pointee (such as the
 deinitializer, move initializer or copy initializer).
 
 ```mojo
-var allocation = alloc[String]({count = 1})
+var allocation = alloc[String]({length = 1})
 var str_ptr = allocation.unsafe_ptr()
 # str_ptr[] = "Testing" # Undefined behavior!
 str_ptr.unsafe_write("Testing")
@@ -381,7 +379,7 @@ For example, the following code allocates memory to store 6 `Float64`
 values, and initializes them all to zero.
 
 ```mojo
-var allocation = alloc(Layout[Float64](count=6))
+var allocation = alloc(Layout[Float64](length=6))
 var float_ptr = allocation.unsafe_ptr()
 for offset in range(6):
     float_ptr.unsafe_offset(offset).unsafe_write(0.0)
@@ -566,7 +564,7 @@ This example shows storing the layout as a comptime member; for a struct
 with a dynamic size, you can reconstruct the original layout:
 
 ```mojo no-test
-self._alloc^.unsafe_with_layout({count = size})
+self._alloc^.unsafe_with_layout({length = size})
 ```
 
 ### Allocations and raising functions
@@ -578,7 +576,7 @@ Consider the following code:
 
 ```mojo no-test
 def allocating_function() raises:
-    var data = alloc[Float64]({count = 64})
+    var data = alloc[Float64]({length = 64})
     # ...
     raising_function(data.unsafe_ptr())
     dealloc(data^)
@@ -592,7 +590,7 @@ of an error:
 
 ```mojo
 def allocating_function() raises:
-    var data = alloc[Float64]({count = 64})
+    var data = alloc[Float64]({length = 64})
     # ...
     try:
         raising_function(data.unsafe_ptr())
@@ -610,12 +608,12 @@ pattern a last resort if other patterns don't work:
 
 ```mojo
 def leaky_function() raises:
-    var data_ptr = alloc[Float64]({count = 64}).unsafe_leak()
+    var data_ptr = alloc[Float64]({length = 64}).unsafe_leak()
     # ...
     raising_function(data_ptr)
     dealloc(
         ThinAllocation(unsafe_owned_ptr=data_ptr).unsafe_with_layout(
-            {count = 64}
+            {length = 64}
         )
     )
 ```

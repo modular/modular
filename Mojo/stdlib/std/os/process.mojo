@@ -21,7 +21,6 @@ _ = Process.run("echo", ["== TEST_ECHO"])
 ```
 """
 from std.collections import List, Optional
-from std.collections.string import StringSlice
 from std.sys import CompilationTarget
 from std.sys._libc import (
     waitpid,
@@ -36,8 +35,13 @@ from std.sys._libc import (
     close,
     WaitFlags,
 )
-from std.ffi import c_char, c_int, c_pid_t, get_errno, CStringSlice
-from .os import abort, sep
+from std.ffi import (
+    c_int,
+    c_pid_t,
+    get_errno,
+    CStringSpan,
+)
+from .os import sep
 
 
 # ===----------------------------------------------------------------------=== #
@@ -102,9 +106,9 @@ struct Pipe:
     ```
     """
 
-    var fd_in: Optional[FileDescriptor]
+    var fd_in: Optional[RawFileDescriptor]
     """File descriptor for pipe input."""
-    var fd_out: Optional[FileDescriptor]
+    var fd_out: Optional[RawFileDescriptor]
     """File descriptor for pipe output."""
 
     def __init__(
@@ -139,8 +143,8 @@ struct Pipe:
                 _ = close(pipe_fds[1])
                 raise Error("Failed to configure output pipe close on exec")
 
-        self.fd_in = FileDescriptor(Int(pipe_fds[0]))
-        self.fd_out = FileDescriptor(Int(pipe_fds[1]))
+        self.fd_in = RawFileDescriptor(pipe_fds[0])
+        self.fd_out = RawFileDescriptor(pipe_fds[1])
 
     def __deinit__(deinit self):
         """Ensures pipes input and output file descriptors are closed, when the object is destroyed.
@@ -159,21 +163,21 @@ struct Pipe:
             == 0
         )
 
-    @always_inline
+    @inline(.always)
     def set_input_only(mut self):
         """Close the output descriptor/ channel for this side of the pipe."""
-        if self.fd_out:
-            _ = close(Int32(rebind[Int](self.fd_out.value())))
+        if case .Some(fd_out) = self.fd_out:
+            _ = close(fd_out._value)
             self.fd_out = None
 
-    @always_inline
+    @inline(.always)
     def set_output_only(mut self):
         """Close the input descriptor/ channel for this side of the pipe."""
-        if self.fd_in:
-            _ = close(Int32(rebind[Int](self.fd_in.value())))
+        if case .Some(fd_in) = self.fd_in:
+            _ = close(fd_in._value)
             self.fd_in = None
 
-    @always_inline
+    @inline(.always)
     def write_bytes(mut self, bytes: Span[Byte, _]) raises:
         """Writes a span of bytes to the pipe.
 
@@ -183,12 +187,12 @@ struct Pipe:
         Raises:
             Error: If called on a read-only pipe.
         """
-        if self.fd_out:
-            self.fd_out.value().write_bytes(bytes)
+        if case .Some(ref fd_out) = self.fd_out:
+            fd_out.write_bytes(bytes)
         else:
             raise Error("Can not write from read only side of pipe")
 
-    @always_inline
+    @inline(.always)
     def read_bytes(mut self, buffer: MutSpan[Byte, _]) raises -> Int:
         """Read a number of bytes from this pipe.
 
@@ -201,8 +205,8 @@ struct Pipe:
         Raises:
             Error: If the pipe is in write-only mode.
         """
-        if self.fd_in:
-            return self.fd_in.value().read_bytes(buffer)
+        if case .Some(ref fd_in) = self.fd_in:
+            return fd_in.read_bytes(buffer)
 
         raise Error("Can not read from write only side of pipe")
 
@@ -254,8 +258,9 @@ struct Process:
         # We need to check the "cached" status to avoid trying to
         # kill a process after already having waited upon its exit.
         # Such a process no longer exists and its pid could be reused
-        if self.status and self.status.value().has_exited():
-            return False
+        if case .Some(status) = self.status:
+            if status.has_exited():
+                return False
 
         # `kill` returns 0 on success and -1 on failure
         return kill(Int32(self.child_pid), Int32(signal)) > -1
@@ -299,7 +304,7 @@ struct Process:
         else:
             # An error occurred.
             var err = get_errno()
-            raise Error("waitpid failed with errno " + String(err))
+            raise Error(String(t"waitpid failed with errno {err}"))
 
     def hangup(mut self) -> Bool:
         """Send the Hang up signal to the managed child process.
@@ -337,8 +342,8 @@ struct Process:
         Raises:
             Error: If `waitpid` fails.
         """
-        if self.status:
-            return self.status.value()
+        if case .Some(cached) = self.status:
+            return cached
 
         var status: c_int = 0
         var pid = waitpid(self.child_pid, Pointer(to=status), WaitFlags.WNOHANG)
@@ -359,8 +364,8 @@ struct Process:
         Raises:
             Error: If `waitpid` fails or the process does not exit.
         """
-        if self.status:
-            return self.status.value()
+        if case .Some(cached) = self.status:
+            return cached
 
         var status: c_int = 0
         var pid = waitpid(self.child_pid, Pointer(to=status), 0)
@@ -448,21 +453,22 @@ struct Process:
         var c_argv = argv.copy()
         var arg_count = len(c_argv)
         var argv_array_ptr_cstr_ptr = List[
-            Optional[CStringSlice[ImmutAnyOrigin]]
+            Optional[CStringSpan[ImmutAnyOrigin]]
         ](
             length=arg_count + 2,
             fill={},
         )
         var offset = 0
-        argv_array_ptr_cstr_ptr[offset] = rebind[CStringSlice[ImmutAnyOrigin]](
-            file_name.as_c_string_slice()
+        # Arg 0 in `argv` ptr array should be the file name
+        argv_array_ptr_cstr_ptr[offset] = rebind[CStringSpan[ImmutAnyOrigin]](
+            file_name.as_c_string_span()
         )
         offset += 1
 
         for i in range(len(c_argv)):
             argv_array_ptr_cstr_ptr[offset] = rebind[
-                CStringSlice[ImmutAnyOrigin]
-            ](c_argv[i].as_c_string_slice())
+                CStringSpan[ImmutAnyOrigin]
+            ](arg.as_c_string_span())
             offset += 1
 
         argv_array_ptr_cstr_ptr[offset] = {}
@@ -471,7 +477,8 @@ struct Process:
 
         var has_error_code = posix_spawnp(
             Pointer(to=pid),
-            path.as_c_string_slice(),
+            path.as_c_string_span(),
+            # Safety: `argv_array_ptr_cstr_ptr` has at least 2 elements so is non-null
             argv_array_ptr_cstr_ptr.unsafe_ptr(),
             envp,
         )

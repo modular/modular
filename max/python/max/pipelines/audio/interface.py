@@ -17,8 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
-from max.experimental.tensor import Tensor
 from max.pipelines.modeling.base.tensor_struct import TensorStruct
+from max.tensor import Tensor
 
 if TYPE_CHECKING:
     from max.engine import InferenceSession

@@ -14,7 +14,6 @@
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_idx,
     grid_dim,
     thread_idx,
@@ -38,12 +37,11 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200
 from max.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
-from std.math import ceildiv, clamp
+from std.math import clamp
 from std.math.uutils import ufloordiv, uceildiv, udivmod
 from std.memory import unsafe_stack_allocation
 from std.sys._assembly import inlined_assembly
 from std.sys.defines import get_defined_bool, get_defined_int
-from std.sys.info import _has_sm_100x_or_newer, has_nvidia_gpu_accelerator
 from std.utils.coord import Coord, CoordLike, coord_to_index_list
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -63,9 +61,9 @@ comptime _USE_CLC_WORK_STEALING = get_defined_bool[
 comptime _PDL_LEVEL = PDLLevel.ON
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _mbarrier_wait_acquire_cta(
-    mbar: Pointer[mut=True, Int64, _, address_space=.SHARED],
+    mbar: Pointer[mut=False, Int64, _, address_space=.SHARED],
     phase: UInt32,
 ):
     """Spin-waits on an mbarrier until the given phase completes, with acquire
@@ -85,7 +83,7 @@ def _mbarrier_wait_acquire_cta(
     ](Int32(Int(mbar)), phase)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _advance_indices[
     rank: Int
 ](
@@ -100,7 +98,7 @@ def _advance_indices[
             idx[d - 1] += 1
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _start_indices_of_nth_element[
     rank: Int, //, shape_types: TypeList[Trait=CoordLike, ...]
 ](n: Int, shape: IndexList[rank, element_type=_], out res: type_of(shape)):
@@ -175,7 +173,7 @@ struct _ClcKernel[
     @__name(
         t"{Self.trace_description}_r{Self.rank}_w{Self.simd_width}_b{Self.block_size}.clc.{Self.handle_uneven_simd}"
     )
-    def __call__(self) capturing:
+    def __call__(self):
         var result = unsafe_stack_allocation[
             1,
             UInt128,
@@ -302,7 +300,7 @@ struct _ClcKernel[
                 )
 
 
-@always_inline
+@inline(.always)
 def _elementwise_impl_gpu_clc[
     rank: Int,
     //,
@@ -359,7 +357,7 @@ def _elementwise_impl_gpu_clc[
     if num_tiles == 0:
         num_tiles = 1
 
-    @always_inline
+    @inline(.always)
     def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _ClcKernel[
             shape_types=shape_types,
@@ -424,7 +422,7 @@ struct _GridStrideKernel[
     @__name(
         t"{Self.trace_description}_r{Self.rank}_w{Self.simd_width}_b{Self.block_size}.gs.{Self.handle_uneven_simd}"
     )
-    def __call__(self) capturing:
+    def __call__(self):
         # process the packed region — each thread handles multiple packed
         # elements at stride block_size for coalesced access and ILP.
         var tid = thread_idx.x + Self.block_size * block_idx.x
@@ -480,7 +478,7 @@ struct _GridStrideKernel[
                 )
 
 
-@always_inline
+@inline(.always)
 def _elementwise_impl_gpu_grid_stride[
     rank: Int,
     //,
@@ -544,7 +542,7 @@ def _elementwise_impl_gpu_grid_stride[
         * num_waves,
     )
 
-    @always_inline
+    @inline(.always)
     def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _GridStrideKernel[
             shape_types=shape_types,
@@ -619,7 +617,7 @@ struct _DualGridStrideKernel[
     @__name(
         t"{Self.trace_description}_r{Self.rank}_w{Self.simd_width}_b{Self.block_size}.dual_gs.{Self.handle_uneven_simd}"
     )
-    def __call__(self) capturing:
+    def __call__(self):
         comptime assert Self.shape_0_types.length == Self.shape_1_types.length
         var tid = thread_idx.x + Self.block_size * block_idx.x
         var stride = Self.block_size * grid_dim.x
@@ -641,9 +639,9 @@ struct _DualGridStrideKernel[
                         )
                         comptime if Self.handle_uneven_simd:
                             if Int(
-                                start_indices_0[Self.rank - 1].value()
+                                start_indices_0[Self.rank - 1]
                             ) + Self.simd_width > Int(
-                                self.shape_0[Self.rank - 1].value()
+                                self.shape_0[Self.rank - 1]
                             ):
                                 self.func_0[1](Coord(start_indices_0))
                                 var si = start_indices_0
@@ -669,9 +667,9 @@ struct _DualGridStrideKernel[
                         )
                         comptime if Self.handle_uneven_simd:
                             if Int(
-                                start_indices_1[Self.rank - 1].value()
+                                start_indices_1[Self.rank - 1]
                             ) + Self.simd_width > Int(
-                                self.shape_1[Self.rank - 1].value()
+                                self.shape_1[Self.rank - 1]
                             ):
                                 self.func_1[1](Coord(start_indices_1))
                                 var si = start_indices_1
@@ -709,7 +707,7 @@ struct _DualGridStrideKernel[
                 )
 
 
-@always_inline
+@inline(.always)
 def _dual_elementwise_impl_gpu_grid_stride[
     simd_width: Int,
     block_size: Int,
@@ -786,11 +784,11 @@ def _dual_elementwise_impl_gpu_grid_stride[
     )
 
     var any_unaligned = (
-        Int(shape_0[rank - 1].value()) % simd_width != 0
-        or Int(shape_1[rank - 1].value()) % simd_width != 0
+        Int(shape_0[rank - 1]) % simd_width != 0
+        or Int(shape_1[rank - 1]) % simd_width != 0
     )
 
-    @always_inline
+    @inline(.always)
     def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _DualGridStrideKernel[
             handle_uneven_simd=handle_uneven_simd,
@@ -826,7 +824,7 @@ def _dual_elementwise_impl_gpu_grid_stride[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _elementwise_impl_gpu[
     simd_width: Int,
     FuncType: ImplicitlyCopyable
@@ -868,7 +866,7 @@ def _elementwise_impl_gpu[
 
     # Round down to the warp/wavefront size for correct hardware alignment
     # on both NVIDIA (warp=32) and AMD (wavefront=64).
-    comptime warp_size = WARP_SIZE
+    comptime warp_size = hw_info.warp_size
     comptime default_block_size = (
         128 if ctx.default_device_info
         == B200 else block_size_unrounded - (block_size_unrounded % warp_size)
@@ -882,14 +880,12 @@ def _elementwise_impl_gpu[
     ]()
     comptime elems_per_thread = get_defined_int[
         "MOJO_ELEMENTWISE_ELEMS_PER_THREAD",
-        4 if has_nvidia_gpu_accelerator() else 1,
+        4 if ctx.target.is_nvidia_gpu() else 1,
     ]()
     comptime clc_min_packed_per_row = get_defined_int[
         "MOJO_ELEMENTWISE_CLC_MIN_PACKED_PER_ROW", 9
     ]()
-    var packed_elems_per_row = ufloordiv(
-        Int(shape[rank - 1].value()), simd_width
-    )
+    var packed_elems_per_row = ufloordiv(Int(shape[rank - 1]), simd_width)
     var shape_idx = coord_to_index_list(shape)
 
     var length = Int(shape.product())
@@ -902,7 +898,7 @@ def _elementwise_impl_gpu[
     # accelerator-arch predicate is only evaluated when work-stealing is
     # actually enabled. This avoids per-instantiation comptime cost in the
     # common case where `_USE_CLC_WORK_STEALING` is off.
-    comptime if _USE_CLC_WORK_STEALING and _has_sm_100x_or_newer():
+    comptime if _USE_CLC_WORK_STEALING and ctx.target._is_sm_100x_or_newer():
         var num_packed = ufloordiv(length, simd_width)
         var num_tiles = uceildiv(num_packed, block_size * elems_per_thread)
 
@@ -974,7 +970,7 @@ def _elementwise_impl_gpu[
             ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
 
 
-@always_inline
+@inline(.always)
 def _dual_elementwise_impl_gpu[
     simd_width: Int,
     Func0Type: ImplicitlyCopyable
@@ -1026,7 +1022,7 @@ def _dual_elementwise_impl_gpu[
     ), "the sm_count and thread_count must be known"
 
     comptime block_size_unrounded = registers_per_block // registers_per_thread
-    comptime warp_size = WARP_SIZE
+    comptime warp_size = hw_info.warp_size
     comptime default_block_size = (
         128 if ctx.default_device_info
         == B200 else block_size_unrounded - (block_size_unrounded % warp_size)
@@ -1036,7 +1032,7 @@ def _dual_elementwise_impl_gpu[
     ]()
     comptime elems_per_thread = get_defined_int[
         "MOJO_ELEMENTWISE_ELEMS_PER_THREAD",
-        4 if has_nvidia_gpu_accelerator() else 1,
+        4 if ctx.target.is_nvidia_gpu() else 1,
     ]()
 
     var max_length = Int(shape_0.product())

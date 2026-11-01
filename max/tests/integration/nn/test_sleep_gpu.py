@@ -18,7 +18,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 
 def build_sleep_graph(device: Device) -> Model:
@@ -39,6 +39,13 @@ def time_sleep_kernel_with_buffer(
     device: Device = Accelerator(),  # noqa: B008
 ) -> float:
     model = build_sleep_graph(device=device)
+
+    # The first run loads the GPU kernel, which can take seconds.
+    # Run once with zero sleep so the timed run only measures the sleep.
+    warmup_buffer = Buffer(shape=[1], dtype=DType.float64)
+    warmup_buffer[0] = 0.0
+    model.execute(warmup_buffer)
+    device.synchronize()
 
     t0 = time.time()
     model.execute(seconds_buffer)

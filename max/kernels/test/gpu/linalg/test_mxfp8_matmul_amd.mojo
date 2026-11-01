@@ -68,11 +68,11 @@ def block_scaled_matmul_fp8_ref(
         return
 
     var k_groups = K // MXFP8_SF_VECTOR_SIZE
-    var am_scales = a_scales_ptr + m * k_groups
-    var bn_scales = b_scales_ptr + n * k_groups
+    var am_scales = a_scales_ptr.unsafe_offset(m * k_groups)
+    var bn_scales = b_scales_ptr.unsafe_offset(n * k_groups)
     # One byte per element at MXFP8, so the row stride is K (not K // 2).
-    var am = (a_ptr + m * K).bitcast[Float8_e4m3fn]()
-    var bn = (b_ptr + n * K).bitcast[Float8_e4m3fn]()
+    var am = a_ptr.unsafe_offset(m * K).unsafe_bitcast[Float8_e4m3fn]()
+    var bn = b_ptr.unsafe_offset(n * K).unsafe_bitcast[Float8_e4m3fn]()
 
     var accum = Float32(0)
     for ko in range(k_groups):
@@ -83,8 +83,8 @@ def block_scaled_matmul_fp8_ref(
         for ki in range(MXFP8_SF_VECTOR_SIZE):
             part += am[ki].cast[.float32]() * bn[ki].cast[.float32]()
         accum += part * a_scale * b_scale
-        am += MXFP8_SF_VECTOR_SIZE
-        bn += MXFP8_SF_VECTOR_SIZE
+        am = am.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
+        bn = bn.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
 
     c_ptr[m * N + n] = accum
 
@@ -152,7 +152,7 @@ def _test_case[
     comptime K_BYTES = K_static
     comptime K_SCALES = K_static // MXFP8_SF_VECTOR_SIZE
 
-    print("  ", name, " ", M_static, "x", N_static, "x", K_static)
+    print(t"   {name}   {M_static} x {N_static} x {K_static}")
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
     var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
@@ -183,16 +183,16 @@ def _test_case[
     ctx.enqueue_copy(sfb_d, sfb_h)
 
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
-    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_imm()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_imm()
     var sfa_tt = TileTensor(
         sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
 
     comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
@@ -279,24 +279,9 @@ def test_mxfp8_matmul_split_k[
     K-band error still fails; the tighter spread keeps the reference in atol.
     """
     print(
-        M_static,
-        "x",
-        N_static,
-        "x",
-        K_static,
-        " [split-K num_splits=",
-        num_splits,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        " unit_scales=",
-        unit_scales,
-        "]",
+        t"{M_static} x {N_static} x {K_static}  [split-K num_splits="
+        t" {num_splits}  BM= {BM}  BN= {BN}  BK= {BK_ELEMS}  WN= {WN} "
+        t" unit_scales= {unit_scales} ]"
     )
 
     comptime assert (
@@ -333,16 +318,16 @@ def test_mxfp8_matmul_split_k[
     ctx.enqueue_copy(sfb_d, sfb_h)
 
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
-    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_imm()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_imm()
     var sfa_tt = TileTensor(
         sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
 
     _launch_block_scaled_split_k[
         BM=BM,
@@ -415,7 +400,7 @@ def _test_dispatch[
     comptime K_BYTES = K_static
     comptime K_SCALES = K_static // MXFP8_SF_VECTOR_SIZE
 
-    print("  ", name, " ", M_static, "x", N_static, "x", K_static)
+    print(t"   {name}   {M_static} x {N_static} x {K_static}")
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
     var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
@@ -444,16 +429,16 @@ def _test_dispatch[
     ctx.enqueue_copy(sfb_d, sfb_h)
 
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
-    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_imm()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_imm()
     var sfa_tt = TileTensor(
         sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
 
     block_scaled_matmul_amd[lane_bytes=FP8_LANE_BYTES](
         c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx

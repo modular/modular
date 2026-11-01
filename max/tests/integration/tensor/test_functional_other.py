@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Smoke tests for ops in `max.experimental.functional`.
+"""Smoke tests for ops in `max.functional`.
 
 These tests exercise each expected op at least once with real data and kernels.
 They don't otherwise make any attempt at coverage, edge cases, or correctness.
@@ -20,12 +20,12 @@ from typing import cast
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.module import Module, module_dataclass
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType, ops
+from max.nn.module import Module, module_dataclass
+from max.tensor import Tensor
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
 
@@ -443,6 +443,47 @@ def test_print_symbolic(capfd: pytest.CaptureFixture[str]) -> None:
     compiled = PrintModule().compile(input_type)
     compiled(Tensor.ones([2, 2], dtype=DType.float32, device=DEVICE))
     assert "graph_tensor" in capfd.readouterr().out
+
+
+def test_side_stream() -> None:
+    @module_dataclass
+    class SideStreamModule(Module[[Tensor], Tensor]):
+        def forward(self, x: Tensor) -> Tensor:
+            def body(t: Tensor) -> Tensor:
+                assert isinstance(t, Tensor)
+                return t * 2
+
+            (y,) = F.side_stream([x], body, result_types=[x.type])
+            assert isinstance(y, Tensor)
+            return y + 1
+
+    input_type = TensorType(
+        DType.float32, [2, 2], device=DeviceRef.from_device(DEVICE)
+    )
+    compiled = SideStreamModule().compile(input_type)
+    result = compiled(Tensor.ones([2, 2], dtype=DType.float32, device=DEVICE))
+    np.testing.assert_equal(np.from_dlpack(result.to(CPU())), 3.0)
+
+
+def test_shape_to_tensor() -> None:
+    result = F.shape_to_tensor([2, 3])
+    assert result.dtype == DType.int64
+    assert list(result.shape) == [2]
+    np.testing.assert_array_equal(np.from_dlpack(result), [2, 3])
+
+
+def test_shape_to_tensor_symbolic() -> None:
+    @module_dataclass
+    class ShapeModule(Module[[Tensor], Tensor]):
+        def forward(self, x: Tensor) -> Tensor:
+            return F.shape_to_tensor(x.shape)
+
+    input_type = TensorType(
+        DType.float32, ["n", 4], device=DeviceRef.from_device(DEVICE)
+    )
+    compiled = ShapeModule().compile(input_type)
+    result = compiled(Tensor.ones([5, 4], dtype=DType.float32, device=DEVICE))
+    np.testing.assert_array_equal(np.from_dlpack(result), [5, 4])
 
 
 def test_arange() -> None:

@@ -293,17 +293,66 @@ def test_layer_norm() -> None:
     assert "mo.reduce.layer_norm" in str(graph._mlir_op)
 
 
-def test_matmul_dtype_promotion() -> None:
-    """Tests for dtype promotion in matmul."""
+def test_matmul_operator_rejects_mixed_dtypes() -> None:
+    """The ``@`` operator requires both operands to share a dtype."""
+    with pytest.raises(ValueError, match="different dtypes"):
+        Graph(
+            "matmul_operator_mixed_dtypes",
+            lambda x, y: x @ y,
+            (
+                TensorType(DType.float32, (4, 2, 3), device=DeviceRef.CPU()),
+                TensorType(DType.float64, (3, 2), device=DeviceRef.CPU()),
+            ),
+        )
+
+
+def test_matmul_out_dtype_defaults_to_the_inputs() -> None:
+    """Without ``out_dtype``, the result keeps the inputs' shared dtype."""
     graph = Graph(
-        "matmul_dtype_promotion",
-        lambda x, y: x @ y,
+        "matmul_default_out_dtype",
+        lambda x, y: ops.matmul(x, y),
+        (
+            TensorType(DType.bfloat16, (4, 3), device=DeviceRef.CPU()),
+            TensorType(DType.bfloat16, (3, 2), device=DeviceRef.CPU()),
+        ),
+    )
+    assert_matmul_properties(graph, (4, 2), DType.bfloat16)
+
+    with pytest.raises(ValueError, match="different dtypes"):
+        Graph(
+            "matmul_default_out_dtype_mixed",
+            lambda x, y: ops.matmul(x, y),
+            (
+                TensorType(DType.bfloat16, (4, 3), device=DeviceRef.CPU()),
+                TensorType(DType.float32, (3, 2), device=DeviceRef.CPU()),
+            ),
+        )
+
+
+def test_matmul_out_dtype() -> None:
+    """``out_dtype`` sets a result dtype wider than the inputs."""
+    graph = Graph(
+        "matmul_out_dtype",
+        lambda x, y: ops.matmul(x, y, out_dtype=DType.float32),
+        (
+            TensorType(DType.bfloat16, (4, 3), device=DeviceRef.CPU()),
+            TensorType(DType.bfloat16, (3, 2), device=DeviceRef.CPU()),
+        ),
+    )
+    assert_matmul_properties(graph, (4, 2), DType.float32)
+
+
+def test_matmul_mixed_input_dtypes() -> None:
+    """Mixed inputs take ``out_dtype``, even narrower than either input."""
+    graph = Graph(
+        "matmul_mixed_input_dtypes",
+        lambda x, y: ops.matmul(x, y, out_dtype=DType.float32),
         (
             TensorType(DType.float32, (4, 2, 3), device=DeviceRef.CPU()),
             TensorType(DType.float64, (3, 2), device=DeviceRef.CPU()),
         ),
     )
-    assert_matmul_properties(graph, (4, 2, 2), DType.float64)
+    assert_matmul_properties(graph, (4, 2, 2), DType.float32)
 
 
 def test_band_part() -> None:
@@ -322,13 +371,13 @@ def test_band_part() -> None:
 
 
 def test_matmul_mismatched_devices() -> None:
-    """Tests for dtype promotion in matmul."""
+    """Tests that matmul rejects operands on different devices."""
     with pytest.raises(ValueError, match="same device"):
         Graph(
-            "matmul_dtype_promotion",
+            "matmul_mismatched_devices",
             operator.matmul,
             (
                 TensorType(DType.float32, (4, 2, 3), device=DeviceRef.CPU(0)),
-                TensorType(DType.float64, (3, 2), device=DeviceRef.CPU(1)),
+                TensorType(DType.float32, (3, 2), device=DeviceRef.CPU(1)),
             ),
         )

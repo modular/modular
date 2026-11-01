@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import queue
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -23,6 +23,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import DummyKVCache
+from max.pipelines.kv_cache.checkpoint import Checkpointer
 from max.pipelines.modeling.types import RequestID, TextGenerationInputs
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
@@ -429,3 +430,32 @@ def test_deferred_lora_request_cleanup() -> None:
     bc.release_request(req.request_id)
 
     assert req.request_id not in replica.deferred_lora_requests
+
+
+def test_the_cache_and_batch_constructor_share_one_checkpointer() -> None:
+    """The cache populates the factory, then gets the checkpointer built from it."""
+    kv_cache = DummyKVCache()
+    factory = Checkpointer.factory()
+    checkpointer = factory.disabled().build()
+
+    with (
+        patch.object(
+            kv_cache, "populate_checkpointer", side_effect=lambda f: f
+        ) as populate,
+        patch.object(kv_cache, "with_checkpointer") as cache_attach,
+    ):
+        scheduler = TokenGenerationScheduler(
+            scheduler_config=TokenGenerationSchedulerConfig(
+                max_batch_size=4, target_tokens_per_batch_ce=32
+            ),
+            pipeline=create_mock_pipeline(),
+            request_queue=queue.Queue(),
+            response_queue=queue.Queue(),
+            cancel_queue=queue.Queue(),
+            kv_cache=kv_cache,
+            checkpointer_factory=factory,
+        )
+        scheduler.with_checkpointer(checkpointer)
+
+    populate.assert_called_once_with(factory)
+    cache_attach.assert_called_once_with(checkpointer)

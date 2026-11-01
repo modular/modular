@@ -62,26 +62,7 @@ def test_flux_conv_layer[
     comptime filter_size = R * S * C_in * C_out
     comptime out_size = N * Hout * Wout * C_out
 
-    print(
-        "  ",
-        name,
-        ": ",
-        H,
-        "x",
-        W,
-        "x",
-        C_in,
-        " -> ",
-        C_out,
-        "ch (",
-        R,
-        "x",
-        S,
-        " pad=",
-        pad,
-        ")",
-        sep="",
-    )
+    print(t"  {name}: {H}x{W}x{C_in} -> {C_out}ch ({R}x{S} pad={pad})")
 
     # Host memory
     var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](in_size)

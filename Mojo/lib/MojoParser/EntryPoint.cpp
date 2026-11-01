@@ -14,6 +14,7 @@
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
+#include "Mojo/MojoParser/ModuleCache.h"
 #include "Mojo/MojoParser/SharedState.h"
 
 #include "AsyncRT/Runtime/CPUDevice.h"
@@ -29,7 +30,10 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/SourceMgr.h"
+
+#define DEBUG_TYPE "mojo-parser"
 
 using namespace M;
 using namespace KGEN;
@@ -128,8 +132,7 @@ static void sortValueUses(Operation *topLevelOp) {
 /// provides the compiler a canonical form of IR coming out of the parser. This,
 /// for instance, ensures the cache key computed on parser output does not
 /// depend on whether the parser has cache hits for lazy loading.
-static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
-                                  bool preserveClosureTraitMethods = false) {
+static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
   CompilerTimeTraceScope traceScope("eraseUnreachableDecls");
 
   // Precompute a map from structs to their extensions, this will help with
@@ -227,22 +230,10 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
       }
     }
 
-    // If preserving closure trait methods, mark all functions in closure traits
-    // as live when the trait itself is live.
-    if (preserveClosureTraitMethods) {
-      if (auto traitOp = dyn_cast<LIT::TraitDeclOp>(cur)) {
-        if (traitOp.getClosureSignature().has_value())
-          traitOp.walk([&](FnOp fn) { markLive(fn); });
-      }
-    }
-
     // Collect symbol references between this symbol table and any child symbol
-    // tables. Nested `lit.fn` operations are trickier, however.
+    // tables.
     cur->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
       if (op != cur) {
-        // Mark nested functions as live, which also recurses on them.
-        if (auto func = dyn_cast<FnOp>(op); func && func.getParamDeclAttr())
-          markLive(func);
         // Witness tables & witness entries are part of the struct type spec, so
         // they need to be live for elaboration time generics.
         if (isa<ConformanceOp, WitnessOp>(op))
@@ -300,12 +291,12 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
 /// Parse a mojo module or package into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module or package. This abstracts away
 /// the shared setup between module and package parsing.
-static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
+static std::tuple<OwningOpRef<mlir::ModuleOp>, ModuleASTDecl *>
 importMojoImpl(ContextRef context, StringRef moduleIdentifier,
                SourceMgr &sourceMgr, SharedState &sharedState,
                mlir::TimingScope &ts,
                SmallVectorImpl<std::string> *includedFiles,
-               function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
+               function_ref<ModuleASTDecl &(ModuleOp)> buildDeclFn) {
   auto fileLoc =
       sharedState.createLocation(moduleIdentifier, /*line=*/1, /*column=*/1);
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
@@ -319,21 +310,38 @@ importMojoImpl(ContextRef context, StringRef moduleIdentifier,
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
   // Build the decl for the main module.
-  ASTDecl &moduleDecl = buildDeclFn(*module);
+  ModuleASTDecl &moduleDecl = buildDeclFn(*module);
 
   // Resolve everything within the main input module.
   sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
+
+  if (!sharedState.isIncrParsingEnabled()) {
+    // Sweep everything the lazy parse left behind.
+    sharedState.declResolver->eraseUnparsedDecls();
+  }
 
   // Finalize the imported bytecode now that we've resolved everything. This
   // will drop bytecode operations that never got referenced.
   if (failed(sharedState.finalizeImportedBytecodeModules()))
     return {nullptr, nullptr};
 
-  // We fail either if we have a non-recoverable parse error, or if we emitted
-  // an error and then recovered.  In either case, the IR will not be valid and
-  // the caller should not verify it.
+  // We fail either if we have a non-recoverable parse error, or if we
+  // emitted an error and then recovered.  In either case, the IR will not be
+  // valid and the caller should not verify it. This must also precede the
+  // cache write below: erroneous IR must never reach the cache.
   if (sharedState.diags.isErrorEmitted())
     return {nullptr, nullptr};
+
+  if (sharedState.isIncrParsingEnabled()) {
+    // The write happens before the unparsed-decl sweep: the placeholders are
+    // exactly what gets marked for source resume, and cached sections must
+    // keep them to reconstruct name lookup when served.
+    writeIncrParsingCache(sharedState, *module, moduleDecl);
+
+    // Erase unparsed decls now that the cache has been written.
+    sharedState.declResolver->eraseUnparsedDecls();
+    eraseIncrParsingCacheResumeAttrs(*module);
+  }
 
 #ifndef MODULAR_PRODUCTION
   // Make sure the parse module has no other structural problems detected by
@@ -345,14 +353,7 @@ importMojoImpl(ContextRef context, StringRef moduleIdentifier,
   }
 #endif // MODULAR_PRODUCTION
 
-  // Closure traits live outside module so we cannot distinguish between those
-  // that were defined by this unit and those that were defined by dependencies.
-  // The difference between a trait defined by the unit and one defined by the
-  // dependency is that the methods of the latter need not persist. The same is
-  // not true for the former. Opt to keep all methods of closure traits to
-  // guarantee correctness.
-  eraseUnreachableDecls(moduleDecl.getIfOperation(), *module,
-                        /*preserveClosureTraitMethods=*/true);
+  eraseUnreachableDecls(moduleDecl.getOp(), *module);
   sortValueUses(*module);
 
   // Set the included files if requested.
@@ -363,7 +364,7 @@ importMojoImpl(ContextRef context, StringRef moduleIdentifier,
 
 /// Parse the specified Mojo file into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module represented by the input file.
-static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
+static std::tuple<OwningOpRef<mlir::ModuleOp>, ModuleASTDecl *>
 importMojoFileImpl(ContextRef context, SourceMgr &sourceMgr,
                    SharedState &sharedState, mlir::TimingScope &ts,
                    SmallVectorImpl<std::string> *includedFiles) {
@@ -373,15 +374,17 @@ importMojoFileImpl(ContextRef context, SourceMgr &sourceMgr,
 
   return importMojoImpl(
       context, bufName, sourceMgr, sharedState, ts, includedFiles,
-      [&](ModuleOp module) -> ASTDecl & {
+      [&](ModuleOp module) -> ModuleASTDecl & {
         Lexer lexer(sharedState.diags, sourceBuf);
         auto startSMLoc = lexer.getToken().getLoc();
 
         // Create the top-level outer decl, which will contain all things we
         // parse.
-        ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(
-            module, startSMLoc, StringAttr(), /*parentDecl=*/nullptr,
-            lexer.getCursor(), LexerCursor::getEOF(sourceBuf), -1);
+        auto &topLevelDecl =
+            cast<TopLevelModuleASTDecl>(sharedState.declResolver->addDecl(
+                module.getOperation(), startSMLoc, StringAttr(),
+                /*parentDecl=*/nullptr, lexer.getCursor(),
+                LexerCursor::getEOF(sourceBuf), -1));
         sharedState.initialize(topLevelDecl);
 
         // If we are emitting debug info, create a file entry for this file.
@@ -402,11 +405,11 @@ importMojoFileImpl(ContextRef context, SourceMgr &sourceMgr,
       });
 }
 
-std::pair<OwningOpRef<ModuleOp>, PackageOp>
-LIT::importMojoPackage(ContextRef context, StringRef path,
-                       StringRef packageName, llvm::SourceMgr &sourceMgr,
-                       ParserConfig &config, mlir::TimingScope &ts,
-                       SmallVectorImpl<std::string> *includedFiles) {
+std::pair<OwningOpRef<ModuleOp>, PackageOp> LIT::importMojoPackage(
+    ContextRef context, StringRef path, StringRef packageName,
+    llvm::SourceMgr &sourceMgr, MLIRContext *mlirContext,
+    const CompilationOptions &options, const FrontendOptions &frontendOptions,
+    mlir::TimingScope &ts, SmallVectorImpl<std::string> *includedFiles) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!Filesystem::isMojoSourcePackagePath(path.str())) {
     sourceMgr.PrintMessage({}, llvm::SourceMgr::DK_Error,
@@ -414,18 +417,20 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
                                "' does not correspond to a package");
     return {};
   }
-  SharedState sharedState(sourceMgr, config);
+  SharedState sharedState(sourceMgr, mlirContext, options, frontendOptions);
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
 
   auto [module, packageDecl] = importMojoImpl(
       context, path, sourceMgr,
       // TODO(MOCO-1295): Generate Python bindings for Mojo packages.
-      sharedState, ts, includedFiles, [&](ModuleOp module) -> ASTDecl & {
+      sharedState, ts, includedFiles, [&](ModuleOp module) -> ModuleASTDecl & {
         // Create the top-level outer decl, which will contain all things we
         // parse.
-        ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(
-            module, SMLoc(), StringAttr(), /*parentDecl=*/nullptr,
-            LexerCursor(), LexerCursor(), /*indentation=*/-1);
+        auto &topLevelDecl =
+            cast<TopLevelModuleASTDecl>(sharedState.declResolver->addDecl(
+                module.getOperation(), SMLoc(), StringAttr(),
+                /*parentDecl=*/nullptr, LexerCursor(), LexerCursor(),
+                /*indentation=*/-1));
         sharedState.initialize(topLevelDecl);
 
         if (sharedState.diBuilder)
@@ -434,17 +439,23 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
         // Build the package.
         return sharedState.createPackage(path, packageName);
       });
+  LLVM_DEBUG(
+      llvm::dbgs()
+      << "Parser allocators for package '" << packageName
+      << "': persistent=" << sharedState.persistentAllocator.getTotalMemory()
+      << " bytes in " << sharedState.persistentAllocator.getNumSlabs()
+      << " slabs, statements=" << sharedState.stmtAllocator.getTotalMemory()
+      << " bytes in " << sharedState.stmtAllocator.getNumSlabs() << " slabs\n");
   if (!module)
     return {};
-  return {std::move(module),
-          cast_or_null<PackageOp>(packageDecl->getIfOperation())};
+  return {std::move(module), cast<PackageASTDecl>(packageDecl)->getOp()};
 }
 
-OwningOpRef<mlir::ModuleOp>
-LIT::importMojoFile(ContextRef context, llvm::SourceMgr &sourceMgr,
-                    ParserConfig &config, mlir::TimingScope &ts,
-                    SmallVectorImpl<std::string> *includedFiles) {
-  SharedState sharedState(sourceMgr, config);
+OwningOpRef<mlir::ModuleOp> LIT::importMojoFile(
+    ContextRef context, llvm::SourceMgr &sourceMgr, MLIRContext *mlirContext,
+    const CompilationOptions &options, const FrontendOptions &frontendOptions,
+    mlir::TimingScope &ts, SmallVectorImpl<std::string> *includedFiles) {
+  SharedState sharedState(sourceMgr, mlirContext, options, frontendOptions);
   auto [module, topLevelDecl] =
       importMojoFileImpl(context, sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
@@ -466,10 +477,7 @@ OwningOpRef<ModuleOp> LIT::cloneDeclModuleForCompilation(ASTDecl &decl,
 
   // Perform the necessary post-parse transformations to prepare the module for
   // compilation.
-  // TODO: ensure bodies of closure traits survive resolution and remove the
-  // closure preservation flag.
-  eraseUnreachableDecls(newDeclOp, *newModule,
-                        /*preserveClosureTraitMethods=*/false);
+  eraseUnreachableDecls(newDeclOp, *newModule);
   sortValueUses(*newModule);
 
   // Give any lit.fn with an empty body region a placeholder entry block and
@@ -518,6 +526,7 @@ void ParserListener::onStructDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onTraitDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onDeclReplaced(ASTDecl *oldDecl, ASTDecl *newDecl) {}
 void ParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
                            llvm::SMRange range) {}
 void ParserListener::onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
@@ -525,3 +534,6 @@ void ParserListener::onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
 void ParserListener::onParameterBinding(ArrayRef<ASTDecl *> decls,
                                         llvm::SMLoc rsquareLoc,
                                         ArrayRef<ExprNode *> parameters) {}
+void ParserListener::onMatchMissingCases(llvm::SMRange matchRange,
+                                         llvm::SMLoc insertLoc,
+                                         StringRef arms) {}

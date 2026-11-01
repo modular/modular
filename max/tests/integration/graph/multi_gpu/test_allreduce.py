@@ -36,7 +36,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Allreduce, Module, Signals
+from max.nn.legacy import Allreduce, Module, Signals
 
 M = 512
 N = 1024
@@ -661,7 +661,7 @@ def _grouped_allreduce_graph(
             [inp.buffer for inp in graph.inputs[num_devices:]],
             group_size=group_size,
         )
-        graph.output(*outputs)
+        graph.output(outputs)
         return graph
 
 

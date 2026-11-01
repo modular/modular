@@ -21,6 +21,7 @@ from max.gpu.host.info import MI355X
 from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.memory import CacheOperation
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal, assert_true
 
 comptime size = 257
@@ -28,8 +29,8 @@ comptime size_clip = size - 5
 
 
 def kernel[
-    dtype: DType, width: Int
-](a: MutPointer[Scalar[dtype], MutAnyOrigin]):
+    dtype: DType, width: Int, a_origin: MutOrigin
+](a: MutPointer[Scalar[dtype], a_origin]):
     var aligned_size = align_down(size, width)
     var buffer = AMDBufferResource(a, size_clip)
     for i in range(0, aligned_size, width):
@@ -41,8 +42,8 @@ def kernel[
 
 
 def kernel_lds[
-    dtype: DType, width: Int
-](a: MutPointer[Scalar[dtype], MutAnyOrigin]):
+    dtype: DType, width: Int, a_origin: MutOrigin
+](a: MutPointer[Scalar[dtype], a_origin]):
     var a_shared = unsafe_stack_allocation[size, dtype, address_space=.SHARED]()
 
     var aligned_size = align_down(size, width)
@@ -52,9 +53,9 @@ def kernel_lds[
     barrier()
 
     for i in range(0, aligned_size, width):
-        buffer.load_to_lds[width=width](Int32(i), a_shared + i)
+        buffer.load_to_lds[width=width](Int32(i), a_shared.unsafe_offset(i))
     for i in range(aligned_size, size):
-        buffer.load_to_lds[width=1](Int32(i), a_shared + i)
+        buffer.load_to_lds[width=1](Int32(i), a_shared.unsafe_offset(i))
     barrier()
 
     for i in range(size):
@@ -63,7 +64,7 @@ def kernel_lds[
 
 # Assembly test kernels for different cache policies
 def cache_policy_kernel_always():
-    var dummy_ptr = MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
+    var dummy_ptr = MutPointer[Float32, MutUntrackedOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[.float32, 4, cache_policy=CacheOperation.ALWAYS](offset)
@@ -71,7 +72,7 @@ def cache_policy_kernel_always():
 
 
 def cache_policy_kernel_streaming():
-    var dummy_ptr = MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
+    var dummy_ptr = MutPointer[Float32, MutUntrackedOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[
@@ -81,7 +82,7 @@ def cache_policy_kernel_streaming():
 
 
 def cache_policy_kernel_global():
-    var dummy_ptr = MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
+    var dummy_ptr = MutPointer[Float32, MutUntrackedOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[.float32, 4, cache_policy=CacheOperation.GLOBAL](offset)
@@ -89,7 +90,7 @@ def cache_policy_kernel_global():
 
 
 def cache_policy_kernel_volatile():
-    var dummy_ptr = MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
+    var dummy_ptr = MutPointer[Float32, MutUntrackedOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[.float32, 4, cache_policy=CacheOperation.VOLATILE](
@@ -98,7 +99,7 @@ def cache_policy_kernel_volatile():
     buffer.store[.float32, 4, cache_policy=CacheOperation.VOLATILE](offset, v)
 
 
-@always_inline
+@inline(.always)
 def _verify_cache_bits_always(asm: StringSlice) raises -> None:
     # aux = 0x00 - no cache control bits set
     # Should generate: buffer_load_dwordx4 v[...], v..., s[...], 0 offen
@@ -110,7 +111,7 @@ def _verify_cache_bits_always(asm: StringSlice) raises -> None:
     assert_true("sc1" not in asm)
 
 
-@always_inline
+@inline(.always)
 def _verify_cache_bits_streaming(asm: StringSlice) raises -> None:
     # aux = 0x02 - only NT bit set
     # Should generate: buffer_load_dwordx4 v[...], v..., s[...], 0 offen nt
@@ -122,7 +123,7 @@ def _verify_cache_bits_streaming(asm: StringSlice) raises -> None:
     assert_true("sc1" not in asm)
 
 
-@always_inline
+@inline(.always)
 def _verify_cache_bits_global(asm: StringSlice) raises -> None:
     # aux = 0x10 - only SC1 bit set
     # Should generate: buffer_load_dwordx4 v[...], v..., s[...], 0 offen sc1
@@ -134,7 +135,7 @@ def _verify_cache_bits_global(asm: StringSlice) raises -> None:
     assert_true(" nt" not in asm)  # Space prefix to avoid matching "int"
 
 
-@always_inline
+@inline(.always)
 def _verify_cache_bits_volatile(asm: StringSlice) raises -> None:
     # aux = 0x11 - SC0 and SC1 bits set
     # Should generate: buffer_load_dwordx4 v[...], v..., s[...], 0 offen sc0 sc1
@@ -175,7 +176,7 @@ def test_cache_policy_assembly_volatile() raises:
 
 
 def test_buffer[dtype: DType, width: Int](ctx: DeviceContext) raises:
-    var a_host_buf = alloc[Scalar[dtype]](size)
+    var a_host_buf = unsafe_alloc[Scalar[dtype]](size)
     var a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
@@ -183,7 +184,7 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
-    comptime kernel_func = kernel[dtype, width]
+    comptime kernel_func = kernel[dtype, width, origin_of(a_device_buf)]
     ctx.enqueue_function[kernel_func](a_device_buf, grid_dim=1, block_dim=1)
     ctx.enqueue_copy(a_host_buf, a_device_buf)
 
@@ -193,11 +194,11 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext) raises:
     for i in range(size_clip, size):
         assert_equal(a_host_buf[i], Scalar[dtype](i + 1))
 
-    a_host_buf.free()
+    a_host_buf.unsafe_free()
 
 
 def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext) raises:
-    var a_host_buf = alloc[Scalar[dtype]](size)
+    var a_host_buf = unsafe_alloc[Scalar[dtype]](size)
     var a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
@@ -205,7 +206,7 @@ def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
-    comptime kernel_lds_func = kernel_lds[dtype, width]
+    comptime kernel_lds_func = kernel_lds[dtype, width, origin_of(a_device_buf)]
     ctx.enqueue_function[kernel_lds_func](a_device_buf, grid_dim=1, block_dim=1)
     ctx.enqueue_copy(a_host_buf, a_device_buf)
 

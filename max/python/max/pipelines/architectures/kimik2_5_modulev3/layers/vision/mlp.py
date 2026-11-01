@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The vision tower's feed-forward layers."""
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.nn import Module
+from max.nn.linear import Linear
+from max.tensor import Tensor
 
 
 # TODO: (MODELS-1084) generalize this (non-gated) MLP layer and move it somewhere central
@@ -39,6 +40,7 @@ class MLP2(Module[[Tensor], Tensor]):
         self.down_proj = Linear(in_dim=dim[1], out_dim=dim[2], bias=has_bias)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the vision feed-forward over ``x``, with a GELU gate."""
         x = self.up_proj(x)
         # The vision encoder uses the tanh approximation of GELU.
         x = F.gelu(x, approximate="tanh")

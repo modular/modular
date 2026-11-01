@@ -15,9 +15,8 @@ from std.math import *
 from std.math.math import _exp_taylor, _ldexp_impl
 from std.math.polynomial import polynomial_evaluate
 from std.ffi import external_call
-from std.sys import llvm_intrinsic, simd_width_of, size_of
+from std.sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from std.sys.arg import argv
-from std.utils import IndexList
 from std.algorithm.functional import vectorize
 from std.benchmark import (
     Bench,
@@ -30,7 +29,13 @@ from std.benchmark import (
 from layout import Coord, TileTensor, row_major
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
-from std.memory import bitcast, dealloc, unsafe_stack_allocation
+from std.memory import (
+    Alignment,
+    Layout as AllocLayout,
+    bitcast,
+    dealloc,
+    unsafe_stack_allocation,
+)
 
 
 def _ri(v: Int) -> Int64:
@@ -47,9 +52,10 @@ def apply[
     output: TileTensor[mut=True, dtype, ...],
 ):
     def _func[width: Int](idx: Int) {imm}:
-        output.store_linear[width=width](
-            IndexList[1](idx),
-            func(input.load_linear[width=width](IndexList[1](idx))),
+        comptime alignment = align_of[SIMD[dtype, width]]()
+        output.store[alignment=alignment](
+            Coord(idx),
+            func(input.load[width=width, alignment=alignment](Coord(idx))),
         )
 
     vectorize[simd_width_of[dtype]()](input.num_elements(), _func)
@@ -71,13 +77,13 @@ def bench_unary[
     ],
     dtype: DType,
 ](mut m: Bench, size: Int, op_name: String) raises:
-    comptime alignment = 64
-    var input_ptr_alloc = alloc[Scalar[dtype]](
-        {count = size, alignment = alignment}
+    comptime alignment = Alignment.of_bytes[64]()
+    var input_ptr_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=alignment](length=size)
     ).into_managed()
     var input_ptr = input_ptr_alloc.unsafe_ptr()
-    var output_ptr_alloc = alloc[Scalar[dtype]](
-        {count = size, alignment = alignment}
+    var output_ptr_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=alignment](length=size)
     ).into_managed()
     var output_ptr = output_ptr_alloc.unsafe_ptr()
 
@@ -89,8 +95,8 @@ def bench_unary[
     def bench(mut b: Bencher, size: Int) raises {imm}:
         def iter_fn() {imm}:
             apply[func](
-                TileTensor(input_ptr, row_major(Coord(_ri(size)))),
-                TileTensor(output_ptr, row_major(Coord(_ri(size)))),
+                TileTensor(input_ptr, row_major(_ri(size))),
+                TileTensor(output_ptr, row_major(_ri(size))),
             )
             keep(output_ptr)
 
@@ -132,14 +138,14 @@ def ldexp2kf_opt[
     var u = bitcast[dtype, simd_width](m << 23)
     var x = x_in * u * u * u * u
     #   u = intBitsToFloat(((int32_t)(q + 0x7f)) << 23);
-    var xu = ((q + SIMD[.int32, simd_width](0x7F)).cast[.int32]()) << 23
+    var xu = (q + 0x7F) << 23
     return x * xu.cast[dtype]()
 
 
 def pow2if[
     simd_width: SIMDLength
 ](q: SIMD[.int32, simd_width]) -> SIMD[.float32, simd_width]:
-    var x = (((q + SIMD[.int32, simd_width](0x7F)).cast[.int32]())) << 23
+    var x = (q + 0x7F) << 23
     return bitcast[.float32, simd_width](x)
 
 
@@ -168,7 +174,7 @@ def ldexp2kf[
 
 # `bench_unary` takes an unconstrained function, so the stdlib `exp` reaches it
 # through a wrapper that states no obligation of its own.
-@always_inline
+@inline(.always)
 def exp_mojo[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
@@ -176,7 +182,7 @@ def exp_mojo[
     return exp(x)
 
 
-@always_inline
+@inline(.always)
 def exp_libm[
     dtype: DType, simd_width: SIMDLength
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
@@ -187,7 +193,7 @@ def exp_libm[
     return res
 
 
-@always_inline
+@inline(.always)
 def ldexp_libm[
     dtype: DType, simd_width: SIMDLength
 ](arg: SIMD[dtype, simd_width], e: SIMD[.int32, simd_width]) -> SIMD[
@@ -226,7 +232,7 @@ def exp_sleef[
     return q.eq(0).select(u, ldexp2kf(u + 1, q.cast[.int32]()) - 1)
 
 
-@always_inline
+@inline(.always)
 def _exp_taylor0[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
@@ -243,7 +249,7 @@ def _exp_taylor0[
     return polynomial_evaluate[coefficients](x)
 
 
-@always_inline
+@inline(.always)
 def exp_mojo_opt[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
@@ -264,14 +270,14 @@ def exp_mojo_opt[
 
     var r = k.fma(neg_ln2, xc)
     # var r = k.fma(-L2Lf, k.fma(-L2Uf, xc))
-    var taylor_result = _exp_taylor0(r.cast[im_type]()).cast[dtype]()
+    var taylor_result = _exp_taylor0(r).cast[dtype]()
     var expr = ldexp(taylor_result, k.cast[.int32]())
     return expr
     # var val1 = (expr > min_val).select(expr, SIMD[dtype,simd_width](0))
     # return (val1 < max_val).select(val1, SIMD[dtype,simd_width](inf[dtype]()))
 
 
-@always_inline
+@inline(.always)
 def exp_mojo_opt2[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
@@ -296,7 +302,7 @@ def exp_mojo_opt2[
     return expr
 
 
-@always_inline
+@inline(.always)
 def _exp_taylor3[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
@@ -311,7 +317,7 @@ def _exp_taylor3[
     return polynomial_evaluate[coefficients](x)
 
 
-@always_inline
+@inline(.always)
 def exp_mojo_opt3[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
@@ -335,7 +341,7 @@ def exp_mojo_opt3[
     return expr
 
 
-@always_inline
+@inline(.always)
 def _exp_taylor_mlas[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
@@ -352,7 +358,7 @@ def _exp_taylor_mlas[
     ](x)
 
 
-@always_inline
+@inline(.always)
 def exp_mlas[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
@@ -373,7 +379,7 @@ def exp_mlas[
     return max(ldexp(_exp_taylor_mlas(rr), k.cast[.int32]()), xc)
 
 
-@always_inline
+@inline(.always)
 def llvm_ldexp[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width], exp: SIMD[.int32, simd_width]) -> SIMD[
@@ -382,7 +388,7 @@ def llvm_ldexp[
     return llvm_intrinsic["llvm.ldexp", type_of(x)](x, exp)
 
 
-@always_inline
+@inline(.always)
 def mlas_llvm_ldexp[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:

@@ -13,26 +13,27 @@
 
 from std.math import ceildiv
 from max.gpu import global_idx
-from max.gpu.host import DeviceContext, DeviceStream
-from max.gpu.host._amdgpu_hip import HIP
-from max.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host import DeviceContext, DeviceStream, default_accelerator
+from max.gpu.host import HIP
+from max.gpu.host import CUDA
 from std.memory.unsafe_pointer import unsafe_cast
-from std.sys.info import has_nvidia_gpu_accelerator
 from std.testing import assert_equal
 
 
 def native_stream_ptr(
     stream: DeviceStream,
-) raises -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
-    comptime if has_nvidia_gpu_accelerator():
+) raises -> Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]:
+    comptime if default_accelerator().is_nvidia_gpu():
         return unsafe_cast[Type=NoneType](CUDA(stream))
     else:
         return unsafe_cast[Type=NoneType](HIP(stream))
 
 
-def scale_kernel(
-    input: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def scale_kernel[
+    in_origin: ImmOrigin, out_origin: MutOrigin
+](
+    input: ImmPointer[Float32, in_origin],
+    output: MutPointer[Float32, out_origin],
     n_dev: Int32,
     scale: Float32,
 ):
@@ -71,7 +72,9 @@ def main() raises:
         # Run a kernel on this new stream
         # Note: DeviceStream currently only runs pre-compiled kernels, so the
         # compilation step here is needed.
-        var func = ctx.compile_function[scale_kernel]()
+        var func = ctx.compile_function[
+            scale_kernel[ImmUntrackedOrigin, MutUntrackedOrigin]
+        ]()
         stream.enqueue_function(
             func,
             dev_in,

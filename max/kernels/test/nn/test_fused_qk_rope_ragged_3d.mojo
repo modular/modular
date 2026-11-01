@@ -21,11 +21,7 @@ from kv_cache.types import (
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout.tile_layout import Layout as TileLayout
@@ -41,6 +37,7 @@ from testdata.fused_qk_rope_3d_goldens import (
 )
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 
 def test_fused_qk_rope[
@@ -82,36 +79,53 @@ def test_fused_qk_rope[
     comptime kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    comptime block_shape = IndexList[6](
-        num_paged_blocks, 2, num_layers, page_size, num_heads, head_dim
+    comptime block_shape = Index(
+        num_paged_blocks,
+        2,
+        num_layers,
+        page_size,
+        num_heads,
+        head_dim,
     )
     # The testdata is generated with mrope_section = (16, 8, 8),
     # but the expected input for the kernel is the original mrope_section
     # multiplied by 2, and prefix-summed.
     comptime mrope_section = Coord(Idx[32], Idx[48], Idx[64])
 
-    # Construct backing buffer and the KV cache itself (uses LayoutTensor).
     var kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    var kv_cache_block_ptr: MutPointer[
-        Scalar[dtype], origin_of(kv_cache_block_buffer)
-    ] = kv_cache_block_buffer.unsafe_ptr()
-    var kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
-        kv_cache_block_ptr,
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_paged_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var kv_cache_block = (
+        TileTensor(
+            Span(kv_cache_block_buffer),
+            row_major(len(kv_cache_block_buffer)),
+        )
+        .reshape(BlocksLayout(blocks_shape, blocks_strides))
+        .as_unsafe_any_origin()
     )
 
-    comptime lut_layout = Layout.row_major[2]()
     var lookup_table_buffer = List[UInt32](
         length=batch_size * pages_per_seq, fill=0
     )
-    var lookup_table = LayoutTensor[.uint32, lut_layout](
-        lookup_table_buffer.unsafe_ptr(),
-        RuntimeLayout[lut_layout].row_major(
-            IndexList[2](batch_size, pages_per_seq)
-        ),
-    )
+    var lookup_table = TileTensor(
+        Span(lookup_table_buffer), row_major(len(lookup_table_buffer))
+    ).reshape(Coord(Int64(batch_size), Int64(pages_per_seq)))
     # Reverse the page pool so no sequence lands on an identity mapping.
     for batch_idx in range(batch_size):
         for page_idx in range(pages_per_seq):
@@ -122,9 +136,7 @@ def test_fused_qk_rope[
     var start_positions_dyn = materialize[start_positions]()
     # Initialize KV cache block buffer with golden values.
     var k_cache_input_buffer = k_cache_input[dtype]()
-    var k_cache_input_buffer_ptr: MutPointer[
-        k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
-    ] = k_cache_input_buffer.unsafe_ptr()
+    var k_cache_input_buffer_ptr = k_cache_input_buffer.unsafe_ptr()
     var max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         var start_pos = Int(start_positions_dyn[batch_idx])
@@ -132,38 +144,32 @@ def test_fused_qk_rope[
         for seq_idx in range(seq_len):
             var tok_idx = start_pos + seq_idx
             unsafe_memcpy(
-                dest=kv_cache_block.ptr
-                + kv_cache_block._offset(
-                    IndexList[6](
-                        Int(lookup_table[batch_idx, tok_idx // page_size]),
-                        0,
-                        0,
-                        tok_idx % page_size,
-                        0,
-                        0,
+                dest=kv_cache_block.ptr.unsafe_offset(
+                    kv_cache_block.layout(
+                        Coord(
+                            Int(lookup_table[batch_idx, tok_idx // page_size]),
+                            0,
+                            0,
+                            tok_idx % page_size,
+                            0,
+                            0,
+                        )
                     )
                 ),
-                src=k_cache_input_buffer_ptr
-                + ((batch_idx * seq_len + seq_idx) * dim),
+                src=k_cache_input_buffer_ptr.unsafe_offset(
+                    (batch_idx * seq_len + seq_idx) * dim
+                ),
                 count=dim,
             )
         max_cache_len_in_batch = max(max_cache_len_in_batch, start_pos)
 
-    # Create the actual KV cache type (uses LayoutTensor).
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
+    var cache_lengths = TileTensor(
+        Span(start_positions_dyn), row_major(len(start_positions_dyn))
+    ).reshape(Coord(Int64(len(start_positions_dyn))))
+    var kv_collection = Collection(
         blocks=kv_cache_block,
-        cache_lengths=LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
-            start_positions_dyn.unsafe_ptr(),
-            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                IndexList[1](len(start_positions_dyn))
-            ),
-        ),
-        lookup_table=LayoutTensor[mut=False, .uint32, lut_layout](
-            lookup_table.ptr,
-            RuntimeLayout[lut_layout].row_major(
-                IndexList[2](batch_size, pages_per_seq)
-            ),
-        ),
+        cache_lengths=cache_lengths.as_imm().as_unsafe_any_origin(),
+        lookup_table=lookup_table.as_imm().as_unsafe_any_origin(),
         max_seq_length=seq_len,
         max_cache_length=UInt32(max_cache_len_in_batch),
     )
@@ -208,14 +214,8 @@ def test_fused_qk_rope[
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
     var freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
     assert len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim, (
-        "invalid freqs_cis_table init"
-        + String(len(freqs_cis_table_buffer))
-        + " != "
-        + String(2)
-        + " * "
-        + String(max_seq_len)
-        + " * "
-        + String(head_dim)
+        t"invalid freqs_cis_table init{len(freqs_cis_table_buffer)} != 2 *"
+        t" {max_seq_len} * {head_dim}"
     )
     # Create a TileTensor view into freqs_cis that only includes the roped dimensions.
     # Offset to last rope_dim elements.
@@ -225,11 +225,9 @@ def test_fused_qk_rope[
         Coord(Idx[max_seq_len], Idx[rope_dim]),
         Coord(Idx[head_dim], Idx[1]),
     )
-    var freqs_cis_table_buffer_ptr: MutPointer[
-        freqs_cis_table_buffer.T, origin_of(freqs_cis_table_buffer)
-    ] = freqs_cis_table_buffer.unsafe_ptr()
+    var freqs_cis_table_buffer_ptr = freqs_cis_table_buffer.unsafe_ptr()
     var freqs_cis_table = TileTensor(
-        freqs_cis_table_buffer_ptr + (head_dim - rope_dim),
+        freqs_cis_table_buffer_ptr.unsafe_offset(head_dim - rope_dim),
         freqs_cis_layout,
     )
 
@@ -243,9 +241,7 @@ def test_fused_qk_rope[
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
-    var expected_k_out_buffer_ptr: MutPointer[
-        expected_k_out_buffer.T, origin_of(expected_k_out_buffer)
-    ] = expected_k_out_buffer.unsafe_ptr()
+    var expected_k_out_buffer_ptr = expected_k_out_buffer.unsafe_ptr()
 
     print("Created freqs_cis_table_buffer", flush=True)
     # Create output buffer and TileTensor.
@@ -282,16 +278,16 @@ def test_fused_qk_rope[
                 )
                 # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
                 assert_almost_equal(
-                    q_out._storage + base_offset,
-                    q._storage + base_offset,
+                    q_out._storage.unsafe_offset(base_offset),
+                    q._storage.unsafe_offset(base_offset),
                     head_dim - rope_dim,
                 )
 
                 # Verify roped region: Last rope_dim elements should match expected output
                 var roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
-                    q_out._storage + roped_offset,
-                    expected_q_out._storage + roped_offset,
+                    q_out._storage.unsafe_offset(roped_offset),
+                    expected_q_out._storage.unsafe_offset(roped_offset),
                     rope_dim,
                 )
 
@@ -301,10 +297,9 @@ def test_fused_qk_rope[
             for head_idx in range(num_heads):
                 # Calculate offsets for current position
                 var tok_idx = Int(start_positions_dyn[batch_idx]) + seq_idx
-                var cache_block_ptr = (
-                    kv_cache_block.ptr
-                    + kv_cache_block._offset(
-                        IndexList[6](
+                var cache_block_ptr = kv_cache_block.ptr.unsafe_offset(
+                    kv_cache_block.layout(
+                        Coord(
                             Int(lookup_table[batch_idx, tok_idx // page_size]),
                             0,
                             0,
@@ -320,15 +315,17 @@ def test_fused_qk_rope[
                 # Verify unroped region: Should match original input
                 assert_almost_equal(
                     cache_block_ptr,
-                    k_cache_input_buffer_ptr + input_offset,
+                    k_cache_input_buffer_ptr.unsafe_offset(input_offset),
                     head_dim - rope_dim,
                 )
 
                 # Verify roped region: Should match expected output
                 var roped_offset = head_dim - rope_dim
                 assert_almost_equal(
-                    cache_block_ptr + roped_offset,
-                    expected_k_out_buffer_ptr + input_offset + roped_offset,
+                    cache_block_ptr.unsafe_offset(roped_offset),
+                    expected_k_out_buffer_ptr.unsafe_offset(
+                        input_offset
+                    ).unsafe_offset(roped_offset),
                     rope_dim,
                 )
 

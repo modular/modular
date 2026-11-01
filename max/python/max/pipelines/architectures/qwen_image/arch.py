@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Qwen-Image with the pipeline registry."""
 
 from __future__ import annotations
 
@@ -42,6 +43,7 @@ class QwenImageArchConfig(ArchConfig):
     quantization_encoding: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
+        """Zero: an image pipeline serves no token sequence."""
         return 0  # Not used for pixel generation.
 
     @classmethod
@@ -50,6 +52,7 @@ class QwenImageArchConfig(ArchConfig):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """Zero: a checkpoint sets no token sequence length."""
         del huggingface_config, model_config
         return 0
 
@@ -61,6 +64,7 @@ class QwenImageArchConfig(ArchConfig):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         if model_config is None:
             model_config = pipeline_config.models.get("transformer")
         if model_config is None and "main" in pipeline_config.models:

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from max.graph.weights import WeightData
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
@@ -117,6 +117,7 @@ class DiffusionGemmaForBlockDiffusionConfig(
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the diffusion view of the HF config."""
         view = _diffusion_hf_config_view(huggingface_config)
         cfg = super().initialize_from_config(
             pipeline_config, view, max_seq_len=max_seq_len
@@ -132,6 +133,7 @@ class DiffusionGemmaForBlockDiffusionConfig(
         state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
     ) -> None:
+        """Delegates to the parent with the diffusion config view."""
         super().finalize(
             _diffusion_hf_config_view(huggingface_config),
             state_dict,

@@ -45,7 +45,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from internal_utils import arg_parse, CacheBustingBuffer, CACHE_BUST_BYTES
 from internal_utils._utils import InitializationType
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import Shuffler, block_scaled_grouped_matmul_amd_preb
 
@@ -133,12 +133,12 @@ def _run_name(
 def _verify_buffers_gpu[
     c_type: DType, BLOCK_SIZE: Int
 ](
-    output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
+    output: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
+    reference: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
     length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Float32, MutAnyOrigin],
+    result: MutPointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -235,12 +235,12 @@ def _block_scaled_matmul_fp8_ref(
 
     var k_groups = K // MXFP8_SF_VECTOR_SIZE
 
-    var am_scales_ptr = a_scales_ptr + m * k_groups
-    var bn_scales_ptr = b_scales_ptr + n * k_groups
+    var am_scales_ptr = a_scales_ptr.unsafe_offset(m * k_groups)
+    var bn_scales_ptr = b_scales_ptr.unsafe_offset(n * k_groups)
 
     # One byte per element at MXFP8, so the row stride is K.
-    var am_ptr = (a_ptr + m * K).bitcast[Float8_e4m3fn]()
-    var bn_ptr = (b_ptr + n * K).bitcast[Float8_e4m3fn]()
+    var am_ptr = a_ptr.unsafe_offset(m * K).unsafe_bitcast[Float8_e4m3fn]()
+    var bn_ptr = b_ptr.unsafe_offset(n * K).unsafe_bitcast[Float8_e4m3fn]()
 
     var accum = Float32(0)
 
@@ -253,8 +253,8 @@ def _block_scaled_matmul_fp8_ref(
             part += am_ptr[ki].cast[.float32]() * bn_ptr[ki].cast[.float32]()
         accum += part * a_scale * b_scale
 
-        am_ptr += MXFP8_SF_VECTOR_SIZE
-        bn_ptr += MXFP8_SF_VECTOR_SIZE
+        am_ptr = am_ptr.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
+        bn_ptr = bn_ptr.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
 
     c_ptr[m * N + n] = accum
 
@@ -341,14 +341,9 @@ def bench_preb[
     )
     var b_windows = ceildiv(b_budget, align_up(b_full_bytes, simd_size))
     print(
-        "  cache_bust=",
-        cache_bust,
-        " B full=",
-        b_full_bytes // (1024 * 1024),
-        "MiB budget=",
-        b_budget // (1024 * 1024),
-        "MiB windows=",
-        b_windows,
+        t"  cache_bust= {cache_bust}  B full="
+        t" {b_full_bytes // (1024 * 1024)} MiB budget="
+        t" {b_budget // (1024 * 1024)} MiB windows= {b_windows}"
     )
     var cb_a = CacheBustingBuffer[.uint8](
         total_routes * packed_K, simd_size, ctx, cache_bust
@@ -378,16 +373,14 @@ def bench_preb[
     ctx.enqueue_memset(cb_a_sc.device_buffer(), UInt8(127))
     ctx.enqueue_memset(cb_b_sc.device_buffer(), UInt8(127))
 
-    var aoff_tt = TileTensor(
-        a_offsets_dev, row_major(Coord(num_active_experts + 1))
-    )
-    var ei_tt = TileTensor(expert_ids_dev, row_major(Coord(num_active_experts)))
+    var aoff_tt = TileTensor(a_offsets_dev, row_major(num_active_experts + 1))
+    var ei_tt = TileTensor(expert_ids_dev, row_major(num_active_experts))
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var a_tt = TileTensor[mut=False](
             cb_a.offset_ptr(iteration),
-            row_major(Coord(total_routes, Idx[packed_K])),
+            row_major(total_routes, Idx[packed_K]),
         )
         var b_pre_tt = TileTensor[mut=False](
             cb_b.offset_ptr(iteration), row_major[num_experts, N * packed_K]()
@@ -396,15 +389,15 @@ def bench_preb[
         # dispatcher signature. The kernel internally re-bitcasts to uint8 for
         # V# construction; the dtype is a wrapping convention.
         var sfa_tt = TileTensor[mut=False](
-            cb_a_sc.offset_ptr(iteration).bitcast[Float8_e8m0fnu](),
-            row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+            cb_a_sc.offset_ptr(iteration).unsafe_bitcast[Float8_e8m0fnu](),
+            row_major(num_experts * max_padded_M, Idx[scale_K]),
         )
         var sfb_tt = TileTensor[mut=False](
-            cb_b_sc.offset_ptr(iteration).bitcast[Float8_e8m0fnu](),
+            cb_b_sc.offset_ptr(iteration).unsafe_bitcast[Float8_e8m0fnu](),
             row_major[num_experts, N, scale_K](),
         )
         var c_tt = TileTensor[mut=True](
-            cb_c.offset_ptr(iteration), row_major(Coord(total_routes, Idx[N]))
+            cb_c.offset_ptr(iteration), row_major(total_routes, Idx[N])
         )
         # Pass lane_bytes explicitly: every format is uint8, and (N, packed_K)
         # is not unique across formats.
@@ -422,7 +415,7 @@ def bench_preb[
             estimated_total_m,
         )
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut bencher: Bencher) {imm}:
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
@@ -497,21 +490,21 @@ def bench_preb[
 
             var a_tt_v = TileTensor[mut=False](
                 cb_a.offset_ptr(0),
-                row_major(Coord(total_routes, Idx[packed_K])),
+                row_major(total_routes, Idx[packed_K]),
             )
             var b_pre_flat_v = TileTensor[mut=False](
                 verify_b_pre_dev, row_major[num_experts, N * packed_K]()
             )
             var sfa_tt_v = TileTensor[mut=False](
-                cb_a_sc.offset_ptr(0).bitcast[Float8_e8m0fnu](),
-                row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+                cb_a_sc.offset_ptr(0).unsafe_bitcast[Float8_e8m0fnu](),
+                row_major(num_experts * max_padded_M, Idx[scale_K]),
             )
             var sfb_tt_v = TileTensor[mut=False](
-                cb_b_sc.offset_ptr(0).bitcast[Float8_e8m0fnu](),
+                cb_b_sc.offset_ptr(0).unsafe_bitcast[Float8_e8m0fnu](),
                 row_major[num_experts, N, scale_K](),
             )
             var c_tt_v = TileTensor[mut=True](
-                verify_c_dev, row_major(Coord(total_routes, Idx[N]))
+                verify_c_dev, row_major(total_routes, Idx[N])
             )
 
             block_scaled_grouped_matmul_amd_preb[lane_bytes=lane_bytes](
@@ -537,15 +530,23 @@ def bench_preb[
                     continue
                 var eid = Int(ei_h[slot])
                 ctx.enqueue_function[_block_scaled_matmul_fp8_ref](
-                    (cb_a.offset_ptr(0) + tok_start * packed_K).as_imm(),
-                    (cb_b.offset_ptr(0) + eid * N * packed_K).as_imm(),
-                    (verify_sfa_natural_dev.unsafe_ptr() + tok_start * scale_K)
-                    .bitcast[Float8_e8m0fnu]()
+                    cb_a.offset_ptr(0)
+                    .unsafe_offset(tok_start * packed_K)
                     .as_imm(),
-                    (cb_b_sc.offset_ptr(0) + eid * N * scale_K)
-                    .bitcast[Float8_e8m0fnu]()
+                    cb_b.offset_ptr(0)
+                    .unsafe_offset(eid * N * packed_K)
                     .as_imm(),
-                    verify_c_ref_dev.unsafe_ptr() + tok_start * N,
+                    (
+                        verify_sfa_natural_dev.unsafe_ptr().unsafe_offset(
+                            tok_start * scale_K
+                        )
+                    )
+                    .unsafe_bitcast[Float8_e8m0fnu]()
+                    .as_imm(),
+                    (cb_b_sc.offset_ptr(0).unsafe_offset(eid * N * scale_K))
+                    .unsafe_bitcast[Float8_e8m0fnu]()
+                    .as_imm(),
+                    verify_c_ref_dev.unsafe_ptr().unsafe_offset(tok_start * N),
                     Int32(m_slot),
                     Int32(N),
                     Int32(K),
@@ -622,7 +623,7 @@ def bench_preb[
                     worst_violation,
                 )
 
-            print("  verify PASSED (atol=", atol, " rtol=", rtol, ")")
+            print(t"  verify PASSED (atol= {atol}  rtol= {rtol} )")
             _ = result_host^
             _ = verify_b_pre_dev^
             _ = verify_sfa_natural_dev^
@@ -796,34 +797,16 @@ def main() raises:
                 )
 
     print(
-        "Config: algo=",
-        algo,
-        " lane_bytes=",
-        lane_bytes,
-        " num_experts=",
-        num_experts,
-        " num_active_experts=",
-        num_active_experts,
-        " num_shared=",
-        num_shared_experts,
-        " M=",
-        M,
-        " topk=",
-        topk,
-        " n_gpus_per_node=",
-        n_gpus_per_node,
-        " N=",
-        N,
-        " K=",
-        K,
-        " skew=",
-        skew_spec,
+        t"Config: algo= {algo}  lane_bytes= {lane_bytes}  num_experts="
+        t" {num_experts}  num_active_experts= {num_active_experts}  num_shared="
+        t" {num_shared_experts}  M= {M}  topk= {topk}  n_gpus_per_node="
+        t" {n_gpus_per_node}  N= {N}  K= {K}  skew= {skew_spec}"
     )
-    print("  target_counts(len=", len(target_counts), "):", end=" ")
+    print(t"  target_counts(len= {len(target_counts)} ):", end=" ")
     for c in target_counts:
         print(c, end=" ")
     print()
-    print("  expert_id_pool(len=", len(expert_id_pool), "):", end=" ")
+    print(t"  expert_id_pool(len= {len(expert_id_pool)} ):", end=" ")
     for e in expert_id_pool:
         print(e, end=" ")
     print()

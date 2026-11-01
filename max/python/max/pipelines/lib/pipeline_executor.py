@@ -36,7 +36,7 @@ InputsT = TypeVar("InputsT", bound=TensorStruct)
 """Type variable for the inputs type.
 
 Bound to :class:`TensorStruct`, a frozen-dataclass base that enforces
-all fields are :class:`~max.experimental.tensor.Tensor`,
+all fields are :class:`~max.tensor.Tensor`,
 :class:`~max.driver.Buffer`, or ``Optional`` variants thereof at
 class-definition time.
 
@@ -54,7 +54,7 @@ OutputsT = TypeVar("OutputsT", bound=TensorStruct)
 """Type variable for the outputs type.
 
 Bound to :class:`TensorStruct`, a frozen-dataclass base that enforces
-all fields are :class:`~max.experimental.tensor.Tensor`,
+all fields are :class:`~max.tensor.Tensor`,
 :class:`~max.driver.Buffer`, or ``Optional`` variants thereof at
 class-definition time.
 

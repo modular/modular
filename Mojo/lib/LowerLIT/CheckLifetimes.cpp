@@ -19,6 +19,7 @@
 #include "Mojo/ToolCommon/KGENPasses.h"
 
 #include "Mojo/HLCFDialect/HLCFOps.h"
+#include "Mojo/HLCFDialect/HLCFUtils.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
@@ -39,6 +40,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace LIT;
 using llvm::BitVector;
 
@@ -68,6 +71,26 @@ struct RaiseSetEntry {
     while (matchingSet && matchingSet->label != label)
       matchingSet = matchingSet->prev;
     return matchingSet;
+  }
+};
+
+/// Nested `hlcf.match` contexts for `match.next` / `match.complete`. The active
+/// match for a terminator is resolved via `HLCF::getParentNode` (else regions
+/// target an enclosing match), then looked up in this stack.
+template <typename ElementType>
+struct MatchSetEntry {
+  Operation *match;
+  /// Live/consume set merged by `hlcf.match.next` (advance to next case/else).
+  ElementType *nextSet;
+  /// Live/consume set merged by `hlcf.match.complete` (exit the match).
+  ElementType *completeSet;
+  MatchSetEntry *prev;
+
+  MatchSetEntry *getMatching(Operation *matchOp) {
+    for (MatchSetEntry *entry = this; entry; entry = entry->prev)
+      if (entry->match == matchOp)
+        return entry;
+    return nullptr;
   }
 };
 } // namespace
@@ -193,21 +216,15 @@ struct WholeProgramState {
 WholeProgramState::WholeProgramState(Operation *module,
                                      std::vector<FnOp> &funcList) {
   module->walk([&](Operation *op) {
-    // Collect functions and nested functions.
+    // Collect functions.
     if (auto funcOp = dyn_cast<FnOp>(op)) {
-      if (!funcOp.isOptionalSymbol())
-        funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
+      funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
 
       // We don't process external functions. They don't have a body to check.
       if (funcOp.isExternal())
         return;
 
-      // Only top-level functions are parallel work items. A nested function
-      // (an old closure) reads SSA values from the function it is nested in,
-      // so it is processed within that top-level ancestor's task (see
-      // runOnOperation) rather than concurrently with it.
-      if (!funcOp->getParentOfType<FnOp>())
-        funcList.emplace_back(funcOp);
+      funcList.emplace_back(funcOp);
 
       // Remember the Deinitable.__deinit__ member function.
       if (funcOp.getSpecialFunctionKind() == SpecialFunctionKind::kDeinit &&
@@ -673,9 +690,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
     auto newType =
         GeneratorType::get(info.decl.getSignature().getParamTypes(), fnType,
                            info.decl.getSignature().getParamListAttrs());
-    auto sym = cast<SymbolConstantAttr>(dtorAttr).getSymbol();
-    return SpecialMemberInfo::available(
-        SymbolConstantAttr::get(sym, newType, {}));
+    auto sym = FuncSymbolGenerator::dynCast(dtorAttr).getSymbol();
+    return SpecialMemberInfo::available(FuncSymbolGenerator::get(sym, newType));
   };
 
   return getSpecialMemberForType(type, this, getDestructor, loc);
@@ -1166,11 +1182,6 @@ ValueSet::ValueSet(PerThreadCache &perThreadCache, FnOp func,
 
   func.getBodyRegion().walk<mlir::WalkOrder::PreOrder>(
       [&](Operation *op) -> WalkResult {
-        // Skip looking at nested functions, they are handled as separate
-        // contexts.
-        if (isa<FnOp>(op))
-          return WalkResult::skip();
-
         // All the ops that define trackable values have a single result.
         if (op->getNumResults() == 1) {
           Value result = op->getResult(0);
@@ -1823,11 +1834,6 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
 
   // Scan the body region to find all the interior origins.
   func.getBodyRegion().walk([&](Operation *op) -> WalkResult {
-    // Skip looking at nested functions, they are handled as separate
-    // contexts.
-    if (isa<FnOp>(op))
-      return WalkResult::skip();
-
     // Interior origins can be found by scanning all the operation results
     // and arguments.  We can ignore any operands because they'll be using
     // the other things.
@@ -2137,7 +2143,8 @@ private:
   void checkTerminatorOp(Operation &op);
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
-  void checkElIfOp(HLCF::ElifOp op);
+  void checkIfOp(HLCF::IfOp op);
+  void checkMatchOp(HLCF::MatchOp op);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
@@ -2174,6 +2181,9 @@ private:
   /// When analyzing the body of a try, this stack indicates what a
   /// 'raise' should intersect with. It is indexed with a raise label.
   RaiseSetEntry<TrackedAndInteriorLiveness> *raiseEntryInfo = nullptr;
+  /// When analyzing cases of a match, this stack indicates what
+  /// `match.next` / `match.complete` should intersect with.
+  MatchSetEntry<TrackedAndInteriorLiveness> *matchEntryInfo = nullptr;
 };
 } // namespace
 
@@ -2413,7 +2423,7 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
 
   // Specialize diagnostics for returns because it can be confusing why they are
   // "using" argument values otherwise.
-  if (isa<KGEN::ReturnOp>(op)) {
+  if (isa<HLCF::ReturnOp>(op)) {
     addBadValueNameToDiag(valueRef, liveness.tracked, valueSet, diag);
     diag << " is uninitialized at ";
 
@@ -2627,7 +2637,7 @@ void UninitializedValueScan::checkInteriorOriginUsage(
     // If this is being defined by a lit.ref.from_pointer, then this is the
     // internal implementation of _get_ref_with_unsafe_interior_origin. Allow
     // use of the interior origin.
-    if (isa<KGEN::ReturnOp>(op) &&
+    if (isa<HLCF::ReturnOp>(op) &&
         RefImmutOp::stripRebinds(operand).getDefiningOp<RefFromPointerOp>())
       return;
 
@@ -2680,7 +2690,7 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   // If this is checking liveness of a result slot for a return, use the
   // location of the return itself. "operand" may be null when checking capture
   // set origins.
-  if (operand && !isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op))
+  if (operand && !isa<HLCF::ReturnOp, LIT::ErrorReturnOp>(op))
     operandPt = getProgramPointThatDefinedInteriorOrigin(operand);
 
   assert(operandPt && "operand wasn't defined by a program point?");
@@ -2703,19 +2713,6 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   Operation *liftedDefiningOp = liftToCommonRegion(definingOp, &op);
   Operation *liftedOperandPt = liftToCommonRegion(operandPt, &op);
   if (valueSet.domInfo.dominates(liftedDefiningOp, liftedOperandPt))
-    return;
-
-  // TODO(remove legacy closures): Legacy closures can have operands defined
-  // outside the function that are referenced directly from within it.  For
-  // example:
-  //   ptr = ...
-  //   @__parameter
-  //   def inner():
-  //     use(ptr)
-  // This gets represented as a direct use of the operand but we mark the origin
-  // live on the function itself. This trips up the dominance check, so special
-  // case this.
-  if (isa<FnOp>(definingOp))
     return;
 
   // Otherwise, it is valid for some other reference but was reinitialized since
@@ -3040,15 +3037,19 @@ void UninitializedValueScan::scanBlock(Block &block) {
     case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op);
       break;
-    case OverallOpValueEffect::elifOp: {
-      auto elifOp = cast<HLCF::ElifOp>(op);
-      // A single if/else shaped elif has the same region layout as IfOp.
-      if (elifOp.getElifRegions().empty())
+    case OverallOpValueEffect::ifOp: {
+      auto ifOp = cast<HLCF::IfOp>(op);
+      // A single if/else shaped elif has the same region layout as
+      // HLCF::ComptimeIfOp.
+      if (ifOp.getElifRegions().empty())
         checkIfLikeOp(op);
       else
-        checkElIfOp(elifOp);
+        checkIfOp(ifOp);
       break;
     }
+    case OverallOpValueEffect::matchOp:
+      checkMatchOp(cast<HLCF::MatchOp>(op));
+      break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(op);
       break;
@@ -3070,17 +3071,17 @@ static bool isUninitializedAtExit(const ValueInfo &valueInfo, Operation &exit) {
     return isa<ErrorReturnOp>(exit);
 
   if (valueInfo.endInitState == OriginTrackable::InitOnError)
-    return isa<KGEN::ReturnOp>(exit);
+    return isa<HLCF::ReturnOp>(exit);
   return false;
 }
 
 /// This is called when the op is a return, lit.error_return or unreachable op.
 void UninitializedValueScan::checkTerminatorOp(Operation &op) {
-  // If this is a kgen.return then we have an exit from the function
+  // If this is a hlcf.return then we have an exit from the function
   // (including early returns and exception raises that leave the function).
   // Check that *all* of the values are live-out of the function are
   // initialized.
-  if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op)) {
+  if (isa<HLCF::ReturnOp, LIT::ErrorReturnOp>(op)) {
     for (const ValueInfo &valueInfo :
          llvm::drop_begin(valueSet.getValueInfos())) {
       // If the value doesn't need to be live at end of function, ignore it.
@@ -3112,7 +3113,7 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
       checkUse(valueInfo.value, op, /*isDeref=*/valueInfo.isIndirect);
     }
   } else {
-    auto unreachable = cast<KGEN::UnreachableOp>(op);
+    auto unreachable = cast<HLCF::UnreachableOp>(op);
 
     // Calls to no-return functions (like abort(), exit()) are treated
     // specially: after the call, we allow any live values to be outstanding,
@@ -3129,8 +3130,15 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
       SmallVector<int32_t> liveValueIds;
       for (unsigned i = 0, e = valueSet.getValueInfos().size(); i != e; ++i) {
         const auto &valueInfo = valueSet.getValueInfo(i);
-        if (valueInfo.getFullValueRef(i).isAllPresent(liveness.tracked))
-          liveValueIds.push_back(i);
+        if (!valueInfo.value ||
+            !valueInfo.getFullValueRef(i).isAllPresent(liveness.tracked))
+          continue;
+        // A value can be fully live here without being in scope. Demanding it
+        // would make the backward pass destroy it where its definition doesn't
+        // dominate.
+        if (!valueSet.domInfo.properlyDominates(valueInfo.value, &op))
+          continue;
+        liveValueIds.push_back(i);
       }
       if (!liveValueIds.empty())
         op.setAttr(liveValueIdsAfterNoReturnCallAttrName,
@@ -3143,15 +3151,29 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
   liveness.markReachable(false);
 }
 
-/// This is HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, which all
-/// perform local control flow.
+/// This is HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp,
+/// HLCF::MatchNextOp, HLCF::MatchCompleteOp, which all perform local control
+/// flow.
 void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
-  if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
+  if (isa<HLCF::BreakOp, HLCF::ComptimeForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     breakSet->mergeWith(liveness, valueSet.domInfo);
-  } else if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
+  } else if (isa<HLCF::ContinueOp, HLCF::ComptimeForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     continueSet->mergeWith(liveness, valueSet.domInfo);
+  } else if (isa<HLCF::MatchNextOp, HLCF::MatchCompleteOp>(op)) {
+    auto *match = HLCF::getParentNode(cast<HLCF::ControlFlowTerminator>(op));
+    assert(match && "match next/complete without enclosing match?");
+    MatchSetEntry<TrackedAndInteriorLiveness> *entry =
+        matchEntryInfo ? matchEntryInfo->getMatching(match) : nullptr;
+    assert(entry && "match next/complete without active match scan?");
+    if (isa<HLCF::MatchNextOp>(op)) {
+      assert(entry->nextSet && "match.next without a next-case set?");
+      entry->nextSet->mergeWith(liveness, valueSet.domInfo);
+    } else {
+      assert(entry->completeSet && "match.complete without a complete set?");
+      entry->completeSet->mergeWith(liveness, valueSet.domInfo);
+    }
   } else {
     StringAttr label = cast<LIT::TryRaiseOp>(op).getLabelAttr();
     RaiseSetEntry<TrackedAndInteriorLiveness> *matchingSet =
@@ -3167,24 +3189,30 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   liveness.markReachable(false);
 }
 
-/// This is HLCF::IfOp, ParamIfOp, or a simple (no extra arms) HLCF::ElifOp.
+/// This is HLCF::ComptimeIfOp (any number of then arms + else), or a simple
+/// (no extra arms) HLCF::IfOp. Live-out is the intersection of every arm.
 void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
-  // the intersection of the live values produced by the then/else branches.
-  assert((isa<HLCF::IfOp, ParamIfOp, HLCF::ElifOp>(op)));
-  assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
-         op.getRegion(1).hasOneBlock() &&
-         "if-like op should have two single-block regions");
+  // the intersection of the live values produced by each arm.
+  assert((isa<HLCF::ComptimeIfOp, HLCF::IfOp>(op)));
+  assert(op.getNumRegions() >= 2 &&
+         "if-like op should have at least then + else regions");
 
-  TrackedAndInteriorLiveness livenessCopy = liveness;
-  scanBlock(op.getRegion(0).front());
-  livenessCopy.swap(liveness);
-  scanBlock(op.getRegion(1).front());
-  liveness.mergeWith(livenessCopy, valueSet.domInfo);
+  TrackedAndInteriorLiveness entryLiveness = liveness;
+  auto armLiveOut =
+      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
+
+  for (Region &region : op.getRegions()) {
+    assert(region.hasOneBlock() && "if-like arm should be a single block");
+    liveness = entryLiveness;
+    scanBlock(region.front());
+    armLiveOut.mergeWith(liveness, valueSet.domInfo);
+  }
+  liveness = std::move(armLiveOut);
 }
 
-// This is used for the HLCF::ElifOp.
-void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
+// This is used for the HLCF::IfOp.
+void UninitializedValueScan::checkIfOp(HLCF::IfOp op) {
   // Region layout: thenRegion, elseRegion, then additional (cond, then) pairs
   // in elifRegions. Live-out is the intersection of all then arms and else.
   auto thenLiveOutValues =
@@ -3222,10 +3250,49 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
   liveness.mergeWith(thenLiveOutValues, valueSet.domInfo);
 }
 
+void UninitializedValueScan::checkMatchOp(HLCF::MatchOp op) {
+  // Cases run in order: each `match.next` carries liveness into the next case
+  // (or else). Each `match.complete` contributes to the match live-out. The
+  // else region's yield (or outer next/complete) also contributes to live-out.
+  auto completeLiveOut =
+      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
+  TrackedAndInteriorLiveness caseLiveIn = liveness;
+
+  MatchSetEntry<TrackedAndInteriorLiveness> entry = {
+      op.getOperation(),
+      /*nextSet=*/nullptr,
+      &completeLiveOut,
+      matchEntryInfo,
+  };
+  llvm::SaveAndRestore restoreMatchEntry(matchEntryInfo, &entry);
+
+  for (Region &caseRegion : op.getCaseRegions()) {
+    auto nextSet =
+        TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
+    entry.nextSet = &nextSet;
+
+    liveness = caseLiveIn;
+    scanBlock(caseRegion.front());
+
+    // Subsequent cases (and eventually else) start from the next-exit state.
+    caseLiveIn = std::move(nextSet);
+  }
+
+  // Else is outside this match's next/complete scope; keep the entry pushed so
+  // next/complete inside else resolve to an enclosing match via getMatching.
+  entry.nextSet = nullptr;
+  liveness = std::move(caseLiveIn);
+  scanBlock(op.getElseRegion().front());
+
+  // Live-out is the intersection of all complete paths and the else path.
+  liveness.mergeWith(completeLiveOut, valueSet.domInfo);
+}
+
 void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   UninitializedValueScan bodySets(valueSet, interiorOriginTracker);
-  // Loops are transparent to raise.
+  // Loops are transparent to raise / match.
   bodySets.raiseEntryInfo = raiseEntryInfo;
+  bodySets.matchEntryInfo = matchEntryInfo;
 
   // The default continueSet is the live-in set of values.  This can lose
   // values if some 'continue' path through the body of the loop consumes a
@@ -3257,7 +3324,7 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // If the loop has an 'else' region, scan it and then intersect with the loop
   // region.  ParamForLoopOp's will have an 'unreachable' in the else region
   // because LowerSemanticCF already processed them.
-  if (loopOp.getNumRegions() == 2 && !isa<ParamForOp>(loopOp)) {
+  if (loopOp.getNumRegions() == 2 && !isa<HLCF::ComptimeForOp>(loopOp)) {
     scanBlock(loopOp.getRegion(1).front());
     liveness.mergeWith(breakSet, valueSet.domInfo);
   } else {
@@ -3270,9 +3337,10 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   // Our current live-in set is live-in to the try body.
   bodySets.liveness = liveness;
 
-  // Try is transparent to break/continue.
+  // Try is transparent to break/continue/match.
   bodySets.continueSet = continueSet;
   bodySets.breakSet = breakSet;
+  bodySets.matchEntryInfo = matchEntryInfo;
 
   // We capture all the common values live-out of raise's as being the live-in
   // to the except block.
@@ -4169,6 +4237,7 @@ struct DestructorInsertion {
     DestructorInsertion result(existing.valueSet);
     result.consumedValues = existing.consumedValues;
     result.raiseEntryInfo = existing.raiseEntryInfo;
+    result.matchEntryInfo = existing.matchEntryInfo;
     result.breakSet = existing.breakSet;
     result.continueSet = existing.continueSet;
     result.dryRun = existing.dryRun;
@@ -4184,7 +4253,8 @@ private:
   void checkTerminatorOp(Operation &op);
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op, SmallVector<ResultEffect> &resultEffects);
-  void checkElIfOp(HLCF::ElifOp op, SmallVector<ResultEffect> &resultEffects);
+  void checkIfOp(HLCF::IfOp op, SmallVector<ResultEffect> &resultEffects);
+  void checkMatchOp(HLCF::MatchOp op, SmallVector<ResultEffect> &resultEffects);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
@@ -4230,6 +4300,10 @@ private:
   /// surrounding loop.
   BitVector *breakSet = nullptr;
   BitVector *continueSet = nullptr;
+
+  /// When analyzing cases of a match, this stack indicates what
+  /// `match.next` / `match.complete` should produce.
+  MatchSetEntry<BitVector> *matchEntryInfo = nullptr;
 
   /// This is a set of warnings to emit from this pass.  We buffer them and then
   /// emit them at the end of the pass, because dtor insertion is "bottom up"
@@ -4341,16 +4415,20 @@ void DestructorInsertion::scanBlock(Block &block) {
     case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op, opEffects.results);
       break;
-    case OverallOpValueEffect::elifOp: {
-      auto elifOp = cast<HLCF::ElifOp>(op);
-      // A single if/else shaped elif has the same region layout as IfOp; reuse
-      // the proven if-like destructor logic (important inside loops).
-      if (elifOp.getElifRegions().empty())
+    case OverallOpValueEffect::ifOp: {
+      auto ifOp = cast<HLCF::IfOp>(op);
+      // A single if/else shaped elif has the same region layout as
+      // HLCF::ComptimeIfOp; reuse the proven if-like destructor logic
+      // (important inside loops).
+      if (ifOp.getElifRegions().empty())
         checkIfLikeOp(op, opEffects.results);
       else
-        checkElIfOp(elifOp, opEffects.results);
+        checkIfOp(ifOp, opEffects.results);
       break;
     }
+    case OverallOpValueEffect::matchOp:
+      checkMatchOp(cast<HLCF::MatchOp>(op), opEffects.results);
+      break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(op);
       break;
@@ -4367,7 +4445,8 @@ void DestructorInsertion::scanBlock(Block &block) {
 
     assert((opEffects.results.size() == op.getNumResults() ||
             overall == OverallOpValueEffect::ifLikeOp ||
-            overall == OverallOpValueEffect::elifOp) &&
+            overall == OverallOpValueEffect::ifOp ||
+            overall == OverallOpValueEffect::matchOp) &&
            "OperationEffects::analyze returned wrong # effects");
 
     for (auto [result, effect] :
@@ -4506,6 +4585,9 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
     if (!unreachable.getIsAfterUnreachableCall())
       return;
 
+    // Code up to a no-return call executes, so this path is reachable.
+    consumedValues.set(0);
+
     // If this is after a no-return call, then we do mark all the live-out
     // values (e.g. like "read" arguments) as consumed so they don't get
     // destroyed on this path.  This is calculated on the forward pass.
@@ -4519,7 +4601,7 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
     return;
   }
 
-  assert((isa<KGEN::ReturnOp, ErrorReturnOp>(op)) && "unknown terminator");
+  assert((isa<HLCF::ReturnOp, ErrorReturnOp>(op)) && "unknown terminator");
   consumedValues.set(0); // Slot 0 indicates that this block is reachable.
 
   for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
@@ -4540,14 +4622,29 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
 }
 
 void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
-  if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
+  if (isa<HLCF::BreakOp, HLCF::ComptimeForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     consumedValues = *breakSet;
     return;
   }
-  if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
+  if (isa<HLCF::ContinueOp, HLCF::ComptimeForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     consumedValues = *continueSet;
+    return;
+  }
+  if (isa<HLCF::MatchNextOp, HLCF::MatchCompleteOp>(op)) {
+    auto *match = HLCF::getParentNode(cast<HLCF::ControlFlowTerminator>(op));
+    assert(match && "match next/complete without enclosing match?");
+    MatchSetEntry<BitVector> *entry =
+        matchEntryInfo ? matchEntryInfo->getMatching(match) : nullptr;
+    assert(entry && "match next/complete without active match scan?");
+    if (isa<HLCF::MatchNextOp>(op)) {
+      assert(entry->nextSet && "match.next without a next-case set?");
+      consumedValues = *entry->nextSet;
+    } else {
+      assert(entry->completeSet && "match.complete without a complete set?");
+      consumedValues = *entry->completeSet;
+    }
     return;
   }
 
@@ -4562,7 +4659,8 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
 
 /// 'if' operations propagate the consume sets into each branch, and use the
 /// resulting consume sets to make sure the upward propagated set of consumed
-/// values is consistent.
+/// values is consistent. Handles HLCF::ComptimeIfOp (any number of then arms +
+/// else) and simple (no-elif) HLCF::IfOp.
 void DestructorInsertion::checkIfLikeOp(
     Operation &ifElseOp, SmallVector<ResultEffect> &resultEffects) {
 
@@ -4593,39 +4691,45 @@ void DestructorInsertion::checkIfLikeOp(
     resultEffects.clear();
   }
 
-  // Given an 'if' like operation (normal 'if' statement or parameter if)
-  // perform dtor analysis for each side and insert destructors at the top of
-  // the blocks to form a common upward-projected consume set.
-  assert(ifElseOp.getNumRegions() == 2 && ifElseOp.getRegion(0).hasOneBlock() &&
-         ifElseOp.getRegion(1).hasOneBlock() &&
-         "if-like op should have two single-block regions");
-  BitVector thenConsumedValues = consumedValues;
-  scanBlock(ifElseOp.getRegion(0).front());
-  // Scan 'else' block.
-  thenConsumedValues.swap(consumedValues);
-  scanBlock(ifElseOp.getRegion(1).front());
+  assert((isa<HLCF::ComptimeIfOp, HLCF::IfOp>(ifElseOp)));
+  assert(ifElseOp.getNumRegions() >= 2 &&
+         "if-like op should have at least then + else regions");
 
-  BitVector merged = unifyConsumedSets(consumedValues, thenConsumedValues);
-  if (merged.empty()) // Common case, they are identical.
-    return;
+  BitVector entryConsumedValues = consumedValues;
+  SmallVector<BitVector, 4> armConsumed;
+  SmallVector<Block *, 4> arms;
 
-  // 'consumedValues' is the current set for the 'else' block, so insert those
-  // dtors if needed.
-  destroyValuesAtEntryIfNeeded(consumedValues, ifElseOp.getRegion(1).front(),
-                               merged, ifElseOp.getLoc());
+  for (Region &region : ifElseOp.getRegions()) {
+    assert(region.hasOneBlock() && "if-like arm should be a single block");
+    consumedValues = entryConsumedValues;
+    scanBlock(region.front());
+    armConsumed.push_back(std::move(consumedValues));
+    arms.push_back(&region.front());
+  }
 
-  // Insert destructors in the 'then' block.
-  destroyValuesAtEntryIfNeeded(thenConsumedValues,
-                               ifElseOp.getRegion(0).front(), merged,
-                               ifElseOp.getLoc());
+  // Unify consume sets across every arm. `unifyConsumedSets` returns an empty
+  // bitvector when its inputs already agree, so keep the prior unified set in
+  // that case rather than collapsing to empty.
+  BitVector unified = armConsumed.front();
+  bool needsDestroy = false;
+  for (const BitVector &arm : ArrayRef(armConsumed).drop_front()) {
+    BitVector merged = unifyConsumedSets(unified, arm);
+    if (!merged.empty()) {
+      unified = std::move(merged);
+      needsDestroy = true;
+    }
+  }
 
-  // The upward consume set is the union of both sides.
-  consumedValues = std::move(merged);
+  if (needsDestroy) {
+    for (auto [armSet, block] : llvm::zip(armConsumed, arms))
+      destroyValuesAtEntryIfNeeded(armSet, *block, unified, ifElseOp.getLoc());
+  }
+  consumedValues = std::move(unified);
 }
 
-// This is used for the HLCF::ElifOp.
-void DestructorInsertion::checkElIfOp(
-    HLCF::ElifOp op, SmallVector<ResultEffect> &resultEffects) {
+// This is used for the HLCF::IfOp.
+void DestructorInsertion::checkIfOp(HLCF::IfOp op,
+                                    SmallVector<ResultEffect> &resultEffects) {
   // Handle owned register results of the elif the same way as if-like ops.
   if (!resultEffects.empty()) {
     ImplicitLocOpBuilder builder(op.getLoc(), op->getBlock(),
@@ -4693,6 +4797,54 @@ void DestructorInsertion::checkElIfOp(
       consumedValues = std::move(merged);
     }
   }
+}
+
+void DestructorInsertion::checkMatchOp(
+    HLCF::MatchOp op, SmallVector<ResultEffect> &resultEffects) {
+  // Handle owned register results of the match the same way as if-like ops.
+  if (!resultEffects.empty()) {
+    ImplicitLocOpBuilder builder(op.getLoc(), op->getBlock(),
+                                 std::next(Block::iterator(op)));
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+    for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
+      switch (effect) {
+      case ResultEffect::ignore:
+        continue;
+      case ResultEffect::regDefine:
+        checkDef(result, *op, /*isDeref=*/false, dtorInserter);
+        break;
+      default:
+        llvm_unreachable("unknown result effect for 'match'");
+      }
+    }
+    resultEffects.clear();
+  }
+
+  // Demand after the match is what `match.complete` / else `yield` require.
+  BitVector completeExitSet = consumedValues;
+
+  MatchSetEntry<BitVector> entry = {
+      op.getOperation(),
+      /*nextSet=*/nullptr,
+      &completeExitSet,
+      matchEntryInfo,
+  };
+  llvm::SaveAndRestore restoreMatchEntry(matchEntryInfo, &entry);
+
+  // Backward: else first, then cases from last to first. Each case's
+  // `match.next` loads the entry demand of the following case/else.
+  scanBlock(op.getElseRegion().front());
+  BitVector nextDemand = consumedValues;
+
+  for (Region &caseRegion : llvm::reverse(op.getCaseRegions())) {
+    entry.nextSet = &nextDemand;
+    // Seed with the post-match demand (like if-arms); terminators overwrite.
+    consumedValues = completeExitSet;
+    scanBlock(caseRegion.front());
+    nextDemand = consumedValues;
+  }
+
+  consumedValues = std::move(nextDemand);
 }
 
 /// Given two consume sets that correspond to an 'if-like' construct which
@@ -4803,7 +4955,7 @@ BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
 /// 'else' block removed (merged into their body).
 void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // True if this is a parameter for, false if this is an infinite HLCF::LoopOp.
-  [[maybe_unused]] bool isParamFor = isa<ParamForOp>(loopOp);
+  [[maybe_unused]] bool isParamFor = isa<HLCF::ComptimeForOp>(loopOp);
   assert((!isParamFor ||
           isa<UnreachableOp>(loopOp.getRegion(1).front().front())) &&
          "LowerSemanticCF should have handled this");
@@ -4832,7 +4984,7 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // continue set.
   loopBodySets.dryRun = true;
 
-  // Iteratively scan the loop body until the continue set converges.
+  // Iteratively scan the loop body until continueSet covers header demand.
   [[maybe_unused]] unsigned numIters = 0;
   while (true) {
     // Scan the body: any breaks will intersect their live-out set with
@@ -4846,8 +4998,11 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
     if (!loopBodySets.consumedValues[0])
       loopBodySets.consumedValues[0] = true;
 
-    // If the continue set is unchanged, then we converged.
-    if (loopBodySets.consumedValues == continueSet)
+    // Extra 1s in continueSet are leftover from an unreachable break meet.
+    // Allow that only while break is unreachable; once it is reachable,
+    // require equality.
+    if (breakSet[0] ? loopBodySets.consumedValues == continueSet
+                    : loopBodySets.consumedValues.subsetOf(continueSet))
       break;
 
     // Otherwise, use the set of values consumed on loop entry as the new
@@ -5437,23 +5592,12 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     // that persists across all functions it processes; it is reset between
     // functions.
     PerThreadCache cache(std::move(typeDeclInfo));
-    // `functionVector` holds only top-level functions. Each task walks its
-    // function's nested functions and processes the whole subtree on one
-    // thread. A nested function (an old closure) reads SSA values from the
-    // function it is nested in, so keeping the subtree on a single thread
-    // avoids racing that function's own IR mutation (destructor insertion);
-    // distinct top-level functions are op-disjoint.
-    //
-    // FIXME(MOCO-3942): remove this code once old closures are removed -- every
-    // function is then op-disjoint and this becomes a plain per-function loop.
     M::parallelForEach(
         &getContext(), functionVector,
-        [&](PerThreadCache &cache, FnOp topFunc) {
-          topFunc.walk([&](FnOp func) {
-            if (failed(processFunction(func, cache)))
-              hadError = true;
-            cache.reset();
-          });
+        [&](PerThreadCache &cache, FnOp func) {
+          if (failed(processFunction(func, cache)))
+            hadError = true;
+          cache.reset();
         },
         cache);
 

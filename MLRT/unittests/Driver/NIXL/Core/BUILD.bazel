@@ -1,0 +1,39 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+modular_cc_test(
+    name = "AgentTests",
+    size = "small",
+    srcs = ["AgentTests.cpp"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    # NVIDIA or AMD, never Apple: Apple GPUs only exist on macOS, and NIXL is
+    # Linux-only.
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//MLRT/unittests/Driver/NIXL:TestCommon",
+        "@nixl_upstream//:nixl_api_headers",
+        "@nixl_upstream//:nixl_runtime",
+    ],
+)
+
+modular_cc_test(
+    name = "MetadataStreamTests",
+    size = "small",
+    srcs = ["MetadataStreamTests.cpp"],
+    target_compatible_with = select({
+        "//:linux_x86_64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "@nixl_upstream//:nixl_api_headers",
+        "@nixl_upstream//:nixl_stream",
+    ],
+)

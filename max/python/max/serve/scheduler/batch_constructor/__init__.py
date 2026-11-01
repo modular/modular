@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Batch constructors that turn queued requests into batches."""
+
 from .text_batch_constructor import TextBatchConstructor
 
 __all__ = ["TextBatchConstructor"]

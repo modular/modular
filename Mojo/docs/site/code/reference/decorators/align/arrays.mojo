@@ -22,7 +22,7 @@ struct CacheAligned:
 
 
 def demonstrate_array_stride() raises:
-    var allocation = alloc[CacheAligned]({count = 4})
+    var allocation = alloc[CacheAligned]({length = 4})
     var _ = allocation.unsafe_ptr()  # `arr`
 
     # print(align_of[CacheAligned]())  # 64

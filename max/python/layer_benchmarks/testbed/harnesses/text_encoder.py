@@ -30,7 +30,7 @@ from max.driver import Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.umt5.model_config import UMT5ConfigBase
 from max.pipelines.architectures.umt5.umt5 import UMT5EncoderModel
 from transformers import UMT5Config as HFUmt5Config
@@ -182,10 +182,12 @@ class TextEncoderHarness(
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the text encoder harness."""
         return TextEncoderStaticParams
 
     @staticmethod
     def dynamic_params_type() -> type:
+        """Returns the per-shape parameters type for the text encoder."""
         return TextEncoderDynamicParams
 
     def __init__(
@@ -219,9 +221,11 @@ class TextEncoderHarness(
 
     @property
     def name(self) -> str:
+        """Returns the registered harness name, ``text_encoder``."""
         return "text_encoder"
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the UMT5 encoder graph and its weight registry."""
         p = self.static_params
         max_dtype, _ = DTYPE_MAP[p.dtype]
         dev_ref = DeviceRef.GPU()
@@ -257,6 +261,7 @@ class TextEncoderHarness(
         return graph, module.state_dict()
 
     def build_and_compile(self) -> CompiledLayerBundle:
+        """Compiles the encoder graph and releases the staging buffers."""
         graph, weights_registry = self.build_graph()
         compiled = self.session.load(graph, weights_registry=weights_registry)
         # Drop local refs and run GC so the source torch tensors and any
@@ -277,6 +282,12 @@ class TextEncoderHarness(
         bundle: CompiledLayerBundle,
         dynamic_params: TextEncoderDynamicParams,
     ) -> tuple[list[Buffer], None]:
+        """Builds token ids and an attention mask for one shape.
+
+        The first ``num_real_tokens`` positions of each sequence hold random
+        ids between 1 and ``vocab_size - 1``. The remaining positions stay at
+        id 0 with a mask value of 0.
+        """
         p = self.static_params
         batch = dynamic_params.batch_size
         seq_len = dynamic_params.seq_len
@@ -302,11 +313,12 @@ class TextEncoderHarness(
     def cleanup_inputs(
         self, bundle: CompiledLayerBundle, context: None
     ) -> None:
-        pass  # No resources to clean up.
+        """Releases nothing; the encoder allocates no per-shape resources."""
 
     def cuda_graph_eligible(
         self, dynamic_params: TextEncoderDynamicParams
     ) -> bool:
+        """Returns ``False`` because the sequence length stays symbolic."""
         # The encoder has symbolic seq_len, so static shape is not guaranteed.
         # Disable CUDA graph capture for now.
         return False
@@ -337,6 +349,7 @@ class TextEncoderHarness(
         dynamic_params: TextEncoderDynamicParams,
         device: str = "cuda",
     ) -> list[torch.Tensor]:
+        """Wraps the token id and mask buffers as torch tensors."""
         token_ids = torch.from_dlpack(execute_args[0]).to(device=device)
         attention_mask = torch.from_dlpack(execute_args[1]).to(device=device)
         return [token_ids, attention_mask]

@@ -83,6 +83,12 @@ spec:
               value: libfabric
             - name: FI_EFA_USE_DEVICE_RDMA
               value: "1"
+            # The anti-affinity above forces cross-node placement today; this
+            # guards the run if scheduling ever co-locates the pods, where the
+            # efa provider's shm path fails across pods and NIXL retries
+            # EAGAIN forever (DISTINF-658).
+            - name: FI_EFA_ENABLE_SHM_TRANSFER
+              value: "0"
             # Surface libfabric provider warnings (e.g. EFA MR registration
             # detail) in pod logs so smoke failures are diagnosable from CI.
             - name: FI_LOG_LEVEL

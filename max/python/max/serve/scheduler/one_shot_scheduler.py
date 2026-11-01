@@ -13,7 +13,7 @@
 """OneShotScheduler for non-autoregressive pipelines.
 
 This scheduler is designed for pipelines that process requests in a single pass
-without requiring iterative generation (e.g., image generation, non-autoregressive
+without requiring iterative generation (such as image generation, non-autoregressive
 text models). It processes each request serially, making it simple and suitable
 for workloads that don't benefit from batching or continuous generation.
 """

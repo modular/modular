@@ -66,13 +66,7 @@ Example (prefill sweep at N=K=4096):
        max/kernels/benchmarks/misc/bench_amd_matmul.mojo
 """
 
-from std.collections import Optional
-from std.sys import (
-    get_defined_bool,
-    get_defined_dtype,
-    get_defined_int,
-    align_of,
-)
+from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.benchmark import bencher_iter_custom
@@ -87,7 +81,6 @@ from max.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
-from std.utils import Index
 from linalg.matmul.gpu import _amdgpu_matmul_config_from_block_shape
 from linalg.matmul.gpu.amd.amd_matmul import AMDMatmul
 from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
@@ -116,7 +109,7 @@ comptime SHAPE_ALL = 3
 comptime SHAPE_SINGLE = 4
 
 
-@always_inline
+@inline(.always)
 def _launch_default[
     dtype: DType,
     c_dtype: DType,
@@ -142,7 +135,7 @@ def _launch_default[
         dtype,
         transpose_b=True,
         K=K,
-    ](Index(256, 256))
+    ]((256, 256))
     comptime k = AMDMatmul[
         dtype,
         dtype,
@@ -166,7 +159,7 @@ def _launch_default[
     )
 
 
-@always_inline
+@inline(.always)
 def _kernel_name[kernel_id: Int]() -> String:
     comptime if kernel_id == KERNEL_DEFAULT:
         return "default"
@@ -181,7 +174,7 @@ def _kernel_name[kernel_id: Int]() -> String:
     return "unknown"
 
 
-@always_inline
+@inline(.always)
 def _shape_set_label[shape_set_id: Int]() -> String:
     comptime if shape_set_id == SHAPE_LARGE:
         return "large"
@@ -267,14 +260,14 @@ def _bench_one_kernel[
     # creation costs ~50us — far too slow to do per bench iter.
     var split_k_workspace: SplitKWorkspace[num_splits]
     comptime if kernel_id == KERNEL_4WAVE_SPLIT_K:
-        var M_ = Int(shape_c[0].value())
-        var N_ = Int(shape_c[1].value())
+        var M_ = Int(shape_c[0])
+        var N_ = Int(shape_c[1])
         split_k_workspace = SplitKWorkspace[num_splits](ctx, M_ * N_)
     else:
         # Dummy 1-element workspace for non-split-K kernels — never read.
         split_k_workspace = SplitKWorkspace[num_splits](ctx, 1)
 
-    @always_inline
+    @inline(.always)
     def bench_func(
         mut b: Bencher,
     ) {
@@ -287,7 +280,7 @@ def _bench_one_kernel[
         var split_k_workspace,
         imm,
     }:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
                 cb_a.offset_ptr(iteration), row_major(shape_a)
@@ -341,10 +334,7 @@ def _bench_one_kernel[
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
     b.bench_function(
         bench_func,
@@ -406,9 +396,9 @@ def bench_shape[
         Idx[K_static if transpose_b else N_static],
     )
 
-    @always_inline
+    @inline(.always)
     def get_size(shape: Coord) -> Int:
-        return Int(shape[0].value()) * Int(shape[1].value())
+        return Int(shape[0]) * Int(shape[1])
 
     var cb_a = CacheBustingBuffer[dtype](get_size(shape_a), simd_size, ctx)
     var cb_b = CacheBustingBuffer[dtype](get_size(shape_b), simd_size, ctx)
@@ -566,28 +556,22 @@ def main() raises:
     var single_M = Int(arg_parse("M", -1))
     var ms = _shape_set_m_values(shape_set_id, N, single_M)
 
-    print(
-        "bench_amd_matmul: dtype=",
-        String(dtype),
-        " N=",
-        N,
-        " K=",
-        K,
-        " shape_set=",
-        _shape_set_label[shape_set_id](),
-        " kernels=[",
-        "default " if run_default else "",
-        "ping_pong " if run_ping_pong else "",
-        "4wave " if run_4wave else "",
-        "vendor " if run_vendor else "",
-        String("4wave_split_k(", num_splits, ") ") if run_4wave_split_k else "",
+    var default_label = "default " if run_default else ""
+    var ping_pong_label = "ping_pong " if run_ping_pong else ""
+    var four_wave_label = "4wave " if run_4wave else ""
+    var vendor_label = "vendor " if run_vendor else ""
+    var split_k_label = String(
+        "4wave_split_k(", num_splits, ") "
+    ) if run_4wave_split_k else ""
+    var block_label = (
         String(" bm/bn/bk=", bm_4wave, "/", bn_4wave, "/", bk_4wave) if bm_4wave
         > 0
-        or bk_4wave > 0 else "",
-        "] M sweep=",
-        len(ms),
-        " values",
-        sep="",
+        or bk_4wave > 0 else ""
+    )
+    print(
+        t"bench_amd_matmul:"
+        t" dtype={String(dtype)} N={N} K={K} shape_set={_shape_set_label[shape_set_id]()} kernels=[{default_label}{ping_pong_label}{four_wave_label}{vendor_label}{split_k_label}{block_label}]"
+        t" M sweep={len(ms)} values"
     )
 
     var m = Bench()

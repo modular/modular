@@ -360,6 +360,10 @@ private:
                            SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
   void writeDIProperty(const DIProperty *N, SmallVectorImpl<uint64_t> &Record,
                        unsigned Abbrev);
+  void writeDILayerLoc(const DILayerLoc *N, SmallVectorImpl<uint64_t> &Record,
+                       unsigned Abbrev);
+  void writeDILayerLocList(const DILayerLocList *N,
+                           SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
   void writeDIImportedEntity(const DIImportedEntity *N,
                              SmallVectorImpl<uint64_t> &Record,
                              unsigned Abbrev);
@@ -2453,6 +2457,21 @@ void ModuleBitcodeWriter::writeDIProperty(const DIProperty *,
   llvm_unreachable("DIProperty cannot be encoded in this bitcode version");
 }
 
+// DILocation irlayers postdate this bitcode format, whose readers have no
+// METADATA_LAYERLOC or METADATA_LAYERLOC_LIST record. Mojo debug info never
+// builds them.
+void ModuleBitcodeWriter::writeDILayerLoc(const DILayerLoc *,
+                                          SmallVectorImpl<uint64_t> &,
+                                          unsigned) {
+  llvm_unreachable("DILayerLoc cannot be encoded in this bitcode version");
+}
+
+void ModuleBitcodeWriter::writeDILayerLocList(const DILayerLocList *,
+                                              SmallVectorImpl<uint64_t> &,
+                                              unsigned) {
+  llvm_unreachable("DILayerLocList cannot be encoded in this bitcode version");
+}
+
 void ModuleBitcodeWriter::writeDIImportedEntity(
     const DIImportedEntity *N, SmallVectorImpl<uint64_t> &Record,
     unsigned Abbrev) {
@@ -3619,8 +3638,9 @@ void ModuleBitcodeWriter::writeInstruction(const Instruction &I,
     FunctionType *FTy = CI.getFunctionType();
 
     // PointerRewriter typed the emask callee `i8*`; the call's explicit type
-    // must match it, else the AIR reader rejects "explicit call type does not
-    // match pointee". Gated to the emask family; every other call is unchanged.
+    // must match it, else the platform bitcode reader rejects "explicit call
+    // type does not match pointee". Gated to the emask family; every other
+    // call is unchanged.
     if (const Function *F = dyn_cast<Function>(CI.getCalledOperand())) {
       StringRef CalleeName = F->getName();
       if (CalleeName.starts_with("llvm.agx3.") &&

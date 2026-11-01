@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 import numpy as np
 from max.driver import Buffer
@@ -29,16 +29,19 @@ from max.graph import (
     Dim,
     Graph,
     TensorType,
+    TensorValue,
+    Value,
     ops,
 )
-from max.nn.kernels import (
+from max.nn.legacy import Module
+from max.nn.legacy.kernels import (
     apply_packed_bitmask,
     apply_penalties_to_logits,
     scatter_set_constant,
     topk_fused_sampling,
     update_frequency_data,
 )
-from max.nn.sampling import (
+from max.nn.legacy.sampling import (
     RejectionSampler,
     RejectionSamplerWithResiduals,
     compute_synthetic_acceptance_base_rate,
@@ -49,7 +52,11 @@ from max.nn.sampling import (
 from max.pipelines.context import TextContext
 
 from .sampling_config import SamplingConfig
-from .sampling_logits_processor import PenaltyInputs, SamplerInputs
+from .sampling_logits_processor import (
+    PenaltyInputs,
+    SamplerInputs,
+    batch_max_k,
+)
 
 
 def _sampling_input_types(
@@ -164,17 +171,14 @@ def _sampling_input_types(
     return inputs
 
 
-def token_sampler(
-    sampling_config: SamplingConfig,
-    device: DeviceRef,
-    return_logits: bool = False,
-    needs_bitmask_input: bool | None = None,
-    custom_extensions: Iterable[Path] = (),
-) -> Graph:
-    """Builds a sampling graph that samples tokens from logits.
+class TopKSampler(Module):
+    """Samples one token per row of logits.
+
+    Applies penalties, a min-tokens mask and a structured-output bitmask when
+    the config enables them, then samples with top-k, top-p and min-p.
 
     Args:
-        sampling_config: Sampling configuration (top-k, temperature, etc.).
+        sampling_config: Sampling configuration (top-k, temperature and so on).
         device: Device for the graph inputs and ops.
         return_logits: Whether the graph should expose logits as an output.
         needs_bitmask_input: Whether to wire a ``bitmask`` input into the
@@ -182,55 +186,76 @@ def token_sampler(
             ``sampling_config.enable_structured_output``. Callers should
             pass ``True`` explicitly when tool-call grammars can fire even
             though ``--enable-structured-output`` is off.
-        custom_extensions: Custom-op extension paths to compile the graph
-            with. Empty by default.
-
-    Returns:
-        A graph that takes logits (and optional penalty inputs) and outputs tokens.
+        unpadded_vocab_size: The tokenizer's token count. Logits for ids at
+            or past it are masked to -inf before sampling, so a padded
+            ``lm_head`` can never produce an id the tokenizer cannot decode.
+            ``None`` disables the mask.
     """
-    if needs_bitmask_input is None:
-        needs_bitmask_input = sampling_config.enable_structured_output
-    _input_dict = _sampling_input_types(
-        sampling_config,
-        return_logits=return_logits,
-        device=device,
-        needs_bitmask_input=needs_bitmask_input,
-    )
-    with Graph(
-        "top_k_sampler",
-        input_types=_input_dict.values(),
-        custom_extensions=custom_extensions,
-    ) as graph:
-        # Deconstruct inputs
+
+    GRAPH_NAME = "top_k_sampler"
+
+    def __init__(
+        self,
+        sampling_config: SamplingConfig,
+        device: DeviceRef,
+        return_logits: bool = False,
+        needs_bitmask_input: bool | None = None,
+        unpadded_vocab_size: int | None = None,
+    ) -> None:
+        super().__init__()
+        if needs_bitmask_input is None:
+            needs_bitmask_input = sampling_config.enable_structured_output
+        self._sampling_config = sampling_config
+        self._device = device
+        self._unpadded_vocab_size = unpadded_vocab_size
+        input_dict = _sampling_input_types(
+            sampling_config,
+            return_logits=return_logits,
+            device=device,
+            needs_bitmask_input=needs_bitmask_input,
+        )
+        self._input_names = list(input_dict)
+        self.input_types: list[TensorType | BufferType] = list(
+            input_dict.values()
+        )
+
+    def __call__(self, *inputs: Value[Any]) -> tuple[TensorValue, ...]:
+        """Samples a token per row.
+
+        Args:
+            *inputs: One value per entry of :attr:`input_types`, in order.
+
+        Returns:
+            The sampled tokens, every token so far, the logits so far if
+            ``return_logits`` is set, and the next seed.
+        """
+        sampling_config = self._sampling_config
+        device = self._device
+        unpadded_vocab_size = self._unpadded_vocab_size
         # TODO: Explore better ways of indexing into these input values
         # tightly coupling the input order with element indices feels
         # quite brittle.
-        logits_buffer = graph.inputs[list(_input_dict).index("logits")].buffer
+        names = self._input_names
+        logits_buffer = inputs[names.index("logits")].buffer
         if sampling_config.enable_penalties:
-            penalty_freq_data = graph.inputs[
-                list(_input_dict).index("penalty_freq_data")
+            penalty_freq_data = inputs[names.index("penalty_freq_data")].buffer
+
+            penalty_freq_offsets = inputs[
+                names.index("penalty_freq_offsets")
+            ].tensor
+
+            repetition_freq_data = inputs[
+                names.index("repetition_freq_data")
             ].buffer
 
-            penalty_freq_offsets = graph.inputs[
-                list(_input_dict).index("penalty_freq_offsets")
+            repetition_freq_offsets = inputs[
+                names.index("repetition_freq_offsets")
             ].tensor
 
-            repetition_freq_data = graph.inputs[
-                list(_input_dict).index("repetition_freq_data")
-            ].buffer
-
-            repetition_freq_offsets = graph.inputs[
-                list(_input_dict).index("repetition_freq_offsets")
-            ].tensor
-
-            frequency_penalty = graph.inputs[
-                list(_input_dict).index("frequency_penalty")
-            ].tensor
-            presence_penalty = graph.inputs[
-                list(_input_dict).index("presence_penalty")
-            ].tensor
-            repetition_penalty = graph.inputs[
-                list(_input_dict).index("repetition_penalty")
+            frequency_penalty = inputs[names.index("frequency_penalty")].tensor
+            presence_penalty = inputs[names.index("presence_penalty")].tensor
+            repetition_penalty = inputs[
+                names.index("repetition_penalty")
             ].tensor
 
             # repetition penalty needs to be applied first
@@ -250,9 +275,7 @@ def token_sampler(
             )
 
         if sampling_config.enable_min_tokens:
-            min_tokens_mask = graph.inputs[
-                list(_input_dict).index("min_tokens_mask")
-            ].tensor
+            min_tokens_mask = inputs[names.index("min_tokens_mask")].tensor
 
             scatter_set_constant(
                 logits_buffer, min_tokens_mask, fill_val=-10000
@@ -262,40 +285,47 @@ def token_sampler(
         logits = ops.buffer_load(logits_buffer)
         logits = ops.cast(logits, sampling_config.out_dtype)
 
-        prev_tokens = graph.inputs[
-            list(_input_dict).index("prev_tokens")
-        ].tensor
+        prev_tokens = inputs[names.index("prev_tokens")].tensor
 
-        if "existing_logits" in _input_dict:
-            existing_logits = graph.inputs[
-                list(_input_dict).index("existing_logits")
-            ].tensor
+        if "existing_logits" in names:
+            existing_logits = inputs[names.index("existing_logits")].tensor
 
-        if "logit_offsets" in _input_dict:
-            logit_offsets = graph.inputs[
-                list(_input_dict).index("logit_offsets")
-            ].tensor
+        if "logit_offsets" in names:
+            logit_offsets = inputs[names.index("logit_offsets")].tensor
             logits = ops.gather(logits, logit_offsets[1:] - 1, axis=0)
             logits = ops.rebind(logits, shape=("batch", "vocab_size"))
 
-        if "bitmask" in _input_dict:
-            bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
+        if unpadded_vocab_size is not None:
+            # Not a slice: slicing past a narrower lm_head reads out of
+            # bounds instead of failing, and a mask is a no-op there.
+            vocab_dim = logits.shape[1]
+            token_ids = ops.range(
+                0,
+                vocab_dim,
+                out_dim=vocab_dim,
+                dtype=DType.int64,
+                device=logits.device,
+            )
+            logits = ops.where(
+                token_ids >= unpadded_vocab_size, float("-inf"), logits
+            )
+
+        if "bitmask" in names:
+            bitmask = inputs[names.index("bitmask")].tensor
 
             # Unpack the packed int32 bitmask and mask the logits in one fused
             # pass. The kernel reads only words covering ``logits``' vocab dim,
-            # so llguidance's 32-bit alignment padding needs no explicit slice.
+            # so the packed bitmask's 32-bit alignment padding needs no explicit slice.
             logits = apply_packed_bitmask(logits, bitmask, fill_val=-10000.0)
 
         # Apply top_k sampling
-        temperature = graph.inputs[
-            list(_input_dict).index("temperature")
-        ].tensor
-        top_k = graph.inputs[list(_input_dict).index("top_k")].tensor
-        max_k = graph.inputs[list(_input_dict).index("max_k")].tensor
-        top_p = graph.inputs[list(_input_dict).index("top_p")].tensor
-        min_top_p = graph.inputs[list(_input_dict).index("min_top_p")].tensor
-        min_p = graph.inputs[list(_input_dict).index("min_p")].tensor
-        seed = graph.inputs[list(_input_dict).index("seed")].tensor
+        temperature = inputs[names.index("temperature")].tensor
+        top_k = inputs[names.index("top_k")].tensor
+        max_k = inputs[names.index("max_k")].tensor
+        top_p = inputs[names.index("top_p")].tensor
+        min_top_p = inputs[names.index("min_top_p")].tensor
+        min_p = inputs[names.index("min_p")].tensor
+        seed = inputs[names.index("seed")].tensor
 
         tokens = topk_fused_sampling(
             logits=logits,
@@ -327,7 +357,7 @@ def token_sampler(
         seed = seed + 1
 
         # Gather logits if needed to return.
-        if "existing_logits" in _input_dict:
+        if "existing_logits" in names:
             token_range = ops.reshape(
                 ops.range(
                     0,
@@ -353,12 +383,48 @@ def token_sampler(
 
             all_logits = ops.concat([existing_logits, new_logits], -1)
             tokens = ops.squeeze(tokens, -1)
-            graph.output(tokens, all_tokens, all_logits, seed)
+            return tokens, all_tokens, all_logits, seed
         else:
             tokens = ops.squeeze(tokens, -1)
-            graph.output(tokens, all_tokens, seed)
+            return tokens, all_tokens, seed
 
-        return graph
+
+def token_sampler(
+    sampling_config: SamplingConfig,
+    device: DeviceRef,
+    return_logits: bool = False,
+    needs_bitmask_input: bool | None = None,
+    custom_extensions: Iterable[Path] = (),
+    unpadded_vocab_size: int | None = None,
+) -> Graph:
+    """Builds a sampling graph that samples tokens from logits.
+
+    Args:
+        sampling_config: Sampling configuration (top-k, temperature and so on).
+        device: Device for the graph inputs and ops.
+        return_logits: Whether the graph should expose logits as an output.
+        needs_bitmask_input: Whether to wire a ``bitmask`` input into the
+            graph. See :class:`TopKSampler`.
+        custom_extensions: Custom-op extension paths to compile the graph
+            with. Empty by default.
+        unpadded_vocab_size: The tokenizer's token count. See
+            :class:`TopKSampler`.
+
+    Returns:
+        A graph that takes logits (and optional penalty inputs) and outputs tokens.
+    """
+    sampler = TopKSampler(
+        sampling_config,
+        device,
+        return_logits=return_logits,
+        needs_bitmask_input=needs_bitmask_input,
+        unpadded_vocab_size=unpadded_vocab_size,
+    )
+    return sampler.trace(
+        *sampler.input_types,
+        name=TopKSampler.GRAPH_NAME,
+        custom_extensions=custom_extensions,
+    )
 
 
 class TokenSampler:
@@ -556,6 +622,7 @@ def rejection_sampler_with_residuals(
                 target_logits.tensor,
                 target_logit_offsets.tensor,
                 full_draft_logits.tensor,
+                seed.tensor,
                 rejection_rand.tensor if debug else None,
                 residual_rand.tensor if debug else None,
             )
@@ -829,7 +896,9 @@ class _TypicalAcceptanceRunner(RejectionRunner):
                 target_logits,
                 Buffer.from_numpy(temps_np).to(self._device),
                 Buffer.from_numpy(top_k_np).to(self._device),
-                Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64)),
+                Buffer.from_numpy(
+                    np.array(batch_max_k(top_k_np), dtype=np.int64)
+                ),
                 Buffer.from_numpy(top_p_np).to(self._device),
                 Buffer.from_numpy(np.array(np.min(top_p_np), dtype=np.float32)),
                 self._next_seed(),

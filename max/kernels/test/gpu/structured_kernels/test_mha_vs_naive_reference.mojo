@@ -39,18 +39,15 @@ from std.random import randn, seed
 from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
-from layout import LayoutTensor, Layout, TileTensor, UNKNOWN_VALUE
-from layout.coord import Coord, Idx
-from layout.runtime_layout import RuntimeLayout
+from layout import TileTensor
+from layout.coord import Idx
 from layout.tile_layout import row_major
-
-from std.utils.index import Index
 
 from nn.attention.gpu.amd_structured.mha_mma_op import MhaConfigV2
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import MhaPrefillV2
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand, MHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand, MHAOperand
 
 
 # ---- Shape constants (MHA archetype at d=128).
@@ -89,7 +86,7 @@ def _is_finite_bf16(v: Float32) -> Bool:
     return v == v and abs(v) < Float32(1e38)
 
 
-@always_inline
+@inline(.always)
 def _mha_prefill_v2_launch[
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -132,6 +129,8 @@ def _mha_prefill_v2_launch[
         o.dtype,
         q.LayoutType,
         o.LayoutType,
+        q.Engine,
+        o.Engine,
         ragged=False,
     ]
 
@@ -179,23 +178,9 @@ def test_mha_vs_naive[
     similarity for FP8 gating.
     """
     print(
-        "--- MHA vs naive reference (qkv=",
-        qkv_type,
-        " out=",
-        output_type,
-        " mask=",
-        mask_name,
-        " kv_block=",
-        kv_block,
-        " d=",
-        DEPTH,
-        " heads=",
-        NUM_HEADS,
-        " kv_heads=",
-        NUM_KV_HEADS,
-        " seq=",
-        SEQ_LEN,
-        ") ---",
+        t"--- MHA vs naive reference (qkv= {qkv_type}  out= {output_type} "
+        t" mask= {mask_name}  kv_block= {kv_block}  d= {DEPTH}  heads="
+        t" {NUM_HEADS}  kv_heads= {NUM_KV_HEADS}  seq= {SEQ_LEN} ) ---"
     )
 
     # `scale = 1 / sqrt(d)` — the canonical scaled-dot-product attention
@@ -248,51 +233,23 @@ def test_mha_vs_naive[
     # Q/K/V/O TileTensors at (BATCH, SEQ_LEN/NUM_KEYS, NUM_HEADS, DEPTH).
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
 
-    var k_op = LayoutTensorMHAOperand(k_tt)
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var k_op = TileTensorMHAOperand(k_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     _mha_prefill_v2_launch[config=CONFIG](
         q_tt,
@@ -310,68 +267,34 @@ def test_mha_vs_naive[
     # mha_gpu_naive takes K and V at d=DEPTH (same as the MHA kernel).
     var q_naive_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
     var k_ref_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var v_ref_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var out_ref_tt = TileTensor(
         dev_out_ref,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
-    var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_tt.as_immut().as_unsafe_any_origin()
-    )
-    var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_tt.as_immut().as_unsafe_any_origin()
-    )
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var k_ref_operand = TileTensorMHAOperand(k_ref_tt.as_imm())
+    var v_ref_operand = TileTensorMHAOperand(v_ref_tt.as_imm())
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
     )
 
     # MHA: group = num_q_heads / num_kv_heads = 1.
     mha_gpu_naive[_is_cache_length_accurate=True,](
-        q_naive_tt.to_layout_tensor(),
+        q_naive_tt,
         k_ref_operand,
         v_ref_operand,
         mask_functor,
-        out_ref_tt.to_layout_tensor(),
+        out_ref_tt,
         null_valid_length,
         scale,
         BATCH,
@@ -434,20 +357,8 @@ def test_mha_vs_naive[
                         head_mismatches[h] += 1
                         if mismatches <= 5:
                             print(
-                                "MISMATCH b=",
-                                b,
-                                " s=",
-                                s,
-                                " h=",
-                                h,
-                                " d=",
-                                d,
-                                " out=",
-                                out_val,
-                                " ref=",
-                                ref_val,
-                                " diff=",
-                                diff,
+                                t"MISMATCH b= {b}  s= {s}  h= {h}  d= {d}  out="
+                                t" {out_val}  ref= {ref_val}  diff= {diff}"
                             )
 
     if num_nonfinite_hk > 0:
@@ -457,14 +368,8 @@ def test_mha_vs_naive[
 
     var mean_diff = sum_diff / Float64(num_checked)
     print(
-        "  num_checked=",
-        num_checked,
-        " mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " mean_diff=",
-        Float32(mean_diff),
+        t"  num_checked= {num_checked}  mismatches= {mismatches}  max_diff="
+        t" {max_diff}  mean_diff= {Float32(mean_diff)}"
     )
     # Per-head cosine similarity. FP8 gate: min_cos >= 0.99.
     var min_cos: Float64 = 1.0
@@ -478,19 +383,13 @@ def test_mha_vs_naive[
         if cos_sim < min_cos:
             min_cos = cos_sim
         print(
-            "    head=",
-            h,
-            " max_diff=",
-            head_max_diff[h],
-            " mismatches=",
-            head_mismatches[h],
-            " cos_sim=",
-            Float32(cos_sim),
+            t"    head= {h}  max_diff= {head_max_diff[h]}  mismatches="
+            t" {head_mismatches[h]}  cos_sim= {Float32(cos_sim)}"
         )
 
     # FP8 gate: cosine similarity >= 0.99 (per MLA convention).
     # BF16 gate: zero mismatches per the per-element tolerance.
-    comptime is_fp8 = qkv_type == DType.float8_e4m3fn
+    comptime is_fp8 = qkv_type == .float8_e4m3fn
     var passed: Bool = False
     if mismatches == 0:
         passed = True
@@ -498,12 +397,8 @@ def test_mha_vs_naive[
     elif is_fp8 and min_cos >= 0.99:
         passed = True
         print(
-            "  PASSED (",
-            mask_name,
-            ") via cosine similarity (min cos=",
-            Float32(min_cos),
-            "); per-element mismatches=",
-            mismatches,
+            t"  PASSED ( {mask_name} ) via cosine similarity (min cos="
+            t" {Float32(min_cos)} ); per-element mismatches= {mismatches}"
         )
     else:
         print("  FAILED (", mask_name, ") — see mismatches above")

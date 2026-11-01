@@ -23,6 +23,9 @@
 # Cross-compile to AArch64 Linux using --mcpu
 # RUN: %mojo-build --target-triple aarch64-unknown-linux-gnu --mcpu=cortex-a72 --emit=llvm -o - %s 2>&1 | FileCheck %s --check-prefix=CHECK_AARCH64
 
+# A repeated target option takes its last value
+# RUN: %mojo-build --target-triple x86_64-unknown-linux-gnu --target-triple aarch64-unknown-linux-gnu --mcpu=cortex-a72 --emit=llvm -o - %s 2>&1 | FileCheck %s --check-prefix=CHECK_AARCH64
+
 # When both --march and --mcpu are specified, --march takes precedence for the arch name
 # RUN: %mojo-build --target-triple x86_64-unknown-linux-gnu --march=x86-64 --mcpu=haswell --emit=llvm -o - %s 2>&1 | FileCheck %s --check-prefix=CHECK_MARCH
 

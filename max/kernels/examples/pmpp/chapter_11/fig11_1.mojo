@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.memory.alloc import unsafe_alloc
+
 
 # ========================== CPU CODE ==========================
 def sequential_scan(
-    input: UnsafePointer[mut=False, Float32, _],
-    output: UnsafePointer[mut=True, Float32, _],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: UInt32,
 ):
     """Sequential scan (inclusive scan) on CPU.
@@ -36,8 +38,8 @@ def main() raises:
     comptime N = 16
 
     # Allocate host memory
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](N)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](N)
 
     # Initialize input with simple values
     print("Input: ", end="")
@@ -76,5 +78,5 @@ def main() raises:
         print("FAILED: Found errors")
 
     # Cleanup
-    h_input.free()
-    h_output.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()

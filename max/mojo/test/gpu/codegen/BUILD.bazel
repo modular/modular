@@ -1,0 +1,92 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+# Codegen budgets have to read the assembly a release build emits, so this test
+# opts out of the debug info and the assertions that land instructions in the
+# loops it measures.
+mojo_test(
+    name = "test_range_codegen.mojo.test",
+    srcs = ["test_range_codegen.mojo"],
+    enable_assertions = False,
+    target_compatible_with = select({
+        # OSS repo: incompatible when Mojo is built from the open-source
+        # subset, since this test uses GPU compiler backends the prebuilt
+        # toolchain ships. Internally this condition is false (test runs).
+        "//:oss_source_only_build": ["@platforms//:incompatible"],
+        # 25 `compile_info[...]` calls, every one of them retargeting to NVPTX or
+        # AMDGPU. Under asan on aarch64 the comptime compiler invocations blow past
+        # the remote-executor timeout, the same way `test_compile_atomic.mojo` does.
+        # Tracked in MOCO-3794.
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_sync_codegen.mojo.test",
+    srcs = ["test_sync_codegen.mojo"],
+    target_compatible_with = select({
+        "//:oss_source_only_build": ["@platforms//:incompatible"],
+        # Retargets to NVPTX, AMDGPU and AIR at comptime, which times out under
+        # asan on aarch64 like `test_range_codegen.mojo` (MOCO-3794).
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_shuffle_codegen.mojo.test",
+    srcs = ["test_shuffle_codegen.mojo"],
+    target_compatible_with = select({
+        "//:oss_source_only_build": ["@platforms//:incompatible"],
+        # TODO(MOCO-3794): Same comptime retargeting and asan timeout as
+        # `test_sync_codegen.mojo`.
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_vote_match_codegen.mojo.test",
+    srcs = ["test_vote_match_codegen.mojo"],
+    target_compatible_with = select({
+        "//:oss_source_only_build": ["@platforms//:incompatible"],
+        # TODO(MOCO-3794): Same comptime retargeting and asan timeout as
+        # `test_sync_codegen.mojo`.
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_plugin_select.mojo.test",
+    srcs = ["test_plugin_select.mojo"],
+    target_compatible_with = select({
+        "//:oss_source_only_build": ["@platforms//:incompatible"],
+        # TODO(MOCO-3794): Same comptime retargeting and asan timeout as
+        # `test_sync_codegen.mojo`.
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)

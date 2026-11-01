@@ -47,16 +47,25 @@ def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
                                                   "TypedAttr &":$value)>,
     InterfaceMethod<[{
       Print an attribute of this type, using pretty syntax if desired. Return
-      false if the attribute is not one the type knows how to print.
+      false if the attribute is not one the type knows how to print. `printer`
+      carries the dedup state (if any) and must be forwarded to any nested
+      parameter value printing.
     }], "LogicalResult", "printValue", (ins "AsmPrinter &":$p,
-                                            "TypedAttr":$value)>,
+                                            "TypedAttr":$value,
+                                            "::M::KGEN::KGENParamPrinter &":$printer)>,
     InterfaceMethod<[{
       Return whether the type is a metatype.
     }], "bool", "isMetaType", (ins), [{}], [{ return false; }]>,
 
     InterfaceMethod<[{
       Return the metatype of the type it has one.
-    }], "Type", "getMetaType", (ins), [{}], [{ return Type(); }]>
+    }], "Type", "getMetaType", (ins), [{}], [{ return Type(); }]>,
+
+    InterfaceMethod<[{
+      Return whether a value of this type may be `#kgen.unknown`. Types that
+      return false have no unknown-value form, so a dependency on an erased
+      parameter of this type is represented as `#kgen.unbound` instead.
+    }], "bool", "supportsUnknownValue", (ins), [{}], [{ return true; }]>
   ];
 }
 
@@ -205,6 +214,26 @@ def SugaredTypeInterface : TypeInterface<"SugaredTypeInterface"> {
       null.  The type canonicalizer will recursively canonicalize types without
       a cache.
     }], "Type", "getCachedCanonicalType", (ins "Type":$type)>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// ParamPrintableTypeInterface
+//===----------------------------------------------------------------------===//
+
+def ParamPrintableTypeInterface : TypeInterface<"ParamPrintableTypeInterface"> {
+  let description = [{
+    Implemented by types that print nested parameters.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Prints this type with `printer`, so its nested parameters keep the
+      printer's context.
+    }], "void", "printWith",
+        (ins "AsmPrinter &":$p, "::M::KGEN::KGENParamPrinter &":$printer)>,
   ];
 }
 

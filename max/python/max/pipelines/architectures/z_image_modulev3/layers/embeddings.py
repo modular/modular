@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Z-Image's timestep and rotary embeddings."""
 
 import math
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.tensor import Tensor
 from max.graph import DimLike
+from max.nn import Linear, Module
+from max.tensor import Tensor
 
 
 def apply_rotary_emb(
@@ -164,25 +165,16 @@ def get_1d_rotary_pos_embed(
     sin_emb = F.sin(freqs)
 
     # Repeat interleave: [S, dim/2] -> [S, dim]
-    # repeat_interleave not supported on GPU, use stack + reshape instead
     # PyTorch: repeat_interleave(2, dim=1) makes [a, b, c] -> [a, a, b, b, c, c]
-    # MAX equivalent: stack([x, x], axis=2) + reshape
-    cos_stacked = F.stack([cos_emb, cos_emb], axis=2)  # [S, dim/2, 2]
-    sin_stacked = F.stack([sin_emb, sin_emb], axis=2)  # [S, dim/2, 2]
-
-    freqs_cos = F.reshape(
-        cos_stacked,
-        [cos_emb.shape[0], cos_stacked.shape[1] * cos_stacked.shape[2]],
-    )  # [S, dim]
-    freqs_sin = F.reshape(
-        sin_stacked,
-        [sin_emb.shape[0], sin_stacked.shape[1] * sin_stacked.shape[2]],
-    )  # [S, dim]
+    freqs_cos = F.repeat_interleave(cos_emb, 2, axis=1)  # [S, dim]
+    freqs_sin = F.repeat_interleave(sin_emb, 2, axis=1)  # [S, dim]
 
     return freqs_cos, freqs_sin
 
 
 class TimestepEmbedder(Module[[Tensor], Tensor]):
+    """Embeds the timestep into the block's conditioning vector."""
+
     def __init__(
         self,
         out_size: int,
@@ -202,6 +194,7 @@ class TimestepEmbedder(Module[[Tensor], Tensor]):
         dim: int,
         max_period: float = 10000.0,
     ) -> Tensor:
+        """Builds the sinusoidal embedding of ``t``."""
         half = dim // 2
         freqs = F.arange(0, half, dtype=DType.float32, device=t.device)
         freqs = F.exp((-math.log(max_period) * freqs) / float(half))
@@ -222,6 +215,7 @@ class TimestepEmbedder(Module[[Tensor], Tensor]):
         return embedding
 
     def forward(self, t: Tensor) -> Tensor:
+        """Embeds ``t`` and projects it."""
         t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
         t_freq = F.cast(t_freq, self.linear_1.weight.dtype)
         t_emb = self.linear_2(F.silu(self.linear_1(t_freq)))
@@ -229,6 +223,8 @@ class TimestepEmbedder(Module[[Tensor], Tensor]):
 
 
 class RopeEmbedder(Module[[Tensor], tuple[Tensor, Tensor]]):
+    """Builds the rotary embedding tables from the position ids."""
+
     def __init__(
         self,
         theta: float = 256.0,
@@ -238,6 +234,7 @@ class RopeEmbedder(Module[[Tensor], tuple[Tensor, Tensor]]):
         self.axes_dims = axes_dims
 
     def forward(self, ids: Tensor) -> tuple[Tensor, Tensor]:
+        """Returns the rotary tables for ``ids``."""
         if ids.rank != 2:
             raise ValueError(f"Expected 2D ids tensor, got rank={ids.rank}")
 

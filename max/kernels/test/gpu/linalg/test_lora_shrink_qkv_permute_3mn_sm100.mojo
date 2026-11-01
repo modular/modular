@@ -15,12 +15,7 @@ import std.itertools
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn
@@ -96,7 +91,7 @@ def test[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -104,11 +99,11 @@ def test[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx[3], total_num_tokens, Idx[N])),
+        row_major(Idx[3], total_num_tokens, Idx[N]),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[actual_N])),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
 
     # Setup offsets and expert ids
@@ -135,7 +130,7 @@ def test[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var b_dev = TileTensor(
         b_dev_buffer,
@@ -143,27 +138,19 @@ def test[
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(Idx[3], total_num_tokens, Idx[N])),
+        row_major(Idx[3], total_num_tokens, Idx[N]),
     )
     var c_ref_dev = TileTensor(
         c_ref_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[actual_N])),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
-        row_major(
-            Coord(
-                num_experts + 1,
-            )
-        ),
+        row_major(num_experts + 1),
     )
     var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
-        row_major(
-            Coord(
-                num_experts,
-            )
-        ),
+        row_major(num_experts),
     )
 
     # Move inputs to device
@@ -175,10 +162,10 @@ def test[
 
     naive_grouped_matmul(
         c_ref_dev,
-        a_dev.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        a_dev.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -243,21 +230,21 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(192, 1024),
+            expert_shape=(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](1, [128], [0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(16, 256),
+            expert_shape=(16, 256),
         ](1, [128], [0], ctx)
 
         # unaligned matmul
@@ -265,14 +252,14 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(1024, 256),
+            expert_shape=(1024, 256),
         ](1, [200], [0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](1, [256], [0], ctx)
 
         # simple expert routing
@@ -280,7 +267,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(256, 64),
+            expert_shape=(256, 64),
         ](1, [128], [2], ctx)
 
         # simple aligned group routing
@@ -288,7 +275,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(256, 64),
+            expert_shape=(256, 64),
         ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
@@ -296,21 +283,21 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(256, 64),
+            expert_shape=(256, 64),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(2880, 512),
+            expert_shape=(2880, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(5760, 512),
+            expert_shape=(5760, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -318,7 +305,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(768, 1024),
+            expert_shape=(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -327,7 +314,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(1280, 1024),
+            expert_shape=(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -337,21 +324,21 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(192, 1024),
+            expert_shape=(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(1280, 16),
+            expert_shape=(1280, 16),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(16, 1024),
+            expert_shape=(16, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
@@ -359,5 +346,5 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(768, 1024),
+            expert_shape=(768, 1024),
         ](2, [128, 256], [0, 2], ctx)

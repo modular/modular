@@ -16,7 +16,7 @@ from std.sys import get_defined_int
 import extensibility
 from max.gpu.host import DeviceContext
 from std.logger import Logger
-from extensibility import foreach, OutputTensor, InputTensor
+from extensibility import foreach, OutputTensor, InputTensor, Tensor
 
 
 from std.utils.coord import Coord
@@ -57,15 +57,14 @@ struct AddOneCustom:
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @__parameter
-        def add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
+        def add_one[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[add_one, target=target](output, ctx)
+        foreach[target=target](add_one, output, ctx)
 
 
 @extensibility.register_shape_function("add_one_custom")
 def add_one_custom_shape(
-    x: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"

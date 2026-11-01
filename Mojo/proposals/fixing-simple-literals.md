@@ -137,7 +137,7 @@ example.mojo:3:4: note: see current operation:
 ^bb0(%arg0: !pop.int_literal):
   %0 = "kgen.param.constant"() {value = #pop.int_literal<1> : !pop.int_literal} : () -> !pop.int_literal
   %1 = "pop.int_literal.binop"(%arg0, %0) {oper = #pop<int_literal.binop_kind sub>} : (!pop.int_literal, !pop.int_literal) -> !pop.int_literal
-  "kgen.return"(%1) : (!pop.int_literal) -> ()
+  "hlcf.return"(%1) : (!pop.int_literal) -> ()
 }) {LLVMMetadata = {}, crossDeviceCaptures = #M<strings[]>, decorators = #kgen<decorators[]>, exportKind = #kgen.export<exported>, funcTypeGenerator = !kgen.generator<(!pop.int_literal) -> !pop.int_literal>, inlineLevel = 0 : i32, sym_name = "test"} : () -> ()
 ```
 

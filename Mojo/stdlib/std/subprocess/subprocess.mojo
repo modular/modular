@@ -22,7 +22,6 @@ from std.ffi import external_call
 from std.memory.unsafe_pointer import unsafe_cast
 from std.sys._libc import FILE_ptr, pclose, popen
 from std.ffi import c_char
-from std.sys.info import CompilationTarget
 
 from std.collections import Span
 
@@ -43,8 +42,8 @@ struct _POpenHandle:
             raise Error("the mode specified `", mode, "` is not valid")
 
         self._handle = popen(
-            cmd.as_c_string_slice(),
-            mode.as_c_string_slice(),
+            cmd.as_c_string_span(),
+            mode.as_c_string_span(),
         )
 
         if not self._handle:
@@ -66,7 +65,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = OptionalPointer[c_char, MutUntrackedOrigin]()
+        var line = Optional[Pointer[c_char, MutUntrackedOrigin]]()
         var res = String()
 
         while True:
@@ -83,7 +82,7 @@ struct _POpenHandle:
                 )
             )
 
-        libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](line))
+        libc.free(unsafe_cast[Type=NoneType](line))
         return String(res.rstrip())
 
 

@@ -22,7 +22,9 @@ import numpy.typing as npt
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
     float32_to_bfloat16_as_uint16,
+    resolve_eos_token_ids,
 )
+from max.pipelines.lib.tokenizer import resolve_token_id_bound
 from PIL import Image
 from transformers import (
     AutoConfig,
@@ -46,9 +48,9 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
 def _get_image_context_token_id(huggingface_config: Any) -> int:
-    """Get the correct token ID for "<IMG_CONTEXT>" based on the InternVL
-    version. This is used to identify where to insert image embeddings in the
-    text.
+    """Returns the token ID this InternVL version uses for "<IMG_CONTEXT>".
+
+    The ID marks where the image embeddings go in the text.
 
     Args:
         huggingface_config: HuggingFace model configuration
@@ -345,6 +347,13 @@ class InternVLProcessor:
         config: AutoConfig,
         vision_overrides: dict[str, Any] | None = None,
     ) -> None:
+        """Stores the tokenizer and reads the InternVL image settings.
+
+        ``image_size``, ``max_dynamic_patch`` and ``num_image_token`` come from
+        the model config with ``vision_overrides`` applied. The prompt
+        placeholders hold the ``<img>``, ``</img>`` and ``<IMG_CONTEXT>``
+        tokens.
+        """
         self.tokenizer = tokenizer
         self.config = config
 
@@ -371,7 +380,6 @@ class InternVLProcessor:
         This method handles multimodal messages by extracting text content before
         forwarding to the HF tokenizer.
         """
-
         # Convert multimodal messages to text-only for the tokenizer
         text_messages = []
         for message in messages:
@@ -537,6 +545,11 @@ class InternVLTokenizer(TextAndVisionTokenizer):
         trust_remote_code: bool = False,
         **unused_kwargs,
     ) -> None:
+        """Builds the delegate tokenizer, processor, and token bounds.
+
+        Records the vision token ID, the prefix-caching flag, the EOS IDs, the
+        token ID bound, and the reasoning parser name the base class reads.
+        """
         self.model_path = model_path
         self.max_new_tokens = max_new_tokens
 
@@ -568,10 +581,11 @@ class InternVLTokenizer(TextAndVisionTokenizer):
             self.delegate, config, vision_overrides
         )
 
-        # Initialize default EOS token IDs (required by parent class new_context method)
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
+        )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
         )
 
         self._reasoning_parser_name: str | None = (

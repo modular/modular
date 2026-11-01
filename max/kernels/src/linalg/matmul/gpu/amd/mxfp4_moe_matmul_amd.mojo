@@ -40,13 +40,11 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.math import align_up, ceildiv
-from std.memory import AddressSpace
-from std.sys import simd_width_of
+from std.sys import align_of, simd_width_of
 from std.utils import StaticTuple
 
 from layout import (
     Coord,
-    Idx,
     TensorLayout,
     TensorEngine,
     TileTensor,
@@ -59,7 +57,6 @@ from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
 )
-from structured_kernels.amd_tile_io import RegTileLoader
 
 from .block_scaled_preshuffle_loaders import (
     PreshuffledBLoader,
@@ -99,7 +96,7 @@ struct InputRowMode(TrivialRegisterPassable):
     comptime TOKEN_SLOT = Self(1)  # A_row = t*topk + s (stage2 / down)
 
 
-@always_inline
+@inline(.always)
 def _xcd_wgm_swizzle(
     wgid_raw: Int, num_pid_m: Int, num_pid_n: Int
 ) -> Tuple[Int, Int]:
@@ -225,13 +222,13 @@ struct MXFP4MoERoutedMatmul[
         comptime if Self.enable_swizzle:
             comptime num_pid_n = ceildiv(N, Self.BN)
             var num_pid_m = _size_expert_ids
-            var wgid_raw = Int(block_idx.y) * num_pid_n + Int(block_idx.x)
+            var wgid_raw = block_idx.y * num_pid_n + block_idx.x
             var pid = _xcd_wgm_swizzle(wgid_raw, num_pid_m, num_pid_n)
             bx = pid[0]
             by_n = pid[1]
         else:
-            bx = Int(block_idx.y)
-            by_n = Int(block_idx.x)
+            bx = block_idx.y
+            by_n = block_idx.x
         var bx_m = bx * Self.sort_block_m
 
         # NOTE: flydsl-style routing producers can elide empty experts
@@ -250,7 +247,7 @@ struct MXFP4MoERoutedMatmul[
         var warp_m, warp_n = divmod(wid, Self.num_warps_n)
 
         # ---- Decode expert_id, build per-expert / per-block TileTensors ----
-        var expert_id_i32 = expert_ids[Coord(bx)]
+        var expert_id_i32 = expert_ids[bx]
 
         # TODO: confirm no production routing producer emits -1; if not,
         # drop the predicate and update the test fixtures to express
@@ -275,14 +272,14 @@ struct MXFP4MoERoutedMatmul[
 
         # ---- Loaders ----
         var b_loader = PreshuffledBLoader[N=N, K_BYTES=K_BYTES](
-            TileTensor(b_pre_expert.ptr, b_pre_expert.layout)
+            b_pre_expert.reshape(b_pre_expert.layout)
         )
         var sfa_loader = PreshuffledScaleLoader[
             MN_padded=Self.sort_block_m, K_SCALES=K_SCALES
-        ](TileTensor(sfa_pre_block.ptr, sfa_pre_block.layout))
+        ](sfa_pre_block.reshape(sfa_pre_block.layout))
         var sfb_loader = PreshuffledScaleLoader[
             MN_padded=N_padded_scale, K_SCALES=K_SCALES
-        ](TileTensor(sfb_pre_expert.ptr, sfb_pre_expert.layout))
+        ](sfb_pre_expert.reshape(sfb_pre_expert.layout))
         var a_bc = make_amd_buffer_resource(a_tt)
 
         # ---- SMEM for A ----
@@ -297,9 +294,8 @@ struct MXFP4MoERoutedMatmul[
         comptime a_loads_per_tile = Self.BM // load_thread_rows
         comptime load_layout = row_major[load_thread_rows, load_thread_cols]()
 
-        var thread_idx_x = Int(thread_idx.x)
-        var row_thread = thread_idx_x // load_thread_cols
-        var col_thread = thread_idx_x % load_thread_cols
+        var thread_idx_x = thread_idx.x
+        var row_thread, col_thread = divmod(thread_idx_x, load_thread_cols)
 
         # Decode (t, s) per row this thread will load. Cached across K-iters.
         # TOKEN_ID:   A_row = t        (stage1; multiple slots share the same A row)
@@ -308,7 +304,7 @@ struct MXFP4MoERoutedMatmul[
         comptime for i in range(a_loads_per_tile):
             var local_row = row_thread + i * load_thread_rows
             var sorted_row_idx = bx_m + local_row
-            var fused = sorted_token_ids[Coord(sorted_row_idx)]
+            var fused = sorted_token_ids[sorted_row_idx]
             var t = Int(fused & UInt32(0xFFFFFF))
             comptime if (
                 Self.INPUT_ROW_MODE._value == InputRowMode.TOKEN_ID._value
@@ -344,10 +340,9 @@ struct MXFP4MoERoutedMatmul[
                 )
                 var data = a_bc.load[.uint8, simd_width](Int32(a_byte_off))
                 var local_row = row_thread + i * load_thread_rows
-                var smem_byte_off = (
-                    local_row * Self.BK_BYTES + col_thread * simd_width
+                a_smem.store[alignment=align_of[DType.uint8]()](
+                    Coord(local_row, col_thread * simd_width), data
                 )
-                a_smem.raw_store[width=simd_width](smem_byte_off, data)
             barrier()
 
             # 2. Per-warp inner: scale-pack loop, ds_read A, load B + scales, MFMA.
@@ -375,9 +370,10 @@ struct MXFP4MoERoutedMatmul[
                             .vectorize[1, Self.FRAG_W_BYTES]()
                             .distribute[lane_layout](lane_id())
                         )
-                        a_frags[ikxdl * Self.num_m_mmas + m] = a_frag.raw_load[
-                            width=Self.FRAG_W_BYTES
-                        ](0)
+                        a_frags[ikxdl * Self.num_m_mmas + m] = a_frag.load[
+                            width=Self.FRAG_W_BYTES,
+                            alignment=align_of[DType.uint8](),
+                        ](Coord(0, 0))
 
                 var b_frags = StaticTuple[
                     SIMD[.uint8, Self.FRAG_W_BYTES],
@@ -443,7 +439,7 @@ struct MXFP4MoERoutedMatmul[
                     + i
                 )
                 var sorted_row_idx = bx_m + local_row
-                var fused = sorted_token_ids[Coord(sorted_row_idx)]
+                var fused = sorted_token_ids[sorted_row_idx]
                 var t = Int(fused & UInt32(0xFFFFFF))
                 var s = Int(fused >> UInt32(24))
                 c_dst_rows[i] = t * Self.topk + s
@@ -459,9 +455,7 @@ struct MXFP4MoERoutedMatmul[
                 var acc = c_acc[m_mma * Self.num_n_mmas + n_mma]
                 comptime for i in range(Self.C_FRAG_SIZE):
                     if row_valids[i]:
-                        c[Coord(c_dst_rows[i], c_col)] = acc[i].cast[
-                            out_dtype
-                        ]()
+                        c[c_dst_rows[i], c_col] = acc[i].cast[out_dtype]()
 
 
 # Thin host-launchable wrapper around `MXFP4MoERoutedMatmul.run`.

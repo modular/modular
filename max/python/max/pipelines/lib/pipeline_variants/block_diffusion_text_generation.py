@@ -123,7 +123,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         host = Buffer.from_numpy(np.zeros((rows * cols,), dtype=np.uint16))
         return host.view(DType.bfloat16, [rows, cols]).to(self._devices[0])
 
-    def execute(
+    def _execute(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         """Runs one canvas: encoder commit, denoising loop, finalize."""
@@ -202,7 +202,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         entropy = entropy_d.to_numpy().reshape(batch, canvas_len)
         # Host categorical over the device top-64 (renormalized); the
         # truncated tail mass is negligible at schedule temperatures and
-        # avoids a [N, vocab] cumsum that has no GPU kernel.
+        # avoids a cumsum over the full [N, vocab] distribution.
         topk_p = topk_p_d.to_numpy().reshape(n_tokens, -1)
         topk_i = topk_i_d.to_numpy().reshape(n_tokens, -1)
         cdf = np.cumsum(topk_p / topk_p.sum(axis=-1, keepdims=True), axis=-1)

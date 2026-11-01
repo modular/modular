@@ -1,10 +1,52 @@
 load("//bazel:api.bzl", "modular_cc_binary")
+load("//bazel:tablegen.bzl", "driver_option_tablegen")
 
 package(default_visibility = ["//Mojo:consumers"])
+
+driver_option_tablegen(
+    name = "KGENTranslate",
+    srcs = [
+        "KGENTranslateCommonOptions.td",
+        "KGENTranslateMLIROptions.td",
+        "KGENTranslateOptions.td",
+    ],
+    manual_name = "kgen-translate",
+    markdown_name = "kgen-translate",
+    td_file = "KGENTranslateOptions.td",
+    deps = ["//Mojo/tools/mojo:MojoDescriptionTdFiles"],
+)
+
+driver_option_tablegen(
+    name = "KGENTranslateDoc",
+    srcs = [
+        "KGENTranslateCommonOptions.td",
+        "KGENTranslateDocOptions.td",
+    ],
+    manual_name = "kgen-translate-emit-mojo-doc",
+    markdown_name = "kgen-translate-emit-mojo-doc",
+    td_file = "KGENTranslateDocOptions.td",
+    deps = ["//Mojo/tools/mojo:MojoDescriptionTdFiles"],
+)
+
+driver_option_tablegen(
+    name = "KGENTranslateLLVMIR",
+    srcs = [
+        "KGENTranslateCommonOptions.td",
+        "KGENTranslateLLVMIROptions.td",
+        "KGENTranslateMLIROptions.td",
+    ],
+    manual_name = "kgen-translate-mlir-to-llvmir",
+    markdown_name = "kgen-translate-mlir-to-llvmir",
+    td_file = "KGENTranslateLLVMIROptions.td",
+    deps = ["//Mojo/tools/mojo:MojoDescriptionTdFiles"],
+)
 
 modular_cc_binary(
     name = "kgen-translate",
     srcs = glob(["*.cpp"]),
+    data = [
+        "//Mojo:CompilerRT",
+    ],
     internal_deps = select({
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
@@ -15,11 +57,13 @@ modular_cc_binary(
         "//conditions:default": [],
     }),
     deps = [
+        ":KGENTranslate.inc_files",
+        ":KGENTranslateDoc.inc_files",
+        ":KGENTranslateLLVMIR.inc_files",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Init",
         "//Mojo:Compiler",
-        "//Mojo:CompilerRT",
         "//Mojo:ExecutionEngine",
         "//Mojo:KGENDialect",
         "//Mojo:MojoParser",

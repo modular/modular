@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Merges neighbouring vision patches before projection."""
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm.layer_norm import LayerNorm
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.nn import Module
+from max.nn.linear import Linear
+from max.nn.norm.layer_norm import LayerNorm
+from max.tensor import Tensor
 
 
 class PatchMergerMLP(Module[[Tensor], Tensor]):
@@ -57,6 +58,7 @@ class PatchMergerMLP(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes and projects the merged patches."""
         # x: (total_patches, N_k, mm_hidden_size)
         x = self.pre_norm(x)
         # Use self.input_dim explicitly instead of -1: the symbolic shape engine

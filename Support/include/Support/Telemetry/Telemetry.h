@@ -15,6 +15,7 @@
 #define SUPPORT_TELEMETRY_H
 
 #include "Support/Configuration.h"
+#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/Instruments.h"
@@ -30,6 +31,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -68,6 +70,18 @@ constexpr auto kExportTimeout = std::chrono::milliseconds(1000);
 /// underlying libcurl handle, providing a hard deadline on the entire HTTP
 /// request (including connection establishment).
 constexpr auto kOtlpRequestTimeout = std::chrono::milliseconds(3000);
+
+/// Whether `endpoint` is Modular's collector, whose exports must not carry
+/// the operator's OTEL_EXPORTER_OTLP_*HEADERS.
+bool isModularEndpoint(StringRef endpoint);
+
+/// Drops the headers that OTLP HTTP exporter `options` read from the
+/// environment when `endpoint` is Modular's collector.
+template <typename OtlpHttpOptions>
+void dropHeadersForModular(OtlpHttpOptions &options, StringRef endpoint) {
+  if (isModularEndpoint(endpoint))
+    options.http_headers.clear();
+}
 
 /// Emit a one-time warning to stderr when a telemetry export fails. The warned
 /// flag is injectable so that tests can create isolated instances. Production
@@ -333,20 +347,43 @@ private:
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
 // later if needed.
 
+/// `machineid.source` values; the warehouse and the crash forwarder pin them.
+inline constexpr llvm::StringLiteral kMachineSourceInstallId = "install-id";
+inline constexpr llvm::StringLiteral kMachineSourceNone = "none";
+inline constexpr llvm::StringLiteral kMachineSourceCorrupted = "corrupted";
+
+/// The machineid or sessionid sent when there is none; motel inserts the same
+/// sentinel for a missing attribute.
+inline constexpr llvm::StringLiteral kUnknownId = "unknown";
+
 /// Local identifiers reported alongside telemetry events.
 struct LocalIDs {
-  /// Invariant within a given container.
+  /// The persisted install id, or `kUnknownId` when there is none.
   std::string machine;
   /// Invariant within a given process.
   std::string session;
+  /// One of the `kMachineSource*` values.
+  std::string machineSource;
 };
 
-/// createLocalIDs creates the local machineid/sessionid pair.
+/// createLocalIDs creates the local machine, session and source identifiers.
 ///
 /// The result is computed once and memoized (it may be quite expensive), so
 /// every caller in the process observes identical values. The crash reporting
 /// and usage telemetry lanes rely on this to carry the same IDs.
 const LocalIDs &createLocalIDs();
+
+/// The folder holding `installId`: `$TEST_TMPDIR/.modular`, else the XDG state
+/// directory (`$XDG_STATE_HOME/modular`, default `~/.local/state/modular`).
+ErrorOr<std::filesystem::path> getInstallIdFolder();
+
+/// Reads `dataFolder/installId`, creating it with a fresh random id when it is
+/// missing, and returns the id with its `machineid.source`. An existing file
+/// that holds no valid id is left alone and reported as
+/// `kMachineSourceCorrupted`; any other failure is `kMachineSourceNone`. Both
+/// failures return `kUnknownId`.
+std::pair<std::string, llvm::StringRef>
+readOrCreateInstallId(const std::filesystem::path &dataFolder);
 
 /// Reports whether the usage telemetry lane is enabled,
 /// Users opt out, so this defaults to enabled for production builds.
@@ -478,7 +515,6 @@ public:
 private:
   /// Configured telemetry level for this telemetry context.
   Level telemetryLevel;
-  StringRef machineId;
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> userMetricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> userMeter;

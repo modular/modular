@@ -15,34 +15,34 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import ClassVar
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.sharding.action import ActionSet
-from max.experimental.sharding.cost import force_replicated_action_set
-from max.experimental.sharding.types import TensorLayout
-from max.experimental.tensor import Tensor
-from max.nn.kernels import tpool_patch_merger as _tpool_patch_merger
+from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.nn.legacy.kernels import tpool_patch_merger as _tpool_patch_merger
+from max.tensor import Tensor
+from max.tensor.sharding import AxisAssignment, replicated_rows
+from max.tensor.sharding.types import TensorLayout
 
-from ...model_config import VisionConfig
+from ...model_config import KimiK2_5Config, VisionConfig
 from .encoder import Encoder
 from .patch_embedding import PatchEmbedding
 from .patch_merger import PatchMergerMLP
 
 
 def _tpool_patch_merger_rule(
-    input: TensorLayout, grid_thws: TensorLayout, *extras: Any
-) -> ActionSet:
-    """Replicated on the token stream and the grid table.
-
-    Only the leading tensor operands are declared; the ``kH``/``kW`` merge
-    extents and the host ``max_h``/``max_w`` scalars trail them and pass
-    through the dispatcher untouched.
-    """
-    return force_replicated_action_set(input, grid_thws)
+    input: TensorLayout,
+    grid_thws: TensorLayout,
+    kH: int,
+    kW: int,
+    max_h: int | TensorLayout,
+    max_w: int | TensorLayout,
+) -> list[AxisAssignment]:
+    """Replicated on the token stream, the grid table and the host extents."""
+    return replicated_rows(input, grid_thws, max_h, max_w)
 
 
 tpool_patch_merger = F.functional(
@@ -152,3 +152,40 @@ class Transformer(
         h = h.reshape([h.shape[0] // merge_k, merge_k, h.shape[1]])
         h = self.patch_merger(h)
         return (h,)
+
+
+class KimiK2_5VisionEncoder(Transformer):
+    """The Kimi K2.5 vision tower, registered for the ``VISION`` role.
+
+    It runs on the config's first device and yields bf16 embeddings as wide
+    as the text tower's hidden state.
+    """
+
+    graph_name: ClassVar[str] = "Transformer"
+
+    def __init__(self, config: KimiK2_5Config) -> None:
+        super().__init__(config.vision_config)
+        self.vision_config = config.vision_config
+        self.embedding_dtype = DType.bfloat16
+        self.embedding_dim = config.vision_config.text_hidden_size
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        """Returns the vision graph's inputs, in :meth:`forward`'s order."""
+        config = self.vision_config
+        device = config.devices[0]
+        return (
+            TensorType(
+                config.dtype,
+                shape=[
+                    "n_patches",
+                    config.in_channels,
+                    config.patch_size,
+                    config.patch_size,
+                ],
+                device=device,
+            ),
+            TensorType(DType.int64, shape=["n_images", 3], device=device),
+            TensorType(DType.uint32, shape=["n_seqlens"], device=device),
+            TensorType(DType.uint32, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int64, shape=["n_patches"], device=device),
+        )

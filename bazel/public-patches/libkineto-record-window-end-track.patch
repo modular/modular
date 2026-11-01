@@ -1,0 +1,49 @@
+Stop libkineto's global-scope instant events from spawning Unnamed SliceTracks.
+
+Two emitters produce instant events that Perfetto cannot route to a named
+track:
+
+1. The singleton "Record Window End" marker carries empty-string pid/tid and
+   global scope ("s":"g"). Perfetto treats empty pid/tid as an unrouted event
+   and global scope as a process-wide instants track, so the marker spawns an
+   "Unnamed SliceTrack" in every trace. Emit it on the (-1, 0) overhead track
+   (which carries a process_name) with thread scope instead.
+
+2. The per-CpuTraceBuffer "Iteration Start: <span>" marker
+   (addIterationMarker) is emitted with global scope. Its pid/tid strings
+   ("Traces" / "Trace <span>") name a perfectly good track, but global scope
+   routes it to the unnamed process-wide instants track anyway. Demote it to
+   thread scope so it lands on its own named track. This fires for every
+   client CPU-trace transfer (MAX's semantic-range buffer, PyTorch's op
+   buffer alike).
+
+MAX previously fixed the first case by text-patching the trace file after
+writing it (Range.cpp::patchOverheadTrackMetadata), but that only covers
+traces written through M::Profiling::disable(); Dynolog on-demand traces are
+serialized by libkineto itself and bypassed the fixup (MXTOOLS-266). Patching
+the emitters covers every write path.
+
+--- a/libkineto/src/output_json.cpp
++++ b/libkineto/src/output_json.cpp
+@@ -605,7 +605,7 @@
+   writeInstantEvent(
+       /*cat=*/"",
+       /*name=*/fmt::format("Iteration Start: {}", span.name),
+-      /*scope=*/"g",
++      /*scope=*/"t",
+       /*pid=*/R"("Traces")",
+       /*tid=*/fmt::format("\"Trace {}\"", span.name),
+       /*ts=*/start,
+@@ -945,9 +945,9 @@
+   writeInstantEvent(
+       /*cat=*/"",
+       /*name=*/"Record Window End",
+-      /*scope=*/"g",
+-      /*pid=*/R"("")",
+-      /*tid=*/R"("")",
++      /*scope=*/"t",
++      /*pid=*/"-1",
++      /*tid=*/"0",
+       /*ts=*/endTime,
+       /*args=*/emptyArgs,
+       /*finalEvent=*/true);

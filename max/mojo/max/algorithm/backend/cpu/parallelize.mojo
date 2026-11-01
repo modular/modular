@@ -29,10 +29,10 @@ from max.gpu.host import DeviceContext
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def sync_parallelize[
     FuncType: def(Int) raises -> None,
-](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
+](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext.CPU] = None):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
 
@@ -57,7 +57,7 @@ def sync_parallelize[
     # parent. Otherwise parent_id will be zero.
     var parent_id = tracing.get_current_trace_id[TraceLevel.THREAD]()
 
-    @always_inline
+    @inline(.always)
     def func_wrapped(i: Int) {imm}:
         with FlushDenormals():
             try:
@@ -74,17 +74,17 @@ def sync_parallelize[
         return
 
     try:
-        var cpu_ctx = ctx.or_else(DeviceContext(api="cpu"))
+        var cpu_ctx = ctx.value() if ctx else DeviceContext.cpu()
         cpu_ctx.enqueue_cpu_range(func_wrapped, count=num_work_items)
         cpu_ctx.synchronize()
     except e:
         abort(String(e))
 
 
-@always_inline
+@inline(.always)
 def parallelize[
     FuncType: def(Int) -> None,
-](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
+](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext.CPU] = None):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
 
@@ -99,14 +99,14 @@ def parallelize[
     _parallelize_impl(func, num_work_items, parallelism_level(ctx), ctx)
 
 
-@always_inline
+@inline(.always)
 def parallelize[
     FuncType: def(Int) -> None,
 ](
     func: FuncType,
     num_work_items: Int,
     num_workers: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -123,14 +123,14 @@ def parallelize[
     _parallelize_impl(func, num_work_items, num_workers, ctx)
 
 
-@always_inline
+@inline(.always)
 def _parallelize_impl[
     FuncType: def(Int) -> None,
 ](
     func: FuncType,
     num_work_items: Int,
     num_workers: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Distributes work items across workers by coalescing consecutive items
     into chunks and executing them in parallel via `sync_parallelize`.
@@ -150,7 +150,7 @@ def _parallelize_impl[
 
     # We coalesce consecutive groups of work items into a single dispatch by
     # using the coarse_grained_func below.
-    @always_inline
+    @inline(.always)
     def coarse_grained_func(
         thread_idx: Int,
     ) {imm func, imm chunk_size, imm extra_items,}:
@@ -168,11 +168,11 @@ def _parallelize_impl[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _get_num_workers(
     problem_size: Int,
     grain_size: Int = 32768,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) -> Int:
     """Returns a number of workers to run in parallel for given problem_size,
     accounting for the available worker threads of the current runtime.
@@ -204,7 +204,7 @@ def parallelize_over_rows[
     shape: IndexList,
     axis: Int,
     grain_size: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Parallelize func over non-axis dims of shape.
 
@@ -231,7 +231,7 @@ def parallelize_over_rows[
     )
     var chunk_size = ceildiv(num_rows, num_workers)
 
-    @always_inline
+    @inline(.always)
     def task_func(
         task_id: Int,
     ) {imm func, imm chunk_size, imm num_rows,}:

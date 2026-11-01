@@ -43,20 +43,20 @@ config as well.
 """
 from std.math import align_up, ceildiv
 from max.gpu.host import DeviceBuffer, DeviceContext
-from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import alloc
 from std.memory.unsafe import bitcast
+from std.memory.alloc import unsafe_alloc
 from std.random import seed, rand
 
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
+    grouped_matmul_block_scaled_swiglu_sm100_dispatch,
     grouped_matmul_mxfp8_dispatch,
     grouped_matmul_swiglu_mxfp8_dispatch,
+)
+from linalg.swiglu_activation import (
+    get_swiglu_activation,
+    swiglu_activation_type,
 )
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -64,13 +64,14 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
+    W4A8_B_DTYPE,
     get_scale_factor,
     set_scale_factor,
 )
 from shmem.ep_comm import fused_silu_mxfp8_interleaved_kernel
 
 
-@always_inline
+@inline(.always)
 def e8m0(x: Float32) -> Float8_e8m0fnu:
     """Construct an E8M0 scalar from a Float32 via cast."""
     return x.cast[.float8_e8m0fnu]()
@@ -98,20 +99,21 @@ def _make_ragged(head: Int, tail_value: Int, tail_count: Int) -> List[Int]:
     return r^
 
 
-struct _SharedB(Movable):
+struct _SharedB[b_type: DType = DType.float8_e4m3fn](Movable):
     """Per-comptime-shape device buffers reused across all test cases:
     pre-permuted B weights, pre-permuted B scales, expert scales. The
     heavy host-side `rand(b_host)` (~600 MB at the EP=8 shape) and the
-    per-expert N-axis sigma permutation run only once.
+    per-expert N-axis sigma permutation run only once. `b_type` is E4M3
+    (MXFP8) or nibble-packed E2M1 (W4A8, `K / 2` bytes a row).
     """
 
-    var b_perm: DeviceBuffer[.float8_e4m3fn]
+    var b_perm: DeviceBuffer[Self.b_type]
     var b_scales_perm: DeviceBuffer[MXFP8_SF_DTYPE]
     var expert_scales: DeviceBuffer[.float32]
 
     def __init__(
         out self,
-        var b_perm: DeviceBuffer[.float8_e4m3fn],
+        var b_perm: DeviceBuffer[Self.b_type],
         var b_scales_perm: DeviceBuffer[MXFP8_SF_DTYPE],
         var expert_scales: DeviceBuffer[.float32],
     ):
@@ -124,13 +126,13 @@ def _build_shared_b[
     num_experts: Int,
     N: Int,
     K: Int,
-](ctx: DeviceContext) raises -> _SharedB:
+    b_type: DType = DType.float8_e4m3fn,
+](ctx: DeviceContext) raises -> _SharedB[b_type]:
     """Build B-side weights and the permuted MXFP8 scale tile once."""
     seed(1234)
-    comptime b_type = DType.float8_e4m3fn
     comptime scales_dtype = MXFP8_SF_DTYPE
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
-    comptime packed_K = K
+    comptime packed_K = K // 2 if b_type == W4A8_B_DTYPE else K
 
     comptime assert N % 2 == 0, "N must be even for gate/up interleave."
     comptime H = N // 2
@@ -140,32 +142,32 @@ def _build_shared_b[
 
     var b_size = num_experts * N * packed_K
 
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_perm_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
+    var b_perm_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
 
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups_b],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups_b],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_total = b_scales_shape.product()
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
-    var b_scales_perm_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var b_scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](b_scales_total)
+    var b_scales_perm_host_ptr = unsafe_alloc[Scalar[scales_dtype]](
+        b_scales_total
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
     var b_scales_perm_host = TileTensor(b_scales_perm_host_ptr, b_scales_shape)
 
-    var expert_scales_host_ptr = alloc[Float32](num_experts)
+    var expert_scales_host_ptr = unsafe_alloc[Float32](num_experts)
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
     # Deterministic fill on the raw byte stream; the kernel interprets
-    # bytes per the E4M3 / E8M0 encodings respectively.
-    rand(b_host_ptr.bitcast[UInt8](), b_size, min=0, max=255)
+    # bytes per the E4M3 (or two E2M1) / E8M0 encodings respectively.
+    rand(b_host_ptr.unsafe_bitcast[UInt8](), b_size, min=0, max=255)
     # Small power-of-2 scale (2^-7) keeps matmul outputs inside the
     # +-448 E4M3 representable range so we don't saturate to NaN.
     var sf_small = e8m0(Float32(0.0078125))
@@ -196,27 +198,23 @@ def _build_shared_b[
     )
     for e in range(num_experts):
         var src_view = TileTensor(
-            b_scales_host_ptr + e * b_expert_sf_size,
+            b_scales_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
-                Coord(
-                    Idx[n_groups_b],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups_b],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         var dst_view = TileTensor(
-            b_scales_perm_host_ptr + e * b_expert_sf_size,
+            b_scales_perm_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
-                Coord(
-                    Idx[n_groups_b],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups_b],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         for i in range(H):
@@ -247,13 +245,13 @@ def _build_shared_b[
     ctx.enqueue_copy(expert_scales_device, expert_scales_host_ptr)
     ctx.synchronize()
 
-    b_host_ptr.free()
-    b_perm_host_ptr.free()
-    b_scales_host_ptr.free()
-    b_scales_perm_host_ptr.free()
-    expert_scales_host_ptr.free()
+    b_host_ptr.unsafe_free()
+    b_perm_host_ptr.unsafe_free()
+    b_scales_host_ptr.unsafe_free()
+    b_scales_perm_host_ptr.unsafe_free()
+    expert_scales_host_ptr.unsafe_free()
 
-    return _SharedB(
+    return _SharedB[b_type](
         b_perm=b_perm_device^,
         b_scales_perm=b_scales_perm_device^,
         expert_scales=expert_scales_device^,
@@ -264,30 +262,41 @@ def _test_swiglu_mxfp8_dispatch[
     num_experts: Int,
     N: Int,
     K: Int,
+    b_type: DType = DType.float8_e4m3fn,
     match_bf16: Bool = True,
     clamp_activation: Bool = False,
     use_inplace: Bool = True,
+    via_selector: Bool = False,
+    alpha: Float32 = 1.702,
+    limit: Float32 = 7.0,
+    activation: swiglu_activation_type = get_swiglu_activation[
+        "swigluoai" if clamp_activation else "silu",
+        alpha,
+        limit if clamp_activation else 0.0,
+    ],
 ](
     num_tokens_by_expert: List[Int],
     expert_ids: List[Int],
-    shared: _SharedB,
+    shared: _SharedB[b_type],
     ctx: DeviceContext,
-    alpha: Float32 = Float32(1.702),
-    limit: Float32 = Float32(7.0),
     est_m_override: Int = -1,
 ) raises:
     """End-to-end byte-exact compare: fused MXFP8 dispatch vs chain.
 
     `num_active_experts = len(num_tokens_by_expert)`. Tail slots
     `[num_active_experts, num_experts)` are padded (0 tokens, -1 id).
-    When `clamp_activation=True`, both REF and TEST paths apply the
-    swigluoai clamped activation so the comparison remains byte-exact.
+    Both REF and TEST paths apply `activation`, so the comparison stays
+    byte-exact for any activation.
     `use_inplace` selects the fused decode epilogue flavor (register
     in-place vs cooperative); both must match the REF chain.
+    `via_selector` runs TEST through the dtype selector that graph ops
+    call, which takes the default epilogue flavor.
     """
+    comptime assert not via_selector or (
+        match_bf16 and use_inplace
+    ), "the selector takes the default epilogue flavor"
     seed(1234)
     comptime a_type = DType.float8_e4m3fn
-    comptime b_type = DType.float8_e4m3fn
     comptime c_type = DType.bfloat16
     comptime fp8_dtype = DType.float8_e4m3fn
     comptime scales_dtype = MXFP8_SF_DTYPE
@@ -296,9 +305,11 @@ def _test_swiglu_mxfp8_dispatch[
 
     comptime assert N % 2 == 0, "N must be even for gate/up interleave."
     comptime H = N // 2
-    # MXFP8 is one byte per element (no nibble packing).
+    # MXFP8 is one byte per element (no nibble packing). W4A8 packs only the
+    # weights, so A, O and every K extent stay in elements.
     comptime packed_K = K
     comptime packed_H = H
+    comptime b_packed_K = K // 2 if b_type == W4A8_B_DTYPE else K
 
     var num_active_experts = len(num_tokens_by_expert)
 
@@ -311,38 +322,21 @@ def _test_swiglu_mxfp8_dispatch[
     # exercise the floored-estimate EP-decode path (S*top_k//n_gpus == 0).
     var est_m = est_m_override if est_m_override >= 0 else M
     print(
-        "  N=",
-        N,
-        " K=",
-        K,
-        " H=",
-        H,
-        " M=",
-        M,
-        " est_m=",
-        est_m,
-        " active=",
-        num_active_experts,
-        "/",
-        num_experts,
-        " match_bf16=",
-        match_bf16,
-        " clamp=",
-        clamp_activation,
-        " inplace=",
-        use_inplace,
+        (
+            t"  N={N} K={K} H={H} M={M} est_m={est_m} active={num_active_experts}/{num_experts} match_bf16={match_bf16} clamp={clamp_activation} inplace={use_inplace} b={b_type}"
+        ),
         sep="",
     )
 
     # ---- M-dependent A-side / output buffers ----
-    var a_shape = row_major(Coord(Int(M), Idx[packed_K]))
-    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K]))
-    var c_shape = row_major(Coord(Int(M), Idx[N]))
+    var a_shape = row_major(M, Idx[packed_K])
+    var b_shape = row_major(Idx[num_experts], Idx[N], Idx[b_packed_K])
+    var c_shape = row_major(M, Idx[N])
 
     var a_size = M * packed_K
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_tensor = TileTensor(a_device, a_shape)
 
@@ -356,24 +350,24 @@ def _test_swiglu_mxfp8_dispatch[
     # ---- Per-expert offsets / IDs sized at comptime upper bound
     # `num_experts`. Tail slots [num_active_experts, num_experts) are
     # padded (0 tokens, -1 id); the kernel skips expert_id < 0.
-    var a_offsets_host_ptr = alloc[UInt32](num_experts + 1)
-    var a_scale_offsets_ptr = alloc[UInt32](num_experts)
-    var expert_ids_host_ptr = alloc[Int32](num_experts)
+    var a_offsets_host_ptr = unsafe_alloc[UInt32](num_experts + 1)
+    var a_scale_offsets_ptr = unsafe_alloc[UInt32](num_experts)
+    var expert_ids_host_ptr = unsafe_alloc[Int32](num_experts)
 
     var a_offsets_device = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
     var a_offsets_tensor = TileTensor(
-        a_offsets_device, row_major(Coord(Idx[num_experts + 1]))
+        a_offsets_device, row_major(Idx[num_experts + 1])
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](num_experts)
     var a_scale_offsets_tensor = TileTensor(
-        a_scale_offsets_device, row_major(Coord(Idx[num_experts]))
+        a_scale_offsets_device, row_major(Idx[num_experts])
     )
     var expert_ids_device = ctx.enqueue_create_buffer[.int32](num_experts)
     var expert_ids_tensor = TileTensor(
-        expert_ids_device, row_major(Coord(Idx[num_experts]))
+        expert_ids_device, row_major(Idx[num_experts])
     )
     var expert_scales_tensor = TileTensor(
-        shared.expert_scales, row_major(Coord(Idx[num_experts]))
+        shared.expert_scales, row_major(Idx[num_experts])
     )
 
     var a_scale_dim0 = 0
@@ -398,32 +392,28 @@ def _test_swiglu_mxfp8_dispatch[
     comptime k_groups = ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
 
     var a_scales_shape = row_major(
-        Coord(
-            Int(a_scale_dim0),
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var a_scales_total = a_scales_shape.product()
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
+    var a_scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](a_scales_total)
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
 
     # ---- Output buffers (fused FP8 packed + 5D E8M0 SFs) ----
     comptime k_groups_swiglu = ceildiv(H, SF_VECTOR_SIZE * SF_ATOM_K)
-    var O_shape = row_major(Coord(Int(M), Idx[packed_H]))
+    var O_shape = row_major(M, Idx[packed_H])
     var O_size = M * packed_H
     var swiglu_scales_shape = row_major(
-        Coord(
-            Int(a_scale_dim0),
-            Idx[k_groups_swiglu],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups_swiglu],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var S_size = swiglu_scales_shape.product()
 
@@ -431,17 +421,17 @@ def _test_swiglu_mxfp8_dispatch[
     var O_test_device = ctx.enqueue_create_buffer[fp8_dtype](O_size)
     var S_ref_device = ctx.enqueue_create_buffer[scales_dtype](S_size)
     var S_test_device = ctx.enqueue_create_buffer[scales_dtype](S_size)
-    var O_ref_host_ptr = alloc[Scalar[fp8_dtype]](O_size)
-    var O_test_host_ptr = alloc[Scalar[fp8_dtype]](O_size)
-    var S_ref_host_ptr = alloc[Scalar[scales_dtype]](S_size)
-    var S_test_host_ptr = alloc[Scalar[scales_dtype]](S_size)
+    var O_ref_host_ptr = unsafe_alloc[Scalar[fp8_dtype]](O_size)
+    var O_test_host_ptr = unsafe_alloc[Scalar[fp8_dtype]](O_size)
+    var S_ref_host_ptr = unsafe_alloc[Scalar[scales_dtype]](S_size)
+    var S_test_host_ptr = unsafe_alloc[Scalar[scales_dtype]](S_size)
     var O_ref_tensor = TileTensor(O_ref_device, O_shape)
     var O_test_tensor = TileTensor(O_test_device, O_shape)
     var S_ref_tensor = TileTensor(S_ref_device, swiglu_scales_shape)
     var S_test_tensor = TileTensor(S_test_device, swiglu_scales_shape)
 
     # ---- Init A + A-scales ----
-    rand(a_host_ptr.bitcast[UInt8](), a_size, min=0, max=255)
+    rand(a_host_ptr.unsafe_bitcast[UInt8](), a_size, min=0, max=255)
 
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var sf_zero = e8m0(Float32(0.0))
@@ -475,20 +465,18 @@ def _test_swiglu_mxfp8_dispatch[
         a_scales_device, a_scales_shape
     ).as_unsafe_any_origin()
     var b_scales_perm_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_perm_tt = TileTensor(
         shared.b_scales_perm, b_scales_perm_shape
     ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
-        shared.expert_scales, row_major(Coord(Int64(num_experts)))
+        shared.expert_scales, row_major(Int64(num_experts))
     ).as_unsafe_any_origin()
 
     # ---- Path REF: non-fused matmul -> BF16 -> standalone SwiGLU. ----
@@ -508,9 +496,9 @@ def _test_swiglu_mxfp8_dispatch[
     )
 
     comptime hw_info = ctx.default_device_info
-    var c_ref_immut = c_ref_tensor.as_immut()
-    var a_offsets_immut = a_offsets_tensor.as_immut()
-    var a_scale_offsets_immut = a_scale_offsets_tensor.as_immut()
+    var c_ref_immut = c_ref_tensor.as_imm()
+    var a_offsets_immut = a_offsets_tensor.as_imm()
+    var a_scale_offsets_immut = a_scale_offsets_tensor.as_imm()
 
     comptime ref_silu_mxfp8 = fused_silu_mxfp8_interleaved_kernel[
         fp8_dtype,
@@ -523,7 +511,12 @@ def _test_swiglu_mxfp8_dispatch[
         a_scale_offsets_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
-        clamp_activation=clamp_activation,
+        activation=activation,
+        OutputEngine=type_of(O_ref_tensor).Engine,
+        ScalesEngine=type_of(S_ref_tensor).Engine,
+        InputEngine=type_of(c_ref_immut).Engine,
+        RowOffsetsEngine=type_of(a_offsets_immut).Engine,
+        ScalesOffsetsEngine=type_of(a_scale_offsets_immut).Engine,
     ]
     ctx.enqueue_function[ref_silu_mxfp8](
         O_ref_tensor,
@@ -531,35 +524,52 @@ def _test_swiglu_mxfp8_dispatch[
         c_ref_immut,
         a_offsets_immut,
         a_scale_offsets_immut,
-        alpha,
-        limit,
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )
 
     # ---- Path TEST: fused MXFP8 dispatch. ----
-    grouped_matmul_swiglu_mxfp8_dispatch[
-        transpose_b=transpose_b,
-        match_bf16=match_bf16,
-        use_inplace=use_inplace,
-        clamp_activation=clamp_activation,
-    ](
-        O_test_tensor,
-        S_test_tensor,
-        a_tensor,
-        b_perm_tensor,
-        a_scales_tt,
-        b_scales_perm_tt,
-        a_offsets_tensor,
-        a_scale_offsets_tensor,
-        expert_ids_tensor,
-        expert_scales_tt,
-        num_active_experts,
-        est_m,
-        ctx,
-        alpha,
-        limit,
-    )
+    comptime if via_selector:
+        # MXFP8 ignores the per-expert input scales.
+        grouped_matmul_block_scaled_swiglu_sm100_dispatch[
+            transpose_b=transpose_b, activation=activation
+        ](
+            O_test_tensor,
+            S_test_tensor,
+            a_tensor,
+            b_perm_tensor,
+            a_scales_tt,
+            b_scales_perm_tt,
+            a_offsets_tensor,
+            a_scale_offsets_tensor,
+            expert_ids_tensor,
+            expert_scales_tt,
+            expert_scales_tt,
+            num_active_experts,
+            est_m,
+            ctx,
+        )
+    else:
+        grouped_matmul_swiglu_mxfp8_dispatch[
+            transpose_b=transpose_b,
+            match_bf16=match_bf16,
+            use_inplace=use_inplace,
+            activation=activation,
+        ](
+            O_test_tensor,
+            S_test_tensor,
+            a_tensor,
+            b_perm_tensor,
+            a_scales_tt,
+            b_scales_perm_tt,
+            a_offsets_tensor,
+            a_scale_offsets_tensor,
+            expert_ids_tensor,
+            expert_scales_tt,
+            num_active_experts,
+            est_m,
+            ctx,
+        )
     ctx.synchronize()
 
     # ---- Copy results back, byte-exact compare ----
@@ -595,30 +605,21 @@ def _test_swiglu_mxfp8_dispatch[
                 first_bad_S = i
             S_mismatch += 1
 
-    a_host_ptr.free()
-    a_offsets_host_ptr.free()
-    a_scale_offsets_ptr.free()
-    expert_ids_host_ptr.free()
-    a_scales_host_ptr.free()
-    O_ref_host_ptr.free()
-    O_test_host_ptr.free()
-    S_ref_host_ptr.free()
-    S_test_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    a_offsets_host_ptr.unsafe_free()
+    a_scale_offsets_ptr.unsafe_free()
+    expert_ids_host_ptr.unsafe_free()
+    a_scales_host_ptr.unsafe_free()
+    O_ref_host_ptr.unsafe_free()
+    O_test_host_ptr.unsafe_free()
+    S_ref_host_ptr.unsafe_free()
+    S_test_host_ptr.unsafe_free()
 
     if O_mismatch != 0 or S_mismatch != 0:
         print(
-            "    OUT mismatch =",
-            O_mismatch,
-            "/",
-            O_size,
-            " first @ idx=",
-            first_bad_O,
-            "  SF mismatch =",
-            S_mismatch,
-            "/",
-            S_size,
-            " first @ idx=",
-            first_bad_S,
+            t"    OUT mismatch = {O_mismatch} / {O_size}  first @ idx="
+            t" {first_bad_O}   SF mismatch = {S_mismatch} / {S_size}  first @"
+            t" idx= {first_bad_S}"
         )
         raise Error(
             "MXFP8 fused dispatch disagrees with non-fused reference chain"
@@ -813,6 +814,40 @@ def main() raises:
             ctx,
         )
 
+        # A caller-supplied thin lambda outside the stock set (ReGLU)
+        # runs through both the fused epilogue, in-place (decode) and
+        # cooperative (prefill), and the REF chain's standalone kernel.
+        print("  lambda decode: 8 active, [2] x 8")
+        _test_swiglu_mxfp8_dispatch[
+            NUM_E,
+            N,
+            K,
+            activation=lambda (g: Float32, u: Float32) -> Float32: max(
+                g, Float32(0.0)
+            )
+            * u,
+        ](
+            _make_uniform(2, 8),
+            _make_range(8),
+            shared,
+            ctx,
+        )
+        print("  lambda prefill: 2 active, [64, 33]")
+        _test_swiglu_mxfp8_dispatch[
+            NUM_E,
+            N,
+            K,
+            activation=lambda (g: Float32, u: Float32) -> Float32: max(
+                g, Float32(0.0)
+            )
+            * u,
+        ](
+            [64, 33],
+            [0, 1],
+            shared,
+            ctx,
+        )
+
         # match_bf16=False (fp32 across SMEM scatter).
         print("  match_bf16=False: 2 active, [64, 33]")
         _test_swiglu_mxfp8_dispatch[NUM_E, N, K, match_bf16=False](
@@ -825,3 +860,69 @@ def main() raises:
         print("\nALL EP=8 MXFP8 SWIGLU DISPATCH TESTS PASSED!")
 
         _ = shared^
+
+        # W4A8: E2M1 weights (two a byte) against the same E4M3 activations.
+        # Shape of a 384-expert MoE at EP=8: 48 experts a rank, hidden 5120,
+        # intermediate 2304. Token counts are prime or ragged so tiles end
+        # mid-block, with empty and masked slots among them.
+        comptime W_E = 48
+        comptime W_N = 4608
+        comptime W_K = 5120
+        comptime silu10 = get_swiglu_activation["silu", 0.0, 10.0]
+        var w4a8 = _build_shared_b[W_E, W_N, W_K, W4A8_B_DTYPE](ctx)
+
+        print("=== W4A8 grouped_matmul_swiglu_mxfp8_dispatch ===")
+        print("  decode: 48 active, [2] x 48")
+        _test_swiglu_mxfp8_dispatch[W_E, W_N, W_K, W4A8_B_DTYPE](
+            _make_uniform(2, 48), _make_range(48), w4a8, ctx
+        )
+        print("  decode: 48 active, [8] x 48, silu limit 10")
+        _test_swiglu_mxfp8_dispatch[
+            W_E, W_N, W_K, W4A8_B_DTYPE, activation=silu10
+        ](_make_uniform(8, 48), _make_range(48), w4a8, ctx)
+        print("  decode: 1 active, [7], estimated_total_m=0")
+        _test_swiglu_mxfp8_dispatch[W_E, W_N, W_K, W4A8_B_DTYPE](
+            [7], [46], w4a8, ctx, est_m_override=0
+        )
+        print(
+            "  decode ragged via selector: 12 slots, primes, empty and masked"
+        )
+        _test_swiglu_mxfp8_dispatch[
+            W_E, W_N, W_K, W4A8_B_DTYPE, via_selector=True
+        ](
+            [3, 1, 0, 7, 2, 5, 1, 11, 0, 13, 0, 2],
+            [0, 5, -1, 7, 2, 9, 47, 30, 31, 12, -1, 4],
+            w4a8,
+            ctx,
+        )
+        print("  decode ragged cooperative: [8] + 8 x [1]")
+        _test_swiglu_mxfp8_dispatch[
+            W_E, W_N, W_K, W4A8_B_DTYPE, use_inplace=False
+        ](_make_ragged(8, 1, 8), _make_range(9), w4a8, ctx)
+        print(
+            "  prefill ragged via selector: [127, 257, 509, 1021], silu"
+            " limit 10"
+        )
+        _test_swiglu_mxfp8_dispatch[
+            W_E, W_N, W_K, W4A8_B_DTYPE, via_selector=True, activation=silu10
+        ]([127, 257, 509, 1021], [0, 47, 13, 2], w4a8, ctx)
+        print("  prefill: 48 active, [33] x 48")
+        _test_swiglu_mxfp8_dispatch[W_E, W_N, W_K, W4A8_B_DTYPE](
+            _make_uniform(33, 48), _make_range(48), w4a8, ctx
+        )
+        print("  prefill: 48 active, [67] x 48")
+        _test_swiglu_mxfp8_dispatch[W_E, W_N, W_K, W4A8_B_DTYPE](
+            _make_uniform(67, 48), _make_range(48), w4a8, ctx
+        )
+        print("  prefill: 1 active, [4099]")
+        _test_swiglu_mxfp8_dispatch[W_E, W_N, W_K, W4A8_B_DTYPE](
+            [4099], [5], w4a8, ctx
+        )
+        print("  prefill tail-pad: [129, 53, 1, 0, 383], ids [3, 1, 2, -1, 40]")
+        _test_swiglu_mxfp8_dispatch[W_E, W_N, W_K, W4A8_B_DTYPE](
+            [129, 53, 1, 0, 383], [3, 1, 2, -1, 40], w4a8, ctx
+        )
+
+        print("\nALL W4A8 SWIGLU DISPATCH TESTS PASSED!")
+
+        _ = w4a8^

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for FP8 matmul kernels in max.nn.kernels."""
+"""Tests for FP8 matmul kernels in max.nn.legacy.kernels."""
 
 from __future__ import annotations
 
@@ -20,25 +20,26 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn import (
+from max.nn.legacy import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     _fused_qkv_ragged_matmul_scaled_float8 as fused_qkv_ragged_matmul_scaled_float8,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     batched_dynamic_scaled_fp8_matmul,
     dynamic_scaled_matmul,
     grouped_dynamic_scaled_fp8_matmul,
     matmul_k_cache_ragged_scaled_float8,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
+    packed_page_stride,
 )
 
 
@@ -292,6 +293,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
 
         # Now call the kernel - should not raise any errors when all devices match
@@ -529,6 +531,7 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
         matmul_k_cache_ragged_scaled_float8(
             kv_params,
@@ -611,6 +614,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
                 lookup_table.tensor,
                 max_prompt_length.tensor,
                 max_cache_length.tensor,
+                page_stride=packed_page_stride(blocks.buffer),
             )
             matmul_k_cache_ragged_scaled_float8(
                 kv_params,

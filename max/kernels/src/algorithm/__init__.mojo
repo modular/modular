@@ -10,6 +10,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Free-form row-wise reduction library: the `ReduceOp` monoid trait, the
-`rowwise` scaffolder (`Row` / `reduce` / `map` / `emit`), and the Row-based
-pure reductions used by the graph reduction kernels."""
+"""Free-form row-wise reduction library: the `ReduceOp` monoid trait and the
+`rowwise` scaffolder (`Row` / `reduce` / `map` / `emit`)."""

@@ -38,6 +38,7 @@ from .memory import (
     async_copy_wait_group,
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_prefetch,
+    cp_async_bulk_prefetch_tensor,
     cp_async_bulk_reduce_global_shared_cta,
     cp_async_bulk_shared_cluster_global,
     cp_async_bulk_tensor_2d_gather4,

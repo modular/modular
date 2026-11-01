@@ -69,8 +69,16 @@ forwardModule(LLVMModuleAndContext &&module) {
 /// support for splitting an LLVM module into multiple parts using exported
 /// functions as anchors, and pull in all dependency on the call stack into one
 /// module.
-void splitPerExported(LLVMModuleAndContext module,
-                      LLVMSplitProcessFn processFn);
+///
+/// With `outlineSharedSubtrees`, a subtree reached from many anchors is
+/// emitted into its own module instead of cloned into each. Promoted linkage
+/// is recorded in `symbolLinkageTypes` for `MCLinker` to restore. Accelerator
+/// callers pass false: a kernel module must be self-contained to be
+/// loadable.
+void splitPerExported(
+    LLVMModuleAndContext module, LLVMSplitProcessFn processFn,
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
+    bool outlineSharedSubtrees = false, unsigned threads = 2);
 
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)

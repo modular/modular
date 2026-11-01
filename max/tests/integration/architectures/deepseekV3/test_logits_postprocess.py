@@ -19,7 +19,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 from max.graph import DeviceRef
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV3 import deepseekV3
 
 
@@ -71,7 +71,7 @@ def test_last_token_logits_keep_request_batch_in_tp_ep(
         return_hidden_states=ReturnHiddenStates.NONE,
     )
 
-    last_logits = result[0]
+    last_logits = result.logits["next_token_logits"]
     assert last_logits.shape[0] == 1
 
 
@@ -113,7 +113,7 @@ def test_last_token_logits_allgather_batch_in_dp_attention(
         return_hidden_states=ReturnHiddenStates.NONE,
     )
 
-    last_logits = result[0]
+    last_logits = result.logits["next_token_logits"]
     assert last_logits.shape[0] == 4
 
 

@@ -16,14 +16,14 @@ from std.random import rand, randint
 from std.benchmark import *
 from max.gpu.host import DeviceContext
 from std.memory import alloc, dealloc
-from nn.gather_scatter import scatter_elements
-from extensibility import DynamicTensor
+from nn.gather_scatter import _atomic_reduce, scatter_elements
+from layout import Coord, TileTensor, row_major
 
 from std.utils.index import Index
 
 
 def bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
-    @always_inline
+    @inline(.always)
     def bench_scatter_wrapper(
         mut b: Bencher, concrete_spec: ScatterSpec
     ) raises {}:
@@ -42,43 +42,43 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
     var indices_shape = Index(spec.n1, spec.n2)
 
     var data_alloc = alloc[Float32](
-        {count = input_shape.flattened_length()}
+        {length = input_shape.flattened_length()}
     ).into_managed()
     rand(data_alloc.unsafe_span())
-    var data_tensor = DynamicTensor[.float32, 2](
-        data_alloc.unsafe_ptr(), input_shape
+    var data_tensor = TileTensor(
+        data_alloc.unsafe_ptr(), row_major(Coord(input_shape))
     )
 
     var indices_alloc = alloc[Int32](
-        {count = indices_shape.flattened_length()}
+        {length = indices_shape.flattened_length()}
     ).into_managed()
     randint(
         indices_alloc.unsafe_span(),
         index_rand_min,
         index_rand_max,
     )
-    var indices_tensor = DynamicTensor[.int32, 2](
-        indices_alloc.unsafe_ptr(), indices_shape
+    var indices_tensor = TileTensor(
+        indices_alloc.unsafe_ptr(), row_major(Coord(indices_shape))
     )
 
     var updates_alloc = alloc[Float32](
-        {count = indices_shape.flattened_length()}
+        {length = indices_shape.flattened_length()}
     ).into_managed()
     rand(updates_alloc.unsafe_span())
-    var updates_tensor = DynamicTensor[.float32, 2](
-        updates_alloc.unsafe_ptr(), indices_shape
+    var updates_tensor = TileTensor(
+        updates_alloc.unsafe_ptr(), row_major(Coord(indices_shape))
     )
 
     var output_alloc = alloc[Float32](
-        {count = input_shape.flattened_length()}
+        {length = input_shape.flattened_length()}
     ).into_managed()
-    var output_tensor = DynamicTensor[.float32, 2](
-        output_alloc.unsafe_ptr(), input_shape
+    var output_tensor = TileTensor(
+        output_alloc.unsafe_ptr(), row_major(Coord(input_shape))
     )
 
-    @always_inline
+    @inline(.always)
     def bench_fn() raises {mut output_tensor, imm}:
-        @always_inline
+        @inline(.always)
         def reduce_fn[
             _dtype: DType, width: SIMDLength
         ](
@@ -86,7 +86,7 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
         ) -> SIMD[_dtype, width]:
             return input_val + update_val
 
-        scatter_elements[reduce_fn=reduce_fn](
+        scatter_elements[atomic_update_fn=_atomic_reduce[reduce_fn]](
             data_tensor,
             indices_tensor,
             updates_tensor,

@@ -39,7 +39,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.sampling import stochastic_acceptance_sampler
+from max.nn.legacy.sampling import stochastic_acceptance_sampler
 
 VOCAB_SIZE = 512
 # Mirrors MiniMax-M3: the tokenizer holds fewer ids than lm_head has rows.

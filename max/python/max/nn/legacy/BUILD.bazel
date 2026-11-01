@@ -1,0 +1,33 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "legacy",
+    srcs = glob(["**/*.py"]),
+    # max.nn is imported only by a docstring example in
+    # __init__.py; it depends back on this target, so keep it out of `deps`.
+    docstring_example_deps = [
+        "//max/python/max/nn",
+    ],
+    # rich is used as a runtime protocol (_rich_traceback_omit) not via import.
+    ignore_extra_deps = [
+        requirement("rich"),
+    ],
+    test_docstring_examples = True,
+    deps = [
+        requirement("numpy"),
+        requirement("rich"),
+        requirement("typing-extensions"),
+        "//max/python/max:_core",
+        "//max/python/max:_kv_core",
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/_kv_cache_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/support",
+    ],
+)

@@ -71,7 +71,7 @@ def test_memset() raises:
     var ctx = create_test_device_context()
 
     print("-------")
-    print("Running test_memset(" + ctx.name() + "):")
+    print("Running test_memset(" + ctx.device().get_name() + "):")
 
     comptime one_mb = 1024 * 1024
 

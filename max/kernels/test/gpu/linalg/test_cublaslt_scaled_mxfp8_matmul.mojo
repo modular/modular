@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, align_up
+from std.memory.alloc import unsafe_alloc
 from std.random import random_ui64
 from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
@@ -44,9 +45,9 @@ def test_scaled_mxfp8_cublaslt[
         transpose_b == True
     ), "Only transpose_b = True is supported for scaled FP8 matmul"
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var cublaslt_version = cublasLtGetVersion()
 
@@ -114,8 +115,8 @@ def test_scaled_mxfp8_cublaslt[
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](a_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](b_size)
-    var c_host_ptr = alloc[Scalar[output_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[output_type]](c_size)
+    var c_host_ptr = unsafe_alloc[Scalar[output_type]](c_size)
+    var c_host_ref_ptr = unsafe_alloc[Scalar[output_type]](c_size)
 
     var a_device = ctx.enqueue_create_buffer[input_type](a_size)
     var b_device = ctx.enqueue_create_buffer[input_type](b_size)
@@ -188,8 +189,8 @@ def test_scaled_mxfp8_cublaslt[
         c,
         a,
         b,
-        a_scales=a_scales.as_immut(),
-        b_scales=b_scales.as_immut(),
+        a_scales=a_scales.as_imm(),
+        b_scales=b_scales.as_imm(),
         transpose_b=True,
         c_row_major=True,
     )
@@ -202,11 +203,11 @@ def test_scaled_mxfp8_cublaslt[
         SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
     ](
-        c_ref.to_layout_tensor(),
-        a.to_layout_tensor(),
-        b.to_layout_tensor(),
-        a_scales.to_layout_tensor(),
-        b_scales.to_layout_tensor(),
+        c_ref,
+        a,
+        b,
+        a_scales,
+        b_scales,
         ctx,
     )
 

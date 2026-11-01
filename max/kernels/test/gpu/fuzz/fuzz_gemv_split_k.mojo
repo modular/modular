@@ -40,7 +40,7 @@ from std.random import rand, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 
 from _fuzz import boundary_int, collect_args, flag, flag_int, numeric_check
@@ -93,9 +93,9 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, rerun: Int = 0) raises:
 
     # M runtime (bare Int); N, K comptime (Idx[...]) so the tuned split-K path
     # engages (it keys on the static N/K).
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     # use_tf32=False pins the IEEE-fp32 split-K GEMV and makes the dispatcher's
     # `has_precise_f32_gemv` comptime assert enforce it (see module header).
@@ -145,22 +145,15 @@ def main() raises:
 
     if mode == "single":
         var m = flag_int(args, "--m", 4)
-        print("FUZZ_SINGLE m=", m, "N=", N, "K=", K)
+        print(t"FUZZ_SINGLE m= {m} N= {N} K= {K}")
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(m), rerun=rerun)
         print("FUZZ_RESULT verdict=PASS")
         return
 
     print(
-        "=== fuzz_gemv_split_k seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "N=",
-        N,
-        "K=",
-        K,
-        "===",
+        t"=== fuzz_gemv_split_k seed= {the_seed} budget= {the_budget} N= {N} K="
+        t" {K} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

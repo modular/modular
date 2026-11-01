@@ -1,0 +1,50 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# The block-diagonal wo_a launch vs the per-group reference it replaces.
+#   ./bazelw test --config=remote-b200 \
+#     //max/tests/integration/architectures/deepseekV41_modulev3/small_ops:test_fused_woa_gpu \
+#     --test_output=streamed --noshow_progress
+modular_py_test(
+    name = "test_fused_woa_gpu",
+    size = "large",
+    srcs = ["test_fused_woa_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# The grouped wo_a's group-rank requirements per arm: the 128-row
+# interleave constraint is the block-diagonal launch's alone, so a rank
+# that is a whole 32-row scale block traces (graph construction only,
+# CPU reference arm).
+modular_py_test(
+    name = "test_grouped_dense_ranks",
+    srcs = ["test_grouped_dense_ranks.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+    ],
+)

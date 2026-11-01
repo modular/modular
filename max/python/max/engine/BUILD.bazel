@@ -8,6 +8,7 @@ modular_py_library(
     test_docstring_examples = True,
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_validation_hooks",
         "//max/python/max/driver",
         "//max/python/max/graph",
         "//max/python/max/profiler",

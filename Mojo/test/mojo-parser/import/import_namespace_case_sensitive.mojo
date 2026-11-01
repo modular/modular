@@ -19,7 +19,7 @@
 # RUN: echo "    pass" >> %t.dir/one/foo/test.mojo
 # RUN: echo "def hello2():" > %t.dir/two/FOO/test2.mojo
 # RUN: echo "    pass" >> %t.dir/two/FOO/test2.mojo
-# RUN: %parse-mojo-isolated -verify-diagnostics -I=%t.dir/one -I=%t.dir/two %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I%t.dir/one -I%t.dir/two %s
 
 import foo.test
 

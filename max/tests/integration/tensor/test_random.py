@@ -16,8 +16,8 @@ from __future__ import annotations
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import random
-from max.experimental.testing import assert_all_close
+from max.functional import random
+from max.tensor.testing import assert_all_close
 
 
 def test_normal() -> None:

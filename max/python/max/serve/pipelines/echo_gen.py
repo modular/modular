@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Pipeline that echoes its input back."""
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -33,6 +35,7 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenIds,
 )
 
 
@@ -80,17 +83,12 @@ class EchoPipelineTokenizer(
                 raise ValueError("Prompt cannot be empty")
             return np.array(tokens, dtype=np.int64)
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decode token IDs back to text.
 
         Convert ASCII values back to characters.
         """
-        if isinstance(encoded, int):
-            encoded = np.array([encoded])
-        elif encoded.ndim == 0:
-            encoded = np.array([encoded.item()])
+        encoded = np.atleast_1d(np.asarray(encoded))
 
         # Convert ASCII values back to characters
         try:
@@ -101,7 +99,6 @@ class EchoPipelineTokenizer(
 
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         """Creates a new TextContext for echo generation."""
-
         # Extract prompt from request
         prompt: str | Sequence[int]
         if request.prompt is not None:
@@ -162,6 +159,7 @@ class EchoTokenGenerator(
 
     @property
     def max_batch_size(self) -> int:
+        """The largest batch the token generator accepts."""
         return self._max_batch_size
 
     @property
@@ -173,6 +171,7 @@ class EchoTokenGenerator(
         self,
         inputs: TextGenerationInputs[TextContext],
     ) -> dict[RequestID, TextGenerationOutput]:
+        """Returns responses that echo the request's tokens."""
         responses = {}
 
         for context in inputs.flat_batch:

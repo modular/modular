@@ -17,6 +17,7 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -229,6 +230,60 @@ static void removeTrivialTry(LIT::TryOp op) {
   b.eraseOp(elseTerm);
 }
 
+/// Optimize `if`s when
+///  - these 2 `if`s have same condition
+///  - one `if` dominates the other
+///  - dominator `if` cannot fall through: it returns, traps, breaks or
+///    continues
+/// by replacing condition of dominated `if` with `false`. That's correct,
+/// because
+///  - if condition is `true`, dominator `if` will be executed and leave the
+///    block
+///  - if condition is `false`, neither of `if`s will be executed in runtime
+///
+/// Before:                    After:
+///   hlcf.if %c {               hlcf.if %c {
+///     A                          A
+///     hlcf.return                hlcf.return
+///   }                          }
+///   hlcf.if %c {               hlcf.if false {
+///     B                          B
+///   }                          }
+static bool propagateImpliedCondition(IfOp op) {
+  if (mlir::matchPattern(op.getCond(), mlir::m_Constant()))
+    return false;
+  // Naming the exits, rather than testing for `hlcf.yield`, keeps a
+  // terminator added later from being mistaken for one that cannot fall
+  // through, which would imply a condition that is still live.
+  auto exitsEarly = [](Region &region) {
+    return !isa<ReturnOp, BreakOp, ContinueOp, HLCF::UnreachableOp>(
+        region.front().getTerminator());
+  };
+  std::optional<bool> impliedValue;
+  if (!exitsEarly(op.getThenRegion()))
+    impliedValue = false;
+  else if (op.getElifRegions().empty() && !exitsEarly(op.getElseRegion()))
+    impliedValue = true;
+  if (!impliedValue)
+    return false;
+
+  Block *block = op->getBlock();
+  Value constant;
+  for (OpOperand &use : llvm::make_early_inc_range(op.getCond().getUses())) {
+    Operation *user = block->findAncestorOpInBlock(*use.getOwner());
+    if (!user || !op->isBeforeInBlock(user))
+      continue;
+    if (!constant) {
+      OpBuilder b(op);
+      constant = KGEN::ParamConstantOp::create(
+          b, op.getLoc(),
+          KGEN::SIMDAttr::getScalarBool(b.getContext(), *impliedValue));
+    }
+    use.set(constant);
+  }
+  return constant != nullptr;
+}
+
 //===----------------------------------------------------------------------===//
 // Pass Driver
 //===----------------------------------------------------------------------===//
@@ -264,4 +319,7 @@ void SimplifyCF::runOnOperation() {
       ++numErasedTry;
     }
   }
+  numImpliedConditions = 0;
+  getOperation().walk(
+      [&](IfOp op) { numImpliedConditions += propagateImpliedCondition(op); });
 }

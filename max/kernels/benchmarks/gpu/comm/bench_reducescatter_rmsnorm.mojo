@@ -35,7 +35,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    has_amd_gpu_accelerator,
     size_of,
     simd_width_of,
 )
@@ -49,7 +48,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from max.benchmark import bench_multicontext, bencher_iter_custom
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.reducescatter import reducescatter, ReduceScatterConfig
 from comm.reducescatter_rmsnorm import reducescatter_rmsnorm, _dispatch_rs_norm
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
@@ -60,19 +59,18 @@ from layout import Coord, TileTensor, row_major
 from nn.normalization import rms_norm_gpu
 
 from std.math import rsqrt
-from std.utils.index import Index
 
 
 def _launch_norm[
     in_dtype: DType,
     num_cols: Int,
+    epsilon: Float32,
+    weight_offset: Float32,
 ](
     in_ptr: MutPointer[Scalar[in_dtype], MutAnyOrigin],
     out_ptr: MutPointer[Scalar[in_dtype], MutAnyOrigin],
     gamma_ptr: ImmPointer[Scalar[in_dtype], ImmutAnyOrigin],
     local_rows: Int,
-    epsilon: Float32,
-    weight_offset: Scalar[in_dtype],
     ctx: DeviceContext,
 ) raises:
     """Launch a standalone RMSNorm over `[local_rows, num_cols]`.
@@ -80,53 +78,45 @@ def _launch_norm[
     `in_ptr`/`out_ptr` are fixed shard buffers, so the tensors are built once and
     captured (no per-iter rotation). Caller must ensure `local_rows > 0`.
     """
-    var gamma = TileTensor(gamma_ptr, row_major(Coord(Index(num_cols))))
-    var in_buf = TileTensor(
-        in_ptr, row_major(Coord(Index(local_rows, num_cols)))
-    )
-    var out_buf = TileTensor(
-        out_ptr, row_major(Coord(Index(local_rows, num_cols)))
-    )
+    var gamma = TileTensor(gamma_ptr, row_major(Coord(num_cols)))
+    var in_buf = TileTensor(in_ptr, row_major(Coord(local_rows, num_cols)))
+    var out_buf = TileTensor(out_ptr, row_major(Coord(local_rows, num_cols)))
 
-    @always_inline
-    @__copy_capture(in_buf)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-        return in_buf.raw_load[width=width](in_buf.layout(coords))
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var in_buf} -> SIMD[in_dtype, width]:
+        return in_buf.load[width=width](coords)
 
-    @always_inline
-    @__copy_capture(out_buf)
-    @__parameter
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-        out_buf.raw_store[width=width, alignment=alignment](
-            out_buf.layout(coords), val
-        )
+    ](coords: Coord, val: SIMD[in_dtype, width]) {var out_buf} -> None:
+        out_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
-        input_fn,
-        output_fn,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
         multiply_before_cast=True,
-    ](Coord(Index(local_rows, num_cols)), gamma, epsilon, weight_offset, ctx)
+    ](input_fn, output_fn, Coord(local_rows, num_cols), gamma, ctx)
 
 
 def _verify_results[
     in_dtype: DType,
     ngpus: Int,
     num_cols: Int,
+    epsilon: Float32,
+    weight_offset_f32: Float32,
 ](
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     gamma_dev: DeviceBuffer[in_dtype],
     gamma_host: List[Scalar[in_dtype]],
     host_bufs: List[List[Scalar[in_dtype]]],
-    epsilon: Float32,
-    weight_offset: Scalar[in_dtype],
     config: ReduceScatterConfig[in_dtype, ngpus],
 ) raises:
     """Run both GPU paths into fresh buffers and compare each rank's normed shard
@@ -138,6 +128,7 @@ def _verify_results[
     ref (the mid-way bf16 rounding). Both refs use the full-H divisor and fold
     gamma in f32 before the final bf16 cast.
     """
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
     # Fresh buffers for both runs (>= 1 row so 0-row ranks aren't zero-size).
     # `v_rs_shard` doubles as the standalone RS shard `sum_out` is checked against.
     var v_rs_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -165,17 +156,17 @@ def _verify_results[
     # Launch 1: reduce-scatter (collective; 0-row ranks only clear the barrier).
     # Non-rotated inputs (offset 0) so the host oracle matches `host_bufs`.
     comptime InTensorType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), ImmutAnyOrigin
     ]
     comptime OutShardType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), MutAnyOrigin
     ]
     var in_bufs = Array[InTensorType, ngpus](
         fill_with=lambda (i: Int) -> InTensorType: InTensorType(
             rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[i].offset_ptr(0)
             ),
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         )
     )
     for i in range(ngpus):
@@ -185,10 +176,15 @@ def _verify_results[
     for i in range(ngpus):
         var out_shard = OutShardType(
             v_rs_shard[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(config.rank_units(i), num_cols)),
         )
+        # `reducescatter`'s output is a world-view array (every device's own
+        # shard, indexed by global rank); only THIS device's slot is ever
+        # read back, so the rest is left uninitialized.
+        var world_out_shard = Array[OutShardType, ngpus](uninitialized=True)
+        world_out_shard[i] = out_shard
         reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
-            in_bufs, out_shard, rank_sigs, list_of_ctx[i]
+            in_bufs, world_out_shard, rank_sigs, list_of_ctx[i], my_rank=i
         )
     group_end()
     for i in range(ngpus):
@@ -198,15 +194,13 @@ def _verify_results[
     for i in range(ngpus):
         var local_rows = config.rank_units(i)
         if local_rows > 0:
-            _launch_norm[in_dtype, num_cols](
+            _launch_norm[in_dtype, num_cols, epsilon, weight_offset_f32](
                 v_rs_shard[i].unsafe_ptr().as_unsafe_any_origin(),
                 v_normed[i].unsafe_ptr().as_unsafe_any_origin(),
                 rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     gamma_dev.unsafe_ptr().as_unsafe_any_origin()
                 ),
                 local_rows,
-                epsilon,
-                weight_offset,
                 list_of_ctx[i],
             )
     for i in range(ngpus):
@@ -215,13 +209,13 @@ def _verify_results[
     # Launch 3: the fused kernel into fresh normed/sum shards. Re-init the
     # signal buffers so this collective gets clean barrier state.
     comptime GammaShardType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0))), ImmutAnyOrigin
     ]
     var gamma_view = GammaShardType(
         rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma_dev.unsafe_ptr()
         ),
-        row_major(Coord(Index(num_cols))),
+        row_major(Coord(num_cols)),
     )
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -232,11 +226,11 @@ def _verify_results[
     for i in range(ngpus):
         var normed_view = OutShardType(
             v_fused_normed[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(config.rank_units(i), num_cols)),
         )
         var sum_view = OutShardType(
             v_fused_sum[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(config.rank_units(i), num_cols)),
         )
         reducescatter_rmsnorm(
             in_bufs,
@@ -385,25 +379,14 @@ def _verify_results[
     # bf16 rounding of the ~1010 peer sum shifts 1-2 ULP on ~24% of elements, so
     # an exact-rate<=3% gate false-fails. A real bug is large (>>4 ULP).
     print(
-        (
-            "TIGHT (GPU two-launch vs host bf16-rounded ref, same algorithm):"
-            " exact-match ="
-        ),
-        (1.0 - rate_bf) * 100.0,
-        "%, max_ulp =",
-        max_ulp_bf,
-        ", fraction>1ULP =",
-        frac_gt1_bf * 100.0,
-        "%, mean_ulp =",
-        mean_ulp_bf,
+        t"TIGHT (GPU two-launch vs host bf16-rounded ref, same algorithm):"
+        t" exact-match = {(1.0 - rate_bf) * 100.0} %, max_ulp = {max_ulp_bf} ,"
+        t" fraction>1ULP = {frac_gt1_bf * 100.0} %, mean_ulp = {mean_ulp_bf}"
     )
     print(
-        "LOOSE (GPU two-launch vs host f32 ref): exact-mismatch =",
-        rate_f * 100.0,
-        "% [fusion-accuracy headroom], max_ulp =",
-        max_ulp_f,
-        ", mean_ulp =",
-        mean_ulp_f,
+        t"LOOSE (GPU two-launch vs host f32 ref): exact-mismatch ="
+        t" {rate_f * 100.0} % [fusion-accuracy headroom], max_ulp ="
+        t" {max_ulp_f} , mean_ulp = {mean_ulp_f}"
     )
 
     # Tight gate: same algorithm, bit-equal apart from block-reduce vs
@@ -433,14 +416,10 @@ def _verify_results[
         fused_max_ulp_bf,
     )
     print(
-        "FUSED LOOSE (kernel vs host f32 ref): exact-mismatch =",
-        fused_rate_f * 100.0,
-        "% [mid-way rounding divergence], max_ulp =",
-        fused_max_ulp_f,
-        "| sum_out mismatches =",
-        fused_sum_mismatch,
-        ", max_ulp =",
-        fused_sum_max_ulp,
+        t"FUSED LOOSE (kernel vs host f32 ref): exact-mismatch ="
+        t" {fused_rate_f * 100.0} % [mid-way rounding divergence], max_ulp ="
+        t" {fused_max_ulp_f} | sum_out mismatches = {fused_sum_mismatch} ,"
+        t" max_ulp = {fused_sum_max_ulp}"
     )
     if fused_frac_gt1_bf > 0.01 or fused_max_ulp_bf > 4:
         raise Error(
@@ -459,7 +438,7 @@ def _verify_results[
             )
         )
     # sum_out: bit-identical on AMD non-multimem; 1-ULP tolerance on NVIDIA.
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if fused_sum_mismatch != 0:
             raise Error(
                 String(
@@ -529,9 +508,6 @@ def bench_reducescatter_rmsnorm[
     var fused_sum = List[DeviceBuffer[in_dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
 
     for i in range(ngpus):
         cb_inputs.append(
@@ -581,12 +557,12 @@ def bench_reducescatter_rmsnorm[
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Gamma weights (shared, read-only; GPU 0 is fine).
     var gamma_dev = list_of_ctx[0].enqueue_create_buffer[in_dtype](num_cols)
@@ -596,8 +572,9 @@ def bench_reducescatter_rmsnorm[
             in_dtype
         ]()
     list_of_ctx[0].enqueue_copy(gamma_dev, gamma_host)
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](0.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(0.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -605,20 +582,20 @@ def bench_reducescatter_rmsnorm[
     # RS input / output-shard tensor views. Inputs rotate per iter (as a direct
     # Array arg); output shards are fixed (RS overwrites the storage).
     comptime InTensorType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), ImmutAnyOrigin
     ]
     comptime OutShardType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), MutAnyOrigin
     ]
     comptime GammaShardType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0))), ImmutAnyOrigin
     ]
     var in_bufs = Array[InTensorType, ngpus](
         fill_with=lambda (i: Int) -> InTensorType: InTensorType(
             rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[i].unsafe_ptr()
             ),
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         )
     )
     var out_shards = Array[OutShardType, ngpus](
@@ -626,7 +603,7 @@ def bench_reducescatter_rmsnorm[
             ref rs_out_shard, imm config
         } -> OutShardType: OutShardType(
             rs_out_shard[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(config.rank_units(i), num_cols)),
         )
     )
     # Fused-kernel output-shard views: normed + sum, both [rank_units, cols].
@@ -635,7 +612,7 @@ def bench_reducescatter_rmsnorm[
             ref normed, imm config
         } -> OutShardType: OutShardType(
             normed[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(config.rank_units(i), num_cols)),
         )
     )
     var fused_sum_shards = Array[OutShardType, ngpus](
@@ -643,7 +620,7 @@ def bench_reducescatter_rmsnorm[
             ref fused_sum, imm config
         } -> OutShardType: OutShardType(
             fused_sum[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(config.rank_units(i), num_cols)),
         )
     )
     # Shared gamma view (GPU 0; peer-read on other ranks via P2P, matching the
@@ -652,7 +629,7 @@ def bench_reducescatter_rmsnorm[
         rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma_dev.unsafe_ptr()
         ),
-        row_major(Coord(Index(num_cols))),
+        row_major(Coord(num_cols)),
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -692,11 +669,11 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 1: reduce-scatter only -> t_RS =====
-    @always_inline
+    @inline(.always)
     def bench_rs_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut in_bufs, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_bufs, imm}:
@@ -705,10 +682,10 @@ def bench_reducescatter_rmsnorm[
                     rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 )
             reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
-                in_bufs, out_shards[ctx_idx], rank_sigs, ctx_inner
+                in_bufs, out_shards, rank_sigs, ctx_inner, my_rank=ctx_idx
             )
 
         bencher_iter_custom(bench, call_fn, ctx)
@@ -722,22 +699,20 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 2: standalone RMSNorm on a cold shard -> t_norm(shard) =====
-    @always_inline
+    @inline(.always)
     def bench_norm_cold_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {imm}:
         var local_rows = config.rank_units(ctx_idx)
 
-        @always_inline
+        @inline(.always)
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             if local_rows > 0:
-                _launch_norm[in_dtype, num_cols](
+                _launch_norm[in_dtype, num_cols, epsilon, weight_offset_f32](
                     cold_ptrs[ctx_idx],
                     normed_ptrs[ctx_idx],
                     gamma_ptr,
                     local_rows,
-                    epsilon,
-                    weight_offset,
                     ctx_inner,
                 )
 
@@ -752,13 +727,13 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 3: RS then RMSNorm on the live RS output -> t_chained =====
-    @always_inline
+    @inline(.always)
     def bench_chained_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut in_bufs, imm}:
         var local_rows = config.rank_units(ctx_idx)
 
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_bufs, imm}:
@@ -767,19 +742,17 @@ def bench_reducescatter_rmsnorm[
                     rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 )
             reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
-                in_bufs, out_shards[ctx_idx], rank_sigs, ctx_inner
+                in_bufs, out_shards, rank_sigs, ctx_inner, my_rank=ctx_idx
             )
             if local_rows > 0:
-                _launch_norm[in_dtype, num_cols](
+                _launch_norm[in_dtype, num_cols, epsilon, weight_offset_f32](
                     rs_out_ptrs[ctx_idx],
                     normed_ptrs[ctx_idx],
                     gamma_ptr,
                     local_rows,
-                    epsilon,
-                    weight_offset,
                     ctx_inner,
                 )
 
@@ -796,11 +769,11 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 4: fused reduce-scatter + RMSNorm kernel -> t_fused =====
-    @always_inline
+    @inline(.always)
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut in_bufs, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_bufs, imm}:
@@ -809,7 +782,7 @@ def bench_reducescatter_rmsnorm[
                     rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 )
             reducescatter_rmsnorm(
                 in_bufs,
@@ -836,42 +809,42 @@ def bench_reducescatter_rmsnorm[
     # Two-launch path is caller-supplied so `comm` stays free of `nn`; the
     # dispatch auto-routes on per-rank shard size (fused below
     # `RS_NORM_FUSE_THRESHOLD`, two-launch above).
-    @always_inline
+    @inline(.always)
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises {mut in_bufs, imm}:
+    ) raises {imm}:
         var local_rows = config.rank_units(ctx_idx)
 
-        @always_inline
-        def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
-        ) raises {mut in_bufs, imm}:
+        @inline(.always)
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+            # Local views: `{var}` cannot copy `Array[TileTensor, …]`, and
+            # `{imm}` nested under `{mut in_bufs}` aliases.
+            var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
                     rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 )
 
-            @__parameter
-            @always_inline
-            def two_launch() raises:
+            @inline(.always)
+            def two_launch() raises {imm}:
                 reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
-                    in_bufs, out_shards[ctx_idx], rank_sigs, ctx_inner
+                    in_bufs, out_shards, rank_sigs, ctx_inner, my_rank=ctx_idx
                 )
                 if local_rows > 0:
-                    _launch_norm[in_dtype, num_cols](
+                    _launch_norm[
+                        in_dtype, num_cols, epsilon, weight_offset_f32
+                    ](
                         rs_out_ptrs[ctx_idx],
                         normed_ptrs[ctx_idx],
                         gamma_ptr,
                         local_rows,
-                        epsilon,
-                        weight_offset,
                         ctx_inner,
                     )
 
-            _dispatch_rs_norm[two_launch=two_launch](
+            _dispatch_rs_norm(
                 in_bufs,
                 normed_shards[ctx_idx],
                 fused_sum_shards[ctx_idx],
@@ -880,6 +853,7 @@ def bench_reducescatter_rmsnorm[
                 weight_offset,
                 rank_sigs,
                 ctx_inner,
+                two_launch,
             )
 
         bencher_iter_custom(bench, call_fn, ctx)
@@ -895,7 +869,7 @@ def bench_reducescatter_rmsnorm[
     b.dump_report()
 
     comptime if verify:
-        _verify_results[in_dtype, ngpus, num_cols](
+        _verify_results[in_dtype, ngpus, num_cols, epsilon, weight_offset_f32](
             num_rows,
             list_of_ctx,
             signal_buffers,
@@ -904,8 +878,6 @@ def bench_reducescatter_rmsnorm[
             gamma_dev,
             gamma_host,
             host_bufs,
-            epsilon,
-            weight_offset,
             config,
         )
 
@@ -931,9 +903,7 @@ def main() raises:
 
     var num_devices = DeviceContext.number_of_devices()
     if num_devices < num_gpus:
-        print(
-            "Need", num_gpus, "GPUs but only found", num_devices, "- skipping."
-        )
+        print(t"Need {num_gpus} GPUs but only found {num_devices} - skipping.")
         return
 
     # Enable P2P between all GPU pairs before the read-only status check.
@@ -947,14 +917,8 @@ def main() raises:
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "Benchmarking reduce-scatter + RMSNorm (no quant):",
-        num_gpus,
-        "GPUs,",
-        in_dtype,
-        ",",
-        num_rows,
-        "x",
-        num_cols,
+        t"Benchmarking reduce-scatter + RMSNorm (no quant): {num_gpus} GPUs,"
+        t" {in_dtype} , {num_rows} x {num_cols}"
     )
 
     var m = Bench(BenchConfig(num_repetitions=1))

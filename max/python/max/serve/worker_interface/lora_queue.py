@@ -61,13 +61,13 @@ class LoRAQueue:
             ]
 
     def list_loras(self) -> list[str]:
+        """The paths of the loaded LoRAs."""
         return self._loaded_loras
 
     async def get_response(
         self, req_id: RequestID, request: LoRARequest, timeout: float = 30.0
     ) -> LoRAResponse:
-        """
-        Send a LoRA request and await the response.
+        """Send a LoRA request and await the response.
 
         Since LoRA operations are infrequent, we await directly on the
         async ZMQ socket with a timeout.

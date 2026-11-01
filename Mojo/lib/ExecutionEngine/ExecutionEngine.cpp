@@ -15,6 +15,7 @@
 #include "Mojo/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "Mojo/Support/Configuration.h"
 #include "Support/ErrorOr.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
@@ -69,6 +70,45 @@ static ErrorOrSuccess setupPlatform(llvm::orc::JITDylib &platformStdlib,
   return success();
 }
 
+/// Returns true for the names that must come from the running process rather
+/// than from a dynamic library the JIT was pointed at.
+///
+/// A library generator resolves through `dlsym` on one specific handle, whose
+/// scope is that library plus its own dependencies, so it answers with libc's
+/// definition and never sees an allocator that interposes these names from the
+/// executable. Since user dylibs link against the CompilerRT dylib ahead of the
+/// platform dylib, a library generator that answered here would win, and JIT'ed
+/// code would pair one allocator's malloc with another's free.
+///
+/// The Mojo heap is deliberately not in this set. It allocates through the
+/// KGEN_CompilerRT_Aligned* entry points, which route to the runtime's own
+/// allocator in AsyncRT rather than to the process malloc, and that stays true
+/// whatever the process malloc is.
+static bool isProcessAllocatorSymbol(StringRef name, char globalPrefix) {
+  // MachO symbol names carry a leading underscore.
+  if (globalPrefix != '\0')
+    name.consume_front(StringRef(&globalPrefix, 1));
+
+  // In the Itanium ABI these two prefixes belong to the operator new and
+  // operator delete families alone.
+  if (name.starts_with("_Zn") || name.starts_with("_Zd"))
+    return true;
+
+  static constexpr StringLiteral cAllocatorNames[] = {"malloc",
+                                                      "free",
+                                                      "calloc",
+                                                      "realloc",
+                                                      "reallocarray",
+                                                      "posix_memalign",
+                                                      "aligned_alloc",
+                                                      "memalign",
+                                                      "valloc",
+                                                      "pvalloc",
+                                                      "malloc_usable_size",
+                                                      "cfree"};
+  return llvm::is_contained(cAllocatorNames, name);
+}
+
 /// Initialize the mlirc and CompilerRT dylib.
 static ErrorOrSuccess
 initializeCompilerRT(llvm::orc::ExecutionSession &session,
@@ -100,10 +140,14 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session,
   SmallVector<StringRef> paths = options.libraryPaths;
   paths.push_back(compilerRTPath);
 
+  char globalPrefix = layout.getGlobalPrefix();
   for (StringRef libPath : paths) {
     auto generatorOr =
         toModularErrorOr(llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
-            session, dylibMgr, libPath.str().c_str()));
+            session, dylibMgr, libPath.str().c_str(),
+            [globalPrefix](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
+              return !isProcessAllocatorSymbol(*symbolStringPtr, globalPrefix);
+            }));
     if (generatorOr.isError()) {
       return Error(Twine("error '") + Twine(generatorOr.getError()) +
                    "' while loading compiler runtime library from '" +
@@ -111,6 +155,16 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session,
     }
     libJD->addGenerator(std::move(*generatorOr));
   }
+
+  // Supply the allocator names the library generators above declined, looking
+  // them up in the process rather than in one library, so that JIT'ed code
+  // reaches the same allocator the host process uses.
+  libJD->addGenerator(llvm::cantFail(
+      llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
+          session, dylibMgr,
+          [globalPrefix](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
+            return isProcessAllocatorSymbol(*symbolStringPtr, globalPrefix);
+          })));
 
   // Allow pulling in sanitizer methods from the current process, as we
   // currently can't activate any of these runtimes otherwise (they must

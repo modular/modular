@@ -1,0 +1,14 @@
+{
+  "target": "allgather_rows_slice",
+  "spec": {
+    "rows_per_rank": 1,
+    "col_units": 1024,
+    "repeats": 2,
+    "order": 2,
+    "data_seed": 12345
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "Row blocks just above a 16 KiB TMA chunk, changing launch order with reused signals.",
+  "findings": []
+}

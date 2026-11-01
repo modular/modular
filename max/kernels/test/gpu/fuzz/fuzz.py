@@ -64,15 +64,29 @@ class FuzzTarget:
     binary: str  # path under the repo root, relative to bazel-bin via symlink
     description: str
     default_oracle: str
+    min_gpus: int = 1
 
 
 _TARGETS: dict[str, FuzzTarget] = {
+    "allgather_rows_slice": FuzzTarget(
+        name="allgather_rows_slice",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_allgather_rows_slice.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_allgather_rows_slice.mojo.test",
+        description="multi-GPU row windows, exact host-slice oracle and barrier reuse",
+        default_oracle="ref",
+        min_gpus=2,
+    ),
+    "argsort": FuzzTarget(
+        name="argsort",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_argsort.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_argsort.mojo.test",
+        description="argsort block boundaries, exact CPU sort and permutation oracle",
+        default_oracle="ref",
+    ),
     "attn_res_mix": FuzzTarget(
         name="attn_res_mix",
-        bazel_target=(
-            "//max/kernels/test/gpu/fuzz:fuzz_attn_res_mix.mojo.test"
-        ),
-        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_attn_res_mix.mojo.test",
+        bazel_target=("//Kernels/test/fuzz:fuzz_attn_res_mix.mojo.test"),
+        binary="bazel-bin/Kernels/test/fuzz/fuzz_attn_res_mix.mojo.test",
         description=(
             "attn_res_mix fused attention-residual softmax mixture "
             "(fp64-reference oracle)"
@@ -97,6 +111,27 @@ _TARGETS: dict[str, FuzzTarget] = {
         description="MHA NullMask (non-causal) boundary fuzz (memory-safety + ref)",
         default_oracle="memcheck",
     ),
+    # `megaffn`, not `mega_ffn`: the corpus subdirectory is named after the
+    # target, and `corpus/mega_ffn/` would sit under the harness directory,
+    # where it SHADOWS the `mega_ffn` Mojo package for a plain `mojo build`
+    # of `Kernels/test/fuzz/fuzz_mega_ffn.mojo`. That build needs
+    # `-I max/kernels/test/gpu/fuzz` for `_fuzz`, which makes the harness
+    # directory an import root; `corpus/` has no `__init__.mojo`, so
+    # `corpus/mega_ffn/` is reachable as a top-level package with none of the
+    # kernel's submodules in it. Bazel is unaffected -- it passes explicit
+    # srcs -- but the documented fast dev loop breaks with "unable to locate
+    # module 'mega_ffn_kernel'". Do not rename this back without moving the
+    # corpus out of the harness directory.
+    "megaffn": FuzzTarget(
+        name="megaffn",
+        bazel_target="//Kernels/test/fuzz:fuzz_mega_ffn.mojo.test",
+        binary="bazel-bin/Kernels/test/fuzz/fuzz_mega_ffn.mojo.test",
+        description=(
+            "fused MXFP8 MegaFFN + EP-combine send: edge-shape ragged fuzz,"
+            " three-way vs the unfused chain and a host FP64 reference"
+        ),
+        default_oracle="ref",
+    ),
     "moe_indices": FuzzTarget(
         name="moe_indices",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_moe_indices.mojo.test"),
@@ -116,9 +151,25 @@ _TARGETS: dict[str, FuzzTarget] = {
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_reductions.mojo.test",
         binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_reductions.mojo.test",
         description=(
-            "algorithm.reductions sum/max/min/mean/argmax/argmin over the"
+            "builtin_kernels.rowwise_reductions argmax/argmin over the"
             " rowwise GPU scaffolder; reduced axis drawn from 0, outputs"
             " sentinel-checked for a missing write (ref oracle)"
+        ),
+        default_oracle="ref",
+    ),
+    "gated_group_rmsnorm": FuzzTarget(
+        name="gated_group_rmsnorm",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_gated_group_rmsnorm.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_gated_group_rmsnorm.mojo.test"
+        ),
+        description=(
+            "gated_group_rmsnorm_gpu: Mamba-2 silu-gated group RMSNorm over a"
+            " strided, possibly misaligned gate view (vector and scalar"
+            " paths); memcheck/ref"
         ),
         default_oracle="ref",
     ),
@@ -147,6 +198,35 @@ _TARGETS: dict[str, FuzzTarget] = {
             " determinism + batch_variance negative control)"
         ),
         default_oracle="memcheck",
+    ),
+    "mamba2_ssd_scan": FuzzTarget(
+        name="mamba2_ssd_scan",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_mamba2_ssd_scan.mojo.test",
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/fuzz_mamba2_ssd_scan.mojo.test"
+        ),
+        description=(
+            "B200 Mamba-2 SSD scan (Nemotron-H SSM): decode + short ragged"
+            " prefill over strided views, scattered slots and mixed initial"
+            " states; ref checks y and the whole state pool vs the CPU"
+            " reference"
+        ),
+        default_oracle="ref",
+    ),
+    "causal_conv1d_varlen": FuzzTarget(
+        name="causal_conv1d_varlen",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_causal_conv1d_varlen.mojo.test",
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_causal_conv1d_varlen.mojo.test"
+        ),
+        description=(
+            "Varlen causal conv1d (Nemotron-H conv, channels last): decode +"
+            " ragged prefill over a column-range input view, scattered slots"
+            " and mixed initial states; ref checks the output and the whole"
+            " state pool vs the CPU reference"
+        ),
+        default_oracle="ref",
     ),
     "gemv_split_k": FuzzTarget(
         name="gemv_split_k",
@@ -294,8 +374,8 @@ _TARGETS: dict[str, FuzzTarget] = {
     ),
     "msa_decode": FuzzTarget(
         name="msa_decode",
-        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_msa_decode.mojo.test",
-        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_msa_decode.mojo.test",
+        bazel_target="//Kernels/test/fuzz:fuzz_msa_decode.mojo.test",
+        binary="bazel-bin/Kernels/test/fuzz/fuzz_msa_decode.mojo.test",
         description=(
             "msa_sm100_decode: MiniMax-M3 block-sparse decode attention"
             " (attends indexer-selected blocks). ref = f64 block-max softmax"
@@ -306,8 +386,8 @@ _TARGETS: dict[str, FuzzTarget] = {
     ),
     "msa_prefill": FuzzTarget(
         name="msa_prefill",
-        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_msa_prefill.mojo.test",
-        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_msa_prefill.mojo.test",
+        bazel_target="//Kernels/test/fuzz:fuzz_msa_prefill.mojo.test",
+        binary="bazel-bin/Kernels/test/fuzz/fuzz_msa_prefill.mojo.test",
         description=(
             "msa_sm100_prefill_plan + _run: MiniMax-M3 block-sparse PREFILL"
             " attention (ragged Q, on-device reverse-CSR + block-major fwd +"
@@ -328,6 +408,20 @@ _TARGETS: dict[str, FuzzTarget] = {
             " decode (hang/OOB/ref/schedule)"
         ),
         default_oracle="memcheck",
+    ),
+    "mla_prefill": FuzzTarget(
+        name="mla_prefill",
+        bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_prefill.mojo.test"),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/fuzz_mla_prefill.mojo.test"
+        ),
+        description=(
+            "AMD gfx950 Attention.mla_prefill (via flare_mla_prefill):"
+            " deferred-scale online-softmax defect (KERN-2826-class) where a"
+            " fully-masked tile reseeds its running max and double-scales it,"
+            " overflowing exp2 (contract)"
+        ),
+        default_oracle="contract",
     ),
     "fused_rope_rmsnorm": FuzzTarget(
         name="fused_rope_rmsnorm",
@@ -488,11 +582,10 @@ _TARGETS: dict[str, FuzzTarget] = {
     "sparse_indexer_decode": FuzzTarget(
         name="sparse_indexer_decode",
         bazel_target=(
-            "//max/kernels/test/gpu/fuzz:fuzz_sparse_indexer_decode.mojo.test"
+            "//Kernels/test/fuzz:fuzz_sparse_indexer_decode.mojo.test"
         ),
         binary=(
-            "bazel-bin/max/kernels/test/gpu/fuzz/"
-            "fuzz_sparse_indexer_decode.mojo.test"
+            "bazel-bin/Kernels/test/fuzz/fuzz_sparse_indexer_decode.mojo.test"
         ),
         description=(
             "sparse_indexer_decode_score + _topk: MiniMax-M3 MSA indexer decode"
@@ -501,14 +594,27 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "sparse_indexer_decode_mtp": FuzzTarget(
+        name="sparse_indexer_decode_mtp",
+        bazel_target=(
+            "//Kernels/test/fuzz:fuzz_sparse_indexer_decode_mtp.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/Kernels/test/fuzz/fuzz_sparse_indexer_decode_mtp.mojo.test"
+        ),
+        description=(
+            "MSA per-token decode indexer: ragged m16/m32 scoring, causal"
+            " horizons, init/local forcing and top-k; ref + validity + schedule"
+        ),
+        default_oracle="ref",
+    ),
     "sparse_indexer_prefill": FuzzTarget(
         name="sparse_indexer_prefill",
         bazel_target=(
-            "//max/kernels/test/gpu/fuzz:fuzz_sparse_indexer_prefill.mojo.test"
+            "//Kernels/test/fuzz:fuzz_sparse_indexer_prefill.mojo.test"
         ),
         binary=(
-            "bazel-bin/max/kernels/test/gpu/fuzz/"
-            "fuzz_sparse_indexer_prefill.mojo.test"
+            "bazel-bin/Kernels/test/fuzz/fuzz_sparse_indexer_prefill.mojo.test"
         ),
         description=(
             "sparse_indexer_prefill_score + _topk: MiniMax-M3 MSA indexer"
@@ -597,7 +703,7 @@ def _compute_sanitizer_path() -> str:
 
 
 def _oracle_command_and_env(
-    oracle: str, base_cmd: list[str], gpu: int
+    oracle: str, base_cmd: list[str], gpu: str
 ) -> tuple[list[str], dict[str, str]]:
     """Return the (command, extra-env) for running one case under `oracle`.
 
@@ -746,6 +852,11 @@ def _repo_root() -> Path:
     return Path(out.stdout.strip())
 
 
+def _package_present(root: Path, target: FuzzTarget) -> bool:
+    package = target.bazel_target.removeprefix("//").split(":")[0]
+    return (root / package).is_dir()
+
+
 def build_target(root: Path, target: FuzzTarget, line_info: bool) -> None:
     cmd = [
         "./bazelw",
@@ -759,6 +870,37 @@ def build_target(root: Path, target: FuzzTarget, line_info: bool) -> None:
         cmd += ["--mojocopt=--debug-level", "--mojocopt=line-tables"]
     print(f"[build] {' '.join(cmd)}", file=sys.stderr)
     subprocess.run(cmd, cwd=root, check=True)
+
+
+def incompatible_targets(root: Path, targets: list[FuzzTarget]) -> set[str]:
+    """Returns the names of `targets` that bazel cannot build on this machine.
+
+    Asks bazel rather than mirroring each target's `target_compatible_with`,
+    since several targets are gated to a single GPU (B200 or MI355).
+    """
+    by_label = {t.bazel_target.lstrip("@"): t.name for t in targets}
+    out = subprocess.run(
+        [
+            "./bazelw",
+            "cquery",
+            f"set({' '.join(by_label)})",
+            "--output=starlark",
+            "--starlark:expr=str(target.label) + ' ' + str("
+            "'IncompatiblePlatformProvider' in (providers(target) or {}))",
+            "--curses=no",
+            "--noshow_progress",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    incompatible: set[str] = set()
+    for line in out.stdout.splitlines():
+        label, _, flag = line.rpartition(" ")
+        if flag == "True":
+            incompatible.add(by_label[label.lstrip("@")])
+    return incompatible
 
 
 def list_specs(
@@ -794,7 +936,7 @@ def run_case(
     target: FuzzTarget,
     spec: dict[str, int],
     oracle: str,
-    gpu: int,
+    gpu: str,
     timeout_s: float,
 ) -> CaseResult:
     # Generic: pass each spec field as `--<key> <value>`; the Mojo target reads
@@ -927,7 +1069,7 @@ def shrink(
     target: FuzzTarget,
     spec: dict[str, int],
     oracle: str,
-    gpu: int,
+    gpu: str,
     timeout_s: float,
     target_verdict: Verdict,
     target_kind: str,
@@ -1002,7 +1144,7 @@ def replay_corpus(
     root: Path,
     corpus_root: Path,
     only_target: str | None,
-    gpu: int,
+    gpu: str,
     timeout_s: float,
     do_build: bool,
 ) -> int:
@@ -1011,19 +1153,58 @@ def replay_corpus(
     fixed bug whose corpus entry needs updating, or a broken oracle), else 0.
 
     This is the deterministic, fast gate: same seed/spec -> same verdict.
+    Entries whose target package is absent from the checkout, or whose target
+    cannot build on this machine's GPU, are skipped; an explicitly requested
+    `only_target` that cannot build on this machine returns 1.
     """
     loaded: list[tuple[Path, dict[str, object]]] = []
     targets_needed: set[str] = set()
+    absent: set[str] = set()
+    skipped = 0
     for path in sorted(corpus_root.glob("*/*.json")):
         data = json.loads(path.read_text())
-        if only_target and data["target"] != only_target:
+        tname = str(data["target"])
+        if only_target and tname != only_target:
+            continue
+        # Targets for closed-source kernels are registered here too, but the
+        # open-source repo omits their package, so their entries cannot run.
+        target = _TARGETS[tname]
+        if len(gpu.split(",")) < target.min_gpus:
+            print(
+                f"[replay] SKIP     {tname}: requires at least"
+                f" {target.min_gpus} devices in --gpu"
+            )
+            skipped += 1
+            if only_target:
+                return 1
+            continue
+        if not _package_present(root, target):
+            absent.add(tname)
+            skipped += 1
             continue
         loaded.append((path, data))
-        targets_needed.add(str(data["target"]))
+        targets_needed.add(tname)
+
+    for tname in sorted(absent):
+        print(
+            f"[replay] SKIP     {tname}: {_TARGETS[tname].bazel_target} is not"
+            " in this checkout"
+        )
 
     if not loaded:
         print("[replay] no corpus entries found")
         return 0
+
+    incompatible = incompatible_targets(
+        root, [_TARGETS[t] for t in targets_needed]
+    )
+    for tname in sorted(incompatible):
+        print(f"[replay] SKIP     {tname}: incompatible with this machine")
+    if only_target and incompatible:
+        return 1
+    skipped += sum(1 for _, d in loaded if d["target"] in incompatible)
+    loaded = [(p, d) for p, d in loaded if d["target"] not in incompatible]
+    targets_needed -= incompatible
 
     if do_build:
         for tname in sorted(targets_needed):
@@ -1044,13 +1225,30 @@ def replay_corpus(
             f"[replay] {'OK' if ok else 'MISMATCH':<8} {tgt.name} {spec} "
             f"oracle={oracle} expected={expected} got={res.verdict.value}"
         )
-    print(f"[replay] {len(loaded)} entries, {mismatches} mismatch(es)")
+    print(
+        f"[replay] {len(loaded)} entries, {mismatches} mismatch(es),"
+        f" {skipped} skipped"
+    )
     return 1 if mismatches else 0
 
 
 # ===----------------------------------------------------------------------=== #
 # CLI
 # ===----------------------------------------------------------------------=== #
+
+
+def _gpu_devices(value: str) -> str:
+    devices = [device.strip() for device in value.split(",")]
+    if not all(device.isascii() and device.isdecimal() for device in devices):
+        raise argparse.ArgumentTypeError(
+            "--gpu requires comma-separated nonnegative device indices"
+        )
+    indices = [str(int(device)) for device in devices]
+    if len(indices) != len(set(indices)):
+        raise argparse.ArgumentTypeError(
+            "--gpu device indices must be distinct"
+        )
+    return ",".join(indices)
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1103,9 +1301,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     p.add_argument(
         "--gpu",
-        type=int,
-        default=0,
-        help="GPU device index (NVIDIA or AMD).",
+        type=_gpu_devices,
+        default="0",
+        help="GPU device index or comma-separated indices for a collective (NVIDIA or AMD).",
     )
     p.add_argument(
         "--timeout",
@@ -1134,9 +1332,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str]) -> int:
     args = _parse_args(argv)
-    root = _repo_root()
 
     if args.replay_corpus:
+        root = _repo_root()
         return replay_corpus(
             root,
             root / args.corpus_dir,
@@ -1148,7 +1346,14 @@ def main(argv: list[str]) -> int:
 
     target = _TARGETS[args.target or "mha_causal"]
     oracle = args.oracle or target.default_oracle
+    if len(args.gpu.split(",")) < target.min_gpus:
+        print(
+            f"{target.name} requires at least {target.min_gpus} devices in --gpu",
+            file=sys.stderr,
+        )
+        return 1
 
+    root = _repo_root()
     if not args.no_build:
         build_target(
             root, target, line_info=(oracle in ("memcheck", "initcheck"))

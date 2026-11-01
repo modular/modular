@@ -21,8 +21,7 @@ from std.python import PythonObject
 
 from . import ConvertibleToPython
 from std.os import abort
-from std.sys import bit_width_of
-from std.ffi import c_double, c_int, c_long, c_size_t, c_ssize_t
+from std.ffi import c_int, c_ssize_t
 import std.format._utils as fmt
 
 from std.reflection import reflect
@@ -36,7 +35,6 @@ from ._cpython import (
     Py_LE,
     Py_LT,
     Py_NE,
-    PyObject,
     PyObjectPtr,
     PyTypeObject,
     PyTypeObjectPtr,
@@ -80,7 +78,7 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> PythonObject:
         """Return the next item and update to point to subsequent item.
 
@@ -165,9 +163,14 @@ struct PythonObject(
         self._obj_ptr = from_borrowed
 
     @implicit
-    def __init__(out self, var source: Some[ConvertibleToPython]) raises:
+    def __init__[
+        T: ConvertibleToPython, //
+    ](out self, var source: T) raises T.ConversionToPythonErrorType:
         """Initialize this object from a value of some type that can be
         custom converted to a PythonObject.
+
+        Parameters:
+            T: The type of the value to convert to a PythonObject.
 
         Args:
             source: The value to convert to a PythonObject.
@@ -177,7 +180,7 @@ struct PythonObject(
         """
         self = source^.to_python_object()
 
-    @always_inline
+    @inline(.always)
     def __init__[T: Movable & Deinitable](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
@@ -231,85 +234,6 @@ struct PythonObject(
         self = Self(from_borrowed=cpy.Py_None())
 
     @implicit
-    def __init__(out self, value: Bool):
-        """Initialize the object from a bool.
-
-        Args:
-            value: The boolean value.
-        """
-        ref cpy = Python().cpython()
-        self = Self(from_owned=cpy.PyBool_FromLong(c_long(Int(value))))
-
-    @implicit
-    def __init__[dtype: DType](out self, value: Scalar[dtype]):
-        """Initialize the object with a generic scalar value. If the scalar
-        value type is bool, it is converted to a boolean. Otherwise, it is
-        converted to the appropriate integer or floating point type.
-
-        Parameters:
-            dtype: The scalar value type.
-
-        Args:
-            value: The scalar value.
-        """
-        ref cpy = Python().cpython()
-
-        comptime if dtype == .bool:
-            var val = c_long(Int(value))
-            self = Self(from_owned=cpy.PyBool_FromLong(val))
-        elif dtype.is_unsigned():
-            var val = c_size_t(value.cast[.uint]())
-            self = Self(from_owned=cpy.PyLong_FromSize_t(val))
-        elif dtype.is_integral():
-            var val = c_ssize_t(value.cast[.int]())
-            self = Self(from_owned=cpy.PyLong_FromSsize_t(val))
-        else:
-            var val = c_double(value.cast[.float64]())
-            self = Self(from_owned=cpy.PyFloat_FromDouble(val))
-
-    @implicit
-    def __init__(out self, string: StringSlice) raises:
-        """Initialize the object from a string.
-
-        Args:
-            string: The string value.
-
-        Raises:
-            If the string is not valid UTF-8.
-        """
-        ref cpy = Python().cpython()
-        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
-        # be valid UTF-8.
-        var unicode = cpy.PyUnicode_DecodeUTF8(string)
-        if not unicode:
-            raise cpy.unsafe_get_error()
-        self = Self(from_owned=unicode)
-
-    @implicit
-    def __init__(out self, value: StringLiteral) raises:
-        """Initialize the object from a string literal.
-
-        Args:
-            value: The string literal value.
-
-        Raises:
-            If the string is not valid UTF-8.
-        """
-        self = Self(StringSlice(value))
-
-    @implicit
-    def __init__(out self, value: String) raises:
-        """Initialize the object from a string.
-
-        Args:
-            value: The string value.
-
-        Raises:
-            If the string is not valid UTF-8.
-        """
-        self = Self(StringSlice(value))
-
-    @implicit
     def __init__(out self, slice: Slice):
         """Initialize the object from a Mojo Slice.
 
@@ -318,7 +242,7 @@ struct PythonObject(
         """
         self = Self(from_owned=_slice_to_py_object_ptr(slice))
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self, var *values: PythonObject, __list_literal__: NoneType
     ) raises:
@@ -336,7 +260,7 @@ struct PythonObject(
         """
         self = Python.list(*values^)
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self, var *values: PythonObject, __set_literal__: NoneType
     ) raises:
@@ -1360,7 +1284,7 @@ struct PythonObject(
         """
         return Python.float(self)
 
-    @no_inline
+    @inline(.never)
     def __str__(self) raises -> PythonObject:
         """Convert the PythonObject to a Python `str`.
 
@@ -1387,7 +1311,7 @@ struct PythonObject(
             # TODO: make this method raising when we can raise parametrically.
             abort(t"failed to write PythonObject to writer: {e}")
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this `PythonObject` to a writer.
 
@@ -1635,7 +1559,7 @@ def _unsafe_alloc_init[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _unary_op[
     op: def(CPython, PyObjectPtr) thin -> PyObjectPtr
 ](obj: PythonObject) raises -> PythonObject:
@@ -1660,7 +1584,7 @@ def _unary_op[
     return PythonObject(from_owned=result)
 
 
-@always_inline
+@inline(.always)
 def _binary_op[
     op: def(CPython, PyObjectPtr, PyObjectPtr) thin -> PyObjectPtr
 ](lhs: PythonObject, rhs: PythonObject) raises -> PythonObject:
@@ -1686,7 +1610,7 @@ def _binary_op[
     return PythonObject(from_owned=result)
 
 
-@always_inline
+@inline(.always)
 def _power_op[
     op: def(CPython, PyObjectPtr, PyObjectPtr, PyObjectPtr) thin -> PyObjectPtr
 ](base: PythonObject, exp: PythonObject) raises -> PythonObject:
@@ -1712,7 +1636,7 @@ def _power_op[
     return PythonObject(from_owned=result)
 
 
-@always_inline
+@inline(.always)
 def _rich_compare[
     opid: c_int
 ](lhs: PythonObject, rhs: PythonObject) raises -> PythonObject:

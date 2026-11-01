@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
@@ -21,14 +20,18 @@ from std.utils.index import Index
 from layout import Idx
 
 # Helper to calculate block_tile_shape based on dtype and wgmma_n
-comptime block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
-    128, wgmma_n, 128
-) if a_dtype == .float8_e4m3fn else Index(128, wgmma_n, 64)
+comptime block_tile_shape[wgmma_n: Int, a_dtype: DType] = (
+    128,
+    wgmma_n,
+    128,
+) if a_dtype == .float8_e4m3fn else (128, wgmma_n, 64)
 
 # Helper to calculate wgmma_shape based on dtype and wgmma_n
-comptime wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
-    64, wgmma_n, 32
-) if a_dtype == .float8_e4m3fn else Index(64, wgmma_n, 16)
+comptime wgmma_shape[wgmma_n: Int, a_dtype: DType] = (
+    64,
+    wgmma_n,
+    32,
+) if a_dtype == .float8_e4m3fn else (64, wgmma_n, 16)
 
 
 def main() raises:
@@ -41,13 +44,13 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             block_tile_shape[80, .float8_e4m3fn],
             wgmma_shape[80, .float8_e4m3fn],
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            grid_shape=Index(32, 4),
+            grid_shape=(32, 4),
             schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
@@ -61,13 +64,13 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             block_tile_shape[128, .float8_e4m3fn],
             wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
-            grid_shape=Index(10, 13),
+            grid_shape=(10, 13),
             schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
@@ -81,7 +84,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             block_tile_shape[128, .float8_e4m3fn],
             wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
@@ -100,7 +103,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             block_tile_shape[128, .float8_e4m3fn],
             wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
@@ -119,7 +122,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             block_tile_shape[128, .float8_e4m3fn],
             wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
@@ -138,7 +141,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             block_tile_shape[128, .float8_e4m3fn],
             wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
@@ -157,7 +160,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             block_tile_shape[128, .float8_e4m3fn],
             wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
@@ -176,7 +179,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             block_tile_shape[128, .float8_e4m3fn],
             wgmma_shape[128, .float8_e4m3fn],
             partitioned_multicast=True,
@@ -192,7 +195,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             block_tile_shape[128, .float8_e4m3fn],
             wgmma_shape[128, .float8_e4m3fn],
             partitioned_multicast=False,
@@ -208,7 +211,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             block_tile_shape[128, .float8_e4m3fn],
             wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,

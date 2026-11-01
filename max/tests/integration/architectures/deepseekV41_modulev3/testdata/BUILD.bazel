@@ -1,0 +1,18 @@
+# The V4.1 checkpoint config (config_full.json) and its tensor census by name
+# pattern (census_patterns.tsv, from the headers of nvidia/DeepSeek-V4.1-Flash-NVFP4
+# at 3431dde3), and the ABI contract recorded from the stub graph
+# (abi_contract.json; regenerate with record_abi_contract, never by hand).
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+filegroup(
+    name = "testdata",
+    srcs = glob([
+        "*.json",
+        "*.tsv",
+    ]),
+)

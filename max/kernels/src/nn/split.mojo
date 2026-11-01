@@ -13,20 +13,21 @@
 """Implements the tensor split operation, dividing a tensor into chunks along a specified axis."""
 
 from std.collections.string import StaticString
-from std.sys import simd_width_of
-from std.sys.info import _current_target
+from std.sys import align_of, simd_width_of
+from std.sys.info import CompilationTarget
 
 from max.algorithm import elementwise
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
+    TensorEngine,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
 )
+from layout.coord import DynamicCoord
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # split
@@ -35,6 +36,7 @@ from std.utils import IndexList, StaticTuple
 
 def split[
     OutputLayoutType: TensorLayout,
+    OutputEngine: TensorEngine,
     //,
     dtype: DType,
     num_outputs: Int,
@@ -46,7 +48,7 @@ def split[
 ](
     input: TileTensor[dtype, ...],
     outputs: StaticTuple[
-        TileTensor[dtype, OutputLayoutType, output_origin],
+        TileTensor[dtype, OutputLayoutType, output_origin, Engine=OutputEngine],
         num_outputs,
     ],
     ctx: DeviceContext,
@@ -61,6 +63,7 @@ def split[
 
     Parameters:
         OutputLayoutType: Layout shared by all output tensors.
+        OutputEngine: Engine policy shared by all output tensors.
         dtype: Element type of the input and output tensors.
         num_outputs: Number of output chunks to produce.
         target: Target string used by the elementwise dispatch.
@@ -89,42 +92,39 @@ def split[
                     " non-split axes"
                 )
 
-    var output_sizes = IndexList[num_outputs]()
-
-    comptime for i in range(num_outputs):
-        output_sizes[i] = Int(outputs[i].dim(axis))
-
-    @always_inline
+    @inline(.always)
     def elementwise_fn_wrapper[
         width: Int, alignment: Int = 1
-    ](input_coords: Coord) {var output_sizes, var input, var outputs,}:
-        # The associated index in the output tensor
-        var output_coords = IndexList[input_coords.rank]()
-        var input_idx = coord_to_index_list(input_coords)
-
+    ](input_coords: Coord) {var input, var outputs,}:
         # Which output index to write to
         var output_idx = 0
 
-        # The current shape
-        var axis_output_dim = input_idx[axis]
+        # The current position along the split axis. Read through an unrolled
+        # loop variable: a literal read on a symbolically-ranked `Coord` does
+        # not compile.
+        var axis_output_dim = 0
+        comptime for i in range(input_coords.rank):
+            if i == axis:
+                axis_output_dim = Int(input_coords[i])
 
         # First determine which output we should write to
         comptime for i in range(num_outputs):
-            if axis_output_dim < output_sizes[i]:
+            if axis_output_dim < Int(outputs[i].dim(axis)):
                 break
-            axis_output_dim -= output_sizes[i]
+            axis_output_dim -= Int(outputs[i].dim(axis))
             output_idx += 1
 
         # Then derive the output coordinate
+        var output_coords = DynamicCoord[.int, input_coords.rank]()
         comptime for i in range(input_coords.rank):
             if i == axis:
-                output_coords[i] = axis_output_dim
+                output_coords.replace_dynamic[i](axis_output_dim)
             else:
-                output_coords[i] = input_idx[i]
+                output_coords.replace_dynamic[i](Int(input_coords[i]))
 
-        var idx = input.layout(input_coords)
-
-        var value = input.raw_load[width=width](idx)
+        var value = input.load[width=width, alignment=align_of[dtype]()](
+            input_coords
+        )
 
         # Write through a COMPILE-TIME index into the `outputs` StaticTuple.
         # On Metal (Apple M5), a StaticTuple[TileTensor, N] aggregate indexed
@@ -138,17 +138,19 @@ def split[
         # comptime StaticTuple probes (.derived/repro_*statictuple*).
         comptime for i in range(num_outputs):
             if output_idx == i:
-                var output_ptr_idx = outputs[i].layout(Coord(output_coords))
-                outputs[i].raw_store(output_ptr_idx, value)
+                outputs[i].store[alignment=align_of[dtype]()](
+                    output_coords, value
+                )
 
     # Can vectorize only if not splitting over last dim.
     if axis != input.rank - 1:
-        comptime compile_target = _current_target() if is_cpu[
-            target
-        ]() else get_gpu_target()
-        comptime target_simd_width = simd_width_of[
-            dtype, target=compile_target
-        ]()
+        comptime target_simd_width = (
+            simd_width_of[
+                dtype, target=CompilationTarget.current()
+            ]() if is_cpu[target]() else simd_width_of[
+                dtype, target=ctx.target
+            ]()
+        )
 
         elementwise[
             simd_width=target_simd_width,

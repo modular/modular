@@ -16,6 +16,7 @@ from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.algorithm.functional import vectorize
+from std.memory.alloc import unsafe_alloc
 from layout import Coord, TileTensor, row_major
 from nn.conv.conv_transpose import (
     ConvTransposedPacked,
@@ -41,7 +42,7 @@ comptime simd_size: Int = simd_width_of[DType.float32]()
 comptime dtype = DType.float32
 
 
-@always_inline
+@inline(.always)
 def extend_shape_5d[
     rank: Int
 ](in_shape: IndexList[rank], first: Int, last: Int) -> IndexList[5]:
@@ -49,20 +50,21 @@ def extend_shape_5d[
     out_shape[0] = first
     out_shape[4] = last
 
-    comptime if rank == 1:
-        out_shape[3] = in_shape[0]
-    elif rank == 2:
-        out_shape[2] = in_shape[0]
-        out_shape[3] = in_shape[1]
-    elif rank == 3:
-        out_shape[1] = in_shape[0]
-        out_shape[2] = in_shape[1]
-        out_shape[3] = in_shape[2]
+    comptime match rank:
+        case 1:
+            out_shape[3] = in_shape[0]
+        case 2:
+            out_shape[2] = in_shape[0]
+            out_shape[3] = in_shape[1]
+        case 3:
+            out_shape[1] = in_shape[0]
+            out_shape[2] = in_shape[1]
+            out_shape[3] = in_shape[2]
 
     return out_shape
 
 
-@always_inline
+@inline(.always)
 def extend_shape_3d[rank: Int](in_shape: IndexList[rank]) -> IndexList[3]:
     var out_shape = IndexList[3](1)
 
@@ -72,7 +74,7 @@ def extend_shape_3d[rank: Int](in_shape: IndexList[rank]) -> IndexList[3]:
     return out_shape
 
 
-@always_inline
+@inline(.always)
 def append_shape_5d[
     rank: Int
 ](in_shape: IndexList[rank], last2nd: Int, last: Int) -> IndexList[5]:
@@ -80,15 +82,16 @@ def append_shape_5d[
     out_shape[3] = last2nd
     out_shape[4] = last
 
-    comptime if rank == 1:
-        out_shape[2] = in_shape[0]
-    elif rank == 2:
-        out_shape[1] = in_shape[0]
-        out_shape[2] = in_shape[1]
-    elif rank == 3:
-        out_shape[0] = in_shape[0]
-        out_shape[1] = in_shape[1]
-        out_shape[2] = in_shape[2]
+    comptime match rank:
+        case 1:
+            out_shape[2] = in_shape[0]
+        case 2:
+            out_shape[1] = in_shape[0]
+            out_shape[2] = in_shape[1]
+        case 3:
+            out_shape[0] = in_shape[0]
+            out_shape[1] = in_shape[1]
+            out_shape[2] = in_shape[2]
 
     return out_shape
 
@@ -123,15 +126,16 @@ def test_conv_transposed[
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    comptime if rank == 1:
-        pad_w = Index(pad[0], pad[1])
-    elif rank == 2:
-        pad_h = Index(pad[0], pad[1])
-        pad_w = Index(pad[2], pad[3])
-    elif rank == 3:
-        pad_d = Index(pad[0], pad[1])
-        pad_h = Index(pad[2], pad[3])
-        pad_w = Index(pad[4], pad[5])
+    comptime match rank:
+        case 1:
+            pad_w = Index(pad[0], pad[1])
+        case 2:
+            pad_h = Index(pad[0], pad[1])
+            pad_w = Index(pad[2], pad[3])
+        case 3:
+            pad_d = Index(pad[0], pad[1])
+            pad_h = Index(pad[2], pad[3])
+            pad_w = Index(pad[4], pad[5])
 
     var conv_shape = ConvShape[rank](
         n=N,
@@ -171,16 +175,16 @@ def test_conv_transposed[
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
-    var input_shape = extend_shape(input_dims, N, C)
-    var input = TileTensor(input_ptr, row_major(Coord(input_shape)))
+    var input_shape = extend_shape(Coord(input_dims), N, C)
+    var input = TileTensor(input_ptr, row_major(input_shape))
     var input_ref = TileTensor(
         input_ptr,
         row_major(Coord(extend_shape_5d(input_dims, N, C))),
     )
 
     # Filter buffer.
-    var filter_shape = append_shape(filter_dims, F, C_per_group)
-    var filter = TileTensor(filter_ptr, row_major(Coord(filter_shape)))
+    var filter_shape = append_shape(Coord(filter_dims), F, C_per_group)
+    var filter = TileTensor(filter_ptr, row_major(filter_shape))
     var filter_ref = TileTensor(
         filter_ptr,
         row_major(Coord(append_shape_5d(filter_dims, F, C_per_group))),
@@ -195,16 +199,16 @@ def test_conv_transposed[
         row_major(Coord(rebind[IndexList[rank + 3]](packed_filter_shape))),
     )
 
-    var output_shape = extend_shape(output_dims, N, F)
-    var output = TileTensor(output_ptr, row_major(Coord(output_shape)))
+    var output_shape = extend_shape(Coord(output_dims), N, F)
+    var output = TileTensor(output_ptr, row_major(output_shape))
     var output_ref = TileTensor(
         output_ref_ptr,
         row_major(Coord(extend_shape_5d(output_dims, N, F))),
     )
 
-    # Bias for epilogue. Kept as raw alloc because it's captured by
-    # `@__copy_capture` closures, which require ImplicitlyCopyable.
-    var bias_ptr = alloc[Scalar[dtype]](F)
+    # Bias for epilogue. Kept as raw alloc because it's copy-captured by
+    # closures, which requires ImplicitlyCopyable.
+    var bias_ptr = unsafe_alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
     pack_filter(filter, packed_filter, num_groups)
@@ -225,20 +229,20 @@ def test_conv_transposed[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref._storage + F * (
-                i + output_image_size * n
+            var output_ref_ptr = output_ref._storage.unsafe_offset(
+                F * (i + output_image_size * n)
             )
 
-            @always_inline
+            @inline(.always)
             def body0[
                 width: Int
             ](offset: Int) {var output_ref_ptr, var bias_ptr}:
-                output_ref_ptr.store(
+                output_ref_ptr.unsafe_store(
                     offset,
                     10.0
                     * (
-                        output_ref_ptr.load[width=width](offset)
-                        + bias_ptr.load[width=width](offset)
+                        output_ref_ptr.unsafe_load[width=width](offset)
+                        + bias_ptr.unsafe_load[width=width](offset)
                     ),
                 )
 
@@ -248,23 +252,18 @@ def test_conv_transposed[
     comptime conv_attr = ConvInfoStatic[rank]()
 
     # Test epilogue
-    @always_inline
-    @__copy_capture(output, bias_ptr)
-    @__parameter
-    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
-        @always_inline
+    @inline(.always)
+    def epilogue(coords: Coord, f_size: Int) {var output, var bias_ptr}:
+        @inline(.always)
         def body1[width: Int](idx: Int) {var}:
-            var curr_coords = rebind[IndexList[rank + 2]](coords)
-            curr_coords[rank + 1] += idx
+            var f = Int(coords[rank + 1]) + idx
+            var curr_coords = coords
+            curr_coords.replace_dynamic[rank + 1](f)
 
-            var output_idx = output.layout(Coord(curr_coords))
+            var vec = output.load[width=width](curr_coords)
 
-            var vec = output.raw_load[width=width](output_idx)
-
-            output.raw_store(
-                output_idx,
-                10.0
-                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
+            output.store(
+                curr_coords, 10.0 * (vec + bias_ptr.unsafe_load[width=width](f))
             )
 
         vectorize[simd_size](f_size, body1)
@@ -277,20 +276,24 @@ def test_conv_transposed[
         dtype,
         dtype,
         conv_attr,
-        epilogue,
+        True,
+        type_of(epilogue),
     ].run(
         output,
         input,
         packed_filter,
         rebind[ConvShape[rank]](conv_shape),
+        epilogue,
     )
 
     # Check results, return on the first failed comparison.
+    var output_ref_flat = output_ref.reshape(row_major(output_size))
+    var output_flat = output.reshape(row_major(output_size))
     for i in range(output_size):
         if not all(
             isclose(
-                output_ref.raw_load[width=1](i),
-                output.raw_load[width=1](i),
+                output_ref_flat[i],
+                output_flat[i],
                 atol=1e-4,  # absolute error tolerance
                 rtol=1e-4,  # relative error tolerance
             )
@@ -299,14 +302,14 @@ def test_conv_transposed[
             print("filter shape: ", filter_shape)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.raw_load[width=1](i))
-            print("Actual value: ", output.raw_load[width=1](i))
-            bias_ptr.free()
+            print("Golden value: ", output_ref_flat[i])
+            print("Actual value: ", output_flat[i])
+            bias_ptr.unsafe_free()
             return
 
     # CHECK: Succeed
     print("Succeed")
-    bias_ptr.free()
+    bias_ptr.unsafe_free()
     _ = output_ref_ptr^
     _ = output_ptr^
     _ = packed_filter_ptr^
@@ -530,7 +533,7 @@ def main() raises:
     #     320,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -542,7 +545,7 @@ def main() raises:
     #     256,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -554,7 +557,7 @@ def main() raises:
     #     128,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -566,7 +569,7 @@ def main() raises:
     #     64,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -578,6 +581,6 @@ def main() raises:
     #     32,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )

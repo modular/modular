@@ -15,10 +15,9 @@
 from std.sys import simd_width_of
 from max.gpu import warp_id as get_warp_id
 from std.math.uutils import udivmod
-from std.utils import IndexList
 
 
-@always_inline
+@inline(.always)
 def pad[dtype: DType, depth: Int, size: Int]() -> Int:
     """V-SMEM row padding to avoid bank conflicts. Skipped for depth=64.
 
@@ -33,8 +32,8 @@ def pad[dtype: DType, depth: Int, size: Int]() -> Int:
     return size + padding
 
 
-@always_inline
-def get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
+@inline(.always)
+def get_warp_coords[BN: Int, WN: Int]() -> Tuple[Int, Int]:
     """Return `(warp_row, warp_col)` for the current warp given a BN×WN grid.
 
     Parameters:
@@ -43,5 +42,4 @@ def get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
             is `BN // WN`.
     """
     comptime num_warps_n = BN // WN
-    var warp_row, warp_col = udivmod(get_warp_id(), num_warps_n)
-    return IndexList[2](warp_row, warp_col)
+    return udivmod(get_warp_id(), num_warps_n)

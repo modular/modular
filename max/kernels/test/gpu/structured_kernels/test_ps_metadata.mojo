@@ -43,13 +43,8 @@ def _wf(md: PsMetadata, w: Int, field: Int) -> Int32:
 def check_invariants(md: PsMetadata, batch: Int, seq: Int32) raises:
     var ntg = len(md.work_indptr) - 1
     print(
-        "  num_works=",
-        md.num_works,
-        " tgs=",
-        ntg,
-        " (works/tg ~",
-        md.num_works // ntg,
-        ")",
+        t"  num_works= {md.num_works}  tgs= {ntg}  (works/tg ~"
+        t" {md.num_works // ntg} )"
     )
 
     # 1. work_indptr: starts 0, non-decreasing, ends at num_works.
@@ -89,14 +84,8 @@ def check_invariants(md: PsMetadata, batch: Int, seq: Int32) raises:
                 expected += Int(min(nb, seq))  # clamp to batch KV (S)
                 q += 256
     print(
-        "  consumed_kv_blocks=",
-        total_consumed,
-        " expected=",
-        expected,
-        " partials=",
-        num_partials,
-        " final_direct=",
-        num_final_direct,
+        t"  consumed_kv_blocks= {total_consumed}  expected= {expected} "
+        t" partials= {num_partials}  final_direct= {num_final_direct}"
     )
     if total_consumed != expected:
         raise Error("KV-block conservation FAILED")
@@ -125,18 +114,8 @@ def print_first_works(md: PsMetadata, count: Int):
     )
     for w in range(min(count, md.num_works)):
         print(
-            "   w",
-            w,
-            ": [",
-            _wf(md, w, 0),
-            _wf(md, w, 1),
-            _wf(md, w, 2),
-            _wf(md, w, 3),
-            _wf(md, w, 4),
-            _wf(md, w, 5),
-            _wf(md, w, 6),
-            _wf(md, w, 7),
-            "]",
+            t"   w {w} : ["
+            t" {_wf(md, w, 0)} {_wf(md, w, 1)} {_wf(md, w, 2)} {_wf(md, w, 3)} {_wf(md, w, 4)} {_wf(md, w, 5)} {_wf(md, w, 6)} {_wf(md, w, 7)} ]"
         )
 
 

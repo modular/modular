@@ -37,17 +37,27 @@ class Device:
     Do not instantiate this class directly; use :class:`CPU` for host
     devices and :class:`Accelerator` for any hardware accelerator.
 
+    .. invisible-code-block: python
+
+        from max import driver
+
     .. code-block:: python
 
         from max import driver
 
         cpu = driver.CPU()
-        gpu = driver.Accelerator()
+        device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
     """
 
     def can_access(self, other: Device) -> bool:
         """
         Checks if this device can directly access memory of another device.
+
+        .. invisible-code-block: python
+
+             from max import driver
+
+        .. skip: next if(driver.accelerator_count() < 2, reason="requires two accelerators")
 
         .. code-block:: python
 
@@ -60,10 +70,10 @@ class Device:
                  print("GPU0 can directly access GPU1 memory.")
 
         Args:
-            other (Device): The other device to check peer access against.
+            other: The other device to check peer access against.
 
         Returns:
-            bool: True if peer access is possible, False otherwise.
+            ``True`` if peer access is possible, ``False`` otherwise.
         """
 
     def synchronize(self) -> None:
@@ -83,7 +93,7 @@ class Device:
 
             from max import driver
 
-            device = driver.CPU()
+            device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
             device.is_host
         """
 
@@ -99,7 +109,7 @@ class Device:
 
             from max import driver
 
-            device = driver.Accelerator()
+            device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
             device.is_host_unified
         """
 
@@ -112,16 +122,21 @@ class Device:
 
             from max import driver
 
-            device = driver.CPU()
+            device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
             stats = device.stats
 
         Returns:
-            dict: A dictionary containing device utilization statistics.
+            A dictionary containing device utilization statistics.
         """
 
     @property
     def max_single_alloc_size(self) -> int:
         """Largest single contiguous allocation, in bytes."""
+
+    def _allocation_range(self, address: int) -> tuple[int, int]:
+        """
+        Returns ``(base, size)`` of the driver allocation that contains ``address``.
+        """
 
     @property
     def label(self) -> str:
@@ -137,7 +152,7 @@ class Device:
 
             from max import driver
 
-            device = driver.CPU()
+            device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
             device.label
         """
 
@@ -157,7 +172,7 @@ class Device:
 
             from max import driver
 
-            device = driver.CPU()
+            device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
             device.api
         """
 
@@ -171,6 +186,12 @@ class Device:
         - ``gfx90a``, ``gfx942`` for AMD GPUs.
         - ``sm_80``, ``sm_86`` for NVIDIA GPUs.
         - CPU devices raise an exception.
+
+        .. invisible-code-block: python
+
+            from max import driver
+
+        .. skip: next if(driver.accelerator_count() == 0, reason="requires an accelerator")
 
         .. code-block:: python
 
@@ -190,12 +211,13 @@ class Device:
         - ``NVIDIA H100 80GB HBM3`` for an H100.
         - ``NVIDIA B200`` for a B200.
         - ``AMD Instinct MI300X`` for an MI300X.
+        - ``cpu`` for a CPU device.
 
         .. code-block:: python
 
             from max import driver
 
-            device = driver.Accelerator()
+            device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
             device.model_name
         """
 
@@ -205,19 +227,19 @@ class Device:
         Returns a zero-based device id.
 
         For a CPU device this is always 0.
-        For GPU accelerators this is the id of the device relative to this host.
-        Along with the ``label``, an id can uniquely identify a device,
-        e.g. ``gpu:0``, ``gpu:1``.
+        For GPU accelerators this is the ID of the device relative to this host.
+        Along with the ``label``, an ID can uniquely identify a device,
+        such as ``gpu:0`` or ``gpu:1``.
 
         .. code-block:: python
 
             from max import driver
 
-            device = driver.Accelerator()
+            device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
             device_id = device.id
 
         Returns:
-            int: The device ID.
+            The device ID.
         """
 
     @property
@@ -228,7 +250,7 @@ class Device:
         The default queue is initialized when the device object is created.
 
         Returns:
-            DeviceQueue: The default execution queue for this device.
+            The default execution queue for this device.
         """
 
     @property
@@ -237,7 +259,8 @@ class Device:
         Returns whether this device is compatible with MAX.
 
         Returns:
-            bool: True if the device is compatible with MAX, False otherwise.
+            ``True`` if the device is compatible with MAX, ``False``
+            otherwise.
         """
 
     def __unsafe_enqueue_py_host_func(self, fn: Callable) -> None:
@@ -310,101 +333,97 @@ class Device:
         """Gets the device context pointer."""
 
     @staticmethod
-    def cpu(id: int = -1) -> CPU:
-        """Creates a CPU device. The id is ignored currently."""
-
-class Accelerator(Device):
-    def __init__(self, id: int = -1) -> None:
-        """
-        Creates an accelerator device with the specified ID and memory limit.
-
-        Represents any hardware accelerator attached to the host: the
-        graph compiler reaches CUDA, HIP, Metal and plugin-provided
-        backends alike through this one device class. Use
-        ``isinstance(device, Accelerator)`` to mean "any non-CPU device",
-        and :attr:`api` to tell the concrete backends apart.
-
-        Repeated instantiations with a previously-used device-id will still
-        refer to the first such instance that was created. This is especially
-        important when providing a different memory limit: only the value
-        (implicitly or explicitly) provided in the first such instantiation
-        is effective.
-
-        .. code-block:: python
-
-          from max import driver
-          # Create default accelerator (usually first available GPU)
-          device = driver.Accelerator()
-          # Or specify GPU id
-          device = driver.Accelerator(id=0)  # First GPU
-          device = driver.Accelerator(id=1)  # Second GPU
-          # Get device id
-          device_id = device.id
-
-        Args:
-            id (int, optional): The device ID to use. Defaults to -1, which selects
-                the first available accelerator.
-
-        Returns:
-            Accelerator: A new Accelerator device object.
-        """
-
-class CPU(Device):
-    def __init__(self, id: int = -1) -> None:
+    def cpu(id: int = 0) -> CPU:
         """
         Creates a CPU device.
 
-        .. code-block:: python
-
-            from max import driver
-            # Create default CPU device
-            device = driver.CPU()
-            # Device id is always 0 for CPU devices
-            device_id = device.id
-
         Args:
-            id (int, optional): The device ID to use.
-                Defaults to -1.
-
-        Returns:
-            CPU: A new CPU device object.
+            id: The device ID. Currently ignored.
         """
+
+class Accelerator(Device):
+    """
+    Represents any hardware accelerator attached to the host.
+
+    The graph compiler reaches CUDA, HIP, Metal and plugin-provided
+    backends alike through this one device class. Use
+    ``isinstance(device, Accelerator)`` to mean "any non-CPU device",
+    and :attr:`api` to tell the concrete backends apart.
+
+    .. invisible-code-block: python
+
+        from max import driver
+
+    .. skip: next if(driver.accelerator_count() == 0, reason="requires an accelerator")
+
+    .. code-block:: python
+
+        from max import driver
+
+        device = driver.Accelerator()
+        first = driver.Accelerator(id=0)
+
+    Args:
+        id: The zero-based ID of the accelerator to select. Defaults to
+            -1, which selects the first available accelerator.
+
+    Raises:
+        ValueError: If the device cannot be created, for example when no
+            compatible accelerator is available.
+    """
+
+    def __init__(self, id: int = -1) -> None: ...
+
+class CPU(Device):
+    """
+    A host (CPU) device.
+
+    .. code-block:: python
+
+        from max import driver
+
+        device = driver.CPU()
+        device_id = device.id
+
+    Args:
+        id: The device ID. Defaults to 0.
+    """
+
+    def __init__(self, id: int = 0) -> None: ...
 
 class CompletionFlag:
     """
     An 8-byte completion flag in pinned host memory mapped into a device's address space.
 
-    Lets a CPU thread signal a GPU queue (or vice versa) by
-    writing a 64-bit value to a single location that's visible to
-    both. Pair with ``DeviceQueue.wait_for_host_value`` (added in
-    a follow-on PR) or the ``mo.wait_host_value`` graph op to gate
-    downstream GPU work on a host-produced result without a
-    second queue or a blocking host callback.
+    Lets a CPU thread signal a GPU queue (or vice versa) by writing a
+    64-bit value to a single location that is visible to both. Pair
+    with :meth:`DeviceQueue.wait_for_host_value` or the
+    ``mo.wait_host_value`` graph op to gate downstream GPU work on a
+    host-produced result without a second queue or a blocking host
+    callback.
 
-    Currently requires a CUDA-backed ``Device``; constructing
+    Currently requires a CUDA-backed :class:`Device`; constructing
     against any other backend raises ``RuntimeError``.
+
+    .. invisible-code-block: python
+
+        from max import driver
+
+    .. skip: next if(driver.accelerator_count() == 0 or driver.Accelerator().api != "cuda", reason="requires a CUDA device")
 
     .. code-block:: python
 
         from max.driver import Accelerator, CompletionFlag
 
-        accel = Accelerator()
-        flag = CompletionFlag(accel)
+        flag = CompletionFlag(Accelerator())
         assert flag.load() == 0  # initialized to zero
 
-        # Subsequent PRs add the producer/consumer methods that
-        # actually use the flag's device pointer.
+    Args:
+        device: A CUDA-backed device. Other backends raise
+            ``RuntimeError``.
     """
 
-    def __init__(self, device: Device) -> None:
-        """
-        Allocates a fresh device-mapped pinned u64 bound to ``device``.
-
-        Args:
-            device: A CUDA-backed device. Other backends raise
-                ``RuntimeError``.
-        """
-
+    def __init__(self, device: Device) -> None: ...
     @property
     def device_ptr(self) -> int:
         """
@@ -432,7 +451,7 @@ class CompletionFlag:
         the first captured-graph replay's ``mo.wait_host_value``
         passes immediately, before any async kickoff has run.
         Direct Python signalling on the hot path is usually a
-        mistake -- prefer the async-host-func trampoline which
+        mistake; prefer the async-host-func trampoline, which
         signals from its AsyncRT worker.
 
         Args:
@@ -446,7 +465,7 @@ class CompletionFlag:
         Pairs with a release-ordered store on the producer side.
 
         Returns:
-            int: Current 64-bit flag value.
+            The current 64-bit flag value.
         """
 
     @property
@@ -455,7 +474,7 @@ class CompletionFlag:
         Raw 64-bit address of the underlying ``M::Driver::CompletionFlag``.
 
         Intended for packing into a graph-op payload buffer
-        (e.g. for ``mo.wait_host_value``); parallels the
+        (such as for ``mo.wait_host_value``); parallels the
         trampoline/user_data pointers returned by
         ``__unsafe_pack_py_host_func`` for ``mo.launch_host_func``.
 
@@ -474,42 +493,30 @@ class DeviceEvent:
     An event can be used to wait for the GPU execution to reach a certain
     point on the given queue.
 
+    For example, create an event, record it on the default queue, and
+    wait for the queue to reach it:
+
     .. code-block:: python
 
         from max import driver
-        # Create a default accelerator device
-        device = driver.Accelerator()
-        # Create an event on the device
+
+        device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
         event = driver.DeviceEvent(device)
-        # Record an event on the device (default queue)
         device.default_queue.record_event(event)
-        # Wait for execution on the default queue to reach the event
         event.synchronize()
+
+    Args:
+        device: The device on which to create the event.
+        enable_timing: If ``True``, enables GPU timing on this event.
+            Events created with ``enable_timing=True`` can be used with
+            :meth:`elapsed_time` to measure GPU execution time.
+            Defaults to ``False``.
+
+    Raises:
+        ValueError: If event creation failed.
     """
 
-    def __init__(self, device: Device, enable_timing: bool = False) -> None:
-        """
-        Creates an event for synchronization on the specified device.
-
-        Args:
-            device (Device): The device on which to create the event.
-            enable_timing (bool): If True, enable GPU timing on this event.
-                Events created with ``enable_timing=True`` can be used with
-                :meth:`elapsed_time` to measure GPU execution time.
-                Defaults to False.
-
-        Raises:
-            ValueError: If event creation failed.
-
-        .. code-block:: python
-
-            from max import driver
-
-            device = driver.Accelerator()
-            event = driver.DeviceEvent(device)
-            timed_event = driver.DeviceEvent(device, enable_timing=True)
-        """
-
+    def __init__(self, device: Device, enable_timing: bool = False) -> None: ...
     def synchronize(self) -> None:
         """
         Ensures all operations on this queue complete before returning.
@@ -523,7 +530,7 @@ class DeviceEvent:
         Returns whether this event is ready.
 
         Returns:
-            bool: True if the event is complete, otherwise false.
+            ``True`` if the event is complete, ``False`` otherwise.
 
         Raises:
             ValueError: If querying the event status returned an error.
@@ -537,15 +544,13 @@ class DeviceEvent:
         and recorded on a queue before calling this method. The end
         event must be synchronized before calling this method.
 
-        Args:
-            end_event (DeviceEvent): The ending event.
+        For example, time the GPU work enqueued between two recorded events:
 
-        Returns:
-            float: Elapsed time in milliseconds.
+        .. invisible-code-block: python
 
-        Raises:
-            RuntimeError: If either event was not created with timing
-                enabled, or if the events have not been recorded.
+            from max import driver
+
+        .. skip: next if(driver.accelerator_count() == 0 or driver.Accelerator().api not in ("cuda", "hip"), reason="requires a CUDA or HIP device")
 
         .. code-block:: python
 
@@ -562,6 +567,16 @@ class DeviceEvent:
             end.synchronize()
 
             elapsed_ms = start.elapsed_time(end)
+
+        Args:
+            end_event: The ending event.
+
+        Returns:
+            The elapsed time in milliseconds.
+
+        Raises:
+            RuntimeError: If either event was not created with timing
+                enabled, or if the events have not been recorded.
         """
 
     def __eq__(self, arg: object, /) -> bool: ...
@@ -584,21 +599,28 @@ class LaunchTraceEntry:
         """The kind of operation a trace entry describes."""
 
         KERNEL_LAUNCH = 0
+        """A compute kernel launched on the device."""
 
         MEMCPY = 1
+        """A memory copy between device or host locations."""
 
         MEMSET = 2
+        """A region of memory filled with a value."""
 
     class MemcpyKind(enum.Enum):
         """The direction of a memcpy entry."""
 
         NONE = 0
+        """Not a memcpy; the entry is a kernel launch or memset."""
 
         HTOD = 1
+        """Host-to-device copy."""
 
         DTOH = 2
+        """Device-to-host copy."""
 
         DTOD = 3
+        """Device-to-device copy."""
 
     @property
     def kind(self) -> LaunchTraceEntry.OperationKind:
@@ -607,7 +629,7 @@ class LaunchTraceEntry:
     @property
     def name(self) -> str:
         """
-        The kernel name, or the driver API name for copies/memsets (e.g. ``cuMemcpyHtoD``).
+        The kernel name, or the driver API name for copies/memsets (such as ``cuMemcpyHtoD``).
         """
 
     @property
@@ -615,19 +637,33 @@ class LaunchTraceEntry:
         """Deterministic, address-free hash of the operation parameters."""
 
     @property
-    def grid_x(self) -> int: ...
+    def grid_x(self) -> int:
+        """X dimension of the launch grid, in blocks."""
+
     @property
-    def grid_y(self) -> int: ...
+    def grid_y(self) -> int:
+        """Y dimension of the launch grid, in blocks."""
+
     @property
-    def grid_z(self) -> int: ...
+    def grid_z(self) -> int:
+        """Z dimension of the launch grid, in blocks."""
+
     @property
-    def block_x(self) -> int: ...
+    def block_x(self) -> int:
+        """X dimension of each thread block."""
+
     @property
-    def block_y(self) -> int: ...
+    def block_y(self) -> int:
+        """Y dimension of each thread block."""
+
     @property
-    def block_z(self) -> int: ...
+    def block_z(self) -> int:
+        """Z dimension of each thread block."""
+
     @property
-    def shared_mem_bytes(self) -> int: ...
+    def shared_mem_bytes(self) -> int:
+        """Bytes of dynamic shared memory requested by the launch."""
+
     @property
     def stream_index(self) -> int:
         """
@@ -639,13 +675,22 @@ class LaunchTraceEntry:
         """The copy direction; ``NONE`` unless ``kind`` is ``MEMCPY``."""
 
     @property
-    def memcpy_byte_size(self) -> int: ...
+    def memcpy_byte_size(self) -> int:
+        """Bytes copied; zero unless ``kind`` is ``MEMCPY``."""
+
     @property
-    def memset_byte_size(self) -> int: ...
+    def memset_byte_size(self) -> int:
+        """Bytes written; zero unless ``kind`` is ``MEMSET``."""
+
     @property
-    def memset_value(self) -> int: ...
+    def memset_value(self) -> int:
+        """The fill value; zero unless ``kind`` is ``MEMSET``."""
+
     @property
-    def memset_value_size(self) -> int: ...
+    def memset_value_size(self) -> int:
+        """
+        Element size of the fill value in bytes; zero unless ``kind`` is ``MEMSET``.
+        """
 
 class DeviceQueue:
     """
@@ -657,11 +702,8 @@ class DeviceQueue:
     .. code-block:: python
 
         from max import driver
-        # Create a default accelerator device
-        device = driver.Accelerator()
-        # Get the default queue for the device
+        device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
         queue = device.default_queue
-        # Create a new queue of execution on the device
         new_queue = driver.DeviceQueue(device)
     """
 
@@ -670,10 +712,7 @@ class DeviceQueue:
         Creates a new queue of execution associated with the device.
 
         Args:
-            device (Device): The device to create the queue on.
-
-        Returns:
-            DeviceQueue: A new queue of execution.
+            device: The device to create the queue on.
         """
 
     def synchronize(self) -> None:
@@ -690,8 +729,8 @@ class DeviceQueue:
         Records an event on this queue.
 
         Returns:
-            DeviceEvent: A new event that will be signaled when all operations
-                submitted to this queue before this call have completed.
+            A new event that will be signaled when all operations
+            submitted to this queue before this call have completed.
 
         Raises:
             ValueError: If recording the event failed.
@@ -703,7 +742,7 @@ class DeviceQueue:
         Records an existing event on this queue.
 
         Args:
-            event (DeviceEvent): The event to record on this queue.
+            event: The event to record on this queue.
 
         Raises:
             ValueError: If recording the event failed.
@@ -715,16 +754,16 @@ class DeviceQueue:
         Ensures all operations on the other queue complete before future work submitted to this queue is scheduled.
 
         Args:
-            stream (DeviceQueue): The queue to wait for.
+            stream: The queue to wait for.
         """
 
     @overload
     def wait_for(self, device: Device) -> None:
         """
-        Ensures all operations on device's default queue complete before future work submitted to this queue is scheduled.
+        Ensures all operations on the device's default queue complete before future work submitted to this queue is scheduled.
 
         Args:
-            device (Device): The device whose default queue to wait for.
+            device: The device whose default queue to wait for.
         """
 
     def wait_for_host_value(self, flag: CompletionFlag, value: int) -> None:
@@ -740,10 +779,9 @@ class DeviceQueue:
         CUDA graph as a wait-value node.
 
         Args:
-            flag (CompletionFlag): The completion flag to wait on.
-                The queue observes ``flag.device_ptr`` via the
-                pinned device-mapped alias.
-            value (int): The 64-bit value to wait for (equality).
+            flag: The completion flag to wait on. The queue observes
+                ``flag.device_ptr`` via the pinned device-mapped alias.
+            value: The 64-bit value to wait for (equality).
 
         Raises:
             RuntimeError: If the underlying device does not support
@@ -803,19 +841,19 @@ class DeviceQueue:
         The native stream handle as an integer, or ``0`` if there is none.
 
         The handle is the CUDA ``CUstream`` / HIP ``hipStream_t``; ``0`` means
-        the stream has no native handle (e.g. a CPU device). Lets native code
-        outside MLRT order its own work against this stream -- for example,
-        record a CUDA event on it. The handle remains owned by this stream; do
-        not destroy it.
+        the stream has no native handle (such as a CPU device). Native code
+        outside MLRT can use the handle to order its own work against this
+        stream, for example by recording a CUDA event on it. The handle
+        remains owned by this stream; do not destroy it.
 
         Returns:
-            int: The native stream handle, or ``0`` if there is none.
+            The native stream handle, or ``0`` if there is none.
         """
 
     def __eq__(self, arg: object, /) -> bool: ...
 
 def accelerator_count() -> int:
-    """Returns number of accelerator devices available."""
+    """Returns the number of accelerator devices available."""
 
 def begin_launch_trace() -> None:
     """
@@ -824,7 +862,7 @@ def begin_launch_trace() -> None:
     Records kernel launches, memory copies, and memsets across **all**
     streams into one enqueue-ordered list, clearing any previous trace.
     No stream or device handle is needed, so work enqueued on streams the
-    caller does not hold (e.g. a compiled graph's internal stream) is still
+    caller does not hold (such as a compiled graph's internal stream) is still
     captured. Only CUDA and HIP devices record entries; on other devices the
     trace is always empty. Intended for tests and debugging: pair with
     ``take_launch_trace`` to assert which device work a code path enqueues
@@ -837,8 +875,8 @@ def take_launch_trace() -> list[LaunchTraceEntry]:
 
     Returns:
         list[LaunchTraceEntry]: The operations enqueued since
-            ``begin_launch_trace``, in enqueue order across all streams.
-            Each entry's ``stream_index`` identifies its stream.
+        ``begin_launch_trace``, in enqueue order across all streams.
+        Each entry's ``stream_index`` identifies its stream.
     """
 
 def __unsafe_pack_py_host_func(fn: Callable) -> tuple[int, int]:
@@ -867,13 +905,13 @@ def set_virtual_device_count(count: int) -> None:
     """
     Sets the number of virtual devices for device creation.
 
-    When count is greater than 0, Device::create() will return VirtualDevice
-    instances instead of real hardware devices for GPU APIs, and
-    Device::numberOfDevices() will return this count. This allows creating
-    devices for GPU configurations that don't match the current hardware.
+    When ``count`` is greater than 0, device creation returns virtual
+    devices for GPU APIs, and device enumeration reports this count. This
+    allows creating devices for GPU configurations beyond the current
+    hardware.
 
     Args:
-        count (int): The number of virtual devices. Set to 0 to disable
+        count: The number of virtual devices. Set to 0 to disable
             virtual device mode.
     """
 
@@ -882,8 +920,8 @@ def get_virtual_device_count() -> int:
     Gets the current virtual device count.
 
     Returns:
-        int: The number of virtual devices, or 0 if virtual device mode
-            is disabled.
+        The number of virtual devices, or 0 if virtual device mode is
+        disabled.
     """
 
 def is_virtual_device_mode() -> bool:
@@ -891,7 +929,8 @@ def is_virtual_device_mode() -> bool:
     Checks if virtual device mode is currently enabled.
 
     Returns:
-        bool: True if virtual device mode is enabled (count > 0), False otherwise.
+        ``True`` if virtual device mode is enabled (``count > 0``),
+        ``False`` otherwise.
     """
 
 def enable_all_peer_access() -> None:
@@ -899,7 +938,7 @@ def enable_all_peer_access() -> None:
     Enables peer-to-peer memory access between all available GPU pairs.
 
     This must be called before any collective operations (allreduce,
-    broadcast, etc.) that require direct GPU-to-GPU memory access.
+    broadcast, and similar) that require direct GPU-to-GPU memory access.
     It is safe to call multiple times; the underlying runtime caches
     the result after the first successful enablement.
 
@@ -911,13 +950,14 @@ def set_virtual_device_api(api: str) -> None:
     """
     Sets the target API for virtual devices in compile-only mode.
 
-    This specifies which GPU API (e.g., "cuda", "hip", "metal") virtual
-    devices will use for compilation. Must be called before creating
-    virtual devices via set_virtual_device_count().
+    This specifies which GPU API virtual devices use for compilation,
+    such as ``"cuda"``, ``"hip"``, or ``"metal"``. Must be called
+    before creating virtual devices via
+    :func:`~max.driver.set_virtual_device_count`.
 
     Args:
-        api (str): The target API string (e.g., "cuda" for NVIDIA,
-            "hip" for AMD, "metal" for Apple).
+        api: The target API string, such as ``"cuda"`` for NVIDIA,
+            ``"hip"`` for AMD, or ``"metal"`` for Apple.
     """
 
 def get_virtual_device_api() -> str:
@@ -925,20 +965,21 @@ def get_virtual_device_api() -> str:
     Gets the current target API for virtual devices.
 
     Returns:
-        str: The target API string, or empty string if not set.
+        The target API string, or an empty string if not set.
     """
 
 def set_virtual_device_target_arch(arch: str) -> None:
     """
     Sets the target GPU architecture for virtual devices in compile-only mode.
 
-    This specifies the GPU architecture (e.g., "sm_80", "sm_90") that virtual
-    devices will target when compiling code. Must be called before creating
-    virtual devices via set_virtual_device_count().
+    This specifies the GPU architecture that virtual devices target
+    when compiling code, such as ``"sm_80"`` or ``"sm_90"``. Must be
+    called before creating virtual devices via
+    :func:`~max.driver.set_virtual_device_count`.
 
     Args:
-        arch (str): The target GPU architecture string (e.g., "sm_80" for
-            Ampere/A100, "sm_90" for Hopper/H100).
+        arch: The target GPU architecture string, such as ``"sm_80"``
+            for Ampere/A100 or ``"sm_90"`` for Hopper/H100.
     """
 
 def get_virtual_device_target_arch() -> str:
@@ -946,26 +987,27 @@ def get_virtual_device_target_arch() -> str:
     Gets the current target GPU architecture for virtual devices.
 
     Returns:
-        str: The target GPU architecture string, or empty string if not set.
+        The target GPU architecture string, or an empty string if not
+        set.
     """
 
 def set_virtual_cpu_target(cpu: str) -> None:
     """
     Sets the CPU target for host-independent kernel codegen.
 
-    When set before any CPU kernel compilation (e.g. before importing
-    ``max._interpreter_ops``), CPU kernels compile for this fixed target
-    instead of the build host's CPU, so the kernel cache can ship to and be
-    reused on a different host. Mirrors
+    Set this before any CPU kernel is compiled. CPU kernels compiled
+    afterwards target this CPU, so the kernel cache can be shipped to,
+    and reused on, a host with a different CPU. Mirrors
     :func:`set_virtual_device_target_arch` for GPUs.
 
     Args:
-        cpu (str): An LLVM target-CPU name (e.g. "x86-64-v3",
-            "neoverse-n1"), or "generic" for the most-portable baseline of
-            the host arch family ("x86-64" on x86_64, the armv8-a baseline
-            on AArch64; other families raise an error). Empty string
-            restores host-CPU codegen. "native" is rejected because it
-            would re-leak the build host's CPU.
+        cpu: An LLVM target-CPU name, such as ``x86-64-v3`` or
+            ``neoverse-n1``; ``generic``, for the most portable baseline
+            of the host architecture family (``x86-64`` on x86_64, the
+            armv8-a baseline on AArch64, an error for other families);
+            or an empty string, which restores host-CPU codegen.
+            ``native`` is rejected because it would compile for the
+            host's CPU.
     """
 
 def get_virtual_cpu_target() -> str:
@@ -973,7 +1015,7 @@ def get_virtual_cpu_target() -> str:
     Gets the current virtual CPU target.
 
     Returns:
-        str: The CPU target string, or empty string if not set (host CPU).
+        The CPU target string, or an empty string if not set (host CPU).
     """
 
 class Usage(enum.Flag):
@@ -986,11 +1028,11 @@ class Usage(enum.Flag):
 
     _boundary_: enum.FlagBoundary = ...
 
-    _flag_mask_: int = 1
+    _flag_mask_: int = 3
 
-    _singles_mask_: int = 1
+    _singles_mask_: int = 3
 
-    _all_bits_: int = 3
+    _all_bits_: int = 7
 
     _inverted_: None = None
 
@@ -1004,9 +1046,102 @@ class Usage(enum.Flag):
     Host memory for staging transfers to and from the given device. May be page-locked, depending on the backend.
     """
 
+    UNTRACKED = 2
+    """
+    Memory opting out of host side hazard tracking. Useless unless paired with STAGING.
+    """
+
+class HostHazardError(RuntimeError): ...
+
+class HostHazardCompletion:
+    """
+    A completion shared by host hazard tracked resources.
+
+    Internal to max.driver's hazard tracking. Facilitates ordering of host
+    access to resources.
+
+    .. code-block:: python
+
+        import numpy as np
+
+        from max import driver
+        from max.dtype import DType
+
+        device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
+        staging = driver.Buffer(
+            DType.float32, [4], device=device, usage=driver.Usage.STAGING
+        )
+        host = np.zeros(4, dtype=np.float32)
+        source = driver.Buffer.from_numpy(host).to(device)
+
+        # Record a token on the queue that will signal the copy, then
+        # stamp it onto every buffer that submission touched.
+        staging.inplace_copy_from(source)
+
+        # The host read waits on that token without draining the device.
+        value = staging[0].item()
+    """
+
+    @staticmethod
+    def record_on(queue: DeviceQueue) -> HostHazardCompletion:
+        """
+        Records an event on ``queue`` for the work already submitted to it.
+
+        Args:
+            queue (DeviceQueue): The queue whose submitted work to record.
+
+        Returns:
+            HostHazardCompletion: A completion that resolves when that work
+            finishes.
+        """
+
+    @staticmethod
+    def poisoned(queue: DeviceQueue, error: str) -> HostHazardCompletion:
+        """
+        Creates a completion that raises instead of waiting.
+
+        For a producer that failed after enqueuing work, so a later host
+        access reports the failure rather than trusting unfinished bytes.
+
+        Args:
+            queue (DeviceQueue): The queue the failed work was submitted to.
+            error (str): The producer's rendered error.
+
+        Returns:
+            HostHazardCompletion: A poisoned completion.
+        """
+
+    def is_ready(self) -> bool:
+        """
+        Returns whether the recorded work has finished.
+
+        A poisoned completion reports ready: waiting on it raises rather
+        than blocking, so it can never hold up a caller.
+
+        Returns:
+            bool: Whether the work has finished.
+        """
+
+    def wait(self) -> None:
+        """
+        Blocks until the recorded work finishes.
+
+        Raises:
+            HostHazardError: If the completion is poisoned, carrying the
+                producer's error.
+        """
+
+    def poison(self, message: str) -> None:
+        """
+        Marks the completion failed, so every later wait raises.
+
+        Args:
+            message (str): The producer's error, reported by the raise.
+        """
+
 class Buffer:
     """
-    Device-resident buffer representation.
+    A multi-dimensional buffer allocated on a device.
 
     Allocates memory onto a given device with the provided shape and dtype.
     Buffers can be sliced to provide strided views of the underlying memory,
@@ -1020,20 +1155,25 @@ class Buffer:
         from max import driver
         from max.dtype import DType
 
-        # Create a buffer on CPU
         cpu_buffer = driver.Buffer(shape=[2, 3], dtype=DType.float32)
 
-        # Create a buffer on GPU
-        gpu = driver.Accelerator()
-        gpu_buffer = driver.Buffer(shape=[2, 3], dtype=DType.float32, device=gpu)
+    .. code-block:: python
+
+        from max import driver
+        from max.dtype import DType
+
+        device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
+        device_buffer = driver.Buffer(shape=[2, 3], dtype=DType.float32, device=device)
 
     Args:
-        dtype (DType): Data type of buffer elements.
-        shape (Sequence[int]): Tuple of positive, non-zero integers denoting the buffer shape.
-        device (Device, optional): Device to allocate buffer onto. Defaults to the CPU.
-        stream (DeviceQueue, optional): Queue to associate the buffer with.
-        usage (Usage, optional): Allocation intent, see :obj:`Usage`.
-            Defaults to ``Usage.DEFAULT``.
+        dtype: The data type of buffer elements.
+        shape: The buffer shape as a sequence of positive, non-zero
+            integers.
+        device: The device to allocate the buffer on. Defaults to the
+            CPU.
+        stream: The queue to associate the buffer with.
+        usage: The allocation intent, see :obj:`Usage`. Defaults to
+            ``Usage.DEFAULT``.
     """
 
     @overload
@@ -1058,38 +1198,60 @@ class Buffer:
     ) -> None: ...
     @property
     def device(self) -> Device:
-        """Device on which tensor is resident."""
+        """The device on which the buffer is resident."""
 
     @property
     def stream(self) -> DeviceQueue:
-        """Stream to which tensor is bound."""
+        """The stream to which the buffer is bound."""
 
     @property
     def dtype(self) -> max._core.dtype.DType:
-        """DType of constituent elements in tensor."""
+        """The data type of the buffer elements."""
 
     @property
     def element_size(self) -> int:
-        """Return the size of the element type in bytes."""
+        """The size of the element type in bytes."""
 
     @property
     def is_contiguous(self) -> bool:
         """
-        Whether or not buffer is contiguously allocated in memory.
+        Whether the buffer is contiguously allocated in memory.
 
-        Returns false if the buffer is a non-contiguous slice.
+        Returns ``False`` if the buffer is a non-contiguous slice.
 
-        Currently, we consider certain situations that are contiguous as
-        non-contiguous for the purposes of our engine, such as when a buffer
-        has negative steps.
+        Currently, some situations that are contiguous are considered
+        non-contiguous for the purposes of the engine, such as when a
+        buffer has negative steps.
+        """
+
+    @property
+    def strides(self) -> tuple:
+        """
+        How far apart consecutive elements are, per dimension.
+
+        Counted in elements, not bytes.
+
+        Slicing does not move any data, so a slice keeps its parent's
+        strides. Narrow a 10-wide buffer to 6 columns and it still takes
+        10 elements to reach the next row:
+
+        .. code-block:: python
+
+            parent = driver.Buffer(shape=[8, 10], dtype=DType.uint8)
+            rows = parent[:, :6]
+            rows.shape          # (8, 6)
+            rows.strides        # (10, 1) -- still 10 to the next row
+            rows.is_contiguous  # False
+
+        A buffer must be contiguous to be passed into model execution.
         """
 
     @property
     def is_host(self) -> bool:
         """
-        Whether or not buffer is host-resident.
+        Whether the buffer is host-resident.
 
-        Returns false for GPU buffers, true for CPU buffers.
+        Returns ``False`` for GPU buffers and ``True`` for CPU buffers.
 
         .. code-block:: python
 
@@ -1111,33 +1273,21 @@ class Buffer:
 
     @property
     def rank(self) -> int:
-        """Buffer rank."""
+        """The rank of the buffer."""
 
     @property
     def shape(self) -> tuple:
-        """Shape of buffer."""
+        """The shape of the buffer."""
 
     def contiguous(self) -> Buffer:
         """Creates a contiguous copy of the buffer."""
 
-    @overload
-    def copy(self, stream: DeviceQueue) -> Buffer:
-        """
-        Creates a deep copy on the device associated with the queue.
-
-        Args:
-            stream (DeviceQueue): The queue to associate the new buffer with.
-
-        Returns:
-            Buffer: A new buffer that is a copy of this buffer.
-        """
-
-    @overload
     def copy(self, device: Device | None = None) -> Buffer:
         """
         Creates a deep copy on an optionally given device.
 
-        If device is None (default), a copy is created on the same device.
+        If ``device`` is ``None`` (the default), a copy is created on the
+        same device.
 
         .. code-block:: python
 
@@ -1147,16 +1297,21 @@ class Buffer:
             cpu_buffer = driver.Buffer(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
             cpu_copy = cpu_buffer.copy()
 
-            # Copy to GPU
-            gpu = driver.Accelerator()
-            gpu_copy = cpu_buffer.copy(device=gpu)
+        .. code-block:: python
+
+            from max import driver
+            from max.dtype import DType
+
+            device = driver.Accelerator() if driver.accelerator_count() else driver.CPU()
+            cpu_buffer = driver.Buffer(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
+            device_copy = cpu_buffer.copy(device=device)
 
         Args:
-            device (Device, optional): The device to create the copy on.
-                Defaults to None (same device).
+            device: The device to create the copy on. Defaults to ``None``
+                (same device).
 
         Returns:
-            Buffer: A new buffer that is a copy of this buffer.
+            A new buffer that is a copy of this buffer.
         """
 
     @staticmethod
@@ -1170,7 +1325,8 @@ class Buffer:
         """
         Creates a memory-mapped buffer from a binary file on disk.
 
-        The constructor argument semantics follow that of np.memmap.
+        The constructor argument semantics follow those of
+        ``numpy.memmap``.
         """
 
     def inplace_copy_from(self, src: Buffer) -> None:
@@ -1178,39 +1334,38 @@ class Buffer:
         Copies the contents of another buffer into this one.
 
         These buffers may be on different devices.
-        Requires that both buffers are contiguous and have same size.
+        Requires that both buffers are contiguous and have the same size.
         """
 
     @staticmethod
     def from_dlpack(array: Any, *, copy: bool | None = None) -> Buffer:
         """
-        Creates a buffer from an object implementing the dlpack protocol.
+        Creates a buffer from an object implementing the DLPack protocol.
 
         This usually does not result in a copy, and the producer of the object
         retains ownership of the underlying memory.
 
         Args:
-            array (Any): An object that implements the dlpack protocol.
-            copy (bool, optional): Whether to create a copy of the data.
-                Defaults to None.
+            array: An object that implements the DLPack protocol.
+            copy: Whether to create a copy of the data. Defaults to ``None``.
 
         Returns:
-            Buffer: A new buffer that views or copies the dlpack data.
+            A new buffer that views or copies the DLPack data.
         """
 
     @staticmethod
     def from_numpy(arr: numpy.ndarray) -> Buffer:
         """
-        Creates a buffer from a provided numpy array on the host device.
+        Creates a buffer from a NumPy array on the host device.
 
-        The underlying data is not copied unless the array is noncontiguous. If
-        it is, a contiguous copy will be returned.
+        The underlying data is not copied unless the array is noncontiguous.
+        If it is, a contiguous copy is returned.
 
         Args:
-            arr (numpy.ndarray): The numpy array to convert.
+            arr: The NumPy array to convert.
 
         Returns:
-            Buffer: A new buffer that views or copies the numpy array data.
+            A new buffer that views or copies the NumPy array data.
         """
 
     def item(self) -> Any:
@@ -1228,31 +1383,39 @@ class Buffer:
         """
         Creates a scalar value of a given dtype and value.
 
-        If device is None (default), the buffer will be allocated on the CPU.
+        Args:
+            value: The scalar value.
+            dtype: The data type of the scalar.
+            device: The device to allocate the buffer on. Defaults to
+                ``None``, which allocates the buffer on the CPU.
+
+        Returns:
+            A new rank-0 buffer holding the scalar value.
         """
 
     @overload
-    def to(self, device: Device) -> Buffer:
+    def to(self, device: Device, *, after: DeviceEvent | None = None) -> Buffer:
         """
         Returns a buffer that's guaranteed to be on the given device.
 
         The buffer is only copied if the requested device is different from the
-        device upon which the buffer is already resident.
+        device upon which the buffer is already resident. A buffer on another
+        queue of the same device becomes a view on the default queue, ordered
+        after ``after``.
+
+        Args:
+            device (Device): The device to move the buffer to.
+            after (DeviceEvent, optional): Recorded on the buffer's current
+                queue. Required when the result is a view.
+
+        Raises:
+            ValueError: If the result is a view and ``after`` is not given.
         """
 
     @overload
-    def to(self, stream: DeviceQueue) -> Buffer:
-        """
-        Returns a buffer that's guaranteed to be on the given device and associated with the given queue.
-
-        The buffer is only copied if the requested device is different from the
-        device upon which the buffer is already resident. If the destination
-        queue is on the same device, then a new reference to the same buffer is
-        returned.
-        """
-
-    @overload
-    def to(self, devices: Sequence[Device]) -> list[Buffer]:
+    def to(
+        self, devices: Sequence[Device], *, after: DeviceEvent | None = None
+    ) -> list[Buffer]:
         """
         Returns a list of buffers that are guaranteed to be on the given devices.
 
@@ -1260,24 +1423,15 @@ class Buffer:
         device upon which the buffer is already resident.
         """
 
-    @overload
-    def to(self, streams: Sequence[DeviceQueue]) -> list[Buffer]:
-        """
-        Returns a list of buffers that are guaranteed to be on the given queues.
-
-        The buffers are only copied if the requested queues are different from the
-        queue upon which the buffer is already resident.
-        """
-
     def to_numpy(self) -> numpy.ndarray:
         """
         Converts the buffer to a numpy array.
 
-        If the buffer is on the host (CPU), the numpy array aliases the existing memory.
-        Otherwise, it is copied to the host device.
+        If the buffer is on the host (CPU), the NumPy array aliases the
+        existing memory. Otherwise, it is copied to the host device.
 
         Returns:
-            numpy.ndarray: A numpy array containing the buffer data.
+            A NumPy array containing the buffer data.
         """
 
     @property
@@ -1290,14 +1444,37 @@ class Buffer:
     def usage(self) -> Usage:
         """Allocation intent. Slices and views report their parent's usage."""
 
+    @property
+    def _host_hazard_tracked(self) -> bool:
+        """Whether the allocation is instrumented for host hazard tracking."""
+
     def view(
         self, dtype: max._core.dtype.DType, shape: Sequence[int] | None = None
     ) -> Buffer:
         """
         Returns a new buffer with the given type and shape that shares the underlying memory.
 
-        If the shape is not given, it will be deduced if possible, or a
-        ValueError is raised.
+        If ``shape`` is not given, it is deduced by resizing the last axis to fit
+        the new dtype. A rank-0 buffer has no axis to resize, so it keeps shape
+        ``()`` and only accepts a dtype of the same size. A ``ValueError`` is raised
+        when no shape can be deduced.
+        """
+
+    def memset(self, value: int) -> None:
+        """
+        Fills the buffer's bytes in place with a repeated byte value.
+
+        The fill is enqueued on the buffer's device stream. Contiguous slices
+        are supported and only their bytes are changed. The value is a byte
+        pattern, not a typed element value; zero clears every byte.
+
+        Args:
+            value: The byte value, between 0 and 255 inclusive.
+
+        Raises:
+            ValueError: If the buffer is not contiguous, is a sub-byte slice
+                that does not start and end on whole bytes, or the value is
+                outside the byte range.
         """
 
     @staticmethod
@@ -1311,24 +1488,24 @@ class Buffer:
         Allocates a buffer with all elements initialized to zero.
 
         Args:
-            shape (Sequence[int]): The shape of the buffer.
-            dtype (DType): The data type of the buffer.
-            device (Device, optional): The device to allocate the buffer on.
-                Defaults to None (CPU).
-            usage (Usage, optional): Allocation intent, see :obj:`Usage`.
-                Defaults to ``Usage.DEFAULT``.
+            shape: The shape of the buffer.
+            dtype: The data type of the buffer.
+            device: The device to allocate the buffer on. Defaults to
+                ``None`` (CPU).
+            usage: The allocation intent, see :obj:`Usage`. Defaults to
+                ``Usage.DEFAULT``.
 
         Returns:
-            Buffer: A new buffer filled with zeros.
+            A new buffer filled with zeros.
         """
 
     def __dlpack__(
         self, *, stream: int | None = None, **kwargs
     ) -> types.CapsuleType:
-        """Implements part of the dlpack contract."""
+        """Implements part of the DLPack contract."""
 
     def __dlpack_device__(self) -> tuple:
-        """Implements part of the dlpack contract."""
+        """Implements part of the DLPack contract."""
 
     def __getitem__(self, idx: int | slice | Sequence[int | slice]) -> Buffer:
         """
@@ -1362,6 +1539,12 @@ class Buffer:
     def _data_ptr(self) -> int:
         """Gets the memory address of the buffer data. Internal use only."""
 
+    def _stamp_read(self, completion: HostHazardCompletion) -> None:
+        """Add a read completion to the buffer. Internal use only."""
+
+    def _stamp_write(self, completion: HostHazardCompletion) -> None:
+        """Add a write completion to the buffer. Internal use only."""
+
 def _batch_inplace_copy(dsts: Sequence[Buffer], srcs: Sequence[Buffer]) -> None:
     """
     Batched copy of ``srcs`` into ``dsts``.
@@ -1372,169 +1555,192 @@ def _batch_inplace_copy(dsts: Sequence[Buffer], srcs: Sequence[Buffer]) -> None:
     (``dst is src``) are skipped. All buffers must have matching sizes.
     """
 
-class DevicePinnedBuffer(Buffer):
+def _batch_copy_rows(
+    dsts: Sequence[Buffer],
+    srcs: Sequence[Buffer],
+    dst_rows: Sequence[int],
+    src_rows: Sequence[int],
+) -> None:
     """
-    Creates a pinned host memory allocation tied to the given device.
+    Batched copy of ``srcs[i][src_rows[i]]`` into ``dsts[i][dst_rows[i]]``.
 
-    Device-pinned memory allocations can provide faster DMA speeds and allow
-    properly asynchronous copies between the device and the host.
+    Same as :func:`_batch_inplace_copy` over those row views, without
+    building a buffer per row. A row is one index of the leading axis.
+    Buffers must be contiguous and not host-hazard tracked.
+    """
 
-    Since device-pinned buffers can be used for asynchronous copies they
-    don't perform automatic synchronizations in operations like `to_numpy`,
-    so synchronization should be handled manually to ensure GPU tasks writing
-    to the buffer are complete before reading it on the host.
+class _ChunkedStagingRegion:
+    """
+    A host mapping made device-accessible in chunks.
 
-    .. caution::
-      Since this class provides device-pinned memory  it doesn't work on CPU,
-      for regular host memory use the Buffer class.
+    Page-locking a multi-hundred-GiB range in one call is slow, and above
+    1 TiB it fails outright. This maps the range once, faults it in across
+    parallel workers, and registers it in chunks while they run ahead.
 
-    .. code-block:: python
+    Not a :obj:`Buffer`: a ``Buffer`` promises a range the device addresses
+    in a single transfer, and a transfer crossing a chunk boundary here
+    fails. Callers work from :obj:`address` and keep each transfer inside
+    one ``row_bytes`` row, which no chunk boundary splits.
 
-        from max.driver import DevicePinnedBuffer, Accelerator
-        from max.dtype import DType
-        import numpy as np
+    With ``driver_alloc``, each chunk is instead its own pinned host
+    allocation from the GPU driver, which the kernel cannot migrate during
+    memory compaction. The chunks are then not contiguous, so callers work
+    from :obj:`chunk_addresses`.
 
-        # Requires GPU device
-        device = Accelerator()
-        buffer = DevicePinnedBuffer(
-            dtype=DType.float32, shape=[1024], device=device
-        )
+    Releases on garbage collection: drains the device, unregisters every
+    chunk, then unmaps (or frees every driver-allocated chunk).
 
-        # Fill with data and transfer to GPU
-        np_data = buffer.to_numpy()
-        np_data[:] = np.arange(1024, dtype=np.float32)
-        gpu_buffer = buffer.to(device)
+    Internal to ``max``; no compatibility guarantee.
 
     Args:
-        dtype (DType): Data type of buffer elements.
-        shape (Sequence[int]): Tuple of positive, non-zero integers denoting the buffer shape.
-        device (Device): GPU/Accelerator device to associate buffer with. Must not be CPU.
-        stream (DeviceQueue, optional): Queue to associate the buffer with.
+        byte_size (int): Total bytes to map. Must be a positive multiple of ``row_bytes``.
+        row_bytes (int): Row width no chunk boundary may fall inside.
+        device (Device): GPU/Accelerator the range is made accessible to. Must not be CPU.
+        threads (int, optional): Parallel page-touch workers. Defaults to 16. Unused with ``driver_alloc``.
+        chunk_bytes (int, optional): Registration granularity, rounded up to whole rows and pages. Defaults to 512 MiB.
+        driver_alloc (bool, optional): Allocate each chunk as pinned host memory from the GPU driver instead of registering one host mapping. Defaults to False.
+        mlock_pages (bool, optional): ``mlock`` the registered mapping. Not allowed with ``driver_alloc``. Defaults to False.
 
     Raises:
-        ValueError: If is a CPU device.
+        ValueError: If ``device`` is a CPU device, any size is zero, or ``byte_size`` is not a multiple of ``row_bytes``.
+        RuntimeError: If registering or allocating a chunk fails.
     """
 
-    @overload
-    def __init__(
-        self, dtype: max._core.dtype.DType, shape: Sequence[int], device: Device
-    ) -> None: ...
-    @overload
     def __init__(
         self,
-        dtype: max._core.dtype.DType,
-        shape: Sequence[int],
-        stream: DeviceQueue,
+        byte_size: int,
+        row_bytes: int,
+        device: Device,
+        threads: int = 16,
+        chunk_bytes: int = 536870912,
+        driver_alloc: bool = False,
+        mlock_pages: bool = False,
     ) -> None: ...
-    def __dlpack__(
-        self, *, stream: int | None = None, **kwargs
-    ) -> types.CapsuleType:
+    @property
+    def address(self) -> int:
         """
-        Export device-pinned buffer using DLPack protocol.
-
-        For device-pinned buffer no synchronization is done in DLPack,
-        synchronization should be handled manually.
-
-        Args:
-            stream: Optional stream parameter for DLPack protocol.
-            **kwargs: Additional keyword arguments for DLPack protocol.
-
-        Returns:
-            DLPack capsule for the buffer.
+        Base host address, valid until this is released. Raises for a ``driver_alloc`` region, which has no single base.
         """
 
-    @staticmethod
-    def zeros(
-        shape: Sequence[int], dtype: max._core.dtype.DType, device: Device
-    ) -> DevicePinnedBuffer:
+    @property
+    def chunk_addresses(self) -> list[int]:
         """
-        Allocates a pinned buffer with all elements initialized to zero.
-
-        Creates a pinned buffer for efficient host-device transfers on GPU/accelerator devices.
-
-        Args:
-            shape: The shape of the buffer.
-            dtype: The data type of the buffer.
-            device: GPU/Accelerator device to associate buffer with. Must not be CPU.
-
-        Returns:
-            DevicePinnedBuffer: A pinned buffer with all elements initialized to zero.
-
-        Raises:
-            ValueError: If is a CPU device.
+        Host address of each chunk, in order; chunk ``i`` holds region bytes ``[i * chunk_bytes, (i + 1) * chunk_bytes)``.
         """
 
-    def __getitem__(
-        self, idx: int | slice | Sequence[int | slice]
-    ) -> DevicePinnedBuffer:
-        """
-        Gets a buffer slice, preserving the device-pinned type.
+    @property
+    def driver_alloc(self) -> bool: ...
+    @property
+    def mlocked(self) -> bool: ...
+    @property
+    def byte_size(self) -> int: ...
+    @property
+    def row_bytes(self) -> int: ...
+    @property
+    def chunk_bytes(self) -> int:
+        """The requested ``chunk_bytes`` rounded up to whole rows and pages."""
 
-        Unlike :obj:`Buffer.__getitem__`, the returned slice is itself a
-        :obj:`DevicePinnedBuffer`, so reads such as ``to_numpy`` on the slice
-        keep the no-synchronization behavior of device-pinned memory.
-        """
-
-    def _view(
-        self, dtype: max._core.dtype.DType, shape: Sequence[int]
-    ) -> DevicePinnedBuffer: ...
+    @property
+    def num_chunks(self) -> int: ...
+    @property
+    def device(self) -> Device: ...
 
 def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
     """Convert owning buffers into borrowed wrappers over the same storage."""
 
-def _unsafe_alloc_fast_pinned_buffer(
-    dtype: max._core.dtype.DType,
-    shape: Sequence[int],
-    device: Device,
-    threads: int = 16,
-    chunk_bytes: int = 536870912,
-) -> DevicePinnedBuffer:
+class SymmetricPool:
     """
-    Fast page-locked host allocation for very large host KV-cache buffers.
+    A driver-owned symmetric multicast pool shared by a set of devices.
 
-    Maps one contiguous region and faults it in across ``threads`` parallel
-    workers while a single consumer registers it with the device in
-    ``chunk_bytes`` chunks, overlapping the two phases. Far faster than the
-    per-call ``cuMemAllocHost`` path, and it avoids the ``cuMemAllocHost``
-    failure on single >1 TiB allocations.
+    The pool is a single fixed-capacity allocation, created once per device
+    set and registered in the driver. It outlives this handle: dropping the
+    Python object does not free device memory, and two handles for the same
+    devices refer to the same allocation.
 
-    UNSAFE / low-level (host KV-cache offloading). The returned buffer is
-    NOT garbage-collected: it must be freed explicitly via
-    :func:`_unsafe_free_fast_pinned_buffer`, and forgetting to do so leaks
-    the mapping. No host/device synchronization is performed -- before
-    reading the region on the host (or freeing it) the caller must ensure
-    the GPU is done accessing it (host-synchronize the relevant streams).
-
-    Args:
-        dtype (DType): Data type of buffer elements (typically ``uint8``).
-        shape (Sequence[int]): Buffer shape, e.g. ``[num_blocks, bytes_per_block]``.
-        device (Device): GPU/Accelerator device the memory is registered against. Must not be CPU.
-        threads (int, optional): Number of parallel page-touch workers. Defaults to 16.
-        chunk_bytes (int, optional): Per-call host-register granularity in bytes. Defaults to 512 MiB.
-
-    Returns:
-        DevicePinnedBuffer: A pinned host buffer over the mapping. Must be
-        freed with :func:`_unsafe_free_fast_pinned_buffer`.
-
-    Raises:
-        ValueError: If ``device`` is a CPU device.
+    Not constructible directly. Use :meth:`allocate()` once during session
+    setup, and :meth:`lookup()` afterwards.
     """
 
-def _unsafe_free_fast_pinned_buffer(buffer: DevicePinnedBuffer) -> None:
-    """
-    Free a buffer from :func:`_unsafe_alloc_fast_pinned_buffer` (unregister + munmap).
+    @staticmethod
+    def allocate(devices: Sequence[Device], byte_size: int) -> SymmetricPool:
+        """
+        Allocates the pool over ``devices`` and registers it in the driver.
 
-    UNSAFE / low-level. The caller MUST first host-synchronize every GPU
-    stream that issued copies into the region -- the buffer does not track
-    them, and unmapping a region a stream is still copying to/from is a
-    use-after-free. After this call the buffer (and any view/slice of it)
-    must not be used.
+        Args:
+            devices (Sequence[Device]): The devices to span, at least two,
+                in any order.
+            byte_size (int): Usable bytes per device. The driver rounds
+                the real allocation up to the multicast granularity.
 
-    Args:
-        buffer (DevicePinnedBuffer): A buffer from
-            :func:`_unsafe_alloc_fast_pinned_buffer`.
+        Returns:
+            SymmetricPool: The newly registered pool.
 
-    Raises:
-        ValueError: If the buffer was not produced by
-            :func:`_unsafe_alloc_fast_pinned_buffer`, or was already freed.
-    """
+        Raises:
+            RuntimeError: If a pool is already registered for these
+                devices, fewer than two devices are given, a device lacks
+                multicast support, or the allocation fails.
+        """
+
+    @staticmethod
+    def lookup(devices: Sequence[Device]) -> SymmetricPool | None:
+        """
+        Returns the pool registered for ``devices``, or ``None``.
+
+        A registry read, never an allocation.
+
+        Args:
+            devices (Sequence[Device]): The devices the pool spans.
+
+        Returns:
+            SymmetricPool | None: The registered pool, if any.
+        """
+
+    @staticmethod
+    def is_supported(devices: Sequence[Device]) -> bool:
+        """
+        Returns whether ``devices`` can back a multicast pool.
+
+        Answers before any memory is committed. A device that cannot
+        report its capability counts as unsupported.
+
+        Args:
+            devices (Sequence[Device]): The devices a pool would span.
+
+        Returns:
+            bool: True when every device supports multicast.
+        """
+
+    @property
+    def byte_size(self) -> int:
+        """Usable bytes per device; the views are exactly this long."""
+
+    def unicast_view(self, device: Device) -> Buffer:
+        """
+        Returns the device's own view of the pool as a flat ``uint8`` buffer.
+
+        The buffer is non-owning; the driver owns the memory. Retype a
+        sub-region with :meth:`Buffer.view()`.
+
+        Args:
+            device (Device): One of the devices the pool spans.
+
+        Returns:
+            Buffer: A flat ``uint8`` view, ``byte_size`` bytes long.
+
+        Raises:
+            RuntimeError: If ``device`` is not one the pool spans.
+        """
+
+    def multicast_view(self, device: Device) -> Buffer:
+        """
+        Returns the multicast alias the switch reduces through.
+
+        Only meaningful to a kernel issuing multimem instructions; host
+        loads and stores through it are undefined.
+
+        Args:
+            device (Device): One of the devices the pool spans.
+
+        Returns:
+            Buffer: A flat ``uint8`` view, ``byte_size`` bytes long.
+        """

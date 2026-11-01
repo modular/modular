@@ -16,7 +16,7 @@ kgen.generator @pointer<ty: type, address_space>(
   // CHECK-SAME: !kgen.pointer<ty, address_space>
   %arg5: !kgen.pointer<ty, address_space>
 ) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @array
@@ -26,7 +26,7 @@ kgen.generator @array<size, ty: type>(
   // CHECK-SAME: !pop.array<size, ty>
   %arg1: !pop.array<size, ty>
 ) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @struct
@@ -45,7 +45,7 @@ kgen.generator @struct<size, dtype: dtype, ty: type>(
   // CHECK: !kgen.struct<(ty, array<size, scalar<dtype>>)>
   %arg2: !kgen.struct<(ty, array<size, scalar<dtype>>)>
 ) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @variadic
@@ -55,7 +55,7 @@ kgen.generator @variadic<ty: type>(
   // CHECK-SAME: !kgen.param_list<ty>
   %arg1: !kgen.param_list<ty>
 ) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @union
@@ -63,7 +63,7 @@ kgen.generator @variadic<ty: type>(
 // CHECK-SAME: !pop.union<i32>
 // CHECK-SAME: !pop.union<i32, i64>
 kgen.func @union(%arg0: !pop.union<>, %arg1: !pop.union<i32>, %arg2: !pop.union<i32, i64>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @variadic_union
@@ -73,5 +73,5 @@ kgen.generator @variadic_union<Ts: param_list<type>, T0: type, T1: type>(
   %arg0: !pop.union<[Ts]>,
   %arg1: !pop.union<[[T0, T1]]>
 ) {
-  kgen.return
+  hlcf.return
 }

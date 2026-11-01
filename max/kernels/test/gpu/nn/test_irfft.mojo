@@ -34,12 +34,8 @@ def test_irfft_basic[
     The output is real Float32 values.
     """
     print(
-        "== test_irfft_basic: batch_size=",
-        batch_size,
-        ", input_size=",
-        input_size,
-        ", output_size=",
-        output_size,
+        t"== test_irfft_basic: batch_size= {batch_size} , input_size="
+        t" {input_size} , output_size= {output_size}"
     )
 
     # Input shape: [batch_size, input_size*2] because complex values are stored

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Wan with the pipeline registry."""
 
 from __future__ import annotations
 
@@ -47,6 +48,7 @@ class WanArchConfig(ArchConfig):
     quantization_encoding: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
+        """The text sequence length Wan was trained at."""
         # Tokenizer padding length — matches diffusers __call__ default.
         return 512
 
@@ -56,6 +58,7 @@ class WanArchConfig(ArchConfig):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The fixed text sequence length; the checkpoint does not set it."""
         del huggingface_config, model_config
         return 512
 
@@ -67,6 +70,7 @@ class WanArchConfig(ArchConfig):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         if model_config is None:
             model_config = pipeline_config.models.get("transformer")
         if model_config is None and "main" in pipeline_config.models:

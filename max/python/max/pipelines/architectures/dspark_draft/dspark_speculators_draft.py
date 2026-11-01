@@ -15,14 +15,13 @@
 Follows the vLLM runtime reference (``qwen3_dflash.py`` / ``qwen3_dspark.py``
 / ``dspark/speculator.py``), which is what runs speculators-format DSpark
 checkpoints such as ``RedHatAI/gemma-4-31B-it-speculator.dspark``. This is
-NOT the dense deepseek-style drafter that ``unified_dspark_gemma4_12b``
-mirrors:
+NOT the dense deepseek-style drafter that ``dspark_gemma4`` mirrors:
 the block here is a qwen3/llama-style transformer with separate K/V GQA
 projections, per-head-dim q/k RMSNorm, plain (non-gemma) RMSNorm, and
 per-layer config-driven causality (causal sliding-window attention iff the
 layer type is ``sliding_attention``).
 
-Semantics the caller (the unified graph) must uphold:
+Semantics the caller (the fused spec-decode graph) must uphold:
 
 - Block inputs are RAW embedding rows (``embed_tokens[token]``) with NO gemma
   ``sqrt(hidden)`` scaling; slot 0 embeds the anchor/bonus token and slots
@@ -38,19 +37,19 @@ Semantics the caller (the unified graph) must uphold:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.attention import AttentionWithRope
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import TransformerBlock
+from max.nn.legacy.attention import AttentionWithRope
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import TransformerBlock
 
 from ..speculators_common.d2t import map_draft_to_target_vocab
 
@@ -102,12 +101,14 @@ class DSparkSpeculatorsMarkovHead(Module):
         )
 
     def compute_step_bias(self, prev_tokens: TensorValue) -> TensorValue:
-        """Returns the ``[batch, draft_vocab]`` bias for ``[batch]``
-        TARGET-vocab prev tokens."""
+        """Returns each row's ``[draft_vocab]`` bias.
+
+        The bias is computed from the ``[batch]`` previous TARGET-vocab tokens.
+        """
         return self.markov_w2(self.markov_w1(prev_tokens))
 
     def __call__(self, prev_tokens: TensorValue) -> TensorValue:
-        # Alias for compute_step_bias to satisfy the Module ABC.
+        """Alias for :meth:`compute_step_bias`."""
         return self.compute_step_bias(prev_tokens)
 
 
@@ -120,6 +121,11 @@ class DSparkSpeculatorsDraft(Module):
     per-head-dim q/k RMSNorm before full-rotary neox RoPE, and a per-layer
     causal/sliding mask derived from ``layer_causal``/``sliding_window``.
     """
+
+    has_own_embed_tokens = True
+    """The draft embeds through its own copy, never the target's scaled one."""
+    has_own_lm_head = True
+    """The draft scores its own pruned vocabulary."""
 
     def __init__(
         self,
@@ -137,7 +143,6 @@ class DSparkSpeculatorsDraft(Module):
         vocab_size: int,
         draft_vocab_size: int,
         markov_rank: int,
-        block_size: int,
         sample_from_anchor: bool,
         mask_token_id: int,
         num_context_features: int,
@@ -167,8 +172,6 @@ class DSparkSpeculatorsDraft(Module):
                 "DSparkSpeculatorsDraft requires a vanilla markov head"
                 f" (markov_rank > 0), got {markov_rank}."
             )
-        if block_size < 2:
-            raise ValueError(f"block_size must be >= 2, got {block_size}.")
         if not 0 <= mask_token_id < vocab_size:
             raise ValueError(
                 f"mask_token_id {mask_token_id} outside [0, {vocab_size})."
@@ -186,7 +189,6 @@ class DSparkSpeculatorsDraft(Module):
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
         self.draft_vocab_size = draft_vocab_size
-        self.block_size = block_size
         self.sample_from_anchor = sample_from_anchor
         self.mask_token_id = mask_token_id
         self.num_context_features = num_context_features
@@ -276,17 +278,18 @@ class DSparkSpeculatorsDraft(Module):
             "d2t", DType.int64, shape=[draft_vocab_size], device=device
         )
 
-        # Aliased to the target's embedding by the unified pipeline at load
-        # time when sharing weights (the checkpoint ships a byte-identical
-        # frozen copy). The draft path must use the RAW rows — never the
-        # target's sqrt(hidden)-scaled embedding output.
+        # Set by the draft's pipeline model to a plain embedding loaded from
+        # the checkpoint's frozen copy of the target's. The draft path must
+        # use the RAW rows, never the target's sqrt(hidden)-scaled output.
         self.embed_tokens: Embedding | None = None
 
     def project_target_hidden(
         self, target_hs_concat: TensorValue
     ) -> TensorValue:
-        """Projects concatenated target taps to the context-KV input,
-        ``hidden_norm(fc(concat(taps)))``."""
+        """Projects concatenated target taps to the context-KV input.
+
+        The projection is ``hidden_norm(fc(concat(taps)))``.
+        """
         return self.hidden_norm(self.fc(target_hs_concat))
 
     def materialize_kv(
@@ -295,8 +298,9 @@ class DSparkSpeculatorsDraft(Module):
         input_row_offsets: TensorValue,
         kv_collection: PagedCacheValues,
     ) -> None:
-        """Projects context hidden states to per-layer K/V and writes the
-        paged KV cache.
+        """Projects context hidden states to per-layer K/V.
+
+        The result lands in the paged KV cache.
 
         K gets ``k_norm`` + RoPE at the context positions; V is the plain
         ``v_proj`` output (un-normed, un-roped), matching the reference
@@ -323,7 +327,7 @@ class DSparkSpeculatorsDraft(Module):
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
-        # Alias for forward_block to satisfy the Module ABC.
+        """Alias for :meth:`forward_block`."""
         return self.forward_block(
             input_embeds, kv_collection, input_row_offsets
         )
@@ -337,8 +341,8 @@ class DSparkSpeculatorsDraft(Module):
         """Runs the draft stack over the block tokens.
 
         Returns hidden states for ALL block slots (anchor slot 0 included);
-        dropping slot 0 when ``sample_from_anchor`` is false is the unified
-        graph's job.
+        dropping slot 0 when ``sample_from_anchor`` is false is the
+        proposer's job.
         """
         h = input_embeds
         freqs_cis = self.rope.freqs_cis
@@ -357,6 +361,7 @@ class DSparkSpeculatorsDraft(Module):
         self,
         base_logits: TensorValue,
         anchor_tokens: TensorValue,
+        sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> TensorValue:
         """Greedily samples the markov-corrected draft tokens.
 
@@ -369,8 +374,11 @@ class DSparkSpeculatorsDraft(Module):
         Args:
             base_logits: Base draft logits ``[batch, num_slots, draft_vocab]``
                 with a static slot axis (slot 0 = the first drafted position,
-                i.e. after the caller's anchor-slot drop).
+                that is, after the caller's anchor-slot drop).
             anchor_tokens: Anchor/bonus token ids ``[batch]``, target vocab.
+            sampler: Draws step ``k``'s ``[batch]`` DRAFT-vocab id from its
+                ``[batch, draft_vocab]`` corrected logits in place of the
+                argmax.
 
         Returns:
             The drafted TARGET-vocab token ids ``[batch, num_slots]`` (int64).
@@ -382,7 +390,12 @@ class DSparkSpeculatorsDraft(Module):
             step_logits = base_logits[:, k, :] + (
                 self.markov_head.compute_step_bias(prev)
             )
-            draft_ids = ops.squeeze(ops.argmax(step_logits, axis=-1), axis=-1)
+            if sampler is None:
+                draft_ids = ops.squeeze(
+                    ops.argmax(step_logits, axis=-1), axis=-1
+                )
+            else:
+                draft_ids = sampler(step_logits, k)
             prev = map_draft_to_target_vocab(draft_ids, TensorValue(self.d2t))
             sampled.append(ops.unsqueeze(prev, axis=1))
         return ops.concat(sampled, axis=1)

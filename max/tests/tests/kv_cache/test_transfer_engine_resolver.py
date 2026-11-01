@@ -196,12 +196,12 @@ def test_build_group_descriptors_multi_group_is_per_group_concat() -> None:
     device_id = 2
 
     combined = _build_group_descriptors(
-        base_addrs, bytes_per_group, page_idxs, device_id
+        base_addrs, bytes_per_group, [page_idxs, page_idxs], device_id
     )
     per_group = _build_group_descriptors(
-        base_addrs[:1], bytes_per_group[:1], page_idxs, device_id
+        base_addrs[:1], bytes_per_group[:1], [page_idxs], device_id
     ) + _build_group_descriptors(
-        base_addrs[1:], bytes_per_group[1:], page_idxs, device_id
+        base_addrs[1:], bytes_per_group[1:], [page_idxs], device_id
     )
     assert combined == per_group
 

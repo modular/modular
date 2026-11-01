@@ -25,22 +25,23 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from max.driver import Buffer
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
-    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
-from max.nn.kv_cache.cache_params import KVCacheBufferInterface
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.cache_params import KVCacheBufferInterface
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     ByteCount,
-    KVConnectorTransfer,
+    KVTransfer,
 )
 
-from .block_manager import PrefixCacheHits
+from ..checkpoint import Checkpointer, CheckpointerFactory
+from ._common import PrefixCacheHits
 
 
 class PagedKVCacheManagerInterface(ABC):
@@ -59,9 +60,91 @@ class PagedKVCacheManagerInterface(ABC):
     ) -> list[PrefixCacheHits]:
         """Counts each replica's contiguous cached prefix for a request."""
 
+    def awaits_presence(self, ctx: TextContext) -> bool:
+        """Returns whether the request's external hit count is still out.
+
+        Read after ``get_prefix_cache_hit_counts``, whose external count is
+        the device tier's alone while a connector probe it started has not
+        answered, and worth asking for again once this reads ``False``. A
+        manager that prices in place reads ``False``.
+        """
+        return False
+
+    def abandon_presence(self, ctx: TextContext) -> None:
+        """Drops the probe ``get_prefix_cache_hit_counts`` started, if any.
+
+        For a request released before it was claimed, since a claimed one's
+        ``release`` drops it itself. No-op by default.
+        """
+        return
+
     @abstractmethod
-    def alloc(self, ctx: TextContext) -> KVConnectorTransfer:
-        """Allocates blocks for a request."""
+    def alloc(
+        self, ctx: TextContext, *, defer_lookup: bool = False
+    ) -> KVTransfer:
+        """Allocates blocks for a request.
+
+        ``defer_lookup`` says the caller holds the request out of the batch
+        while the returned transfer is incomplete and calls ``alloc`` again
+        once it completes. Only then may a connector lookup run off the
+        calling thread, since the request then holds no pages until that
+        next call. A caller that reads the request's blocks right after this
+        returns leaves it off.
+        """
+
+    def starts_lookup(self, ctx: TextContext) -> bool:
+        """Returns whether a deferred ``alloc`` would start a connector lookup.
+
+        Takes nothing, so a caller that bounds how many lookups it has out can
+        hold the request back before one is started. A manager that never
+        defers a lookup reads ``False``.
+        """
+        return False
+
+    def start_lookup(self, ctx: TextContext) -> KVTransfer:
+        """Starts the lookup a deferred ``alloc`` would start, taking no pages.
+
+        For a request that has to wait its turn anyway, so the lookup runs
+        while it waits. Asked only when ``starts_lookup`` reads ``True``, so
+        a manager that never defers a lookup is never asked.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} never starts a deferred lookup"
+        )
+
+    def awaits_lookup(self, ctx: TextContext) -> bool:
+        """Returns whether the request's last ``alloc`` left a lookup out.
+
+        Read after a deferred ``alloc``, so a caller counts only the lookups
+        that actually hold a request out, re-asks included. A manager that
+        never defers a lookup reads ``False``.
+        """
+        return False
+
+    def active_length_after_alloc(self, ctx: TextContext) -> int:
+        """Returns how many tokens the request's next deferred ``alloc`` leaves.
+
+        Takes nothing for the request, so a caller can check it against a
+        budget before ``alloc`` changes it. A manager that never defers a
+        lookup or rolls back a failed onload reads the request's active
+        length, which its reuse only shrinks.
+        """
+        return ctx.tokens.active_length
+
+    def hand_back_lookup(self, ctx: TextContext) -> bool:
+        """Hands back the request's lookup without loading from it.
+
+        For a request whose answered lookup would otherwise wait in a queue
+        past its lease. Its next deferred ``alloc`` starts a fresh one. A
+        manager may keep the lookup instead, for one that already gave up, a
+        request handed back too often, or an answer still fresh enough to
+        load. A manager that never defers a lookup has nothing to hand back.
+
+        Returns ``False`` when the manager kept an answer a later call may
+        still hand back, and ``True`` when there is nothing left to hand
+        back.
+        """
+        return True
 
     @abstractmethod
     def runtime_inputs(
@@ -70,7 +153,7 @@ class PagedKVCacheManagerInterface(ABC):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests."""
 
     @abstractmethod
@@ -80,7 +163,7 @@ class PagedKVCacheManagerInterface(ABC):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputs[Buffer, Buffer]:
+    ) -> tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...]:
         """Returns :meth:`runtime_inputs` narrowed to a single leaf cache."""
 
     @abstractmethod
@@ -91,13 +174,21 @@ class PagedKVCacheManagerInterface(ABC):
     def block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the device KV cache block occupancy for the given replica."""
 
-    @abstractmethod
-    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the host KV tier occupancy in bytes for the given replica."""
+    def pressure_pct(self, replica_idx: int = 0) -> float:
+        """Returns how close the replica is to refusing work, in ``[0, 100]``.
+
+        Defaults to block occupancy. A manager whose blocks are coarser than
+        what a request allocates overrides this.
+        """
+        return self.block_count(replica_idx).used_pct
 
     @abstractmethod
-    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the disk KV tier occupancy in bytes for the given replica."""
+    def host_byte_count(self) -> ByteCount:
+        """Returns the host KV tier occupancy in bytes, shared by every replica."""
+
+    @abstractmethod
+    def disk_byte_count(self) -> ByteCount:
+        """Returns the disk KV tier occupancy in bytes, shared by every replica."""
 
     @abstractmethod
     def release(self, ctx: TextContext) -> None:
@@ -124,8 +215,8 @@ class PagedKVCacheManagerInterface(ABC):
         """Returns whether the request is claimed on any replica."""
 
     @abstractmethod
-    def reset_metrics(self) -> None:
-        """Resets metrics for the block manager."""
+    def take_metrics_aggregated(self) -> KVCacheMetrics:
+        """Reads and clears aggregated metrics across all replicas."""
 
     @abstractmethod
     def reset_prefix_cache(self) -> None:
@@ -140,12 +231,45 @@ class PagedKVCacheManagerInterface(ABC):
         """Returns aggregated metrics across all replicas."""
 
     @abstractmethod
-    def get_req_blocks(self, ctx: TextContext) -> list[int]:
-        """Returns block IDs the request holds on the replica it was claimed on."""
+    def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
+        """Returns the block IDs the request holds, keyed by leaf id.
+
+        Covers the replica the request was claimed on, with one entry per leaf
+        that :meth:`KVCacheParamInterface.leaves` names. A manager whose leaves
+        share one block space repeats the same row under every leaf.
+        """
+
+    @abstractmethod
+    def num_req_blocks(self, ctx: TextContext) -> int:
+        """Returns how many pages long the request is on its claimed replica."""
 
     @abstractmethod
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:
         """Returns the replica's KV buffer (single leaf or tree)."""
+
+    @property
+    def chunk_alignment_tokens(self) -> int:
+        """Returns the token multiple a context-encoding chunk ends on.
+
+        Zero when no group of this cache needs the alignment.
+        """
+        return 0
+
+    def populate_checkpointer(
+        self, factory: CheckpointerFactory
+    ) -> CheckpointerFactory:
+        """Populates ``factory`` with the queries this cache answers.
+
+        Disables it by default, since this cache does not persist checkpoints.
+
+        Returns:
+            ``factory``, for chaining.
+        """
+        return factory.disabled()
+
+    def with_checkpointer(self, checkpointer: Checkpointer) -> None:
+        """Sets the checkpointer that decides where this cache checkpoints."""
+        del checkpointer
 
     @property
     @abstractmethod

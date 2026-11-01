@@ -14,10 +14,11 @@
 """One graph exercising several MAP fusers together, end to end.
 
 ``reshape(relu(reshape(matmul(A, transpose(B))) + broadcast(C))) + D``
-collapses into a single kernel under the legacy pipeline: matmul's own
-epilogue absorbs the transpose, both reshapes, the broadcast, and both
-adds. Not env-gated -- the new MAP-dialect system doesn't yet fuse this
-graph as aggressively; Commit 7's exclusion list will pick it up.
+collapses into a single kernel under both pipelines: the matmul epilogue
+absorbs the transpose, both reshapes, the broadcast, and both adds. The
+new MAP-dialect system reaches the same single-kernel fusion once
+`LoopInvariantViewMotion` hoists the broadcast view sitting atop the
+reshaped store index.
 """
 
 from __future__ import annotations

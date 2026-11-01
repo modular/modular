@@ -25,6 +25,7 @@ from std.math import (
     copysign,
     cos,
     cosh,
+    erf,
     erfc,
     expm1,
     exp2,
@@ -49,7 +50,21 @@ from std.math import (
     ulp,
 )
 from std.math.math import _call_libm
+from std.memory import bitcast
 from std.sys import CompilationTarget
+from std.builtin.dtype import _integral_type_of
+from std.math.math import (
+    _call_libm,
+    _frexp_bits,
+    _is_subnormal_bits,
+    _is_zero_bits,
+    _log_accurate,
+    _narrow_f32_to_bf16_bits,
+    _scale_down_bits,
+    _scale_up_subnormal,
+)
+from std.memory import bitcast
+from std.sys import bit_width_of, CompilationTarget
 
 from std.testing import TestSuite
 from std.testing import (
@@ -59,7 +74,17 @@ from std.testing import (
     assert_true,
 )
 
-from std.utils.numerics import inf, isinf, isnan, nan, neg_inf
+from std.utils.numerics import (
+    FPUtils,
+    inf,
+    isinf,
+    isnan,
+    nan,
+    neg_inf,
+    nextafter,
+)
+
+from test_utils.math import SplitMix64
 
 
 def test_sin() raises:
@@ -283,18 +308,19 @@ def test_exp2() raises:
     assert_equal(exp2(Float32(0)), 1.0)
     assert_equal(exp2(Float32(-1)), 0.5)
     assert_equal(exp2(Float32(2)), 4.0)
-    assert_almost_equal(exp2(Float32(-125)), 2.3509887e-38)
-    assert_almost_equal(exp2(Float32(125)), 4.2535296e37)
+    assert_equal(exp2(Float32(-125)), 2.3509887e-38)
+    assert_equal(exp2(Float32(125)), 4.2535296e37)
 
     assert_equal(exp2(Float64(1)), 2.0)
     assert_almost_equal(exp2(Float64(0.2)), 1.148696)
     assert_equal(exp2(Float64(0)), 1.0)
     assert_equal(exp2(Float64(-1)), 0.5)
     assert_equal(exp2(Float64(2)), 4.0)
-    assert_almost_equal(exp2(Float64(-127)), 5.877471754111438e-39)
-    assert_almost_equal(exp2(Float64(127)), 1.7014118346046923e38)
-    assert_almost_equal(exp2(Float64(-1023)), 1.1125369292536007e-308)
-    assert_almost_equal(exp2(Float64(1023)), 8.98846567431158e307)
+    assert_equal(exp2(Float64(-127)), 5.877471754111438e-39)
+    assert_equal(exp2(Float64(127)), 1.7014118346046923e38)
+    assert_equal(exp2(Float64(-1023)), 1.1125369292536007e-308)
+    assert_equal(exp2(Float64(1023)), 8.98846567431158e307)
+    assert_equal(exp2(Float64(-1022)), 2.2250738585072014e-308)
 
 
 def test_iota() raises:
@@ -396,6 +422,40 @@ def test_rsqrt() raises:
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
+def _test_sqrt_rsqrt_comptime[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    comptime x = SIMD[dtype, 4](0.5, 2, 3, 100)
+    comptime sqrt_x = sqrt(x)
+    comptime rsqrt_x = rsqrt(x)
+    assert_equal(sqrt_x, sqrt(x))
+    assert_equal(rsqrt_x, rsqrt(x))
+
+
+def test_sqrt_rsqrt_comptime() raises:
+    _test_sqrt_rsqrt_comptime[.float16]()
+    _test_sqrt_rsqrt_comptime[.bfloat16]()
+    _test_sqrt_rsqrt_comptime[.float32]()
+    _test_sqrt_rsqrt_comptime[.float64]()
+
+
+def _test_sin_cos_comptime[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    # Compile time folds 16-bit inputs directly, while runtime computes them in
+    # float32 and rounds, so the two can differ by an ulp.
+    comptime x = SIMD[dtype, 4](0.5, 2, 3, 100)
+    comptime sin_x = sin(x)
+    comptime cos_x = cos(x)
+    assert_almost_equal(sin_x, sin(x), atol=0, rtol=1e-2)
+    assert_almost_equal(cos_x, cos(x), atol=0, rtol=1e-2)
+
+
+def test_sin_cos_comptime_16bit() raises:
+    _test_sin_cos_comptime[.float16]()
+    _test_sin_cos_comptime[.bfloat16]()
+
+
 def _test_frexp_impl[
     dtype: DType
 ](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
@@ -413,15 +473,21 @@ def _test_frexp_impl[
     assert_almost_equal(res2[0].cast[.float32](), -0.8, atol=atol, rtol=rtol)
     assert_almost_equal(res2[1].cast[.float32](), -3.0, atol=atol, rtol=rtol)
 
-    var res3 = frexp(SIMD[dtype, 4](0, 2, 4, 5))
+    # not representable in bfloat16
+    comptime if dtype in (DType.float32, DType.float64):
+        var res3 = frexp(Scalar[dtype](7.346839692639297e-40))
+        assert_almost_equal(res3[0].cast[.float32](), 0.5)
+        assert_almost_equal(res3[1].cast[.float32](), -129)
+
+    var res4 = frexp(SIMD[dtype, 4](0, 2, 4, 5))
     assert_almost_equal(
-        res3[0].cast[.float32](),
+        res4[0].cast[.float32](),
         SIMD[.float32, 4](0.0, 0.5, 0.5, 0.625),
         atol=atol,
         rtol=rtol,
     )
     assert_almost_equal(
-        res3[1].cast[.float32](),
+        res4[1].cast[.float32](),
         SIMD[.float32, 4](-0.0, 2.0, 3.0, 3.0),
         atol=atol,
         rtol=rtol,
@@ -505,10 +571,186 @@ def _test_log1p_impl[
 
 
 def test_frexp() raises:
+    _test_frexp_impl[.float64](atol=1e-4, rtol=1e-5)
     _test_frexp_impl[.float32](atol=1e-4, rtol=1e-5)
     _test_frexp_impl[.float16](atol=1e-2, rtol=1e-5)
 
     _test_frexp_impl[.bfloat16](atol=1e-1, rtol=1e-5)
+
+    var res1 = frexp(Float64(5e-324))
+    assert_equal(res1[0], 0.5)
+    assert_equal(res1[1], -1073)
+
+    var res2 = frexp(Float64(1.5e-310))
+    assert_almost_equal(res2[0], 0.8628927047339232)
+    assert_equal(res2[1], -1029)
+
+
+def _test_frexp_bits_impl[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    # `_frexp_bits` reads subnormal exponents from the bit pattern instead of
+    # scaling the value, so it must agree with `frexp` bit for bit on the
+    # smallest and largest subnormals, the smallest normal, and ordinary
+    # values, as scalars and as vectors.
+    comptime T = Scalar[dtype]
+    comptime min_normal = T(
+        1.17549435e-38 if dtype == .float32 else 2.2250738585072014e-308
+    )
+    var min_sub = nextafter(T(0), T(1))
+    var xs: List[T] = [
+        min_sub,
+        -min_sub,
+        min_sub * 12345,
+        nextafter(min_normal, T(0)),
+        min_normal,
+        1.0,
+        0.75,
+        -123.45,
+        1e30,
+    ]
+    for x in xs:
+        var got = _frexp_bits(x)
+        var want = frexp(x)
+        assert_equal(
+            got[0].to_bits(), want[0].to_bits(), String(t"frac of {x}")
+        )
+        assert_equal(got[1], want[1], String(t"exponent of {x}"))
+    var v = SIMD[dtype, 4](min_sub, 1.0, -123.45, min_normal)
+    var got4 = _frexp_bits(v)
+    var want4 = frexp(v)
+    assert_equal(got4[0], want4[0])
+    assert_equal(got4[1], want4[1])
+
+
+def test_narrow_f32_to_bf16_bits() raises:
+    # Must agree with the (round-to-nearest-even) `cast`. Every high half
+    # covers each sign, exponent, NaN and kept mantissa; the low halves sit
+    # at, just below and just above a rounding tie. NaN payloads differ
+    # between targets' casts, so a NaN only has to stay a quiet NaN with
+    # its sign.
+    var lows: List[UInt32] = [
+        0x0000,
+        0x0001,
+        0x1234,
+        0x4000,
+        0x7FFF,
+        0x8000,
+        0x8001,
+        0xBFFF,
+        0xFFFF,
+    ]
+    for hi in range(0x10000):
+        for lo in lows:
+            var bits = (UInt32(hi) << 16) | lo
+            var x = Float32(from_bits=bits)
+            var got = _narrow_f32_to_bf16_bits(x)
+            var want = x.cast[.bfloat16]()
+            if isnan(x):
+                var got_bits = got.to_bits[.uint16]()
+                if got_bits & 0xFFC0 != UInt16(hi & 0x8000) | 0x7FC0:
+                    raise Error(
+                        t"narrow of NaN bits {bits}: got bits {got_bits}"
+                    )
+            elif got.to_bits() != want.to_bits():
+                raise Error(t"narrow of bits {bits}: got {got}, want {want}")
+    var v = SIMD[.float32, 4](
+        1.0, bitcast[.float32](UInt32(0x00008001)), -2.5, 0.0
+    )
+    assert_equal(_narrow_f32_to_bf16_bits(v), v.cast[.bfloat16]())
+
+
+def _check_scale_down[shift: Int]() raises:
+    # Exponents near `1 + shift` give subnormal results, smaller ones round
+    # to zero and larger ones stay normal. Clearing the bits below a set bit
+    # `k` makes some shifts discard exactly half an ULP.
+    comptime scale = Float64(from_bits=UInt64(1023 - shift) << 52)
+    var rng = SplitMix64(UInt64(shift))
+    for e in range(1, 255):
+        var r = (rng.next() & 0x7FFFFF).cast[.uint32]()
+        var mantissas: List[UInt32] = [0, 0x7FFFFF, r]
+        for k in range(1, 24):
+            mantissas.append(
+                (r >> UInt32(k) << UInt32(k)) | (UInt32(1) << UInt32(k - 1))
+            )
+        for m in mantissas:
+            for sign in [UInt32(0), UInt32(0x80000000)]:
+                var y = Float32(from_bits=sign | (UInt32(e) << 23) | m)
+                var got = _scale_down_bits[shift](y)
+                var want = (Float64(y) * scale).cast[.float32]()
+                if got.to_bits() != want.to_bits():
+                    raise Error(
+                        t"_scale_down_bits[{shift}]({y}) = {got}, want {want}"
+                    )
+    comptime if shift >= 23:
+        # Zero stays zero once the shift drops the implicit bit. `hypot(0, 0)`
+        # and `scalb(0, n)` pass it in on targets that flush subnormals.
+        for sign in [UInt32(0), UInt32(0x80000000)]:
+            var z = Float32(from_bits=sign)
+            assert_equal(_scale_down_bits[shift](z).to_bits(), z.to_bits())
+
+
+def test_scale_down_bits() raises:
+    _check_scale_down[1]()
+    _check_scale_down[23]()
+    _check_scale_down[24]()
+    _check_scale_down[25]()
+    _check_scale_down[46]()
+    _check_scale_down[64]()
+    _check_scale_down[100]()
+    _check_scale_down[126]()
+    _check_scale_down[130]()
+
+
+def _check_scale_up[shift: Int]() raises:
+    var mantissas: List[UInt32] = [
+        1,
+        2,
+        3,
+        0x12345,
+        0x35555,
+        0x3FFFFF,
+        0x400000,
+        0x400001,
+        0x7FFFFF,
+    ]
+    var rng = SplitMix64(UInt64(shift))
+    for _ in range(512):
+        var m = (rng.next() & 0x7FFFFF).cast[.uint32]()
+        if m != 0:
+            mantissas.append(m)
+    comptime scale = Float64(2) ** Float64(shift)
+    for m in mantissas:
+        for sign in [UInt32(0), UInt32(0x80000000)]:
+            var x = Float32(from_bits=sign | m)
+            var got = _scale_up_subnormal[shift](x)
+            var want = (Float64(x) * scale).cast[.float32]()
+            if got.to_bits() != want.to_bits():
+                raise Error(
+                    t"_scale_up_subnormal[{shift}]({x}) = {got}, want {want}"
+                )
+
+
+def test_scale_up_subnormal() raises:
+    _check_scale_up[23]()
+    _check_scale_up[24]()
+    _check_scale_up[40]()
+    _check_scale_up[46]()
+    _check_scale_up[100]()
+    for m in range(1, 0x400):
+        for sign in [UInt16(0), UInt16(0x8000)]:
+            var h = Float16(from_bits=sign | UInt16(m))
+            var got = _scale_up_subnormal[10](h)
+            var want = (Float64(h) * 1024).cast[.float16]()
+            if got.to_bits() != want.to_bits():
+                raise Error(
+                    t"_scale_up_subnormal[10]({h}) = {got}, want {want}"
+                )
+
+
+def test_frexp_bits() raises:
+    _test_frexp_bits_impl[.float32]()
+    _test_frexp_bits_impl[.float64]()
 
 
 def test_log() raises:
@@ -517,12 +759,17 @@ def test_log() raises:
 
     _test_log_impl[.bfloat16](atol=1e-1, rtol=1e-5)
 
+    assert_almost_equal(log(5e-324), -744.4400719213812)
+
 
 def test_log2() raises:
+    _test_log2_impl[.float64](atol=1e-4, rtol=1e-5)
     _test_log2_impl[.float32](atol=1e-4, rtol=1e-5)
     _test_log2_impl[.float16](atol=1e-2, rtol=1e-5)
 
     _test_log2_impl[.bfloat16](atol=1e-1, rtol=1e-5)
+
+    assert_equal(log2(5e-324), -1074)
 
 
 def test_log1p() raises:
@@ -608,6 +855,211 @@ def test_log1p_accuracy() raises:
     assert_true(isnan(log1p(Float64(-2))))
 
 
+def _scaled[
+    dtype: DType
+](m: Scalar[dtype], k: Int) -> Scalar[dtype] where dtype.is_floating_point():
+    """Returns `m * 2**k` for `m` in [1, 2), rounding into the subnormals."""
+    comptime T = Scalar[dtype]
+    comptime U = _integral_type_of[dtype]()
+    comptime mant = FPUtils[dtype].mantissa_width()
+    comptime bias = FPUtils[dtype].exponent_bias()
+    var lo = max(k, 1 - bias)
+    var p = T(from_bits=Scalar[U](lo + bias) << Scalar[U](mant))
+    var tail = T(from_bits=Scalar[U](bias + k - lo) << Scalar[U](mant))
+    return m * p * tail
+
+
+def _log_ulp_diff[
+    dtype: DType
+](
+    got: Scalar[dtype], want: Scalar[dtype]
+) -> Int where dtype.is_floating_point():
+    if isnan(got) or isnan(want):
+        return 0 if isnan(got) and isnan(want) else Int.MAX
+    if got == want:
+        return 0
+    if isinf(got) or isinf(want):
+        return Int.MAX
+    comptime sign_shift = UInt64(bit_width_of[dtype]() - 1)
+    var got_bits = got.to_bits().cast[.uint64]()
+    var want_bits = want.to_bits().cast[.uint64]()
+    if (
+        got != 0
+        and want != 0
+        and ((got_bits >> sign_shift) != (want_bits >> sign_shift))
+    ):
+        return Int.MAX
+    # Same-sign finite magnitudes differ by less than Int.MAX, even for f64.
+    comptime magnitude_mask = (UInt64(1) << sign_shift) - 1
+    var got_magnitude = got_bits & magnitude_mask
+    var want_magnitude = want_bits & magnitude_mask
+    return Int(
+        max(got_magnitude, want_magnitude) - min(got_magnitude, want_magnitude)
+    )
+
+
+def _test_log_ulp_comparator[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    comptime T = Scalar[dtype]
+    assert_equal(_log_ulp_diff(nan[dtype](), nan[dtype]()), 0)
+    assert_equal(_log_ulp_diff(nan[dtype](), T(1)), Int.MAX)
+    assert_equal(_log_ulp_diff(T(1), nan[dtype]()), Int.MAX)
+    assert_equal(_log_ulp_diff(inf[dtype](), inf[dtype]()), 0)
+    assert_equal(_log_ulp_diff(-inf[dtype](), -inf[dtype]()), 0)
+    assert_equal(_log_ulp_diff(T.MAX_FINITE, inf[dtype]()), Int.MAX)
+    assert_equal(_log_ulp_diff(inf[dtype](), T.MAX_FINITE), Int.MAX)
+    assert_equal(_log_ulp_diff(-T.MAX_FINITE, -inf[dtype]()), Int.MAX)
+    assert_equal(_log_ulp_diff(inf[dtype](), -inf[dtype]()), Int.MAX)
+    assert_equal(_log_ulp_diff(T(-1), T(1)), Int.MAX)
+    assert_equal(_log_ulp_diff(T(0), T(-0.0)), 0)
+    assert_equal(_log_ulp_diff(T(1), T(1)), 0)
+    assert_equal(_log_ulp_diff(T(-1), T(-1)), 0)
+
+
+def test_log_ulp_comparator() raises:
+    _test_log_ulp_comparator[.float64]()
+    _test_log_ulp_comparator[.float32]()
+    _test_log_ulp_comparator[.float16]()
+    _test_log_ulp_comparator[.bfloat16]()
+    var wrong_sign = Float64(from_bits=UInt64(0x3FFF5D4DC0C4548D))
+    var reference = Float64(from_bits=UInt64(0xC000A2B23F3BAB73))
+    assert_equal(_log_ulp_diff(wrong_sign, reference), Int.MAX)
+    assert_equal(_log_ulp_diff(reference, wrong_sign), Int.MAX)
+    var next_positive = Float64(from_bits=UInt64(0x3FF0000000000001))
+    var next_negative = Float64(from_bits=UInt64(0xBFF0000000000001))
+    assert_equal(_log_ulp_diff(next_positive, Float64(1)), 1)
+    assert_equal(_log_ulp_diff(next_negative, Float64(-1)), 1)
+    assert_equal(
+        _log_ulp_diff(Float64(0), Float64.MAX_FINITE), 0x7FEFFFFFFFFFFFFF
+    )
+    var min_subnormal = Float64(from_bits=UInt64(1))
+    assert_equal(_log_ulp_diff(min_subnormal, Float64(-0.0)), 1)
+    assert_equal(_log_ulp_diff(-min_subnormal, Float64(0)), 1)
+
+
+def _assert_ulp_vs_libm[
+    dtype: DType, //, name: StaticString
+](
+    x: Scalar[dtype], got: Scalar[dtype], max_ulp: Int
+) raises where dtype.is_floating_point():
+    var want = _call_libm[name](x)
+    var d = _log_ulp_diff(got, want)
+    assert_true(
+        d <= max_ulp,
+        String(t"{name}({x}) = {got}, libm {want} ({d} ulp)"),
+    )
+
+
+def _test_log_special[dtype: DType]() raises where dtype.is_floating_point():
+    comptime T = Scalar[dtype]
+    assert_equal(log(inf[dtype]()), inf[dtype]())
+    assert_equal(log(T(0)), neg_inf[dtype]())
+    assert_equal(log(T(-0.0)), neg_inf[dtype]())
+    assert_true(isnan(log(T(-1))))
+    assert_true(isnan(log(neg_inf[dtype]())))
+    assert_true(isnan(log(nan[dtype]())))
+    assert_equal(log(T(1)), T(0))
+    assert_equal(log2(inf[dtype]()), inf[dtype]())
+    assert_equal(log1p(inf[dtype]()), inf[dtype]())
+
+
+def test_log_special_values() raises:
+    _test_log_special[.float64]()
+    _test_log_special[.float32]()
+    _test_log_special[.float16]()
+    _test_log_special[.bfloat16]()
+
+
+def test_log_float64_ulp() raises:
+    # Mantissas near 1, sqrt(2)/2 and sqrt(2) at every 5th binade, which
+    # covers subnormals and the reduction boundaries.
+    var mantissas: Array[Float64, 6] = [
+        1.0,
+        1.0000000000000002,
+        1.4142135623730951,
+        1.4142135623730954,
+        1.9999999999999998,
+        1.2345678901234567,
+    ]
+    for k in range(-1074, 1024, 5):
+        for m in mantissas:
+            var x = _scaled(m, k)
+            _assert_ulp_vs_libm["log"](x, log(x), 1)
+    comptime n = 20_000
+    for i in range(1, n):
+        var x = Float64(i) / (n / 4.0)
+        _assert_ulp_vs_libm["log"](x, log(x), 1)
+        var y = 1.0 + Float64(i - n // 2) * 1e-12
+        _assert_ulp_vs_libm["log"](y, log(y), 1)
+
+
+def _check_bit_classification[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    comptime T = Scalar[dtype]
+    comptime TInt = Scalar[_integral_type_of[dtype]()]
+    comptime mw = FPUtils[dtype].mantissa_width()
+    comptime sign = TInt.MIN
+    for neg in range(2):
+        var s = sign if neg == 1 else TInt(0)
+        assert_true(_is_zero_bits(T(from_bits=s)))
+        assert_false(_is_subnormal_bits(T(from_bits=s)))
+        for m in [1, 2, (1 << mw) // 2, (1 << mw) - 1]:
+            var v = T(from_bits=s | TInt(m))
+            assert_false(_is_zero_bits(v))
+            assert_true(_is_subnormal_bits(v))
+        for b in [1 << mw, (1 << mw) + 1, 1 << (mw + 2)]:
+            var v = T(from_bits=s | TInt(b))
+            assert_false(_is_zero_bits(v))
+            assert_false(_is_subnormal_bits(v))
+    assert_false(_is_zero_bits(inf[dtype]()))
+    assert_false(_is_subnormal_bits(nan[dtype]()))
+
+
+def test_subnormal_bit_classification() raises:
+    _check_bit_classification[.float16]()
+    _check_bit_classification[.bfloat16]()
+    _check_bit_classification[.float32]()
+    _check_bit_classification[.float64]()
+    var rng = SplitMix64(7)
+    for _ in range(512):
+        var x = rng.bits[.float32]()
+        var magnitude = x.to_bits() & 0x7FFFFFFF
+        assert_equal(_is_zero_bits(x), magnitude == 0)
+        assert_equal(
+            _is_subnormal_bits(x), magnitude != 0 and magnitude < 0x00800000
+        )
+    var tiny = Float32(from_bits=UInt32(1))
+    var min_normal = Float32(from_bits=UInt32(0x00800000))
+    var x = SIMD[.float32, 8](
+        0, -0.0, tiny, -tiny, 1.1e-38, min_normal, -min_normal, 1
+    )
+    assert_equal(
+        _is_subnormal_bits(x),
+        SIMD[.bool, 8](False, False, True, True, True, False, False, False),
+    )
+    var h = SIMD[.float16, 4](0, 6e-8, 6.2e-5, 1)
+    assert_equal(
+        _is_subnormal_bits(h), SIMD[.bool, 4](False, True, False, False)
+    )
+
+
+def test_log_subnormal() raises:
+    """`_log_reduce` reads a subnormal's exponent from its bits, so the
+    smallest and largest subnormals, and the smallest normal, of each dtype
+    stay within 1 ulp of libm. The float32 kernel is called directly because
+    public float32 `log` does not use it yet."""
+    var bits32: List[UInt32] = [1, 0x007FFFFF, 0x00800000]
+    for b in bits32:
+        var x = Float32(from_bits=b)
+        _assert_ulp_vs_libm["log"](x, _log_accurate(x), 1)
+    var bits64: List[UInt64] = [1, 0x000FFFFFFFFFFFFF, 0x0010000000000000]
+    for b in bits64:
+        var x = Float64(from_bits=b)
+        _assert_ulp_vs_libm["log"](x, log(x), 1)
+
+
 def test_gcd() raises:
     var l = [2, 4, 6, 8, 16]
     var il: Array[Int, 5] = [4, 16, 2, 8, 6]
@@ -655,6 +1107,16 @@ def test_ulp() raises:
     assert_equal(ulp(Float64.MAX_FINITE), 1.99584030953472e292)
     assert_equal(ulp(Float64(5)), 8.881784197001252e-16)
     assert_equal(ulp(Float64(-5)), 8.881784197001252e-16)
+
+
+def test_ulp_at_comptime() raises:
+    # `ulp` reaches `nextafter`, which used to fail in the comptime interpreter.
+    comptime u1 = ulp(Float32(1.0))
+    assert_equal(u1, ulp(Float32(1.0)))
+    comptime u5 = ulp(Float64(5))
+    assert_equal(u5, 8.881784197001252e-16)
+    comptime u_max = ulp(Float64.MAX_FINITE)
+    assert_equal(u_max, 1.99584030953472e292)
 
 
 def test_ceildiv() raises:
@@ -853,6 +1315,30 @@ def test_fma() raises:
     )
 
 
+def _test_atanh_impl[dtype: DType]() raises where dtype.is_floating_point():
+    comptime n = 1 << 16
+    comptime max_ulp = Scalar[dtype](2 if dtype == .float32 else 3)
+    for i in range(-n + 1, n):
+        var x = Scalar[dtype](i) / n
+        var want = _call_libm["atanh"](x)
+        var got = atanh(x)
+        # Written so that a NaN result fails the comparison.
+        assert_true(
+            abs(got - want) <= max_ulp * ulp(want),
+            String(t"atanh[{dtype}]({x}) = {got}, expected {want}"),
+        )
+
+    # Closest representable values to the pole, where `1 - |x|` is smallest.
+    var near_one = nextafter(Scalar[dtype](1), Scalar[dtype](0))
+    for x in [near_one, -near_one]:
+        var want = _call_libm["atanh"](x)
+        var got = atanh(x)
+        assert_true(
+            abs(got - want) <= max_ulp * ulp(want),
+            String(t"atanh[{dtype}]({x}) = {got}, expected {want}"),
+        )
+
+
 def test_atanh() raises:
     assert_equal(atanh(Float32(1)), inf[.float32]())
     assert_equal(atanh(Float32(-1)), -inf[.float32]())
@@ -904,6 +1390,46 @@ def test_atanh() raises:
         Float32(-1.65625),
         msg="atanh(-0.9297103072)",
     )
+
+    _test_atanh_impl[.float32]()
+    _test_atanh_impl[.float64]()
+
+
+def test_atanh_float16() raises:
+    var input_bits = SIMD[.uint16, 8](
+        0x3C00, 0xBC00, 0x3BFF, 0xBBFF, 0x0000, 0x8000, 0x0001, 0x83FF
+    )
+    # atanh(1 - 2^-11) = 4.1587609981435849, which rounds to 0x4429.
+    var expected_bits = SIMD[.uint16, 8](
+        0x7C00, 0xFC00, 0x4429, 0xC429, 0x0000, 0x8000, 0x0001, 0x83FF
+    )
+    for i in range(8):
+        assert_equal(
+            atanh(bitcast[.float16](input_bits[i])).to_bits[.uint16](),
+            expected_bits[i],
+        )
+    assert_equal(
+        atanh(bitcast[.float16](input_bits)).to_bits[.uint16](), expected_bits
+    )
+
+    var tiny_bits = SIMD[.uint16, 8](
+        0x0001, 0x8001, 0x0200, 0x8200, 0x03FF, 0x83FF, 0x0400, 0x8400
+    )
+    for i in range(8):
+        assert_equal(
+            atanh(bitcast[.float16](tiny_bits[i])).to_bits[.uint16](),
+            tiny_bits[i],
+        )
+    assert_equal(
+        atanh(bitcast[.float16](tiny_bits)).to_bits[.uint16](), tiny_bits
+    )
+
+    var domain_bits = SIMD[.uint16, 8](
+        0x3C01, 0xBC01, 0x7C00, 0xFC00, 0x7E00, 0xFE00, 0x4000, 0xC000
+    )
+    for i in range(8):
+        assert_true(isnan(atanh(bitcast[.float16](domain_bits[i]))))
+    assert_true(isnan(atanh(bitcast[.float16](domain_bits))).reduce_and())
 
 
 def test_sinh() raises:
@@ -986,6 +1512,39 @@ def test_cbrt() raises:
         )
 
 
+def test_cbrt_f32_ulp() raises:
+    # Every float32 exponent, subnormals included, against the float64 libm
+    # root: the float32 path is within 0.505 ulp of the true root.
+    comptime n = 1 << 14
+    for i in range(n):
+        var bits = UInt32(i) * ((0x7F800000 // n) | 1) % 0x7F800000
+        var x = bitcast[.float32](bits)
+        var got = cbrt(x)
+        var want = _call_libm["cbrt"](x.cast[.float64]())
+        var err = abs(got.cast[.float64]() - want) / ulp(got).cast[.float64]()
+        assert_true(err <= 0.506, msg=String(t"cbrt({x}) = {got}"))
+        assert_equal(cbrt(-x), -got)
+
+
+def test_cbrt_f32_mixed_lanes() raises:
+    # 0, -0, inf, -inf, nan, 2^-147, -2^-144, -27 in one vector.
+    var x = bitcast[.float32](
+        SIMD[.uint32, 8](
+            0, 0x80000000, 0x7F800000, 0xFF800000, 0x7FC00000, 4, 0x80000020, 0
+        )
+    )
+    x[7] = -27.0
+    var got = bitcast[.uint32](cbrt(x))
+    assert_equal(got[0], 0)
+    assert_equal(got[1], 0x80000000)
+    assert_equal(got[2], 0x7F800000)
+    assert_equal(got[3], 0xFF800000)
+    assert_true(isnan(bitcast[.float32](got[4])))
+    assert_equal(got[5], (127 - 49) << 23)
+    assert_equal(got[6], 0x80000000 | ((127 - 48) << 23))
+    assert_equal(bitcast[.float32](got[7]), -3.0)
+
+
 def test_acos() raises:
     comptime n = 1_000
     for i in range(n):
@@ -1010,6 +1569,249 @@ def test_acos() raises:
     assert_almost_equal(acos(Float64(-1)), pi)
     assert_almost_equal(acos(Float64(0)), pi / 2.0)
     assert_true(isnan(acos(nan[.float64]())))
+
+
+def _assert_same[
+    dtype: DType
+](got: Scalar[dtype], want: Scalar[dtype], msg: String) raises:
+    """Asserts bitwise equality, so NaN matches NaN and -0 differs from +0."""
+    assert_equal(got.to_bits(), want.to_bits(), msg)
+
+
+def _ulp_diff[
+    dtype: DType
+](
+    got: Scalar[dtype], want: Scalar[dtype]
+) -> Int where dtype.is_floating_point():
+    """Counts the floats between `got` and `want`. Bit-identical values give
+    0; a NaN, an infinity, or differing signs (other than +0 and -0) give
+    `Int.MAX`."""
+    comptime sign = UInt64(1) << UInt64(bit_width_of[dtype]() - 1)
+    var a = got.to_bits().cast[.uint64]()
+    var b = want.to_bits().cast[.uint64]()
+    if a == b:
+        return 0
+    if isnan(got) or isnan(want) or isinf(got) or isinf(want):
+        return Int.MAX
+    var ma = a & (sign - 1)
+    var mb = b & (sign - 1)
+    if ((a ^ b) & sign) != 0:
+        return Int(ma + mb) if ma == 0 or mb == 0 else Int.MAX
+    return Int(max(ma, mb) - min(ma, mb))
+
+
+def test_erf_float64_special_values() raises:
+    _assert_same(erf(Float64(0)), Float64(0), "erf(0)")
+    _assert_same(erf(Float64(-0.0)), Float64(-0.0), "erf(-0)")
+    assert_equal(erf(inf[.float64]()), 1.0)
+    assert_equal(erf(neg_inf[.float64]()), -1.0)
+    assert_true(isnan(erf(nan[.float64]())))
+
+
+def test_erf_float64_ulp() raises:
+    # Correctly rounded values from mpmath.
+    var cases: List[Tuple[Float64, Float64]] = [
+        (-0.8358000000000008, -0.7627941782926682),
+        (1e-300, 1.1283791670955126e-300),
+        (2.5e-09, 2.8209479177387815e-09),
+        (0.1, 0.1124629160182849),
+        (0.25, 0.27632639016823696),
+        (0.5, 0.5204998778130465),
+        (0.84375, 0.7672256612323416),
+        (0.9, 0.7969082124228322),
+        (1.0, 0.8427007929497149),
+        (1.2, 0.9103139782296353),
+        (1.25, 0.9229001282564583),
+        (1.5, 0.9661051464753108),
+        (2.0, 0.9953222650189527),
+        (2.857142857142857, 0.9999466876886117),
+        (3.0, 0.9999779095030014),
+        (4.5, 0.9999999998033839),
+        (5.9, 0.9999999999999999),
+        (-0.3, -0.3286267594591274),
+        (-1.1, -0.8802050695740817),
+        (-2.2, -0.9981371537020182),
+    ]
+    for c in cases:
+        var got = erf(c[0])
+        assert_true(
+            _ulp_diff(got, c[1]) <= 1,
+            String("erf(", c[0], ") = ", got, ", expected ", c[1]),
+        )
+
+    # macOS libm erf is off by up to about 3.2 ulp, so the libm comparison
+    # only bounds gross errors; the table above checks the 1 ulp target.
+    comptime n = 20_000
+    for i in range(n):
+        var x = Float64(i) / (n / 14.0) - 7.0
+        _assert_ulp_vs_libm["erf"](x, erf(x), 4)
+    for k in range(-1074, 0, 3):
+        var t = _scaled(Float64(1.2345678901234567), k)
+        _assert_ulp_vs_libm["erf"](t, erf(t), 4)
+        _assert_ulp_vs_libm["erf"](-t, erf(-t), 4)
+    # Interval boundaries of the fdlibm approximations.
+    var edges: Array[Float64, 8] = [
+        0.84375,
+        0.8437499999999999,
+        1.25,
+        1.2499999999999998,
+        2.857142857142857,
+        5.999999999999999,
+        6.0,
+        27.9,
+    ]
+    for x in edges:
+        _assert_ulp_vs_libm["erf"](x, erf(x), 4)
+        _assert_ulp_vs_libm["erf"](-x, erf(-x), 4)
+
+
+def test_erf_plus_erfc() raises:
+    # erf and erfc share their polynomials, so they sum to 1 to within a
+    # couple of rounding errors.
+    comptime n = 10_000
+    for i in range(n):
+        var x = Float64(i) / (n / 6.0) - 3.0
+        assert_almost_equal(
+            erf(x) + erfc(x),
+            1.0,
+            atol=4.5e-16,
+            rtol=0,
+            msg=String("erf + erfc at ", x),
+        )
+
+
+def test_erfc_subnormal_results() raises:
+    # Correctly rounded values from mpmath. Hosts keep subnormals, so these
+    # must come back within 1 ulp (2^-149 or 2^-1074) rather than flush to 0.
+    var x32: List[Float32] = [9.5, 9.6, 10.0]
+    var bits32: List[UInt32] = [0x00006912, 0x00000F66, 0x00000001]
+    for i in range(len(x32)):
+        var got = erfc(x32[i])
+        assert_true(
+            _ulp_diff(got, Float32(from_bits=bits32[i])) <= 1,
+            String("erfc(", x32[i], ") = ", got, ", bits ", hex(got.to_bits())),
+        )
+    var x64: List[Float64] = [26.6, 27.0]
+    var bits64: List[UInt64] = [0x0000C860A467B1A5, 0x0000000000019E0F]
+    for i in range(len(x64)):
+        var got = erfc(x64[i])
+        assert_true(
+            _ulp_diff(got, Float64(from_bits=bits64[i])) <= 1,
+            String("erfc(", x64[i], ") = ", got, ", bits ", hex(got.to_bits())),
+        )
+
+
+def _test_expm1_tiny_bits[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    comptime uint_type = DType.uint32 if dtype == .float32 else DType.uint64
+    comptime sign_bit = Scalar[uint_type](1) << Scalar[uint_type](
+        31 if dtype == .float32 else 63
+    )
+    comptime min_normal_bits = Scalar[uint_type](1) << Scalar[uint_type](
+        23 if dtype == .float32 else 52
+    )
+    for bits in [
+        Scalar[uint_type](0),
+        1,
+        2,
+        min_normal_bits >> 1,
+        min_normal_bits - 1,
+        min_normal_bits,
+    ]:
+        for sign in [Scalar[uint_type](0), sign_bit]:
+            var input_bits = bits | sign
+            var x = bitcast[dtype](input_bits)
+            assert_equal(bitcast[uint_type](expm1(x)), input_bits)
+            # A tiny lane must also be preserved alongside ordinary/special lanes.
+            var mixed = SIMD[dtype, 4](x, 1.0, inf[dtype](), nan[dtype]())
+            var result = expm1(mixed)
+            assert_equal(bitcast[uint_type](result[0]), input_bits)
+            assert_equal(result[2], inf[dtype]())
+            assert_true(isnan(result[3]))
+
+
+def test_expm1_bfloat16_tiny() raises:
+    # Subnormal bit patterns plus 0x3F80 (1.0), a normal boundary value.
+    var bits: List[UInt16] = [1, 2, 0x40, 0x7F, 0x80, 0x3F80]
+    for b in bits:
+        for sign in [UInt16(0), UInt16(0x8000)]:
+            var x = bitcast[DType.bfloat16](b | sign)
+            var expected = _call_libm["expm1"](x.cast[.float64]()).cast[
+                .bfloat16
+            ]()
+            assert_equal(
+                bitcast[DType.uint16](expm1(x)),
+                bitcast[DType.uint16](expected),
+            )
+
+
+def test_expm1_float32_edges() raises:
+    assert_equal(expm1(inf[.float32]()), inf[.float32]())
+    assert_equal(expm1(neg_inf[.float32]()), -1.0)
+    assert_true(isnan(expm1(nan[.float32]())))
+    var neg_zero = expm1(Float32(-0.0))
+    assert_equal(neg_zero, 0.0)
+    assert_equal(copysign(Float32(1.0), neg_zero), -1.0)
+    assert_equal(expm1(Float32(-30.0)), -1.0)
+    # Just below the overflow threshold log(FLT_MAX), where the result needs
+    # the top binade.
+    comptime log_flt_max = Float32(88.7228)
+    var near_overflow: List[Float32] = [88.38, 88.5, 88.72, log_flt_max]
+    for val in near_overflow:
+        var got = expm1(val)
+        assert_false(isinf(got), msg=String(t"expm1({val}) overflowed"))
+        assert_almost_equal(
+            got, _call_libm["expm1"](val), rtol=1e-6, msg=String(val)
+        )
+    assert_equal(expm1(Float32(88.73)), inf[.float32]())
+    assert_equal(expm1(Float32(1000.0)), inf[.float32]())
+    # The largest float32 below log(FLT_MAX) stays finite; the next one
+    # overflows.
+    comptime last_finite = Float32(88.72283172607421875)
+    assert_false(isinf(expm1(last_finite)))
+    assert_equal(expm1(Float32(88.72283935546875)), inf[.float32]())
+
+
+def test_expm1_float32_ulp() raises:
+    # The k = +-1 reductions (|x| near ln2) used to reach 3 ulp around 0.36.
+    # The reference is the float64 libm result rounded to float32, so this
+    # allows up to 1 ulp of error, not a correctly rounded result.
+    comptime n = 2_000
+    for i in range(n + 1):
+        var x = Float32(-20.0) + Float32(i) * (Float32(108.0) / n)
+        var dense = Float32(-1.5) + Float32(i) * (Float32(3.0) / n)
+        for val in [x, dense]:
+            var expected = _call_libm["expm1"](val.cast[.float64]()).cast[
+                .float32
+            ]()
+            var got = expm1(val)
+            assert_true(
+                abs(got - expected) <= ulp(expected),
+                msg=String(t"expm1({val}) = {got}, expected {expected}"),
+            )
+
+
+def test_expm1_float64_edges() raises:
+    assert_equal(expm1(inf[.float64]()), inf[.float64]())
+    assert_equal(expm1(neg_inf[.float64]()), -1.0)
+    assert_true(isnan(expm1(nan[.float64]())))
+    var neg_zero = expm1(Float64(-0.0))
+    assert_equal(neg_zero, 0.0)
+    assert_equal(copysign(Float64(1.0), neg_zero), -1.0)
+    assert_equal(expm1(Float64(-745.0)), -1.0)
+    # The float64 path is new, so pin its overflow threshold the way the
+    # float32 test does: the largest float64 below 1024*ln(2) stays finite
+    # (just under FLT64_MAX after subtracting 1), and the next one overflows.
+    comptime last_finite = Float64(709.782712893384)
+    assert_false(isinf(expm1(last_finite)))
+    assert_equal(expm1(Float64(709.7827128933841)), inf[.float64]())
+    assert_equal(expm1(Float64(1000.0)), inf[.float64]())
+
+
+def test_expm1_tiny_bits() raises:
+    _test_expm1_tiny_bits[.float32]()
+    _test_expm1_tiny_bits[.float64]()
 
 
 def main() raises:

@@ -44,6 +44,7 @@
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from std.random import randint, randn, seed
 from std.sys import size_of
 from std.sys.defines import get_defined_int
@@ -51,6 +52,7 @@ from std.sys.defines import get_defined_int
 from layout import Idx, TileTensor
 from layout.tile_layout import row_major
 from shmem.ep_comm import (
+    EP_NO_INPUT_SCALES,
     BF16TokenFormat,
     EPLocalSyncCounters,
     combine_async_kernel,
@@ -118,7 +120,7 @@ def corrupt_src_info_kernel(
     """
     # `Int` is not device-passable; widen the fixed-width arg.
     var n_rows = Int(n_rows_dev)
-    var gid = Int(global_idx.x)
+    var gid = global_idx.x
     if gid < n_rows:
         src_info[gid * 2] = bad_src_idx
         src_info[gid * 2 + 1] = bad_topk_idx
@@ -217,14 +219,16 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     )
 
     # ----- legitimate inputs: random unique top-k expert ids + token values
-    var host_topk = alloc[Int32](n_tokens_per_rank * top_k)
-    var host_tokens = alloc[Scalar[input_type]](n_tokens_per_rank * hidden_size)
+    var host_topk = unsafe_alloc[Int32](n_tokens_per_rank * top_k)
+    var host_tokens = unsafe_alloc[Scalar[input_type]](
+        n_tokens_per_rank * hidden_size
+    )
     seed(0)
     randint(host_topk, n_tokens_per_rank * top_k, 0, n_experts - 1)
     # Make each token's top-k expert ids unique (a token isn't sent to one
     # expert twice).
     for tok in range(n_tokens_per_rank):
-        var base = host_topk + tok * top_k
+        var base = host_topk.unsafe_offset(tok * top_k)
 
         def dup() {imm} -> Int:
             for i in range(top_k):
@@ -235,7 +239,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
 
         var d = dup()
         while d != -1:
-            randint(base + d, 1, 0, n_experts - 1)
+            randint(base.unsafe_offset(d), 1, 0, n_experts - 1)
             d = dup()
     randn(host_tokens, n_tokens_per_rank * hidden_size)
     ctx.enqueue_copy(topk_ids_dev, host_topk)
@@ -270,24 +274,18 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
 
     var format_handler = token_fmt_type(out_t)
 
-    var recv_bufs = Array[MutPointer[UInt8, MutAnyOrigin], n_ranks](
-        uninitialized=True
-    )
-    recv_bufs[0] = dispatch_recv.unsafe_ptr().as_unsafe_any_origin()
-    var recv_count_bufs = Array[MutPointer[UInt64, MutAnyOrigin], n_ranks](
-        uninitialized=True
-    )
-    recv_count_bufs[0] = dispatch_recv_count.unsafe_ptr().as_unsafe_any_origin()
-    var combine_recv_bufs = Array[MutPointer[UInt8, MutAnyOrigin], n_ranks](
-        uninitialized=True
-    )
-    combine_recv_bufs[0] = combine_recv.unsafe_ptr().as_unsafe_any_origin()
-    var combine_recv_count_bufs = Array[
-        MutPointer[UInt64, MutAnyOrigin], n_ranks
-    ](uninitialized=True)
-    combine_recv_count_bufs[
-        0
-    ] = combine_recv_count.unsafe_ptr().as_unsafe_any_origin()
+    var recv_bufs: Array[_, n_ranks] = [
+        dispatch_recv.unsafe_ptr().as_unsafe_any_origin(),
+    ]
+    var recv_count_bufs: Array[_, n_ranks] = [
+        dispatch_recv_count.unsafe_ptr().as_unsafe_any_origin(),
+    ]
+    var combine_recv_bufs: Array[_, n_ranks] = [
+        combine_recv.unsafe_ptr().as_unsafe_any_origin(),
+    ]
+    var combine_recv_count_bufs: Array[_, n_ranks] = [
+        combine_recv_count.unsafe_ptr().as_unsafe_any_origin(),
+    ]
 
     var counters = EPLocalSyncCounters[n_experts](atomic_counters.unsafe_ptr())
 
@@ -304,6 +302,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         n_ranks,  # p2p world size
         token_fmt_type,
         use_shmem=False,
+        InputScalesFnType=type_of(EP_NO_INPUT_SCALES),
     ]
     comptime dispatch_wait = dispatch_wait_kernel[
         hw_info.max_thread_block_size,
@@ -340,6 +339,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         recv_count_bufs,
         counters,
         Int32(0),
+        host_args=(EP_NO_INPUT_SCALES,),
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )
@@ -372,8 +372,8 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     # ----- the kernel under test: combine send_tokens_back uses src_info as a
     # ----- write offset. A garbage offset is the SERVOPT-1458 wild write.
     ctx.enqueue_function[combine_async](
-        out_t.as_immut(),
-        src_info_t.as_immut(),
+        out_t.as_imm(),
+        src_info_t.as_imm(),
         combine_send.unsafe_ptr(),
         combine_recv_bufs,
         combine_recv_count_bufs,
@@ -384,8 +384,8 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     )
     ctx.synchronize()
 
-    host_topk.free()
-    host_tokens.free()
+    host_topk.unsafe_free()
+    host_tokens.unsafe_free()
     _ = dispatch_send
     _ = dispatch_recv
     _ = dispatch_recv_count
@@ -416,26 +416,16 @@ def main() raises:
 
     if mode == "single":
         var dist = flag_int(args, "--dist", SI_ROW_OOB)
-        print("FUZZ_SINGLE dist=", dist, "(", si_dist_name(dist), ")")
+        print(t"FUZZ_SINGLE dist= {dist} ( {si_dist_name(dist)} )")
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(dist))
         print("FUZZ_RESULT verdict=PASS")
         return
 
     print(
-        "=== fuzz_ep_combine seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "hidden_size=",
-        hidden_size,
-        "top_k=",
-        top_k,
-        "n_experts=",
-        n_experts,
-        "n_tokens_per_rank=",
-        n_tokens_per_rank,
-        "===",
+        t"=== fuzz_ep_combine seed= {the_seed} budget="
+        t" {the_budget} hidden_size= {hidden_size} top_k= {top_k} n_experts="
+        t" {n_experts} n_tokens_per_rank= {n_tokens_per_rank} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

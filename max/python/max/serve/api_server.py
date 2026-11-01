@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 import tempfile
@@ -52,31 +53,41 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import (
+    _decisions_routes,
+    _systemone_routes,
     kserve_routes,
     openai_routes,
     openresponses_routes,
     sagemaker_routes,
 )
+from max.serve.router._decision_format import detect_decision_format
 from max.serve.router._image_resolution import fetch_media_data_uri
-from max.serve.telemetry.common import send_telemetry_log
+from max.serve.telemetry.common import (
+    _telemetry_disabled,
+    send_telemetry_log,
+)
 from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.ttft_join import announce_enabled
 from max.serve.worker_interface import RequestQueueFull
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from uvicorn import Config
 
+# /v1/decisions and /v1/systemone are OpenAI-style extensions served beside
+# /v1/chat/*.
 ROUTES = {
-    APIType.KSERVE: kserve_routes,
-    APIType.OPENAI: openai_routes,
-    APIType.SAGEMAKER: sagemaker_routes,
-    APIType.OPENRESPONSES: openresponses_routes,
+    APIType.KSERVE: (kserve_routes,),
+    APIType.OPENAI: (openai_routes, _decisions_routes, _systemone_routes),
+    APIType.SAGEMAKER: (sagemaker_routes,),
+    APIType.OPENRESPONSES: (openresponses_routes,),
 }
 
 logger = logging.getLogger("max.serve")
 
 
 def validate_port_is_free(port: int) -> int:
+    """Returns the port after confirming it can be bound."""
     # check if port is already in use
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
@@ -91,6 +102,8 @@ def validate_port_is_free(port: int) -> int:
 
 @dataclass(frozen=True)
 class ServingTokenGeneratorSettings:
+    """Settings that a serving token generator is built from."""
+
     # Pipeline config
     model_factory: PipelinesFactory  # type: ignore
     pipeline_config: PipelineConfig
@@ -111,8 +124,9 @@ async def lifespan(
     serving_settings: ServingTokenGeneratorSettings,
     zmq_endpoint_base: str,
 ) -> AsyncGenerator[None]:
+    """Runs the app's startup and shutdown work."""
     try:
-        if not settings.disable_telemetry:
+        if not _telemetry_disabled(settings):
             send_telemetry_log(
                 serving_settings.pipeline_config.models.model_name
             )
@@ -125,6 +139,7 @@ async def lifespan(
         )
 
     logger.info("Starting server...")
+    announce_enabled()
 
     async with AsyncExitStack() as exit_stack:
         media_root = Path(
@@ -145,6 +160,8 @@ async def lifespan(
             start_telemetry_consumer(settings)
         )
         METRICS.configure(client=metric_client)
+        METRICS.export_zero_client_disconnect_cancellations()
+        METRICS.export_zero_structured_output_requests()
 
         # start model worker
 
@@ -230,6 +247,13 @@ async def lifespan(
         # every API type is mounted regardless, so a route with no counterpart
         # in the served model has to refuse the request itself.
         app.state.task = serving_settings.task
+        if serving_settings.task == PipelineTask.TEXT_GENERATION:
+            # Probes the checkpoint (a Hub request for a repo id), so keep it
+            # off the event loop.
+            app.state.decision_format = await asyncio.to_thread(
+                detect_decision_format,
+                serving_settings.pipeline_config.models["main"].model_path,
+            )
 
         # Also store as handler for OpenResponses API route compatibility
         # For the media tasks, this is the same as pipeline
@@ -276,6 +300,7 @@ async def health() -> Response:
 
 
 def make_metrics_app() -> Callable[..., Any]:
+    """Builds the ASGI app that serves Prometheus metrics."""
     from prometheus_client import disable_created_metrics, make_asgi_app
 
     disable_created_metrics()
@@ -310,7 +335,7 @@ async def _request_queue_full_exception_handler(
     before any response status is committed) by any endpoint that submits to the
     worker, so it is handled centrally here rather than per route. Returns the
     OpenAI ``rate_limit_error`` envelope with a ``Retry-After`` hint; the
-    rejection rate is observable via ``maxserve.request_count{code="429"}``.
+    rejection rate is observable via ``max.request_count{code="429"}``.
     """
     assert isinstance(exc, RequestQueueFull)
     request_id = getattr(request.state, "request_id", "<unknown>")
@@ -328,6 +353,7 @@ def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
+    """Builds the FastAPI app from the server settings."""
     zmq_endpoint_base = generate_zmq_ipc_path()
 
     @asynccontextmanager
@@ -344,11 +370,11 @@ def fastapi_app(
     app = FastAPI(title="MAX Serve", lifespan=lifespan_wrap)
     app.state.zmq_endpoint_base = zmq_endpoint_base
 
-    if settings.max_request_bytes > 0:
-        app.add_middleware(
-            RequestBodySizeLimitMiddleware,
-            max_bytes=settings.max_request_bytes,
-        )
+    app.add_middleware(
+        RequestBodySizeLimitMiddleware,
+        max_bytes=settings.max_request_bytes,
+        body_timeout_s=settings.request_body_timeout_s,
+    )
 
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
@@ -360,6 +386,8 @@ def fastapi_app(
             include_responses=settings.transaction_recording_include_responses,
         )
 
+    # Deliberately the raw setting, not _telemetry_disabled: /metrics is a
+    # local pull surface, not egress, so OTEL_SDK_DISABLED must not remove it.
     if (
         not settings.disable_telemetry
         and settings.metric_recording == MetricRecordingMethod.ASYNCIO
@@ -430,7 +458,8 @@ def fastapi_app(
         "/max_internal/eplb_stats_reset", eplb_stats_reset, methods=["POST"]
     )
     for api_type in settings.api_types:
-        app.include_router(ROUTES[api_type].router)
+        for route_module in ROUTES[api_type]:
+            app.include_router(route_module.router)
 
     app.state.settings = settings
 
@@ -444,7 +473,7 @@ def fastapi_app(
 
     app.state.media_data_uri_fetcher = fetch_media_data_uri_for_app
 
-    register_request(app)
+    register_request(app, structured_logging=settings.structured_logging)
 
     app.add_exception_handler(HTTPException, _openai_http_exception_handler)
     app.add_exception_handler(
@@ -458,6 +487,7 @@ def fastapi_app(
 
 
 def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
+    """Builds the uvicorn config for a FastAPI app."""
     config = Config(
         app=app,
         log_config=None,

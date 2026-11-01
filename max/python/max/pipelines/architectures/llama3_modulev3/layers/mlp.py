@@ -15,9 +15,9 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.nn import Linear, Module
+from max.tensor import Tensor
 
 
 class LlamaStackedMLP(Module[[Tensor], Tensor]):
@@ -46,6 +46,7 @@ class LlamaStackedMLP(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the fused gate/up projection, then the down projection."""
         up_states = self.gate_up_proj(x)
         feed_forward_length = int(up_states.shape[-1]) // 2
         gate, up = F.split(

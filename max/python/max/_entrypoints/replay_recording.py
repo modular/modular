@@ -68,7 +68,6 @@ def main(
     designed to use concurrent requests, and later replay these against a
     server with higher request concurrency for load testing.
     """
-
     if not recording_file.name.endswith(".rec.jsonl"):
         raise click.BadParameter(
             "Only JSONL recording files are currently supported."

@@ -33,13 +33,13 @@ from std.math import (
     sqrt,
     tanh,
 )
-from std.sys import llvm_intrinsic
+from std.sys import align_of, llvm_intrinsic
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from std.builtin.simd import _pow
+from std.simd import _pow
 
 from nn.activations import (
     gelu,
@@ -55,7 +55,15 @@ from extensibility import (
     ElementwiseUnaryMixedOp,
     ElementwiseUnaryOp,
 )
-from layout import Idx, DefaultEngine, TensorEngine, TileTensor
+from layout import (
+    Coord,
+    Idx,
+    DefaultEngine,
+    ImmTileTensor,
+    MutTileTensor,
+    TensorEngine,
+    TileTensor,
+)
 from layout.tile_layout import TensorLayout
 from std.logger import Logger
 
@@ -67,16 +75,16 @@ from std.utils.numerics import isinf, isnan
 from .kernels import *
 
 
-@always_inline
+@inline(.always)
 def _elementwise_tile[
     Op: ElementwiseBinaryOp,
     dtype: DType,
     LayoutType: TensorLayout,
     Engine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    lhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
-    rhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
-) -> TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine]:
+    lhs: MutTileTensor[dtype, LayoutType, _, Engine=Engine],
+    rhs: ImmTileTensor[dtype, LayoutType, _, Engine=Engine],
+) -> type_of(lhs):
     """Naive in-place element-wise binary op over two statically-shaped tiles.
 
     Applies `Op.elementwise` (the scalar overload) to each element of `lhs` and
@@ -95,12 +103,11 @@ def _elementwise_tile[
     comptime num_elements = LayoutType.static_product
 
     comptime for i in range(num_elements):
-        var lhs_off = lhs.layout(Idx[i])
-        var rhs_off = rhs.layout(Idx[i])
-        var lhs_val = lhs.raw_load[width=element_size](lhs_off)
-        var rhs_val = rhs.raw_load[width=element_size](rhs_off)
-        lhs.raw_store[width=element_size](
-            lhs_off, Op.elementwise[dtype, element_size](lhs_val, rhs_val)
+        var lhs_val = lhs.load[alignment=align_of[dtype]()](Coord(Idx[i]))
+        var rhs_val = rhs.load[alignment=align_of[dtype]()](Coord(Idx[i]))
+        lhs.store[alignment=align_of[dtype]()](
+            Coord(Idx[i]),
+            Op.elementwise[dtype, element_size](lhs_val, rhs_val),
         )
     return lhs
 
@@ -122,9 +129,9 @@ struct Add(ElementwiseBinaryOp):
         LayoutType: TensorLayout,
         Engine: TensorEngine = DefaultEngine[element_width=1],
     ](
-        lhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
-        rhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
-    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine]:
+        lhs: TileTensor[mut=True, dtype, LayoutType, _, Engine=Engine],
+        rhs: TileTensor[dtype, LayoutType, _, Engine=Engine],
+    ) -> type_of(lhs):
         """Element-wise add two tiles in place into `lhs`; see `_elementwise_tile`.
 
         Parameters:
@@ -136,7 +143,9 @@ struct Add(ElementwiseBinaryOp):
             lhs: Left operand tile; also the in-place result and return value.
             rhs: Right operand tile of the element-wise sum.
         """
-        return _elementwise_tile[Self, dtype, LayoutType, Engine](lhs, rhs)
+        return _elementwise_tile[Self, dtype, LayoutType, Engine](
+            lhs, rhs.as_imm()
+        )
 
 
 @extensibility.register("mo.sub")
@@ -168,9 +177,9 @@ struct Mul(ElementwiseBinaryOp):
         LayoutType: TensorLayout,
         Engine: TensorEngine = DefaultEngine[element_width=1],
     ](
-        lhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
-        rhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
-    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine]:
+        lhs: TileTensor[mut=True, dtype, LayoutType, _, Engine=Engine],
+        rhs: TileTensor[dtype, LayoutType, _, Engine=Engine],
+    ) -> type_of(lhs):
         """Element-wise multiply two tiles in place into `lhs`; see `_elementwise_tile`.
 
         Parameters:
@@ -182,7 +191,9 @@ struct Mul(ElementwiseBinaryOp):
             lhs: Left operand tile; also the in-place result and return value.
             rhs: Right operand tile of the element-wise product.
         """
-        return _elementwise_tile[Self, dtype, LayoutType, Engine](lhs, rhs)
+        return _elementwise_tile[Self, dtype, LayoutType, Engine](
+            lhs, rhs.as_imm()
+        )
 
 
 @extensibility.register("mo.div")
@@ -384,9 +395,7 @@ struct ReLU(ElementwiseUnaryOp):
         dtype: DType,
         LayoutType: TensorLayout,
         Engine: TensorEngine = DefaultEngine[element_width=1],
-    ](
-        x: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
-    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine]:
+    ](x: TileTensor[dtype, LayoutType, _, Engine=Engine]) -> type_of(x):
         # TODO(GEX-3799): implement TileTensor element-wise relu.
         return x
 

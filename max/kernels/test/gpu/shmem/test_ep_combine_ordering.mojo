@@ -27,7 +27,8 @@ MI355X (gfx950) only.
 """
 
 from std.atomic import Atomic, Ordering, fence
-from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from std.memory.alloc import unsafe_alloc
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
@@ -42,16 +43,21 @@ comptime N_CONSUMERS = 512  # oversubscribed vs CU count -> widens the window
 comptime MSG_ELEMS = 256
 
 
-def ordering_guard_kernel(
-    payload: MutPointer[Float32, MutAnyOrigin],
-    flags: MutPointer[Int32, MutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
-    scratch: MutPointer[Float32, MutAnyOrigin],
+def ordering_guard_kernel[
+    payload_origin: MutOrigin,
+    flags_origin: MutOrigin,
+    output_origin: MutOrigin,
+    scratch_origin: MutOrigin,
+](
+    payload: MutPointer[Float32, payload_origin],
+    flags: MutPointer[Int32, flags_origin],
+    output: MutPointer[Float32, output_origin],
+    scratch: MutPointer[Float32, scratch_origin],
 ):
     """Block 0 is the producer (~ wait SM); blocks 1.. are consumers (~ reduce
     SMs), one payload slot each."""
-    var tid = Int(thread_idx.x)
-    var nthreads = Int(block_dim.x)
+    var tid = thread_idx.x
+    var nthreads = block_dim.x
 
     if block_idx.x == 0:
         for c in range(N_CONSUMERS):
@@ -61,10 +67,10 @@ def ordering_guard_kernel(
             barrier()
             if tid == 0:
                 _flag_atomic.store[ordering=Ordering.RELEASE](
-                    flags + c, DATA_READY
+                    flags.unsafe_offset(c), DATA_READY
                 )
     else:
-        var c = Int(block_idx.x) - 1
+        var c = block_idx.x - 1
         if c >= N_CONSUMERS:
             return
         var base = c * MSG_ELEMS
@@ -77,7 +83,7 @@ def ordering_guard_kernel(
             scratch[c] = seed
 
         if tid == 0:
-            while flags.load[volatile=True](c) != DATA_READY:
+            while flags.unsafe_load[volatile=True](c) != DATA_READY:
                 pass
             fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
         barrier()
@@ -93,7 +99,7 @@ def main() raises:
     var flags = ctx.enqueue_create_buffer[.int32](N_CONSUMERS)
     var output = ctx.enqueue_create_buffer[.float32](total_elems)
     var scratch = ctx.enqueue_create_buffer[.float32](N_CONSUMERS)
-    var host_output = alloc[Float32](total_elems)
+    var host_output = unsafe_alloc[Float32](total_elems)
 
     var stale: Int = 0
     for _it in range(N_ITERS):
@@ -102,13 +108,20 @@ def main() raises:
         ctx.enqueue_memset(flags, Int32(0))
         ctx.enqueue_memset(output, Float32(0))
 
-        ctx.enqueue_function[ordering_guard_kernel](
+        ctx.enqueue_function[
+            ordering_guard_kernel[
+                origin_of(payload),
+                origin_of(flags),
+                origin_of(output),
+                origin_of(scratch),
+            ]
+        ](
             payload,
             flags,
             output,
             scratch,
             grid_dim=N_CONSUMERS + 1,
-            block_dim=WARP_SIZE,
+            block_dim=ctx.default_device_info.warp_size,
         )
 
         ctx.enqueue_copy(host_output, output)
@@ -121,7 +134,7 @@ def main() raises:
                 if isnan(got) or got != Float32(c):
                     stale += 1
 
-    host_output.free()
+    host_output.unsafe_free()
 
     assert_equal(
         stale,

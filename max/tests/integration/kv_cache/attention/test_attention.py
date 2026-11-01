@@ -20,12 +20,15 @@ from collections.abc import Callable, Sequence
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.legacy.kernels import MHAMaskVariant, flash_attention_ragged
+from max.nn.legacy.kv_cache import (
+    MHAKVCacheParams,
+)
 from test_common.modular_graph_test import modular_graph_test
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -81,29 +84,13 @@ def test_kv_cache_ragged_attention(
             input_types=[
                 input_type,
                 input_row_offsets_type,
-                *kv_symbolic_inputs.flatten(),
+                *tree.leaves(kv_symbolic_inputs),
             ],
         ) as g:
-            (
-                input,
-                input_row_offsets,
-                blocks,
-                cache_lengths,
-                lookup_table,
-                max_prompt_length,
-                max_cache_length,
-                attention_dispatch_metadata,
-            ) = g.inputs
+            input, input_row_offsets, *kv_inputs = g.inputs
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                blocks.buffer,
-                cache_lengths.tensor,
-                lookup_table.tensor,
-                max_prompt_length.tensor,
-                max_cache_length.tensor,
-                attention_dispatch_metadata=attention_dispatch_metadata.tensor,
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
             result = flash_attention_ragged(
                 kv_params,
                 input=input.tensor,
@@ -142,12 +129,11 @@ def test_kv_cache_ragged_attention(
         },
         provided_inputs={
             1: input_row_offsets,
-            2: kv_runtime_inputs.kv_blocks,
-            3: kv_runtime_inputs.cache_lengths,
-            4: kv_runtime_inputs.lookup_table,
-            5: kv_runtime_inputs.max_prompt_length,
-            6: kv_runtime_inputs.max_cache_length,
-            7: kv_runtime_inputs.attention_dispatch_metadata,
+            # The KV tail starts at slot 2; let its own order place the rest.
+            **{
+                2 + i: buf
+                for i, buf in enumerate(tree.leaves(kv_runtime_inputs))
+            },
         },
     )
     def test_runs_without_nan(

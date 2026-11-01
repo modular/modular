@@ -21,7 +21,7 @@ from std.math import align_down
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def vectorize[
     func: def[width: Int](idx: Int) -> None,
     //,
@@ -58,7 +58,7 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     def main():
-        var allocation = alloc(Layout[Int32](count=size))
+        var allocation = alloc(Layout[Int32](length=size))
 
         def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)
@@ -128,7 +128,7 @@ def vectorize[
         closure[1](i)
 
 
-@always_inline
+@inline(.always)
 def vectorize[
     func: def[width: Int](idx: Int, evl: Int) -> None,
     //,
@@ -175,7 +175,7 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed 4 in this example
 
     def main():
-        var allocation = alloc(Layout[Int32](count=size))
+        var allocation = alloc(Layout[Int32](length=size))
 
         def closure[width: Int](i: Int, evl: Int) {mut}:
             print("storing", evl, "of", width, "els at pos", i)
@@ -255,7 +255,7 @@ def vectorize[
         closure[simd_width](simd_end, remainder)
 
 
-@always_inline
+@inline(.always)
 def vectorize[
     func: def[width: Int](idx: Int) -> None,
     //,
@@ -294,7 +294,7 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     def main():
-        var allocation = alloc(Layout[Int32](count=size))
+        var allocation = alloc(Layout[Int32](length=size))
 
         def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)

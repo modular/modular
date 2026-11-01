@@ -14,12 +14,12 @@
 
 import math
 
-from max.driver import Device
+from max import functional as F
+from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.tensor import Tensor
-from max.nn.rotary_embedding import Llama3RopeScalingParams
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
+from max.tensor import Tensor
 
 
 class Llama3RotaryEmbedding(RotaryEmbedding):
@@ -79,7 +79,7 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
                     - self.scaling_params.low_freq_factor
                 )
             else:
-                smooth = F.constant(0, DType.float32, device=self.device)
+                smooth = F.constant(0, DType.float32, device=CPU())
             inv_freqs = F.where(
                 wave_len < high_freq_wavelen,
                 inv_freqs,

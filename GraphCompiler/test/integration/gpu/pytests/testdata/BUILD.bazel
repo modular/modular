@@ -1,0 +1,11 @@
+# gazelle:default_visibility //GraphCompiler/test/integration/gpu:__subpackages__
+
+package(default_visibility = ["//GraphCompiler/test/integration/gpu:__subpackages__"])
+
+filegroup(
+    name = "testdata",
+    testonly = True,
+    srcs = glob(
+        ["*.mlir"],
+    ),
+)

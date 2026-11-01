@@ -20,12 +20,12 @@ from std.atomic import Atomic, Ordering, fence
 from max.gpu import thread_idx
 from max.gpu.primitives.warp import _ReduceFn
 from std.os import abort
-from std.sys.info import has_amd_gpu_accelerator, is_amd_gpu
+from std.sys.info import is_amd_gpu
 from max.gpu.host import DeviceAttribute, DeviceContext
 from max.gpu.sync import barrier
 
 
-@always_inline
+@inline(.always)
 def _device_scope() -> StaticString:
     comptime if is_amd_gpu():
         return "agent"
@@ -83,11 +83,13 @@ def coop_group_size(
     Returns:
         Blocks per row, or `1` when the row should not be split.
     """
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not ctx.target.is_amd_gpu():
         return 1
     if batch_size <= 0:
         return 1
-    var cu_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var cu_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
     var group_size = 1
     var c = 2
     while c <= _MAX_COOP_GROUP:
@@ -105,33 +107,34 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
     var _round: Int
     var _phase: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, row: Int, rank: Int):
         self.rank = rank
         self._row = row
         self._round = 0
         self._phase = 0
 
-    @always_inline
+    @inline(.always)
     def _counter(
-        self, workspace: UnsafePointer[Int32, MutAnyOrigin]
-    ) -> UnsafePointer[Int32, MutAnyOrigin]:
-        return workspace + self._row * (
-            _COOP_CONTROL_WORDS + 2 * Self.group_size * COOP_SLOT_FLOATS
+        self, workspace: MutPointer[Int32, MutAnyOrigin]
+    ) -> MutPointer[Int32, MutAnyOrigin]:
+        return workspace.unsafe_offset(
+            self._row
+            * (_COOP_CONTROL_WORDS + 2 * Self.group_size * COOP_SLOT_FLOATS)
         )
 
-    @always_inline
+    @inline(.always)
     def _slots(
-        self, workspace: UnsafePointer[Int32, MutAnyOrigin]
-    ) -> UnsafePointer[Float32, MutAnyOrigin]:
-        return (self._counter(workspace) + _COOP_CONTROL_WORDS).bitcast[
-            Float32
-        ]()
+        self, workspace: MutPointer[Int32, MutAnyOrigin]
+    ) -> MutPointer[Float32, MutAnyOrigin]:
+        return (
+            self._counter(workspace)
+            .unsafe_offset(_COOP_CONTROL_WORDS)
+            .unsafe_bitcast[Float32]()
+        )
 
-    @always_inline
-    def _arrive_and_wait(
-        mut self, workspace: UnsafePointer[Int32, MutAnyOrigin]
-    ):
+    @inline(.always)
+    def _arrive_and_wait(mut self, workspace: MutPointer[Int32, MutAnyOrigin]):
         """Synchronizes the group with device-scoped release and acquire fences.
 
         Thread 0 updates the counter. Block barriers make the acquired peer
@@ -163,18 +166,18 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
             fence[ordering=Ordering.ACQUIRE, scope=_DEVICE_SCOPE]()
         barrier()
 
-    @always_inline
-    def sync(mut self, workspace: UnsafePointer[Int32, MutAnyOrigin]):
+    @inline(.always)
+    def sync(mut self, workspace: MutPointer[Int32, MutAnyOrigin]):
         """Makes each block's preceding global writes visible to its peers."""
         self._arrive_and_wait(workspace)
 
-    @always_inline
+    @inline(.always)
     def gather[
         width: Int
     ](
         mut self,
-        workspace: UnsafePointer[Int32, MutAnyOrigin],
-        table: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
+        workspace: MutPointer[Int32, MutAnyOrigin],
+        table: MutPointer[Float32, _, address_space=.SHARED],
         vals: SIMD[.float32, width],
     ):
         """Publishes `vals` and copies each rank's slot into shared memory.
@@ -186,30 +189,32 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         comptime assert (
             width <= COOP_SLOT_FLOATS
         ), "a publish cannot exceed one slot"
-        var tx = Int(thread_idx.x)
+        var tx = thread_idx.x
         var slots = self._slots(workspace)
         var slot_base = self._phase * Self.group_size * COOP_SLOT_FLOATS
         self._phase ^= 1
 
         if tx == 0:
-            slots.store(slot_base + self.rank * COOP_SLOT_FLOATS, vals)
+            slots.unsafe_store(slot_base + self.rank * COOP_SLOT_FLOATS, vals)
 
         self._arrive_and_wait(workspace)
 
         if tx < Self.group_size:
-            table.store(
+            table.unsafe_store(
                 tx * width,
-                slots.load[width=width](slot_base + tx * COOP_SLOT_FLOATS),
+                slots.unsafe_load[width=width](
+                    slot_base + tx * COOP_SLOT_FLOATS
+                ),
             )
         barrier()
 
-    @always_inline
+    @inline(.always)
     def combine[
         width: Int, combine_fn: _ReduceFn
     ](
         mut self,
-        workspace: UnsafePointer[Int32, MutAnyOrigin],
-        table: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
+        workspace: MutPointer[Int32, MutAnyOrigin],
+        table: MutPointer[Float32, _, address_space=.SHARED],
         vals: SIMD[.float32, width],
     ) -> SIMD[.float32, width]:
         """Combines block-reduced vectors in rank order.
@@ -218,7 +223,7 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         result.
         """
         self.gather[width](workspace, table, vals)
-        var acc = table.load[width=width](0)
+        var acc = table.unsafe_load[width=width](0)
         comptime for r in range(1, Self.group_size):
-            acc = combine_fn(acc, table.load[width=width](r * width))
+            acc = combine_fn(acc, table.unsafe_load[width=width](r * width))
         return acc

@@ -208,6 +208,72 @@ class TestHuggingFaceRepoSubfolderWeightDiscovery:
                 ]
             )
 
+    def test_weight_files_excludes_nested_training_checkpoints(self) -> None:
+        """Test that `checkpoint-<step>/` snapshots don't join the weight set.
+
+        Training repos ship these alongside the weights they were exported
+        from; every one of them repeats the same tensor names, so globbing
+        them in loads an arbitrary training step instead of the checkpoint.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_weight = os.path.join(tmpdir, "model.safetensors")
+            open(root_weight, "w").close()
+
+            for step in (500, 1000, 1500):
+                step_dir = os.path.join(tmpdir, f"checkpoint-{step}")
+                os.makedirs(step_dir)
+                open(os.path.join(step_dir, "model.safetensors"), "w").close()
+
+            repo = HuggingFaceRepo(repo_id=tmpdir)
+            wf = repo.weight_files
+
+            assert wf[WeightsFormat.safetensors] == ["model.safetensors"]
+
+    def test_weight_files_keeps_shards_beside_training_checkpoints(
+        self,
+    ) -> None:
+        """Test that a genuinely sharded repo keeps all of its shards."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            shards = [
+                "model-00001-of-00002.safetensors",
+                "model-00002-of-00002.safetensors",
+            ]
+            for shard in shards:
+                open(os.path.join(tmpdir, shard), "w").close()
+
+            step_dir = os.path.join(tmpdir, "checkpoint-500")
+            os.makedirs(step_dir)
+            for shard in shards:
+                open(os.path.join(step_dir, shard), "w").close()
+
+            repo = HuggingFaceRepo(repo_id=tmpdir)
+            wf = repo.weight_files
+
+            assert sorted(wf[WeightsFormat.safetensors]) == shards
+
+    def test_weight_files_subfolder_selects_a_training_checkpoint(
+        self,
+    ) -> None:
+        """Test that an explicitly requested checkpoint is still returned."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            open(os.path.join(tmpdir, "model.safetensors"), "w").close()
+
+            step_dir = os.path.join(tmpdir, "checkpoint-1000")
+            os.makedirs(step_dir)
+            shards = [
+                "model-00001-of-00002.safetensors",
+                "model-00002-of-00002.safetensors",
+            ]
+            for shard in shards:
+                open(os.path.join(step_dir, shard), "w").close()
+
+            repo = HuggingFaceRepo(repo_id=tmpdir, subfolder="checkpoint-1000")
+            wf = repo.weight_files
+
+            assert sorted(wf[WeightsFormat.safetensors]) == [
+                f"checkpoint-1000/{shard}" for shard in shards
+            ]
+
     def test_supported_encodings_scoped_to_subfolder_local(self) -> None:
         """Test that supported_encodings reads from subfolder-scoped files."""
         with tempfile.TemporaryDirectory() as tmpdir:

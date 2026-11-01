@@ -34,7 +34,7 @@ struct MyCipher[KeySize: Int](Cipher, Copyable, Movable):
 def check[
     C: Cipher & Copyable & Deinitable,
     KeySize: Int,
-    cipher_init: def(Array[UInt8, KeySize]) raises capturing[_] -> C,
+    cipher_init: def(Array[UInt8, KeySize]) thin raises -> C,
 ](n: Int) raises:
     var k = Array[UInt8, KeySize](fill=0)
     var c = cipher_init(k)
@@ -45,10 +45,9 @@ def run[
     check: def[
         C: Cipher & Copyable & Deinitable,
         KeySize: Int,
-        cipher_init: def(Array[UInt8, KeySize]) raises capturing[_] -> C,
-    ](Int) raises capturing[_],
+        cipher_init: def(Array[UInt8, KeySize]) thin raises -> C,
+    ](Int) thin raises,
 ](n: Int) raises:
-    @__parameter
     def make[
         KeySize: Int
     ](key: Array[UInt8, KeySize]) raises -> MyCipher[KeySize]:

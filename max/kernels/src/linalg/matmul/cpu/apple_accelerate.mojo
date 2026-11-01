@@ -17,7 +17,7 @@ Wraps the Apple Accelerate `cblas_sgemm` routine to provide single-precision mat
 
 from std.collections import Optional
 from std.math import fma
-from std.memory.alloc import ManagedAllocation, alloc, dealloc
+from std.memory.alloc import ManagedAllocation, alloc
 from std.sys import CompilationTarget, simd_width_of
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
@@ -33,13 +33,13 @@ from max.gpu.host import DeviceContext
 from std.utils import IndexList
 from std.utils.index import Index
 
-from ...bmm import (
-    elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
-)
 from layout import Coord, Idx, TileTensor, row_major
 from ...packing import pack_b_ndbuffer
 from ...utils import (
-    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
 )
 
 comptime cblas_gemm_type = def(
@@ -50,12 +50,12 @@ comptime cblas_gemm_type = def(
     Int32,
     Int32,
     Float32,
-    UnsafePointer[Float32, ImmutAnyOrigin],
+    ImmPointer[Float32, ImmutAnyOrigin],
     Int32,
-    UnsafePointer[Float32, ImmutAnyOrigin],
+    ImmPointer[Float32, ImmutAnyOrigin],
     Int32,
     Float32,
-    UnsafePointer[Float32, MutAnyOrigin],
+    MutPointer[Float32, MutAnyOrigin],
     Int32,
 ) thin -> None
 """Function type matching the Accelerate `cblas_sgemm` C signature."""
@@ -102,7 +102,7 @@ def _init_dylib() -> OwnedDLHandle:
         return OwnedDLHandle(unsafe_uninitialized=True)
 
 
-@always_inline
+@inline(.always)
 def _get_dylib_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
@@ -116,7 +116,7 @@ def _get_dylib_function[
     ]()
 
 
-@always_inline
+@inline(.always)
 def get_cblas_f32_function() raises -> cblas_gemm_type:
     """Loads and returns the `cblas_sgemm` function pointer from the Apple Accelerate library.
 
@@ -145,7 +145,7 @@ def get_cblas_f32_function() raises -> cblas_gemm_type:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def use_apple_accelerate_lib[
     c_type: DType,
     a_type: DType,
@@ -180,7 +180,7 @@ struct _CBLASTranspose(TrivialRegisterPassable):
 
 
 # _cblas_f32 used by apple_batched_matmul (via the corresponding apple_matmul)
-@always_inline
+@inline(.always)
 def _cblas_f32[
     *,
     transpose_b: Bool = False,
@@ -194,9 +194,9 @@ def _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: UnsafePointer[mut=True, Float32, ...],
-    a_ptr: UnsafePointer[mut=False, Float32, ...],
-    b_ptr: UnsafePointer[mut=False, Float32, ...],
+    c_ptr: MutPointer[Float32, ...],
+    a_ptr: ImmPointer[Float32, ...],
+    b_ptr: ImmPointer[Float32, ...],
 ):
     cblas_gemm_fn(
         _CBLASOrder.ROW_MAJOR,
@@ -206,19 +206,19 @@ def _cblas_f32[
         n,
         k,
         alpha,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](a_ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](a_ptr),
         lda,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](b_ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](b_ptr),
         ldb,
         beta,
-        rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr),
+        rebind[MutPointer[Float32, MutAnyOrigin]](c_ptr),
         ldc,
     )
 
 
 # _cblas_f32 used by apple_matmul (except via the apple_matmul in
 # apple_batched_matmul)
-@always_inline
+@inline(.always)
 def _cblas_f32[
     *,
     transpose_b: Bool = False,
@@ -231,9 +231,9 @@ def _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: UnsafePointer[mut=True, Float32, ...],
-    a_ptr: UnsafePointer[mut=False, Float32, ...],
-    b_ptr: UnsafePointer[mut=False, Float32, ...],
+    c_ptr: MutPointer[Float32, ...],
+    a_ptr: ImmPointer[Float32, ...],
+    b_ptr: ImmPointer[Float32, ...],
 ) raises:
     var cblas_gemm = get_cblas_f32_function()
 
@@ -262,17 +262,23 @@ def _cblas_f32[
 # Currently, use is limited in Apple Float32 case.
 # apple_matmul (which internally calls cblas_sgemm, which in turns calls a
 # cblas_sgemv has been found to have suboptimal performance compared to this.
-@always_inline
+@inline(.always)
 def apple_gemv[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     *,
     b_packed: Bool,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """Performs a parallelized and vectorized GEMV for the M=1 case on Apple CPUs.
 
@@ -281,14 +287,21 @@ def apple_gemv[
     Iterates over columns of B using SIMD FMA and optional parallelism.
 
     Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         b_packed: Whether B is already in packed (transposed) layout.
         transpose_b: Whether to treat B as transposed.
-        elementwise_lambda_fn: Optional epilogue applied element-wise to output.
+        has_epilogue_fn: Whether to hand each output element to
+            `epilogue_fn` instead of storing it to `c`.
+        has_compute_fn: Whether to store `compute_fn` of each output
+            element to `c`.
 
     Args:
         c: Output matrix tile (M=1).
         a: Input A matrix tile (M=1).
         b: Input B matrix tile.
+        epilogue_fn: Epilogue applied element-wise to the output.
+        compute_fn: Compute epilogue applied element-wise to the output.
         ctx: Optional device context for parallelism control.
     """
     comptime assert c.flat_rank >= 2
@@ -303,8 +316,8 @@ def apple_gemv[
 
     var transposed_b_alloc = Optional[ManagedAllocation[Scalar[b.dtype]]]()
     var transposed_b = TileTensor(
-        UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
-        row_major(Coord(Int(0), Int(0))),
+        MutPointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
+        row_major(Int(0), Int(0)),
     )
 
     # If both b_packed and transpose_b are False, we need to transpose B at
@@ -312,15 +325,13 @@ def apple_gemv[
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(Int(b.dim[1]()), Int(b.dim[0]()))
         transposed_b_alloc = alloc[Scalar[b.dtype]](
-            {count = b.num_elements()}
+            {length = b.num_elements()}
         ).into_managed()
         transposed_b = TileTensor(
             transposed_b_alloc.unsafe_value()
             .unsafe_ptr()
             .unsafe_origin_cast[MutUntrackedOrigin](),
-            row_major(
-                Coord(Int(transposed_b_shape[0]), Int(transposed_b_shape[1]))
-            ),
+            row_major(transposed_b_shape[0], transposed_b_shape[1]),
         )
 
         var _kernel_type_m = 0
@@ -339,7 +350,7 @@ def apple_gemv[
 
     comptime simd_width = simd_width_of[c.dtype]()
 
-    @always_inline
+    @inline(.always)
     def process_rows(
         start_row: Int, end_row: Int
     ) {var c, var a, var b, var K, imm}:
@@ -347,16 +358,14 @@ def apple_gemv[
             var acc_vector = SIMD[c.dtype, simd_width]()
             var acc_scalar = Scalar[c.dtype]()
 
-            @always_inline
-            def compute_fn[width: Int](k: Int) {a, b, c, transposed_b, mut}:
-                var a_val = a.load[width=width](Coord(Idx[0], k)).cast[
-                    c.dtype
-                ]()
+            @inline(.always)
+            def accumulate[width: Int](k: Int) {a, b, c, transposed_b, mut}:
+                var a_val = a.load[width=width]((Idx[0], k)).cast[c.dtype]()
                 var b_val = (
-                    b.load[width=width](Coord(n, k)).cast[c.dtype]() if b_packed
+                    b.load[width=width]((n, k)).cast[c.dtype]() if b_packed
                     or (not b_packed and transpose_b) else transposed_b.load[
                         width=width
-                    ](Coord(n, k)).cast[c.dtype]()
+                    ]((n, k)).cast[c.dtype]()
                 )
 
                 comptime if width == 1:
@@ -372,15 +381,19 @@ def apple_gemv[
                         acc_vector,
                     )
 
-            vectorize[simd_width](K, compute_fn)
+            vectorize[simd_width](K, accumulate)
 
             var val = acc_vector.reduce_add() + acc_scalar
 
-            comptime if elementwise_lambda_fn:
-                comptime func = elementwise_lambda_fn.value()
-                func[c.dtype, 1](Index(0, n), val)
+            comptime if has_epilogue_fn:
+                epilogue_fn[c.dtype, 1, alignment=1]((0, n), val)
+            elif has_compute_fn:
+                c.store(
+                    (Idx[0], n),
+                    compute_fn[c.dtype, 1, alignment=1]((0, n), val),
+                )
             else:
-                c.store[width=1](Coord(Idx[0], n), val)
+                c.store((Idx[0], n), val)
 
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
@@ -397,16 +410,22 @@ def apple_gemv[
 
 
 # apple_matmul used by apple_batched_matmul
-@always_inline
+@inline(.always)
 def apple_matmul[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     *,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
 ](
     cblas_gemm_fn: cblas_gemm_type,
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
     b: TileTensor[mut=False, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ) raises:
     """Performs a single-precision matmul via a pre-loaded `cblas_sgemm` function pointer.
 
@@ -415,14 +434,21 @@ def apple_matmul[
     Requires all operands to be `DType.float32`.
 
     Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         transpose_b: Whether to treat B as transposed.
-        elementwise_lambda_fn: Optional epilogue applied element-wise to output.
+        has_epilogue_fn: Whether to apply `epilogue_fn` to the output after
+            the matmul writes it.
+        has_compute_fn: Whether to store `compute_fn` of the output back
+            into `c` after the matmul writes it.
 
     Args:
         cblas_gemm_fn: Pre-loaded `cblas_sgemm` function handle from the Accelerate library.
         c: Output matrix tile.
         a: Input A matrix tile.
         b: Input B matrix tile.
+        epilogue_fn: Epilogue applied element-wise to the output.
+        compute_fn: Compute epilogue applied element-wise to the output.
     """
     comptime assert c.flat_rank >= 2
     comptime assert a.flat_rank >= 2
@@ -451,39 +477,41 @@ def apple_matmul[
         ldc,
         alpha,
         beta,
-        rebind[UnsafePointer[Float32, MutAnyOrigin]](c.ptr),
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](a.ptr),
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](b.ptr),
+        rebind[MutPointer[Float32, MutAnyOrigin]](c.ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](a.ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](b.ptr),
     )
 
-    comptime if elementwise_lambda_fn:
+    comptime if has_epilogue_fn or has_compute_fn:
         var m = Int(c.dim[0]())
         var n = Int(c.dim[1]())
-        comptime epilogue = elementwise_lambda_fn.value()
         comptime simd_size = simd_width_of[c.dtype]()
 
-        @always_inline
+        @inline(.always)
         def epilogue_on_col_chunk[
             simd_width: Int, alignment: Int = 1
         ](idx: Coord) {var}:
             var c_val = c.load[width=simd_width](idx)
-            epilogue[c.dtype, simd_width](
-                Index(idx[0].value(), idx[1].value()), c_val
-            )
+            comptime if has_compute_fn:
+                c.store(
+                    idx,
+                    compute_fn[c.dtype, simd_width, alignment=1](idx, c_val),
+                )
+            else:
+                epilogue_fn[c.dtype, simd_width, alignment=1](idx, c_val)
 
         # TODO: thread a DeviceContext through the matmul stack so we can
         # drop this local construction.
-        elementwise[simd_size](
+        elementwise[simd_size, _trace_description="apple_matmul_epilogue"](
             epilogue_on_col_chunk, (m, n), DeviceContext(api="cpu")
         )
 
 
 # apple_matmul used by all matmuls except apple_batched_matmul
-@always_inline
+@inline(.always)
 def apple_matmul[
     *,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
@@ -497,12 +525,54 @@ def apple_matmul[
 
     Parameters:
         transpose_b: Whether to treat B as transposed.
-        elementwise_lambda_fn: Optional epilogue applied element-wise to output.
 
     Args:
         c: Output matrix tile.
         a: Input A matrix tile.
         b: Input B matrix tile.
+    """
+    apple_matmul[
+        transpose_b=transpose_b, has_epilogue_fn=False, has_compute_fn=False
+    ](c, a, b, no_epilogue_fn, no_compute_fn)
+
+
+@inline(.always)
+def apple_matmul[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool = False,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+) raises:
+    """Performs a single-precision matmul via the Apple Accelerate library.
+
+    Loads `cblas_sgemm` from the Accelerate framework and delegates to
+    `apple_matmul` with the function handle. Requires all operands to be
+    `DType.float32`.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_b: Whether to treat B as transposed.
+        has_epilogue_fn: Whether to apply `epilogue_fn` to the output after
+            the matmul writes it.
+        has_compute_fn: Whether to store `compute_fn` of the output back
+            into `c` after the matmul writes it.
+
+    Args:
+        c: Output matrix tile.
+        a: Input A matrix tile.
+        b: Input B matrix tile.
+        epilogue_fn: Epilogue applied element-wise to the output.
+        compute_fn: Compute epilogue applied element-wise to the output.
     """
     comptime assert (
         a.dtype == b.dtype == c.dtype == .float32
@@ -510,8 +580,10 @@ def apple_matmul[
     var cblas_gemm = get_cblas_f32_function()
 
     apple_matmul[
-        transpose_b=transpose_b, elementwise_lambda_fn=elementwise_lambda_fn
-    ](cblas_gemm, c, a, b)
+        transpose_b=transpose_b,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
+    ](cblas_gemm, c, a, b, epilogue_fn, compute_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -519,14 +591,11 @@ def apple_matmul[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def apple_batched_matmul[
     rank: Int,
     *,
     transpose_b: Bool = False,
-    elementwise_epilogue_fn: Optional[
-        batched_matmul_elementwise_epilogue_type
-    ] = None,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
@@ -542,7 +611,6 @@ def apple_batched_matmul[
     Parameters:
         rank: The rank of the output tensor (must be >= 3).
         transpose_b: Whether to treat B as transposed.
-        elementwise_epilogue_fn: Optional rank-aware epilogue applied to each output slice.
 
     Args:
         c: Output batched tensor tile.
@@ -550,6 +618,103 @@ def apple_batched_matmul[
         b: Input B batched tensor tile.
         c_shape_idx: Shape of the output tensor used to compute batch strides.
     """
+    _apple_batched_matmul_impl[
+        transpose_b=transpose_b, has_epilogue_fn=False, has_compute_fn=False
+    ](c, a, b, c_shape_idx, no_epilogue_fn, no_compute_fn)
+
+
+@inline(.always)
+def apple_batched_matmul[
+    rank: Int,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_b: Bool = False,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+    c_shape_idx: IndexList[rank],
+    epilogue_fn: EpilogueFnType,
+) raises:
+    """Performs a batched single-precision matmul via the Apple Accelerate
+    library, then applies `epilogue_fn` to the output.
+
+    `epilogue_fn` receives rank-`rank` coordinates in the original
+    (uncollapsed) output shape.
+
+    Parameters:
+        rank: The rank of the output tensor (must be >= 3).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        transpose_b: Whether to treat B as transposed.
+
+    Args:
+        c: Output batched tensor tile.
+        a: Input A batched tensor tile.
+        b: Input B batched tensor tile.
+        c_shape_idx: Shape of the output tensor used to compute batch strides.
+        epilogue_fn: Epilogue applied element-wise to the output.
+    """
+    _apple_batched_matmul_impl[
+        transpose_b=transpose_b, has_epilogue_fn=True, has_compute_fn=False
+    ](c, a, b, c_shape_idx, epilogue_fn, no_compute_fn)
+
+
+@inline(.always)
+def apple_batched_matmul[
+    rank: Int,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool = False,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+    c_shape_idx: IndexList[rank],
+    compute_fn: ComputeFnType,
+) raises:
+    """Performs a batched single-precision matmul via the Apple Accelerate
+    library, storing `compute_fn(idx, value)` into `c`.
+
+    `compute_fn` receives rank-`rank` coordinates in the original
+    (uncollapsed) output shape.
+
+    Parameters:
+        rank: The rank of the output tensor (must be >= 3).
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_b: Whether to treat B as transposed.
+
+    Args:
+        c: Output batched tensor tile.
+        a: Input A batched tensor tile.
+        b: Input B batched tensor tile.
+        c_shape_idx: Shape of the output tensor used to compute batch strides.
+        compute_fn: Maps each output index and value to the value to store.
+    """
+    _apple_batched_matmul_impl[
+        transpose_b=transpose_b, has_epilogue_fn=False, has_compute_fn=True
+    ](c, a, b, c_shape_idx, no_epilogue_fn, compute_fn)
+
+
+@inline(.always)
+def _apple_batched_matmul_impl[
+    rank: Int,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+    c_shape_idx: IndexList[rank],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+) raises:
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
 
     # Compute batch dimensions by collapsing all but the last two dims.
@@ -566,45 +731,62 @@ def apple_batched_matmul[
     var b_rows = Int(b.dim[b.rank - 2]())
     var b_cols = Int(b.dim[b.rank - 1]())
 
-    var c_stride = c_rows * c_cols
-    var a_stride = a_rows * a_cols
-    var b_stride = b_rows * b_cols
+    # Collapse the leading batch dims into one batch axis so each per-batch
+    # 2D operand view is a subscript slice. This assumes the batch dims are
+    # packed contiguously, the same assumption the pointer form made.
+    var c3 = c.reshape(row_major(batch_size, c_rows, c_cols))
+    var a3 = a.reshape(row_major(batch_size, a_rows, a_cols))
+    var b3 = b.reshape(row_major(batch_size, b_rows, b_cols))
 
     var cblas_gemm = get_cblas_f32_function()
 
     for batch in range(batch_size):
-        var c2 = TileTensor(
-            c.ptr + batch * c_stride,
-            row_major(Coord(c_rows, c_cols)),
-        )
-        var a2 = TileTensor(
-            a.ptr + batch * a_stride,
-            row_major(Coord(a_rows, a_cols)),
-        )
-        var b2 = TileTensor(
-            b.ptr + batch * b_stride,
-            row_major(Coord(b_rows, b_cols)),
-        )
+        var c2 = c3[batch, :, :]
+        var a2 = a3[batch, :, :]
+        var b2 = b3[batch, :, :]
 
         var batch_coords = _get_start_indices_of_nth_subvolume[2](
             batch, c_shape_idx
         )
 
-        @__parameter
-        @__copy_capture(batch_coords)
-        def elementwise_lambda_2d[
-            c_type: DType, width: SIMDLength, *, alignment: Int = 1
-        ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
+        @inline(.always)
+        def epilogue_2d[
+            c_type: DType, width: SIMDLength, *, alignment: Int
+        ](out_coords: Coord, out_val: SIMD[c_type, width]) {
+            var batch_coords,
+            var epilogue_fn,
+        }:
+            comptime assert (
+                out_coords.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             var local_batch_coords = batch_coords
-            local_batch_coords[rank - 1] = out_coords[1]
-            local_batch_coords[rank - 2] = out_coords[0]
+            local_batch_coords[rank - 1] = Int(out_coords[1])
+            local_batch_coords[rank - 2] = Int(out_coords[0])
 
-            comptime func = elementwise_epilogue_fn.value()
-            func[c_type, width, rank](local_batch_coords, out_val)
+            epilogue_fn[c_type, width, alignment=alignment](
+                Coord(local_batch_coords), out_val
+            )
+
+        @inline(.always)
+        def compute_2d[
+            c_type: DType, width: SIMDLength, *, alignment: Int
+        ](out_coords: Coord, out_val: SIMD[c_type, width]) {
+            var batch_coords,
+            var compute_fn,
+        } -> SIMD[c_type, width]:
+            comptime assert (
+                out_coords.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var local_batch_coords = batch_coords
+            local_batch_coords[rank - 1] = Int(out_coords[1])
+            local_batch_coords[rank - 2] = Int(out_coords[0])
+
+            return compute_fn[c_type, width, alignment=alignment](
+                Coord(local_batch_coords), out_val
+            )
 
         apple_matmul[
             transpose_b=transpose_b,
-            elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
-                elementwise_lambda_2d
-            ) if elementwise_epilogue_fn else None,
-        ](cblas_gemm, c2, a2, b2)
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+        ](cblas_gemm, c2, a2, b2, epilogue_2d, compute_2d)

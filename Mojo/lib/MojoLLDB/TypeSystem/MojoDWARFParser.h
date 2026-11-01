@@ -25,14 +25,10 @@ class DWARFDebugInfoEntry;
 class SymbolFileDWARF;
 } // namespace lldb_private::plugin::dwarf
 
-namespace M {
-class MojoASTDeclRef;
-
-namespace KGEN::LIT {
+namespace M::KGEN::LIT {
 class ASTDecl;
-} // namespace KGEN::LIT
-
-} // namespace M
+class OpASTDecl;
+} // namespace M::KGEN::LIT
 
 namespace M::KGEN::Mojo {
 class MojoTypeSystem;
@@ -115,18 +111,17 @@ private:
   /// Get parent decl of the given die.
   ///
   /// If `declDieCopy` is provided, it should be set to the parent decl.
-  MojoASTDeclRef getDeclContextContainingDIE(
+  LIT::ASTDecl *getDeclContextContainingDIE(
       const lldb_private::plugin::dwarf::DWARFDIE &die,
       lldb_private::plugin::dwarf::DWARFDIE *declDieCopy);
 
   /// Get the decl that corresponds to the given die. It has an internal cache
   /// to prevent duplicates.
-  MojoASTDeclRef
-  getDeclForDIE(const lldb_private::plugin::dwarf::DWARFDIE &die);
+  LIT::ASTDecl *getDeclForDIE(const lldb_private::plugin::dwarf::DWARFDIE &die);
 
   /// Get the decl that corresponds to the given die only if it has been created
   /// already.
-  MojoASTDeclRef
+  LIT::ASTDecl *
   getCachedDeclForDIE(const lldb_private::plugin::dwarf::DWARFDIE &die);
 
   /// Extract the SourceName of a given die by inspecting its annotations.
@@ -137,7 +132,7 @@ private:
 
   using DIEToDeclMap =
       llvm::DenseMap<const lldb_private::plugin::dwarf::DWARFDebugInfoEntry *,
-                     MojoASTDeclRef>;
+                     LIT::ASTDecl *>;
   /// Mapping from DWARF DIE to the generated Mojo decl.
   DIEToDeclMap dieToDecl;
 

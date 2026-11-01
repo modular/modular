@@ -28,23 +28,21 @@ struct CSRGraph(Copyable):
 
     var num_vertices: Int
     var num_edges: Int
-    var src_ptrs: UnsafePointer[UInt32, MutUntrackedOrigin]
-    var dst: UnsafePointer[UInt32, MutUntrackedOrigin]
+    var src_ptrs: MutPointer[UInt32, MutUntrackedOrigin]
+    var dst: MutPointer[UInt32, MutUntrackedOrigin]
 
     def __init__(out self):
         self.num_vertices = 0
         self.num_edges = 0
-        self.src_ptrs = UnsafePointer[
-            UInt32, MutUntrackedOrigin
-        ].unsafe_dangling()
-        self.dst = UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
+        self.src_ptrs = MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
+        self.dst = MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
 
     def __init__(
         out self,
         nv: Int,
         ne: Int,
-        sp: UnsafePointer[UInt32, MutUntrackedOrigin],
-        d: UnsafePointer[UInt32, MutUntrackedOrigin],
+        sp: MutPointer[UInt32, MutUntrackedOrigin],
+        d: MutPointer[UInt32, MutUntrackedOrigin],
     ):
         self.num_vertices = nv
         self.num_edges = ne
@@ -57,23 +55,21 @@ struct CSCGraph(Copyable):
 
     var num_vertices: Int
     var num_edges: Int
-    var dst_ptrs: UnsafePointer[UInt32, MutUntrackedOrigin]
-    var src: UnsafePointer[UInt32, MutUntrackedOrigin]
+    var dst_ptrs: MutPointer[UInt32, MutUntrackedOrigin]
+    var src: MutPointer[UInt32, MutUntrackedOrigin]
 
     def __init__(out self):
         self.num_vertices = 0
         self.num_edges = 0
-        self.dst_ptrs = UnsafePointer[
-            UInt32, MutUntrackedOrigin
-        ].unsafe_dangling()
-        self.src = UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
+        self.dst_ptrs = MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
+        self.src = MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
 
     def __init__(
         out self,
         nv: Int,
         ne: Int,
-        dp: UnsafePointer[UInt32, MutUntrackedOrigin],
-        s: UnsafePointer[UInt32, MutUntrackedOrigin],
+        dp: MutPointer[UInt32, MutUntrackedOrigin],
+        s: MutPointer[UInt32, MutUntrackedOrigin],
     ):
         self.num_vertices = nv
         self.num_edges = ne
@@ -86,21 +82,21 @@ struct COOGraph(Copyable):
 
     var num_vertices: Int
     var num_edges: Int
-    var src: UnsafePointer[UInt32, MutUntrackedOrigin]
-    var dst: UnsafePointer[UInt32, MutUntrackedOrigin]
+    var src: MutPointer[UInt32, MutUntrackedOrigin]
+    var dst: MutPointer[UInt32, MutUntrackedOrigin]
 
     def __init__(out self):
         self.num_vertices = 0
         self.num_edges = 0
-        self.src = UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
-        self.dst = UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
+        self.src = MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
+        self.dst = MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling()
 
     def __init__(
         out self,
         nv: Int,
         ne: Int,
-        s: UnsafePointer[UInt32, MutUntrackedOrigin],
-        d: UnsafePointer[UInt32, MutUntrackedOrigin],
+        s: MutPointer[UInt32, MutUntrackedOrigin],
+        d: MutPointer[UInt32, MutUntrackedOrigin],
     ):
         self.num_vertices = nv
         self.num_edges = ne
@@ -258,7 +254,7 @@ def cpu_bfs(
 def verify_levels(
     num_vertices: Int,
     expected: List[UInt32],
-    h_level: UnsafePointer[mut=False, UInt32, _],
+    h_level: ImmPointer[UInt32, _],
 ) -> Bool:
     """Verify GPU BFS results against CPU reference.
 

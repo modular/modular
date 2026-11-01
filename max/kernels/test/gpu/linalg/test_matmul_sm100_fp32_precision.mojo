@@ -41,7 +41,12 @@ from std.random import random_float64, seed
 
 from max.gpu.host import DeviceContext
 from std.testing import assert_true
-from layout import TileTensor, Coord, Idx, DefaultEngine, row_major
+from layout import (
+    TileTensor,
+    Idx,
+    DefaultEngine,
+    row_major,
+)
 from linalg.matmul.gpu import _matmul_gpu
 
 comptime N = 128
@@ -78,8 +83,8 @@ def _stats_vs_ref(
     var max_abs = Float64(0.0)
     for mm in range(rows):
         for nn in range(N):
-            var g = Float64(got.raw_load(mm * N + nn))
-            var r = reference.raw_load(mm * N + nn)
+            var g = Float64(got.load[width=1]((mm, nn)))
+            var r = reference.load[width=1]((mm, nn))
             var ad = abs(g - r)
             var denom = abs(r)
             if denom < 1e-30:
@@ -117,10 +122,10 @@ def _run_matmul[
     picks the dispatch mode."""
     var a_dev_buf = ctx.enqueue_create_buffer[f32](m * K)
     ctx.enqueue_copy(a_dev_buf, a_host._storage)
-    var a_dev = TileTensor(a_dev_buf, row_major(Coord(Int(m), Idx[K])))
+    var a_dev = TileTensor(a_dev_buf, row_major(m, Idx[K]))
 
     var c_dev_buf = ctx.enqueue_create_buffer[f32](m * N)
-    var c_dev = TileTensor(c_dev_buf, row_major(Coord(Int(m), Idx[N])))
+    var c_dev = TileTensor(c_dev_buf, row_major(m, Idx[N]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True, use_tf32=use_tf32](
         c_dev, a_dev, b_dev, ctx
@@ -136,42 +141,36 @@ def main() raises:
     with DeviceContext() as ctx:
         seed(0xC0FFEE)
         var a_host_buf = ctx.enqueue_create_host_buffer[f32](MAX_M * K)
-        var a_host = TileTensor(
-            a_host_buf, row_major(Coord(Idx[MAX_M], Idx[K]))
-        )
+        var a_host = TileTensor(a_host_buf, row_major(Idx[MAX_M], Idx[K]))
         var b_host_buf = ctx.enqueue_create_host_buffer[f32](N * K)
-        var b_host = TileTensor(b_host_buf, row_major(Coord(Idx[N], Idx[K])))
+        var b_host = TileTensor(b_host_buf, row_major(Idx[N], Idx[K]))
         for i in range(a_host.num_elements()):
-            a_host.raw_store(i, Float32(random_float64(-1.0, 1.0)))
+            a_host[i // K, i % K] = Float32(random_float64(-1.0, 1.0))
         for i in range(b_host.num_elements()):
-            b_host.raw_store(i, Float32(random_float64(-1.0, 1.0)))
+            b_host[i // K, i % K] = Float32(random_float64(-1.0, 1.0))
 
         var b_dev_buf = ctx.enqueue_create_buffer[f32](N * K)
-        var b_dev = TileTensor(b_dev_buf, row_major(Coord(Idx[N], Idx[K])))
+        var b_dev = TileTensor(b_dev_buf, row_major(Idx[N], Idx[K]))
         ctx.enqueue_copy(b_dev_buf, b_host._storage)
         ctx.synchronize()
 
         # fp64 reference for the first REF_ROWS rows, from the same fp32
         # inputs. transpose_b: C[mm, nn] = sum_k A[mm, k] * B[nn, k].
         var ref_buf = ctx.enqueue_create_host_buffer[f64](REF_ROWS * N)
-        var ref_host = TileTensor(
-            ref_buf, row_major(Coord(Idx[REF_ROWS], Idx[N]))
-        )
+        var ref_host = TileTensor(ref_buf, row_major(Idx[REF_ROWS], Idx[N]))
         for mm in range(REF_ROWS):
             for nn in range(N):
                 var acc = Float64(0.0)
                 for kk in range(K):
-                    acc += Float64(a_host.raw_load(mm * K + kk)) * Float64(
-                        b_host.raw_load(nn * K + kk)
-                    )
-                ref_host.raw_store(mm * N + nn, acc)
+                    acc += Float64(a_host[mm, kk]) * Float64(b_host[nn, kk])
+                ref_host[mm, nn] = acc
 
         # Kept for the cross-m comparisons below.
         var c64_buf = ctx.enqueue_create_host_buffer[f32](REF_ROWS * N)
-        var c64 = TileTensor(c64_buf, row_major(Coord(Idx[REF_ROWS], Idx[N])))
+        var c64 = TileTensor(c64_buf, row_major(Idx[REF_ROWS], Idx[N]))
         var c128_tf32_buf = ctx.enqueue_create_host_buffer[f32](REF_ROWS * N)
         var c128_tf32 = TileTensor(
-            c128_tf32_buf, row_major(Coord(Idx[REF_ROWS], Idx[N]))
+            c128_tf32_buf, row_major(Idx[REF_ROWS], Idx[N])
         )
 
         print("[phase 1] use_tf32=True, m <= 64: split-K GEMV, IEEE fp32")
@@ -179,7 +178,7 @@ def main() raises:
         for idx in range(len(ms_small)):
             var m = ms_small[idx]
             var c_buf = ctx.enqueue_create_host_buffer[f32](m * N)
-            var c = TileTensor(c_buf, row_major(Coord(Int(m), Idx[N])))
+            var c = TileTensor(c_buf, row_major(m, Idx[N]))
             _run_matmul(a_host, b_dev, c, m, ctx)
             var st = _stats_vs_ref(c, ref_host, min(m, REF_ROWS))
             print(t"  m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")
@@ -192,15 +191,16 @@ def main() raises:
                 String("m=", m, " max_abs above the fp32-exact bound"),
             )
             if m == 64:
-                for i in range(REF_ROWS * N):
-                    c64.raw_store(i, c.raw_load(i))
+                for mm in range(REF_ROWS):
+                    for nn in range(N):
+                        c64[mm, nn] = c[mm, nn]
 
         print("[phase 2] use_tf32=True, m > 64: TF32 UMMA tile GEMM")
         var ms_large = [65, 128, 512]
         for idx in range(len(ms_large)):
             var m = ms_large[idx]
             var c_buf = ctx.enqueue_create_host_buffer[f32](m * N)
-            var c = TileTensor(c_buf, row_major(Coord(Int(m), Idx[N])))
+            var c = TileTensor(c_buf, row_major(m, Idx[N]))
             _run_matmul(a_host, b_dev, c, m, ctx)
             var st = _stats_vs_ref(c, ref_host, REF_ROWS)
             print(t"  m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")
@@ -219,15 +219,16 @@ def main() raises:
                 String("m=", m, " mean_rel above the TF32 band"),
             )
             if m == 128:
-                for i in range(REF_ROWS * N):
-                    c128_tf32.raw_store(i, c.raw_load(i))
+                for mm in range(REF_ROWS):
+                    for nn in range(N):
+                        c128_tf32[mm, nn] = c[mm, nn]
 
         # The dispatch cliff: the same 64 input rows produce different
         # outputs at m=64 (split-K GEMV) vs m=128 (TF32 tile GEMM).
         var sum_rel_diff = Float64(0.0)
         for i in range(REF_ROWS * N):
-            var g64 = Float64(c64.raw_load(i))
-            var g128 = Float64(c128_tf32.raw_load(i))
+            var g64 = Float64(c64[i // N, i % N])
+            var g128 = Float64(c128_tf32[i // N, i % N])
             var denom = abs(g64)
             if denom < 1e-30:
                 denom = 1e-30
@@ -247,7 +248,7 @@ def main() raises:
         for idx in range(len(ms_precise)):
             var m = ms_precise[idx]
             var c_buf = ctx.enqueue_create_host_buffer[f32](m * N)
-            var c = TileTensor(c_buf, row_major(Coord(Int(m), Idx[N])))
+            var c = TileTensor(c_buf, row_major(m, Idx[N]))
             _run_matmul[use_tf32=False](a_host, b_dev, c, m, ctx)
             var st = _stats_vs_ref(c, ref_host, min(m, REF_ROWS))
             print(t"  m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")
@@ -276,7 +277,7 @@ def main() raises:
             if m == 64 or m == 128:
                 var mismatches = 0
                 for i in range(REF_ROWS * N):
-                    if c.raw_load(i) != c64.raw_load(i):
+                    if c[i // N, i % N] != c64[i // N, i % N]:
                         mismatches += 1
                 print(t"  bit-exact vs default m=64: {mismatches} diffs")
                 assert_true(

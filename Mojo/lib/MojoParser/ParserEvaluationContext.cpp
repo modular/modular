@@ -42,18 +42,24 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
   // Typically, this is a LIT struct type.
   if (auto resolvedType =
           sugarDynCast<LIT::StructType>(typeParam.getTypeValue())) {
-    ASTDecl &astDecl =
-        shared.declResolver->getDeclForTypeSymbol(resolvedType.getSymbol());
-    auto structDeclOp = cast<StructDeclOp>(astDecl.getIfOperation());
+    // Decls from a bytecode package are registered lazily, so the struct may
+    // not have been seen yet: resolve it on demand rather than assuming that
+    // whoever produced this type already forced it.
+    ASTDecl *decl = shared.resolveAndGetTypeDecl(
+        resolvedType.getSymbol(), shared.getTopLevelDecl().getLoc());
+    assert(decl);
+    auto *structDecl = cast<StructASTDecl>(decl);
+    StructDeclOp structDeclOp = structDecl->getOp();
 
-    if (failed(shared.declResolver->resolveBody(astDecl, astDecl.getLoc())))
+    if (failed(shared.declResolver->resolveBody(*structDecl,
+                                                structDecl->getLoc())))
       return failure();
 
     // Return the decl. instance is null since this is not an IREvaluator
     // context.
     return ResolvedStructHandle{
         cast<StructDeclInterface>(structDeclOp.getOperation()),
-        resolvedType.getParamValues(), &astDecl,
+        resolvedType.getParamValues(), structDecl,
         /*instance=*/nullptr};
   }
   return failure();
@@ -62,9 +68,9 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
 FuncInterface
 ParserEvaluationContext::resolveFunctionDecl(SymbolRefAttr symbol) {
   ASTDecl *decl = shared.declResolver->getDeclForFuncSymbol(symbol);
-  if (!decl)
-    return nullptr;
-  return dyn_cast_or_null<FuncInterface>(decl->getIfOperation());
+  if (auto *defDecl = dyn_cast_or_null<DefASTDecl>(decl))
+    return defDecl->getOp();
+  return nullptr;
 }
 
 Operation *ParserEvaluationContext::resolveConformanceForStruct(
@@ -72,7 +78,7 @@ Operation *ParserEvaluationContext::resolveConformanceForStruct(
   auto *astDecl = static_cast<ASTDecl *>(resolved.handle);
 
   // Typically, this is a StructDeclOp created by the parser.
-  if (isa<StructDeclOp>(astDecl->getIfOperation())) {
+  if (isa<StructASTDecl>(astDecl)) {
     auto conformanceDecls =
         astDecl->lookupInCurrentScope(traitSymbol.getFlattenedName());
     if (conformanceDecls.empty())
@@ -80,12 +86,12 @@ Operation *ParserEvaluationContext::resolveConformanceForStruct(
     // TODO: we might need to allow multiple conformance ops for parametric
     // traits, and we need to filter it here.
     assert(conformanceDecls.size() == 1 && "expected exactly one conformance");
-    ASTDecl &conformDecl = *conformanceDecls.front();
+    auto &conformDecl = cast<ConformanceASTDecl>(*conformanceDecls.front());
     if (failed(shared.declResolver->resolveBody(conformDecl,
                                                 conformDecl.getLoc())))
       return nullptr;
 
-    return conformDecl.getIfOperation();
+    return conformDecl.getOp();
   }
 
   return nullptr;
@@ -108,7 +114,7 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
     auto traitDeclResolver = [&](SymbolRefAttr symbol) -> TraitDeclOp {
       ASTDecl &decl = shared.declResolver->getDeclForTypeSymbol(symbol);
-      return cast<TraitDeclOp>(decl.getIfOperation());
+      return cast<TraitASTDecl>(decl).getOp();
     };
 
     // Try LIT-specific trait type folding first, then fall back to the attr

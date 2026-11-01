@@ -21,23 +21,53 @@ requests until its copy has actually landed.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import logging
+from collections.abc import Iterable, Mapping, Sequence
 
 import numpy as np
 import pytest
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.driver import Buffer
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn.legacy.kv_cache import (
+    KVCacheGroupId,
+    PagedKVLeafRegion,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
+from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.checkpoint import (
+    Checkpointer,
+    CheckpointEvent,
+    CheckpointEventKind,
+    checkpoint_at_end_of_prompt,
+    checkpoint_at_release,
+)
+from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
+    CompletedLookup,
     KVConnector,
     KVConnectorTransfer,
-    TransferDirection,
+    KVLoadFailed,
+    KVLoadRefused,
+    KVLookup,
+    KVProbe,
+    KVTransfer,
 )
+from max.pipelines.kv_cache.paged_kv_cache import jenga_block_manager
+from max.pipelines.kv_cache.paged_kv_cache._common import PrefixCacheHits
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     JengaBlockManager,
     KVLeafInfo,
+    create_groups,
+    create_pools,
+)
+from max.pipelines.kv_cache.paged_kv_cache.recurrent_coordinator import (
+    RecurrentKVGroupCoordinator,
 )
 from max.pipelines.request.base import RequestID
 
@@ -45,29 +75,105 @@ FULL = "full"
 VALUES = "values"
 SCALES = "scales"
 SLIDING = "sliding"
+STATE = "state"
 
 
 class FakeTransfer:
-    """A transfer that reports complete only once ``synchronize`` is called."""
+    """A transfer that reports complete only once ``synchronize`` is called.
 
-    def __init__(
-        self,
-        g0: Mapping[str, Sequence[int]],
-        direction: TransferDirection = TransferDirection.LOAD,
-    ) -> None:
-        self.g0_blocks_per_leaf = g0
-        self.direction = direction
+    Setting ``fails`` makes every poll raise ``error``, as a terminal transfer
+    failure does: the destination blocks hold no valid KV, and the failure is
+    sticky so a second poller cannot see completion instead.
+    """
+
+    def __init__(self, g0: Mapping[str, Sequence[int]] | None = None) -> None:
+        self.g0_blocks_per_leaf = {} if g0 is None else g0
         self.done = False
+        self.fails = False
+        self.error: Exception = KVLoadFailed("transfer failed")
 
     def is_complete(self) -> bool:
+        if self.fails:
+            raise self.error
         return self.done
 
     def synchronize(self) -> None:
         self.done = True
 
 
+class FakeLookup:
+    """A started lookup that answers only once ``answer`` is called.
+
+    Setting ``error`` makes every poll raise it, as a broken handle would.
+    """
+
+    def __init__(self, masks: Mapping[str, Sequence[bool]]) -> None:
+        self._masks = masks
+        self.answered = False
+        self.error: Exception | None = None
+        self.polls = 0
+        self.mask_reads = 0
+
+    def is_complete(self) -> bool:
+        self.polls += 1
+        if self.error is not None:
+            raise self.error
+        return self.answered
+
+    def masks(self) -> Mapping[str, Sequence[bool]]:
+        self.mask_reads += 1
+        if not self.answered:
+            raise RuntimeError("the lookup has not answered yet")
+        return self._masks
+
+    def answer(self) -> None:
+        self.answered = True
+
+
+class FakeProbe:
+    """A started probe that answers only once ``answer`` is called.
+
+    Setting ``error`` makes every poll raise it, as a broken handle would,
+    and ``give_up`` completes it with no answer, as a probe the store shed
+    or timed out on does.
+    """
+
+    def __init__(self, answers: Sequence[Mapping[str, Sequence[bool]]]) -> None:
+        self._answers: Sequence[Mapping[str, Sequence[bool]]] | None = answers
+        self.answered = False
+        self.error: Exception | None = None
+        self.polls = 0
+
+    def is_complete(self) -> bool:
+        self.polls += 1
+        if self.error is not None:
+            raise self.error
+        return self.answered
+
+    def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        if not self.answered:
+            raise RuntimeError("the probe has not answered yet")
+        return self._answers
+
+    def answer(self) -> None:
+        self.answered = True
+
+    def give_up(self) -> None:
+        self._answers = None
+        self.answered = True
+
+
 class FakeConnector:
-    """Serves whatever hashes it has been told it holds, and records calls."""
+    """Serves whatever hashes each leaf holds, and records calls.
+
+    ``deferred_lookups`` makes ``start_lookup`` hand back a :class:`FakeLookup`
+    that answers only when told to, the way a connector whose lookup is a
+    round trip does. ``probe_answers`` makes ``probe`` answer from what the
+    connector holds rather than sending the manager back to ``lookup``, and
+    ``probe_leaves`` narrows that answer to the leaves it names.
+    ``deferred_probes`` makes ``start_probe`` hand back a :class:`FakeProbe`
+    over that same answer, which answers only when told to.
+    """
 
     name = "FakeConnector"
 
@@ -75,51 +181,184 @@ class FakeConnector:
         self,
         leaves: Mapping[str, KVCacheGroupId] | Sequence[str],
         asynchronous: bool = True,
+        skips_held: bool = False,
+        deferred_lookups: bool = False,
+        probe_answers: bool = False,
+        deferred_probes: bool = False,
     ) -> None:
+        self.deferred_lookups = deferred_lookups
+        self.probe_answers = probe_answers
+        self.deferred_probes = deferred_probes
+        self.probe_leaves: Sequence[str] | None = None
+        # Whether a probe answer may be loaded from, as the tiered
+        # connector's, which is one lookup, may.
+        self.probes_are_lookups = False
+        self.started: list[FakeLookup] = []
+        self.started_probes: list[FakeProbe] = []
+        self.loaded_from: list[KVLookup] = []
+        self.abandoned: list[KVLookup] = []
+        self.probes: list[tuple[list[bytes], list[int], bytes | None]] = []
         self.leaves = (
             dict(leaves)
             if isinstance(leaves, Mapping)
             else {leaf: KVCacheGroupId.full() for leaf in leaves}
         )
-        self.held: set[bytes] = set()
+        self.held: dict[str, set[bytes]] = {leaf: set() for leaf in self.leaves}
+        self.evict_before_load: set[bytes] = set()
+        # Raised by the next `load` in place of posting anything.
+        self.load_error: Exception | None = None
+        # Whether the next load's transfer fails on its very first poll.
+        self.fail_on_first_poll = False
         self.asynchronous = asynchronous
-        self.loads: list[tuple[dict[str, list[int]], list[bytes], int]] = []
-        self.offloads: list[tuple[dict[str, list[int]], list[bytes]]] = []
+        # Whether an offload skips the hashes a leaf already holds, as the
+        # real connectors do, and so reports only the blocks it took.
+        self.skips_held = skips_held
+        self.lookups: list[tuple[list[bytes], int, bytes | None]] = []
+        self.chain_starts: list[int | None] = []
+        # Only the calls to the blocking `lookup`, which a deferred alloc
+        # must never make because it runs on the scheduler thread.
+        self.blocking_lookups = 0
+        self.loads: list[
+            tuple[dict[str, list[int]], dict[str, list[bytes]], int]
+        ] = []
+        self.offloads: list[
+            tuple[dict[str, list[int]], dict[str, list[bytes]]]
+        ] = []
+        self.touches: list[tuple[list[bytes], int]] = []
         self.transfers: list[FakeTransfer] = []
+        self.polls = 0
+
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+        chain_start: int | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        """States residency and nothing else.
+
+        What a pattern of residency is WORTH is the manager's to work out from
+        each leaf's shape, which is the point of the split.
+        """
+        self.blocking_lookups += 1
+        self.lookups.append((list(block_hashes), replica_idx, hint))
+        self.chain_starts.append(chain_start)
+        return self._resident(block_hashes)
+
+    def _resident(
+        self, block_hashes: Sequence[bytes]
+    ) -> Mapping[str, Sequence[bool]]:
+        return {
+            leaf_id: [h in self.held[leaf_id] for h in block_hashes]
+            for leaf_id in self.leaves
+        }
+
+    def start_lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+        chain_start: int | None = None,
+    ) -> KVLookup:
+        self.lookups.append((list(block_hashes), replica_idx, hint))
+        self.chain_starts.append(chain_start)
+        masks = self._resident(block_hashes)
+        if not self.deferred_lookups:
+            return CompletedLookup(masks)
+        lookup = FakeLookup(masks)
+        self.started.append(lookup)
+        return lookup
+
+    def defers_lookup(self, replica_idx: int = 0) -> bool:
+        return self.deferred_lookups
+
+    def probe_is_lookup(self) -> bool:
+        return self.probes_are_lookups
+
+    def load_lookup(
+        self,
+        lookup: KVLookup,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        self.loaded_from.append(lookup)
+        return self.load(
+            block_ids, block_hashes, replica_idx=replica_idx, hint=hint
+        )
+
+    def abandon_lookup(self, lookup: KVLookup) -> None:
+        self.abandoned.append(lookup)
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        self.probes.append((list(block_hashes), list(replica_idxs), hint))
+        if not self.probe_answers:
+            return None
+        return self._probe_answers(block_hashes, replica_idxs)
+
+    def _probe_answers(
+        self, block_hashes: Sequence[bytes], replica_idxs: Sequence[int]
+    ) -> list[Mapping[str, Sequence[bool]]]:
+        resident = {
+            leaf_id: [h in self.held[leaf_id] for h in block_hashes]
+            for leaf_id in (
+                self.leaves if self.probe_leaves is None else self.probe_leaves
+            )
+        }
+        return [resident for _ in replica_idxs]
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        if not self.deferred_probes:
+            return None
+        probe = FakeProbe(self._probe_answers(block_hashes, replica_idxs))
+        self.started_probes.append(probe)
+        return probe
 
     def load(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
         hint: bytes | None = None,
-    ) -> KVConnectorTransfer:
-        served = 0
-        for block_hash in block_hashes:
-            if block_hash not in self.held:
-                break
-            served += 1
+    ) -> KVTransfer:
         self.loads.append(
             (
                 {leaf: list(ids) for leaf, ids in block_ids.items()},
-                list(block_hashes),
-                served,
+                {leaf: list(hs) for leaf, hs in block_hashes.items()},
+                replica_idx,
             )
         )
-        loaded_blocks = {}
-        for leaf_id, ids in block_ids.items():
-            group_id = self.leaves[leaf_id]
-            window_blocks = (
-                group_id.blocks_in_window(page_size=1)
-                if group_id.is_sliding_window()
-                else served
+        for leaf_id, hashes in block_hashes.items():
+            assert len(hashes) == len(block_ids[leaf_id]), (
+                f"leaf {leaf_id!r} got {len(block_ids[leaf_id])} blocks for "
+                f"{len(hashes)} hashes"
             )
-            null_padding = max(0, served - window_blocks)
-            loaded_blocks[leaf_id] = [0] * null_padding + list(ids)[
-                : served - null_padding
-            ]
-        transfer = FakeTransfer(loaded_blocks)
-        if not self.asynchronous or served == 0:
+            for block_hash in hashes:
+                if block_hash in self.evict_before_load:
+                    raise KVLoadRefused(
+                        f"evicted between lookup and load: {block_hash!r}",
+                        leaf_id=leaf_id,
+                        block_hash=block_hash,
+                    )
+                assert block_hash in self.held[leaf_id], (
+                    f"asked for {block_hash!r}, which lookup never reported"
+                )
+        if self.load_error is not None:
+            raise self.load_error
+        transfer = FakeTransfer()
+        transfer.fails = self.fail_on_first_poll
+        if not self.asynchronous:
             transfer.done = True
         self.transfers.append(transfer)
         return transfer
@@ -127,20 +366,33 @@ class FakeConnector:
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
+        for leaf_id, hashes in block_hashes.items():
+            assert len(hashes) == len(block_ids[leaf_id]), (
+                f"leaf {leaf_id!r} got {len(block_ids[leaf_id])} blocks for "
+                f"{len(hashes)} hashes"
+            )
         self.offloads.append(
             (
                 {leaf: list(ids) for leaf, ids in block_ids.items()},
-                list(block_hashes),
+                {leaf: list(hs) for leaf, hs in block_hashes.items()},
             )
         )
-        self.held.update(block_hashes)
-        transfer = FakeTransfer(
-            {leaf: list(ids) for leaf, ids in block_ids.items()},
-            TransferDirection.OFFLOAD,
-        )
+        taken = {
+            leaf_id: [
+                bid
+                for bid, block_hash in zip(
+                    ids, block_hashes[leaf_id], strict=True
+                )
+                if not (self.skips_held and block_hash in self.held[leaf_id])
+            ]
+            for leaf_id, ids in block_ids.items()
+        }
+        for leaf_id, hashes in block_hashes.items():
+            self.held[leaf_id].update(hashes)
+        transfer = FakeTransfer(taken)
         if not self.asynchronous:
             transfer.done = True
         self.transfers.append(transfer)
@@ -149,31 +401,30 @@ class FakeConnector:
     def touch(
         self, block_hashes: Sequence[bytes], replica_idx: int = 0
     ) -> None:
-        return None
+        self.touches.append((list(block_hashes), replica_idx))
 
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        return (0, 0)
-
-    def wait_for_loads(self) -> None:
-        return None
-
-    def wait_for_offloads(self) -> None:
-        return None
+    def poll_transfers(self) -> None:
+        self.polls += 1
 
     def reset_prefix_cache(self) -> None:
-        self.held.clear()
+        for held in self.held.values():
+            held.clear()
+
+    def hold(self, block_hashes: Iterable[bytes]) -> None:
+        """Marks the hashes held by every leaf."""
+        hashes = list(block_hashes)
+        for held in self.held.values():
+            held.update(hashes)
 
     def shutdown(self) -> None:
-        return None
-
-    def reset_metrics(self) -> None:
         return None
 
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics()
+
+    def take_metrics(self) -> KVCacheMetrics:
+        return self.metrics
 
     @property
     def host_byte_count(self) -> ByteCount:
@@ -182,6 +433,17 @@ class FakeConnector:
     @property
     def disk_byte_count(self) -> ByteCount:
         return ByteCount(free=3, total=4)
+
+
+def attach_checkpointing(manager: JengaBlockManager) -> Checkpointer:
+    """Builds and attaches a checkpointer, as the scheduler does."""
+    checkpointer = manager.populate_checkpointer(
+        Checkpointer.factory().with_heuristics(
+            checkpoint_at_end_of_prompt(), checkpoint_at_release()
+        )
+    ).build()
+    manager.with_checkpointer(checkpointer)
+    return checkpointer
 
 
 def make_ctx(tokens: Sequence[int]) -> TextContext:
@@ -197,19 +459,131 @@ def make_manager(
     leaves: Sequence[str] = (FULL,),
     num_huge_blocks: int = 16,
     leaf_infos: Mapping[str, KVLeafInfo] | None = None,
+    block_size: int = 1,
 ) -> JengaBlockManager:
-    return JengaBlockManager(
-        leaf_infos
-        or {leaf: KVLeafInfo(1, KVCacheGroupId.full()) for leaf in leaves},
-        num_huge_blocks=num_huge_blocks,
-        block_size=1,
+    leaf_infos = leaf_infos or {
+        leaf: KVLeafInfo(1, KVCacheGroupId.full()) for leaf in leaves
+    }
+    pools = create_pools(leaf_infos, num_huge_blocks)
+    manager = JengaBlockManager(
+        pools=pools,
+        groups=create_groups(
+            leaf_infos, pools, block_size, enable_prefix_caching=True
+        ),
+        leaves={
+            leaf_id: PagedKVLeafRegion(
+                leaf_id=leaf_id,
+                group_id=info.group_id,
+                bytes_per_page=1,
+                page_size=block_size,
+            )
+            for leaf_id, info in leaf_infos.items()
+            if not info.group_id.is_recurrent()
+        },
+        block_size=block_size,
         enable_prefix_caching=True,
-        num_replicas=1,
         max_num_input_tokens=None,
         num_draft_tokens=0,
         num_draft_tokens_per_step=0,
         connector=connector,
     )
+    attach_checkpointing(manager)
+    return manager
+
+
+PAGE = 4
+"""Tokens per page, more than one so checkpoints are sparser than the run."""
+
+
+def make_hybrid_manager(
+    connector: KVConnector, num_huge_blocks: int = 64, num_replicas: int = 1
+) -> JengaBlockManager:
+    """A full-attention leaf beside a recurrent state."""
+    state_params = RecurrentStateParams(
+        devices=[DeviceRef.CPU()],
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=STATE,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+            ),
+        ),
+    )
+    leaf_infos = {
+        FULL: KVLeafInfo(1, KVCacheGroupId.full()),
+        STATE: KVLeafInfo(1, KVCacheGroupId.recurrent()),
+    }
+    pools = create_pools(leaf_infos, num_huge_blocks, num_replicas)
+    manager = JengaBlockManager(
+        pools=pools,
+        groups=create_groups(
+            leaf_infos, pools, PAGE, enable_prefix_caching=True
+        ),
+        leaves={
+            FULL: PagedKVLeafRegion(
+                leaf_id=FULL,
+                group_id=KVCacheGroupId.full(),
+                bytes_per_page=1,
+                page_size=PAGE,
+            ),
+            **state_params.leaves(),
+        },
+        block_size=PAGE,
+        enable_prefix_caching=True,
+        max_num_input_tokens=None,
+        num_draft_tokens=0,
+        num_draft_tokens_per_step=0,
+        connector=connector,
+    )
+    attach_checkpointing(manager)
+    return manager
+
+
+def hybrid_connector() -> FakeConnector:
+    return FakeConnector(
+        {FULL: KVCacheGroupId.full(), STATE: KVCacheGroupId.recurrent()}
+    )
+
+
+def forward_to_boundary(manager: JengaBlockManager, ctx: TextContext) -> None:
+    """Runs one forward cut at a page boundary, checkpointing the state.
+
+    The cache manager checkpoints in its ``step``; the block manager does not.
+    """
+    end = ctx.tokens.processed_length + ctx.tokens.active_length
+    cut = end - end % PAGE - ctx.tokens.processed_length
+    if 0 < cut < ctx.tokens.active_length:
+        ctx.tokens.chunk(cut)
+    manager.alloc(ctx)
+    ctx.update(9)
+    if manager._publishes_states(ctx):
+        for group in manager.groups.values():
+            group.checkpoint(ctx, 0, allocation_owner=manager)
+    manager.step(ctx)
+
+
+def end_prompt(manager: JengaBlockManager, ctx: TextContext) -> None:
+    """Reports the end of the prompt and offloads, as the scheduler does."""
+    manager._checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id,
+            CheckpointEventKind.END_OF_PROMPT,
+            ctx.tokens.prompt_length,
+        )
+    )
+    manager.offload(0)
+
+
+def sent_by_leaf(
+    offloads: Sequence[tuple[object, Mapping[str, Sequence[bytes]]]],
+) -> dict[str, list[bytes]]:
+    """Returns every hash ``offloads`` sent, per leaf, in send order."""
+    sent: dict[str, list[bytes]] = {}
+    for _, hashes in offloads:
+        for leaf_id, leaf_hashes in hashes.items():
+            sent.setdefault(leaf_id, []).extend(leaf_hashes)
+    return sent
 
 
 def test_offload_then_onload_defers_publish_until_the_copy_lands() -> None:
@@ -225,7 +599,7 @@ def test_offload_then_onload_defers_publish_until_the_copy_lands() -> None:
     manager.step(first)
     manager.offload(0)
     assert connector.offloads, "no offload issued"
-    _, offloaded_hashes = connector.offloads[-1]
+    offloaded_hashes = connector.offloads[-1][1][FULL]
     assert manager.pending_transfers_exist(0), "async offload did not pin"
     manager.release(first)
 
@@ -240,13 +614,14 @@ def test_offload_then_onload_defers_publish_until_the_copy_lands() -> None:
 
     # With the device tier empty, the same prompt must be served by the
     # connector instead.
-    connector.held = set(offloaded_hashes)
+    connector.hold(offloaded_hashes)
     connector.loads.clear()
     second = make_ctx([1, 2, 3, 4])
     manager.claim(second)
     transfer = manager.alloc(second)
     assert connector.loads, "no load issued"
-    _, asked, served = connector.loads[-1]
+    asked = connector.loads[-1][1][FULL]
+    served = len(asked)
     assert served > 0
     assert second.tokens.processed_length == served
     assert not transfer.is_complete(), "async load should still be in flight"
@@ -281,8 +656,11 @@ def test_multi_leaf_sends_distinct_per_leaf_block_ids() -> None:
 
     assert connector.offloads, "no offload issued"
     block_ids, hashes = connector.offloads[-1]
-    assert set(block_ids) == {VALUES, SCALES}
-    assert len(block_ids[VALUES]) == len(block_ids[SCALES]) == len(hashes)
+    assert set(block_ids) == set(hashes) == {VALUES, SCALES}
+    assert hashes[VALUES] == hashes[SCALES]
+    assert (
+        len(block_ids[VALUES]) == len(block_ids[SCALES]) == len(hashes[VALUES])
+    )
     assert block_ids[VALUES] != block_ids[SCALES], (
         "leaves shared a page index; they have separate bid spaces"
     )
@@ -299,13 +677,13 @@ def test_device_hit_and_onload_splice_into_one_run() -> None:
     first.update(9)
     manager.step(first)
     manager.offload(0)
-    _, offloaded = connector.offloads[-1]
+    offloaded = connector.offloads[-1][1][FULL]
     manager.release(first)
 
     # Keep only the leading block on device; the connector still holds the
     # rest, so the two hits have to meet in the middle.
     manager.reset_prefix_cache()
-    connector.held = set(offloaded)
+    connector.hold(offloaded)
     pool = manager.pools[0]
     assert not pool.prefix_caches[FULL]
     replay = make_ctx([1])
@@ -323,7 +701,7 @@ def test_device_hit_and_onload_splice_into_one_run() -> None:
 
     # The replay's own last token is never hashed, so one block stays uncached.
     reusable = offloaded[:-1]
-    asked = connector.loads[-1][1]
+    asked = connector.loads[-1][1][FULL]
     assert manager.metrics.device_blocks_served == 1, (
         "device hit should stop at the one cached block"
     )
@@ -333,6 +711,17 @@ def test_device_hit_and_onload_splice_into_one_run() -> None:
     assert second.cached_prefix_length == len(reusable)
     assert second.cached_prefix_external_length == len(reusable) - 1
     assert second.tokens.processed_length == len(reusable)
+    # Recency covers the whole reused run, device hit AND connector onload,
+    # which is what BlockManager touches on the legacy path. Gating the touch
+    # on the device hit alone would skip it entirely under
+    # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE, where there is never one.
+    # `release` also re-ranks a finished request's sequence (CLIN-1893), so
+    # earlier releases in this test contribute touches of their own. The
+    # admission touch is the one under test, and it is the most recent. It
+    # goes out at the step, once the forward has launched.
+    second.update(9)
+    manager.step(second)
+    assert connector.touches[-1] == (list(reusable), 0)
     # One contiguous row: the device page first, then the onloaded ones,
     # then whatever the forward still has to fill.
     row = manager.get_req_blocks_per_leaf(second)[FULL]
@@ -353,12 +742,12 @@ def test_onload_is_skipped_when_the_run_does_not_fit() -> None:
     ctx.update(9)
     filler.step(ctx)
     filler.offload(0)
-    assert connector.held
+    assert any(connector.held.values())
 
     # Two huge blocks between them cannot carve a 4-page run for both leaves.
     tight = make_manager(connector, leaves=(VALUES, SCALES), num_huge_blocks=3)
     pool = tight.pools[0]
-    free_before = len(pool.free_huge_blocks)
+    free_before = pool.num_free_huge_blocks
     connector.loads.clear()
     replay = make_ctx([1, 2, 3, 4, 5])
     tight.claim(replay)
@@ -368,8 +757,27 @@ def test_onload_is_skipped_when_the_run_does_not_fit() -> None:
     assert not connector.loads, "asked for a run the pool cannot hold"
     assert replay.tokens.processed_length == 0
     # Nothing was drawn on the way out.
-    assert len(pool.free_huge_blocks) == free_before
+    assert pool.num_free_huge_blocks == free_before
     assert not pool.prefix_caches[VALUES]
+
+
+def test_a_lookup_that_finds_nothing_posts_no_load() -> None:
+    """A miss asks and then stops. Nothing is owed back to the connector.
+
+    The connector holds nothing, so the reconcile agrees on no prefix. What a
+    leasing connector does with the lookup it took is its own business -- the
+    manager has no release to call.
+    """
+    connector = FakeConnector([VALUES, SCALES], asynchronous=False)
+    manager = make_manager(
+        connector, leaves=(VALUES, SCALES), num_huge_blocks=16
+    )
+    ctx = make_ctx([1, 2, 3, 4, 5])
+    manager.claim(ctx)
+    manager.alloc(ctx)
+
+    assert connector.lookups, "the connector was never asked"
+    assert not connector.loads
 
 
 def test_last_level_cache_only_forces_every_hit_through_the_connector(
@@ -386,14 +794,14 @@ def test_last_level_cache_only_forces_every_hit_through_the_connector(
     first.update(9)
     manager.step(first)
     manager.offload(0)
-    _, offloaded = connector.offloads[-1]
+    offloaded = connector.offloads[-1][1][FULL]
     manager.release(first)
 
     # The device prefix cache still holds the run; the lookup must ignore it.
     pool = manager.pools[0]
     assert all(h in pool.prefix_caches[FULL] for h in offloaded)
 
-    connector.held = set(offloaded)
+    connector.hold(offloaded)
     connector.loads.clear()
     second = make_ctx([1, 2, 3, 4, 5])
     manager.claim(second)
@@ -402,7 +810,17 @@ def test_last_level_cache_only_forces_every_hit_through_the_connector(
     assert manager.metrics.device_blocks_served == 0
     assert second.cached_prefix_external_length == second.cached_prefix_length
     assert second.cached_prefix_length > 0
-    assert connector.loads[-1][1] == list(offloaded[:-1])
+    assert connector.loads[-1][1][FULL] == list(offloaded[:-1])
+    # The recency touch must still fire with NO device hit. This is the
+    # regression guard for the call site's own rationale: gating it on
+    # `num_hit_blocks` instead of the reused run skips it entirely under
+    # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE, which is exactly the
+    # configuration that leans on the connector hardest. No other test can see
+    # that mutation, because every other one has a device hit and the touch
+    # argument is byte-identical either way.
+    second.update(9)
+    manager.step(second)
+    assert connector.touches[-1] == (list(offloaded[:-1]), 0)
 
 
 def test_alloc_drains_landed_transfers_so_pins_do_not_accumulate() -> None:
@@ -414,7 +832,7 @@ def test_alloc_drains_landed_transfers_so_pins_do_not_accumulate() -> None:
     connector = FakeConnector([FULL])
     manager = make_manager(connector)
     pool = manager.pools[0]
-    free_huge = len(pool.free_huge_blocks)
+    free_huge = pool.num_free_huge_blocks
 
     for _ in range(4):
         ctx = make_ctx([1, 2, 3, 4])
@@ -435,7 +853,7 @@ def test_alloc_drains_landed_transfers_so_pins_do_not_accumulate() -> None:
     manager.release(drain)
 
     assert not manager.pending_transfers_exist(0), "alloc did not drain pins"
-    assert len(pool.free_huge_blocks) == free_huge, (
+    assert pool.num_free_huge_blocks == free_huge, (
         "huge blocks never came back: pinned pages kept them out of the pool"
     )
 
@@ -460,19 +878,23 @@ def test_swa_connector_onload_null_pads_and_skips_prefix_cache_commit() -> None:
     first.update(9)
     manager.step(first)
     manager.offload(0)
-    _, offloaded = connector.offloads[-1]
+    offloaded = connector.offloads[-1][1][FULL]
     manager.release(first)
     manager.reset_prefix_cache()
-    connector.held = set(offloaded)
+    connector.hold(offloaded)
 
     replay = make_ctx([1, 2, 3, 4, 5, 6])
     manager.claim(replay)
     manager.alloc(replay)
 
-    block_ids, asked, served = connector.loads[-1]
+    block_ids, hashes, _ = connector.loads[-1]
+    asked = hashes[FULL]
     assert asked == list(offloaded[:-1])
-    assert served == len(asked)
-    assert len(block_ids[SLIDING]) == groups[SLIDING].blocks_in_window(1)
+    # The windowed leaf is asked only for the tail its attention reads, and
+    # given exactly that many blocks.
+    window = groups[SLIDING].blocks_in_window(1)
+    assert hashes[SLIDING] == asked[-window:]
+    assert len(block_ids[SLIDING]) == window
 
     pool = manager.pools[0]
     sliding_blocks = manager.get_req_blocks_per_leaf(replay)[SLIDING]
@@ -483,3 +905,2736 @@ def test_swa_connector_onload_null_pads_and_skips_prefix_cache_commit() -> None:
         not block.is_null for block in pool.prefix_caches[SLIDING].values()
     )
     assert len(pool.prefix_caches[FULL]) == len(asked)
+
+
+def test_the_drain_settles_offloads_rather_than_step() -> None:
+    """A posted offload is settled by the manager's drain, not by ``step``.
+
+    dKV's ``offload`` only acquires its slots and posts the writes; the blocks
+    stay ``Filling`` -- counted under ``g1_blocks`` but unreadable -- until
+    their transfer settles. Nothing settling them is a 0% hit rate while dKV
+    appears to fill up. ``step`` used to run a post-forward barrier for that;
+    the transfer's own completion is what does it now, observed by
+    ``poll_transfers``, which also hands the connector its own drain.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    manager.offload(0)
+
+    assert connector.offloads, "step should leave a committed run to offload"
+    posted = connector.transfers[-1]
+    assert not posted.done, "an in-flight offload is not settled by step"
+
+    polls_before = connector.polls
+    manager.poll_transfers()
+    assert connector.polls > polls_before, (
+        "the drain has to reach the connector, whose own transfers settle "
+        "resources no poll of the manager's covers"
+    )
+
+    pool = manager.pools[0]
+    sources = [pool.block(FULL, bid) for bid in posted.g0_blocks_per_leaf[FULL]]
+    # The request holds these pages too, so the write's own pin shows up as one
+    # ref on top of that rather than as an absolute count.
+    pinned = [block.ref_cnt for block in sources]
+
+    posted.synchronize()
+    manager.poll_transfers()
+
+    assert not manager.pending_transfers_exist(0)
+    assert [block.ref_cnt for block in sources] == [n - 1 for n in pinned], (
+        "a settled write has to hand its source pages back"
+    )
+
+
+def test_an_offload_pins_only_the_blocks_the_connector_took() -> None:
+    """A hash the connector already holds is skipped, so its page is not pinned.
+
+    The connector reports what it took in ``g0_blocks_per_leaf``; pinning
+    everything handed over would hold pages no copy reads until the transfer
+    lands.
+    """
+    connector = FakeConnector([FULL], skips_held=True)
+    manager = make_manager(connector)
+
+    tokens = [1, 2, 3, 4]
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    assert not connector.offloads, "step leaves the run for the offload call"
+
+    pool = manager.pools[0]
+    rows = manager.get_req_blocks_per_leaf(ctx)[FULL]
+    committed = [b for b in rows if pool.block(FULL, b).block_hash is not None]
+    assert len(committed) > 1
+    held_hash = pool.block(FULL, committed[0]).block_hash
+    assert held_hash is not None
+    connector.held[FULL].add(held_hash)
+    before = {bid: pool.block(FULL, bid).ref_cnt for bid in committed}
+
+    manager.offload(0)
+
+    posted = connector.transfers[-1]
+    assert posted.g0_blocks_per_leaf[FULL] == committed[1:]
+    after = {bid: pool.block(FULL, bid).ref_cnt for bid in committed}
+    assert after[committed[0]] == before[committed[0]], (
+        "a block the connector skipped must not be pinned"
+    )
+    assert all(after[b] == before[b] + 1 for b in committed[1:]), (
+        "every block the connector took is pinned until its copy lands"
+    )
+
+    posted.synchronize()
+    manager.poll_transfers()
+    assert {bid: pool.block(FULL, bid).ref_cnt for bid in committed} == before
+
+
+def test_a_failed_poll_unpins_without_publishing() -> None:
+    """A poll that raises unpins the onload's pages and commits nothing.
+
+    The transfer settled itself on the way to failing, and the pages it was
+    filling hold no valid KV, so publishing them would let any later request
+    hit garbage. The pin still has to come off, or those pages are lost to the
+    pool for the rest of the process. An error that is not ``KVLoadFailed`` is
+    a bug rather than a copy that failed, so it still reaches the caller.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+
+    # Fill the connector from a forward, then empty the device tier so the
+    # same prompt has to come back over an onload.
+    first = make_ctx([1, 2, 3, 4])
+    manager.claim(first)
+    manager.alloc(first)
+    first.update(9)
+    manager.step(first)
+    manager.offload(0)
+    offloaded_hashes = connector.offloads[-1][1][FULL]
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.release(first)
+    # Release checkpoints the request; land that copy too so its pins do not
+    # keep the pages on the device.
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.reset_prefix_cache()
+
+    connector.hold(offloaded_hashes)
+    second = make_ctx([1, 2, 3, 4])
+    manager.claim(second)
+    transfer = manager.alloc(second)
+    asked = connector.loads[-1][1][FULL]
+    assert asked, "no onload issued"
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    transfer.error = RuntimeError("transfer failed")
+
+    pool = manager.pools[0]
+    onloaded = [
+        pool.block(FULL, bid)
+        for bid in manager.get_req_blocks_per_leaf(second)[FULL]
+    ]
+
+    with pytest.raises(RuntimeError, match="transfer failed"):
+        manager.poll_transfers()
+
+    prefix_cache = pool.prefix_caches[FULL]
+    assert all(h not in prefix_cache for h in asked), (
+        "a failed onload's pages must not be published"
+    )
+    assert not manager.pending_transfers_exist(0)
+    assert all(block.ref_cnt == 1 for block in onloaded), (
+        "the failed transfer's pin is released, leaving the allocation's own"
+    )
+
+
+def _hold_only_in_the_connector(
+    manager: JengaBlockManager,
+    connector: FakeConnector,
+    tokens: Sequence[int],
+) -> list[bytes]:
+    """Leaves ``tokens``' KV in the connector and nowhere on the device.
+
+    Runs one forward over them, lands its offload, then empties the device
+    tier, so the same prompt can only come back over an onload. Returns the
+    run of hashes the full-attention leaf holds.
+    """
+    start = len(connector.offloads)
+    first = make_ctx(tokens)
+    manager.claim(first)
+    manager.alloc(first)
+    first.update(9)
+    manager.step(first)
+    end_prompt(manager, first)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.release(first)
+    # Release checkpoints the request; land that copy too so its pins do not
+    # keep the pages on the device.
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.reset_prefix_cache()
+    offloaded = sent_by_leaf(connector.offloads[start:])
+    for leaf_id, hashes in offloaded.items():
+        connector.held[leaf_id].update(hashes)
+    return offloaded[FULL]
+
+
+@pytest.mark.parametrize("fails_at", ["post", "first_poll"])
+def test_a_load_that_fails_to_post_is_served_as_a_miss(fails_at: str) -> None:
+    """A transport fault before anything is spliced costs a hit, not the worker.
+
+    The load can raise while posting, or the manager's own poll right after it
+    can see the copy fail. Nothing is in flight into the rows either way, so
+    they go straight back, and the request skips the connector for the rest of
+    its claim rather than failing the same way on every admission.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    pool = manager.pools[0]
+    free_before = pool.num_free_blocks(FULL)
+    if fails_at == "post":
+        connector.load_error = KVLoadFailed("memory transfer failed")
+    else:
+        connector.fail_on_first_poll = True
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+
+    assert transfer.is_complete()
+    assert ctx.tokens.processed_length == 0
+    assert ctx.cached_prefix_length == 0
+    assert not manager.pending_transfers_exist(0)
+    assert not pool.prefix_caches[FULL]
+    assert manager.take_metrics().connector_load_failures == 1
+
+    lookups = len(connector.lookups)
+    manager.alloc(ctx)
+    assert len(connector.lookups) == lookups, (
+        "the request skips the connector now"
+    )
+
+    manager.release(ctx)
+    assert pool.num_free_blocks(FULL) == free_before, "the rows went back"
+
+
+def _hold_in_connector_with_a_device_hit(
+    manager: JengaBlockManager,
+    connector: FakeConnector,
+    tokens: Sequence[int],
+    num_device_blocks: int,
+) -> list[bytes]:
+    """Puts ``tokens``' KV in the connector and its first blocks on device.
+
+    Returns the hashes the connector holds, in prefix order.
+    """
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    by_leaf = {
+        leaf_id: set(hashes) for leaf_id, hashes in connector.held.items()
+    }
+    connector.reset_prefix_cache()
+    device = make_ctx(tokens[: num_device_blocks * manager._block_size])
+    manager.claim(device)
+    manager.alloc(device)
+    device.update(9)
+    manager.step(device)
+    manager.release(device)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    for leaf_id, hashes in by_leaf.items():
+        connector.held[leaf_id].update(hashes)
+    return held
+
+
+def test_a_failed_onload_recomputes_from_the_device_hit() -> None:
+    """The failed copy costs the onload and nothing else.
+
+    The scheduler's cordon sweep sees the failure first here. The request's
+    next ``alloc`` still undoes the splice and takes the device hit back
+    without the connector: the onloaded pages go back unpublished, and the
+    request recomputes from where its device hit ends.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    pool = manager.pools[0]
+    free_before = pool.num_free_blocks(FULL)
+    device_bids = [pool.prefix_caches[FULL][h].bid for h in held[:3]]
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    assert ctx.cached_prefix_external_length == 4
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    with pytest.raises(KVLoadFailed):
+        transfer.is_complete()
+
+    lookups = len(connector.lookups)
+    resumed = manager.alloc(ctx)
+
+    assert resumed.is_complete()
+    assert len(connector.lookups) == lookups, (
+        "the recompute skips the connector"
+    )
+    assert ctx.tokens.processed_length == 3
+    assert ctx.cached_prefix_length == 3
+    assert ctx.cached_prefix_external_length == 0
+    assert manager.get_req_blocks_per_leaf(ctx)[FULL][:3] == device_bids
+    assert all(h not in pool.prefix_caches[FULL] for h in held[3:7]), (
+        "a failed copy's pages must not be published"
+    )
+    assert not manager.pending_transfers_exist(0)
+    assert manager.take_metrics().connector_load_failures == 1
+
+    manager.release(ctx)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    assert pool.num_free_blocks(FULL) == free_before, "every page went back"
+
+
+def test_a_failed_windowed_onload_takes_back_the_window_it_freed() -> None:
+    """A sliding leaf cannot just be trimmed back to the device hit.
+
+    Splicing an onload that reaches past the window frees the device hit's
+    windowed pages and nulls their slots, so the window ending at the device
+    hit is gone from the row. Rolling back means taking it from the device
+    tier again.
+    """
+    groups = {
+        FULL: KVCacheGroupId.full(),
+        SLIDING: KVCacheGroupId("sliding_window", 4),
+    }
+    connector = FakeConnector(groups)
+    manager = make_manager(
+        connector,
+        num_huge_blocks=64,
+        leaf_infos={
+            FULL: KVLeafInfo(1, groups[FULL]),
+            SLIDING: KVLeafInfo(1, groups[SLIDING]),
+        },
+    )
+    tokens = list(range(1, 11))
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    pool = manager.pools[0]
+    window_bids = [pool.prefix_caches[SLIDING][h].bid for h in held[:3]]
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    sliding_row = manager.get_req_blocks_per_leaf(ctx)[SLIDING]
+    assert sliding_row[:3] == [0, 0, 0], "the device window was nulled"
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    manager.poll_transfers()
+
+    manager.alloc(ctx)
+
+    assert ctx.tokens.processed_length == 3
+    assert manager.get_req_blocks_per_leaf(ctx)[SLIDING][:3] == window_bids
+    assert all(h not in pool.prefix_caches[SLIDING] for h in held[3:9])
+    assert manager.take_metrics().connector_load_failures == 1
+
+
+def test_a_request_released_before_its_onload_fails_leaves_nothing() -> None:
+    """A request cancelled mid-onload has nothing left to roll back."""
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    pool = manager.pools[0]
+    free_before = pool.num_free_blocks(FULL)
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    manager.release(ctx)
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    manager.poll_transfers()
+
+    assert not manager.pending_transfers_exist(0)
+    assert pool.num_free_blocks(FULL) == free_before
+    assert manager.take_metrics().connector_load_failures == 1
+
+
+def test_a_failed_onload_leaves_the_state_row_a_fresh_admission_holds() -> None:
+    """A recurrent leaf cannot be trimmed back to its device hit either.
+
+    Trimming keeps its live block, so taking the device hit again would land
+    the device checkpoint behind a live block that never ran. The rollback
+    hands the request a fresh claim instead: it resumes from the device
+    checkpoint and runs in one live block.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    pool = manager.pools[0]
+
+    # The connector holds two pages, and the state at the second boundary.
+    first = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(first)
+    forward_to_boundary(manager, first)
+    end_prompt(manager, first)
+    offloaded = sent_by_leaf(connector.offloads)
+    manager.release(first)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.reset_prefix_cache()
+
+    # The device holds the first page, and the state at its boundary.
+    device = make_ctx(list(range(1, PAGE + 2)))
+    manager.claim(device)
+    forward_to_boundary(manager, device)
+    (device_hash,) = pool.prefix_caches[STATE]
+    device_state = pool.prefix_caches[STATE][device_hash]
+    for leaf_id, hashes in offloaded.items():
+        connector.held[leaf_id].update(hashes)
+    free_before = pool.num_free_blocks(STATE)
+
+    ctx = make_ctx(list(range(1, 3 * PAGE + 1)))
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    assert ctx.tokens.processed_length == 2 * PAGE, "device page plus onload"
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    manager.poll_transfers()
+
+    manager.alloc(ctx)
+
+    state_group = manager.groups[STATE]
+    assert isinstance(state_group, RecurrentKVGroupCoordinator)
+    assert ctx.tokens.processed_length == PAGE
+    runs_in = state_group.live_blocks(ctx.request_id)
+    assert runs_in is not None
+    assert state_group.resume(ctx, 0) == {
+        STATE: (device_state.bid, runs_in[STATE])
+    }
+    null_bid = pool.null_little_blocks[STATE].bid
+    row = manager.get_req_blocks_per_leaf(ctx)[STATE]
+    assert [bid for bid in row if bid != null_bid] == [
+        device_state.bid,
+        runs_in[STATE],
+    ], "one device checkpoint, then one live block"
+
+    manager.release(ctx)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    assert pool.num_free_blocks(STATE) == free_before
+
+
+def test_a_request_that_ran_past_a_failed_onload_is_not_recomputed() -> None:
+    """A caller that never held the request back has already read the pages.
+
+    There is no clean prefix to go back to by then, so the next ``alloc``
+    fails loudly instead of recomputing over KV it cannot trust.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+
+    with pytest.raises(RuntimeError, match="ran past") as excinfo:
+        manager.alloc(ctx)
+    assert isinstance(excinfo.value.__cause__, KVLoadFailed)
+
+
+def test_step_without_a_connector_still_commits() -> None:
+    """A manager with no connector must not reach for one."""
+    manager = make_manager(None)
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+
+    manager.release(ctx)
+
+
+def test_without_a_checkpointer_every_cache_streams_as_it_commits() -> None:
+    """Nothing would offload the state later, so it streams with attention."""
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    manager.with_checkpointer(Checkpointer.factory().disabled().build())
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+
+    ((_, hashes),) = connector.offloads
+    assert len(hashes[FULL]) == 2
+    assert hashes[STATE] == hashes[FULL][1:]
+
+
+def test_a_state_offloads_only_where_a_checkpoint_landed() -> None:
+    """The attention run streams as it commits, the state only at a checkpoint."""
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+
+    ((block_ids, hashes),) = connector.offloads
+    assert len(hashes[FULL]) == 2, "the attention run was cut short"
+    assert len(block_ids[FULL]) == 2
+    assert hashes[STATE] == [], "the state streamed without a checkpoint"
+
+    end_prompt(manager, ctx)
+
+    _, (block_ids, checkpoint) = connector.offloads
+    assert checkpoint[FULL] == []
+    assert checkpoint[STATE] == hashes[FULL][1:], (
+        "the state checkpoints at the boundary the forward ended on"
+    )
+    assert len(block_ids[STATE]) == 1
+    assert set(checkpoint[STATE]) == set(manager.pools[0].prefix_caches[STATE])
+
+
+def test_a_state_reloads_from_the_connector_at_the_deepest_checkpoint() -> None:
+    """With the device tier empty, the connector serves the KV and the state."""
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    pool = manager.pools[0]
+
+    first = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(first)
+    forward_to_boundary(manager, first)
+    end_prompt(manager, first)
+    offloaded = sent_by_leaf(connector.offloads)
+    manager.release(first)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.reset_prefix_cache()
+    assert not pool.prefix_caches[FULL] and not pool.prefix_caches[STATE]
+    for leaf_id, hashes in offloaded.items():
+        connector.held[leaf_id].update(hashes)
+
+    # A page longer, so its chain reaches the checkpoint.
+    second = make_ctx(list(range(1, 3 * PAGE + 1)))
+    manager.claim(second)
+    transfer = manager.alloc(second)
+
+    block_ids, asked, _ = connector.loads[-1]
+    assert asked[FULL] == offloaded[FULL]
+    assert asked[STATE] == offloaded[STATE]
+    assert len(block_ids[STATE]) == 1
+    assert second.tokens.processed_length == 2 * PAGE
+    assert second.cached_prefix_external_length == 2 * PAGE
+    assert manager.metrics.cache_tokens == 2 * PAGE
+
+    # Until the copy lands the loaded state is neither published nor run in.
+    state_group = manager.groups[STATE]
+    assert isinstance(state_group, RecurrentKVGroupCoordinator)
+    (loaded_bid,) = block_ids[STATE]
+    runs_in = state_group.live_blocks(second.request_id)
+    assert runs_in is not None
+    assert runs_in[STATE] != loaded_bid, (
+        "the recurrence would run in the block the copy is filling"
+    )
+    assert not transfer.is_complete()
+    assert not pool.prefix_caches[STATE]
+    transfer.synchronize()
+    manager.poll_transfers()
+    (checkpoint_hash,) = offloaded[STATE]
+    assert pool.prefix_caches[STATE][checkpoint_hash].bid == loaded_bid
+    assert state_group.resume(second, 0) == {
+        STATE: (loaded_bid, runs_in[STATE])
+    }
+
+    # The forward ends on the next boundary, and the successor is there.
+    second.update(9)
+    assert state_group.checkpoint(second, 0, allocation_owner=manager), (
+        "the boundary found no successor"
+    )
+    manager.step(second)
+
+
+def test_a_connector_without_an_async_lookup_answers_at_once() -> None:
+    """The protocol defaults wrap the synchronous calls, so nothing changes.
+
+    A connector that answers from local memory gets a handle that is already
+    complete, a load that is a plain ``load``, an abandon that does nothing
+    and no pricing probe, which sends the manager down the paths it ran
+    before any of this existed.
+    """
+    connector = NullConnector()
+    hashes = [bytes([1]) * 8, bytes([2]) * 8]
+
+    lookup = connector.start_lookup(hashes)
+
+    assert lookup.is_complete()
+    assert lookup.masks() == connector.lookup(hashes)
+    transfer = connector.load_lookup(lookup, {"full": [1, 2]}, {"full": hashes})
+    assert transfer.is_complete()
+    connector.abandon_lookup(lookup)
+    assert connector.probe(hashes, [0, 1]) is None
+
+
+def test_a_deferred_lookup_holds_the_request_out_until_it_answers() -> None:
+    """The connector's answer is waited for off the batch, then loaded once.
+
+    While the lookup is outstanding the request holds nothing and has
+    skipped nothing, so the scheduler can readmit it unchanged. The alloc
+    after the answer loads from that same lookup rather than asking again.
+    """
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    held = _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    # The request's own last token is never hashed, so one block stays unasked.
+    asked = held[:-1]
+    pool = manager.pools[0]
+    free_before = pool.num_free_blocks(FULL)
+    connector.lookups.clear()
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+
+    assert not pending.is_complete()
+    assert not connector.loads
+    assert ctx.tokens.processed_length == 0
+    assert manager.num_req_blocks(ctx) == 0
+    assert pool.num_free_blocks(FULL) == free_before
+    (lookup,) = connector.started
+    assert connector.lookups == [(asked, 0, None)]
+
+    lookup.answer()
+    assert pending.is_complete()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert len(connector.lookups) == 1, "the answer is reused, not asked again"
+    assert connector.loaded_from == [lookup]
+    assert not connector.abandoned
+    assert connector.loads[-1][1][FULL] == asked
+    assert ctx.tokens.processed_length == len(asked)
+    assert ctx.cached_prefix_external_length == len(asked)
+    assert not transfer.is_complete(), "the onload itself is still in flight"
+
+
+def test_a_deferred_answer_is_read_from_where_the_device_hit_ends() -> None:
+    """A device hit that grew while the lookup was out shortens the load.
+
+    The lookup was asked past the device hit as counted when it started. By
+    the time it answers another request may have put more of the prefix on
+    device, so the answer is read from the new hit's end and only the rest
+    is loaded, still out of the same lookup.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    asked = held[:-1]
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    assert connector.lookups[-1][0] == asked[3:]
+
+    # Another request lands the fourth block on device meanwhile.
+    other = make_ctx(tokens[:5])
+    manager.claim(other)
+    manager.alloc(other)
+    manager.release(other)
+    assert asked[3] in manager.pools[0].prefix_caches[FULL]
+
+    (lookup,) = connector.started
+    lookup.answer()
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.loaded_from == [lookup]
+    assert connector.loads[-1][1][FULL] == asked[4:]
+    assert ctx.tokens.processed_length == len(asked)
+    assert ctx.cached_prefix_length == len(asked)
+    assert ctx.cached_prefix_external_length == len(asked) - 4
+
+
+def test_the_active_length_after_alloc_reads_what_an_answered_hit_leaves() -> (
+    None
+):
+    """What an answered lookup leaves is read before the alloc that loads it.
+
+    Unanswered, the request reads its whole prompt. Answered, it reads the
+    1 token the 3-block device hit and the 4-block answer leave, which is
+    what the alloc then leaves, and reading it takes and loads nothing.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    assert manager.active_length_after_alloc(make_ctx(tokens)) == 8
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    assert manager.active_length_after_alloc(ctx) == 8
+
+    (lookup,) = connector.started
+    lookup.answer()
+    loads = len(connector.loads)
+    predicted = manager.active_length_after_alloc(ctx)
+
+    assert predicted == 1
+    assert manager.num_req_blocks(ctx) == 0
+    assert len(connector.loads) == loads
+    manager.alloc(ctx, defer_lookup=True)
+    assert connector.loaded_from == [lookup]
+    assert ctx.tokens.active_length == predicted
+    assert lookup.mask_reads == 1, "the handle is read once"
+
+
+def test_the_active_length_after_alloc_reads_a_miss_from_the_device_hit() -> (
+    None
+):
+    """An answered miss leaves the request what its device hit does not cover."""
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    for held in connector.held.values():
+        held.clear()
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.answer()
+    predicted = manager.active_length_after_alloc(ctx)
+
+    assert predicted == 5
+    manager.alloc(ctx, defer_lookup=True)
+    assert ctx.tokens.active_length == predicted
+
+
+def test_the_active_length_after_alloc_reads_a_lookup_given_up_as_a_miss() -> (
+    None
+):
+    """A lookup whose handle broke reads as a miss, without reading the handle.
+
+    The manager gives up on a handle whose poll raises and serves the request
+    from its device hit, so nothing may ask that handle for an answer.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.error = RuntimeError("the extension lost the handle")
+    predicted = manager.active_length_after_alloc(ctx)
+
+    assert predicted == 5
+    assert lookup.mask_reads == 0
+    manager.alloc(ctx, defer_lookup=True)
+    assert ctx.tokens.active_length == predicted
+
+
+def test_the_active_length_after_alloc_loads_nothing_past_a_shrunk_device_hit() -> (
+    None
+):
+    """A device hit that shrank under the lookup, with no re-asks left, loads none.
+
+    The answer starts where the 3-block device hit ended when it was asked,
+    so once that hit is evicted it covers none of the gap, and the alloc
+    computes the whole prompt.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.answer()
+    manager.reset_prefix_cache()
+    manager._requests[
+        ctx.request_id
+    ].connector_lookup_reasks = jenga_block_manager._MAX_CONNECTOR_LOOKUP_REASKS
+    predicted = manager.active_length_after_alloc(ctx)
+
+    assert predicted == 8
+    manager.alloc(ctx, defer_lookup=True)
+    assert ctx.tokens.active_length == predicted
+
+
+def test_the_active_length_after_alloc_reads_a_failed_onload_whole() -> None:
+    """A copy that failed reads as the whole prompt its rollback gives back.
+
+    The read settles the failure itself, as an alloc would, so a failure no
+    drain has seen yet still counts. The alloc then takes the device hit
+    again, which only leaves the request less than was read.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    assert ctx.tokens.active_length == 1
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+
+    assert manager.active_length_after_alloc(ctx) == 8
+    manager.alloc(ctx)
+    assert ctx.tokens.active_length == 5
+
+
+def test_a_deferred_answer_is_handed_back_when_the_device_hit_covers_it() -> (
+    None
+):
+    """A device hit that grew over everything asked leaves nothing to load.
+
+    Another request put the whole prefix on device while the lookup was out,
+    so the request is served from the device tier and the answer goes back
+    unread.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    asked = held[:-1]
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    assert connector.lookups[-1][0] == asked
+
+    other = make_ctx(tokens)
+    manager.claim(other)
+    manager.alloc(other)
+    manager.release(other)
+    assert all(h in manager.pools[0].prefix_caches[FULL] for h in asked)
+    loads = len(connector.loads)
+
+    (lookup,) = connector.started
+    lookup.answer()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.abandoned == [lookup]
+    assert connector.loaded_from == []
+    assert len(connector.loads) == loads
+    assert ctx.tokens.processed_length == len(asked)
+    assert ctx.cached_prefix_length == len(asked)
+    assert ctx.cached_prefix_external_length == 0
+
+
+def test_starts_lookup_reads_what_the_deferred_alloc_then_does() -> None:
+    """The check the scheduler asks before allocating matches the alloc.
+
+    The scheduler bounds the lookups it has out by asking first, so a
+    request reads as starting one exactly when the deferred alloc that
+    follows starts one. A lookup already out is consumed rather than
+    started, and a prompt the device tier covers asks nothing.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_only_in_the_connector(manager, connector, tokens)
+
+    fresh = make_ctx(tokens)
+    manager.claim(fresh)
+    assert manager.starts_lookup(fresh)
+    manager.alloc(fresh, defer_lookup=True)
+    assert len(connector.started) == 1
+    assert not manager.starts_lookup(fresh)
+
+    other = make_ctx(tokens)
+    manager.claim(other)
+    manager.alloc(other)
+    manager.release(other)
+    covered = make_ctx(tokens)
+    manager.claim(covered)
+    assert not manager.starts_lookup(covered)
+    manager.alloc(covered, defer_lookup=True)
+    assert len(connector.started) == 1
+
+
+def test_a_lookup_answered_in_place_neither_starts_nor_awaits() -> None:
+    """A connector that answers in place never holds a request out.
+
+    So neither the check the scheduler asks before allocating nor the one
+    it asks after reads a lookup, and the deferred alloc onloads at once.
+    """
+    connector = FakeConnector([FULL], asynchronous=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    assert not manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert not transfer.is_complete()
+    assert not manager.awaits_lookup(ctx)
+    assert connector.loads[-1][1][FULL] == held[:-1]
+
+
+def test_a_lookup_handed_back_is_started_afresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A handed back answer is abandoned, and the next alloc asks again.
+
+    The hand back counts against the request's hand backs and leaves its
+    re-asks alone.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (first,) = connector.started
+    first.answer()
+    age = jenga_block_manager._LOOKUP_HAND_BACK_AGE_S
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", 0.0)
+    assert manager.hand_back_lookup(ctx)
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", age)
+
+    assert connector.abandoned == [first]
+    assert not manager.awaits_lookup(ctx)
+    assert manager.starts_lookup(ctx)
+    assert manager._state_of(ctx).connector_lookup_hand_backs == 1
+    assert manager._state_of(ctx).connector_lookup_reasks == 0
+
+    manager.alloc(ctx, defer_lookup=True)
+    (_, again) = connector.started
+    again.answer()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.loaded_from == [again]
+    assert connector.loads[-1][1][FULL] == held[:-1]
+
+
+def test_a_deferred_answer_is_asked_again_when_the_device_hit_shrinks() -> None:
+    """A device hit evicted while the lookup was out leaves a gap it cannot fill.
+
+    The answer starts past where the device hit used to end, so the run
+    cannot continue from the shorter hit. It is handed back unused and the
+    connector is asked again over everything past the shorter hit, off the
+    scheduler thread like the first lookup. The check the scheduler asks
+    before allocating reads that as a lookup started, so the bound on
+    lookups out covers it. The request holds nothing until that answer is
+    in, and then loads the whole prefix out of it.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.lookups.clear()
+    connector.loads.clear()
+    connector.blocking_lookups = 0
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    assert connector.lookups[-1][0] == held[3:-1]
+    manager.pools[0].reset_prefix_cache()
+
+    (first,) = connector.started
+    first.answer()
+    assert manager.starts_lookup(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+
+    assert not pending.is_complete()
+    assert manager.awaits_lookup(ctx), "the re-ask holds the request out"
+    assert connector.abandoned == [first]
+    assert connector.blocking_lookups == 0
+    assert connector.lookups[-1] == (held[:-1], 0, None)
+    assert not connector.loads
+    assert manager.num_req_blocks(ctx) == 0
+    assert ctx.tokens.processed_length == 0
+
+    (_, again) = connector.started
+    again.answer()
+    assert pending.is_complete()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.loaded_from == [again]
+    assert connector.abandoned == [first]
+    assert connector.blocking_lookups == 0
+    assert connector.loads[-1][1][FULL] == held[:-1]
+    assert ctx.tokens.processed_length == len(held) - 1
+    assert ctx.cached_prefix_external_length == len(held) - 1
+
+
+def test_a_deferred_lookup_starts_its_chain_past_the_device_hit() -> None:
+    """The lookup names the chain index of the first hash it asks about.
+
+    The connector reads it to tell a hint that cannot serve the request from
+    one describing another chain, so it counts the device hit skipped.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.chain_starts.clear()
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.lookups[-1][0] == held[3:-1]
+    assert connector.chain_starts == [3]
+
+
+def test_a_synchronous_lookup_starts_its_chain_past_the_device_hit() -> None:
+    connector = FakeConnector([FULL], asynchronous=False)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.chain_starts.clear()
+    blocking_before = connector.blocking_lookups
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx)
+
+    assert connector.blocking_lookups > blocking_before
+    assert connector.lookups[-1][0] == held[3:-1]
+    assert connector.chain_starts == [3]
+
+
+@pytest.mark.parametrize("defer_lookup", [False, True])
+def test_a_lookup_counts_its_chain_start_in_blocks(defer_lookup: bool) -> None:
+    """A page of several tokens still moves the chain start by one."""
+    connector = FakeConnector(
+        [FULL], asynchronous=False, deferred_lookups=defer_lookup
+    )
+    manager = make_manager(connector, num_huge_blocks=32, block_size=PAGE)
+    tokens = list(range(1, 8 * PAGE + 1))
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.chain_starts.clear()
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=defer_lookup)
+
+    assert connector.lookups[-1][0] == held[3:-1]
+    assert connector.chain_starts == [3]
+
+
+def test_a_lookup_asked_again_starts_its_chain_past_the_shorter_hit() -> None:
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.chain_starts.clear()
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    # Another request holds the first block, so the reset leaves a hit of one.
+    keeper = make_ctx(tokens[:2])
+    manager.claim(keeper)
+    manager.alloc(keeper)
+    manager.pools[0].reset_prefix_cache()
+    (first,) = connector.started
+    first.answer()
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.abandoned == [first]
+    assert connector.lookups[-1][0] == held[1:-1]
+    assert connector.chain_starts == [3, 1]
+
+
+def test_a_lookup_that_prices_a_replica_starts_its_chain_past_its_hit() -> None:
+    connector = FakeConnector([FULL], asynchronous=False)
+    manager, ctx, _ = _price_setup(connector)
+    connector.chain_starts.clear()
+
+    manager.get_prefix_cache_hit_counts(ctx)
+
+    assert connector.chain_starts == [0, 2]
+
+
+def test_a_lookup_asked_again_is_served_as_a_miss_at_its_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lookup asked after a shrink is bounded the way the first one is."""
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.loads.clear()
+    connector.blocking_lookups = 0
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    manager.pools[0].reset_prefix_cache()
+    (first,) = connector.started
+    first.answer()
+    pending = manager.alloc(ctx, defer_lookup=True)
+    (_, again) = connector.started
+    assert not pending.is_complete()
+
+    monkeypatch.setattr(jenga_block_manager, "_CONNECTOR_LOOKUP_TIMEOUT_S", 0.0)
+    assert pending.is_complete()
+    assert connector.abandoned == [first, again]
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.blocking_lookups == 0
+    assert not connector.loads
+    assert ctx.tokens.processed_length == 0
+    assert manager.num_req_blocks(ctx) == len(tokens)
+
+
+def test_a_request_whose_hit_keeps_shrinking_computes_the_rest() -> None:
+    """Constant eviction cannot hold a request out of the batch for good.
+
+    Each shrink of the device hit under an answered lookup asks the
+    connector again, but only twice for one request. The third shrink
+    serves what is still on device and computes the rest, without asking
+    again and without the blocking lookup. A request held out again keeps
+    none of the device hit it found, so it pins nothing while it waits.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 6)
+    connector.loads.clear()
+    connector.blocking_lookups = 0
+    pool = manager.pools[0]
+    cache = pool.prefix_caches[FULL]
+    free_before = pool.num_free_blocks(FULL)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    for depth in (5, 4):
+        connector.started[-1].answer()
+        pool.uncommit_block(cache[held[depth]])
+        assert manager.starts_lookup(ctx)
+        pending = manager.alloc(ctx, defer_lookup=True)
+
+        assert not pending.is_complete()
+        assert connector.lookups[-1][0] == held[depth:-1]
+        assert manager.num_req_blocks(ctx) == 0
+        assert pool.num_free_blocks(FULL) == free_before
+
+    connector.started[-1].answer()
+    pool.uncommit_block(cache[held[3]])
+    assert not manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert len(connector.started) == 3
+    assert connector.abandoned == connector.started
+    assert connector.blocking_lookups == 0
+    assert not connector.loads
+    assert ctx.tokens.processed_length == 3
+    assert ctx.cached_prefix_length == 3
+    assert ctx.cached_prefix_external_length == 0
+
+
+def test_a_lookup_answering_right_after_alloc_still_reads_pending_once() -> (
+    None
+):
+    """The caller's first poll cannot see an answer alloc did not act on.
+
+    The batch constructor polls the transfer straight after alloc to decide
+    whether to cordon the request. A lookup answered in between would read
+    complete there and send a request holding no pages into the batch, so
+    that first poll repeats what alloc saw and the next one moves on.
+    """
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.answer()
+
+    assert not pending.is_complete()
+    assert manager.num_req_blocks(ctx) == 0
+    assert pending.is_complete()
+
+
+def test_release_hands_back_an_unanswered_lookup() -> None:
+    """A request cancelled while its lookup is out owes the handle back."""
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    manager.release(ctx)
+
+    assert connector.abandoned == [lookup]
+    assert not manager.contains(ctx)
+
+
+class _FakePanic(BaseException):
+    """Stands in for pyo3's ``PanicException``, which is not an ``Exception``."""
+
+
+def test_release_forgets_the_request_when_its_hand_back_panics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pages are freed before the hand back, so the request must go too.
+
+    Otherwise the manager still reads it as claimed over pages it no longer
+    holds, and releasing it again frees those pages a second time.
+    """
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    def panic(lookup: KVLookup) -> None:
+        raise _FakePanic
+
+    monkeypatch.setattr(connector, "abandon_lookup", panic)
+
+    with pytest.raises(_FakePanic):
+        manager.release(ctx)
+
+    assert not manager.contains(ctx)
+
+
+def test_a_lookup_that_answers_a_miss_is_handed_back() -> None:
+    """A miss owes the handle back and then allocates for the compute."""
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+    assert not pending.is_complete()
+    (lookup,) = connector.started
+    lookup.answer()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.abandoned == [lookup]
+    assert not connector.loads
+    assert ctx.tokens.processed_length == 0
+    assert manager.num_req_blocks(ctx) == 4
+
+
+@pytest.mark.parametrize("fails_at", ["post", "first_poll"])
+def test_a_load_that_fails_hands_back_the_lookup(fails_at: str) -> None:
+    """A failed load out of a lookup leaves no lease outstanding."""
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    if fails_at == "post":
+        connector.load_error = KVLoadFailed("memory transfer failed")
+    else:
+        connector.fail_on_first_poll = True
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.answer()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.loaded_from == [lookup]
+    assert connector.abandoned == [lookup]
+    assert ctx.tokens.processed_length == 0
+    assert manager.take_metrics().connector_load_failures == 1
+
+
+@pytest.mark.parametrize("breaks_at", ["masks", "load"])
+def test_a_lookup_consumed_by_a_raising_alloc_is_handed_back(
+    breaks_at: str,
+) -> None:
+    """A bug surfacing while the answer is consumed strands no lease.
+
+    The lookup is taken off the request before it is read, so whatever
+    raises between reading it and loading out of it has to hand it back
+    on the way out.
+    """
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.answer()
+    if breaks_at == "masks":
+        lookup._masks = {}
+        expected: type[Exception] = KeyError
+    else:
+        connector.load_error = ValueError("rows do not match the tree")
+        expected = ValueError
+
+    with pytest.raises(expected):
+        manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.abandoned == [lookup]
+
+
+def test_a_run_the_pool_cannot_hold_hands_back_the_lookup() -> None:
+    """Dropping a run that does not fit still owes the handle back."""
+    connector = FakeConnector(
+        [VALUES, SCALES], asynchronous=False, deferred_lookups=True
+    )
+    filler = make_manager(
+        connector, leaves=(VALUES, SCALES), num_huge_blocks=16
+    )
+    ctx = make_ctx([1, 2, 3, 4, 5])
+    filler.claim(ctx)
+    filler.alloc(ctx)
+    ctx.update(9)
+    filler.step(ctx)
+    filler.offload(0)
+    assert any(connector.held.values())
+
+    tight = make_manager(connector, leaves=(VALUES, SCALES), num_huge_blocks=3)
+    replay = make_ctx([1, 2, 3, 4, 5])
+    tight.claim(replay)
+    tight.alloc(replay, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.answer()
+    with pytest.raises(InsufficientBlocksError):
+        tight.alloc(replay, defer_lookup=True)
+
+    assert connector.abandoned == [lookup]
+    assert not connector.loads
+    tight.release(replay)
+    assert connector.abandoned == [lookup], "nothing left to hand back"
+
+
+def test_the_synchronous_alloc_never_waits_on_a_deferred_lookup() -> None:
+    """A caller that reads the blocks right after ``alloc`` is served at once.
+
+    The DI decode node hands the request's block ids to prefill as soon as
+    ``alloc`` returns, so it cannot be told to come back later.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector)
+    held = _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+
+    assert transfer.is_complete()
+    assert not connector.started
+    assert connector.loads[-1][1][FULL] == held[:-1]
+    assert ctx.tokens.processed_length == len(held) - 1
+
+
+def test_a_lookup_whose_poll_raises_is_served_as_a_miss(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A handle that raises reads as an answered miss rather than an error.
+
+    The scheduler polls it on every iteration, so raising out of the poll
+    would take the scheduler down. It is handed back once, logged once and
+    never polled again, and the next alloc computes the prompt.
+    """
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    assert not pending.is_complete()
+    lookup.error = RuntimeError("the extension lost the handle")
+
+    with caplog.at_level(logging.ERROR, logger="max.pipelines"):
+        assert pending.is_complete()
+        assert pending.is_complete()
+    polls = lookup.polls
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert lookup.polls == polls
+    assert transfer.is_complete()
+    assert connector.abandoned == [lookup]
+    assert not connector.loads
+    assert ctx.tokens.processed_length == 0
+    assert manager.num_req_blocks(ctx) == 4
+    assert len(caplog.records) == 1
+
+
+def test_a_lookup_that_never_answers_is_served_as_a_miss_at_its_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request is not held out of the batch forever on a stuck lookup."""
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    assert not pending.is_complete()
+    assert not connector.abandoned
+
+    monkeypatch.setattr(jenga_block_manager, "_CONNECTOR_LOOKUP_TIMEOUT_S", 0.0)
+    assert pending.is_complete()
+    assert connector.abandoned == [lookup]
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.abandoned == [lookup]
+    assert not connector.loads
+    assert ctx.tokens.processed_length == 0
+    assert manager.num_req_blocks(ctx) == 4
+
+
+def test_a_request_handed_back_too_often_keeps_its_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Past its hand backs a request keeps its last answer and loads it.
+
+    A request passed over on every pass would otherwise ask for good.
+    """
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", 0.0)
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+
+    for _ in range(jenga_block_manager._MAX_CONNECTOR_LOOKUP_HAND_BACKS):
+        manager.alloc(ctx, defer_lookup=True)
+        connector.started[-1].answer()
+        manager.hand_back_lookup(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    last = connector.started[-1]
+    last.answer()
+    assert manager.hand_back_lookup(ctx)
+
+    assert last not in connector.abandoned
+    assert manager.awaits_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+    assert transfer.is_complete()
+    assert connector.loaded_from == [last]
+    assert connector.loads[-1][1][FULL] == held[:-1]
+
+
+def test_a_fresh_answer_is_kept_when_handed_back() -> None:
+    """An answer younger than the hand back age stays with its request.
+
+    Its lease still has room to load, and asking again would cost another
+    leased read, so the hand back keeps it, reports that it did, and the
+    next alloc loads it.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (first,) = connector.started
+    first.answer()
+
+    assert not manager.hand_back_lookup(ctx)
+
+    assert connector.abandoned == []
+    transfer = manager.alloc(ctx, defer_lookup=True)
+    assert transfer.is_complete()
+    assert connector.started == [first]
+    assert connector.loaded_from == [first]
+    assert connector.loads[-1][1][FULL] == held[:-1]
+
+
+class _Clock:
+    """Stands in for the block manager's ``time``, moved only by the test."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+def test_a_lookups_age_counts_the_time_its_start_took(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lookup is aged from before it was started, not after.
+
+    The connector may stamp the lease before its start returns, so an age
+    taken after the start could read young by however long it took, and
+    an answer kept as fresh could outlive its lease.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_only_in_the_connector(manager, connector, tokens)
+    start_lookup = connector.start_lookup
+
+    def slow_start_lookup(
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+        chain_start: int | None = None,
+    ) -> KVLookup:
+        clock.now += 4.0
+        return start_lookup(
+            block_hashes,
+            replica_idx=replica_idx,
+            hint=hint,
+            chain_start=chain_start,
+        )
+
+    monkeypatch.setattr(connector, "start_lookup", slow_start_lookup)
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (first,) = connector.started
+    first.answer()
+    clock.now += jenga_block_manager._LOOKUP_HAND_BACK_AGE_S - 4.0
+
+    assert manager.hand_back_lookup(ctx)
+    assert connector.abandoned == [first]
+
+
+def test_an_answer_too_old_to_load_is_asked_again_when_consumed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An answer a request waited on past the hand back age is not loaded.
+
+    Its lease may lapse before the load reaches the store, and a refused
+    load serves the request as a miss. So the alloc that would consume it
+    hands it back and asks again with the request still held out, and the
+    check the scheduler asks before allocating reads that as a lookup
+    started, so the bound on lookups out covers it.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    connector.blocking_lookups = 0
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    first_pending = manager.alloc(ctx, defer_lookup=True)
+    assert not first_pending.is_complete()
+    (first,) = connector.started
+    first.answer()
+    assert first_pending.is_complete(), "the scheduler readmits on this poll"
+    age = jenga_block_manager._LOOKUP_HAND_BACK_AGE_S
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", 0.0)
+
+    assert manager.starts_lookup(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+
+    assert not pending.is_complete()
+    assert manager.awaits_lookup(ctx)
+    assert connector.abandoned == [first]
+    assert connector.loaded_from == []
+    assert connector.lookups[-1] == (held[:-1], 0, None)
+    assert connector.blocking_lookups == 0
+    assert manager.num_req_blocks(ctx) == 0
+    assert ctx.tokens.processed_length == 0
+    assert manager._state_of(ctx).connector_lookup_hand_backs == 1
+
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", age)
+    (_, second) = connector.started
+    second.answer()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.loaded_from == [second]
+    assert connector.loads[-1][1][FULL] == held[:-1]
+
+
+def test_an_answer_too_old_to_load_is_loaded_past_the_hand_backs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request whose answers keep going stale loads its last one.
+
+    Asking again when consuming spends the hand backs, so a request whose
+    queue keeps it waiting cannot ask for good. Its last answer is loaded
+    however old, and a lease that lapsed is refused and served as a miss.
+    """
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", 0.0)
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    connector.loads.clear()
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    for _ in range(jenga_block_manager._MAX_CONNECTOR_LOOKUP_HAND_BACKS):
+        connector.started[-1].answer()
+        assert not manager.alloc(ctx, defer_lookup=True).is_complete()
+    last = connector.started[-1]
+    last.answer()
+    connector.evict_before_load = set(held)
+
+    assert not manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert (
+        len(connector.started)
+        == 1 + jenga_block_manager._MAX_CONNECTOR_LOOKUP_HAND_BACKS
+    )
+    assert connector.loaded_from == [last]
+    assert connector.abandoned == connector.started
+    assert ctx.tokens.processed_length == 0
+    assert manager.num_req_blocks(ctx) == len(tokens)
+
+
+def test_hand_backs_leave_the_re_asks_a_shrunken_hit_needs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request handed back as often as allowed still re-asks past a shrink.
+
+    Hand backs have their own budget, so a request a queue passed over can
+    still start its lookup over from a device hit an eviction shortened,
+    rather than compute everything past it.
+    """
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", 0.0)
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.loads.clear()
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    for _ in range(jenga_block_manager._MAX_CONNECTOR_LOOKUP_HAND_BACKS):
+        manager.alloc(ctx, defer_lookup=True)
+        connector.started[-1].answer()
+        assert manager.hand_back_lookup(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    manager.pools[0].reset_prefix_cache()
+    connector.started[-1].answer()
+
+    pending = manager.alloc(ctx, defer_lookup=True)
+
+    assert not pending.is_complete()
+    assert connector.lookups[-1] == (held[:-1], 0, None)
+    connector.started[-1].answer()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+    assert transfer.is_complete()
+    assert connector.loads[-1][1][FULL] == held[:-1]
+    assert ctx.tokens.processed_length == len(held) - 1
+
+
+def test_a_lookup_that_gave_up_is_not_asked_again_after_a_hand_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Handing back a lookup past its deadline keeps the request a miss.
+
+    The store did not answer in time, so asking it again for the same
+    request would only add to its load.
+    """
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+    assert not pending.is_complete()
+    monkeypatch.setattr(jenga_block_manager, "_CONNECTOR_LOOKUP_TIMEOUT_S", 0.0)
+    assert pending.is_complete()
+
+    manager.hand_back_lookup(ctx)
+
+    assert not manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+    assert transfer.is_complete()
+    assert len(connector.started) == 1
+    assert ctx.tokens.processed_length == 0
+
+
+def test_a_synchronous_alloc_hands_back_an_outstanding_lookup() -> None:
+    """An alloc that cannot wait drops the lookup and asks synchronously.
+
+    Its caller reads the request's blocks as soon as alloc returns, so an
+    answer still outstanding from an earlier deferred alloc is handed back
+    and the synchronous lookup serves the request at once.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector)
+    held = _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    connector.lookups.clear()
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    transfer = manager.alloc(ctx)
+
+    assert transfer.is_complete()
+    assert connector.abandoned == [lookup]
+    assert connector.loaded_from == []
+    assert len(connector.lookups) == 2
+    assert connector.loads[-1][1][FULL] == held[:-1]
+    assert ctx.tokens.processed_length == len(held) - 1
+
+
+def make_dp_manager(
+    connector: FakeConnector, copies_across_replicas: bool = False
+) -> JengaBlockManager:
+    """Two replicas tiling the same huge blocks.
+
+    ``copies_across_replicas`` backs each replica with host memory so a
+    prefix one replica holds can be copied to the other.
+    """
+    leaf_infos = {FULL: KVLeafInfo(1, KVCacheGroupId.full())}
+    pools = create_pools(leaf_infos, 16, num_replicas=2)
+    return JengaBlockManager(
+        pools=pools,
+        groups=create_groups(leaf_infos, pools, 1, enable_prefix_caching=True),
+        leaves={
+            FULL: PagedKVLeafRegion(
+                leaf_id=FULL,
+                group_id=KVCacheGroupId.full(),
+                bytes_per_page=1,
+                page_size=1,
+            )
+        },
+        block_size=1,
+        enable_prefix_caching=True,
+        connector=connector,
+        replica_kv_memory=[
+            {
+                FULL: KVCacheMemory(
+                    replicated=False,
+                    buffers=[Buffer.from_numpy(np.zeros((16, 1), np.uint8))],
+                )
+            }
+            for _ in range(2)
+        ],
+        enable_dp_cross_replica_prefix_copy=copies_across_replicas,
+    )
+
+
+def test_a_peer_hit_that_no_longer_fits_is_served_as_a_miss() -> None:
+    """A device hit counted on another replica can come up short when taken.
+
+    The count saw the whole prompt on the other replica, so no lookup was
+    started. The copy then finds no room, and the gap is served as a miss
+    rather than asked about, neither by the blocking lookup nor off the
+    thread, so the request is refused for want of pages like any other
+    miss. Once the copy fits, the device hit serves it.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_dp_manager(connector, copies_across_replicas=True)
+    tokens = [1, 2, 3, 4, 5, 6]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    peer = make_ctx(tokens)
+    manager.claim(peer, replica_idx=1)
+    manager.alloc(peer)
+    manager.release(peer)
+    assert all(h in manager.pools[1].prefix_caches[FULL] for h in held[:-1])
+    pool = manager.pools[0]
+    filler = [pool.alloc_block(FULL) for _ in range(pool.num_free_blocks(FULL))]
+    connector.blocking_lookups = 0
+    lookups = len(connector.lookups)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    with pytest.raises(InsufficientBlocksError):
+        manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.blocking_lookups == 0
+    assert not connector.started
+    assert len(connector.lookups) == lookups
+    assert manager.num_req_blocks(ctx) == 0
+
+    for block in filler:
+        pool.free_block(block)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.blocking_lookups == 0
+    assert not connector.started
+    assert ctx.tokens.processed_length == len(held) - 1
+    assert ctx.cached_prefix_external_length == 0
+
+
+def test_a_gap_after_the_take_is_asked_in_place_when_the_connector_can(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A connector that answers in place is asked about a short take's gap.
+
+    The count is made to see the whole prompt, as it does when a peer
+    replica holds it, so no lookup is started, and the take then finds
+    nothing, as a copy that found no room does. Asking a connector that
+    answers in place costs no round trip, so the gap is loaded rather than
+    computed, as the synchronous alloc does.
+    """
+    connector = FakeConnector([FULL], asynchronous=False)
+    manager = make_manager(connector, num_huge_blocks=32)
+    held = _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4, 5])
+    connector.blocking_lookups = 0
+    monkeypatch.setattr(
+        manager,
+        "_count_device_prefix_blocks",
+        lambda desired_hashes, replica_idx: len(desired_hashes),
+    )
+
+    ctx = make_ctx([1, 2, 3, 4, 5])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.blocking_lookups == 1
+    assert connector.loads[-1][1][FULL] == held[:-1]
+    assert ctx.cached_prefix_external_length == len(held) - 1
+
+
+def test_a_shrunken_peer_hit_is_asked_again_before_anything_is_copied() -> None:
+    """A request is held out again before any page is copied into it.
+
+    The lookup was asked past two blocks the count saw on the other
+    replica, and one of them is evicted there before the answer is read.
+    The shrink is caught before the device hit is taken, so the request is
+    held out on a new lookup having copied nothing. A page a copy was
+    enqueued into stays held by the request, because the copy can land
+    after the page is reused if it goes back to the pool, and then
+    overwrites what the new owner put there.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_dp_manager(connector, copies_across_replicas=True)
+    tokens = [1, 2, 3, 4, 5, 6, 7]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    asked = held[:-1]
+    peer = make_ctx(tokens[:3])
+    manager.claim(peer, replica_idx=1)
+    manager.alloc(peer)
+    manager.release(peer)
+    peer_cache = manager.pools[1].prefix_caches[FULL]
+    assert all(h in peer_cache for h in asked[:2])
+    connector.blocking_lookups = 0
+    manager.take_metrics()
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+
+    def alloc_holding_every_copy() -> tuple[KVTransfer, int]:
+        transfer = manager.alloc(ctx, defer_lookup=True)
+        copied = manager.take_metrics().cross_replica_blocks_copied
+        if copied:
+            local = manager.pools[0].prefix_caches[FULL][asked[0]]
+            assert local.ref_cnt > 0, "the copied page went back to the pool"
+            assert manager.num_req_blocks(ctx) > 0
+        return transfer, copied
+
+    pending, copied = alloc_holding_every_copy()
+
+    assert not pending.is_complete()
+    assert copied == 0
+    (first,) = connector.started
+    assert connector.lookups[-1] == (asked[2:], 0, None)
+
+    manager.pools[1].uncommit_block(peer_cache[asked[1]])
+    first.answer()
+    pending, copied = alloc_holding_every_copy()
+
+    assert not pending.is_complete()
+    assert copied == 0, "nothing is copied before the request is held out"
+    assert connector.abandoned == [first]
+    assert connector.lookups[-1] == (asked[1:], 0, None)
+    assert manager.num_req_blocks(ctx) == 0
+
+    (_, again) = connector.started
+    again.answer()
+    transfer, copied = alloc_holding_every_copy()
+
+    assert transfer.is_complete()
+    assert copied == 1
+    assert connector.loaded_from == [again]
+    assert connector.loads[-1][1][FULL] == asked[1:]
+    assert connector.blocking_lookups == 0
+    assert ctx.tokens.processed_length == len(asked)
+    assert ctx.cached_prefix_external_length == len(asked) - 1
+
+
+def _price_setup(
+    connector: FakeConnector,
+) -> tuple[JengaBlockManager, TextContext, list[bytes]]:
+    """The connector holds a whole run, and replica 1 holds its first two blocks.
+
+    Returns the hashes a fresh request over the run asks about.
+    """
+    manager = make_dp_manager(connector)
+    tokens = [1, 2, 3, 4, 5, 6]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    device = make_ctx(tokens[:3])
+    manager.claim(device, replica_idx=1)
+    manager.alloc(device)
+    manager.release(device)
+    assert all(h in manager.pools[1].prefix_caches[FULL] for h in held[:2])
+    connector.lookups.clear()
+    connector.probes.clear()
+    return manager, make_ctx(tokens), held[:-1]
+
+
+def test_pricing_probes_the_connector_once_for_every_replica() -> None:
+    """One probe over the whole chain prices every replica.
+
+    The connector's tiers are shared, so one answer serves them all, and
+    each replica reads it from where its own device hit ends.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, probe_answers=True)
+    manager, ctx, asked = _price_setup(connector)
+
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert connector.probes == [(asked, [0, 1], None)]
+    assert not connector.lookups
+    assert not manager.awaits_presence(ctx)
+    assert ctx.request_id not in manager._pending_probes
+    assert hits == [
+        PrefixCacheHits(device_blocks=0, external_blocks=len(asked)),
+        PrefixCacheHits(device_blocks=2, external_blocks=len(asked) - 2),
+    ]
+
+
+def test_pricing_reconciles_only_the_leaves_a_probe_covers() -> None:
+    """A probe may answer for one representative leaf.
+
+    The dKV connector prices from its first full-attention leaf when its
+    server predates presence, so the leaves the answer leaves out neither
+    decide the hit nor fail the pricing.
+    """
+    connector = FakeConnector(
+        [FULL, SCALES], asynchronous=False, probe_answers=True
+    )
+    connector.probe_leaves = [FULL]
+    manager = make_manager(connector, leaves=(FULL, SCALES))
+    tokens = [1, 2, 3, 4, 5, 6]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    connector.held[SCALES].clear()
+    connector.lookups.clear()
+
+    (hits,) = manager.get_prefix_cache_hit_counts(make_ctx(tokens))
+
+    assert hits == PrefixCacheHits(
+        device_blocks=0, external_blocks=len(held) - 1
+    )
+    assert len(connector.probes) == 1
+    assert not connector.lookups
+
+
+def test_pricing_falls_back_to_a_lookup_per_replica_without_a_probe() -> None:
+    """A connector with no probe is priced the way it always was."""
+    connector = FakeConnector([FULL], asynchronous=False)
+    manager, ctx, asked = _price_setup(connector)
+
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert len(connector.probes) == 1
+    assert connector.lookups == [(asked, 0, None), (asked[2:], 1, None)]
+    assert hits == [
+        PrefixCacheHits(device_blocks=0, external_blocks=len(asked)),
+        PrefixCacheHits(device_blocks=2, external_blocks=len(asked) - 2),
+    ]
+
+
+def _probing_connector(deferred_lookups: bool = True) -> FakeConnector:
+    """A connector whose probe is a round trip, as dKV's presence is."""
+    return FakeConnector(
+        [FULL],
+        asynchronous=False,
+        deferred_lookups=deferred_lookups,
+        probe_answers=True,
+        deferred_probes=True,
+    )
+
+
+def test_pricing_starts_a_probe_and_reads_the_device_tier_until_it_answers() -> (
+    None
+):
+    """A connector whose probe is a round trip is never asked in place.
+
+    The first pricing starts the probe and counts the device tier alone,
+    reporting the answer as still out. Pricing again once it has answered
+    reads the external run from it with nothing asked again, and neither
+    the blocking probe nor a lookup is ever called.
+    """
+    connector = _probing_connector()
+    manager, ctx, asked = _price_setup(connector)
+
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    (probe,) = connector.started_probes
+    assert connector.probes == [] and not connector.lookups
+    assert manager.awaits_presence(ctx)
+    assert hits == [PrefixCacheHits(), PrefixCacheHits(device_blocks=2)]
+
+    probe.answer()
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert not manager.awaits_presence(ctx)
+    assert connector.started_probes == [probe]
+    assert connector.probes == [] and not connector.lookups
+    assert hits == [
+        PrefixCacheHits(device_blocks=0, external_blocks=len(asked)),
+        PrefixCacheHits(device_blocks=2, external_blocks=len(asked) - 2),
+    ]
+
+
+def test_a_probed_miss_skips_the_first_chunk_lease() -> None:
+    """A request its probe answered a miss for leases nothing.
+
+    Its deferred alloc starts no lookup, so the request is never held out,
+    and it takes the pages to compute the prompt at once.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+
+    manager.claim(ctx)
+    assert not manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.started == [] and connector.blocking_lookups == 0
+    assert not manager.awaits_lookup(ctx)
+    assert manager.num_req_blocks(ctx) == len(tokens)
+    assert ctx.request_id not in manager._pending_probes
+
+
+def test_async_presence_off_prices_with_the_blocking_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the started probe switched off, pricing asks in place as before.
+
+    No probe is kept, so nothing reports presence as out and no miss can
+    spare the request's lease.
+    """
+    monkeypatch.setenv(jenga_block_manager.ASYNC_PRESENCE_ENV_VAR, "0")
+    connector = _probing_connector()
+    manager, ctx, asked = _price_setup(connector)
+
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert connector.started_probes == []
+    assert connector.probes == [(asked, [0, 1], None)]
+    assert not manager.awaits_presence(ctx)
+    assert ctx.request_id not in manager._pending_probes
+    assert hits == [
+        PrefixCacheHits(device_blocks=0, external_blocks=len(asked)),
+        PrefixCacheHits(device_blocks=2, external_blocks=len(asked) - 2),
+    ]
+
+
+def test_probed_miss_skip_off_still_leases_a_probed_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the miss skip switched off, a probed miss leases as before.
+
+    Pricing still runs on the started probe.
+    """
+    monkeypatch.setenv(jenga_block_manager.PROBED_MISS_SKIP_ENV_VAR, "0")
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    ctx = make_ctx([1, 2, 3, 4, 5, 6, 7, 8])
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+
+    manager.claim(ctx)
+
+    assert manager.starts_lookup(ctx)
+    assert connector.probes == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        jenga_block_manager.ASYNC_PRESENCE_ENV_VAR,
+        jenga_block_manager.PROBED_MISS_SKIP_ENV_VAR,
+    ],
+)
+def test_presence_switches_reject_anything_but_0_or_1(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    monkeypatch.setenv(name, "yes")
+
+    with pytest.raises(ValueError, match=name):
+        make_manager(_probing_connector())
+
+
+def test_a_probed_hit_still_leases() -> None:
+    """A probe reporting a run sends the chunk down the leased path as before.
+
+    The lease is what the load reads out of, so the probe only ever spares
+    one, never replaces it.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+
+    manager.claim(ctx)
+    assert manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert not transfer.is_complete()
+    (lookup,) = connector.started
+    assert manager.awaits_lookup(ctx)
+    assert ctx.request_id not in manager._pending_probes
+    lookup.answer()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+    assert transfer.is_complete()
+    assert connector.loaded_from == [lookup]
+    assert connector.loads[-1][1][FULL] == held[:-1]
+
+
+def test_an_unanswered_probe_leaves_the_lease_to_decide() -> None:
+    """A chunk allocated before its probe answers takes the leased path.
+
+    The probe is dropped then, since the lookup supersedes it.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    manager.claim(ctx)
+
+    assert manager.starts_lookup(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert len(connector.started) == 1
+    assert ctx.request_id not in manager._pending_probes
+
+
+def test_a_probe_that_answered_nothing_prices_the_device_tier_and_leases() -> (
+    None
+):
+    """A probe the store shed or timed out on is read as no answer.
+
+    Pricing counts the device tier alone and stops reporting the answer as
+    out, nothing is asked again on this thread, and the lease decides what
+    the store holds, as it did before the probe.
+    """
+    connector = _probing_connector()
+    manager, ctx, _ = _price_setup(connector)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.give_up()
+
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert not manager.awaits_presence(ctx)
+    assert hits == [PrefixCacheHits(), PrefixCacheHits(device_blocks=2)]
+    assert connector.started_probes == [probe]
+    assert connector.probes == [] and not connector.lookups
+    manager.claim(ctx, replica_idx=1)
+    assert manager.starts_lookup(ctx)
+
+
+def test_a_probe_whose_poll_raises_is_read_as_no_answer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    connector = _probing_connector()
+    manager, ctx, _ = _price_setup(connector)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.error = RuntimeError("broken handle")
+
+    with caplog.at_level(logging.ERROR, logger="max.pipelines"):
+        hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert "presence answer failed" in caplog.text
+    assert not manager.awaits_presence(ctx)
+    assert hits == [PrefixCacheHits(), PrefixCacheHits(device_blocks=2)]
+    manager.claim(ctx, replica_idx=1)
+    assert manager.starts_lookup(ctx)
+
+
+def test_a_stale_probed_miss_no_longer_skips_the_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A miss older than the probe age is not trusted.
+
+    The blocks it missed may have landed in the store since, so a request
+    that waited that long in its queue takes the leased path as before.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    manager.claim(ctx)
+    assert not manager.starts_lookup(ctx)
+
+    clock.now += jenga_block_manager._PROBED_MISS_AGE_S
+
+    assert manager.starts_lookup(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    assert len(connector.started) == 1
+
+
+def test_a_probed_miss_is_aged_from_before_its_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The start waits for the connector lock, and that wait ages the miss.
+
+    An age taken after the start would trust the miss for the wait on top
+    of its window, during which the blocks may already have landed.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    start_probe = connector.start_probe
+
+    def slow_start_probe(
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        clock.now += jenga_block_manager._PROBED_MISS_AGE_S / 2
+        return start_probe(block_hashes, replica_idxs, hint=hint)
+
+    monkeypatch.setattr(connector, "start_probe", slow_start_probe)
+    ctx = make_ctx([1, 2, 3, 4, 5, 6, 7, 8])
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    manager.claim(ctx)
+    assert not manager.starts_lookup(ctx)
+
+    clock.now += jenga_block_manager._PROBED_MISS_AGE_S / 2
+
+    assert manager.starts_lookup(ctx)
+
+
+def test_a_probe_still_out_past_its_age_is_read_as_unanswered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A probe that has not answered by the probe age stops being waited on.
+
+    Pricing stops reporting it as out, and an answer that lands afterwards
+    is not read, so a store that never answers holds no pricing up.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector()
+    manager, ctx, _ = _price_setup(connector)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    assert manager.awaits_presence(ctx)
+
+    clock.now += jenga_block_manager._PRESENCE_PROBE_AGE_S
+
+    assert not manager.awaits_presence(ctx)
+    probe.answer()
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+    assert hits == [PrefixCacheHits(), PrefixCacheHits(device_blocks=2)]
+
+
+def test_a_probed_miss_is_read_from_where_the_device_hit_ends() -> None:
+    """A device hit that grew after the probe moves where its answer is read.
+
+    The probe covers the request's whole chain, so the blocks another
+    request computed since are skipped over and the miss past them still
+    spares the lease.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    device = make_ctx(tokens[:4])
+    manager.claim(device)
+    manager.alloc(device)
+    device.update(9)
+    manager.step(device)
+    manager.release(device)
+    asked_before = connector.blocking_lookups
+
+    manager.claim(ctx)
+    assert not manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.started == []
+    assert connector.blocking_lookups == asked_before
+    assert ctx.cached_prefix_length == 4
+
+
+def test_release_drops_the_probe_and_the_next_pricing_starts_afresh() -> None:
+    """A request priced again after its release gets a fresh probe.
+
+    One released before it was claimed hands its probe back the same way.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.get_prefix_cache_hit_counts(ctx)
+    manager.claim(ctx)
+    manager.release(ctx)
+    assert ctx.request_id not in manager._pending_probes
+
+    manager.get_prefix_cache_hit_counts(ctx)
+    assert len(connector.started_probes) == 2
+    manager.abandon_presence(ctx)
+    assert ctx.request_id not in manager._pending_probes
+
+
+def _lookup_probe_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[JengaBlockManager, FakeConnector, TextContext, list[bytes], _Clock]:
+    """Prices a request on a connector whose probe is its lookup.
+
+    Returns the hashes the connector can load for it.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector(deferred_lookups=False)
+    connector.probes_are_lookups = True
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    connector.lookups.clear()
+    manager.claim(ctx)
+    return manager, connector, ctx, held[:-1], clock
+
+
+def test_a_probe_that_is_the_lookup_is_loaded_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pricing answer of a connector whose probe is its lookup is loaded.
+
+    Asking again at admission would repeat the lookup pricing just made.
+    """
+    manager, connector, ctx, loadable, _ = _lookup_probe_setup(monkeypatch)
+
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.lookups == []
+    assert connector.loads[-1][1][FULL] == loadable
+    assert ctx.cached_prefix_external_length == len(loadable)
+
+
+def test_a_stale_probe_that_is_the_lookup_is_asked_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An answer past the probe age is not trusted, so the lookup runs."""
+    manager, connector, ctx, loadable, clock = _lookup_probe_setup(monkeypatch)
+    clock.now += jenga_block_manager._PROBED_MISS_AGE_S
+
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.lookups == [(loadable, 0, None)]
+    assert ctx.cached_prefix_external_length == len(loadable)
+
+
+def test_a_block_gone_since_the_probe_serves_a_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A block evicted after pricing refuses the load, as after a lookup."""
+    manager, connector, ctx, loadable, _ = _lookup_probe_setup(monkeypatch)
+    connector.evict_before_load.add(loadable[-1])
+
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.lookups == []
+    assert ctx.cached_prefix_length == 0
+
+
+def test_a_probed_miss_that_is_the_lookup_skips_it() -> None:
+    """A fresh miss from a probe that is the lookup is not asked again.
+
+    The connector answers its lookup in place, so without the probe's
+    answer the admission would look up on the scheduler thread.
+    """
+    connector = _probing_connector(deferred_lookups=False)
+    connector.probes_are_lookups = True
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    manager.claim(ctx)
+
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.lookups == [] and connector.loads == []
+    assert ctx.cached_prefix_length == 0
+    assert manager.num_req_blocks(ctx) == len(tokens)
+
+
+def test_a_probe_covering_no_leaf_leaves_the_lease_to_decide() -> None:
+    """An answer that names none of the manager's leaves is no answer.
+
+    Reconciled, an empty answer reads as a miss, which would spare a lease
+    the store may well have answered, so it is read as nothing known.
+    """
+    connector = _probing_connector()
+    connector.probe_leaves = []
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    manager.claim(ctx)
+
+    assert manager.starts_lookup(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    assert len(connector.started) == 1
+
+
+def test_a_manager_without_a_connector_disables_checkpointing() -> None:
+    """Nothing could persist a checkpoint, so every event is dropped."""
+    manager = make_manager(None)
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    checkpointer = attach_checkpointing(manager)
+
+    checkpointer.record(
+        CheckpointEvent(ctx.request_id, CheckpointEventKind.RELEASE, 4)
+    )
+
+    assert checkpointer.checkpoint() == set()
+
+
+def test_release_checkpoints_every_leaf_before_freeing_it() -> None:
+    """Releasing checkpoints the request while it still holds its pages.
+
+    The attention run already streamed as it committed, so the checkpoint
+    sends only the state at the boundary. The copy pins its source past the
+    free.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+    streamed = len(connector.offloads)
+    ctx_hashes = connector.offloads[-1][1][FULL]
+    for transfer in connector.transfers:
+        transfer.synchronize()
+    manager.poll_transfers()
+    assert not manager.pending_transfers_exist(0)
+
+    manager.release(ctx)
+
+    assert len(connector.offloads) == streamed + 1
+    _, hashes = connector.offloads[-1]
+    assert hashes[FULL] == []
+    assert hashes[STATE] == ctx_hashes[1:]
+    assert manager.pending_transfers_exist(0), (
+        "the checkpoint's copy has to pin its sources past the release"
+    )
+
+
+def test_end_of_prompt_offloads_its_checkpoint_at_the_next_offload() -> None:
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+    streamed = len(connector.offloads)
+    ctx_hashes = connector.offloads[-1][1][FULL]
+
+    checkpointer = attach_checkpointing(manager)
+    checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id, CheckpointEventKind.END_OF_PROMPT, 2 * PAGE
+        )
+    )
+    manager.offload(0)
+
+    assert len(connector.offloads) == streamed + 1
+    _, hashes = connector.offloads[-1]
+    assert hashes[FULL] == [], "the attention run streams as it commits"
+    assert hashes[STATE] == ctx_hashes[1:]
+
+
+def test_a_checkpoint_lands_only_where_every_leaf_can_resume() -> None:
+    """Between two state boundaries no position resumes, so none is offloaded.
+
+    The attention leaf could resume one block in, but the state was published
+    only at the end of the forward, so there is no candidate at or before an
+    event inside the second page.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+    streamed = len(connector.offloads)
+
+    checkpointer = attach_checkpointing(manager)
+    checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id, CheckpointEventKind.END_OF_PROMPT, 2 * PAGE - 1
+        )
+    )
+    manager.offload(0)
+
+    assert len(connector.offloads) == streamed
+
+
+def test_a_boundary_the_state_cannot_resume_at_is_not_checkpointed() -> None:
+    """A forward that ran past the boundary published no state there.
+
+    The attention leaf could resume at the boundary, and it is at or before
+    the event, but the state cannot, so the event checkpoints nothing.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 3)))
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    assert manager._state_of(ctx).committed_idx == 2 * PAGE
+
+    checkpointer = attach_checkpointing(manager)
+    checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id,
+            CheckpointEventKind.RELEASE,
+            ctx.tokens.processed_length,
+        )
+    )
+
+    assert checkpointer.checkpoint() == set()
+
+
+def test_a_prompt_ending_on_a_page_checkpoints_where_a_replay_resumes() -> None:
+    """A replay recomputes the last prompt token, so it resumes a page short.
+
+    End of prompt checkpoints both depths, and the windowed leaf keeps the
+    page below the replay's window past ``advance`` so that checkpoint can
+    send it. A replay then resumes from the checkpoints alone.
+    """
+    groups = {
+        FULL: KVCacheGroupId.full(),
+        SLIDING: KVCacheGroupId("sliding_window", 4),
+    }
+    connector = FakeConnector(groups, asynchronous=False)
+    manager = make_manager(
+        connector,
+        leaf_infos={
+            FULL: KVLeafInfo(1, groups[FULL]),
+            SLIDING: KVLeafInfo(1, groups[SLIDING]),
+        },
+    )
+    window = groups[SLIDING].blocks_in_window(1)
+    first = make_ctx([1, 2, 3, 4, 5, 6])
+    manager.claim(first)
+    manager.alloc(first)
+    first.update(9)
+    manager.step(first)
+    manager.offload(0)
+    hashes = connector.offloads[-1][1][FULL]
+    streamed = len(connector.offloads)
+
+    checkpointer = attach_checkpointing(manager)
+    checkpointer.record(
+        CheckpointEvent(first.request_id, CheckpointEventKind.END_OF_PROMPT, 6)
+    )
+    manager.offload(0)
+
+    checkpoints = connector.offloads[streamed:]
+    assert {tuple(sent[SLIDING]) for _, sent in checkpoints} == {
+        tuple(hashes[5 - window : 5]),
+        tuple(hashes[6 - window : 6]),
+    }
+    assert all(sent[FULL] == [] for _, sent in checkpoints)
+
+    # The next step keeps only the window at its own boundary.
+    manager.alloc(first)
+    first.update(10)
+    manager.step(first)
+    assert manager._resumable_at(first.request_id, 7)
+    assert not manager._resumable_at(first.request_id, 5)
+
+    manager.release(first)
+    manager.reset_prefix_cache()
+    connector.held[FULL].update(hashes)
+    for _, sent in checkpoints:
+        connector.held[SLIDING].update(sent[SLIDING])
+
+    replay = make_ctx([1, 2, 3, 4, 5, 6])
+    manager.claim(replay)
+    manager.alloc(replay)
+
+    assert replay.tokens.processed_length == 5
+    _, asked, _ = connector.loads[-1]
+    assert asked[SLIDING] == hashes[5 - window : 5]
+
+
+def test_a_checkpoint_waiting_on_another_replica_is_sent_whole() -> None:
+    """A release on one replica can resolve another replica's checkpoint.
+
+    The checkpoint then waits for its own replica's next offload, while
+    admissions may evict any page no request holds. The request keeps what
+    the checkpoint reads, so the eviction cannot reach it.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector, num_replicas=2)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx, replica_idx=0)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+    ((_, streamed),) = connector.offloads
+    other = make_ctx([100, 101])
+    manager.claim(other, replica_idx=1)
+    manager.alloc(other)
+
+    manager._checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id, CheckpointEventKind.END_OF_PROMPT, 2 * PAGE
+        )
+    )
+    manager.release(other)
+    assert manager._pending_offloads[0], "the release left it unresolved"
+    assert len(connector.offloads) == 1, "sent before its replica's offload"
+    manager.reset_prefix_cache()
+    manager.offload(0)
+
+    _, checkpoint = connector.offloads[-1]
+    assert checkpoint[STATE] == streamed[FULL][1:]
+
+
+def _partially_written_sliding_manager() -> tuple[
+    JengaBlockManager, FakeConnector, TextContext
+]:
+    """A request whose sliding pages 6 and 7 were never fully written.
+
+    The first forward writes pages 0-5 and the second only pages 8-11, as a
+    bounded replay that computes just a chunk's tail rows does, so pages 6
+    and 7 can never be published.
+    """
+    groups = {
+        FULL: KVCacheGroupId.full(),
+        SLIDING: KVCacheGroupId("sliding_window", 4),
+    }
+    connector = FakeConnector(groups, asynchronous=False)
+    manager = make_manager(
+        connector,
+        num_huge_blocks=64,
+        leaf_infos={
+            FULL: KVLeafInfo(1, groups[FULL]),
+            SLIDING: KVLeafInfo(1, groups[SLIDING]),
+        },
+    )
+    manager.with_checkpointer(Checkpointer.factory().disabled().build())
+    ctx = make_ctx(list(range(1, 13)))
+    manager.claim(ctx)
+    ctx.tokens.chunk(6)
+    manager.alloc(ctx)
+    ctx.update(9)
+    ctx.kv_cache_write_ranges[SLIDING] = (0, 6)
+    manager.step(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    ctx.kv_cache_write_ranges[SLIDING] = (8, 12)
+    manager.step(ctx)
+    manager.offload(0)
+    return manager, connector, ctx
+
+
+def test_an_unwritten_sliding_page_does_not_stop_the_offload_past_it() -> None:
+    manager, connector, ctx = _partially_written_sliding_manager()
+    hashes = manager._compute_hashes_for_request(ctx)
+    published = [*hashes[:6], *hashes[8:12]]
+    assert set(manager.pools[0].prefix_caches[SLIDING]) == set(published)
+    connector.offloads.clear()
+
+    # A checkpoint window reaching back over the gap queues unpublished pages.
+    manager._pending_offloads[0].append({SLIDING: hashes[:12]})
+    manager.offload(0)
+
+    ((_, sent),) = connector.offloads
+    assert sent[SLIDING] == published
+    assert not set(sent[SLIDING]) & {hashes[6], hashes[7]}
+
+
+def test_a_missing_block_stops_a_full_leaf_but_not_a_windowed_one() -> None:
+    manager, connector, ctx = _partially_written_sliding_manager()
+    hashes = manager._compute_hashes_for_request(ctx)
+    gone = b"evicted"
+    connector.offloads.clear()
+
+    run = [hashes[0], gone, hashes[2]]
+    manager._pending_offloads[0].append({FULL: run, SLIDING: run})
+    manager.offload(0)
+
+    ((_, sent),) = connector.offloads
+    assert sent[FULL] == [hashes[0]]
+    assert sent[SLIDING] == [hashes[0], hashes[2]]

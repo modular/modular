@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Portable NVFP4 -> bf16 weight-only dequant for the Apple M5 matmul (W4A16).
 
-SM100/Apple M5 (`compute_capability == 5`), but the math here is hardware-neutral
+SM100/Apple M5 (`compute_capability >= 5`), but the math here is hardware-neutral
 (plain LUT + scale, no PTX / MFMA intrinsics). FLUX.2-dev-NVFP4 stores Linear
 weights as packed E2M1 values with per-16-element FP8-E4M3 block scales; the
 goal is to keep them packed in DRAM and dequant to bf16 in-register at the
@@ -36,13 +36,13 @@ from max.gpu import global_idx
 from std.math import ceildiv
 from max.gpu.host import DeviceContext
 
-from layout import Idx, TensorEngine, TileTensor
-from layout.tile_layout import TensorLayout, row_major
+from layout import TensorEngine, TileTensor
+from layout.tile_layout import TensorLayout
 
 from linalg.fp4_utils import E2M1_TO_FLOAT32, NVFP4_SF_VECTOR_SIZE
 
 
-@always_inline
+@inline(.always)
 def dequant_fp4_nibble[
     out_type: DType
 ](packed_byte: UInt8, nibble_hi: Bool, scale_abs: Float32) -> Scalar[out_type]:
@@ -120,8 +120,8 @@ def fp4_materialize_kernel[
     var N = Int(out_w.dim[0]())
     var K = Int(out_w.dim[1]())
 
-    var n = Int(global_idx.y)
-    var k = Int(global_idx.x)
+    var n = global_idx.y
+    var k = global_idx.x
     if n >= N or k >= K:
         return
 
@@ -133,7 +133,7 @@ def fp4_materialize_kernel[
     )
 
 
-@always_inline
+@inline(.always)
 def enqueue_fp4_materialize[
     out_type: DType
 ](
@@ -175,8 +175,8 @@ def enqueue_fp4_materialize[
     ]
     ctx.enqueue_function[kernel](
         out_w,
-        packed.as_immut(),
-        scales.as_immut(),
+        packed.as_imm(),
+        scales.as_imm(),
         grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
         block_dim=(BLK, BLK),
     )

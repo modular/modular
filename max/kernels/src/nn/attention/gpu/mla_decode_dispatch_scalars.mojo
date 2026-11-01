@@ -32,6 +32,8 @@ device-generic location instead.
 from max.gpu.host import DeviceAttribute, DeviceContext
 
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    amd_sparse_mla_bf16_num_partitions,
+    amd_sparse_mla_inplace_decode_num_partitions,
     mha_decoding_num_partitions,
 )
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
@@ -46,6 +48,7 @@ def mla_decode_dispatch_scalars(
     num_heads: Int,
     is_fp8_kv: Bool,
     ctx: DeviceContext,
+    sparse_indices_stride: Int = 0,
 ) raises -> Tuple[Int, Int, Int]:
     """Compute the packed MLA decode dispatch metadata for the active device.
 
@@ -60,7 +63,15 @@ def mla_decode_dispatch_scalars(
       byte-for-byte equal to the baked grid, compute the SAME value the kernel
       bakes: pass RAW `max_cache_valid_length` and `num_heads` (`kv_heads == 1`
       for MLA so `heads_per_group == num_heads`), with NO `q_max_seq_len`
-      adjustment.
+      adjustment. Sparse MLA (`sparse_indices_stride > 0`) differs: no AMD
+      sparse op reads this value. The FP8-weight sparse ops pass their arm
+      `amd_sparse_mla_inplace_decode_num_partitions` of their own token
+      count (`_amd_sparse_decode_partitions` in the graph-op registrations),
+      and the BF16-weight arm sizes its split with
+      `amd_sparse_mla_bf16_num_partitions`, so the value only labels a
+      captured graph and is a function of `batch_size` and `q_max_seq_len`
+      alone. It matches the BF16 arm on a BF16 cache and, at one query
+      token with an FP8 cache, the FP8-weight ops.
     - **CUDA (NVIDIA/SM100):** delegate to the SM100 runtime heuristic
       `compute_mla_dispatch_scalars_runtime`, which reads the device SM count.
     - **Any other api (e.g. Metal):** raise: there is no MLA decode dispatch
@@ -74,15 +85,42 @@ def mla_decode_dispatch_scalars(
         num_heads: Number of Q attention heads.
         is_fp8_kv: Whether the KV cache is FP8 (selects the SM100 sub-heuristic).
         ctx: Device context used to read `api()` and the SM count.
+        sparse_indices_stride: Selected rows per token for sparse MLA, the
+            sparse index row stride; 0 for dense MLA. Read on HIP only.
 
     Returns:
         The packed `(batch_size, q_max_seq_len, num_partitions)` metadata.
     """
     if ctx.api() == "hip":
+        var np: Int
+        if sparse_indices_stride > 0:
+            var sm_count = ctx.device().get_attribute(
+                DeviceAttribute.MULTIPROCESSOR_COUNT
+            )
+            if q_max_seq_len == 1 and is_fp8_kv:
+                np = amd_sparse_mla_inplace_decode_num_partitions(
+                    batch_size, sparse_indices_stride, num_heads, sm_count
+                )
+            elif not is_fp8_kv:
+                np = amd_sparse_mla_bf16_num_partitions(
+                    batch_size * q_max_seq_len,
+                    sparse_indices_stride,
+                    num_heads,
+                    sm_count,
+                )
+            else:
+                np = mha_decoding_num_partitions(
+                    batch_size * q_max_seq_len,
+                    sparse_indices_stride,
+                    num_heads,
+                    ctx,
+                    is_mla=True,
+                )
+            return (batch_size, q_max_seq_len, np)
         # MLA: kv_num_heads == 1, so heads_per_group == num_heads. Pass raw
         # max_cache_valid_length — byte-for-byte the same value
         # `mha_decoding_num_partitions` bakes into the AMD split-K grid.
-        var np = mha_decoding_num_partitions(
+        np = mha_decoding_num_partitions(
             batch_size,
             max_cache_valid_length,
             num_heads,
@@ -99,7 +137,7 @@ def mla_decode_dispatch_scalars(
             q_max_seq_len,
             num_heads,
             is_fp8_kv,
-            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
         )
     else:
         raise Error(

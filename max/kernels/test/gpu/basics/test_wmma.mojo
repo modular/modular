@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from std.random import random_si64
 
-from max.gpu import WARP_SIZE, block_idx
+from max.gpu import block_idx
 from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import mma
 from max.gpu.compute.mma_util import (
@@ -22,7 +23,7 @@ from max.gpu.compute.mma_util import (
     load_matrix_b,
     store_matrix_d,
 )
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_false
 
@@ -30,15 +31,16 @@ from std.utils.numerics import isnan
 
 
 # TF32 Tensor core Matmul with shape m16n8k8
-def mma_kernel_fp32_tf32(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[Float32, ImmutAnyOrigin],
-    b_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+def mma_kernel_fp32_tf32[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: MutPointer[Float32, a_origin],
+    b_ptr: MutPointer[Float32, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -70,15 +72,16 @@ def mma_kernel_fp32_tf32(
 
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k8
-def mma_kernel_fp32_bf16(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
-    b_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+def mma_kernel_fp32_bf16[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: MutPointer[BFloat16, a_origin],
+    b_ptr: MutPointer[BFloat16, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -110,15 +113,16 @@ def mma_kernel_fp32_bf16(
 
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k16
-def mma_kernel_fp32_bf16_2(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
-    b_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+def mma_kernel_fp32_bf16_2[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: MutPointer[BFloat16, a_origin],
+    b_ptr: MutPointer[BFloat16, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -150,15 +154,16 @@ def mma_kernel_fp32_bf16_2(
 
 
 # FP32-FP16 (mixed precision) Tensor core Matmul with shape m16n8k8
-def mma_kernel_fp32_fp16(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[Float16, ImmutAnyOrigin],
-    b_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+def mma_kernel_fp32_fp16[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -190,15 +195,16 @@ def mma_kernel_fp32_fp16(
 
 
 # FP16 Tensor core Matmul with shape m16n8k8
-def mma_kernel_fp16_fp16(
-    c_ptr: MutPointer[Float16, MutAnyOrigin],
-    a_ptr: ImmPointer[Float16, ImmutAnyOrigin],
-    b_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+def mma_kernel_fp16_fp16[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float16, c_origin],
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -241,12 +247,12 @@ def run_mma_fp32_tf32(
 ) raises:
     print("== run_matmul fp32.tf32 tensor core kernel")
 
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
-    var c_host = alloc[Float32](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[Float32](M * K)
+    var b_host = unsafe_alloc[Float32](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -277,18 +283,26 @@ def run_mma_fp32_tf32(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    @always_inline
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp32_tf32[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
+    @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp32_tf32
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)
@@ -313,22 +327,22 @@ def run_mma_fp32_tf32(
     # requires exact type matches).
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(K, N)),
+        row_major(K, N),
     )
 
-    @always_inline
+    @inline(.always)
     def run_func_naive(ctx: DeviceContext) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -410,12 +424,12 @@ def run_mma_fp32_bf16(
 ) raises:
     print("== run_matmul fp32.bf16 1688 tensor core kernel")
 
-    var a_host = alloc[BFloat16](M * K)
-    var b_host = alloc[BFloat16](K * N)
-    var c_host = alloc[Float32](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[BFloat16](M * K)
+    var b_host = unsafe_alloc[BFloat16](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -446,18 +460,26 @@ def run_mma_fp32_bf16(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    @always_inline
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp32_bf16[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
+    @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp32_bf16
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)
@@ -479,22 +501,22 @@ def run_mma_fp32_bf16(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(K, N)),
+        row_major(K, N),
     )
 
-    @always_inline
+    @inline(.always)
     def run_func_naive(ctx: DeviceContext) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -575,12 +597,12 @@ def run_mma_fp32_bf16_2(
 ) raises:
     print("== run_matmul fp32.bf16 16816 tensor core kernel")
 
-    var a_host = alloc[BFloat16](M * K)
-    var b_host = alloc[BFloat16](K * N)
-    var c_host = alloc[Float32](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[BFloat16](M * K)
+    var b_host = unsafe_alloc[BFloat16](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -611,18 +633,26 @@ def run_mma_fp32_bf16_2(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    @always_inline
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp32_bf16_2[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
+    @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp32_bf16_2
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)
@@ -644,22 +674,22 @@ def run_mma_fp32_bf16_2(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(K, N)),
+        row_major(K, N),
     )
 
-    @always_inline
+    @inline(.always)
     def run_func_naive(ctx: DeviceContext) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -740,12 +770,12 @@ def run_mma_fp32_fp16(
 ) raises:
     print("== run_matmul fp32.fp16 tensor core kernel")
 
-    var a_host = alloc[Float16](M * K)
-    var b_host = alloc[Float16](K * N)
-    var c_host = alloc[Float32](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[Float16](M * K)
+    var b_host = unsafe_alloc[Float16](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -776,18 +806,26 @@ def run_mma_fp32_fp16(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    @always_inline
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp32_fp16[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
+    @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp32_fp16
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)
@@ -809,22 +847,22 @@ def run_mma_fp32_fp16(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(K, N)),
+        row_major(K, N),
     )
 
-    @always_inline
+    @inline(.always)
     def run_func_naive(ctx: DeviceContext) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -905,12 +943,12 @@ def run_mma_fp16_fp16(
 ) raises:
     print("== run_matmul fp16.fp16 tensor core kernel")
 
-    var a_host = alloc[Float16](M * K)
-    var b_host = alloc[Float16](K * N)
-    var c_host = alloc[Float16](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[Float16](M * K)
+    var b_host = unsafe_alloc[Float16](K * N)
+    var c_host = unsafe_alloc[Float16](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -941,18 +979,26 @@ def run_mma_fp16_fp16(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    @always_inline
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp16_fp16[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
+    @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp16_fp16
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)
@@ -974,22 +1020,22 @@ def run_mma_fp16_fp16(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(K, N)),
+        row_major(K, N),
     )
 
-    @always_inline
+    @inline(.always)
     def run_func_naive(ctx: DeviceContext) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,

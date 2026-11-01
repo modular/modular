@@ -73,17 +73,6 @@ __extension AnotherStruct:
         _ = name
 
 
-# CHECK-LABEL: lit.fn @"test_nested_function
-def test_nested_function():
-    # CHECK-LABEL: lit.fn *"inner
-    def inner() capturing:
-        # CHECK: #StringLiteral <:string "inner">
-        var name = __get_current_function_name()
-        _ = name
-
-    inner()
-
-
 # Storage methods print before the enclosing function, so the nested name
 # string is matched via CHECK-DAG near the top of this file.
 
@@ -104,7 +93,6 @@ def test_unified_clsoures():
 
 def main():
     test_simple_function()
-    test_nested_function()
     var s = MyStruct()
     s.my_method()
     MyStruct.my_static_method()

@@ -13,9 +13,7 @@
 """Eagle3 draft model for a DeepseekV3 target.
 
 Thin named alias over the shared :class:`Eagle3MLADraft`; the implementation
-lives in ``architectures/eagle_common/eagle_mla_draft.py``. Kept as a subclass
-so existing imports (``from .eagle3_draft import Eagle3DeepseekV3``) and the
-``Eagle3DeepseekV3Unified`` graph wiring stay unchanged.
+lives in ``architectures/eagle_common/eagle_mla_draft.py``.
 """
 
 from __future__ import annotations
@@ -30,3 +28,7 @@ class Eagle3DeepseekV3(Eagle3MLADraft):
 
     See :class:`Eagle3MLADraft` for the implementation.
     """
+
+    has_own_lm_head = True
+    """Whether the head scores through its own ``lm_head``. One whose
+    checkpoint ships none scores through its target's."""

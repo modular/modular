@@ -13,7 +13,6 @@
 
 #include "AsyncRT/CompilerSupport/Context.h"
 #include "AsyncRT/Runtime/CPUDevice.h"
-#include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "Config/Version.h"
 #include "Init/Init.h"
 #include "Mojo/Compiler/KGENCompiler.h"
@@ -23,20 +22,31 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
+#include "Mojo/Precompile/Precompile.h"
 #include "Mojo/Support/CLOptionUtils.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/Support/Configuration.h"
 #include "Mojo/Support/Constants.h"
 #include "Mojo/Support/ForceLinkMLIRC.h"
+#include "Mojo/Support/MojoPrecompiledFile.h"
 #include "Mojo/ToolCommon/CLOptions.h"
 #include "Mojo/ToolCommon/Debug.h"
+#include "Mojo/ToolCommon/DriverOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
+#include "Mojo/ToolCommon/OptionNormalizers.h"
+#include "Mojo/ToolCommon/TargetOptions.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/Compiler/Diags.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
+#include "Support/Driver/DiagnosticFormat.h"
+#include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/OptionMarshalling.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Filesystem/Paths.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/MDialect/MDialect.h"
 #include "Support/Process.h"
 #include "Target/TargetTraits.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -46,15 +56,24 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Option/ArgList.h"
+#include "llvm/Option/OptTable.h"
+#include "llvm/Option/Option.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
+
+#include <filesystem>
 
 using namespace M;
 using namespace KGEN;
 using namespace mlir;
 
-namespace {
+#define DRIVER_OPTIONS_PATH "Mojo/tools/kgen/KGENOptions.inc"
+#include "Mojo/tools/kgen/KGENOptionsHelpTexts.inc"
+#include "Support/Driver/OptTable.inc"
 
+namespace {
 /// Parser listener used for the `lsp` command: restricts interest to the main
 /// file's locations, mirroring how the language server parses an open document
 /// (and matching kgen-translate's -lsp listener). Installing a listener also
@@ -72,57 +91,151 @@ private:
   const llvm::SourceMgr &sourceMgr;
 };
 
-class CLOptions : public KGENOptions {
-public:
-  KGENCLOptions parser;
+/// The EmitAs outputs kgen writes; their spellings are accepted directly,
+/// and target-declared kinds canonicalize onto them.
+static constexpr EmitAs kEmitAsKinds[] = {
+    EmitAs::OBJECT, EmitAs::LLVM,     EmitAs::LLVM_BITCODE,
+    EmitAs::ASM,    EmitAs::LLVM_OPT, EmitAs::LLVM_OPT_BITCODE};
 
-  CLOptions(int argc, char **argv, bool skipInitLLVM = false)
-      : parser(argc, argv, *this, skipInitLLVM) {}
+/// kgen products with no EmitAs identity, named only here.
+static constexpr llvm::StringRef kAsmVerboseKind = "asm-verbose";
+static constexpr llvm::StringRef kHeaderKind = "header";
+static constexpr llvm::StringRef kSharedLibKind = "shared-lib";
+static constexpr llvm::StringRef kProductKinds[] = {
+    kAsmVerboseKind, kHeaderKind, kSharedLibKind};
 
-  M::cl::MListOpt<std::string> inputFiles{llvm::cl::Positional,
-                                          cl::desc("<input files>")};
+/// True if `cmd` is the emit command for `kind`.
+static bool isEmitCmd(llvm::StringRef cmd, llvm::StringRef kind) {
+  return cmd.consume_front("emit=") && cmd == kind;
+}
+static bool isEmitCmd(llvm::StringRef cmd, EmitAs kind) {
+  return isEmitCmd(cmd, stringifyEmitAs(kind));
+}
 
-  M::cl::MOpt<bool> emitTextualAsm{
-      "S", cl::desc("Print MLIR output files in textual form")};
+/// The options that kgen parsed from its command line.
+struct CLOptions : public CommonOptions {
+  /// Canonical command string: "elaborate[=<mode>]", "emit=<kind>",
+  /// "execute", "lsp[=no-dump]", or "precompile".
+  std::string cmd;
+  /// The requested `-emit` kind, or empty when no emit command was given.
+  std::string emissionKind;
+  SmallVector<CommandLineFunc> funcs;
+  /// The input files after the first, which `inputFilename` holds.
+  std::vector<std::string> inputFiles;
+  CompilationOptions compilationOptions;
+  FrontendOptions frontendOptions;
+  AsyncRT::CPUDeviceOptions cpuDeviceOptions;
+  TargetArgs targetArgs;
+  DriverOptions driverOptions;
+  std::string dependencyFilename;
+  bool emitTextualAsm = false;
+  bool ignoreFailures = false;
+  /// The driver state, which formats the errors and diagnostics.
+  const State *state = nullptr;
 
-  M::cl::MOpt<bool> ignoreFailures{
-      "ignore-failure",
-      cl::desc("Ignore execution failures. Any messages are still printed, but "
-               "failures don't mean the tool fails to execute.")};
+  int reportError(const Twine &message) const {
+    return state->reportError(message);
+  }
 
-  M::cl::MOpt<bool> disablePrebuiltPackages{
-      "disable-prebuilt-packages",
-      cl::desc("Disable prebuilt packages when parsing the input Mojo file."),
-      llvm::cl::init(false)};
-
-  M::cl::MOpt<std::string> dependencyFilename{
-      "d", llvm::cl::desc("Path of the dependency file to generate"),
-      llvm::cl::value_desc("filename"), llvm::cl::init("")};
-
-  /// We default to printing diagnostics through llvm::SourceMgr to enable
-  /// source ranges and fixit hints, but allow disabling this for testing.
-  M::cl::MOpt<bool> enableMLIRDiagnostics{
-      "enable-mlir-diagnostics",
-      cl::desc("Print .mojo diagnostics through MLIR."), llvm::cl::init(false)};
-
-  M::cl::MListOpt<std::string> bitcodeLibs{
-      "bitcode-libs",
-      cl::desc(
-          "External bitcode libraries to link into the generated LLVM IR.")};
+  std::optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
+    auto found = llvm::find_if(
+        funcs, [&](const CommandLineFunc &ek) { return ek.name == func; });
+    if (found == funcs.end())
+      return std::nullopt;
+    return *found;
+  }
 
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.
   ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
   void addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr);
-
-  /// Set default CPU value.
-  ErrorOrSuccess setDefaultCPU();
 };
+
+/// Parses the command that `arg` gives into `clOptions`.
+ErrorOrSuccess parseCommand(const llvm::opt::Arg &arg, CLOptions &clOptions) {
+  StringRef value = arg.getNumValues() ? arg.getValue() : "";
+  switch (arg.getOption().getID()) {
+  case options::OPT_elaborate:
+    clOptions.cmd = "elaborate";
+    return M::success();
+  case options::OPT_elaborate_eq:
+    if (value != "use-parametric-interpreter" &&
+        value != "no-use-parametric-interpreter")
+      return Error("unsupported 'elaborate' option value '" + value + "'");
+    clOptions.cmd = ("elaborate=" + value).str();
+    return M::success();
+  case options::OPT_emit:
+  case options::OPT_emit_eq:
+    // Any kind is recorded; it is validated against kgen's emission kinds and
+    // the target's traits once the targets are initialized.
+    clOptions.emissionKind =
+        value.empty() ? stringifyEmitAs(EmitAs::OBJECT).str() : value.str();
+    clOptions.cmd = "emit=" + clOptions.emissionKind;
+    return M::success();
+  case options::OPT_execute:
+    clOptions.cmd = "execute";
+    return M::success();
+  case options::OPT_lsp:
+    clOptions.cmd = "lsp";
+    return M::success();
+  case options::OPT_lsp_eq:
+    if (value != "no-dump")
+      return Error("unsupported 'lsp' option value '" + value + "'");
+    clOptions.cmd = "lsp=no-dump";
+    return M::success();
+  case options::OPT_precompile:
+    clOptions.cmd = "precompile";
+    return M::success();
+  default:
+    llvm_unreachable("not a command");
+  }
+}
+
+void printVersion(llvm::raw_ostream &os) {
+  ProjectVersion version = getMojoVersion();
+  os << "KGEN compiler:\n  ";
+  os << "Mojo version: " << version.major << '.' << version.minor << '.'
+     << version.patch << version.label << "\n  ";
+  os << "Git SHA: " << version.revision << "\n  ";
+  os << "Build config: " << version.buildType << "\n\n";
+
+  // Print the host target config.
+  llvm::sys::printDefaultTargetAndDetectedCPU(os);
+  // Print all registered targets.
+  llvm::TargetRegistry::printRegisteredTargetsForVersion(os);
+}
+
+/// Forwards the `-mllvm` values to `llvm::cl`, after registering the LLVM,
+/// MLIR and KGEN options they may name.
+bool parseForwardedCLOptions(const char *programName,
+                             const llvm::opt::InputArgList &args) {
+  M::registerCommandFlags();
+  registerMLIRContextCLOptions();
+  registerAsmPrinterCLOptions();
+  registerDefaultTimingManagerCLOptions();
+  KGEN::registerDefaultKGENPasses("kgen");
+  // Passes contributed by whichever backend plugins this build links.
+  KGEN::TargetTraitsRegistry::get().registerAllPasses();
+  registerPassManagerCLOptions();
+  KGEN::initializeDebugOptions();
+  KGEN::KGENPassCLOptions::registerOptions();
+
+  SmallVector<const char *> clArgs = {programName};
+  for (const llvm::opt::Arg *arg : args.filtered(options::OPT_mllvm))
+    clArgs.push_back(arg->getValue());
+  return llvm::cl::ParseCommandLineOptions(clArgs.size(), clArgs.data(), "kgen",
+                                           &llvm::errs());
+}
 } // namespace
 
 ErrorOrSuccess CLOptions::addInputFilesToSourceMgr(llvm::SourceMgr &mgr) {
-  if (inputFiles.empty())
-    mgr.AddNewSourceBuffer(openInputFileOrExit(), llvm::SMLoc());
+  if (inputFiles.empty()) {
+    ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> buffer =
+        openInputFile(inputFilename);
+    if (buffer.isError())
+      return buffer.takeError();
+    mgr.AddNewSourceBuffer(buffer.takeValue(), llvm::SMLoc());
+  }
 
   for (StringRef in : inputFiles) {
     std::error_code ec;
@@ -148,25 +261,11 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
     exit(reportError(err.getError()));
 }
 
-ErrorOrSuccess CLOptions::setDefaultCPU() {
-  llvm::Triple triple(targetTriple);
-  // A registered target supplies its own default CPU (e.g. the host target's
-  // ARM baseline, or a plugin target); otherwise default to `generic`.
-  ErrorOr<const TargetTraits *> traits =
-      TargetTraitsRegistry::get().lookup(triple);
-  if (traits.isError())
-    return traits.takeError();
-
-  llvm::StringRef targetDefault = (*traits)->defaultCPU(triple);
-  targetCpu = targetDefault.empty() ? "generic" : targetDefault.str();
-  return M::success();
-}
-
 /// Emit the IR for `theModule` to a file.
 static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
   CompilerTimeTraceScope traceScope("emit-module",
                                     theModule.getSymName().value_or(""));
-  if (opts.emitTextualAsm.getValue()) {
+  if (opts.emitTextualAsm) {
     auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/false, ".mlir");
     if (!outFile)
       return failure();
@@ -232,12 +331,12 @@ static LogicalResult createDependencyFile(const CLOptions &clOptions,
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                      CLOptions &clOptions) {
   DialectRegistry registry;
-  TraceProfiler tracer(clOptions.timeTrace, clOptions.timeTraceGranularity);
+  TraceProfiler tracer(clOptions.driverOptions.timeTrace,
+                       clOptions.driverOptions.timeTraceGranularity);
 
-  if (clOptions.enableMLIRCrashReproducer || KGEN::debugFlag) {
-    // If the reproducer is enable, turn off all threading.
+  if (KGEN::debugFlag) {
     ctx->disableMultithreading();
-    clOptions.withSingleThreaded();
+    clOptions.cpuDeviceOptions.withSingleThreaded();
   }
 
   // `-lsp` already forces MLIR pass-manager multithreading off below (there is
@@ -247,8 +346,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // for threads that never do anything -- a measured ~15-20% of wall time on
   // real kernel files, matching the real LSP server's `-mojo-test` mode, which
   // does the same.
-  if (clOptions.cmd == Command::kLSP || clOptions.cmd == Command::kLSPNoDump)
-    clOptions.withSingleThreaded();
+  if (clOptions.cmd == "lsp" || clOptions.cmd == "lsp=no-dump")
+    clOptions.cpuDeviceOptions.withSingleThreaded();
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
@@ -257,30 +356,26 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Create our context, with a cpuDevice; this should not fail.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "kgen", Init::Options().withCPUDeviceOptions(
-                  clOptions.parser.options.withCPUAffinity(false)));
+                  clOptions.cpuDeviceOptions.withCPUAffinity(false)));
   if (ctxOr.isError())
     return failure();
-  registerContext(registry, *ctxOr,
-                  /*enableThreadPool=*/!clOptions.enableMLIRCrashReproducer);
+  registerContext(registry, *ctxOr);
 
   // Set up the dialects in the context.
   ctx->appendDialectRegistry(registry);
 
-  CompilationOptions options = clOptions.getCompilationOptions();
+  CompilationOptions options = clOptions.compilationOptions;
   if (clOptions.saveTemps)
     options.saveTempsPrefix = clOptions.tempsDir;
-  options.verboseOutput = (clOptions.cmd == Command::kEmitAssemblyVerbose);
-  options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
+  options.verboseOutput = isEmitCmd(clOptions.cmd, kAsmVerboseKind);
   options.cacheBaseExtra = "kgen";
-  options.warnOnUnstableAPIs = clOptions.warnOnUnstableAPIs;
-  options.ignoredDeprecations = clOptions.ignoredDeprecations;
 
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename);
 
   // Initialize the timing manager.
   std::unique_ptr<mlir::TimingManager> timingManager;
-  if (clOptions.timeTrace) {
+  if (clOptions.driverOptions.timeTrace) {
     timingManager = std::make_unique<TimeProfilerTimingManager>();
   } else {
     auto defaultManager = std::make_unique<mlir::DefaultTimingManager>();
@@ -288,47 +383,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     timingManager = std::move(defaultManager);
   }
 
-  if (!clOptions.mcmodel.empty()) {
-    if (!llvm::is_contained({"small", "medium", "large"}, clOptions.mcmodel)) {
-      return Error("invalid mcmodel'" + clOptions.mcmodel +
-                   "', expected one of: `small`, `medium` or `large`");
-    }
-    if (clOptions.mcmodel == "small")
-      options.mcmodel = llvm::CodeModel::Small;
-    else if (clOptions.mcmodel == "medium")
-      options.mcmodel = llvm::CodeModel::Medium;
-    else if (clOptions.mcmodel == "large")
-      options.mcmodel = llvm::CodeModel::Large;
-  }
-
-  if (!clOptions.largeDataThreshold.empty()) {
-    uint64_t value;
-    if (!llvm::to_integer(clOptions.largeDataThreshold, value)) {
-      return Error("invalid large-data-threshold'" +
-                   clOptions.largeDataThreshold +
-                   "', expected a positive integer number");
-    }
-    options.largeDataThreshold = value;
-  }
-
-  if (!clOptions.relocationModel.empty()) {
-    ErrorOr<llvm::Reloc::Model> model =
-        M::symbolizeRelocationModel(clOptions.relocationModel);
-    if (model.isError())
-      return model.takeError();
-
-    options.relocModel = *model;
-  }
-
-  if (!clOptions.loopUnrollingWarnThreshold.empty()) {
-    uint64_t value;
-    if (!llvm::to_integer(clOptions.loopUnrollingWarnThreshold, value)) {
-      return Error("invalid loop-unrolling-warn-threshold'" +
-                   clOptions.loopUnrollingWarnThreshold +
-                   "', expected an integer number");
-    }
-    options.loopUnrollingWarnThreshold = value;
-  }
+  // Resolve the target from the target options. A target that the input
+  // module carries is overwritten by this one.
+  ctx->loadDialect<MDialect>();
+  TargetInfoAttr target;
+  if (ErrorOrSuccess err =
+          parseTargetOptions(clOptions.targetArgs, options, *ctx, target))
+    return failure(clOptions.reportError(err.getError()));
 
   TimingScope timing = timingManager->getRootScope();
 
@@ -336,15 +397,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   pmOptions.applyPassManagerCLOptions = true;
   pmOptions.enableTiming = false;
   pmOptions.timingScope = &timing;
-  pmOptions.crashReproducerOptions.enable = clOptions.enableMLIRCrashReproducer;
-  pmOptions.crashReproducerOptions.inputFileName = clOptions.inputFilename;
-  pmOptions.crashReproducerOptions.enableLocalMLIRReproducer =
-      clOptions.enableLocalMLIRReproducer;
 
-  options.isCrossCompilation = !clOptions.targetAccelerator.empty();
-  if (clOptions.cmd == Command::kElaborateUseParametricInterpreter)
+  if (clOptions.cmd == "elaborate=use-parametric-interpreter")
     options.useParametricInterpreter = true;
-  else if (clOptions.cmd == Command::kElaborateNoUseParametricInterpreter)
+  else if (clOptions.cmd == "elaborate=no-use-parametric-interpreter")
     options.useParametricInterpreter = false;
 
   KGENCompiler compiler(*ctx, options, std::move(pmOptions));
@@ -364,7 +420,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // diagnostics are the only signal), this CLI command reports any
   // error-severity diagnostic as a non-zero exit -- useful for scripts/tests
   // that want a pass/fail signal without scraping stderr.
-  if (clOptions.cmd == Command::kLSP || clOptions.cmd == Command::kLSPNoDump) {
+  if (clOptions.cmd == "lsp" || clOptions.cmd == "lsp=no-dump") {
     if (!inputFileName.ends_with(".mojo"))
       return failure(
           clOptions.reportError("lsp command requires a .mojo file"));
@@ -386,15 +442,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
           return failure();
         });
 
-    LIT::ParserConfig config(ctx, options);
-    config.stripFilePrefix = clOptions.stripFilePrefix;
-    config.useMLIRDiagnostics = true;
-    config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
+    FrontendOptions frontendOptions = clOptions.frontendOptions;
+    frontendOptions.useMLIRDiagnostics = true;
     MainFileParserListener lspListener(mgr);
-    config.parserListener = &lspListener;
+    frontendOptions.parserListener = &lspListener;
 
-    MojoParserContext parserContext(mgr, config);
-    MojoASTDeclRef decl = parserContext.parseFileForLSP(mgr.getMainFileID());
+    MojoParserContext parserContext(mgr, ctx, options, frontendOptions);
+    LIT::ASTDecl *decl = parserContext.parseFileForLSP(mgr.getMainFileID());
     if (!decl)
       return failure(clOptions.reportError("could not parse the module"));
 
@@ -405,7 +459,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       OwningOpRef<ModuleOp> clone = LIT::cloneDeclModuleForCompilation(*decl);
       (void)compiler.runCheckLITPipeline(*clone);
 
-      if (clOptions.cmd != Command::kLSPNoDump) {
+      if (clOptions.cmd != "lsp=no-dump") {
         clone->print(llvm::outs());
         llvm::outs() << "\n";
       }
@@ -422,11 +476,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   if (inputFileName.ends_with(".mojo")) {
     TimingScope litScope = timing.nest("Import Mojo source");
-    LIT::ParserConfig config(ctx, options);
-    config.stripFilePrefix = clOptions.stripFilePrefix;
-    config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
-    config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
-    theModule = importMojoFile(*ctxOr, mgr, config, litScope, &includedFiles);
+    theModule = LIT::importMojoFile(*ctxOr, mgr, ctx, options,
+                                    clOptions.frontendOptions, litScope,
+                                    &includedFiles);
   } else {
     theModule = parseSourceFile<ModuleOp>(mgr, ctx);
   }
@@ -438,7 +490,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Populate the module with the user-provided -D options.
   ErrorOr<EnvAttr> env =
-      options.parseDefinesWithDefaults(ctx, clOptions.defines);
+      options.parseDefinesWithDefaults(ctx, clOptions.driverOptions.defines);
   if (env.isError())
     return failure(clOptions.reportError(env.takeError().get()));
   theModule.get()->setAttr(EnvAttr::getEnvAttrName(), env.takeValue());
@@ -454,95 +506,26 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
           clOptions.reportError("failed to create a dependency file"));
   }
 
-  // Find a target specification or construct one using the commandline options.
-  TargetInfoAttr target = getTargetInfo(*theModule);
-  if (target) {
-    if (!clOptions.march.empty()) {
+  if (TargetInfoAttr moduleTarget = getTargetInfo(*theModule)) {
+    if (!clOptions.targetArgs.march.empty()) {
       mlir::emitWarning(theModule->getLoc(),
                         "overriding module target specification with -march");
-    } else if (target.getTripleStr() != clOptions.targetTriple ||
-               target.getArch() != clOptions.targetCpu ||
-               target.getFeatures() != clOptions.targetFeatures) {
+    } else if (moduleTarget.getTripleStr() != target.getTripleStr() ||
+               moduleTarget.getArch() != target.getArch() ||
+               moduleTarget.getFeatures() != target.getFeatures()) {
       mlir::emitWarning(theModule->getLoc(),
                         "module target does not match command line "
                         "specification and will be overwritten");
     }
-    target = nullptr;
   }
+  options.targetTriple = target.getTripleStr();
+  options.targetCpu = target.getArch();
+  options.targetFeatures = target.getFeatures();
+  options.targetAbi = target.getAbi();
 
-  if (!target) {
-    ErrorOr<TargetInfoAttr> targetOr = nullptr;
-    if (!clOptions.march.empty() || !clOptions.mcpu.empty()) {
-      // Detect if the user accidentally specified any of the `--target-*`.
-      if (options.targetCpu != llvm::sys::getHostCPUName() ||
-          options.targetFeatures != getHostCPUFeatures())
-        return failure(clOptions.reportError(
-            "--target-cpu or --target-features specified at "
-            "the same time as -march or -mcpu"));
-
-      // Use `-march` to determine the feature set.
-      targetOr = getMArchFeatures(ctx, clOptions.targetTriple, clOptions.march,
-                                  clOptions.mcpu, clOptions.mtune,
-                                  clOptions.targetAccelerator,
-                                  options.relocModel, options.targetAbi);
-    } else {
-      if (clOptions.targetTriple != llvm::sys::getDefaultTargetTriple()) {
-        if (clOptions.targetCpu == llvm::sys::getHostCPUName()) {
-          ErrorOrSuccess result = clOptions.setDefaultCPU();
-          if (result.isError())
-            return failure(clOptions.reportError(result.getError()));
-        }
-
-        if (clOptions.targetFeatures == getHostCPUFeatures())
-          clOptions.targetFeatures = "";
-      }
-
-      // When --target-cpu differs from the host but --target-features was not
-      // explicitly provided, clear the default host features so they are
-      // re-derived from the specified CPU. Without this, the host's feature
-      // set (e.g. avx512) leaks into cross-CPU compilations (e.g. x86-64-v3).
-      if (clOptions.targetCpu != llvm::sys::getHostCPUName() &&
-          !clOptions.parser.targetFeaturesWasSet())
-        clOptions.targetFeatures = "";
-
-      // `targetCpu` defaults to the host CPU name, which LLVM reports as
-      // "generic" for a part it cannot identify -- a name that fails
-      // validation. Fall back to the triple's baseline instead of refusing to
-      // compile on such a host, and take the resolved name with it so
-      // getTargetInfoFor below is not handed one the target already rejected.
-      ErrorOr<M::ResolvedCpu> cpuOr =
-          M::resolveCpu(clOptions.targetTriple, clOptions.targetCpu);
-      if (cpuOr)
-        return failure(clOptions.reportError(cpuOr.takeError().get()));
-      M::ResolvedCpu resolvedCpu = cpuOr.takeValue();
-      clOptions.targetCpu = resolvedCpu.name;
-
-      // TODO: This always overwrites any user-specified features
-      if (clOptions.targetFeatures.empty())
-        clOptions.targetFeatures =
-            encodeFeatures(TargetInfo({}, {}, std::move(resolvedCpu.features)));
-
-      // Use the full triple, specific CPU, and manually specified features to
-      // get the target info.
-      targetOr = getTargetInfoFor(ctx, clOptions.targetTriple,
-                                  clOptions.targetCpu, clOptions.targetFeatures,
-                                  clOptions.mtune, options.targetAccelerator,
-                                  options.relocModel, options.targetAbi);
-    }
-
-    if (targetOr.isError())
-      return failure(clOptions.reportError(targetOr.getError()));
-    target = targetOr.takeValue();
-    options.targetTriple = target.getTripleStr();
-    options.targetCpu = target.getArch();
-    options.targetFeatures = target.getFeatures();
-    options.targetAbi = target.getAbi();
-    options.targetAccelerator = clOptions.targetAccelerator;
-  }
-
-  auto compilerOr = ObjectCompiler::create(kMojoCacheBaseDirName, options,
-                                           clOptions.cmd == Command::kExecute,
-                                           *ctx, pmOptions);
+  auto compilerOr =
+      ObjectCompiler::create(kMojoCacheBaseDirName, options,
+                             clOptions.cmd == "execute", *ctx, pmOptions);
   if (failed(compilerOr))
     return failure(clOptions.reportError(compilerOr.getError()));
   ObjectCompiler &objCompiler = **compilerOr;
@@ -554,9 +537,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // If all we're doing is generating a library file or elaborating, we're done
   // now.
-  if (clOptions.cmd == Command::kElaborate ||
-      clOptions.cmd == Command::kElaborateUseParametricInterpreter ||
-      clOptions.cmd == Command::kElaborateNoUseParametricInterpreter)
+  if (clOptions.cmd == "elaborate" ||
+      clOptions.cmd == "elaborate=use-parametric-interpreter" ||
+      clOptions.cmd == "elaborate=no-use-parametric-interpreter")
     return emitModuleIR(*theModule, clOptions);
 
   // Construct the symbol table and the export map.
@@ -564,8 +547,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ExportMap exportedSymbols = getExportedSymbols(*theModule);
 
   // Handle LLVM output.
-  if (clOptions.cmd == Command::kEmitLLVM ||
-      clOptions.cmd == Command::kEmitLLVMBitcode) {
+  if (isEmitCmd(clOptions.cmd, EmitAs::LLVM) ||
+      isEmitCmd(clOptions.cmd, EmitAs::LLVM_BITCODE)) {
     llvm::LLVMContext llvmCtx;
     ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
         objCompiler.lowerAllFuncsToLLVM(llvmCtx, *theModule);
@@ -579,7 +562,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return failure(clOptions.reportError("could not open .ll output file"));
 
     std::unique_ptr<llvm::Module> llvmModule = llvmModuleOr.takeValue();
-    if (clOptions.cmd == Command::kEmitLLVMBitcode) {
+    if (isEmitCmd(clOptions.cmd, EmitAs::LLVM_BITCODE)) {
       if (ErrorOrSuccess err =
               objCompiler.emitBitcode(*llvmModule, outFile->os()))
         return failure(clOptions.reportError(err.takeError().get()));
@@ -590,8 +573,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return mlir::success();
   }
 
-  if (clOptions.cmd == Command::kEmitLLVMOpt ||
-      clOptions.cmd == Command::kEmitLLVMOptBitcode) {
+  if (isEmitCmd(clOptions.cmd, EmitAs::LLVM_OPT) ||
+      isEmitCmd(clOptions.cmd, EmitAs::LLVM_OPT_BITCODE)) {
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".ll");
     if (!outFile)
       return failure(clOptions.reportError("could not open .ll output file"));
@@ -602,7 +585,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return failure(clOptions.reportError("failed to generate LLVMIR: " +
                                            Twine(err.getError())));
     }
-    if (clOptions.cmd == Command::kEmitLLVMOptBitcode) {
+    if (isEmitCmd(clOptions.cmd, EmitAs::LLVM_OPT_BITCODE)) {
       if (ErrorOrSuccess err =
               objCompiler.emitBitcode(*llvmModule, outFile->os()))
         return failure(clOptions.reportError(err.takeError().get()));
@@ -614,8 +597,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   // Handle assembly output.
-  if (clOptions.cmd == Command::kEmitAssembly ||
-      clOptions.cmd == Command::kEmitAssemblyVerbose) {
+  if (isEmitCmd(clOptions.cmd, EmitAs::ASM) ||
+      isEmitCmd(clOptions.cmd, kAsmVerboseKind)) {
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".s");
     if (!outFile)
       return failure(clOptions.reportError("could not open .s output file"));
@@ -631,7 +614,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   // Handle header emission, we don't need to generate an archive for this.
-  if (clOptions.cmd == Command::kEmitHeader) {
+  if (isEmitCmd(clOptions.cmd, kHeaderKind)) {
     LogicalResult result = failure();
     auto writeFn = [&](raw_ostream &os) {
       result =
@@ -677,7 +660,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   };
   SmallVector<FunctionExecution> funcExecs;
   StringSet<> foundFuncs;
-  if (clOptions.cmd == Command::kExecute) {
+  if (clOptions.cmd == "execute") {
     for (auto fn : theModule->getOps<FuncOp>()) {
       StringAttr name = fn.getSymNameAttr();
       // See if we were asked to execute this function.
@@ -702,7 +685,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     }
   }
 
-  if (clOptions.cmd == Command::kEmitSharedObject) {
+  if (isEmitCmd(clOptions.cmd, kSharedLibKind)) {
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/true, ".so");
     if (!outFile)
       return failure(clOptions.reportError("could not open .so output file"));
@@ -726,7 +709,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   BufferRef archive = archiveOr.takeValue();
 
   // If we're emitting the archive, do it.
-  if (clOptions.cmd == Command::kEmit) {
+  if (isEmitCmd(clOptions.cmd, EmitAs::OBJECT)) {
     // Look up the first item in the exported symbols to trigger archive
     // generation.
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".o");
@@ -783,11 +766,94 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   return mlir::success();
 }
 
+/// Precompiles the package directory given as the input, as `mojo precompile`
+/// does. The package parses under its directory's name, and takes the name of
+/// the `.mojoc` file it is written to.
+static LogicalResult runPrecompile(CLOptions &clOptions) {
+  if (!clOptions.inputFiles.empty())
+    return failure(clOptions.reportError(
+        "precompile expects a single package directory as input"));
+  StringRef input = clOptions.inputFilename;
+  if (!Filesystem::isMojoSourcePackagePath(input.str()))
+    return failure(clOptions.reportError(
+        "'" + input + "' does not correspond to a Mojo package"));
+  std::error_code ec;
+  std::filesystem::path packagePath =
+      std::filesystem::weakly_canonical(input.str(), ec);
+  if (ec)
+    return failure(clOptions.reportError("cannot canonicalize '" + input +
+                                         "': " + ec.message()));
+  std::string sourceName = packagePath.filename().string();
+  std::filesystem::path outputPath(clOptions.outputFilename);
+  std::string outputName = outputPath.extension() == ".mojoc"
+                               ? outputPath.stem().string()
+                               : sourceName;
+
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "kgen", Init::Options().withCPUDeviceOptions(
+                  clOptions.cpuDeviceOptions.withCPUAffinity(false)));
+  if (ctxOr.isError())
+    return failure(clOptions.reportError(ctxOr.getError()));
+  DialectRegistry registry;
+  registerAllKGENDialects(registry);
+  registerContext(registry, *ctxOr);
+  MLIRContext context(registry, MLIRContext::Threading::DISABLED);
+
+  llvm::SourceMgr sourceMgr;
+  configureSourceMgr(*clOptions.state, clOptions.driverOptions, sourceMgr);
+  mlir::SourceMgrDiagnosticHandler diagHandler(sourceMgr, &context);
+  ScopedMLIRWarningHandler warningHandler(
+      &context, clOptions.frontendOptions.disableWarnings,
+      clOptions.frontendOptions.warningsAsErrors);
+
+  CompilationOptions options = clOptions.compilationOptions;
+  context.loadDialect<MDialect>();
+  TargetInfoAttr target;
+  if (ErrorOrSuccess err =
+          parseTargetOptions(clOptions.targetArgs, options, context, target))
+    return failure(clOptions.reportError(err.getError()));
+  // Precompiled packages are built to be agnostic of how their importers
+  // compile them, so match `mojo precompile`'s conservative settings.
+  options.debugLevel = CompilationOptions::kFullDebugInfo;
+  options.optimizationLevel = 0;
+
+  TimingScope ts;
+  auto [module, packageOp] = LIT::importMojoPackage(
+      *ctxOr, packagePath.string(), sourceName, sourceMgr, &context, options,
+      clOptions.frontendOptions, ts);
+  if (!module)
+    return failure(clOptions.reportError("could not parse the package"));
+
+  ErrorOr<OwningOpRef<ModuleOp>> built = buildPrecompiledPackage(
+      *module, packageOp, sourceName, outputName, options.bitcodeLibs);
+  if (failed(built))
+    return failure(clOptions.reportError(built.getError()));
+
+  KGENCompiler compiler(context, options);
+  if (failed(compiler.runCheckLITPipeline(*module)))
+    return failure(clOptions.reportError("errors occurred during compilation"));
+
+  bool textual = clOptions.emitTextualAsm;
+  auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/!textual);
+  if (textual) {
+    (*built)->print(outFile->os());
+    outFile->os() << "\n";
+  } else if (failed(writePrecompiledFile((*built)->getOperation(),
+                                         outFile->os()))) {
+    return failure(clOptions.reportError("failed to write the package"));
+  }
+  outFile->keep();
+  return failure(warningHandler.wasErrorEmitted());
+}
+
 int main(int argc, char **argv) {
   KGEN::forceLinkMLIRC();
-  M::registerCommandFlags();
 
-  CLOptions clOptions(argc, argv);
+  CLOptions clOptions;
+  CLOptionsBase clOptionsBase(argc, argv, clOptions);
+  State state("kgen", llvm::ArrayRef<const char *>(argv + 1, argv + argc));
+  clOptions.state = &state;
+  options::Table optTable;
 
   // Initialize targets first, so that --version shows registered targets.
   llvm::InitializeAllTargets();
@@ -795,44 +861,136 @@ int main(int argc, char **argv) {
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllAsmPrinters();
 
-  // Override the default version printer.
-  llvm::cl::SetVersionPrinter([](raw_ostream &os) {
-    ProjectVersion version = getMojoVersion();
-    os << "KGEN compiler:\n  ";
-    os << "Mojo version: " << version.major << '.' << version.minor << '.'
-       << version.patch << version.label << "\n  ";
-    os << "Git SHA: " << version.revision << "\n  ";
-    os << "Build config: " << version.buildType << "\n\n";
+  auto printHelpWithEmissionKinds = [&](std::string_view helpText) {
+    state.printHelp(helpText);
+    // The emission-kind table is target-dependent, so it is rendered from the
+    // registered TargetTraits rather than baked into the option declaration.
+    llvm::outs() << "\nEMISSION KINDS (--emit=<kind>):\n";
+    KGEN::printSupportedEmissionKinds(llvm::outs());
+    llvm::outs() << "  Additional kgen-only kinds, accepted for every target:\n"
+                 << "    " << kAsmVerboseKind
+                 << " - verbose assembly with preserved comments\n"
+                 << "    " << kHeaderKind
+                 << " - a C header with declarations of exported functions\n"
+                 << "    " << stringifyEmitAs(EmitAs::LLVM_OPT)
+                 << " - optimized LLVM IR\n"
+                 << "    " << stringifyEmitAs(EmitAs::LLVM_OPT_BITCODE)
+                 << " - bitcode of optimized LLVM IR\n";
+    return EXIT_SUCCESS;
+  };
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode = state.parseArguments(
+          optTable, options::helpTexts(), args,
+          /*stopAtFirstInput=*/false, printHelpWithEmissionKinds))
+    return *exitCode;
+  if (args.hasArg(options::OPT_version)) {
+    printVersion(llvm::outs());
+    return EXIT_SUCCESS;
+  }
 
-    // Print the host target config.
-    llvm::sys::printDefaultTargetAndDetectedCPU(os);
-    // Print all registered targets.
-    llvm::TargetRegistry::printRegisteredTargetsForVersion(os);
-  });
+  MarshallingErrors errors;
+  {
+    DriverOptions &driverOptions = clOptions.driverOptions;
+    FrontendOptions &frontendOptions = clOptions.frontendOptions;
+    CompilationOptions &compilationOptions = clOptions.compilationOptions;
+    TargetArgs &targetArgs = clOptions.targetArgs;
+    AsyncRT::CPUDeviceOptions &cpuDeviceOptions = clOptions.cpuDeviceOptions;
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
+#include "Mojo/tools/kgen/KGENOptions.inc"
+#undef MOJO_OPTION_WITH_MARSHALLING
+  }
+  if (int result = state.rejectInvalidArguments(args, errors))
+    return result;
 
-  // Enable command line options for various MLIR internals.
-  registerMLIRContextCLOptions();
-  registerAsmPrinterCLOptions();
-  registerDefaultTimingManagerCLOptions();
-  KGEN::registerDefaultKGENPasses("kgen");
-  registerPassManagerCLOptions();
-  KGEN::initializeDebugOptions();
-  KGEN::KGENPassCLOptions::registerOptions();
-  llvm::cl::ParseCommandLineOptions(argc, argv);
+  SmallVector<llvm::opt::Arg *> commands = llvm::to_vector(args.filtered(
+      options::OPT_elaborate, options::OPT_elaborate_eq, options::OPT_emit,
+      options::OPT_emit_eq, options::OPT_execute, options::OPT_lsp,
+      options::OPT_lsp_eq, options::OPT_precompile));
+  if (commands.size() != 1)
+    return state.reportError("exactly one of --elaborate, --emit, --execute, "
+                             "--lsp and --precompile must be given");
+  if (ErrorOrSuccess err = parseCommand(*commands.front(), clOptions))
+    return state.reportError(err.getError());
+
+  setWarningPolicy(state, clOptions.frontendOptions);
+  if (ErrorOrSuccess err =
+          validateCompilationOptions(clOptions.compilationOptions))
+    return state.reportError(err.getError());
+  if (size_t numThreads = clOptions.compilationOptions.numThreads) {
+    size_t &maxThreads = clOptions.cpuDeviceOptions.maxThreads;
+    clOptions.cpuDeviceOptions.numThreads = 0;
+    maxThreads = maxThreads ? std::min(maxThreads, numThreads) : numThreads;
+  }
+
+  std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
+  if (!inputs.empty()) {
+    clOptions.inputFilename = inputs.front();
+    clOptions.inputFiles.assign(inputs.begin() + 1, inputs.end());
+  }
+  for (StringRef func : args.getAllArgValues(options::OPT_func))
+    clOptions.funcs.push_back(CommandLineFunc::parse(func));
+
+  if (!parseForwardedCLOptions(argv[0], args))
+    return EXIT_FAILURE;
+
+  // The requested emission kind must be one kgen implements; traits-declared
+  // kinds must also be accepted by the compilation target.
+  if (StringRef kind = clOptions.emissionKind; !kind.empty()) {
+    std::optional<EmitAs> emitAs = symbolizeEmitAs(kind);
+    // The spelling must name an EmitAs kgen actually writes.
+    if (emitAs && !llvm::is_contained(kEmitAsKinds, *emitAs))
+      emitAs = std::nullopt;
+    bool isProduct = llvm::is_contained(kProductKinds, kind);
+    if (!emitAs && !isProduct && !KGEN::isKnownEmissionKind(kind)) {
+      return state.reportError(
+          "unsupported 'emit' option value '" + kind +
+          "'; see the EMISSION KINDS section of --help for the accepted kinds");
+    }
+    if (KGEN::isKnownEmissionKind(kind)) {
+      StringRef triple = clOptions.targetArgs.triple.empty()
+                             ? clOptions.compilationOptions.targetTriple
+                             : clOptions.targetArgs.triple;
+      ErrorOr<const TargetTraits *> traitsOr =
+          TargetTraitsRegistry::get().lookup(llvm::Triple(triple));
+      ErrorOrSuccess err = traitsOr.isError()
+                               ? ErrorOrSuccess(Error(traitsOr.getError()))
+                               : (*traitsOr)->validateEmissionKind(kind);
+      if (err)
+        return state.reportError(err.getError());
+      if (!emitAs && !isProduct) {
+        // A target-declared kind canonicalizes onto the EmitAs its traits
+        // map it to; link products need a linker kgen does not have.
+        ErrorOr<EmitAs> targetEmitAsOr = (*traitsOr)->emitAsForKind(kind);
+        if (targetEmitAsOr.isError())
+          return state.reportError(targetEmitAsOr.getError());
+        if (*targetEmitAsOr == EmitAs::OBJECT ||
+            !llvm::is_contained(kEmitAsKinds, *targetEmitAsOr)) {
+          return state.reportError("emission kind '" + kind +
+                                   "' is not supported by kgen");
+        }
+        clOptions.cmd = ("emit=" + stringifyEmitAs(*targetEmitAsOr)).str();
+      }
+    }
+  }
+
+  // The input is a package directory, which the input setup below cannot open.
+  if (clOptions.cmd == "precompile")
+    return failed(runPrecompile(clOptions));
 
   // Set up the input file(s).
   llvm::SourceMgr sourceManager;
-  sourceManager.setIncludeDirs(clOptions.getIncludePaths());
+  configureSourceMgr(state, clOptions.driverOptions, sourceManager);
   clOptions.addInputFilesToSourceMgrOrExit(sourceManager);
-  if (clOptions.targetAccelerator.empty()) {
-#if MLRT_ACCELERATOR_SUPPORT
-    clOptions.targetAccelerator = Driver::Device::getAcceleratorArchOrEmpty();
-#endif
-  }
 
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
         ctx->printOpOnDiagnostic(true);
-        return runToolPipeline(ctx, sourceManager, clOptions);
+        ScopedMLIRWarningHandler warningHandler(
+            ctx, clOptions.frontendOptions.disableWarnings,
+            clOptions.frontendOptions.warningsAsErrors);
+        if (failed(runToolPipeline(ctx, sourceManager, clOptions)))
+          return failure();
+        return failure(warningHandler.wasErrorEmitted());
       }));
 }

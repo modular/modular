@@ -1,0 +1,13 @@
+diff --git a/llvm/lib/Target/AMDGPU/GCNSchedStrategy.cpp b/llvm/lib/Target/AMDGPU/GCNSchedStrategy.cpp
+index 602489ab3a5c..f03eb198d850 100644
+--- a/llvm/lib/Target/AMDGPU/GCNSchedStrategy.cpp
++++ b/llvm/lib/Target/AMDGPU/GCNSchedStrategy.cpp
+@@ -101,7 +101,7 @@ static cl::opt<bool> PrintMaxRPRegUsageAfterScheduler(
+ 
+ static cl::opt<bool> DisableRewriteMFMAFormSchedStage(
+     "amdgpu-disable-rewrite-mfma-form-sched-stage", cl::Hidden,
+-    cl::desc("Disable rewrite mfma rewrite scheduling stage"), cl::init(true));
++    cl::desc("Disable rewrite mfma rewrite scheduling stage"), cl::init(false));
+ 
+ bool VGPRThresholdParser::parse(cl::Option &O, StringRef ArgName, StringRef Arg,
+                                 unsigned &Value) {

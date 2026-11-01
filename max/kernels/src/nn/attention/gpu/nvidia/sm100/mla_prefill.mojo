@@ -17,7 +17,6 @@ for NVIDIA SM100 GPUs, including the generic (non-blockscale), blockwise-scale,
 and sparse (with optional FP8 KV cache) variants.
 """
 
-from std.memory import UnsafePointer
 
 from kv_cache.types import KVCacheT
 from nn.attention.mha_operand import MHAOperand
@@ -32,7 +31,7 @@ from .mla_prefill_sparse import mla_prefill_sparse
 from .mla_prefill_sparse_kv_fp8 import mla_prefill_sparse_fp8
 
 
-@always_inline
+@inline(.always)
 def mla_sm100_prefill[
     output_type: DType,
     q_type: DType,
@@ -160,7 +159,7 @@ def mla_sm100_prefill[
         )
 
 
-@always_inline
+@inline(.always)
 def mla_sm100_prefill_sparse[
     output_type: DType,
     q_type: DType,
@@ -176,7 +175,7 @@ def mla_sm100_prefill_sparse[
     kv_cache: cache_t,
     indices: TileTensor[.uint32, address_space=.GENERIC, ...],
     topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
-    attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
     scale: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -253,15 +252,15 @@ def mla_sm100_prefill_sparse[
     )
 
 
-# SM100 host launch wrapper. Deliberately NOT `@always_inline`: this wrapper's
+# SM100 host launch wrapper. Deliberately NOT `@inline(.always)`: this wrapper's
 # transitively-inlined FP8 host launch path (the INT64-packed gather4 K+V TMA
 # descriptor construction, `mla_prefill_sparse_fp8` below) is a large store
 # chain. If it inlines into the model's giant fused host `region_0`, LLVM's SLP
 # vectorizer goes quadratic (`BoUpSLP::calculateDependencies` O(n^2) alias
 # queries) and the GLM-5.2 FP8-cache model compile blows up (~66 min vs ~15 for
-# bf16-cache). `@no_inline` keeps the store chain in its own small function
+# bf16-cache). `@inline(.never)` keeps the store chain in its own small function
 # where SLP is cheap. Host-side only — the device kernel body is unchanged.
-@no_inline
+@inline(.never)
 def mla_sm100_prefill_sparse_fp8[
     output_type: DType,
     q_type: DType,
@@ -278,8 +277,8 @@ def mla_sm100_prefill_sparse_fp8[
     kv_cache: cache_t,
     indices: TileTensor[.uint32, address_space=.GENERIC, ...],
     topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
-    attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
-    scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+    scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
     scale: Float32,
     ctx: DeviceContext,
 ) raises:

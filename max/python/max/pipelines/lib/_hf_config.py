@@ -92,7 +92,7 @@ def load_huggingface_config(repo: HuggingFaceRepo) -> PretrainedConfig:
 
     Tries :func:`AutoConfig.from_pretrained` first (for transformers models),
     then falls back to loading the raw ``config.json`` and wrapping it in a
-    :class:`PretrainedConfig` for non-transformers models (e.g. diffusers
+    :class:`PretrainedConfig` for non-transformers models (such as diffusers
     components). Results are cached for the lifetime of the process.
 
     Args:

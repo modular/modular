@@ -18,7 +18,8 @@ namespace M {
 
 class BackendRegistry;
 
-/// Registers the "gen-help-text" backend.
+/// Registers the "gen-help-texts", "gen-help-text" and "gen-help-hidden-text"
+/// backends.
 void registerGenHelpTextBackend(BackendRegistry &registry);
 } // namespace M
 

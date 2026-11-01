@@ -21,7 +21,7 @@ import pytest
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     MHAKVCacheParams,

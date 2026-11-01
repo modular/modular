@@ -18,7 +18,7 @@ This is a Mojo built-in, so you don't need to import it.
 from std.builtin.rebind import downcast
 
 
-@always_inline
+@inline(.always)
 def deinit[T: Deinitable](var value: T, /):
     """Extends a value's lifetime up to this call, then deinitializes it.
 
@@ -72,9 +72,8 @@ trait Deinitable:
     proper cleanup.
 
     By default, all Mojo types implement `Deinitable`, unless they
-    opt-in to required explicit named destructor methods using a
-    `Deinitable where False`, or conditionally with
-    `Deinitable where <cond>`.
+    opt-in to required explicit named destructor methods using
+    `not Deinitable`, or conditionally with `Deinitable where <cond>`.
 
     Key aspects:
 
@@ -93,7 +92,7 @@ trait Deinitable:
         var allocation: Allocation[Int]
 
         def __init__(out self, size: Int):
-            self.allocation = alloc(Layout[Int](count=size))
+            self.allocation = alloc(Layout[Int](length=size))
 
         def __deinit__(deinit self):
             # Clean up owned resources
@@ -104,8 +103,8 @@ trait Deinitable:
 
     - Implement this trait when your type owns resources that need cleanup
     - Ensure the destructor properly frees all owned resources
-    - Consider using a `Deinitable where False` conformance on types
-      that should never be deleted implicitly.
+    - Consider using a `not Deinitable` conformance on types that should
+      never be deleted implicitly.
     - Use composition to automatically handle nested resource cleanup
     """
 

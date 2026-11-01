@@ -14,7 +14,7 @@
 from max.gpu.host import DeviceContext
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 
-from std.utils.index import Index
+from std.utils.coord import DynamicCoord
 
 comptime fp8_dtype = DType.float8_e4m3fnuz
 comptime bf8_dtype = DType.float8_e5m2fnuz
@@ -129,7 +129,7 @@ comptime bf8_dtype = DType.float8_e5m2fnuz
 def test_load_and_mma_f32_f8_16x16x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f8_16x16x32")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, fp8_dtype, Index(16, 16, 32), False
+        DType.float32, fp8_dtype, DynamicCoord[.int, 3](16, 16, 32), False
     ](ctx)
 
 
@@ -242,7 +242,7 @@ def test_load_and_mma_f32_f8_16x16x32(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_f8_16x16x32_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f8_16x16x32_transpose")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, fp8_dtype, Index(16, 16, 32), True
+        DType.float32, fp8_dtype, DynamicCoord[.int, 3](16, 16, 32), True
     ](ctx)
 
 

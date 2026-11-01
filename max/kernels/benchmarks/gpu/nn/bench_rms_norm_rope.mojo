@@ -19,7 +19,7 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, Idx, TileTensor, row_major
-from nn.normalization import rms_norm_rope
+from builtin_kernels.rowwise_normalization import rms_norm_rope
 
 from std.utils.index import Index, IndexList
 
@@ -64,35 +64,31 @@ def bench_rms_norm_rope_gpu[
     ctx.enqueue_copy(cos_d, cos_h)
     ctx.enqueue_copy(sin_d, sin_h)
 
-    @always_inline
+    @inline(.always)
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
+        return data_buf.load[width=width, alignment=alignment](coords)
 
-    @always_inline
+    @inline(.always)
     def cos_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var cos_vals} -> SIMD[dtype, width]:
-        var idx = cos_vals.layout(coords)
-        return cos_vals.raw_load[width=width, alignment=alignment](idx)
+        return cos_vals.load[width=width, alignment=alignment](coords)
 
-    @always_inline
+    @inline(.always)
     def sin_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var sin_vals} -> SIMD[dtype, width]:
-        var idx = sin_vals.layout(coords)
-        return sin_vals.raw_load[width=width, alignment=alignment](idx)
+        return sin_vals.load[width=width, alignment=alignment](coords)
 
-    @always_inline
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var output_buf} -> None:
-        var idx = output_buf.layout(coords)
-        output_buf.raw_store[width=width, alignment=alignment](idx, val)
+        output_buf.store[alignment=alignment](coords, val)
 
-    @always_inline
+    @inline(.always)
     def bench_fn(
         mut b: Bencher,
     ) raises {
@@ -105,7 +101,7 @@ def bench_rms_norm_rope_gpu[
         var output_fn,
         imm,
     }:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             rms_norm_rope[
                 dtype,

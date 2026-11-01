@@ -9,8 +9,7 @@
     running server, `max warm-cache` to compile and cache a model ahead of
     deployment, and `max list` to discover the architectures MAX supports.
 
-    To install the `max` CLI, install the `modular` package as shown
-    in the [install guide](/packages#install).
+    To install the `max` CLI, follow the [install guide](/install/).
 
 
 .. click:: max._entrypoints.pipelines:main

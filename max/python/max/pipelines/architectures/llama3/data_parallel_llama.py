@@ -10,13 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Llama3 decoder replicated across data-parallel devices."""
 
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
+import functools
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -24,12 +28,15 @@ from max.graph import (
     Graph,
     TensorType,
     TensorValue,
+    Type,
     Value,
     ops,
 )
-from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
-from max.nn.layer import Module
+from max.graph import Module as GraphModule
+from max.nn.legacy.data_parallelism import split_batch
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.transformer import DecoderOutputs
 
 from .llama3 import Llama3
 from .model_config import Llama3Config
@@ -38,39 +45,48 @@ from .model_config import Llama3Config
 # TODO: This could be into a helper that wraps any top-level Module into a
 # data-parallel model.
 class DataParallelLlama(Module):
+    """The decoder, one replica per data-parallel device."""
+
     def __init__(self, config: Llama3Config):
         self.config = config
         self.devices = config.devices
-        self.models = []
+        models = []
         for device in config.devices:
             # TODO: dataclasses.replace doesn't work for model config objects:
             # "... has no attribute 'draft_pipeline_parallel_degree'"
             new_config = copy.deepcopy(config)
             new_config.devices = [device]
-            self.models.append(Llama3(new_config))
+            models.append(Llama3(new_config))
 
-        # Sets up weight tracking for the first model.
-        self.model = self.models[0]
-
-        # Replace all weights from the other distributed models with weights
-        # from the first model.
-        model_weights = self.model.raw_state_dict()
-        for model in self.models[1:]:
-            for key, value in model_weights.items():
-                _assign_weight(model, key, value)
+        # A LayerList, not a plain list, so weight tracking sees every
+        # replica and each rank's weights land on that rank. Sharing rank
+        # 0's weights instead makes every `weight.to(x.device)` a
+        # peer-to-peer copy of the whole model, on every execution.
+        # Don't also alias a replica to an attribute: every `Module`
+        # attribute is registered, so rank 0 would get two sets of weights.
+        self.models = LayerList(models)
 
     def __call__(
         self, all_model_args: Sequence[Sequence[Any]]
-    ) -> tuple[TensorValue, ...]:
-        all_outputs: list[list[TensorValue]] = [[] for _ in range(3)]
+    ) -> DecoderOutputs:
+        """Runs every replica over its own rows."""
+        replicas: list[DecoderOutputs] = []
         for args, model in zip(all_model_args, self.models, strict=True):
-            outputs = model(*args)
-            for i, output in enumerate(outputs):
-                all_outputs[i].append(output.to(self.devices[0]))
-        if all_outputs[1] and all_outputs[2]:
-            return tuple(ops.concat(output, axis=0) for output in all_outputs)
-        else:
-            return (ops.concat(all_outputs[0], axis=0),)
+            replica = model(*args)
+            assert isinstance(replica, DecoderOutputs)
+            replicas.append(replica)
+        # Every replica returns the same structure, so each output joins its
+        # replicas' values along the batch, on the first device.
+        joined = [
+            ops.concat([v.to(self.devices[0]) for v in values], axis=0)
+            for values in zip(
+                *(tree.leaves(r, leaf=TensorValue) for r in replicas),
+                strict=True,
+            )
+        ]
+        outputs = tree.unflatten(tree.flatten(replicas[0])[1], joined)
+        assert isinstance(outputs, DecoderOutputs)
+        return outputs
 
     # Graph helpers.
     def input_types(
@@ -99,7 +115,10 @@ class DataParallelLlama(Module):
         tokens and input_row_offsets into data parallel splits.
         """
         inputs = []
-        single_model_inputs = self.model.input_types(kv_params)
+        first_model = self.models[0]
+        # `LayerList.__getitem__` is typed as returning `Layer`.
+        assert isinstance(first_model, Llama3)
+        single_model_inputs = first_model.input_types(kv_params)
         (
             token_type,
             input_row_offsets_type,
@@ -127,7 +146,7 @@ class DataParallelLlama(Module):
 
     def _call_flat(
         self, kv_params: KVCacheParamInterface, *args: Value[Any]
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         (
             tokens,
             input_row_offsets,
@@ -145,11 +164,10 @@ class DataParallelLlama(Module):
 
         all_model_args = []
 
-        symbolic_inputs = kv_params.unflatten_kv_inputs(
-            iter(all_kv_cache_inputs)
+        kv_collections = tree.leaves(
+            kv_params.unflatten_kv_inputs(iter(all_kv_cache_inputs)),
+            leaf=KVCacheInputsPerDevice,
         )
-        assert isinstance(symbolic_inputs, KVCacheInputs)
-        kv_collections = symbolic_inputs.inputs
 
         for i in range(len(self.config.devices)):
             all_model_args.append(
@@ -163,87 +181,72 @@ class DataParallelLlama(Module):
 
         return self(all_model_args)
 
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
 
-def _assign_weight(module: Module, key: str, value: Any) -> None:
-    path = key.split(".")
-    for attr in path[:-1]:
-        if attr.isnumeric():
-            module = module[int(attr)]  # type: ignore
-        else:
-            module = _resolve_attr(module, attr)
-    # The leaf segment is set on whichever container actually owns it,
-    # which may be a (possibly nested) name-omitting descendant of
-    # ``module``.
-    leaf = path[-1]
-    setattr(_owner_of(module, leaf), leaf, value)
+        Adapts the flat graph inputs to :meth:`__call__` through
+        :meth:`_call_flat`.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            functools.partial(self._call_flat, self.config.kv_params),
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
 
 
-def _resolve_attr(module: Module, attr: str) -> Module:
-    """Resolve ``attr`` on ``module``, descending through name-omitting children.
+def create_model(
+    config: Llama3Config, state_dict: dict[str, Any]
+) -> DataParallelLlama:
+    """Builds a data-parallel Llama with a replica of the weights per device.
 
-    State-dict FQNs flatten across modules with
-    ``_omit_module_attr_name`` (notably :class:`~max.nn.StackedLinear` in
-    unfused mode), so a key segment may live one or more levels deeper
-    than the attribute hierarchy suggests. Direct ``getattr`` is tried
-    first; on miss we recurse into each name-omitting child until one
-    exposes ``attr``.
+    Args:
+        config: The model config.
+        state_dict: The single-replica weights. Drops ``rope_freqs.weight``,
+            which the model does not use.
+
+    Returns:
+        The model, with its weights loaded.
     """
-    if hasattr(module, attr):
-        return getattr(module, attr)
-    for child in module.sublayers.values():
-        if not child._omit_module_attr_name:
-            continue
-        try:
-            return _resolve_attr(child, attr)
-        except AttributeError:
-            continue
-    raise AttributeError(
-        f"{type(module).__name__!s} has no attribute {attr!r} (also "
-        "checked name-omitting descendants)."
-    )
-
-
-def _owner_of(module: Module, attr: str) -> Module:
-    """Return the (possibly nested name-omitting) submodule that owns ``attr``.
-
-    Mirrors :func:`_resolve_attr` but returns the *owning module* rather
-    than the resolved attribute itself. Used to set a flattened leaf
-    weight on the actual child whose namespace was elided. If no
-    descendant already owns ``attr``, falls back to ``module`` so the
-    caller's ``setattr`` preserves the original (attribute-creating)
-    behavior for new weights.
-    """
-    if hasattr(module, attr):
-        return module
-    for child in module.sublayers.values():
-        if not child._omit_module_attr_name:
-            continue
-        owner = _owner_of(child, attr)
-        if hasattr(owner, attr):
-            return owner
-    return module
-
-
-def create_graph(
-    config: Llama3Config,
-    kv_params: KVCacheParamInterface,
-    state_dict: dict[str, Any],
-) -> tuple[Graph, dict[str, Any]]:
     model = DataParallelLlama(config)
 
-    new_state_dict = {}
     state_dict.pop("rope_freqs.weight", None)
-    for key, value in state_dict.items():
-        new_key = "model." + key
-        new_state_dict[new_key] = value
+    # One prefix per replica. The copy is shallow (the weight buffer stays
+    # shared) and is needed because `load_state_dict` rewrites the value's
+    # dtype and shape in place.
+    new_state_dict = {}
+    for replica_idx in range(len(config.devices)):
+        # Must match the attribute the replicas are registered under.
+        prefix = f"models.{replica_idx}."
+        for key, value in state_dict.items():
+            new_state_dict[prefix + key] = copy.copy(value)
     model.load_state_dict(
         new_state_dict,
         override_quantization_encoding=True,
         weight_alignment=1,
         strict=True,
     )
-    inputs = model.input_types(kv_params)
-    with Graph("llama3", input_types=inputs) as graph:
-        outputs = model._call_flat(kv_params, *graph.inputs)
-        graph.output(*outputs)
-        return graph, model.state_dict()
+    return model

@@ -75,7 +75,7 @@ def _round_trip(
         id=context.request_id,
         context=context,
         transfer_engine_name="test_engine",
-        dst_block_ids=[0, 1],
+        dst_block_ids={"full": [0, 1]},
         dst_replica_idx=0,
     )
     deadline = time.monotonic() + _TIMEOUT
@@ -138,3 +138,45 @@ def test_prefill_request_plain_text_context_unchanged() -> None:
     assert type(decoded.context) is TextContext
     assert decoded.id == context.request_id
     np.testing.assert_array_equal(decoded.context.tokens.all, np.arange(8))
+
+
+@pytest.mark.parametrize("with_hint", [True, False], ids=["hint", "no_hint"])
+@pytest.mark.parametrize(
+    "context_type", [TextContext, KimiK2_5TextAndVisionContext]
+)
+def test_prefill_request_preserves_dkv_cache_hint(
+    context_type: type[TextContext], with_hint: bool
+) -> None:
+    """The prefill worker hands ``dkv_cache_hint`` to the KV connector's
+    ``load``, so it must arrive byte-for-byte and survive the ``reset()`` that
+    ``handle_prefill_request`` applies before enqueueing."""
+    dkv_cache_hint = (
+        b'{"version":2,"instances":[{"instance_name":"dkv-peer"}]}'
+        if with_hint
+        else None
+    )
+    tokens = TokenBuffer(np.arange(8, dtype=np.int64))
+    context: TextContext
+    if issubclass(context_type, TextAndVisionContext):
+        context = context_type(
+            request_id=RequestID(),
+            max_length=128,
+            tokens=tokens,
+            vision_token_ids=[163605],
+            dkv_cache_hint=dkv_cache_hint,
+        )
+    else:
+        context = context_type(
+            request_id=RequestID(),
+            max_length=128,
+            tokens=tokens,
+            dkv_cache_hint=dkv_cache_hint,
+        )
+    decoded = _round_trip(context, context_type=context_type)
+
+    assert type(decoded.context) is context_type
+    assert type(decoded.context.dkv_cache_hint) is type(dkv_cache_hint)
+    assert decoded.context.dkv_cache_hint == dkv_cache_hint
+
+    decoded.context.reset()
+    assert decoded.context.dkv_cache_hint == dkv_cache_hint

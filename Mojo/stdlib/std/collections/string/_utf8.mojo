@@ -14,7 +14,7 @@
 """Implement UTF-8 utils."""
 
 from std.base64._b64encode import _sub_with_saturation
-from std.sys import simd_width_of, simd_byte_width
+from std.sys import simd_byte_width
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
@@ -102,12 +102,12 @@ comptime UTF8_CHAR_WIDTHS: Array[Byte, 256] = [
 # fmt: on
 
 
-@always_inline
+@inline(.always)
 def _utf8_char_width(b: Byte) -> Int:
     return Int(materialize[UTF8_CHAR_WIDTHS]()[Int(b)])
 
 
-@always_inline
+@inline(.always)
 def _extract_vector[
     width: SIMDLength, //, offset: Int
 ](a: SIMD[.uint8, width], b: SIMD[.uint8, width]) -> SIMD[.uint8, width]:
@@ -230,7 +230,7 @@ def _is_valid_utf8_comptime(span: ImmSpan[Byte, _]) -> Bool:
     return True
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _is_valid_utf8(span: ImmSpan[Byte, _]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
@@ -267,14 +267,14 @@ def _is_valid_utf8(span: ImmSpan[Byte, _]) -> Bool:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _is_utf8_continuation_byte[
     w: SIMDLength
 ](vec: SIMD[.uint8, w]) -> SIMD[.bool, w]:
     return vec.cast[.int8]().lt(-(0b1000_0000 >> 1))
 
 
-@always_inline
+@inline(.always)
 def _is_utf8_start_byte(w: Byte) -> Bool:
     """Determine if `w` is either an ASCII character or the start
     of a UTF-8 multibyte character. This does _not_ validate `w` in
@@ -284,12 +284,12 @@ def _is_utf8_start_byte(w: Byte) -> Bool:
     return w < 128 or w >= 192
 
 
-@always_inline
+@inline(.always)
 def _count_utf8_continuation_bytes(span: Span[Byte, _]) -> Int:
     return Int(span.count(_is_utf8_continuation_byte))
 
 
-@always_inline
+@inline(.always)
 def _utf8_first_byte_sequence_length(b: Byte) -> Int:
     """Get the length of the sequence starting with given byte. Do note that
     this does not work correctly if given a continuation byte."""
@@ -319,7 +319,7 @@ def _utf8_byte_type(b: SIMD[.uint8, _], /) -> type_of(b):
     return count_leading_zeros(~b)
 
 
-@always_inline
+@inline(.always)
 def _is_newline_char_utf8[
     include_r_n: Bool = False
 ](p: ImmPointer[Byte, ...], eol_start: Int, b0: Byte, char_len: Int,) -> Bool:
@@ -331,7 +331,6 @@ def _is_newline_char_utf8[
     # highly performance sensitive code, benchmark before touching
     comptime `\r` = UInt8(ord("\r"))
     comptime `\n` = UInt8(ord("\n"))
-    comptime `\t` = UInt8(ord("\t"))
     comptime `\x1c` = UInt8(ord("\x1c"))
     comptime `\x1e` = UInt8(ord("\x1e"))
 
@@ -342,7 +341,7 @@ def _is_newline_char_utf8[
     # machine instructions optimally. Also memory reads are expensive and the
     # "happy path" of char_len == 1 is cheaper because it has none.
     if likely(char_len == 1):
-        return `\t` <= b0 <= `\x1e` and not (`\r` < b0 < `\x1c`)
+        return `\n` <= b0 <= `\x1e` and not (`\r` < b0 < `\x1c`)
     elif char_len == 4:
         return False
 
@@ -401,15 +400,15 @@ struct UTF8Chunks[origin: ImmOrigin](ImplicitlyCopyable, Iterable, Iterator):
         if len(self._bytes) == 0:
             raise StopIteration()
 
-        @always_inline
+        @inline(.always)
         def safe_get(i: Int) {imm self} -> Byte:
             return self._bytes[i] if i < len(self._bytes) else Byte(0)
 
-        @always_inline
+        @inline(.always)
         def in_range(byte: Byte, *, start: Byte, end: Byte) -> Bool:
             return start <= byte <= end
 
-        @always_inline
+        @inline(.always)
         def is_continuation_byte(byte: Byte) -> Bool:
             # Check if byte has the pattern 10xxxxxx (continuation byte).
             return byte & 192 == TWO_CONTS

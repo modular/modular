@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Map Gemma 3 checkpoint weight names onto MAX names."""
+
 from __future__ import annotations
 
 from max.graph.weights import WeightData, Weights
@@ -27,6 +29,7 @@ GEMMA3_SAFETENSOR_MAP: dict[str, str] = {
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
+    """Rename safetensor weights to the MAX names the model reads."""
     new_state_dict: dict[str, WeightData] = {}
 
     # Remap HuggingFace -> MAX-style names

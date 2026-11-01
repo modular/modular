@@ -32,15 +32,16 @@ from max.benchmark import (
     bench_multicontext,
     bencher_iter_custom,
 )
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import allreduce
-from comm import MAX_GPUS, Signal
+from comm import Signal
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
+    default_accelerator,
     get_gpu_target,
 )
 from internal_utils import (
@@ -55,8 +56,7 @@ from std.testing import assert_almost_equal, assert_true
 from std.utils.index import StaticTuple
 
 
-@always_inline
-@__parameter
+@inline(.always)
 def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:
@@ -96,9 +96,6 @@ def bench_reduce[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * num_bytes
@@ -153,12 +150,12 @@ def bench_reduce[
             )
         )
         init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with_unrolled=lambda [i: Int]() {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Create and initialize input and output buffers.
     comptime InTensorType = TileTensor[
@@ -227,11 +224,11 @@ def bench_reduce[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @always_inline
+    @inline(.always)
     def bench_iter(
         mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut in_tensors, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_tensors, imm}:
@@ -247,8 +244,9 @@ def bench_reduce[
                 # multi_ptr is set when use_multimem == True
                 in_tensors[0] = TileTensor(
                     rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                        multi_ptr.unsafe_value()
-                        + cb_template.offset(cache_iter)
+                        multi_ptr.unsafe_value().unsafe_offset(
+                            cb_template.offset(cache_iter)
+                        )
                     ),
                     row_major(length),
                 )
@@ -293,17 +291,8 @@ def bench_reduce[
     # https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md#allreduce
     var busbw = 2 * gbps * Float64((ngpus - 1)) / Float64(ngpus)
     print(
-        "|",
-        name,
-        "| slowest mean time",
-        max_time,
-        "ms |",
-        "algbw:",
-        gbps,
-        "GB/s |",
-        "busbw:",
-        busbw,
-        "GB/s |",
+        t"| {name} | slowest mean time {max_time} ms | algbw: {gbps} GB/s |"
+        t" busbw: {busbw} GB/s |"
     )
 
     # Copy results back and verify
@@ -407,10 +396,14 @@ def main() raises:
         print("P2P not enabled, skipping benchmark.")
         return
 
-    bench_reduce[
-        dtype=dtype,
-        ngpus=num_gpus,
-        use_multimem=use_multimem,
-        cache_busting=cache_busting,
-        use_vendor_ccl=use_vendor_ccl,
-    ](m, ctx, num_bytes, max_num_blocks, ragged)
+    # multimem is NVLink multicast (SM90+); AMD has no equivalent.
+    comptime if use_multimem and default_accelerator().is_amd_gpu():
+        print("multimem is not supported on AMD GPUs, skipping benchmark.")
+    else:
+        bench_reduce[
+            dtype=dtype,
+            ngpus=num_gpus,
+            use_multimem=use_multimem,
+            cache_busting=cache_busting,
+            use_vendor_ccl=use_vendor_ccl,
+        ](m, ctx, num_bytes, max_num_blocks, ragged)

@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterable, Sequence
+from typing import Any
 
 try:
     from asyncio import TaskGroup  # type: ignore[attr-defined]  # added in 3.11
@@ -51,6 +53,8 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncInput,
     mark_cancelled_if_past_deadline,
     progressbar_request_driver,
+    tag_lora_route,
+    tag_response_format_outcome,
 )
 from max.benchmark.benchmark_shared.utils import (
     deadline_passed,
@@ -117,7 +121,9 @@ def build_single_turn_request_input(
     max_output_len: int | None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
+    disable_ignore_eos: bool = False,
 ) -> BaseRequestFuncInput:
+    """Builds the request input for one sampled request."""
     request_model_id = model_id if lora_id is None else lora_id
     if benchmark_task == "text-generation":
         max_tokens = min(
@@ -138,9 +144,10 @@ def build_single_turn_request_input(
             api_url=api_url,
             prompt_len=prompt_len,
             max_tokens=max_tokens,
-            ignore_eos=request.ignore_eos,
+            ignore_eos=request.ignore_eos and not disable_ignore_eos,
             response_format=request.response_format,
             tools=request.tools,
+            lora_id=lora_id,
         )
     if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):
@@ -168,9 +175,9 @@ async def get_request(
     burstiness: float = 1.0,
     benchmark_should_end_time: int | None = None,
 ) -> AsyncGenerator[SampledRequest, None]:
-    """
-    Asynchronously generates requests at a specified rate
-    with OPTIONAL burstiness.
+    """Asynchronously generates requests at a specified rate.
+
+    Burstiness is OPTIONAL.
 
     Args:
         input_requests:
@@ -188,8 +195,9 @@ async def get_request(
         timing_data:
             Dictionary where timing data will be collected with keys:
             - 'intervals': List of actual time intervals between requests
+        benchmark_should_end_time:
+            A ``perf_counter_ns()`` deadline; generation stops once it passes.
     """
-
     # Calculate scale parameter theta to maintain the desired request_rate.
     assert burstiness > 0, (
         f"A positive burstiness factor is expected, but given {burstiness}."
@@ -244,6 +252,7 @@ async def run_single_turn_benchmark(
     lora_manager: LoRABenchmarkManager | None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
+    disable_ignore_eos: bool = False,
 ) -> list[BaseRequestFuncOutput]:
     """Run single-turn benchmark scenario."""
     if timing_data is None:
@@ -270,6 +279,8 @@ async def run_single_turn_benchmark(
                 return request_func_input.get_output_type()(
                     cancelled=True, request_submit_time=time.perf_counter()
                 )
+            tag_response_format_outcome(output, request_func_input)
+            tag_lora_route(output, request_func_input)
             return mark_cancelled_if_past_deadline(
                 output, benchmark_should_end_time
             )
@@ -303,6 +314,7 @@ async def run_single_turn_benchmark(
             max_output_len=max_output_len,
             run_prefix=run_prefix,
             run_prefix_len=run_prefix_len,
+            disable_ignore_eos=disable_ignore_eos,
         )
         tasks.append(
             asyncio.create_task(limited_request_func(request_func_input))
@@ -321,6 +333,39 @@ async def run_single_turn_benchmark(
         )
 
     return outputs
+
+
+# A --tools run has at most two (with and without); far more means the dataset
+# attaches its own tools per request.
+_MAX_EXPECTED_TOOL_VARIANTS = 8
+
+
+def _warmup_tool_variants(
+    samples: Samples, api_url: str
+) -> list[list[dict[str, Any]] | None]:
+    """Distinct tool lists the measured requests send, tool-free included.
+
+    Chat templates render tools ahead of the user message, so a prefix seeded
+    without them misses for every tool-bearing request. Only the chat driver
+    sends tools; elsewhere every variant would be the same request.
+    """
+    if not api_url.endswith("chat/completions"):
+        return [None]
+    if isinstance(samples, ChatSamples):
+        tool_lists: Iterable[list[dict[str, Any]] | None] = (
+            message.tools
+            for session in samples.chat_sessions
+            for message in session.messages
+            if message.source == "user"
+        )
+    else:
+        tool_lists = (request.tools for request in samples.requests)
+    # The driver sends an empty list as no tools, so the two are one variant.
+    variants = {
+        json.dumps(tools or None, sort_keys=True): tools or None
+        for tools in tool_lists
+    }
+    return list(variants.values()) or [None]
 
 
 async def prime_shared_contexts(
@@ -347,14 +392,27 @@ async def prime_shared_contexts(
         )
         return
 
-    logger.info(
-        f"Warming prefix cache with {len(warmup_entries)}"
-        " unique shared context(s)..."
-    )
-
     is_chat = isinstance(samples, ChatSamples)
+    tool_variants = _warmup_tool_variants(samples, api_url)
+    num_warmups = len(warmup_entries) * len(tool_variants)
+    logger.info(
+        "Warming prefix cache with %d unique shared context(s) x %d tool"
+        " variant(s) (%d requests)...",
+        len(warmup_entries),
+        len(tool_variants),
+        num_warmups,
+    )
+    if len(tool_variants) > _MAX_EXPECTED_TOOL_VARIANTS:
+        logger.warning(
+            "Prefix-cache warmup: the workload sends %d distinct tool lists,"
+            " and each shared context is seeded once per list, so the warmup"
+            " grows with the number of lists.",
+            len(tool_variants),
+        )
+
     warmup_inputs: list[RequestFuncInput] = []
-    for entry in warmup_entries:
+    warmup_labels: list[tuple[int, int]] = []
+    for entry_idx, entry in enumerate(warmup_entries):
         warmup_prompt: str | list[ChatMessage]
         if is_chat:
             warmup_prompt = [
@@ -371,19 +429,23 @@ async def prime_shared_contexts(
                 warmup_prompt, run_prefix
             )
 
-        warmup_inputs.append(
-            RequestFuncInput(
-                model=model_id,
-                session_id=None,
-                sampling=sampling,
-                prompt=warmup_prompt,
-                images=[],
-                api_url=api_url,
-                prompt_len=entry.num_tokens + run_prefix_len,
-                max_tokens=1,
-                ignore_eos=True,
+        for variant_idx, tools in enumerate(tool_variants):
+            warmup_labels.append((entry_idx, variant_idx))
+            warmup_inputs.append(
+                RequestFuncInput(
+                    model=model_id,
+                    session_id=None,
+                    sampling=sampling,
+                    prompt=warmup_prompt,
+                    images=[],
+                    api_url=api_url,
+                    prompt_len=entry.num_tokens + run_prefix_len,
+                    max_tokens=1,
+                    ignore_eos=True,
+                    tools=tools,
+                    is_cache_warmup=True,
+                )
             )
-        )
 
     warmup_results: list[BaseRequestFuncOutput | None] = [None] * len(
         warmup_inputs
@@ -414,8 +476,11 @@ async def prime_shared_contexts(
                 f"Warmup task {sys_idx} did not produce a result (this is a bug)"
             )
         if not result.success:
+            entry_idx, variant_idx = warmup_labels[sys_idx]
+            num_tools = len(inp.tools) if inp.tools else 0
             raise ValueError(
-                f"Shared context warmup request failed at index {sys_idx}:"
+                f"Shared context warmup request failed for context"
+                f" {entry_idx}, tool variant {variant_idx} ({num_tools} tools):"
                 f" (prompt: (SKIPPED), prompt_len: {inp.prompt_len}),"
                 f" error: {result.error}"
             )
@@ -437,6 +502,7 @@ async def run_single_test_prompt(
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
 ) -> BaseRequestFuncOutput:
+    """Runs one test prompt through the request driver."""
     if isinstance(samples, ChatSamples):
         test_question = samples.chat_sessions[0].messages[0]
         test_answer = samples.chat_sessions[0].messages[1]

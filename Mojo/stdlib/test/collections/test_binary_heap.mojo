@@ -17,7 +17,7 @@ from std.testing import (
     assert_true,
     TestSuite,
 )
-from std.testing.prop.strategy import SIMD, List
+from std.testing.prop.strategy import List
 from std.collections import BinaryHeap
 
 

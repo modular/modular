@@ -1,0 +1,47 @@
+{
+  "argument_syntax": "parameter_tags",
+  "call": {
+    "begin": {
+      "prompt_id": 125019,
+      "text": "<tool_call>"
+    },
+    "end": {
+      "prompt_id": 125020,
+      "text": "</tool_call>"
+    },
+    "name_layout": {
+      "close": "</function>",
+      "kind": "function_tag",
+      "open_prefix": "<function=",
+      "open_suffix": ">"
+    },
+    "section": null,
+    "sep": null
+  },
+  "delivery": {
+    "kind": "text"
+  },
+  "format": "formatspec.spec",
+  "json_whitespace": "spaced",
+  "reasoning": {
+    "close": {
+      "prompt_id": 124902,
+      "text": "</think>"
+    },
+    "close_suffix": "",
+    "default": "on",
+    "open": {
+      "prompt_id": 124901,
+      "text": "<think>"
+    },
+    "prompt_start": "prefilled_when_on",
+    "strip_prefix": ""
+  },
+  "spec_version": 1,
+  "terminators": [
+    {
+      "prompt_id": 124900,
+      "text": "<|im_end|>"
+    }
+  ]
+}

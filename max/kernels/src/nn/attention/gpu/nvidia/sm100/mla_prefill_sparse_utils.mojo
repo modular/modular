@@ -22,72 +22,23 @@ BF16-KV kernel (`mla_prefill_sparse.mojo`) and the FP8-KV kernel
 """
 
 from std.sys import size_of
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
-from max.gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    block_idx,
-    warp_id,
-    thread_idx,
-    WARP_SIZE,
-)
+from max.gpu import warp_id, thread_idx
 from max.gpu.sync import barrier
-from std.math import ceildiv, exp2
-from std.math.constants import log2e
 from max.gpu.primitives.cluster import elect_one_sync
-from max.gpu.primitives.cluster import cluster_sync
 import max.gpu.primitives.warp as warp
 from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
-    external_memory,
-    fence_mbarrier_init,
     fence_async_view_proxy,
 )
-from max.gpu.sync import (
-    named_barrier,
-    cp_async_bulk_commit_group,
-    cp_async_bulk_wait_group,
-)
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext, FuncAttribute
 from std.ffi import UnsafeUnion
-from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
-    tcgen05_ld,
-    tcgen05_load_wait,
-    tcgen05_release_allocation_lock,
-    tcgen05_st,
-    tcgen05_cp,
-    tcgen05_store_wait,
-    tcgen05_fence_after,
-    tcgen05_fence_before,
-)
+from max.gpu.compute.arch.tcgen05 import tcgen05_cp, tcgen05_fence_after
 
-from nn.attention.mha_operand import MHAOperand, KVCacheMHAOperand
-from nn.attention.mha_mask import MHAMask
-from kv_cache.types import KVCacheT
-from nn.attention.mha_utils import OptionallyStaticInt, MHAPartitionScheme
-from nn.attention.gpu.nvidia.common import (
-    elect,
-    OptionalPointer,
-    NullPointer,
-    NonNullPointer,
-)
+from nn.attention.mha_operand import MHAOperand
+from nn.attention.gpu.nvidia.common import elect
 
-from nn.attention.gpu.nvidia.sm100.softmax_warp import fa4_softmax
-from nn.attention.gpu.nvidia.sm100.correction_warp import fa4_correction
-from nn.attention.gpu.mha import q_num_matrix_view_rows
-
-from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SM100TensorAccumulator,
-    add_ftz,
-    sub_ftz,
-    mul_ftz,
-    fma_ftz,
-    exp2_emulation,
-)
+from nn.attention.gpu.nvidia.sm100.attention_utils import SM100TensorAccumulator
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
@@ -99,29 +50,17 @@ from linalg.arch.sm100.mma import smem_descriptor
 from layout import (
     TileTensor,
     row_major,
-    Idx,
-    TensorLayout,
     Coord,
-    stack_allocation as tt_stack_allocation,
-)
-from layout.swizzle import make_swizzle
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
-    ld_shared_v4_u32,
-    cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4,
-    st_shared_v4_b32_at_bf16_elem_off,
-    hmul2_bf16x8_by_scalar,
+    coord,
 )
 from std.memory import bitcast
 from layout.tma_async import (
-    create_tensor_tile,
     TMATensorTile,
     SharedMemBarrier,
-    RaggedTMA3DTile,
     _gather4_box_width,
     _default_desc_shape,
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.utils.numerics import min_or_neg_inf
 
 
 struct MLASparseConfig[
@@ -171,7 +110,7 @@ struct MLASparseConfig[
     comptime k_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         *,
@@ -317,9 +256,9 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     comptime NUM_TS_STAGES = 3
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def smem_descriptor_q(
-        q_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
+        q_smem: Pointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.padded_num_q_heads // Self.config.cta_group,
@@ -329,9 +268,9 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
         ](q_smem)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def tmem_descriptor_q(
-        q_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
+        q_smem: Pointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.padded_num_q_heads // Self.config.cta_group,
@@ -341,9 +280,9 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
         ](q_smem)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def descriptor_k_p0(
-        k_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
+        k_smem: Pointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.B_TOPK // Self.config.cta_group,
@@ -353,9 +292,9 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
         ](k_smem)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def descriptor_k_p1(
-        k_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
+        k_smem: Pointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.B_TOPK // Self.config.cta_group,
@@ -413,9 +352,9 @@ struct SVMMAType[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     # the MMA was reading cols permuted by the swizzle XOR and producing
     # wrong O values.
     @staticmethod
-    @always_inline
+    @inline(.always)
     def descriptor_s(
-        s_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
+        s_smem: Pointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.padded_num_q_heads // Self.config.cta_group,
@@ -431,9 +370,9 @@ struct SVMMAType[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     # one SV atom's per-CTA b_bmn (atom1 reads smem cols 0..127, atom2
     # reads cols 128..255 with a shifted base pointer).
     @staticmethod
-    @always_inline
+    @inline(.always)
     def descriptor_v(
-        v_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
+        v_smem: Pointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=(Self.config.v_depth // 2) // Self.config.cta_group,
@@ -479,11 +418,11 @@ struct MLAPrefillSparseCommon[
     # the depth-tile sub-copies are issued manually so each real-head box
     # lands at the PADDED (64-row) depth-tile stride the BMN=64 QK-MMA reads
     # (see the Q-load in `kernel`). NFC at 64/128 (real == padded).
-    comptime q_tile_shape = Index(
+    comptime q_tile_shape = coord[
         1, Self.NUM_Q_HEADS_PER_CTA, Self.config.input_qk_depth
-    )
+    ]
     comptime q_desc_shape = _default_desc_shape[
-        3, Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
+        Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
     ]()
 
     comptime k_tile_width = Self.config.input_qk_depth
@@ -492,8 +431,8 @@ struct MLAPrefillSparseCommon[
     comptime k_gather_box = _gather4_box_width[
         Self.qkv_dtype, Self.k_tile_width, Self.k_swizzle_mode
     ]()
-    comptime k_tile_shape = Index(Self.k_tile_height, Self.k_gather_box)
-    comptime k_desc_shape = Index(1, Self.k_gather_box)
+    comptime k_tile_shape = coord[Self.k_tile_height, Self.k_gather_box]
+    comptime k_desc_shape = coord[1, Self.k_gather_box]
 
     comptime v_tile_width = Self.V_SMEM_COLS_PER_CTA
     # V uses SWIZZLE_128B; gather4 splits tile_width=128 into 2 col-groups
@@ -508,13 +447,13 @@ struct MLAPrefillSparseCommon[
     comptime v_gather_box = _gather4_box_width[
         Self.qkv_dtype, Self.v_tile_width, Self.v_swizzle_mode
     ]()
-    comptime v_tile_shape = Index(Self.v_tile_height, Self.v_gather_box)
-    comptime v_desc_shape = Index(1, Self.v_gather_box)
+    comptime v_tile_shape = coord[Self.v_tile_height, Self.v_gather_box]
+    comptime v_desc_shape = coord[1, Self.v_gather_box]
 
     # desc_shape inner dim 64×2=128B satisfies the ≤256B SWIZZLE_NONE constraint.
     # SMEM is written in column-group order to match TMA's sub-copy layout.
-    comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
-    comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
+    comptime o_tile_shape = coord[Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth]
+    comptime o_desc_shape = coord[Self.NUM_Q_HEADS_PER_CTA, 64]
 
     # FP8 TMA swizzle modes. SWIZZLE_NONE paired with INT64 packing means one
     # gather4 descriptor covers the full row without inner col-tiling.
@@ -533,10 +472,10 @@ struct MLAPrefillSparseCommon[
         Self.k_tma_tile_width_fp8,
         Self.k_tma_swizzle_fp8,
     ]()
-    comptime k_tma_tile_shape_fp8 = Index(
+    comptime k_tma_tile_shape_fp8 = coord[
         Self.k_tile_height, Self.k_tma_gather_box_fp8
-    )
-    comptime k_tma_desc_shape_fp8 = Index(1, Self.k_tma_gather_box_fp8)
+    ]
+    comptime k_tma_desc_shape_fp8 = coord[1, Self.k_tma_gather_box_fp8]
 
     # FP8 V TMA: INT64-packed, per-atom width (V_BMN_PER_ATOM / 8 INT64 elems).
     # Two gather4 calls per row group (one per SV atom) because the atoms'
@@ -551,10 +490,10 @@ struct MLAPrefillSparseCommon[
     ]()
     # FP8 V loads all B_TOPK rows at once (no key-half split like BF16).
     comptime v_tma_tile_height_fp8 = Self.config.B_TOPK
-    comptime v_tma_tile_shape_fp8 = Index(
+    comptime v_tma_tile_shape_fp8 = coord[
         Self.v_tma_tile_height_fp8, Self.v_tma_gather_box_fp8
-    )
-    comptime v_tma_desc_shape_fp8 = Index(1, Self.v_tma_gather_box_fp8)
+    ]
+    comptime v_tma_desc_shape_fp8 = coord[1, Self.v_tma_gather_box_fp8]
 
     comptime SMemType = MLASparseSharedMemory[Self.config]
     comptime FULL_Q_TYPE = Self.SMemType.FULL_Q_TYPE
@@ -579,20 +518,19 @@ struct MLAPrefillSparseCommon[
     # CTAs in the pair (0b11) at cta_group=2, only self (0b1) at cta_group=1.
     comptime CTA_MASK: UInt16 = 0b11 if Self.config.cta_group == 2 else 0b1
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _load_q_prologue(
-        full_q_ptr: UnsafePointer[
-            mut=True, Scalar[Self.config.qkv_dtype], address_space=.SHARED, ...
+        full_q_ptr: MutPointer[
+            Scalar[Self.config.qkv_dtype], address_space=.SHARED, ...
         ],
         q_tma_op: TMATensorTile[
             Self.qkv_dtype,
-            3,
             Self.q_tile_shape,
             Self.q_desc_shape,
         ],
-        prologue_q_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
+        prologue_q_ptr: MutPointer[
+            SharedMemBarrier, address_space=.SHARED, ...
         ],
         cta_id: UInt32,
         seq_idx: UInt32,
@@ -618,7 +556,7 @@ struct MLAPrefillSparseCommon[
         # cp) sees them. Guarded to num_q_heads < 64, so 64/128 stay byte-NFC.
         comptime if Self.NUM_Q_HEADS_PER_CTA < Self.PADDED_HEADS_PER_CTA:
             for i in range(
-                Int(thread_idx.x),
+                thread_idx.x,
                 Self.SMemType.FULL_Q_SIZE,
                 Self.config.num_threads,
             ):
@@ -649,7 +587,9 @@ struct MLAPrefillSparseCommon[
                     # multiple of 8, asserted below) lands rows
                     # [0, num_q_heads) at the same swizzled positions a 64-row
                     # box would; the untouched rows stay zeroed above.
-                    comptime Q_SWIZZLE_COLS = Self.q_desc_shape[2]
+                    comptime Q_SWIZZLE_COLS = Self.q_desc_shape.element_types[
+                        2
+                    ].static_value
                     comptime NUM_Q_DEPTH_TILES = (
                         Self.config.input_qk_depth // Q_SWIZZLE_COLS
                     )
@@ -660,12 +600,14 @@ struct MLAPrefillSparseCommon[
                         cp_async_bulk_tensor_shared_cluster_global[
                             cta_group=Self.config.cta_group
                         ](
-                            full_q_ptr + j * Q_PADDED_DEPTH_TILE_STRIDE,
-                            UnsafePointer(to=q_tma_op.descriptor).bitcast[
+                            full_q_ptr.unsafe_offset(
+                                j * Q_PADDED_DEPTH_TILE_STRIDE
+                            ),
+                            Pointer(to=q_tma_op.descriptor).unsafe_bitcast[
                                 NoneType
                             ](),
                             prologue_q_ptr[].unsafe_ptr(),
-                            Index(
+                            (
                                 j * Q_SWIZZLE_COLS,
                                 Int(cta_id) * Self.NUM_Q_HEADS_PER_CTA,
                                 Int(seq_idx),
@@ -692,7 +634,7 @@ struct MLAPrefillSparseCommon[
                         ),
                     )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def mma[
         # Under FP8 the K/V producer warpgroups credit k_p*_ready /
@@ -702,48 +644,20 @@ struct MLAPrefillSparseCommon[
         # expect_tx that no one will decrement.
         fp8_active: Bool = False,
     ](
-        q_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
-        ],
-        k_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
-        ],
-        s_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
-        ],
-        v_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
-        ],
-        k_p0_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        k_p1_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        v_p0_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        v_p1_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        sv_p0_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        sv_p1_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        so_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        p_free: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        qk_ss_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        qk_ts_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
+        q_smem_ptr: Pointer[Scalar[Self.qkv_dtype], address_space=.SHARED, ...],
+        k_smem_ptr: Pointer[Scalar[Self.qkv_dtype], address_space=.SHARED, ...],
+        s_smem_ptr: Pointer[Scalar[Self.qkv_dtype], address_space=.SHARED, ...],
+        v_smem_ptr: Pointer[Scalar[Self.qkv_dtype], address_space=.SHARED, ...],
+        k_p0_ready: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
+        k_p1_ready: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
+        v_p0_ready: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
+        v_p1_ready: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
+        sv_p0_done: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
+        sv_p1_done: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
+        so_ready: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
+        p_free: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
+        qk_ss_done: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
+        qk_ts_done: MutPointer[SharedMemBarrier, address_space=.SHARED, ...],
         k: UInt32,
         num_k_blocks: UInt32,
     ):
@@ -812,7 +726,9 @@ struct MLAPrefillSparseCommon[
             tcgen05_fence_after()
 
             var k_p1_smem_desc = Self.QKMMAOpType.descriptor_k_p1(
-                k_smem_ptr + Self.B_TOPK_PER_CTA * Self.config.q_smem_depth
+                k_smem_ptr.unsafe_offset(
+                    Self.B_TOPK_PER_CTA * Self.config.q_smem_depth
+                )
             )
             # TS MMA is split across NUM_TS_STAGES stages (see
             # TSMMAType definition).  Each stage adds its k-batch to P;
@@ -850,17 +766,21 @@ struct MLAPrefillSparseCommon[
             )
             var s_p0_smem_desc = Self.SVMMAType.descriptor_s(s_smem_ptr)
             var s_p1_smem_desc = Self.SVMMAType.descriptor_s(
-                s_smem_ptr + Self.PADDED_HEADS_PER_CTA * Self.config.B_TOPK // 2
+                s_smem_ptr.unsafe_offset(
+                    Self.PADDED_HEADS_PER_CTA * Self.config.B_TOPK // 2
+                )
             )
             var v_atom1_p0_desc = Self.SVMMAType.descriptor_v(v_smem_ptr)
             var v_atom1_p1_desc = Self.SVMMAType.descriptor_v(
-                v_smem_ptr + KEY_HALF_OFFSET
+                v_smem_ptr.unsafe_offset(KEY_HALF_OFFSET)
             )
             var v_atom2_p0_desc = Self.SVMMAType.descriptor_v(
-                v_smem_ptr + ATOM2_COL_OFFSET
+                v_smem_ptr.unsafe_offset(ATOM2_COL_OFFSET)
             )
             var v_atom2_p1_desc = Self.SVMMAType.descriptor_v(
-                v_smem_ptr + KEY_HALF_OFFSET + ATOM2_COL_OFFSET
+                v_smem_ptr.unsafe_offset(KEY_HALF_OFFSET).unsafe_offset(
+                    ATOM2_COL_OFFSET
+                )
             )
 
             so_ready[curr_buf].wait(cur_phase)
@@ -945,7 +865,7 @@ struct MLAPrefillSparseCommon[
                 Self.CTA_MASK,
             )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def cp_q_from_smem_to_tmem(
         smem_desc: MMASmemDescriptorPair,
@@ -985,7 +905,7 @@ struct MLAPrefillSparseCommon[
                     sub_tile_desc.descriptor(),
                 )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _raw_indices_to_tma_rows(
         kv_lut: Self.KVLUTType, raw: SIMD[.int32, 4]
@@ -1012,18 +932,16 @@ struct MLAPrefillSparseCommon[
             )
         return rows
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def kv_valid_producer(
         indices: TileTensor[.uint32, address_space=.GENERIC, ...],
-        is_k_valid_ptr: UnsafePointer[
-            mut=True, UInt8, address_space=.SHARED, ...
+        is_k_valid_ptr: MutPointer[UInt8, address_space=.SHARED, ...],
+        k_valid_ready_ptr: MutPointer[
+            SharedMemBarrier, address_space=.SHARED, ...
         ],
-        k_valid_ready_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
-        ],
-        k_valid_free_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
+        k_valid_free_ptr: MutPointer[
+            SharedMemBarrier, address_space=.SHARED, ...
         ],
         lane_idx: UInt32,
         indices_base: UInt32,

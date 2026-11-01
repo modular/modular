@@ -241,7 +241,7 @@ def testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
 # CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
 def testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_lit_ref:
 
-  # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
+  # CHECK: hlcf.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
   return __get_mvalue_as_litref(a)
 
 # CHECK-LABEL: lit.fn @"callByRefResultLifetime
@@ -302,7 +302,7 @@ def test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}Pointer::@"__init__{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}([[PTRVAL]])
   # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Pointer::@"__init__{{.*}}([[REF]])
-  # CHECK-NEXT: kgen.return [[RES]]
+  # CHECK-NEXT: hlcf.return [[RES]]
   return Pointer[Int, arg.origin](to=Pointer(to=arg[])[])
 
 
@@ -448,35 +448,6 @@ def test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) ra
   b.field = HasRaisingInit()
   # EH logic.
   # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}(*, "move":
-
-# CHECK-LABEL: lit.fn @"test_parameter_closure_captures
-def test_parameter_closure_captures(var x: MemExample, var y: MemExample):
-  # CHECK: lit.fn *"capture
-  @__parameter
-  def capture():
-    _ = x^
-    _ = y^
-
-  # CHECK: lit.call[!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%y)
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%x)
-  capture()
-
-def higher_order_function[lts: __mlir_type.`!lit.origin.set`, //, f: def() capturing [lts] -> None]():
-  pass
-
-# CHECK-LABEL: lit.fn @"test_higher_order_capture
-def test_higher_order_capture(var x: MemExample, var y: MemExample):
-  # CHECK: lit.fn *"capture
-  @__parameter
-  def capture():
-    _ = x^
-    _ = y^
-
-  # CHECK: lit.call {{.*}}higher_order_function{{.*}} !lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%y)
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%x)
-  higher_order_function[capture]()
 
 # CHECK-LABEL: lit.fn @"test_origin_ref_spec
 # CHECK-SAME: !lit.ref<!Int, mut *"our_origin._mlir_origin`"> mutref)

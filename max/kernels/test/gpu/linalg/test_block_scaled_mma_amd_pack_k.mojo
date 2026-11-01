@@ -31,7 +31,7 @@ routed FP4 MoE kernel's inner-loop scale amortization relies on
 selectors per scale word).
 """
 
-from std.builtin.simd import _convert_f32_to_float8_ue8m0
+from std.simd import _convert_f32_to_float8_ue8m0
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
@@ -39,14 +39,14 @@ from std.memory import bitcast
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, TensorLayout, TileTensor, row_major
+from layout import TensorLayout, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
 )
 
 
-@always_inline
+@inline(.always)
 def _broadcast_scale_word(value: Float32) -> Int32:
     """Pack one E8M0 scale across all 4 bytes of an Int32."""
     var scale_byte = bitcast[.uint8](
@@ -60,7 +60,7 @@ def _broadcast_scale_word(value: Float32) -> Int32:
     )
 
 
-@always_inline
+@inline(.always)
 def _packed_scale_word(
     b0: Float32, b1: Float32, b2: Float32, b3: Float32
 ) -> Int32:
@@ -168,32 +168,33 @@ def _pack_k_kernel[
     ](bcast_acc3, a_frag, b_frag, packed_b, bcast_a3)
 
     # Store packed acc[i] at row (4*i + lane), broadcast acc[i] same row in second buffer.
-    packed_out.store(Coord(0 * WARP_SIZE + lane, 0), packed_acc0)
-    packed_out.store(Coord(1 * WARP_SIZE + lane, 0), packed_acc1)
-    packed_out.store(Coord(2 * WARP_SIZE + lane, 0), packed_acc2)
-    packed_out.store(Coord(3 * WARP_SIZE + lane, 0), packed_acc3)
+    packed_out.store((0 * WARP_SIZE + lane, 0), packed_acc0)
+    packed_out.store((1 * WARP_SIZE + lane, 0), packed_acc1)
+    packed_out.store((2 * WARP_SIZE + lane, 0), packed_acc2)
+    packed_out.store((3 * WARP_SIZE + lane, 0), packed_acc3)
 
-    broadcast_out.store(Coord(0 * WARP_SIZE + lane, 0), bcast_acc0)
-    broadcast_out.store(Coord(1 * WARP_SIZE + lane, 0), bcast_acc1)
-    broadcast_out.store(Coord(2 * WARP_SIZE + lane, 0), bcast_acc2)
-    broadcast_out.store(Coord(3 * WARP_SIZE + lane, 0), bcast_acc3)
+    broadcast_out.store((0 * WARP_SIZE + lane, 0), bcast_acc0)
+    broadcast_out.store((1 * WARP_SIZE + lane, 0), bcast_acc1)
+    broadcast_out.store((2 * WARP_SIZE + lane, 0), bcast_acc2)
+    broadcast_out.store((3 * WARP_SIZE + lane, 0), bcast_acc3)
 
 
 def test_pack_k_byte_index(ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime num_acc_per_dispatch = 4
     comptime num_dispatches = 4
-    comptime num_values = WARP_SIZE * num_acc_per_dispatch * num_dispatches
+    comptime num_values = warp_size * num_acc_per_dispatch * num_dispatches
 
     var packed_dev = ctx.enqueue_create_buffer[.float32](num_values)
     var bcast_dev = ctx.enqueue_create_buffer[.float32](num_values)
 
     var packed_tt = TileTensor(
         packed_dev,
-        row_major[WARP_SIZE * num_dispatches, num_acc_per_dispatch](),
+        row_major[warp_size * num_dispatches, num_acc_per_dispatch](),
     )
     var bcast_tt = TileTensor(
         bcast_dev,
-        row_major[WARP_SIZE * num_dispatches, num_acc_per_dispatch](),
+        row_major[warp_size * num_dispatches, num_acc_per_dispatch](),
     )
 
     comptime kernel = _pack_k_kernel[
@@ -204,7 +205,7 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
         packed_tt.as_unsafe_any_origin(),
         bcast_tt.as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.synchronize()
 

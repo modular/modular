@@ -68,26 +68,6 @@ struct _c_stat(Copyable, Defaultable, Writable):
     var st_qspare: Array[Int64, 2]
     """RESERVED: DO NOT USE!."""
 
-    def __init__(out self):
-        self.st_dev = 0
-        self.st_mode = 0
-        self.st_nlink = 0
-        self.st_ino = 0
-        self.st_uid = 0
-        self.st_gid = 0
-        self.st_rdev = 0
-        self.st_atimespec = _CTimeSpec()
-        self.st_mtimespec = _CTimeSpec()
-        self.st_ctimespec = _CTimeSpec()
-        self.st_birthtimespec = _CTimeSpec()
-        self.st_size = 0
-        self.st_blocks = 0
-        self.st_blksize = 0
-        self.st_flags = 0
-        self.st_gen = 0
-        self.st_lspare = 0
-        self.st_qspare: Array[Int64, 2] = [0, 0]
-
     def write_to(self, mut writer: Some[Writer]):
         # fmt: off
         writer.write(
@@ -131,22 +111,22 @@ struct _c_stat(Copyable, Defaultable, Writable):
         )
 
 
-@always_inline
+@inline(.always)
 def _stat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["stat", Int32](
-        path.as_c_string_slice(), Pointer(to=stat)
+        path.as_c_string_span(), Pointer(to=stat)
     )
     if err == -1:
         raise Error("unable to stat '", path, "'")
     return stat^
 
 
-@always_inline
+@inline(.always)
 def _lstat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["lstat", Int32](
-        path.as_c_string_slice(), Pointer(to=stat)
+        path.as_c_string_span(), Pointer(to=stat)
     )
     if err == -1:
         raise Error("unable to lstat '", path, "'")

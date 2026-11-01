@@ -88,25 +88,8 @@ def test_4wave_conv_vs_miopen[
     comptime K = R * S * C_in
 
     print(
-        "== test_4wave_conv_vs_miopen:",
-        " N=",
-        N_batch,
-        " H=",
-        H,
-        " W=",
-        W,
-        " C_in=",
-        C_in,
-        " C_out=",
-        C_out,
-        " R=",
-        R,
-        " S=",
-        S,
-        " pad=",
-        pad_h,
-        "x",
-        pad_w,
+        t"== test_4wave_conv_vs_miopen:  N= {N_batch}  H= {H}  W= {W}  C_in="
+        t" {C_in}  C_out= {C_out}  R= {R}  S= {S}  pad= {pad_h} x {pad_w}"
     )
 
     # -------- Allocate buffers --------
@@ -240,16 +223,8 @@ def test_4wave_conv_vs_miopen[
     var rel_pass = rel_diff < 0.01
     var abs_pass = max_diff < tolerance
     print(
-        "  max_abs_diff=",
-        max_diff,
-        "  L1_rel=",
-        rel_diff,
-        "  abs_tol=",
-        tolerance,
-        "  pass(abs)=",
-        abs_pass,
-        "  pass(rel)=",
-        rel_pass,
+        t"  max_abs_diff= {max_diff}   L1_rel= {rel_diff}   abs_tol="
+        t" {tolerance}   pass(abs)= {abs_pass}   pass(rel)= {rel_pass}"
     )
     if not (abs_pass or rel_pass):
         raise Error(

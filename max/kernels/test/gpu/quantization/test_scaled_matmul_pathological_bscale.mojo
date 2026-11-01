@@ -39,11 +39,11 @@
 from max.gpu.host import DeviceContext
 from layout import (
     CoordLike,
-    Coord,
     Idx,
     TileTensor,
     row_major,
 )
+from std.memory.alloc import unsafe_alloc
 from std.utils.numerics import isinf, isnan, max_finite
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
 from std.testing import assert_equal
@@ -62,9 +62,9 @@ def run_pathological_bscale[
     reports (num_nan, num_inf) in the GEMM output, plus the denormal-column
     finiteness specifically."""
     comptime transpose_b = True
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var a_size = M * K
     var b_size = N * K  # transpose_b: b is [N, K]
@@ -72,17 +72,17 @@ def run_pathological_bscale[
     var a_scales_size = M
     var b_scales_size = N
 
-    var a_host_ptr = alloc[Scalar[in_dtype]](a_size)
-    var b_host_ptr = alloc[Scalar[in_dtype]](b_size)
-    var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
+    var a_host_ptr = unsafe_alloc[Scalar[in_dtype]](a_size)
+    var b_host_ptr = unsafe_alloc[Scalar[in_dtype]](b_size)
+    var c_host_ptr = unsafe_alloc[Scalar[out_dtype]](c_size)
+    var a_scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](a_scales_size)
+    var b_scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](b_scales_size)
 
-    var a_layout = row_major(Coord(m, k))
-    var b_layout = row_major(Coord(n, k))
-    var c_layout = row_major(Coord(m, n))
-    var a_scales_layout = row_major(Coord(Idx[1], m))
-    var b_scales_layout = row_major(Coord(n, Idx[1]))
+    var a_layout = row_major(m, k)
+    var b_layout = row_major(n, k)
+    var c_layout = row_major(m, n)
+    var a_scales_layout = row_major(Idx[1], m)
+    var b_scales_layout = row_major(n, Idx[1])
 
     # Fill A and B with full-magnitude fp8 values (worst case for overflow):
     # every element = fp8 max (448). a_scale = 1.0 (benign activation scale).
@@ -164,21 +164,9 @@ def run_pathological_bscale[
                 denormal_col_nonfinite += 1
 
     print(
-        "  up-proj GEMM pathological b_scale: M=",
-        M,
-        "N=",
-        N,
-        "K=",
-        K,
-        "-> NaN=",
-        num_nan,
-        "Inf=",
-        num_inf,
-        "(denormal-col non-finite=",
-        denormal_col_nonfinite,
-        ", large-col idx=",
-        large_col,
-        ")",
+        t"  up-proj GEMM pathological b_scale: M= {M} N= {N} K= {K} -> NaN="
+        t" {num_nan} Inf= {num_inf} (denormal-col non-finite="
+        t" {denormal_col_nonfinite} , large-col idx= {large_col} )"
     )
     # Hard assertions for the NaN this test guards: a near-zero/denormal weight
     # scale must NOT produce NaN, and the denormal column must be finite (~0).
@@ -196,11 +184,11 @@ def run_pathological_bscale[
         msg="Inf outside the deliberately-large b_scale column",
     )
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    a_scales_host_ptr.unsafe_free()
+    b_scales_host_ptr.unsafe_free()
     _ = a_device
     _ = b_device
     _ = c_device

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Wan video transformer."""
 
 from __future__ import annotations
 
@@ -18,12 +19,12 @@ from math import prod
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.stacked_linear import StackedLinear
 
 # Set to "1" to keep the FP8 cross-attn K/V as two separate matmuls instead
 # of one fused (dequant -> concat -> requant) matmul. Mirrors the
@@ -89,6 +90,7 @@ class WanConv3d(Module):
         self.stride = stride
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the 3D convolution over ``x``."""
         return ops.conv3d(x, self.filter, stride=self.stride, bias=self.bias)
 
 
@@ -121,6 +123,7 @@ class WanLayerNorm(Module):
                 self.bias = Weight("bias", dtype, [dim], device)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Normalizes ``x``, scaling by the weight when it has one."""
         gamma = ops.cast(self.weight, x.dtype) if self.has_weight else None
         if self.has_bias:
             beta = ops.cast(self.bias, x.dtype)
@@ -158,10 +161,13 @@ class WanRMSNorm(Module):
         self.eps = eps
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Normalizes ``x`` by its RMS, scaling by the weight."""
         return ops.rms_norm(x, ops.cast(self.weight, x.dtype), self.eps)
 
 
 class WanTextProjection(Module):
+    """Projects the caption into the transformer's width."""
+
     def __init__(
         self,
         in_features: int,
@@ -190,6 +196,7 @@ class WanTextProjection(Module):
         )
 
     def __call__(self, caption: TensorValue) -> TensorValue:
+        """Runs the caption through the projection."""
         hidden_states = self.linear_1(caption)
         hidden_states = ops.gelu(hidden_states, approximate="tanh")
         hidden_states = self.linear_2(hidden_states)
@@ -253,6 +260,7 @@ class WanImageEmbedder(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Projects the reference image's tokens into the transformer's width."""
         x = self.norm1(x)
         x = ops.gelu(self.ff_proj(x))
         x = self.ff_out(x)
@@ -260,6 +268,8 @@ class WanImageEmbedder(Module):
 
 
 class WanTimeTextImageEmbedding(Module):
+    """Combines the timestep, the caption and the image into one conditioning vector."""
+
     def __init__(
         self,
         dim: int,
@@ -315,6 +325,7 @@ class WanTimeTextImageEmbedding(Module):
     def __call__(
         self, timestep: TensorValue, encoder_hidden_states: TensorValue
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        """Embeds the timestep and the caption together."""
         # Sinusoidal timestep embedding (computed in float32 for precision).
         # Cast to the model's working dtype (bf16) for the MLP, matching
         # diffusers' behavior: float32 embedding → cast to weight dtype → MLP.
@@ -339,6 +350,8 @@ class WanTimeTextImageEmbedding(Module):
 
 
 class WanSelfAttention(Module):
+    """Self attention over the video tokens."""
+
     def __init__(
         self,
         dim: int,
@@ -395,6 +408,7 @@ class WanSelfAttention(Module):
         hidden_states: TensorValue,
         rotary_emb: tuple[TensorValue, TensorValue],
     ) -> TensorValue:
+        """Runs the self attention over ``hidden_states``."""
         query = self.to_q(hidden_states)
         key = self.to_k(hidden_states)
         value = self.to_v(hidden_states)
@@ -439,6 +453,8 @@ class WanSelfAttention(Module):
 
 
 class WanCrossAttention(Module):
+    """Cross attention from the video tokens to the caption."""
+
     def __init__(
         self,
         dim: int,
@@ -552,6 +568,7 @@ class WanCrossAttention(Module):
         encoder_hidden_states: TensorValue,
         image_embeds: TensorValue | None = None,
     ) -> TensorValue:
+        """Runs the cross attention, widening the keys and values with the image embedding when there is one."""
         query = self.to_q(hidden_states)
 
         if not self._fp8:
@@ -614,6 +631,8 @@ class WanCrossAttention(Module):
 
 
 class WanFeedForward(Module):
+    """The transformer's feed-forward."""
+
     def __init__(
         self,
         dim: int,
@@ -644,6 +663,7 @@ class WanFeedForward(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the feed-forward over ``x``."""
         hidden = self.proj(x)
         hidden = ops.gelu(hidden, approximate="tanh")
         return self.linear_out(hidden)
@@ -669,6 +689,7 @@ class WanTransformerBlockSequence(Module):
         rope_cos: TensorValue,
         rope_sin: TensorValue,
     ) -> TensorValue:
+        """Runs every block in the sequence."""
         for block in self.blocks:
             hidden_states = block(
                 hidden_states,
@@ -681,6 +702,8 @@ class WanTransformerBlockSequence(Module):
 
 
 class WanTransformerBlock(Module):
+    """One transformer block: self attention, cross attention, then the feed-forward."""
+
     def __init__(
         self,
         dim: int,
@@ -755,6 +778,7 @@ class WanTransformerBlock(Module):
         rope_sin: TensorValue,
         image_embeds: TensorValue | None = None,
     ) -> TensorValue:
+        """Runs the block over ``hidden_states``."""
         rotary_emb = (rope_cos, rope_sin)
 
         # Modulation: scale_shift_table[1,6,D] + timestep_proj[B,6,D]
@@ -838,6 +862,7 @@ class WanTransformerPreProcess(Module):
         encoder_hidden_states: TensorValue,
         i2v_condition: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+        """Embeds the inputs into the tokens the blocks read."""
         # Cast f32 latents to model dtype.
         hidden_states = ops.cast(hidden_states, self._dtype)
 
@@ -846,8 +871,10 @@ class WanTransformerPreProcess(Module):
         # with a pre-concatenated [cond; uncond] B=2 text embedding, and
         # this fold avoids needing a separate pack graph. For non-CFG /
         # I2V the broadcast is an identity because all three inputs share
-        # the same batch. ``ops.broadcast_to`` is used (not ``ops.tile``)
-        # because tile currently falls back to CPU on GPU graphs.
+        # the same batch. ``ops.broadcast_to`` stays: it expands to the
+        # target batch without materializing repeated copies, which is
+        # what this pack step wants even now that ``ops.tile`` runs on
+        # the GPU.
         target_batch = encoder_hidden_states.shape[0]
         hidden_states = ops.broadcast_to(
             hidden_states,
@@ -920,6 +947,7 @@ class WanTransformerPostProcess(Module):
         temb: TensorValue,
         spatial_shape: TensorValue,
     ) -> TensorValue:
+        """Unpatches the blocks' output into the predicted velocity."""
         batch_size = hidden_states.shape[0]
         p_t, p_h, p_w = self.patch_size
         ppf = spatial_shape.shape[0]
@@ -952,131 +980,3 @@ class WanTransformerPostProcess(Module):
             [batch_size, self.out_channels, ppf * p_t, pph * p_h, ppw * p_w],
         )
         return ops.cast(hs, DType.bfloat16)
-
-
-class WanTransformer3DModel(Module):
-    """Full transformer (for reference / single-graph compilation)."""
-
-    def __init__(
-        self,
-        config: WanConfigBase,
-        *,
-        dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
-    ) -> None:
-        super().__init__()
-        self.config = config
-        dim = config.num_attention_heads * config.attention_head_dim
-        self.inner_dim = dim
-        self.num_heads = config.num_attention_heads
-        self.head_dim = config.attention_head_dim
-        self.out_channels = config.out_channels
-        self.patch_size = config.patch_size
-
-        self.patch_embedding = WanConv3d(
-            kernel_size=config.patch_size,
-            in_channels=config.in_channels,
-            out_channels=dim,
-            stride=config.patch_size,
-            dtype=dtype,
-            device=device,
-        )
-        self.condition_embedder = WanTimeTextImageEmbedding(
-            dim=dim,
-            freq_dim=config.freq_dim,
-            text_dim=config.text_dim,
-            num_layers=config.num_layers,
-            image_dim=getattr(config, "image_dim", None),
-            dtype=dtype,
-            device=device,
-            quant_config=config.quant_config,
-        )
-        self.blocks = LayerList(
-            [
-                WanTransformerBlock(
-                    dim=dim,
-                    ffn_dim=config.ffn_dim,
-                    num_heads=config.num_attention_heads,
-                    head_dim=config.attention_head_dim,
-                    text_dim=dim,
-                    cross_attn_norm=config.cross_attn_norm,
-                    eps=config.eps,
-                    dtype=dtype,
-                    device=device,
-                    quant_config=config.quant_config,
-                )
-                for _ in range(config.num_layers)
-            ]
-        )
-        self.scale_shift_table = Weight(
-            "scale_shift_table", dtype, [1, 2, dim], device
-        )
-        self.norm_out = WanLayerNorm(
-            dim,
-            eps=config.eps,
-            elementwise_affine=False,
-            dtype=dtype,
-            device=device,
-        )
-        self.proj_out = _make_linear(
-            in_dim=dim,
-            out_dim=config.out_channels * prod(config.patch_size),
-            dtype=dtype,
-            device=device,
-            has_bias=True,
-            quant_config=config.quant_config,
-        )
-
-    def __call__(
-        self,
-        hidden_states: TensorValue,
-        timestep: TensorValue,
-        encoder_hidden_states: TensorValue,
-        rope_cos: TensorValue,
-        rope_sin: TensorValue,
-    ) -> TensorValue:
-        batch_size = hidden_states.shape[0]
-        orig_T = hidden_states.shape[2]
-        orig_H = hidden_states.shape[3]
-        orig_W = hidden_states.shape[4]
-        p_t, p_h, p_w = self.patch_size
-        ppf = orig_T // p_t
-        pph = orig_H // p_h
-        ppw = orig_W // p_w
-
-        hs = ops.permute(hidden_states, [0, 2, 3, 4, 1])
-        hs = self.patch_embedding(hs)
-        hs = ops.permute(hs, [0, 4, 1, 2, 3])
-        hs = ops.reshape(hs, [batch_size, self.inner_dim, ppf * pph * ppw])
-        hs = ops.permute(hs, [0, 2, 1])
-
-        temb, timestep_proj, text_emb = self.condition_embedder(
-            timestep, encoder_hidden_states
-        )
-
-        # Rebind RoPE to match the sequence length derived from spatial dims.
-        seq_len = ppf * pph * ppw
-        rope_cos = ops.rebind(rope_cos, shape=[seq_len, self.head_dim])
-        rope_sin = ops.rebind(rope_sin, shape=[seq_len, self.head_dim])
-
-        for block in self.blocks:
-            hs = block(hs, text_emb, timestep_proj, rope_cos, rope_sin)
-
-        mod = self.scale_shift_table + ops.reshape(
-            temb, [batch_size, 1, self.inner_dim]
-        )
-        shift = mod[:, :1, :]
-        scale = mod[:, 1:, :]
-        hs = self.norm_out(hs) * (1.0 + scale) + shift
-        hs = self.proj_out(hs)
-
-        hs = ops.reshape(
-            hs,
-            [batch_size, ppf, pph, ppw, p_t, p_h, p_w, self.out_channels],
-        )
-        hs = ops.permute(hs, [0, 7, 1, 4, 2, 5, 3, 6])
-        hs = ops.reshape(
-            hs,
-            [batch_size, self.out_channels, ppf * p_t, pph * p_h, ppw * p_w],
-        )
-        return ops.cast(hs, self.config.dtype)

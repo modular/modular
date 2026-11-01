@@ -22,9 +22,9 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import CompilationStopped, InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import LogProbabilities
 
 if TYPE_CHECKING:
@@ -37,6 +37,21 @@ if TYPE_CHECKING:
     _MixinBase = PipelineModel[Any]
 else:
     _MixinBase = object
+
+
+_LOGPROBS_HEAP_LEVELS = 3
+"""Heap depth the pipeline models build their logprobs graph with."""
+
+_MAX_TOP_LOGPROBS = 2**_LOGPROBS_HEAP_LEVELS - 1
+"""Largest top-k the logprobs graph can return.
+
+The kernel's min-heap holds ``2**levels - 1`` candidates and the graph reserves
+one further output slot for the sampled token, so the graph built with
+``_LOGPROBS_HEAP_LEVELS`` cannot answer a larger ``top_n``. Request routes
+validate against this so an out-of-range value is rejected at the boundary
+rather than raising inside the model worker, which takes the server down with
+it.
+"""
 
 
 def log_probabilities_ragged_graph(device: DeviceRef, *, levels: int) -> Graph:
@@ -189,10 +204,12 @@ def compute_log_probabilities_ragged(
     lp_tokens = model_outputs[1].to_numpy()
 
     def compute_top(output_index: int, top_n: int) -> dict[int, float]:
+        if top_n < 0:
+            raise ValueError(f"top_n must be non-negative, was {top_n}.")
         if top_n > lp_logits.shape[1] - 1:
             raise ValueError(
-                "top_n too large for this graph -- "
-                "rebuild with larger levels & rerun"
+                f"top_n={top_n} exceeds the {lp_logits.shape[1] - 1} this "
+                "graph supports -- raise _LOGPROBS_HEAP_LEVELS and rerun"
             )
         top_assoc = [
             (int(token), float(logit))
@@ -228,6 +245,7 @@ def compute_log_probabilities_ragged(
                     compute_top(i, batch_top_n[batch_index])
                     for i in range(start, end)
                 ],
+                sampled_token_ids=list(map(int, lp_tokens[start:end, -1])),
             )
         )
     return outputs
@@ -237,18 +255,19 @@ class _RaggedModelInputs(Protocol):
     """Model inputs with tokens and input_row_offsets buffers."""
 
     tokens: Buffer
-    input_row_offsets: Buffer
+    input_row_offsets: Buffer | Sequence[Buffer]
 
 
 class LogProbabilitiesMixin(_MixinBase):
     """Mixin providing log probability computation for pipeline models.
 
     Requires the host class to be a ``PipelineModel`` whose ``ModelInputs``
-    subclass has ``tokens`` and ``input_row_offsets`` ``Buffer`` fields.
+    subclass has a ``tokens`` ``Buffer`` and an ``input_row_offsets`` field
+    holding one ``Buffer`` or a per-device sequence of equal ones.
     """
 
     _logprobs_device: Device
-    _logprobs_model: Model
+    _logprobs_model: Model | None
 
     def __init__(
         self,
@@ -260,9 +279,15 @@ class LogProbabilitiesMixin(_MixinBase):
         super().__init__(pipeline_config, session, *args, **kwargs)
         self._logprobs_device = self.devices[0]
         graph = log_probabilities_ragged_graph(
-            DeviceRef.from_device(self._logprobs_device), levels=3
+            DeviceRef.from_device(self._logprobs_device),
+            levels=_LOGPROBS_HEAP_LEVELS,
         )
-        self._logprobs_model = session.load(graph)
+        try:
+            self._logprobs_model = session.load(graph)
+        except CompilationStopped:
+            # `pre-jit` stops the first compile, and this graph is built
+            # before the host's own: propagating would leave that uncompiled.
+            self._logprobs_model = None
 
     def compute_log_probabilities(
         self,
@@ -274,13 +299,17 @@ class LogProbabilitiesMixin(_MixinBase):
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
         """Computes log probabilities for the generated tokens."""
+        assert self._logprobs_model is not None
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits
 
         sampled_tokens = next_tokens.to_numpy()
         ragged_inputs = cast(_RaggedModelInputs, model_inputs)
         tokens = ragged_inputs.tokens.to_numpy()
-        input_row_offsets = ragged_inputs.input_row_offsets.to_numpy()
+        row_offsets = ragged_inputs.input_row_offsets
+        if not isinstance(row_offsets, Buffer):
+            row_offsets = row_offsets[0]
+        input_row_offsets = row_offsets.to_numpy()
 
         has_full_logits = self.return_logits in (
             ReturnLogits.ALL,

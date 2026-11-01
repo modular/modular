@@ -1,0 +1,53 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+# COM: Check if the RPC launch command is created properly with the --cuda-gdb flag
+# RUN: %debug --rpc --cuda-gdb --dry-run hello.mojo | FileCheck %s --check-prefix=CHECK-CUDA-GDB
+# CHECK-CUDA-GDB:     {
+# CHECK-CUDA-GDB:   "args": [
+# CHECK-CUDA-GDB:     "run",
+# CHECK-CUDA-GDB:     "-O0",
+# CHECK-CUDA-GDB:     "--debug-level=full",
+# CHECK-CUDA-GDB:     "hello.mojo"
+# CHECK-CUDA-GDB:   ],
+# CHECK-CUDA-GDB:   "cwd": "
+# CHECK-CUDA-GDB:   "debuggerRoot": "
+# CHECK-CUDA-GDB:   "env": [
+# CHECK-CUDA-GDB:          "PATH=
+# CHECK-CUDA-GDB:        ]
+# CHECK-CUDA-GDB:   "modularHomePath": "
+# CHECK-CUDA-GDB:   "program": "{{.*}}mojo
+# CHECK-CUDA-GDB:   "request": "launch",
+# CHECK-CUDA-GDB:   "type": "mojo-cuda-gdb"
+# CHECK-CUDA-GDB: }
+
+# COM: Check if the RPC launch command is created properly with the --cuda-gdb flag with --break-on-launch
+# RUN: %debug --rpc --cuda-gdb --break-on-launch --dry-run hello.mojo | FileCheck %s --check-prefix=CHECK-CUDA-GDB-BREAK
+# CHECK-CUDA-GDB-BREAK:     {
+# CHECK-CUDA-GDB-BREAK:   "args": [
+# CHECK-CUDA-GDB-BREAK:     "run",
+# CHECK-CUDA-GDB-BREAK:     "-O0",
+# CHECK-CUDA-GDB-BREAK:     "--debug-level=full",
+# CHECK-CUDA-GDB-BREAK:     "hello.mojo"
+# CHECK-CUDA-GDB-BREAK:   ],
+# CHECK-CUDA-GDB-BREAK:   "breakOnLaunch": true,
+# CHECK-CUDA-GDB-BREAK:   "cwd": "
+# CHECK-CUDA-GDB-BREAK:   "debuggerRoot": "
+# CHECK-CUDA-GDB-BREAK:   "env": [
+# CHECK-CUDA-GDB-BREAK:          "PATH=
+# CHECK-CUDA-GDB-BREAK:        ]
+# CHECK-CUDA-GDB-BREAK:   "modularHomePath": "
+# CHECK-CUDA-GDB-BREAK:   "program": "{{.*}}mojo
+# CHECK-CUDA-GDB-BREAK:   "request": "launch",
+# CHECK-CUDA-GDB-BREAK:   "type": "mojo-cuda-gdb"
+# CHECK-CUDA-GDB-BREAK: }

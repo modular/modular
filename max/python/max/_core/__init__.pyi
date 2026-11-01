@@ -52,6 +52,9 @@ from . import (
     profiler as profiler,
 )
 from . import (
+    request_context as request_context,
+)
+from . import (
     safetensors as safetensors,
 )
 from . import (
@@ -102,7 +105,7 @@ class Value(Generic[T]):
     @property
     def type(self) -> T: ...
     @type.setter
-    def type(self) -> T: ...
+    def type(self, type: T, /) -> None: ...
     @property
     def owner(self) -> Block | Operation: ...
     @property

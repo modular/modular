@@ -29,7 +29,7 @@ def as_iterable(
 ) -> Iterable[Value[Any] | TensorValueLike]:
     """Normalize a user-returned result into an iterable of values.
 
-    Callables passed to control-flow ops (e.g., ``ops.cond``,
+    Callables passed to control-flow ops (such as ``ops.cond``,
     ``ops.while_loop``) are allowed to return ``None``, a single value, or
     an iterable of values. Use this to flatten that variation away.
     """

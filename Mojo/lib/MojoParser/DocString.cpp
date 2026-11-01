@@ -90,9 +90,12 @@ static bool requiresDocString(StructDeclOp op) {
 /// string:
 /// 1. It's a "public" function, meaning its name does not start with an
 ///    underscore, unless it's a special function such as `__init__`.
-/// 2. It's defined at the top level of a module, or as a (not-synthesized)
-///    method on a struct that itself requires a doc string.
-static bool requiresDocString(FnOp op) {
+/// 2. It's defined at the top level of a module, or as a source method on a
+///    struct or trait that itself requires a doc string.
+static bool requiresDocString(ASTDecl &decl, FnOp op) {
+  if (decl.getCursor().isInvalid())
+    return false;
+
   StringRef name = *op.getSourceName();
   if (isPrivateMemberName(name))
     return false;
@@ -112,18 +115,10 @@ static bool requiresDocString(FnOp op) {
   if (isa<FileModuleOp>(parent))
     return true;
 
-  if (auto parentStruct = dyn_cast<StructDeclOp>(parent)) {
-    // We rely on an assumption here that only synthesized methods have the same
-    // location as their parent struct.
-    return requiresDocString(parentStruct) &&
-           op.getLoc() != parentStruct.getLoc();
-  }
-  if (auto parentTrait = dyn_cast<TraitDeclOp>(parent)) {
-    // We rely on an assumption here that only synthesized methods have the same
-    // location as their parent struct.
-    return requiresDocString(parentTrait) &&
-           op.getLoc() != parentTrait.getLoc();
-  }
+  if (auto parentStruct = dyn_cast<StructDeclOp>(parent))
+    return requiresDocString(parentStruct);
+  if (auto parentTrait = dyn_cast<TraitDeclOp>(parent))
+    return requiresDocString(parentTrait);
   return false;
 }
 
@@ -345,6 +340,13 @@ StringRef DocString::CodeBlock::getRawCode() const {
 // Verification
 //===----------------------------------------------------------------------===//
 
+/// Return whether the given function has a `self` argument.
+static bool hasSelfArgument(FnOp funcOp) {
+  return isa<StructDeclOp, TraitDeclOp, ExtensionDeclOp>(
+             funcOp->getParentOp()) &&
+         !funcOp.getIsStatic();
+}
+
 /// Return the names of the arguments to the given function.
 static SmallVector<StringAttr> getFunctionArgumentNames(FnOp funcOp) {
   // In general, each function argument must be documented, but exceptions are
@@ -359,11 +361,8 @@ static SmallVector<StringAttr> getFunctionArgumentNames(FnOp funcOp) {
       sig.getNumArguments() - sig.hasMemoryOnlyResult() - sig.isThrows();
   // Methods take `self` as an explicit first argument, for which
   // documentation isn't required.
-  bool hasSelf = isa<StructDeclOp, TraitDeclOp>(funcOp->getParentOp()) &&
-                 !funcOp.getIsStatic();
-
   SmallVector<StringAttr> argNames;
-  for (size_t idx = hasSelf; idx < end; ++idx)
+  for (size_t idx = hasSelfArgument(funcOp); idx < end; ++idx)
     argNames.emplace_back(sig.getArgName(idx));
 
   return argNames;
@@ -486,25 +485,29 @@ public:
 
     if (!decl.getIfOperation())
       return;
+    auto validateOperation = [&](auto op, bool requiresDoc) {
+      ValidationKind validation =
+          requiresDoc ? ValidationKind::Strict : ValidationKind::Normal;
+      if (!docStr) {
+        if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
+            !isOpInPrivateModule(op))
+          emitDiag(op.getLoc(), "public symbol ")
+              << op.getDeclName() << " is missing a doc string";
+        return;
+      }
+
+      if (validation == ValidationKind::Strict)
+        validateSummary();
+
+      validateDecl(decl, op, validation);
+    };
+
     TypeSwitch<Operation *>(decl.getIfOperation())
-        .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp, AliasDeclOp>(
-            [&](auto op) {
-              ValidationKind validation = requiresDocString(op)
-                                              ? ValidationKind::Strict
-                                              : ValidationKind::Normal;
-              if (!docStr) {
-                if (validation == ValidationKind::Strict &&
-                    diagnoseMissingDocStrings && !isOpInPrivateModule(op))
-                  emitDiag(op.getLoc(), "public symbol ")
-                      << op.getDeclName() << " is missing a doc string";
-                return;
-              }
-
-              if (validation == ValidationKind::Strict)
-                validateSummary();
-
-              validateDecl(decl, op, validation);
-            })
+        .Case<FnOp>([&](FnOp op) {
+          validateOperation(op, requiresDocString(decl, op));
+        })
+        .Case<StructDeclOp, StructFieldOp, TraitDeclOp, AliasDeclOp>(
+            [&](auto op) { validateOperation(op, requiresDocString(op)); })
         .Case<FileModuleOp>([&](FileModuleOp moduleOp) {
           if (!requiresDocString(moduleOp) || isOpInPrivateModule(moduleOp))
             return;
@@ -584,16 +587,22 @@ private:
   /// \p optionalElements is a subset of element names that are valid to
   /// document but not required — no "not documented" warning is emitted for
   /// them when absent. Used for inferred parameters.
+  /// \p ignoredElement is accepted but omitted from validation. Methods use
+  /// this for `self`, whose documentation is optional.
   void processParamOrArgs(const char *loc, StringRef tag,
                           llvm::MapVector<StringRef, const char *> &elements,
                           ArrayRef<StringRef> &lines, ValidationKind validation,
-                          ArrayRef<StringRef> optionalElements = {}) {
+                          ArrayRef<StringRef> optionalElements = {},
+                          std::optional<StringRef> ignoredElement = {}) {
     StringRef sectionLine = lines[0];
     bool emittedUnexpectedOrderWarning = false;
     ptrdiff_t nextEltIndex = 0;
     SmallVector<const char *> elementDocEndLocs(elements.size());
     process2ColumnDocSection(lines, [&](StringRef paramName,
                                         StringRef paramBody) {
+      if (ignoredElement && paramName == *ignoredElement)
+        return;
+
       const char *paramLoc = paramName.data();
       size_t currentEltIndex = nextEltIndex++;
 
@@ -678,8 +687,10 @@ private:
   }
   void processArguments(const char *loc,
                         llvm::MapVector<StringRef, const char *> &elements,
-                        ArrayRef<StringRef> &lines, ValidationKind validation) {
-    processParamOrArgs(loc, "argument", elements, lines, validation);
+                        ArrayRef<StringRef> &lines, ValidationKind validation,
+                        std::optional<StringRef> ignoredElement = {}) {
+    processParamOrArgs(loc, "argument", elements, lines, validation,
+                       /*optionalElements=*/{}, ignoredElement);
   }
   void processParameters(const char *loc,
                          llvm::MapVector<StringRef, const char *> &elements,
@@ -746,6 +757,9 @@ private:
     llvm::MapVector<StringRef, const char *> seenArguments;
     for (StringAttr argName : getFunctionArgumentNames(funcOp))
       seenArguments.insert({argName, nullptr});
+    std::optional<StringRef> ignoredArgument;
+    if (hasSelfArgument(funcOp))
+      ignoredArgument = funcOp.getFuncTypeGenerator().getArgName(0);
 
     // Grab the parameters to the function. Inferred parameters (before //) are
     // valid to document but not required, so track them separately.
@@ -768,7 +782,8 @@ private:
 
     auto processFn = [&](StringRef section, const char *loc) mutable {
       if (section == DocString::kSectionArgs)
-        return processArguments(loc, seenArguments, description, validation);
+        return processArguments(loc, seenArguments, description, validation,
+                                ignoredArgument);
 
       if (section == DocString::kSectionParameters)
         return processParameters(loc, seenParameters, description, validation,

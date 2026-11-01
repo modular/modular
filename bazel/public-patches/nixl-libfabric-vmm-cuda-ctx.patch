@@ -1,0 +1,51 @@
+Post VRAM without an owning CUDA context.
+
+NIXL 1.5.0 moved descriptor posting onto the libfabric progress thread
+(upstream PR #1949), and that thread now fails a transfer when it cannot
+apply the CUDA context captured at registration. Device memory mapped
+with the CUDA VMM API (cuMemAddressReserve + cuMemCreate + cuMemMap)
+belongs to no context, so cuPointerGetAttributes reports a NULL one; the
+backend captured that NULL, and every VRAM post then failed with
+NIXL_ERR_BACKEND.
+
+Treat a NULL owning context the way the backend already treats a
+multi-GPU process: report it from cudaUpdateCtxPtr so the engine turns
+the context workaround off and the progress thread calls cudaSetDevice
+for each descriptor's device instead. The device comes from the
+descriptor, not from whatever context the registering thread happens to
+hold, which matters for one-agent-per-GPU processes. The progress thread
+consults one process-wide mediator, so this relies on the most recently
+constructed engine having registered VMM memory; the general
+no-usable-context fallback is tracked in GEX-4312.
+
+TODO(GEX-4312): propose this upstream and drop the patch once it lands.
+
+diff --git a/src/plugins/libfabric/libfabric_backend.cpp b/src/plugins/libfabric/libfabric_backend.cpp
+--- a/src/plugins/libfabric/libfabric_backend.cpp
++++ b/src/plugins/libfabric/libfabric_backend.cpp
+@@ -278,6 +278,13 @@
+         return -1;
+     }
+ 
++    // Memory mapped with the CUDA VMM API (cuMemCreate + cuMemMap) is owned by
++    // no context, so cuPointerGetAttributes reports a NULL one. There is no
++    // context to apply on the progress thread; take the cudaSetDevice path.
++    if (ctx == NULL) {
++        return -1;
++    }
++
+     if (pthrCudaCtx_) {
+         if (pthrCudaCtx_ != ctx) {
+             return -1;
+@@ -1000,8 +1007,9 @@
+             if (use_cuda_addr_wa) {
+                 bool need_restart;
+                 if (vramUpdateCtx((void *)mem.addr, mem.devId, need_restart)) {
+-                    NIXL_INFO << "Multi-GPU detected (device " << mem.devId
+-                              << "), using cudaSetDevice fallback";
++                    NIXL_INFO << "Address for device " << mem.devId
++                              << " has no owning CUDA context or spans devices,"
++                                 " using cudaSetDevice fallback";
+                     {
+                         const std::lock_guard<std::mutex> lock(cuda_ctx_mutex_);
+                         cuda_addr_wa_ = false;

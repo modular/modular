@@ -10,6 +10,7 @@ package(default_visibility = ["//max:consumers"])
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         deps = [
             "//max:algorithm",
+            "//max:builtin_kernels",
             "@mojo//:std",
         ],
     )

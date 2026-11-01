@@ -10,16 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 3's vision attention."""
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import TensorValue
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
+from max.nn import Module
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.linear import Linear
+from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
@@ -60,6 +61,7 @@ class Gemma3VisionAttention(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the attention over ``x``."""
         batch_size, n_patches = x.shape[0], x.shape[1]
 
         xq = self.q_proj(x)

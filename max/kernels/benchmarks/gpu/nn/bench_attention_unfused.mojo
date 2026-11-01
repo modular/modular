@@ -19,9 +19,8 @@ matmul kernel with a compute epilogue that fuses the scale multiply in-register
 """
 
 from std.collections import Optional
-from std.math import ceildiv, rsqrt
+from std.math import rsqrt
 from std.sys import (
-    align_of,
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
@@ -41,13 +40,9 @@ from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul import matmul
-from linalg.utils import elementwise_compute_lambda_type
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from nn.softmax import softmax_inline
-
-
-from std.utils.index import Index, IndexList
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +141,7 @@ def bench_flash[
 
     if bench:
 
-        @always_inline
+        @inline(.always)
         def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, _kernel_launch, ctx)
 
@@ -297,7 +292,7 @@ def bench_naive[
 
     if bench:
 
-        @always_inline
+        @inline(.always)
         def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, _kernel_launch, ctx)
 
@@ -390,22 +385,15 @@ def bench_manual[
     )
 
     # In-register compute lambda: multiply by scale, kernel does the store.
-    @__parameter
-    @always_inline
-    @__copy_capture(scale)
+    @inline(.always)
     def scale_compute_lambda[
         _dtype: DType,
         width: SIMDLength,
         *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
+        alignment: Int,
+    ](idx: Coord, val: SIMD[_dtype, width]) {var scale} -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         return val * scale.cast[_dtype]()
-
-    comptime scale_fn = Optional[elementwise_compute_lambda_type](
-        scale_compute_lambda
-    )
 
     def _run_manual(
         q_base: ImmPointer[Scalar[qkv_type], _],
@@ -419,22 +407,20 @@ def bench_manual[
         # epilogue so we keep TMA stores on H100).
         for h in range(total_heads):
             var q_2d = TileTensor(
-                q_base + h * seq_len * depth,
+                q_base.unsafe_offset(h * seq_len * depth),
                 row_major((seq_len, Idx[depth])),
             )
             var k_2d = TileTensor(
-                k_base + h * num_keys * depth,
+                k_base.unsafe_offset(h * num_keys * depth),
                 row_major((num_keys, Idx[depth])),
             )
             var s_2d = TileTensor(
-                s_base + h * seq_len * num_keys,
+                s_base.unsafe_offset(h * seq_len * num_keys),
                 row_major((seq_len, num_keys)),
             )
-            matmul[
-                transpose_b=True,
-                elementwise_compute_lambda_fn=scale_fn,
-                target="gpu",
-            ](s_2d, q_2d, k_2d, ctx)
+            matmul[transpose_b=True, target="gpu"](
+                s_2d, q_2d, k_2d, scale_compute_lambda, ctx
+            )
 
         # Step 2: softmax over the last axis (num_keys).
         var score_3d = TileTensor(
@@ -442,14 +428,13 @@ def bench_manual[
             row_major((total_heads, seq_len, num_keys)),
         )
 
-        @__parameter
-        @__copy_capture(score_3d)
         def input_fn[
             _simd_width: Int
-        ](coords: Coord) -> SIMD[qkv_type, _simd_width]:
+        ](coords: Coord) {var score_3d} -> SIMD[qkv_type, _simd_width]:
             return score_3d.load[width=_simd_width, alignment=1](coords)
 
-        softmax_inline[qkv_type, 1, 3, input_fn, target="gpu"](
+        softmax_inline[qkv_type, 1, 3, target="gpu"](
+            input_fn,
             Coord(total_heads, seq_len, num_keys),
             score_3d,
             2,
@@ -459,15 +444,15 @@ def bench_manual[
         # Step 3: Score @ V  (per-head 2D matmul, no epilogue).
         for h in range(total_heads):
             var s_2d = TileTensor(
-                s_base + h * seq_len * num_keys,
+                s_base.unsafe_offset(h * seq_len * num_keys),
                 row_major((seq_len, num_keys)),
             )
             var v_2d = TileTensor(
-                v_base + h * num_keys * depth,
+                v_base.unsafe_offset(h * num_keys * depth),
                 row_major((num_keys, Idx[depth])),
             )
             var o_2d = TileTensor(
-                o_base + h * seq_len * depth,
+                o_base.unsafe_offset(h * seq_len * depth),
                 row_major((seq_len, Idx[depth])),
             )
             matmul[target="gpu"](o_2d, s_2d, v_2d, ctx)
@@ -486,7 +471,7 @@ def bench_manual[
 
     if bench:
 
-        @always_inline
+        @inline(.always)
         def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, _kernel_launch, ctx)
 

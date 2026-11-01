@@ -24,17 +24,20 @@ crashed with ``TypeError: unsupported operand type(s) for %: 'NoneType' and
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache.cache_params import MHAKVCacheParams
+from max.nn.legacy.kv_cache.cache_params import MHAKVCacheParams
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
     Gemma4TextConfig,
+    _resolve_head_dims,
     _resolve_num_global_kv_heads,
 )
 from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib.pipeline_parallel import PipelineStage
 from transformers import AutoConfig, PretrainedConfig
 
 CONFIG_DIR = Path(__file__).parent / "configs" / "gemma4_e4b"
@@ -59,6 +62,7 @@ def _mock_pipeline_config() -> Mock:
     model.device_specs = [DeviceSpec.cpu()]
     model.max_length = None
     model.data_parallel_degree = 1
+    model.pipeline_stage = None
 
     pipeline_config = Mock()
     pipeline_config.model = model
@@ -80,6 +84,44 @@ def test_resolve_num_global_kv_heads() -> None:
         num_key_value_heads = 2
 
     assert _resolve_num_global_kv_heads(AbsentFieldConfig()) == 2
+
+
+def test_resolve_head_dims_reads_the_per_layer_config() -> None:
+    """A heterogeneous config carries the widths on the per-layer configs."""
+
+    class Layer:
+        def __init__(self, head_dim: int) -> None:
+            self.head_dim = head_dim
+
+    config = Mock(
+        layer_types=["sliding_attention", "full_attention"],
+        per_layer_config=[Layer(256), Layer(512)],
+    )
+    assert _resolve_head_dims(config) == (256, 512)
+
+
+def test_resolve_head_dims_falls_back_to_the_global_attributes() -> None:
+    """A homogeneous config (older transformers) exposes both widths."""
+
+    class HomogeneousConfig:
+        head_dim = 256
+        global_head_dim = 512
+
+    assert _resolve_head_dims(HomogeneousConfig()) == (256, 512)
+
+
+def test_resolve_head_dims_fails_loudly_when_a_width_is_missing() -> None:
+    """An unresolvable width is an error, not a silently wrong model."""
+
+    class LayerWithoutWidth:
+        pass
+
+    config = Mock(
+        layer_types=["full_attention"],
+        per_layer_config=[LayerWithoutWidth()],
+    )
+    with pytest.raises(ValueError, match="head width"):
+        _resolve_head_dims(config)
 
 
 def test_construct_kv_params_with_null_global_kv_heads() -> None:
@@ -137,3 +179,39 @@ def test_top_level_initialize_from_config() -> None:
     _, global_params = config.kv_params.children.values()
     assert isinstance(global_params, MHAKVCacheParams)
     assert global_params.n_kv_heads == 2
+
+
+def test_a_pipeline_stage_builds_only_its_layers() -> None:
+    """A stage's config holds its layers and their KV, and serves text."""
+    hf_config = _load_hf_config()
+    layer_types = list(hf_config.text_config.layer_types)
+    first_full = layer_types.index("full_attention")
+    pipeline_config = _mock_pipeline_config()
+    pipeline_config.model.pipeline_stage = PipelineStage(
+        1, 2, range(first_full, len(layer_types))
+    )
+
+    config = Gemma4ForConditionalGenerationConfig.initialize_from_config(
+        pipeline_config, hf_config, max_seq_len=_MAX_SEQ_LEN
+    )
+    assert config.layer_ids == range(first_full, len(layer_types))
+    assert config.vision_config is None
+    sliding_params, global_params = config.kv_params.children.values()
+    assert isinstance(sliding_params, MHAKVCacheParams)
+    assert isinstance(global_params, MHAKVCacheParams)
+    held = layer_types[first_full:]
+    assert sliding_params.num_layers == held.count("sliding_attention")
+    assert global_params.num_layers == held.count("full_attention")
+
+    # The layers before the first full attention layer have no full cache.
+    pipeline_config.model.pipeline_stage = PipelineStage(
+        0, 2, range(first_full)
+    )
+    with pytest.raises(ValueError, match="both sliding and full"):
+        Gemma4ForConditionalGenerationConfig.construct_kv_params(
+            hf_config,
+            pipeline_config,
+            [DeviceRef.CPU()],
+            KVCacheConfig(),
+            DType.bfloat16,
+        )

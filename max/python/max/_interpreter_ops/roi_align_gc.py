@@ -16,10 +16,11 @@
 Two compile modes, selected by ``MAX_EAGER_OP_PRECOMPILE`` (see
 :func:`gc_compile.should_precompile`). Must not import from ``handlers.py``.
 
-CPU only: ``mo.roi_align`` carries the ``MO_HostOnly`` trait, so the handler
-never receives a device buffer. (The deleted ``roi_align_ops.mojo`` binding had
-a GPU branch, but ``MO_HostOnly`` meant the interpreter could never reach it --
-migrating CPU-only loses no reachable path.)
+The op carries ``MO_SingleDeviceWithHostOperands``: ``input``/``rois`` and the
+result live on the device inferred from the first device operand, while the
+four numeric scalars stay host-side. The warm sweeps only CPU variants;
+accelerator variants compile and cache on their first dispatch. ROI Align's
+attribute matrix would otherwise make every accelerator warm expensive.
 
 Unlike every other family in this package, ``aligned`` and ``mode`` are genuine
 MLIR attributes and the GC kernel takes them as comptime parameters
@@ -79,24 +80,27 @@ _COMPILATION_TARGETS = [
 
 def _roi_align_graph(module: Module, target: CompilationTarget) -> None:
     """Adds one symbolic roi_align graph into *module* in-place."""
-    cpu = DeviceRef.CPU()
+    device = DeviceRef.from_device(target.device)
+    host = DeviceRef.CPU()
     graph = Graph(
         target.graph_name,
         input_types=[
-            TensorType(target.dtype, ["n", "h", "w", "c"], device=cpu),
-            TensorType(target.dtype, ["m", 5], device=cpu),
+            TensorType(target.dtype, ["n", "h", "w", "c"], device=device),
+            TensorType(target.dtype, ["m", 5], device=device),
             # Rank 0 matches MO_RankedScalarIndexTensor /
-            # MO_RankedScalarFloatTensor; MO_HostOnly puts all four on host.
-            TensorType(DType.int64, [], device=cpu),
-            TensorType(DType.int64, [], device=cpu),
-            TensorType(DType.float32, [], device=cpu),
-            TensorType(DType.float32, [], device=cpu),
+            # MO_RankedScalarFloatTensor; the four scalars stay host-side.
+            TensorType(DType.int64, [], device=host),
+            TensorType(DType.int64, [], device=host),
+            TensorType(DType.float32, [], device=host),
+            TensorType(DType.float32, [], device=host),
         ],
         module=module,
     )
     with graph:
         x, rois, oh, ow, scale, ratio = (v.tensor for v in graph.inputs)
-        out_type = TensorType(target.dtype, ["m", "oh", "ow", "c"], device=cpu)
+        out_type = TensorType(
+            target.dtype, ["m", "oh", "ow", "c"], device=device
+        )
         graph.output(
             Graph.current._add_op_generated(
                 rmo.MoRoiAlignOp,
@@ -118,8 +122,6 @@ class _RoiAlignFamily(gc_compile.GCFamilySpec):
     name = "roi_align"
 
     def sweep_devices(self) -> list[Device]:
-        # MO_HostOnly: never sweep accelerators, or the warm producer compiles
-        # an empty module per GPU lane (see resize_gc's CPU-only family).
         return list(_CPU_DEVICES)
 
     def build_module(self) -> Module:
@@ -146,13 +148,16 @@ _FAMILY = gc_compile.GCOpFamily(_RoiAlignFamily())
 gc_compile.register_family(_FAMILY)
 
 
-def roi_align_model(dtype: DType, aligned: bool, mode: str) -> engine.Model:
+def roi_align_model(
+    device: Device, dtype: DType, aligned: bool, mode: str
+) -> engine.Model:
     """Returns the roi_align :class:`~max.engine.Model` for the given key.
 
-    Lazy by default (compiled and cached on first use); the first miss adopts a
-    whole warm cache. ``MAX_EAGER_OP_PRECOMPILE=1`` makes this a pure lookup.
+    CPU variants adopt the whole warm cache. Accelerator variants compile and
+    cache on first use because they are intentionally excluded from the warm.
 
     Args:
+        device: The device the ``input``/``rois``/output live on.
         dtype: The shared ``input``/``rois``/output float dtype.
         aligned: Whether to apply the half-pixel coordinate offset.
         mode: The pooling mode, ``"AVG"`` or ``"MAX"``.
@@ -161,10 +166,9 @@ def roi_align_model(dtype: DType, aligned: bool, mode: str) -> engine.Model:
         The compiled :class:`~max.engine.Model`.
 
     Raises:
-        KeyError: If *dtype* is not a supported CPU float, or, with
+        KeyError: If *dtype* is not a supported float for *device*, or, with
             ``MAX_EAGER_OP_PRECOMPILE=1``, if the target was not precompiled.
     """
-    device = _CPU_DEVICES[0]
     target = CompilationTarget(device, dtype, aligned, mode)
     key = target.graph_name
     model = _FAMILY.cache.get(key)
@@ -172,7 +176,7 @@ def roi_align_model(dtype: DType, aligned: bool, mode: str) -> engine.Model:
         return model
 
     def check_supported() -> str | None:
-        if dtype not in gc_compile.CPU_FLOAT_DTYPES:
+        if dtype not in gc_compile.float_dtypes(device):
             return f"Unsupported roi_align dtype {dtype}; key {key!r}."
         return None
 

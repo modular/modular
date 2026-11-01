@@ -56,7 +56,9 @@ logger = logging.getLogger(__name__)
     "--devices", required=True, help="Devices string (e.g. gpu, gpu:0,1)"
 )
 @click.option(
-    "--target", required=True, help="Target API and arch (e.g. cuda:sm_90a)"
+    "--target",
+    required=True,
+    help="Target API and arch (e.g. nvidia:sm_90a or cuda:sm_90a)",
 )
 def main(pipeline: str, encoding: str, devices: str, target: str) -> None:
     """Pre-compile a model, matching the verify_pipelines code path."""

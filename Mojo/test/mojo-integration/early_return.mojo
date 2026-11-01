@@ -16,8 +16,7 @@
 
 def print_or(value: Int, condition: Bool):
     @always_inline
-    @__parameter
-    def do_print(value: Int):
+    def do_print(value: Int) {imm}:
         if condition:
             print(value)
             return

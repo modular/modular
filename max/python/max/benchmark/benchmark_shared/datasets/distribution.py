@@ -18,14 +18,19 @@ for normal distributions, "U(lower, upper)" for continuous uniform distributions
 "DU(lower, upper)" for discrete uniform distributions, "NB(n, p)" for
 negative binomial distributions, "G(shape, scale)" for gamma distributions,
 "LN(mean, std)" for log-normal distributions, "Burr12(c, d, scale)" for
-Burr Type XII distributions, as well as plain float values for constant
-returns.
+Burr Type XII distributions, "Cat(v1:w1, v2:w2, ...)" for an explicit weighted
+set of values, as well as plain float values for constant returns.
 
 The class hierarchy separates continuous (float-valued) and discrete
-(int-valued) distributions:
+(int-valued) distributions. `CategoricalDistribution` sits alongside
+`ConstantDistribution` outside that split (like `ConstantDistribution`, its
+values are whatever the caller supplied; callers needing an int round the
+sampled value themselves, the same way they already do for
+`ConstantDistribution`):
 
     BaseDistribution
     ├── ConstantDistribution
+    ├── CategoricalDistribution        Cat(v1:w1, v2:w2, ...)
     ├── ContinuousDistribution
     │   ├── NormalDistribution        N(mean, std)
     │   ├── UniformDistribution       U(lower, upper)
@@ -35,10 +40,16 @@ The class hierarchy separates continuous (float-valued) and discrete
     └── DiscreteDistribution
         ├── DiscreteUniformDistribution   DU(lower, upper)
         └── NegativeBinomialDistribution  NB(n, p)
+
+`CategoricalDistribution` is the general-purpose escape hatch for empirical
+distributions that don't fit a standard parametric shape (for example, a
+handful of image dimensions measured from real production traffic). It works
+with any `DistributionParameter` field in this package, not just images.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -47,6 +58,32 @@ import numpy as np
 
 DistributionParameter = int | float | str
 """Type alias for parameters that accept a float, an int, or a distribution string."""
+
+
+def _match_distribution_args(
+    schema: str, prefix_pattern: str, num_args: int
+) -> list[str] | None:
+    """Match a "PREFIX(a, b, ...)" distribution string.
+
+    Returns its raw, unparsed argument strings, or None if it doesn't match.
+
+    Shared by every parametric distribution's ``parse_from_str_schema``; each
+    still owns its own numeric conversion (float vs. int) and error messages.
+
+    Args:
+        schema: The full distribution string, for example, "N(100, 5)".
+        prefix_pattern: A regex matching the case-insensitive prefix before
+            the opening paren, for example, ``r"[Nn]"`` or ``r"[Ll][Nn]"``.
+        num_args: Expected number of comma-separated arguments.
+
+    Returns:
+        The ``num_args`` raw argument strings, in order, or None if
+        ``schema`` doesn't match ``prefix_pattern(...)`` with exactly that
+        many comma-separated arguments.
+    """
+    arg_pattern = r"\s*,\s*".join([r"([^,)]+)"] * num_args)
+    match = re.match(rf"{prefix_pattern}\(\s*{arg_pattern}\s*\)", schema)
+    return list(match.groups()) if match else None
 
 
 class BaseDistribution(ABC):
@@ -62,6 +99,28 @@ class BaseDistribution(ABC):
         ...
 
     @classmethod
+    def from_distribution_parameter_or_raise(
+        cls, param: DistributionParameter
+    ) -> BaseDistribution:
+        """Parse a distribution parameter that the caller must supply.
+
+        Args:
+            param: An int or float, or a distribution string.
+
+        Returns:
+            A concrete distribution.
+
+        Raises:
+            ValueError: If ``param`` does not resolve to a distribution.
+        """
+        dist = cls.from_distribution_parameter(param)
+        if dist is None:
+            raise ValueError(
+                f"a resolved distribution is required; got {param!r}."
+            )
+        return dist
+
+    @classmethod
     def from_distribution_parameter(
         cls, param: DistributionParameter | None
     ) -> BaseDistribution | None:
@@ -71,7 +130,7 @@ class BaseDistribution(ABC):
             param: An int or float, a string like "N(mean,std)",
                 "U(lower,upper)", "DU(lower,upper)", "NB(n,p)",
                 "G(shape,scale)", "LN(mean,std)", "Burr12(c,d,scale)",
-                or None.
+                "Cat(v1:w1,v2:w2,...)", or None.
 
         Returns:
             A BaseDistribution instance, or None if param is None.
@@ -97,6 +156,8 @@ class BaseDistribution(ABC):
             upper = stripped.upper()
             if upper.startswith("BURR12("):
                 return Burr12Distribution.parse_from_str_schema(stripped)
+            elif upper.startswith("CAT("):
+                return CategoricalDistribution.parse_from_str_schema(stripped)
             elif upper.startswith("LN("):
                 return LogNormalDistribution.parse_from_str_schema(stripped)
             elif upper.startswith("NB("):
@@ -119,7 +180,7 @@ class BaseDistribution(ABC):
                     "Expected a float, 'N(mean,std)', "
                     "'U(lower,upper)', 'DU(lower,upper)', 'NB(n,p)', "
                     "'G(shape,scale)', 'LN(mean,std)', "
-                    "or 'Burr12(c,d,scale)'."
+                    "'Burr12(c,d,scale)', or 'Cat(v1:w1,v2:w2,...)'."
                 )
 
         else:
@@ -133,14 +194,18 @@ class ContinuousDistribution(BaseDistribution):
     """Abstract base for continuous distributions that sample float values."""
 
     @abstractmethod
-    def sample_value(self) -> float: ...
+    def sample_value(self) -> float:
+        """Draws one sample from the continuous distribution."""
+        ...
 
 
 class DiscreteDistribution(BaseDistribution):
     """Abstract base for discrete distributions that sample integer values."""
 
     @abstractmethod
-    def sample_value(self) -> int: ...
+    def sample_value(self) -> int:
+        """Draws one sample from the discrete distribution."""
+        ...
 
 
 @dataclass
@@ -150,7 +215,103 @@ class ConstantDistribution(BaseDistribution):
     value: float
 
     def sample_value(self) -> float:
+        """Returns the configured constant."""
         return self.value
+
+
+@dataclass
+class CategoricalDistribution(BaseDistribution):
+    """A distribution over an explicit, weighted set of values.
+
+    The general-purpose escape hatch for empirical distributions that don't
+    fit one of the standard parametric shapes above — for example, a
+    handful of image dimensions measured from real production traffic.
+    Works with any `DistributionParameter` field, not just images.
+
+    String schema: ``Cat(v1:w1, v2:w2, ...)``. The ``:weight`` suffix is
+    optional per entry and defaults to ``1.0``, so ``Cat(v1, v2, v3)``
+    samples uniformly among the three values. Weights need not sum to 1;
+    they're normalized internally.
+    """
+
+    values: list[float]
+    weights: list[float]
+
+    def __post_init__(self) -> None:
+        if not self.values:
+            raise ValueError(
+                "Categorical distribution requires at least one value"
+            )
+        if len(self.values) != len(self.weights):
+            raise ValueError(
+                f"values ({len(self.values)} entries) and weights"
+                f" ({len(self.weights)} entries) must have the same length"
+            )
+        # nan slips past every comparison below (nan < 0 and nan <= 0 are both
+        # False), so it would reach np.random.choice and fail there instead of
+        # at the typo that produced it.
+        if any(not math.isfinite(v) for v in self.values):
+            raise ValueError("Values must be finite")
+        if any(not math.isfinite(w) for w in self.weights):
+            raise ValueError("Weights must be finite")
+        if any(w < 0 for w in self.weights):
+            raise ValueError("Weights must be non-negative")
+        if sum(self.weights) <= 0:
+            raise ValueError("Weights must sum to a positive value")
+
+    def sample_value(self) -> float:
+        """Draws a category from the configured weights."""
+        # Individually finite weights can still sum to inf, which would send
+        # every probability to 0. Scaling by the max preserves the ratios and
+        # bounds the sum by len(weights).
+        scale = max(self.weights)
+        normalized = [w / scale for w in self.weights]
+        total = sum(normalized)
+        probabilities = [w / total for w in normalized]
+        return float(np.random.choice(self.values, p=probabilities))
+
+    @classmethod
+    def parse_from_str_schema(cls, schema: str) -> CategoricalDistribution:
+        """Parse a string like "Cat(v1:w1, v2:w2, ...)" into a CategoricalDistribution.
+
+        Args:
+            schema: A string in the format "Cat(v1:w1, v2:w2, ...)"
+                (case-insensitive prefix). The ":weight" suffix is optional
+                per entry and defaults to 1.0 (uniform) when omitted.
+
+        Returns:
+            A CategoricalDistribution instance.
+
+        Raises:
+            ValueError: If the string cannot be parsed.
+        """
+        match = re.match(r"(?i)cat\((.*)\)\s*$", schema)
+        if not match:
+            raise ValueError(
+                f"Cannot parse categorical distribution from '{schema}'. "
+                "Expected format: 'Cat(v1:w1, v2:w2, ...)'."
+            )
+        entries = [entry.strip() for entry in match.group(1).split(",")]
+        values: list[float] = []
+        weights: list[float] = []
+        for entry in entries:
+            parts = entry.split(":")
+            if not entry or len(parts) not in (1, 2):
+                raise ValueError(
+                    f"Cannot parse categorical entry '{entry}' in '{schema}'."
+                    " Expected 'value' or 'value:weight'."
+                )
+            try:
+                value = float(parts[0])
+                weight = float(parts[1]) if len(parts) == 2 else 1.0
+            except ValueError as e:
+                raise ValueError(
+                    f"Cannot parse numeric values from '{entry}' in"
+                    f" '{schema}': {e}"
+                ) from e
+            values.append(value)
+            weights.append(weight)
+        return cls(values=values, weights=weights)
 
 
 @dataclass
@@ -167,6 +328,7 @@ class NormalDistribution(ContinuousDistribution):
             )
 
     def sample_value(self) -> float:
+        """Draws one sample from the normal distribution."""
         return float(np.random.normal(loc=self.mean, scale=self.std))
 
     @classmethod
@@ -182,15 +344,15 @@ class NormalDistribution(ContinuousDistribution):
         Raises:
             ValueError: If the string cannot be parsed.
         """
-        match = re.match(r"[Nn]\(\s*([^,]+)\s*,\s*([^)]+)\s*\)", schema)
-        if not match:
+        args = _match_distribution_args(schema, r"[Nn]", 2)
+        if args is None:
             raise ValueError(
                 f"Cannot parse normal distribution from '{schema}'. "
                 "Expected format: 'N(mean, std)'."
             )
         try:
-            mean = float(match.group(1))
-            std = float(match.group(2))
+            mean = float(args[0])
+            std = float(args[1])
         except ValueError as e:
             raise ValueError(
                 f"Cannot parse numeric values from '{schema}': {e}"
@@ -213,6 +375,7 @@ class UniformDistribution(ContinuousDistribution):
             )
 
     def sample_value(self) -> float:
+        """Draws one sample from the uniform distribution."""
         return float(np.random.uniform(low=self.lower, high=self.upper))
 
     @classmethod
@@ -228,15 +391,15 @@ class UniformDistribution(ContinuousDistribution):
         Raises:
             ValueError: If the string cannot be parsed.
         """
-        match = re.match(r"[Uu]\(\s*([^,]+)\s*,\s*([^)]+)\s*\)", schema)
-        if not match:
+        args = _match_distribution_args(schema, r"[Uu]", 2)
+        if args is None:
             raise ValueError(
                 f"Cannot parse uniform distribution from '{schema}'. "
                 "Expected format: 'U(lower, upper)'."
             )
         try:
-            lower = float(match.group(1))
-            upper = float(match.group(2))
+            lower = float(args[0])
+            upper = float(args[1])
         except ValueError as e:
             raise ValueError(
                 f"Cannot parse numeric values from '{schema}': {e}"
@@ -258,6 +421,7 @@ class GammaDistribution(ContinuousDistribution):
             raise ValueError(f"Scale must be positive, got {self.scale}")
 
     def sample_value(self) -> float:
+        """Draws one sample from the gamma distribution."""
         return float(np.random.gamma(shape=self.shape, scale=self.scale))
 
     @classmethod
@@ -273,15 +437,15 @@ class GammaDistribution(ContinuousDistribution):
         Raises:
             ValueError: If the string cannot be parsed.
         """
-        match = re.match(r"[Gg]\(\s*([^,]+)\s*,\s*([^)]+)\s*\)", schema)
-        if not match:
+        args = _match_distribution_args(schema, r"[Gg]", 2)
+        if args is None:
             raise ValueError(
                 f"Cannot parse gamma distribution from '{schema}'. "
                 "Expected format: 'G(shape, scale)'."
             )
         try:
-            shape = float(match.group(1))
-            scale = float(match.group(2))
+            shape = float(args[0])
+            scale = float(args[1])
         except ValueError as e:
             raise ValueError(
                 f"Cannot parse numeric values from '{schema}': {e}"
@@ -291,8 +455,10 @@ class GammaDistribution(ContinuousDistribution):
 
 @dataclass
 class LogNormalDistribution(ContinuousDistribution):
-    """A log-normal distribution parameterized by the mean and std of the
-    underlying normal distribution.
+    """A log-normal distribution.
+
+    Parameterized by the mean and std of the underlying normal
+    distribution.
 
     Samples are drawn from exp(N(mean, std)), so the resulting values are
     always positive.
@@ -308,6 +474,7 @@ class LogNormalDistribution(ContinuousDistribution):
             )
 
     def sample_value(self) -> float:
+        """Draws one sample from the log-normal distribution."""
         return float(np.random.lognormal(mean=self.mean, sigma=self.std))
 
     @classmethod
@@ -323,15 +490,15 @@ class LogNormalDistribution(ContinuousDistribution):
         Raises:
             ValueError: If the string cannot be parsed.
         """
-        match = re.match(r"[Ll][Nn]\(\s*([^,]+)\s*,\s*([^)]+)\s*\)", schema)
-        if not match:
+        args = _match_distribution_args(schema, r"[Ll][Nn]", 2)
+        if args is None:
             raise ValueError(
                 f"Cannot parse log-normal distribution from '{schema}'. "
                 "Expected format: 'LN(mean, std)'."
             )
         try:
-            mean = float(match.group(1))
-            std = float(match.group(2))
+            mean = float(args[0])
+            std = float(args[1])
         except ValueError as e:
             raise ValueError(
                 f"Cannot parse numeric values from '{schema}': {e}"
@@ -341,8 +508,9 @@ class LogNormalDistribution(ContinuousDistribution):
 
 @dataclass
 class Burr12Distribution(ContinuousDistribution):
-    """A Burr Type XII distribution with shape parameters ``c``, ``d`` and
-    a ``scale`` parameter.
+    """A Burr Type XII distribution.
+
+    Shape parameters ``c`` and ``d``, plus a ``scale`` parameter.
 
     The CDF is ``F(x) = 1 - (1 + (x/scale)**c)**(-d)`` for ``x >= 0``.
     Samples are drawn via the inverse-CDF transform on a uniform draw, so
@@ -369,6 +537,7 @@ class Burr12Distribution(ContinuousDistribution):
             raise ValueError(f"scale must be positive, got {self.scale}")
 
     def sample_value(self) -> float:
+        """Draws one sample by inverse-CDF transform on a uniform draw."""
         u = np.random.uniform(low=0.0, high=1.0)
         # expm1/log1p form of (1 - u)**(-1/d) - 1; avoids cancellation when u ~ 0.
         inner = np.expm1(-np.log1p(-u) / self.d)
@@ -389,19 +558,16 @@ class Burr12Distribution(ContinuousDistribution):
         Raises:
             ValueError: If the string cannot be parsed.
         """
-        match = re.match(
-            r"[Bb][Uu][Rr][Rr]12\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)",
-            schema,
-        )
-        if not match:
+        args = _match_distribution_args(schema, r"[Bb][Uu][Rr][Rr]12", 3)
+        if args is None:
             raise ValueError(
                 f"Cannot parse Burr12 distribution from '{schema}'. "
                 "Expected format: 'Burr12(c, d, scale)'."
             )
         try:
-            c = float(match.group(1))
-            d = float(match.group(2))
-            scale = float(match.group(3))
+            c = float(args[0])
+            d = float(args[1])
+            scale = float(args[2])
         except ValueError as e:
             raise ValueError(
                 f"Cannot parse numeric values from '{schema}': {e}"
@@ -429,6 +595,7 @@ class DiscreteUniformDistribution(DiscreteDistribution):
             )
 
     def sample_value(self) -> int:
+        """Draws an integer in ``[lower, upper]``."""
         return int(np.random.randint(low=self.lower, high=self.upper + 1))
 
     @classmethod
@@ -445,15 +612,15 @@ class DiscreteUniformDistribution(DiscreteDistribution):
         Raises:
             ValueError: If the string cannot be parsed or values are not integers.
         """
-        match = re.match(r"[Dd][Uu]\(\s*([^,]+)\s*,\s*([^)]+)\s*\)", schema)
-        if not match:
+        args = _match_distribution_args(schema, r"[Dd][Uu]", 2)
+        if args is None:
             raise ValueError(
                 f"Cannot parse discrete uniform distribution from '{schema}'. "
                 "Expected format: 'DU(lower, upper)'."
             )
         try:
-            lower = int(match.group(1))
-            upper = int(match.group(2))
+            lower = int(args[0])
+            upper = int(args[1])
         except ValueError as e:
             raise ValueError(
                 f"Cannot parse integer values from '{schema}': {e}"
@@ -468,7 +635,7 @@ class NegativeBinomialDistribution(DiscreteDistribution):
     ``np.random.negative_binomial(n, p)`` counts the number of failures before
     ``n`` successes, yielding values in {0, 1, 2, ...}. This class adds 1 to
     every sample so the support becomes {1, 2, 3, ...}, which is appropriate
-    for quantities that must be at least 1 (e.g. number of turns).
+    for quantities that must be at least 1 (such as number of turns).
 
     String schema: ``NB(n, p)``
     """
@@ -487,6 +654,7 @@ class NegativeBinomialDistribution(DiscreteDistribution):
             )
 
     def sample_value(self) -> int:
+        """Draws a sample, shifted so the minimum value is 1."""
         return int(np.random.negative_binomial(n=self.n, p=self.p)) + 1
 
     @classmethod
@@ -504,15 +672,15 @@ class NegativeBinomialDistribution(DiscreteDistribution):
         Raises:
             ValueError: If the string cannot be parsed.
         """
-        match = re.match(r"[Nn][Bb]\(\s*([^,]+)\s*,\s*([^)]+)\s*\)", schema)
-        if not match:
+        args = _match_distribution_args(schema, r"[Nn][Bb]", 2)
+        if args is None:
             raise ValueError(
                 f"Cannot parse negative binomial distribution from "
                 f"'{schema}'. Expected format: 'NB(n, p)'."
             )
         try:
-            n = float(match.group(1))
-            p = float(match.group(2))
+            n = float(args[0])
+            p = float(args[1])
         except ValueError as e:
             raise ValueError(f"Cannot parse values from '{schema}': {e}") from e
         return cls(n=n, p=p)

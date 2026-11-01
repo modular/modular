@@ -1621,12 +1621,6 @@ def test_vision_encode_result_defaults() -> None:
     assert len(result.embeddings) == 1
 
 
-def _make_layer_buffer(rows: int, cols: int, base: int) -> Buffer:
-    """A [rows, cols] host Buffer whose values start at *base* (distinct layers)."""
-    arr = (base + np.arange(rows * cols, dtype=np.float32)).reshape(rows, cols)
-    return Buffer.from_numpy(arr)
-
-
 def _make_manager(
     budget_bytes_per_device: int = 1024 * 1024, n_devices: int = 1
 ) -> VisionEncoderCache[TextAndVisionContext]:
@@ -2452,6 +2446,12 @@ def test_finalize_vision_inputs_sets_real_embeddings() -> None:
     np.testing.assert_array_equal(
         inputs.vision_scatter_indices[0].to_numpy(), scatter
     )
+
+    # Real index buffers belong to their step: the count varies between
+    # batches, so buffers kept per count would never be freed.
+    first = inputs.vision_scatter_indices[0]
+    cache.finalize_vision_inputs(model, inputs, devices, (embeds, scatter))
+    assert inputs.vision_scatter_indices[0] is not first
 
 
 def test_finalize_vision_inputs_empty_scatter_uses_empties() -> None:

@@ -14,7 +14,7 @@
 # Tests that you can import modules and packages through (nested) directories
 # using the same syntax as through packages.
 
-# RUN: %parse-mojo-isolated -split-input-file -I=%S/inputs -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -split-input-file -I%S/inputs -verify-diagnostics %s
 
 import import_through_dir.module
 

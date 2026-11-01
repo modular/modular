@@ -31,7 +31,7 @@ from std.ffi import (
     external_call,
     _DLHandle,
     OwnedDLHandle,
-    CStringSlice,
+    CStringSpan,
     c_char,
     c_double,
     c_int,
@@ -87,7 +87,7 @@ comptime PyCFunctionWithKeywords = def(
 # step that `METH_VARARGS` requires. The args pointer is `PyObject *const *`
 # in CPython and is guaranteed non-null by the vectorcall protocol (PEP
 # 590); we therefore model it as a plain `Pointer` rather than an
-# `OptionalPointer`. The pointer is owned by CPython, so the origin
+# `Optional[Pointer]`. The pointer is owned by CPython, so the origin
 # is `MutUntrackedOrigin`.
 # ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunctionFast
 comptime PyCFunctionFast = def(
@@ -159,7 +159,7 @@ struct PyObjectPtr(
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _unsized_obj_ptr: OptionalPointer[PyObject, MutUntrackedOrigin]
+    var _unsized_obj_ptr: Optional[Pointer[PyObject, MutUntrackedOrigin]]
     """Raw pointer to the underlying PyObject struct instance.
 
     It is not valid to read or write a `PyObject` directly from this pointer.
@@ -178,22 +178,22 @@ struct PyObjectPtr(
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Initialize a null PyObjectPtr."""
         self._unsized_obj_ptr = {}
 
-    @always_inline
+    @inline(.always)
     def __init__[
         T: AnyType, //
-    ](out self, *, upcast_from: OptionalPointer[T, MutUntrackedOrigin]):
+    ](out self, *, upcast_from: Optional[Pointer[T, MutUntrackedOrigin]]):
         self._unsized_obj_ptr = unsafe_cast[Type=PyObject](upcast_from)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, rhs: Self) -> Bool:
         """Compare two PyObjectPtr for equality.
 
@@ -209,14 +209,14 @@ struct PyObjectPtr(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __bool__(self) -> Bool:
         return Bool(self._unsized_obj_ptr)
 
-    @always_inline
+    @inline(.always)
     def __int__(self) -> Int:
-        if self._unsized_obj_ptr:
-            return Int(self._unsized_obj_ptr.unsafe_value())
+        if case .Some(unsized_obj_ptr) = self._unsized_obj_ptr:
+            return Int(unsized_obj_ptr)
         else:
             return 0
 
@@ -224,7 +224,7 @@ struct PyObjectPtr(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def bitcast[T: AnyType](self) -> OptionalPointer[T, MutUntrackedOrigin]:
+    def bitcast[T: AnyType](self) -> Optional[Pointer[T, MutUntrackedOrigin]]:
         """Bitcasts the `PyObjectPtr` to a pointer of type `T`.
 
         Parameters:
@@ -243,7 +243,7 @@ struct PyObjectPtr(
         """
         writer.write(self._unsized_obj_ptr)
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this `PyObjectPtr` to a writer.
 
@@ -296,10 +296,10 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
 
 def _py_get_version(lib: _DLHandle) -> StaticString:
     return StaticString(
-        unsafe_from_utf8=CStringSlice(
+        unsafe_from_utf8=CStringSpan(
             unsafe_from_ptr=lib.call[
                 "Py_GetVersion",
-                OptionalPointer[c_char, ImmStaticOrigin],
+                Optional[Pointer[c_char, ImmStaticOrigin]],
             ]().value()
         )
     )
@@ -320,14 +320,14 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var method_name: Optional[CStringSlice[ImmStaticOrigin]]
+    var method_name: Optional[CStringSpan[ImmStaticOrigin]]
     """A pointer to the name of the method as a C string.
 
     Notes:
         called `ml_name` in CPython.
     """
 
-    var method_impl: OptionalPointer[NoneType, MutUntrackedOrigin]
+    var method_impl: Optional[Pointer[NoneType, MutUntrackedOrigin]]
     """A function pointer to the implementation of the method."""
 
     var method_flags: c_int
@@ -336,7 +336,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
     References:
     - https://docs.python.org/3/c-api/structures.html#c.PyMethodDef"""
 
-    var method_docstring: Optional[CStringSlice[ImmStaticOrigin]]
+    var method_docstring: Optional[CStringSpan[ImmStaticOrigin]]
     """The docstring for the method."""
 
     # ===-------------------------------------------------------------------===#
@@ -387,10 +387,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             | (METH_KEYWORDS if with_kwargs else 0)
         )
         return PyMethodDef(
-            func_name.as_c_string_slice(),
+            func_name.as_c_string_span(),
             func_ptr,
             flags,
-            docstring.as_c_string_slice(),
+            docstring.as_c_string_span(),
         )
 
     @staticmethod
@@ -415,10 +415,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         """
         var flags = c_int(METH_FASTCALL | (METH_STATIC if static_method else 0))
         return PyMethodDef(
-            func_name.as_c_string_slice(),
+            func_name.as_c_string_span(),
             _fn_ptr_as_opaque(func),
             flags,
-            docstring.as_c_string_slice(),
+            docstring.as_c_string_span(),
         )
 
 
@@ -439,7 +439,7 @@ def _fn_ptr_as_opaque[
     }
 
 
-comptime PyTypeObjectPtr = OptionalPointer[PyTypeObject, MutUntrackedOrigin]
+comptime PyTypeObjectPtr = Optional[Pointer[PyTypeObject, MutUntrackedOrigin]]
 
 
 struct PyTypeObject:
@@ -456,18 +456,23 @@ struct PyTypeObject:
 
 
 @fieldwise_init
-struct PyType_Spec(ImplicitlyCopyable, RegisterPassable):
+struct PyType_Spec[slots_origin: MutOrigin](
+    ImplicitlyCopyable, RegisterPassable
+):
     """Structure defining a type's behavior.
+
+    Parameters:
+        slots_origin: The origin of the `slots` array.
 
     References:
     - https://docs.python.org/3/c-api/type.html#c.PyType_Spec
     """
 
-    var name: Optional[CStringSlice[ImmStaticOrigin]]
+    var name: Optional[CStringSpan[ImmStaticOrigin]]
     var basicsize: c_int
     var itemsize: c_int
     var flags: c_uint
-    var slots: OptionalPointer[PyType_Slot, MutUntrackedOrigin]
+    var slots: Optional[Pointer[PyType_Slot, Self.slots_origin]]
 
 
 # https://github.com/python/cpython/blob/main/Include/typeslots.h
@@ -508,7 +513,7 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
     """
 
     var slot: c_int
-    var pfunc: OptionalPointer[NoneType, MutUntrackedOrigin]
+    var pfunc: Optional[Pointer[NoneType, MutUntrackedOrigin]]
 
     @staticmethod
     def tp_dealloc(func: destructor) -> Self:
@@ -523,7 +528,7 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def tp_methods(
-        methods: OptionalPointer[PyMethodDef, MutUntrackedOrigin]
+        methods: Optional[Pointer[PyMethodDef, MutUntrackedOrigin]]
     ) -> Self:
         return PyType_Slot(
             Py_tp_methods,
@@ -583,7 +588,7 @@ struct PyObject(
         writer.write("object_type=", self.object_type)
         writer.write(")")
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this `PyObject` to a writer.
 
@@ -651,7 +656,7 @@ struct PyModuleDef_Base(Defaultable, Movable, Writable):
         writer.write("dict_copy=", self.dict_copy)
         writer.write(")")
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this `PyModuleDef_Base` to a writer.
 
@@ -687,20 +692,20 @@ struct PyModuleDef(Movable, Writable):
 
     var base: PyModuleDef_Base
 
-    var name: Optional[CStringSlice[ImmStaticOrigin]]
+    var name: Optional[CStringSpan[ImmStaticOrigin]]
     """Name for the new module."""
 
-    var docstring: Optional[CStringSlice[ImmStaticOrigin]]
+    var docstring: Optional[CStringSpan[ImmStaticOrigin]]
     """Points to the contents of the docstring for the module."""
 
     var size: Py_ssize_t
     """Size of per-module data."""
 
-    var methods: OptionalPointer[PyMethodDef, MutUntrackedOrigin]
+    var methods: Optional[Pointer[PyMethodDef, MutUntrackedOrigin]]
     """A pointer to a table of module-level functions. Can be null if there
     are no functions present."""
 
-    var slots: OptionalPointer[PyModuleDef_Slot, MutUntrackedOrigin]
+    var slots: Optional[Pointer[PyModuleDef_Slot, MutUntrackedOrigin]]
     """An array of slot definitions for multi-phase initialization, terminated
     by a `{0, NULL}` entry."""
 
@@ -728,7 +733,7 @@ struct PyModuleDef(Movable, Writable):
 
     def __init__(out self, name: StaticString):
         self.base = {}
-        self.name = name.as_c_string_slice()
+        self.name = name.as_c_string_span()
         self.docstring = {}
         # setting `size` to -1 means that the module does not support sub-interpreters
         self.size = -1
@@ -765,7 +770,7 @@ struct PyModuleDef(Movable, Writable):
         writer.write("free_fn=<unprintable>")
         writer.write(")")
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this `PyModuleDef` to a writer.
 
@@ -790,7 +795,7 @@ struct ExternalFunction[
     type: TrivialRegisterPassable,
 ]:
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load(lib: _DLHandle) -> Self.type:
         """Loads this external function from an opened dynamic library."""
         return lib._get_function[Self.name, Self.type]()
@@ -803,13 +808,13 @@ struct ExternalFunction[
 comptime PyRun_SimpleString = ExternalFunction[
     "PyRun_SimpleString",
     # int PyRun_SimpleString(const char *command)
-    def(OptionalPointer[c_char, ImmutAnyOrigin]) thin abi("C") -> c_int,
+    def(Optional[Pointer[c_char, ImmutAnyOrigin]]) thin abi("C") -> c_int,
 ]
 comptime PyRun_String = ExternalFunction[
     "PyRun_String",
     # PyObject *PyRun_String(const char *str, int start, PyObject *globals, PyObject *locals)
     def(
-        OptionalPointer[c_char, ImmutAnyOrigin],
+        Optional[Pointer[c_char, ImmutAnyOrigin]],
         c_int,
         PyObjectPtr,
         PyObjectPtr,
@@ -819,8 +824,8 @@ comptime Py_CompileString = ExternalFunction[
     "Py_CompileString",
     # PyObject *Py_CompileString(const char *str, const char *filename, int start)
     def(
-        OptionalPointer[c_char, ImmutAnyOrigin],
-        OptionalPointer[c_char, ImmutAnyOrigin],
+        Optional[Pointer[c_char, ImmutAnyOrigin]],
+        Optional[Pointer[c_char, ImmutAnyOrigin]],
         c_int,
     ) thin abi("C") -> PyObjectPtr,
 ]
@@ -859,7 +864,7 @@ comptime PyErr_SetString = ExternalFunction[
     "PyErr_SetString",
     # void PyErr_SetString(PyObject *type, const char *message)
     def(
-        PyObjectPtr, OptionalPointer[c_char, ImmutAnyOrigin]
+        PyObjectPtr, Optional[Pointer[c_char, ImmutAnyOrigin]]
     ) thin abi("C") -> None,
 ]
 comptime PyErr_SetNone = ExternalFunction[
@@ -882,9 +887,9 @@ comptime PyErr_Fetch = ExternalFunction[
     "PyErr_Fetch",
     # void PyErr_Fetch(PyObject **ptype, PyObject **pvalue, PyObject **ptraceback)
     def(
-        OptionalPointer[PyObjectPtr, MutUntrackedOrigin],
-        OptionalPointer[PyObjectPtr, MutUntrackedOrigin],
-        OptionalPointer[PyObjectPtr, MutUntrackedOrigin],
+        Optional[Pointer[PyObjectPtr, MutUntrackedOrigin]],
+        Optional[Pointer[PyObjectPtr, MutUntrackedOrigin]],
+        Optional[Pointer[PyObjectPtr, MutUntrackedOrigin]],
     ) thin abi("C") -> None,
 ]
 comptime PyErr_Restore = ExternalFunction[
@@ -897,13 +902,13 @@ comptime PyErr_Restore = ExternalFunction[
 comptime PyEval_SaveThread = ExternalFunction[
     "PyEval_SaveThread",
     # PyThreadState *PyEval_SaveThread()
-    def() thin abi("C") -> OptionalPointer[PyThreadState, MutUntrackedOrigin],
+    def() thin abi("C") -> Optional[Pointer[PyThreadState, MutUntrackedOrigin]],
 ]
 comptime PyEval_RestoreThread = ExternalFunction[
     "PyEval_RestoreThread",
     # void PyEval_RestoreThread(PyThreadState *tstate)
     def(
-        OptionalPointer[PyThreadState, MutUntrackedOrigin]
+        Optional[Pointer[PyThreadState, MutUntrackedOrigin]]
     ) thin abi("C") -> None,
 ]
 comptime PyGILState_Ensure = ExternalFunction[
@@ -926,12 +931,12 @@ comptime PyGILState_Check = ExternalFunction[
 comptime PyImport_ImportModule = ExternalFunction[
     "PyImport_ImportModule",
     # PyObject *PyImport_ImportModule(const char *name)
-    def(OptionalPointer[c_char, ImmutAnyOrigin]) thin abi("C") -> PyObjectPtr,
+    def(Optional[Pointer[c_char, ImmutAnyOrigin]]) thin abi("C") -> PyObjectPtr,
 ]
 comptime PyImport_AddModule = ExternalFunction[
     "PyImport_AddModule",
     # PyObject *PyImport_AddModule(const char *name)
-    def(OptionalPointer[c_char, ImmutAnyOrigin]) thin abi("C") -> PyObjectPtr,
+    def(Optional[Pointer[c_char, ImmutAnyOrigin]]) thin abi("C") -> PyObjectPtr,
 ]
 
 # Abstract Objects Layer
@@ -940,14 +945,14 @@ comptime PyObject_HasAttrString = ExternalFunction[
     "PyObject_HasAttrString",
     # int PyObject_HasAttrString(PyObject *o, const char *attr_name)
     def(
-        PyObjectPtr, OptionalPointer[c_char, ImmutAnyOrigin]
+        PyObjectPtr, Optional[Pointer[c_char, ImmutAnyOrigin]]
     ) thin abi("C") -> c_int,
 ]
 comptime PyObject_GetAttrString = ExternalFunction[
     "PyObject_GetAttrString",
     # PyObject *PyObject_GetAttrString(PyObject *o, const char *attr_name)
     def(
-        PyObjectPtr, OptionalPointer[c_char, ImmutAnyOrigin]
+        PyObjectPtr, Optional[Pointer[c_char, ImmutAnyOrigin]]
     ) thin abi("C") -> PyObjectPtr,
 ]
 comptime PyObject_SetAttrString = ExternalFunction[
@@ -955,7 +960,7 @@ comptime PyObject_SetAttrString = ExternalFunction[
     # int PyObject_SetAttrString(PyObject *o, const char *attr_name, PyObject *v)
     def(
         PyObjectPtr,
-        OptionalPointer[c_char, ImmutAnyOrigin],
+        Optional[Pointer[c_char, ImmutAnyOrigin]],
         PyObjectPtr,
     ) thin abi("C") -> c_int,
 ]
@@ -1186,7 +1191,7 @@ comptime PyType_FromSpec = ExternalFunction[
     "PyType_FromSpec",
     # PyObject *PyType_FromSpec(PyType_Spec *spec)
     def(
-        OptionalPointer[PyType_Spec, MutAnyOrigin]
+        Optional[Pointer[PyType_Spec[MutAnyOrigin], MutAnyOrigin]]
     ) thin abi("C") -> PyObjectPtr,
 ]
 comptime PyType_GetFlags = ExternalFunction[
@@ -1246,9 +1251,9 @@ comptime PyUnicode_DecodeUTF8 = ExternalFunction[
     "PyUnicode_DecodeUTF8",
     # PyObject *PyUnicode_DecodeUTF8(const char *str, Py_ssize_t size, const char *errors)
     def(
-        OptionalPointer[c_char, ImmutAnyOrigin],
+        Optional[Pointer[c_char, ImmutAnyOrigin]],
         Py_ssize_t,
-        OptionalPointer[c_char, ImmutAnyOrigin],
+        Optional[Pointer[c_char, ImmutAnyOrigin]],
     ) thin abi("C") -> PyObjectPtr,
 ]
 comptime PyUnicode_AsUTF8AndSize = ExternalFunction[
@@ -1256,8 +1261,8 @@ comptime PyUnicode_AsUTF8AndSize = ExternalFunction[
     # const char *PyUnicode_AsUTF8AndSize(PyObject *unicode, Py_ssize_t *size)
     def(
         PyObjectPtr,
-        OptionalPointer[Py_ssize_t, MutUntrackedOrigin],
-    ) thin abi("C") -> OptionalPointer[c_char, ImmutAnyOrigin],
+        Optional[Pointer[Py_ssize_t, MutUntrackedOrigin]],
+    ) thin abi("C") -> Optional[Pointer[c_char, ImmutAnyOrigin]],
 ]
 
 # Tuple Objects
@@ -1315,9 +1320,9 @@ comptime PyDict_Next = ExternalFunction[
     # int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
     def(
         PyObjectPtr,
-        OptionalPointer[Py_ssize_t, MutAnyOrigin],
-        OptionalPointer[PyObjectPtr, MutAnyOrigin],
-        OptionalPointer[PyObjectPtr, MutAnyOrigin],
+        Optional[Pointer[Py_ssize_t, MutAnyOrigin]],
+        Optional[Pointer[PyObjectPtr, MutAnyOrigin]],
+        Optional[Pointer[PyObjectPtr, MutAnyOrigin]],
     ) thin abi("C") -> c_int,
 ]
 
@@ -1343,14 +1348,14 @@ comptime PyModule_Create2 = ExternalFunction[
     "PyModule_Create2",
     # PyObject *PyModule_Create2(PyModuleDef *def, int module_api_version)
     def(
-        OptionalPointer[PyModuleDef, MutUntrackedOrigin], c_int
+        Optional[Pointer[PyModuleDef, MutUntrackedOrigin]], c_int
     ) thin abi("C") -> PyObjectPtr,
 ]
 comptime PyModule_AddFunctions = ExternalFunction[
     "PyModule_AddFunctions",
     # int PyModule_AddFunctions(PyObject *module, PyMethodDef *functions)
     def(
-        PyObjectPtr, OptionalPointer[PyMethodDef, MutAnyOrigin]
+        PyObjectPtr, Optional[Pointer[PyMethodDef, MutAnyOrigin]]
     ) thin abi("C") -> c_int,
 ]
 comptime PyModule_AddObjectRef = ExternalFunction[
@@ -1358,7 +1363,7 @@ comptime PyModule_AddObjectRef = ExternalFunction[
     # int PyModule_AddObjectRef(PyObject *module, const char *name, PyObject *value)
     def(
         PyObjectPtr,
-        OptionalPointer[c_char, ImmutAnyOrigin],
+        Optional[Pointer[c_char, ImmutAnyOrigin]],
         PyObjectPtr,
     ) thin abi("C") -> c_int,
 ]
@@ -1380,7 +1385,7 @@ comptime PyCapsule_New = ExternalFunction[
     # PyObject *PyCapsule_New(void *pointer, const char *name, PyCapsule_Destructor destructor)
     def(
         OpaquePointer[MutUntrackedOrigin],
-        OptionalPointer[c_char, ImmutAnyOrigin],
+        Optional[Pointer[c_char, ImmutAnyOrigin]],
         PyCapsule_Destructor,
     ) thin abi("C") -> PyObjectPtr,
 ]
@@ -1388,14 +1393,14 @@ comptime PyCapsule_GetPointer = ExternalFunction[
     "PyCapsule_GetPointer",
     # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
     def(
-        PyObjectPtr, OptionalPointer[c_char, ImmutAnyOrigin]
+        PyObjectPtr, Optional[Pointer[c_char, ImmutAnyOrigin]]
     ) thin abi("C") -> OpaquePointer[MutUntrackedOrigin],
 ]
 comptime PyCapsule_IsValid = ExternalFunction[
     "PyCapsule_IsValid",
     # int PyCapsule_IsValid(PyObject *capsule, const char *name)
     def(
-        PyObjectPtr, OptionalPointer[c_char, ImmutAnyOrigin]
+        PyObjectPtr, Optional[Pointer[c_char, ImmutAnyOrigin]]
     ) thin abi("C") -> c_int,
 ]
 
@@ -1403,7 +1408,7 @@ comptime PyCapsule_IsValid = ExternalFunction[
 comptime PyObject_Free = ExternalFunction[
     "PyObject_Free",
     # void PyObject_Free(void *p)
-    def(OptionalPointer[NoneType, MutUntrackedOrigin]) thin abi("C") -> None,
+    def(Optional[Pointer[NoneType, MutUntrackedOrigin]]) thin abi("C") -> None,
 ]
 
 # Object Implementation Support
@@ -1499,7 +1504,7 @@ struct GILReleased(Movable):
 
     var python: Python
     """Reference to the CPython instance."""
-    var thread_state: OptionalPointer[PyThreadState, MutUntrackedOrigin]
+    var thread_state: Optional[Pointer[PyThreadState, MutUntrackedOrigin]]
     """The thread state returned by PyEval_SaveThread."""
 
     def __init__(out self, python: Python):
@@ -1731,7 +1736,7 @@ struct CPython(Defaultable, Movable):
         # TODO(MOCO-772) Allow raises to propagate through function pointers
         # and make this initialization a raising function.
         self.init_error = StaticString(
-            unsafe_from_utf8=CStringSlice(
+            unsafe_from_utf8=CStringSpan(
                 unsafe_from_ptr=external_call[
                     "KGEN_CompilerRT_Python_SetPythonPath",
                     Pointer[c_char, ImmStaticOrigin],
@@ -1761,8 +1766,10 @@ struct CPython(Defaultable, Movable):
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):
                 self.init_error = "compatible Python library not found"
-            self.lib.call["Py_Initialize"]()
-            self.version = PythonVersion(_py_get_version(self.lib.borrow()))
+                self.version = PythonVersion(0, 0, 0)
+            else:
+                self.lib.call["Py_Initialize"]()
+                self.version = PythonVersion(_py_get_version(self.lib.borrow()))
         else:
             self.version = PythonVersion(0, 0, 0)
 
@@ -2082,11 +2089,10 @@ struct CPython(Defaultable, Movable):
         # instance.
         var maybe_ptr = self.lib.get_symbol[PyObjectPtr](global_name)
 
-        if not maybe_ptr:
-            abort(t"error: symbol `{global_name}` not found in CPython library")
+        if case .Some(ptr) = maybe_ptr:
+            return ptr[]
         else:
-            # SAFETY: maybe_ptr is checked above
-            return maybe_ptr.unsafe_value()[]
+            abort(t"error: symbol `{global_name}` not found in CPython library")
 
     # ===-------------------------------------------------------------------===#
     # Python/C API
@@ -2106,7 +2112,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
         """
         return self._PyRun_SimpleString(
-            command.as_c_string_slice().ptr().as_unsafe_any_origin()
+            command.as_c_string_span().ptr().as_unsafe_any_origin()
         )
 
     def PyRun_String(
@@ -2125,7 +2131,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
         """
         return self._PyRun_String(
-            str.as_c_string_slice().ptr().as_unsafe_any_origin(),
+            str.as_c_string_span().ptr().as_unsafe_any_origin(),
             start,
             globals,
             locals,
@@ -2146,8 +2152,8 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
         """
         return self._Py_CompileString(
-            str.as_c_string_slice().ptr().as_unsafe_any_origin(),
-            filename.as_c_string_slice().ptr().as_unsafe_any_origin(),
+            str.as_c_string_span().ptr().as_unsafe_any_origin(),
+            filename.as_c_string_span().ptr().as_unsafe_any_origin(),
             start,
         )
 
@@ -2254,7 +2260,7 @@ struct CPython(Defaultable, Movable):
     def PyErr_SetString(
         self,
         type: PyObjectPtr,
-        message: OptionalPointer[c_char, ImmutAnyOrigin],
+        message: Optional[ImmPointer[c_char, _]],
     ):
         """This is the most common way to set the error indicator. The first
         argument specifies the exception type; it is normally one of the
@@ -2265,7 +2271,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
         """
-        self._PyErr_SetString(type, message)
+        self._PyErr_SetString(type, unsafe_cast[origin=ImmutAnyOrigin](message))
 
     def PyErr_SetNone(self, type: PyObjectPtr):
         """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
@@ -2375,7 +2381,7 @@ struct CPython(Defaultable, Movable):
 
     def PyEval_SaveThread(
         self,
-    ) -> OptionalPointer[PyThreadState, MutUntrackedOrigin]:
+    ) -> Optional[Pointer[PyThreadState, MutUntrackedOrigin]]:
         """Release the global interpreter lock (if it has been created) and
         reset the thread state to `NULL`, returning the previous thread state
         (which is not `NULL`).
@@ -2386,7 +2392,7 @@ struct CPython(Defaultable, Movable):
         return self._PyEval_SaveThread()
 
     def PyEval_RestoreThread(
-        self, state: OptionalPointer[PyThreadState, MutUntrackedOrigin]
+        self, state: Optional[Pointer[PyThreadState, MutUntrackedOrigin]]
     ):
         """Acquire the global interpreter lock (if it has been created) and
         set the thread state to tstate, which must not be `NULL`.
@@ -2440,7 +2446,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
         """
         return self._PyImport_ImportModule(
-            name.as_c_string_slice().ptr().as_unsafe_any_origin()
+            name.as_c_string_span().ptr().as_unsafe_any_origin()
         )
 
     def PyImport_AddModule(self, var name: String) -> PyObjectPtr:
@@ -2452,7 +2458,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
         """
         return self._PyImport_AddModule(
-            name.as_c_string_slice().ptr().as_unsafe_any_origin()
+            name.as_c_string_span().ptr().as_unsafe_any_origin()
         )
 
     # ===-------------------------------------------------------------------===#
@@ -2474,7 +2480,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString
         """
         return self._PyObject_HasAttrString(
-            obj, name.as_c_string_slice().ptr().as_unsafe_any_origin()
+            obj, name.as_c_string_span().ptr().as_unsafe_any_origin()
         )
 
     def PyObject_GetAttrString(
@@ -2488,7 +2494,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
         """
         return self._PyObject_GetAttrString(
-            obj, name.as_c_string_slice().ptr().as_unsafe_any_origin()
+            obj, name.as_c_string_span().ptr().as_unsafe_any_origin()
         )
 
     def PyObject_SetAttrString(
@@ -2502,7 +2508,7 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyObject_SetAttrString(
             obj,
-            name.as_c_string_slice().ptr().as_unsafe_any_origin(),
+            name.as_c_string_span().ptr().as_unsafe_any_origin(),
             value,
         )
 
@@ -3133,7 +3139,7 @@ struct CPython(Defaultable, Movable):
         return self._PyType_GenericAlloc(type, nitems)
 
     def PyType_GetName(
-        self, type: OptionalPointer[PyTypeObject, MutUntrackedOrigin]
+        self, type: Optional[Pointer[PyTypeObject, MutUntrackedOrigin]]
     ) -> PyObjectPtr:
         """Return the type's name.
 
@@ -3150,7 +3156,7 @@ struct CPython(Defaultable, Movable):
         return self._PyType_GetName(type)
 
     def PyType_FromSpec(
-        self, spec: OptionalPointer[PyType_Spec, MutAnyOrigin]
+        self, spec: Optional[MutPointer[PyType_Spec[_], _]]
     ) -> PyObjectPtr:
         """Equivalent to `PyType_FromMetaclass(NULL, NULL, spec, NULL)`.
 
@@ -3159,7 +3165,11 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/type.html#c.PyType_FromSpec
         """
-        return self._PyType_FromSpec(spec)
+        return self._PyType_FromSpec(
+            unsafe_cast[Type=PyType_Spec[MutAnyOrigin], origin=MutAnyOrigin](
+                spec
+            )
+        )
 
     # ===-------------------------------------------------------------------===#
     # The None Object
@@ -3386,7 +3396,7 @@ struct CPython(Defaultable, Movable):
             .as_imm()
             .as_unsafe_any_origin(),
             Py_ssize_t(s.byte_length()),
-            "strict".as_c_string_slice().ptr().as_unsafe_any_origin(),
+            "strict".as_c_string_span().ptr().as_unsafe_any_origin(),
         )
 
     # TODO: fix signature to take unicode and size as args
@@ -3561,16 +3571,21 @@ struct CPython(Defaultable, Movable):
     def PyDict_Next(
         self,
         dict: PyObjectPtr,
-        pos: OptionalPointer[Py_ssize_t, MutAnyOrigin],
-        key: OptionalPointer[PyObjectPtr, MutAnyOrigin],
-        value: OptionalPointer[PyObjectPtr, MutAnyOrigin],
+        pos: Optional[MutPointer[Py_ssize_t, _]],
+        key: Optional[MutPointer[PyObjectPtr, _]],
+        value: Optional[MutPointer[PyObjectPtr, _]],
     ) -> c_int:
         """Iterate over all key-value pairs in the dictionary `dict`.
 
         References:
         - https://docs.python.org/3/c-api/dict.html#c.PyDict_Next
         """
-        return self._PyDict_Next(dict, pos, key, value)
+        return self._PyDict_Next(
+            dict,
+            unsafe_cast[origin=MutAnyOrigin](pos),
+            unsafe_cast[origin=MutAnyOrigin](key),
+            unsafe_cast[origin=MutAnyOrigin](value),
+        )
 
     # ===-------------------------------------------------------------------===#
     # Set Objects
@@ -3640,7 +3655,7 @@ struct CPython(Defaultable, Movable):
     def PyModule_AddFunctions(
         self,
         module: PyObjectPtr,
-        functions: OptionalPointer[PyMethodDef, MutAnyOrigin],
+        functions: Optional[MutPointer[PyMethodDef, _]],
     ) -> c_int:
         """Add the functions from the `NULL` terminated `functions` array to
         module.
@@ -3648,12 +3663,14 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions
         """
-        return self._PyModule_AddFunctions(module, functions)
+        return self._PyModule_AddFunctions(
+            module, unsafe_cast[origin=MutAnyOrigin](functions)
+        )
 
     def PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: OptionalPointer[c_char, ImmutAnyOrigin],
+        name: Optional[ImmPointer[c_char, _]],
         value: PyObjectPtr,
     ) -> c_int:
         """Add an object to `module` as `name`.
@@ -3661,7 +3678,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
         """
-        return self._PyModule_AddObjectRef(module, name, value)
+        return self._PyModule_AddObjectRef(
+            module, unsafe_cast[origin=ImmutAnyOrigin](name), value
+        )
 
     # ===-------------------------------------------------------------------===#
     # Slice Objects
@@ -3714,7 +3733,7 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyCapsule_New(
             pointer,
-            name.as_c_string_slice().ptr().as_unsafe_any_origin(),
+            name.as_c_string_span().ptr().as_unsafe_any_origin(),
             destructor,
         )
 
@@ -3731,7 +3750,7 @@ struct CPython(Defaultable, Movable):
         """
         var r = self._PyCapsule_GetPointer(
             capsule,
-            name.as_c_string_slice().ptr().as_unsafe_any_origin(),
+            name.as_c_string_span().ptr().as_unsafe_any_origin(),
         )
         if self.PyErr_Occurred():
             raise self.get_error()
@@ -3753,7 +3772,7 @@ struct CPython(Defaultable, Movable):
         return (
             self._PyCapsule_IsValid(
                 capsule,
-                name.as_c_string_slice().ptr().as_unsafe_any_origin(),
+                name.as_c_string_span().ptr().as_unsafe_any_origin(),
             )
             != 0
         )
@@ -3763,7 +3782,9 @@ struct CPython(Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/memory.html
     # ===-------------------------------------------------------------------===#
 
-    def PyObject_Free(self, ptr: OptionalPointer[NoneType, MutUntrackedOrigin]):
+    def PyObject_Free(
+        self, ptr: Optional[Pointer[NoneType, MutUntrackedOrigin]]
+    ):
         """Frees the memory block pointed to by `ptr`, which must have been
         returned by a previous call to `PyObject_Malloc()`, `PyObject_Realloc()`
         or PyObject_Calloc()`.

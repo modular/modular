@@ -27,6 +27,7 @@
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseMap.h"
 
 #include <optional>
 #include <utility>
@@ -38,6 +39,117 @@ class SIMDType;
 
 /// This type is a bit of a mouthful, add a useful alias for it.
 using ExportMap = llvm::MapVector<StringAttr, ExportKind>;
+
+/// Dedup state for printing parameter expressions so that a repeated
+/// subexpression is printed in full once and referred to by a label afterwards.
+class DedupContext {
+public:
+  DedupContext() = default;
+  DedupContext(const DedupContext &) = delete;
+  DedupContext &operator=(const DedupContext &) = delete;
+  DedupContext(DedupContext &&) = default;
+  DedupContext &operator=(DedupContext &&) = default;
+  ~DedupContext() {
+    assert((ids.empty() || finalized) &&
+           "printed with a DedupContext but never called finalize()");
+  }
+
+  /// Returns the placeholder to print at this position for `key`. Sets
+  /// `isRepeat` if `key` was printed before.
+  std::string mark(const void *key, bool &isRepeat);
+
+  /// Rewrites the placeholders in `raw`, which must contain everything printed
+  /// with this context, in print order. `labelPrefix` is prepended to each
+  /// label; it must not appear in the printed text.
+  std::string finalize(StringRef raw, char labelPrefix = '`');
+
+private:
+  DenseMap<const void *, unsigned> ids;
+  SmallVector<bool> referenced;
+  bool finalized = false;
+};
+
+/// Printer for KGEN parameter expressions and types.
+class KGENParamPrinter {
+public:
+  KGENParamPrinter(const KGENParamPrinter &) = delete;
+  KGENParamPrinter &operator=(const KGENParamPrinter &) = delete;
+  KGENParamPrinter(KGENParamPrinter &&) = default;
+  KGENParamPrinter &operator=(KGENParamPrinter &&) = default;
+
+  /// Prints every subexpression in full. Use for round trip printing and
+  /// diagnostics.
+  static KGENParamPrinter createDiagnosticPrinter() {
+    return KGENParamPrinter();
+  }
+
+  /// Prints for a string that is never parsed back and is size sensitive:
+  /// dedups repeated subexpressions and hashes `MemRefAttr` instead of inlining
+  /// them.
+  static KGENParamPrinter createManglePrinter() {
+    KGENParamPrinter printer;
+    printer.dedup.emplace();
+    printer.hashMemRefs = true;
+    return printer;
+  }
+
+  /// Rewrites the dedup placeholders into `raw`.
+  std::string finalize(StringRef raw, char labelPrefix = '`') {
+    return dedup ? dedup->finalize(raw, labelPrefix) : std::string(raw);
+  }
+
+  // Print a complete type or attribute, including mnemonic/prefix.
+  void printKGENType(AsmPrinter &p, Type type);
+  void printParamType(AsmPrinter &p, Type type);
+  void printParamTypes(AsmPrinter &p, ArrayRef<Type> types);
+  void printTypeParamValue(AsmPrinter &p, TypedAttr value);
+  void printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
+  void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
+  void printColonTypeParamValue(AsmPrinter &p, TypedAttr value);
+  void printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType);
+  void printColonTypeOrIndex(AsmPrinter &p, Type type);
+  void printGenerator(AsmPrinter &p, GeneratorType generator);
+  void printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
+  void printBindParams(AsmPrinter &p, TypedAttr generator,
+                       ArrayRef<TypedAttr> paramValues,
+                       DenseBoolArrayAttr discharged = {});
+
+  /// Print the body after a composite type's mnemonic.
+  void printStructInstanceBody(AsmPrinter &p, StructInstanceType type);
+  void printStructBody(AsmPrinter &p, StructType type);
+  void printPointerBody(AsmPrinter &p, PointerType type);
+  void printParamListBody(AsmPrinter &p, ParamListType type);
+  void printTypeValueBody(AsmPrinter &p, TypeValueType type);
+  void printVariantBody(AsmPrinter &p, VariantType type);
+  void printSIMDBody(AsmPrinter &p, SIMDType type);
+  void printFuncLiteralBody(AsmPrinter &p, FuncLiteralType type);
+
+  void printPointerOptionals(AsmPrinter &p, TypedAttr addressSpace,
+                             bool isNonNull);
+  void printVariantTypes(AsmPrinter &p, TypedAttr variadic);
+  void printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly);
+  void printStructDefField(AsmPrinter &p, StringAttr name, TypedAttr typeValue,
+                           ArrayAttr annotations);
+  void printStructDefFields(AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields);
+
+private:
+  KGENParamPrinter() = default;
+
+  void printColonTypeOrIndexPrefix(AsmPrinter &p, Type type);
+  void printOperatorOperands(AsmPrinter &p, POC opcode,
+                             ArrayRef<TypedAttr> operands);
+  void printParamValueImpl(AsmPrinter &p, TypedAttr value, Type type);
+
+  std::string memRefDigest(Attribute model);
+
+  std::optional<DedupContext> dedup;
+  bool hashMemRefs = false;
+  DenseMap<const void *, std::string> memRefDigests;
+};
+
+/// Returns true if `value` is a compound parameter expression eligible for a
+/// dedup label; see `KGENDialect::registerNonTrivialParamAttrs`.
+bool isNonTrivialParamAttr(Attribute value);
 
 /// Given a module operation, return its exported symbols and aliases.
 ExportMap getExportedSymbols(ModuleOp module);
@@ -101,10 +213,25 @@ bool isTypeExprType(Type type);
 /// Returns whether the given attribute is a KGEN type expression.
 bool isTypeExpr(TypedAttr attr);
 
-/// If `prop` asserts that its two operands denote the same value -- so that a
-/// consumer may substitute either one for the other -- return the pair.
+/// If `prop` is an `identical` of any arity, return its operands.
+/// Unlike `getIdentityProposition`, this includes classes wider than two.
+std::optional<ArrayRef<TypedAttr>> getIdentityClass(TypedAttr prop);
+
+/// If `prop` is a binary `#kgen.param.identical` -- so that a consumer may
+/// substitute either operand for the other -- return the pair.
+/// n-ary `identical` wider than two is dropped; use `getIdentityClass`.
 std::optional<std::pair<TypedAttr, TypedAttr>>
 getIdentityProposition(TypedAttr prop);
+
+/// Folds the scalar-bool conjunction of `conjuncts`, which need not be
+/// canonical and may contain nested ANDs. Returns True, False, the single
+/// surviving clause (e.g. a merged `identical` class), or a sorted AND of the
+/// surviving clauses.
+///
+/// Ordinary code builds a conjunction with `ParamOperatorAttr::get(POC::And,
+/// ...)`, which already folds through this; the direct callers are attribute
+/// construction and the proposition fold.
+TypedAttr foldBoolConjunction(ArrayRef<TypedAttr> conjuncts, Type boolType);
 
 /// Gets the common Modular environment attribute (also known as `-D` defines)
 /// for the given compilation context. This includes things like
@@ -134,6 +261,12 @@ ParseResult parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly);
 void printMinAlignment(AsmPrinter &p, TypedAttr minAlignment);
 ParseResult parseMinAlignment(AsmParser &p, TypedAttr &minAlignment);
 
+/// Parser & printer for a single simplified StructDefFieldAttr, spelled
+/// `name: type` with an optional trailing `[annotations...]`.
+ParseResult parseStructDefField(AsmParser &p, StringAttr &name,
+                                TypedAttr &typeValue, ArrayAttr &annotations);
+void printStructDefField(AsmPrinter &p, StringAttr name, TypedAttr typeValue,
+                         ArrayAttr annotations);
 /// Parser & printer for array of simplified StructDefFieldAttrs.
 ParseResult parseStructDefFields(AsmParser &p,
                                  SmallVector<StructDefFieldAttr> &fields);
@@ -172,7 +305,8 @@ ParseResult parseParamNames(AsmParser &p, SmallVector<StringAttr> &names);
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok. In a
 /// context where printing for diagnostics, we do not use the double quoted
-/// syntax to escape MLIR and KGEN keywords.
+/// syntax to escape MLIR and KGEN keywords. Prints every subexpression in
+/// full; use `KGENParamPrinter` with a `DedupContext` to label repeats.
 void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
 void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
                      Type type = {});
@@ -426,8 +560,33 @@ void printFunctionFuncTypeGenerator(OpAsmPrinter &p, Region *region,
                                     ParamDeclPrintHookTy printResultElt = {});
 
 /// Parse the always_inline related keywords if present.
-ParseResult parseOptionalInline(OpAsmParser &parser, InlineLevelAttr &attr);
-void printOptionalInline(AsmPrinter &p, InlineLevel level);
+ParseResult parseOptionalInline(OpAsmParser &parser, Attribute &attr);
+void printOptionalInline(AsmPrinter &p, Attribute attr);
+
+/// Get the value of a scalar index-like parameter value.
+/// This is a temporary helper utility during the Int->SIMD unification project.
+/// After it's done, we should remove the IntegerAttr case.
+ErrorOr<int64_t> getScalarIndexValue(TypedAttr value);
+
+/// Get the value of a scalar parameter value of any integer dtype, including
+/// IntegerAttr. As above, we should drop support for IntegerAttr.
+ErrorOr<int64_t> getScalarIntegerValue(TypedAttr value);
+
+/// The integer `spec` holds, in either the plain or the `InlineLevel` form.
+std::optional<int64_t> inlineLevelValueOf(TypedAttr spec);
+
+/// The level `spec` names, or nullopt while it still depends on a parameter.
+std::optional<InlineLevel> inlineLevelOf(TypedAttr spec);
+
+/// The level `spec` names, or Automatic while it depends on a parameter.
+InlineLevel inlineLevelOrAutomatic(TypedAttr spec);
+
+/// Builds the stored form of `level`; an op's own accessor reads one.
+TypedAttr getInlineLevelAttr(MLIRContext *ctx, InlineLevel level);
+
+/// Diagnose an `inlineLevel` that is not integral, or that folded to a value
+/// naming no level.
+LogicalResult verifyInlineLevel(Operation *op, Attribute spec);
 
 /// Parse and print a decorator list if present.
 ParseResult parseOptionalDecorators(AsmParser &p, DecoratorsAttr &decorators);

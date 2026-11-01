@@ -546,7 +546,8 @@ def unused_init_self_param():
 # expected-note @below {{candidate not viable: missing required argument: 'copy'}}
 # expected-note @below {{def __init__(out self, *, copy: Self)    # note - generated function}}
 struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
-    # expected-note @below {{candidate not viable: return type 'SimpleSIMD[Int(50), Int(1)]' parameter 'size' value 'Int(1)' doesn't match expected value 'Int(4)'}}
+    # expected-note @below {{candidate not viable: violated constraint}}
+    # expected-note @below {{constraint declared here evaluated to False, expected 'identical(size, Int(1))': Self type 'SimpleSIMD[arg1, size]' is not identical to the declared type 'SimpleSIMD[arg1, Int(1)]'}}
     def __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
 
 def dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
@@ -682,7 +683,7 @@ def bad_unpack():
     # expected-error @+1 {{invalid unpack in non-variadic parameter binding}}
     depends_on_a[*42]()
 
-# expected-error @+1 {{value passed to 'shape' cannot be converted from 'IntLiteral[23456]' to 'AutoParamVA[$1]', it depends on an unresolved parameter '$0'}}
+# expected-error @+1 {{value passed to 'shape' cannot be converted from 'IntLiteral[23456]' to 'AutoParamVA[*$1]', it depends on an unresolved parameter '$0'}}
 comptime bad = TakeAutoParamVA[23456]
 
 # TODO: we could potentially support this.
@@ -711,3 +712,29 @@ comptime compute[Trait: type_of(AnyType), T: Trait, val: T] = val
 def main():
     # expected-error @below {{failed to infer from type 'IntLiteral[5]', it overwrites an explicitly unbound parameter '_' at #0}}
     var value = compute[_, _, 5]
+
+
+##===----------------------------------------------------------------------===##
+# MOCO-4805
+##===----------------------------------------------------------------------===##
+
+trait Fooable(Defaultable, ImplicitlyCopyable, TrivialRegisterPassable):
+    pass
+
+struct Leaf(Fooable, TrivialRegisterPassable):
+    def __init__(out self):
+        pass
+
+struct Bag[ *element_types: Fooable, tail: Int = 0](TrivialRegisterPassable):
+    def __init__(out self):
+        pass
+
+# expected-note @below {{function declared here}}
+def helper[
+    element_types: TypeList[Trait=Fooable, ...], //
+](bag: Bag[*element_types]):
+    pass
+
+def call_helper():
+    # expected-error @below {{invalid call to 'helper': value passed to 'bag' cannot be converted from 'Bag[Leaf, tail=Int(1)]' to 'Bag[Leaf]'}}
+    helper(Bag[Leaf, tail=1]())

@@ -15,16 +15,16 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import rms_norm_key_cache
-from max.nn.kv_cache import (
+from max.nn.legacy.kernels import rms_norm_key_cache
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
-    PagedCacheValues,
 )
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -61,13 +61,7 @@ class RMSNormKeyCacheModel:
         """
         rms_norm_key_cache(
             self.kv_params,
-            PagedCacheValues(
-                kv_blocks=graph_inputs[0].buffer,
-                cache_lengths=graph_inputs[1].tensor,
-                lookup_table=graph_inputs[2].tensor,
-                max_prompt_length=graph_inputs[3].tensor,
-                max_cache_length=graph_inputs[4].tensor,
-            ),
+            self.kv_params.unflatten_kv_inputs(iter(graph_inputs))[0],
             gamma=gamma,
             epsilon=1e-5,
             layer_idx=ops.constant(
@@ -130,13 +124,16 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
     gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *graph_inputs.flatten())
+    model(gamma, input_row_offsets, *tree.leaves(graph_inputs))
 
     # Check that the RMSNorm wrote output to the KV cache.
     assert (graph_inputs.kv_blocks.to_numpy() != all_ones).any()
@@ -197,13 +194,16 @@ def test_partial_rms_norm_key_cache(
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *graph_inputs.flatten())
+    model(gamma, input_row_offsets, *tree.leaves(graph_inputs))
 
     # shape: [batch_size,kv_dim,num_layers,max_seq_len,n_kv_heads,head_dim]
     kv_block = graph_inputs.kv_blocks.to_numpy()
@@ -281,13 +281,16 @@ def test_rms_norm_new_key_cache(
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *graph_inputs.flatten())
+    model(gamma, input_row_offsets, *tree.leaves(graph_inputs))
 
     # shape: [batch_size,kv_dim,num_layers,max_seq_len,n_kv_heads,head_dim]
     kv_block = graph_inputs.kv_blocks.to_numpy()
@@ -411,7 +414,10 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
@@ -420,7 +426,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
 
     # Run the model
-    model(gamma, input_row_offsets, *graph_inputs.flatten())
+    model(gamma, input_row_offsets, *tree.leaves(graph_inputs))
 
     # Verify that normalization was applied per token (across all heads)
     kv_block = graph_inputs.kv_blocks.to_numpy()

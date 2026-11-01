@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3 pipeline model."""
 
 from __future__ import annotations
 
@@ -18,17 +19,18 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from max import tree
 from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
-from max.nn.comm.ep.ep_manager import EPBatchManager
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.nn.legacy.comm.ep.ep_manager import EPBatchManager
 from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.weights.quant import parse_quant_config
@@ -55,6 +57,7 @@ class Qwen3Inputs(Llama3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         base = [self.tokens, self.input_row_offsets, self.return_n_logits]
         if (
             self.host_input_row_offsets is not None
@@ -76,7 +79,11 @@ class Qwen3Inputs(Llama3Inputs):
         return (
             *base,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
             *self.ep_inputs,
         )
 
@@ -106,7 +113,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         Args:
             state_dict: Model weight state dict, required for non-bfloat16
-                dispatch dtypes (e.g. FP8) to parse the dispatch quantization
+                dispatch dtypes (such as FP8) to parse the dispatch quantization
                 configuration.
         """
         ep_size = self.pipeline_config.runtime.ep_size
@@ -189,15 +196,15 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         ep_config.node_id = self.ep_comm_initializer.config.node_id
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Qwen3Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: Qwen3Config) -> dict[str, GraphSpec]:
+        """Returns the decoder graph spec.
+
+        It covers single-device, tensor-parallel, or data-parallel attention
+        with expert-parallel MoE, whichever the config selects.
+        """
         ep_config = model_config.ep_config
-        # Create EP batch manager for graph buffer wiring (runtime init is above).
+        # Create EP batch manager for graph buffer wiring (runtime init is
+        # in `_init_distributed_runtime`).
         ep_manager: EPBatchManager | None = None
         if ep_config is not None:
             ep_manager = EPBatchManager(ep_config)
@@ -215,7 +222,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         graph_inputs = nn_model.input_types(self.kv_params)
 
         nn_model.load_state_dict(
-            state_dict,
+            self.state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
             strict=(
@@ -224,66 +231,11 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 )
             ),
         )
-        weights_registry = nn_model.state_dict()
-
-        num_devices = len(self.devices)
-        use_dp = dp > 1
-
-        with Graph("qwen3", input_types=graph_inputs) as graph:
-            if use_dp:
-                (
-                    tokens,
-                    input_row_offsets,
-                    return_n_logits,
-                    host_input_row_offsets,
-                    data_parallel_splits,
-                    *variadic_args,
-                ) = graph.inputs
-
-                variadic_args_iter = iter(variadic_args)
-
-                signal_buffers = [
-                    next(variadic_args_iter).buffer for _ in range(num_devices)
-                ]
-
-                kv_input_count = len(self.kv_params.flattened_kv_inputs())
-                kv_cache_inputs = [
-                    next(variadic_args_iter) for _ in range(kv_input_count)
-                ]
-                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-
-                ep_model_inputs = list(variadic_args_iter)
-                if ep_manager is not None:
-                    ep_manager.fetch_buffers(ep_model_inputs)
-
-                outputs = nn_model(
-                    tokens.tensor,
-                    kv_collections,
-                    return_n_logits.tensor,
-                    input_row_offsets.tensor,
-                    signal_buffers,
-                    host_input_row_offsets=host_input_row_offsets.tensor,
-                    data_parallel_splits=data_parallel_splits.tensor,
-                )
-            else:
-                (
-                    tokens,
-                    input_row_offsets,
-                    return_n_logits,
-                    *variadic_args,
-                ) = graph.inputs
-
-                signal_buffers = [v.buffer for v in variadic_args[:num_devices]]
-                kv_cache_inputs = variadic_args[num_devices:]
-                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-
-                outputs = nn_model(
-                    tokens.tensor,
-                    kv_collections,
-                    return_n_logits.tensor,
-                    input_row_offsets.tensor,
-                    signal_buffers,
-                )
-
-            graph.output(*outputs)
-            return graph, weights_registry
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "qwen3",
+                graph_inputs,
+                weights=nn_model.state_dict(),
+            )
+        }

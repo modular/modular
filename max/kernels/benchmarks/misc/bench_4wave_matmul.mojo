@@ -15,7 +15,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    align_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -46,11 +45,6 @@ from layout import (
     row_major,
 )
 from linalg.matmul.gpu.amd.amd_4wave_matmul import structured_4wave_matmul
-from linalg.utils import (
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
-)
-from std.utils import IndexList
 
 
 def _verify_buffers_gpu[
@@ -125,9 +119,9 @@ def verify_matmul[
     b_shape: Coord,
     init_type: InitializationType,
 ) raises:
-    var c_size = Int(c_shape[0].value()) * Int(c_shape[1].value())
-    var a_size = Int(a_shape[0].value()) * Int(a_shape[1].value())
-    var b_size = Int(b_shape[0].value()) * Int(b_shape[1].value())
+    var c_size = Int(c_shape[0]) * Int(c_shape[1])
+    var a_size = Int(a_shape[0]) * Int(a_shape[1])
+    var b_size = Int(b_shape[0]) * Int(b_shape[1])
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, row_major(a_shape))
@@ -141,19 +135,19 @@ def verify_matmul[
     # Initialize matmul operands
     comptime if not init_on_gpu:
         var a_host_ptr_alloc = alloc[Scalar[a_type]](
-            {count = a_size}
+            {length = a_size}
         ).into_managed()
         var a_host_ptr = a_host_ptr_alloc.unsafe_ptr()
         var b_host_ptr_alloc = alloc[Scalar[a_type]](
-            {count = b_size}
+            {length = b_size}
         ).into_managed()
         var b_host_ptr = b_host_ptr_alloc.unsafe_ptr()
         var a_host = TileTensor(a_host_ptr, row_major(a_shape))
         var b_host = TileTensor(b_host_ptr, row_major(b_shape))
 
         comptime if a_type.is_float8():
-            rand(a_host.ptr, a_host.num_elements())
-            rand(b_host.ptr, b_host.num_elements())
+            rand(a_host.as_span())
+            rand(b_host.as_span())
         else:
             if init_type == InitializationType.zero:
                 _ = a_host.fill(0)
@@ -162,13 +156,15 @@ def verify_matmul[
                 _ = a_host.fill(1)
                 _ = b_host.fill(1)
             elif init_type == InitializationType.uniform_distribution:
-                rand(a_host.ptr, a_host.num_elements())
-                rand(b_host.ptr, b_host.num_elements())
+                rand(a_host.as_span())
+                rand(b_host.as_span())
             elif init_type == InitializationType.arange:
-                for i in range(a_host.num_elements()):
-                    a_host.raw_store(i, Scalar[a_type](i))
-                for i in range(b_host.num_elements()):
-                    b_host.raw_store(i, Scalar[a_type](i))
+                var a_flat = a_host.reshape(row_major(a_host.num_elements()))
+                var b_flat = b_host.reshape(row_major(b_host.num_elements()))
+                for i in range(a_flat.num_elements()):
+                    a_flat[i] = Scalar[a_type](i)
+                for i in range(b_flat.num_elements()):
+                    b_flat[i] = Scalar[a_type](i)
         # Move operands to the Device
         ctx.enqueue_copy(a_device, a_host_ptr)
         ctx.enqueue_copy(b_device, b_host_ptr)
@@ -222,7 +218,7 @@ def verify_matmul[
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
     var result_host_alloc = alloc[Float32](
-        {count = NUM_BLOCKS * 5}
+        {length = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
@@ -349,9 +345,9 @@ def bench_matmul[
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
-    @always_inline
+    @inline(.always)
     def get_size(shape: Coord) -> Int:
-        return Int(shape[0].value()) * Int(shape[1].value())
+        return Int(shape[0]) * Int(shape[1])
 
     comptime simd_size = 4
     var cb_a = CacheBustingBuffer[a_type](get_size(shape_a), simd_size, ctx)
@@ -362,19 +358,19 @@ def bench_matmul[
 
     comptime if not init_on_gpu:
         var a_host_ptr_alloc = alloc[Scalar[a_type]](
-            {count = cb_a.alloc_size()}
+            {length = cb_a.alloc_size()}
         ).into_managed()
         var a_host_ptr = a_host_ptr_alloc.unsafe_ptr()
         var b_host_ptr_alloc = alloc[Scalar[a_type]](
-            {count = cb_b.alloc_size()}
+            {length = cb_b.alloc_size()}
         ).into_managed()
         var b_host_ptr = b_host_ptr_alloc.unsafe_ptr()
         var a_host = TileTensor(a_host_ptr, row_major(cb_a.alloc_size()))
         var b_host = TileTensor(b_host_ptr, row_major(cb_b.alloc_size()))
 
         comptime if a_type.is_float8():
-            rand(a_host.ptr, a_host.num_elements())
-            rand(b_host.ptr, b_host.num_elements())
+            rand(a_host.as_span())
+            rand(b_host.as_span())
         else:
             if init_type == InitializationType.zero:
                 _ = a_host.fill(0)
@@ -383,13 +379,13 @@ def bench_matmul[
                 _ = a_host.fill(1)
                 _ = b_host.fill(1)
             elif init_type == InitializationType.uniform_distribution:
-                rand(a_host.ptr, a_host.num_elements())
-                rand(b_host.ptr, b_host.num_elements())
+                rand(a_host.as_span())
+                rand(b_host.as_span())
             elif init_type == InitializationType.arange:
                 for i in range(a_host.num_elements()):
-                    a_host.raw_store(i, Scalar[a_type](i))
+                    a_host[i] = Scalar[a_type](i)
                 for i in range(b_host.num_elements()):
-                    b_host.raw_store(i, Scalar[a_type](i))
+                    b_host[i] = Scalar[a_type](i)
 
         ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr)
         ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr)
@@ -416,13 +412,10 @@ def bench_matmul[
             transpose_b=transpose_b,
         )
 
-    @__copy_capture(
-        cb_a,
-        cb_b,
-        cb_c,
-    )
-    @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {var cb_a, var cb_b, var cb_c, imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -434,37 +427,6 @@ def bench_matmul[
         )
         comptime assert tensor_c.flat_rank >= 2
 
-        @__parameter
-        @always_inline
-        @__copy_capture(tensor_c)
-        def test_lambda_add_coords_prod[
-            _dtype: DType,
-            width: Int,
-            *,
-            alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-            _dtype, width
-        ]:
-            var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
-            var y = val * x
-            return y
-
-        comptime optional_compute_lambda_fn = Optional[
-            elementwise_compute_lambda_type
-        ](test_lambda_add_coords_prod) if enable_compute_epilogue else None
-
-        @always_inline
-        @__parameter
-        @__copy_capture(tensor_c)
-        def normal_elementwise_epilogue[
-            dtype: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
-
-        comptime optional_normal_lambda_fn = Optional[
-            elementwise_epilogue_type
-        ](normal_elementwise_epilogue) if enable_normal_epilogue else None
-
         comptime if use_vendor_blas:
             run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c)
         else:
@@ -472,17 +434,14 @@ def bench_matmul[
             # transpose_b=True is hardcoded in the kernel (FP8 layout).
             structured_4wave_matmul(tensor_a, tensor_b, tensor_c, ctx)
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
     if run_benchmark:
         b.bench_function(

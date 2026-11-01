@@ -29,7 +29,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -37,7 +37,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.quant_ops import quantized_grouped_matmul
+from max.nn.legacy.quant_ops import quantized_grouped_matmul
 from torch.utils.dlpack import from_dlpack
 
 # A small Llama-4-Scout-ish gate/up shape: K (hidden) -> N (2 * moe_dim).

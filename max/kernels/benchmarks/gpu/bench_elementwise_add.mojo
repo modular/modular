@@ -40,11 +40,11 @@ def bench_add[
     var input1_ptr = ctx.enqueue_create_buffer[type](size)
     var output_ptr = ctx.enqueue_create_buffer[type](size)
 
-    var input0_host = alloc[Scalar[type]]({count = size}).into_managed()
+    var input0_host = alloc[Scalar[type]]({length = size}).into_managed()
     var input0_ptr_host = input0_host.unsafe_ptr()
-    var input1_host = alloc[Scalar[type]]({count = size}).into_managed()
+    var input1_host = alloc[Scalar[type]]({length = size}).into_managed()
     var input1_ptr_host = input1_host.unsafe_ptr()
-    var output_host = alloc[Scalar[type]]({count = size}).into_managed()
+    var output_host = alloc[Scalar[type]]({length = size}).into_managed()
     var output_ptr_host = output_host.unsafe_ptr()
 
     randn(input0_host.unsafe_span())
@@ -58,17 +58,17 @@ def bench_add[
     var input1 = TileTensor(input1_ptr, row_major(Coord(shape)))
     var output = TileTensor(output_ptr, row_major(Coord(shape)))
 
-    @always_inline
+    @inline(.always)
     def add[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert input0.flat_rank >= idx.flat_rank
         var val = input0.load[width=simd_width](idx) + input1.load[
             width=simd_width
         ](idx)
-        output.store[width=simd_width](idx, val)
+        output.store(idx, val)
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher, shape: IndexList[rank]) raises {imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             elementwise[simd_width=unroll_by, target="gpu"](
                 add, Coord(shape), ctx

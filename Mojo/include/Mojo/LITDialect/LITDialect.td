@@ -21,6 +21,9 @@
 include "mlir/IR/DialectBase.td"
 
 def LITDialect : Dialect {
+  // TODO(MOCO-5011): Migrate assembly formats to strict properties before
+  // upstream removes this opt-out.
+  let useStrictPropertiesInAssemblyFormat = 0;
   let name = "lit";
 
   let summary = "The 'lit' dialect for Mojo🔥";

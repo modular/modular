@@ -24,7 +24,7 @@ from std._plugin import CurrentPlugin
 from std.collections import Array, List
 from std.collections.string.string_span import _unsafe_strlen
 from std.format.tstring import TString
-from std.io import FileDescriptor
+from std.io import RawFileDescriptor
 from std.ffi import c_char, c_int, external_call, get_errno
 from std.reflection import SourceLocation, call_location
 from std._gpu import thread_idx, block_idx
@@ -101,8 +101,8 @@ struct _DirHandle:
             raise Error("the directory '", path, "' does not exist")
 
         var handle = external_call[
-            "opendir", OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
-        ](path.as_c_string_slice())
+            "opendir", Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
+        ](path.as_c_string_span())
 
         if not handle:
             var err = get_errno()
@@ -142,14 +142,14 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", OptionalPointer[_dirent_linux, MutUntrackedOrigin]
+                "readdir", Optional[Pointer[_dirent_linux, MutUntrackedOrigin]]
             ](self._handle)
             if not ep:
                 break
             ref name = ep.unsafe_value().unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
-            var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span[Byte, origin_of(name)](
+            var name_str = StringSlice(
+                unsafe_from_utf8=Span(
                     unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
@@ -172,14 +172,14 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", OptionalPointer[_dirent_macos, MutUntrackedOrigin]
+                "readdir", Optional[Pointer[_dirent_macos, MutUntrackedOrigin]]
             ](self._handle)
             if not ep:
                 break
             ref name = ep.unsafe_value().unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
-            var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span[Byte, origin_of(name)](
+            var name_str = StringSlice(
+                unsafe_from_utf8=Span(
                     unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
@@ -237,7 +237,7 @@ def listdir[PathLike: stdPathLike](path: PathLike) raises -> List[String]:
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _abort_base() -> Never:
     __mlir_op.`llvm.intr.trap`()
 
@@ -246,7 +246,7 @@ def _abort_base() -> Never:
         pass
 
 
-@always_inline
+@inline(.always)
 def abort() -> Never:
     """Terminates execution, using a target dependent trap instruction if
     available.
@@ -261,18 +261,22 @@ def abort() -> Never:
     _abort_base()
 
 
-@always_inline
-def _abort_impl[
+@inline(.never)
+def _abort_report[
     *, prefix: StaticString
-](
-    message: Some[Writable],
-    *,
-    location: Optional[SourceLocation] = {},
-) -> Never:
-    var loc = location.or_else(call_location[inline_count=2]())
+](loc: SourceLocation, message: Some[Writable]):
+    """Prints an abort message.
+
+    Kept out of line so the wide `print` call below is emitted once per message
+    type rather than inlined into every `abort` call site.
+    """
 
     comptime if is_apple_gpu():
         # FIXME: Remove after MOCO-3697 is fixed.
+        pass
+    elif is_gpu() and not CurrentPlugin.print_emit_fn:
+        # A GPU target without a print hook, such as one named only by its
+        # triple, has no way to report the message; `abort` still traps.
         pass
     elif is_gpu():
         # On GPU, gate the print to a single thread to avoid flooding the
@@ -317,10 +321,25 @@ def _abort_impl[
             flush=True,
         )
 
+
+@inline(.always)
+def _abort_impl[
+    *, prefix: StaticString
+](
+    message: Some[Writable],
+    *,
+    location: Optional[SourceLocation] = {},
+) -> Never:
+    var loc = location.or_else(call_location[inline_count=2]())
+
+    # Apple GPU has no print path at all (see `_abort_report`), so its body
+    # folds to nothing.
+    comptime if not is_apple_gpu():
+        _abort_report[prefix=prefix](loc, message)
     abort()
 
 
-@always_inline
+@inline(.always)
 def abort[
     *, prefix: StaticString = "ABORT:"
 ](message: String, *, location: Optional[SourceLocation] = {}) -> Never:
@@ -336,7 +355,7 @@ def abort[
     _abort_impl[prefix=prefix](message, location=location)
 
 
-@always_inline
+@inline(.always)
 def abort[
     *, prefix: StaticString = "ABORT:"
 ](message: TString, *, location: Optional[SourceLocation] = {}) -> Never:
@@ -372,7 +391,7 @@ def remove[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["unlink", Int32](fspath.as_c_string_slice())
+    var error = external_call["unlink", Int32](fspath.as_c_string_span())
 
     if error != 0:
         var err = get_errno()
@@ -426,8 +445,8 @@ def symlink[
     var linkpath_fspath = linkpath.__fspath__()
 
     var error = external_call["symlink", c_int](
-        target_fspath.as_c_string_slice(),
-        linkpath_fspath.as_c_string_slice(),
+        target_fspath.as_c_string_span(),
+        linkpath_fspath.as_c_string_span(),
     )
 
     if error != 0:
@@ -467,8 +486,8 @@ def link[
     var newpath_fspath = newpath.__fspath__()
 
     var error = external_call["link", Int32](
-        oldpath_fspath.as_c_string_slice(),
-        newpath_fspath.as_c_string_slice(),
+        oldpath_fspath.as_c_string_span(),
+        newpath_fspath.as_c_string_span(),
     )
 
     if error != 0:
@@ -506,7 +525,7 @@ def mkdir[PathLike: stdPathLike](path: PathLike, mode: Int = 0o777) raises:
     """
 
     var fspath = path.__fspath__()
-    var error = external_call["mkdir", Int32](fspath.as_c_string_slice(), mode)
+    var error = external_call["mkdir", Int32](fspath.as_c_string_span(), mode)
     if error != 0:
         var err = get_errno()
         raise Error("Can not create directory: ", fspath, " Err: ", String(err))
@@ -569,7 +588,7 @@ def rmdir[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["rmdir", Int32](fspath.as_c_string_slice())
+    var error = external_call["rmdir", Int32](fspath.as_c_string_span())
     if error != 0:
         var err = get_errno()
         raise Error("Can not remove directory: ", fspath, " Err: ", String(err))
@@ -633,7 +652,9 @@ def isatty(fd: Int) -> Bool:
         ```
     """
 
-    return FileDescriptor(fd).isatty()
+    if fd < 0:
+        return False
+    return RawFileDescriptor(c_int(fd)).isatty()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -654,7 +675,7 @@ def chdir[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["chdir", Int32](fspath.as_c_string_slice())
+    var error = external_call["chdir", Int32](fspath.as_c_string_span())
     if error != 0:
         var err = get_errno()
         raise Error("chdir failed: ", fspath, " Err: ", String(err))

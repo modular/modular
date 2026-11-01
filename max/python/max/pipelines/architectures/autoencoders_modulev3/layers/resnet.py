@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Resnet block for the ModuleV3 autoencoder."""
 
+from max import functional as F
 from max.driver import accelerator_api
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Conv2d, GroupNorm, Module
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
+from max.nn import Conv2d, GroupNorm, Module
+from max.tensor import Tensor
 
 
 class ResnetBlock2D(Module[[Tensor, Tensor | None], Tensor]):
@@ -50,7 +51,7 @@ class ResnetBlock2D(Module[[Tensor, Tensor | None], Tensor]):
             groups: Number of groups for first GroupNorm.
             groups_out: Number of groups for second GroupNorm.
             eps: Epsilon value for GroupNorm layers.
-            non_linearity: Activation function name (e.g., "silu").
+            non_linearity: Activation function name (such as "silu").
             use_conv_shortcut: Whether to use convolutional shortcut.
             conv_shortcut_bias: Whether to use bias in shortcut convolution.
             device: Device reference for module placement.

@@ -34,7 +34,6 @@ def main() raises:
 from std.math import isclose
 
 from std.reflection import call_location, SourceLocation
-from std.memory import unsafe_memcmp
 from std.python import PythonObject
 from std.utils._ansi import Color, Text
 
@@ -43,12 +42,12 @@ from std.utils._ansi import Color, Text
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
     return Error(loc.prefix(t"AssertionError: {msg}"))
 
 
-@always_inline
+@inline(.always)
 def assert_true[
     T: Boolable, //
 ](
@@ -74,7 +73,7 @@ def assert_true[
         raise _assert_error(msg, location.or_else(call_location()))
 
 
-@always_inline
+@inline(.always)
 def assert_false[
     T: Boolable, //
 ](
@@ -100,7 +99,7 @@ def assert_false[
         raise _assert_error(msg, location.or_else(call_location()))
 
 
-@always_inline
+@inline(.always)
 def assert_equal[
     T: Equatable & Writable,
     //,
@@ -143,7 +142,7 @@ def assert_equal[
 #   Once Mojo supports parametric traits, implement Equatable for
 #   StringSlice such that string slices with different origin types can be
 #   compared, then drop this overload.
-@always_inline
+@inline(.always)
 def assert_equal[
     O1: ImmOrigin, O2: ImmOrigin
 ](
@@ -182,10 +181,36 @@ def assert_equal[
         )
 
 
-@always_inline
+@inline(.always)
+def assert_equal[
+    T: Equatable & Writable
+](lhs: ImmSpan[T, _], rhs: ImmSpan[T, _], msg: String = "") raises:
+    """Asserts that two spans are equal.
+
+    Parameters:
+        T: The element type of both spans.
+
+    Args:
+        lhs: The left-hand side span.
+        rhs: The right-hand side span.
+        msg: The message to be printed if the assertion fails.
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            String(lhs),
+            String(rhs),
+            msg=msg,
+            loc=call_location(),
+        )
+
+
+@inline(.always)
 def assert_equal(
-    lhs: StringSlice[mut=False, _],
-    rhs: StringSlice[mut=False, _],
+    lhs: StringSlice,
+    rhs: StringSlice,
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
@@ -210,7 +235,7 @@ def assert_equal(
         )
 
 
-@always_inline
+@inline(.always)
 def assert_equal_pyobj(
     lhs: PythonObject,
     rhs: PythonObject,
@@ -239,7 +264,7 @@ def assert_equal_pyobj(
         )
 
 
-@always_inline
+@inline(.always)
 def assert_not_equal[
     T: Equatable & Writable,
     //,
@@ -274,7 +299,7 @@ def assert_not_equal[
         )
 
 
-@always_inline
+@inline(.always)
 def assert_almost_equal[
     dtype: DType, size: SIMDLength
 ](
@@ -334,7 +359,7 @@ def assert_almost_equal[
         raise _assert_error(err, location.or_else(call_location()))
 
 
-@always_inline
+@inline(.always)
 def assert_is[
     T: Identifiable & Writable, //
 ](
@@ -368,7 +393,7 @@ def assert_is[
         )
 
 
-@always_inline
+@inline(.always)
 def assert_is_not[
     T: Identifiable & Writable, //
 ](
@@ -419,7 +444,7 @@ def _colorize_diff_string[color: Color](s: String, other: String) -> String:
     var other_codepoints = other.codepoints()
     for s_codepoint in s.codepoints():
         var other_codepoint = other_codepoints.next()
-        if other_codepoint and s_codepoint == other_codepoint.value():
+        if other_codepoint == Optional(s_codepoint):
             # Codepoints match - no color
             result.append(s_codepoint)
         else:
@@ -495,7 +520,7 @@ struct assert_raises:
     var call_location: SourceLocation
     """Assigned the value returned by call_locations() at Self.__init__."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, location: Optional[SourceLocation] = None):
         """Construct a context manager with no message pattern.
 
@@ -505,7 +530,7 @@ struct assert_raises:
         self.message_contains = None
         self.call_location = location.or_else(call_location())
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         *,
@@ -555,9 +580,9 @@ struct assert_raises:
         Returns:
             True if the error was successfully caught and matched.
         """
-        if self.message_contains:
+        if case .Some(message_contains) = self.message_contains:
             comptime assert conforms_to(
                 E, Writable
             ), "assert_raises(contains=...) requires a Writable error type"
-            return self.message_contains.value() in String(error)
+            return message_contains in String(error)
         return True

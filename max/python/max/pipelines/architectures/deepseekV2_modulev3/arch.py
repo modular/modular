@@ -10,19 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for the ModuleV3 DeepSeek-V2."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
+    GraphRole,
     SupportedArchitecture,
     TextTokenizer,
 )
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .batch_processor import DeepseekV2ModuleV3BatchProcessor
-from .model import DeepseekV2Model
+from .deepseekV2 import DeepseekV2Decoder
 from .model_config import DeepseekV2Config
 
 deepseekV2_modulev3_arch = SupportedArchitecture(
@@ -34,7 +35,7 @@ deepseekV2_modulev3_arch = SupportedArchitecture(
     default_encoding=DeepseekV2Config.DEFAULT_ENCODING,
     supported_encodings=DeepseekV2Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=False,
-    pipeline_model=DeepseekV2Model,
+    modules={GraphRole.DECODER: DeepseekV2Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -43,7 +44,6 @@ deepseekV2_modulev3_arch = SupportedArchitecture(
     },
     requires_max_batch_context_length=True,
     config=DeepseekV2Config,
-    batching=DeepseekV2ModuleV3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,

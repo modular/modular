@@ -25,7 +25,6 @@ from .backend import (
     Dynamic1DTileUnitFunc,
     Dynamic1DTileUnswitchUnitFunc,
     Static1DTileUnitFunc,
-    Static1DTileUnitFuncWithFlag,
     Static1DTileUnitFuncWithFlags,
     Static1DTileUnswitchUnitFunc,
     Static2DTileUnitFunc,

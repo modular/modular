@@ -31,7 +31,7 @@ struct StructWithIntParam[size: Int](RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
 def paramArith[x: Int]():
-    # CHECK: lit.alias.decl *"y`": !Bool = <sugar_builtin(apply({{.*}}{_mlir_value: scalar<bool> = eq(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 99)})>
+    # CHECK: lit.alias.decl *"y`": !Bool = <sugar_builtin(apply({{.*}}{:scalar<bool> identical(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 99)})>
     comptime y = x == 98 + 1
 
 def take_3index(a: Int, b: Int, c: Int) -> Int:
@@ -262,6 +262,21 @@ def infer_implicit_params():
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}, :!Int {:scalar<index> 3}, :!Int {:scalar<index> 4}>
     partial_bind(one, two)
 
+
+# Auto-param of a hole that binds an inner struct's own variadic: the
+# '...' unbinds the pack of Inner. The implicit parameters for the pack and
+# its ParameterList wrapper are plain (non-variadic) parameters — the
+# pos_var_arg marker stays on the user's own *Xs argument only.
+struct TakesVariadicParam[*vs: Int, tail: Int](Movable where False):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"implicit_params_with_variadic_element
+# CHECK-SAME: <?, *"Xs.vs.values``": param_list<!Int>, *"Xs.vs`1": !lit.struct<#ParameterList <:!AnyType !Int,
+# CHECK-SAME: :param_list<!Int> *"Xs.vs.values``">>, {{.*}} imm *"Xs`4"> imm_mem|pos_vararg)
+def implicit_params_with_variadic_element(*Xs: TakesVariadicParam[..., tail=1]):
+    pass
+
 def implicit_params_with_var_params[*Ts: Int](s: TwoParams[1, _]): pass
 
 # CHECK-LABEL: lit.fn @"test_implicit_params_with_var_params
@@ -280,7 +295,7 @@ def explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
 comptime TwoParamsSwap[b: Int, a: Int] = TwoParams[a, b]
 
 # CHECK-LABEL: lit.fn @"autoparam_param_alias
-# CHECK-SAME: <?, [[B0:.*]]: !Int, [[A0:.*]]: !Int, [[B1:.*]]: !Int>
+# CHECK-SAME: <?, [[B0:[^:]+]]: !Int, [[A0:[^:]+]]: !Int, [[B1:[^:]+]]: !Int>
 # CHECK-SAME: %x: {{.*}}#TwoParams <:!Int [[A0]], :!Int [[B0]]>
 # CHECK-SAME: %y: {{.*}}#TwoParams <:!Int {:scalar<index> 2}, :!Int [[B1]]>
 def autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
@@ -315,26 +330,6 @@ struct DependentParams[x: Int, //, p: IndexParam[x]](TrivialRegisterPassable):
 # CHECK-LABEL: lit.fn @"autoparam_of_dependent_params
 # CHECK-SAME: <["dp.x`"]*"dp.x`": !Int, ["dp.p`1"]*"dp.p`1": {{.*}}IndexParam <:!Int *"dp.x`">>, +, dp: {{.*}}DependentParams <:!Int *"dp.x`", :{{.*}}IndexParam <:!Int *"dp.x`">> *"dp.p`1">>
 def autoparam_of_dependent_params[dp: DependentParams]():
-    pass
-
-
-# CHECK-LABEL: lit.fn @"function_autoparam
-# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<["f.__origins__`"][[F_LT:.*]]: origin.set, ["g.__origins__`1"][[G_LT:.*]]: origin.set, +
-# CHECK-SAME: f: !lit.generator<:[[F_LT]]:() capturing -> !kgen.none>
-# CHECK-SAME: g: !lit.generator<:[[G_LT]]:() capturing -> !kgen.none>
-def function_autoparam[f: def () capturing [_] -> None, g: def () capturing [_] -> None]():
-    @__parameter
-    def function():
-        pass
-
-    # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.generator<<>!kgen.func.literal<:!lit.fn<() capturing -> !kgen.none>
-    # CHECK-SAME: function_autoparam{{.*}}<:origin.set {}, :origin.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
-    comptime bind_one = function_autoparam[function, function]
-
-
-# CHECK-LABEL: lit.fn @"nonprop_capture_set
-# CHECK-SAME: ()"<f: !lit.generator<<"g.__origins__`2x": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
-def nonprop_capture_set[f: def[g: def () capturing [_] -> None] () thin -> None]():
     pass
 
 
@@ -737,7 +732,7 @@ def useParamVariadics():
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
-  # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
+  # HECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
   # HECK-NEXT: %defLet = lit.var.decl "fnLet" : {{.*}}!lit.generator<() -> !kgen.none>
   # HECK-NEXT: lit.ref.store [[TMP]], %defLet
   # var defLet = fnWithVariadics
@@ -978,7 +973,7 @@ struct InferredDefaultType[dtype: DType = .uint32](Movable where False):
 
 # CHECK-LABEL: lit.fn @"test_dependent_default_param_inference()"() -> !kgen.none
 def test_dependent_default_param_inference():
-    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, 1])"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
+    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, 1]){{.*}}"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
     _ = InferredDefaultType(3)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
@@ -1052,20 +1047,6 @@ def signature_inference[dt: DType, rank: Int]():
     # CHECK-SAME: :!lit.generator<<"width": !Int>(!lit.struct<#Abstraction <:!Int rank>
     # CHECK-SAME: -> !lit.struct<#SIMD <:!DType dt, :!SIMDLength sugar_builtin(apply(:!lit.generator<("value": !Int, |) -> !SIMDLength> @std::@builtin::@stubs::@SIMDLength::@"__init__(::SIMD[DType.int, 1])", *(0,0)), {_mlir_value = to_builtin(:scalar<index> #lit.struct.extract<:!Int *(0,0), "_mlir_value">)})>>
     implicit_signature[func]()
-
-
-struct ClosureParam[lt: Origin[mut=True], f: def () capturing [lt._mlir_origin] -> None](Movable):
-  pass
-
-
-# CHECK-LABEL: lit.fn @"infer_implicit_params
-def infer_implicit_params(var p: ClosureParam):
-    # CHECK: lit.call {{.*}}ClosureParam::@"__init__
-    # CHECK-SAME: *, "move"
-    # CHECK-SAME: <:origin<true> *"p.lt._mlir_origin``",
-    # CHECK-SAME: :!lit.generator<:{mut *"p.lt._mlir_origin``"}:() capturing -> !kgen.none> *"p.f`2">
-    var tmp = p^
-    _ = tmp^
 
 
 trait ToInt:
@@ -1373,7 +1354,7 @@ def default_inferring_param[O: ImmOrigin](str: StringSpan[O] = StaticString(""))
 # CHECK-LABEL: lit.fn @"test_default_inferring_param
 def test_default_inferring_param(b: String):
     # Infers O to default value.
-    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSpan <:!Bool {:scalar<bool> false}, :origin<false> #lit.origin.field<#lit.static.origin : !lit.origin<false>, "__constants__">,
+    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSpan <:origin<false> #lit.origin.field<#lit.static.origin : !lit.origin<false>, "__constants__">,
     # CHECK-NEXT: lit.call {{.*}}default_inferring_param{{.*}}(%0)
     default_inferring_param()
     default_inferring_param(StaticString("a"))
@@ -1693,7 +1674,7 @@ def take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
 
 # CHECK-LABEL: call_variadic_pack_with_function
 def call_variadic_pack_with_function():
-  # CHECK: [[FP:%.*]] = kgen.create_closure[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
+  # CHECK: [[FP:%.*]] = kgen.create_func_ptr[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)
 

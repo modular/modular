@@ -11,12 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import (
-    assert_equal,
-    assert_true,
-    TestSuite,
-)
-from test_utils import DelCounter
+from std.testing import assert_true, TestSuite
 from std.testing.prop import Rng, Strategy
 from std.testing.prop.strategy.simd_strategy import *
 from std.testing.prop.strategy.string_strategy import *

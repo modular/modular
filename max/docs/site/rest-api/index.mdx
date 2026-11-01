@@ -1,0 +1,47 @@
+---
+title: MAX REST API
+sidebar_label: Overview
+description: The API reference for the MAX inference endpoint.
+sidebar_position: 1
+---
+
+import RestApiHashRedirect from '@site/src/components/RestApiHashRedirect';
+
+<RestApiHashRedirect />
+
+The MAX REST API provides an OpenAI-compatible REST endpoint for deploying
+LLMs and other GenAI models locally or in the cloud.
+
+To create your first endpoint and start sending inference requests, see the
+[quickstart guide](/get-started).
+
+## Supported endpoints
+
+The MAX API is compatible with a subset of the OpenAI API, so you can use any
+existing OpenAI client to send inference requests to your MAX endpoint.
+
+- [Create response](/rest-api/create-response) (`POST /v1/responses`)
+- [Create chat completion](/rest-api/create-chat-completion)
+  (`POST /v1/chat/completions`)
+- [Create completion](/rest-api/create-completion) (`POST /v1/completions`)
+- [Create embeddings](/rest-api/create-embedding) (`POST /v1/embeddings`)
+- [Create decisions](/rest-api/create-decisions) (`POST /v1/decisions`)
+- [Create System One answers](/rest-api/create-system-one)
+  (`POST /v1/systemone`)
+- [Create speech](/rest-api/create-speech) (`POST /v1/audio/speech`)
+- [List models](/rest-api/list-models) (`GET /v1/models`)
+- [Load a LoRA adapter](/rest-api/load-lora-adapter)
+  (`POST /v1/load_lora_adapter`)
+- [Unload a LoRA adapter](/rest-api/unload-lora-adapter)
+  (`POST /v1/unload_lora_adapter`)
+- [Health check](/rest-api/health) (`GET /health`)
+
+### Parameter handling
+
+Although MAX aims for high compatibility, not all OpenAI body parameters are
+implemented. Some may be accepted as no-ops (ignored without causing errors) to
+maintain client compatibility. Each endpoint page documents only the parameters
+that actively affect behavior in MAX.
+
+In addition to the OpenAI APIs, MAX provides a Prometheus-formatted [metrics
+endpoint](/serve/metrics) to help track your model's performance.

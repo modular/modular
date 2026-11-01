@@ -10,82 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Pixtral's 2D rotary embeddings."""
 
 from dataclasses import dataclass
 from functools import cached_property
 
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, DimLike, TensorValue, TensorValueLike, ops
-from max.nn.layer import Module
-
-
-def meshgrid(
-    height: DimLike, width: DimLike, _indexing: str = "ij"
-) -> tuple[TensorValue, TensorValue]:
-    """Returns row indices and col indices of each point on the grid."""
-    height = Dim(height)
-    width = Dim(width)
-    row_indices = ops.range(
-        0,
-        TensorValue(height),
-        1,
-        out_dim=height,
-        dtype=DType.int64,
-        device=DeviceRef.GPU(),
-    )
-    col_indices = ops.range(
-        0,
-        TensorValue(width),
-        1,
-        out_dim=width,
-        device=DeviceRef.GPU(),
-        dtype=DType.int64,
-    )
-
-    # repeat row indices for each row [[0, ..., 0], ..., [width=n_cols-1, ..., width-1]]
-    h_grid = ops.tile(
-        ops.unsqueeze(row_indices, 1), [1, width]
-    )  # Shape: (height, width)
-    # repeat col indices for each col [[0, 1, ..., height-1=n_rows-1], ...]
-    v_grid = ops.tile(
-        ops.unsqueeze(col_indices, 0), [height, 1]
-    )  # Shape: (height, width)
-    return h_grid, v_grid
-
-
-def patch_position_ids(
-    patch_embeds: list[TensorValue], max_width: int
-) -> TensorValue:
-    """
-    Takes a list of patches, calculates the positional indices for each patch by
-    flattening the array, and returns these indices in the positions tensor.
-    max_width is the maximum numbers of patches you can have in an image on one
-    side ie.e max_image_width_or_height // patch_size.
-    """
-    positions = []
-    for patch in patch_embeds:
-        height, width = patch.shape[
-            2:4
-        ]  # img_height/patch_size, img_width/patch_size
-        # TODO(MSDK-1194): replace with ops.meshgrid()
-        mesh = meshgrid(height, width)
-        # TODO(MSDK-1193): replace ? by ops.chunk() or ops.split_tensor()
-        # Combine row and col indices into 1 tensor of paired coordinates. Shape = (height, width, 2)
-        # Then split into 2 tensors: 1st and 2nd coordinate of points in the mesh.
-        mesh_coords = ops.stack(mesh, axis=-1).reshape((-1, 2))
-        h_grid, v_grid = mesh_coords[:, 0], mesh_coords[:, 1]
-        # Calculates a unique ID for each coordinate pair.
-        # TODO: Understand if using max_width here leads to memory inefficiency
-        ids = h_grid * max_width + v_grid
-        positions.append(ids[:])
-    return ops.concat(positions)
+from max.graph import DeviceRef, DimLike, TensorValue, TensorValueLike, ops
+from max.nn.legacy.layer import Module
 
 
 @dataclass
 class RotaryEmbedding2D(Module):
-    """
-    RotaryEmbedding layer to calculate and apply the frequency tensor for complex exponentials.
+    """Rotary embedding layer for 2D patch positions.
+
+    Calculates and applies the frequency tensor for complex
+    exponentials over each patch's height and width indices.
     """
 
     dim: DimLike
@@ -110,12 +50,12 @@ class RotaryEmbedding2D(Module):
         self.max_patches_per_side = max_patches_per_side
 
     def freqs_cis_base(self) -> TensorValue:
-        """
-        Computes the frequency tensor for complex exponentials (cis)
-        for a given seq_len = num_patches in a block (image).
-        Tensor is scaled with theta parameter.
-        Required to apply Rotary Position Embedding (RoPE) to tensor.
-        See 'Roformer: Enhanced Transformer with Rotary Embedding'
+        """Builds the frequency tensor for the block's patches.
+
+        ``seq_len`` is the number of patches in a block, so one image. The
+        tensor is scaled by theta and cast to complex exponentials, which is
+        what applies rotary position embedding to a tensor. See 'Roformer:
+        Enhanced Transformer with Rotary Embedding'
         (arxiv.org/pdf/2104.09864).
 
         Returns:
@@ -187,6 +127,7 @@ class RotaryEmbedding2D(Module):
 
     @cached_property
     def freqs_cis(self) -> TensorValue:
+        """The rotary frequencies, computed once and cached."""
         self._freqs_cis = self.freqs_cis_base()
         return self._freqs_cis
 

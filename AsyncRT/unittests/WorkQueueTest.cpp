@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <atomic>
 #include <climits>
+#include <cstdlib>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -706,6 +707,46 @@ TEST(WorkQueueTest, UnpartitionedCPUDeviceIsKGlobal) {
   EXPECT_EQ(cpuDevice->getNumaNode(), M::kAnyNumaNode);
   EXPECT_EQ(cpuDevice->numNumaDevices(), 0u);
   EXPECT_TRUE(cpuDevice->getNumaDevice(0).isError());
+}
+
+/// Exercises the enqueue/suspend handshake from GEX-4343. This is a smoke
+/// test, not a reliable reproducer; the reproducer is the mojo-tool and
+/// GraphCompiler lit tests under --runs_per_test on the Graviton executors.
+TEST(WorkQueueTest, AwaitWakeupStress) {
+  CPUDeviceOptions options;
+  options.numThreads = std::max(8u, std::thread::hardware_concurrency());
+  options.mainWillDonate = true;
+  // Without a busy wait every iteration drives a worker through the
+  // mark/recheck/suspend handshake this test is here to exercise.
+  options.threadBusyWaitTime = 0;
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue *workQueue = cpuDevice->getWorkQueue();
+
+  unsigned iters = 5000;
+  if (const char *envIters = std::getenv("ASYNCRT_WORKQUEUE_STRESS_ITERS")) {
+    char *end = nullptr;
+    unsigned long parsed = std::strtoul(envIters, &end, 10);
+    if (end == envIters || *end != '\0' || parsed == 0 || parsed > UINT_MAX)
+      ADD_FAILURE() << "ASYNCRT_WORKQUEUE_STRESS_ITERS must be a positive "
+                       "integer, got \""
+                    << envIters << "\"";
+    else
+      iters = static_cast<unsigned>(parsed);
+  }
+
+  constexpr unsigned tasksPerIteration = 3;
+  for (unsigned iter = 0; iter < iters; ++iter) {
+    auto chain = AsyncValueRef<Chain>::allocate(*cpuDevice);
+    std::atomic<unsigned> remaining{tasksPerIteration};
+    for (unsigned task = 0; task < tasksPerIteration; ++task) {
+      workQueue->addTask(WorkItem([&remaining, chain = chain.copy()]() mutable {
+        if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1)
+          chain.copy().emplace();
+      }));
+    }
+    await(chain);
+    EXPECT_EQ(remaining.load(std::memory_order_relaxed), 0u);
+  }
 }
 
 } // namespace

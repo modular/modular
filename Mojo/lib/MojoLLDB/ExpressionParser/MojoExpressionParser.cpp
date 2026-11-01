@@ -24,9 +24,9 @@
 #include "Mojo/Compiler/ObjectCompiler.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/LITDialect/LITOps.h"
+#include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/Support/Constants.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
@@ -421,7 +421,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Create a clone of the parser module so that we can compile it without
   // thrashing on the current parser state.
-  auto exprFn = cast<LIT::FnOp>(result.exprFnDecl.getIfOperation());
+  auto exprFn = cast<LIT::DefASTDecl>(*result.exprFnDecl).getOp();
   exprFn.setLinkageNameAttr(
       LinkageNameAttr::get(exprFn->getContext(), exprFnName));
   mlir::IRMapping mapping;
@@ -488,6 +488,11 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
                           ExportKind::Exported});
   OwningOpRef<ModuleOp> sliceModule =
       produceStandaloneModule(symbolTable, exportedSymbols);
+  if (!sliceModule) {
+    impl->expressionLogger->errorLog(
+        "Failed to produce standalone module for '{0}'", exprFnName);
+    return returnErrorCleanup();
+  }
   auto bufferOr = impl->objCompiler->emitArchive(std::move(sliceModule));
   if (bufferOr.isError()) {
     impl->expressionLogger->errorLog(

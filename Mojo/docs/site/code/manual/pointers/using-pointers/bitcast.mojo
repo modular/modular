@@ -46,7 +46,7 @@ def main():
     # Chunk 1: size=2, values=[10, 20] (as UInt32 little-endian)
     # Chunk 2: size=1, values=[30]
     # Terminator: size=0
-    var allocation = alloc(Layout[UInt8](count=1 + 8 + 1 + 4 + 1))
+    var allocation = alloc(Layout[UInt8](length=1 + 8 + 1 + 4 + 1))
     var buf = allocation.unsafe_ptr()
     var offset = 0
 

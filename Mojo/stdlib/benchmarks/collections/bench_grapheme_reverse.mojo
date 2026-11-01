@@ -53,7 +53,7 @@ def bench_grapheme_iter_forward[
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
-    @always_inline
+    @inline(.always)
     def call_fn() {imm}:
         var count = 0
         for _ in black_box(items).graphemes():
@@ -68,7 +68,7 @@ def bench_grapheme_iter_reversed[
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
-    @always_inline
+    @inline(.always)
     def call_fn() {imm}:
         var count = 0
         for _ in black_box(items).graphemes_reversed():
@@ -83,7 +83,7 @@ def bench_grapheme_iter_alternating[
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
-    @always_inline
+    @inline(.always)
     def call_fn() {imm}:
         var count = 0
         var iter = black_box(items).graphemes()
@@ -112,10 +112,10 @@ def main() raises:
     comptime lengths = (1_000, 10_000, 100_000)
 
     comptime for i in range(len(lengths)):
-        comptime length = rebind[Int](lengths[i])
+        comptime length = lengths[i]
 
         comptime for j in range(len(filenames)):
-            comptime fname = rebind[StaticString](filenames[j])
+            comptime fname = filenames[j]
             comptime suffix = String("[", length, ",", fname, "]")
             m.bench_function(
                 bench_grapheme_iter_forward[length, fname],

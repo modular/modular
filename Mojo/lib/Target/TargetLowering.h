@@ -27,12 +27,20 @@
 #include "Support/MDialect/MAttrs.h"
 #include "Target/TargetTraits.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Types.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include <cassert>
+#include <utility>
 
 #include <memory>
 #include <optional>
@@ -61,15 +69,80 @@ class DIType;
 
 namespace M::KGEN {
 
+/// Builder used by eager function-local POP lowering.
+class POPLoweringBuilder : public mlir::OpBuilder {
+public:
+  POPLoweringBuilder(mlir::MLIRContext *context,
+                     llvm::DenseMap<mlir::Value, mlir::Value> &loweredValues)
+      : mlir::OpBuilder(context), loweredValues(loweredValues) {}
+
+  ~POPLoweringBuilder() {
+    for (mlir::Operation *op : llvm::reverse(operationsToDelete))
+      op->destroy();
+  }
+
+  void replaceOp(mlir::Operation *op, mlir::ValueRange values) {
+    assert(op->getNumResults() == values.size() &&
+           "incorrect number of replacement values");
+    for (auto [source, replacement] : llvm::zip(op->getResults(), values)) {
+      loweredValues[source] = replacement;
+      mlir::Value sourceReplacement = replacement;
+      if (source.getType() != replacement.getType()) {
+        mlir::OpBuilder::InsertionGuard guard(*this);
+        setInsertionPoint(op);
+        sourceReplacement =
+            mlir::UnrealizedConversionCastOp::create(
+                *this, op->getLoc(), source.getType(), replacement)
+                .getResult(0);
+        loweredValues[sourceReplacement] = replacement;
+      }
+      source.replaceAllUsesWith(sourceReplacement);
+    }
+    deleteLater(op);
+  }
+  void replaceOp(mlir::Operation *op, mlir::Value value) {
+    replaceOp(op, mlir::ValueRange(value));
+  }
+  void replaceOp(mlir::Operation *op, mlir::Operation *replacement) {
+    replaceOp(op, replacement->getResults());
+  }
+
+  void deleteLater(mlir::Operation *op) {
+    assert(op->getNumRegions() == 0 &&
+           "function-local POP operations must not contain regions");
+    assert(op->use_empty() && "operation still has uses");
+    mlir::Block *block = op->getBlock();
+    assert(block && "operation is already scheduled for deletion");
+    bool invalidatesInsertionPoint = getInsertionBlock() == block &&
+                                     getInsertionPoint() != block->end() &&
+                                     &*getInsertionPoint() == op;
+    op->dropAllReferences();
+    op->remove();
+    if (invalidatesInsertionPoint)
+      clearInsertionPoint();
+    operationsToDelete.push_back(op);
+  }
+
+  template <typename OpTy, typename... Args>
+  OpTy replaceOpWithNewOp(mlir::Operation *op, Args &&...args) {
+    OpTy replacement =
+        OpTy::create(*this, op->getLoc(), std::forward<Args>(args)...);
+    replaceOp(op, replacement->getResults());
+    return replacement;
+  }
+
+private:
+  llvm::DenseMap<mlir::Value, mlir::Value> &loweredValues;
+  llvm::SmallVector<mlir::Operation *> operationsToDelete;
+};
+
 /// Per-target policy for the KGEN/POP -> LLVM-dialect lowering, dispatched by
-/// triple via `TargetLoweringRegistry`. A target contributes its own rewrite
-/// patterns (the same way a compiler plugin already does); the default
-/// contributes none (host-like).
+/// triple via `TargetLoweringRegistry`. A target may directly override
+/// function-local POP lowering and contribute patterns for module-scoped
+/// lowering; the defaults contribute neither (host-like).
 ///
 /// As the inline per-target branches in the lowering passes are migrated, the
-/// per-target logic moves into target-owned patterns registered through these
-/// hooks, and the passes just call
-/// `TargetLoweringRegistry::lookup(triple)->populate...`.
+/// per-target logic moves behind these hooks.
 class TargetLowering {
 public:
   virtual ~TargetLowering() = default;
@@ -100,16 +173,15 @@ public:
     return matches(triple) ? this : nullptr;
   }
 
-  /// Contributes this target's patterns to the POP -> LLVM lowering
-  /// (LowerPOPToLLVM): e.g. casts that lower to target-specific ISA intrinsics.
-  /// The default contributes none. Mirrors the plugin's
-  /// `populateLowerPOPToLLVMPatterns`, so a plugin is just another target
-  /// lowering. Called after the generic patterns; target patterns use a higher
-  /// benefit so they win for the ops they handle.
-  virtual void
-  populateLowerPOPToLLVMPatterns(mlir::RewritePatternSet &patterns,
-                                 mlir::LLVMTypeConverter &converter,
-                                 TargetInfoAttr target) const {}
+  /// Eagerly lowers a function-local POP operation when this target overrides
+  /// the generic lowering. Returns failure when the generic lowering should be
+  /// used.
+  virtual mlir::LogicalResult
+  lowerFunctionLocalPOPToLLVM(mlir::Operation *op, mlir::ValueRange operands,
+                              mlir::LLVMTypeConverter &converter,
+                              POPLoweringBuilder &builder) const {
+    return mlir::failure();
+  }
 
   /// Contributes this target's patterns to the global (module-scoped) POP ->
   /// LLVM lowering (LowerGlobalPOPToLLVM), i.e. lowerings that create or query
@@ -240,6 +312,13 @@ public:
                                       TargetInfoAttr target) const {
     return false;
   }
+
+  /// Returns whether this target's code generator can compile arithmetic on
+  /// 128-bit integers. Lowerings that would widen an operation past the
+  /// target's native widths (e.g. the 2W-bit product in floor division by a
+  /// constant) consult this before emitting the wider type, and fall back to a
+  /// narrower sequence when it returns false. The default supports them.
+  virtual bool supportsI128() const { return true; }
 
   /// Returns a target-specific spelling of `dtype`'s name for debug info, or
   /// nullopt to use the generic encoding (e.g. a target's debugger may expect

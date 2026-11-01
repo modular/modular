@@ -33,7 +33,7 @@ def transfer_to(
     graph tracing and is baked into the compiled graph as an
     ``mo.transfer`` MLIR op.
 
-    This is distinct from :meth:`~max.experimental.nn.Module.to`, which is a
+    This is distinct from :meth:`~max.nn.Module.to`, which is a
     **pre-compilation** operation that moves stored weight tensors on the
     Python host before the graph is built. Use ``transfer_to`` when you need
     to route an activation tensor between devices inside :meth:`forward`
@@ -61,7 +61,7 @@ def transfer_to(
             "transfer_to(CPU) on a scalar tensor detected during graph"
             " construction. If this tensor is a static model weight,"
             " consider annotating the field as `PinnedDeviceTensor`"
-            " (from max.experimental.nn) to keep it on its current"
+            " (from max.nn) to keep it on its current"
             " device and avoid a device sync at runtime.",
             stacklevel=2,
         )

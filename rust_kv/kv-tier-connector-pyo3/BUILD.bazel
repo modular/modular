@@ -1,0 +1,38 @@
+load("//bazel:api.bzl", "copy_files", "modular_py_library", "modular_pyo3_extension")
+load("//rust_kv:test_compat.bzl", "GPU_PLATFORM")
+
+package(default_visibility = ["//rust_kv:consumers"])
+
+# NOTE: pyo3 itself is injected by `modular_pyo3_extension` through a
+# toolchain, so it must not be listed in `deps`.
+modular_pyo3_extension(
+    name = "_kv_tier_connector_pyo3_so",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "kv_tier_connector_pyo3",
+    module_name = "_kv_tier_connector_pyo3",
+    target_compatible_with = GPU_PLATFORM,
+    deps = [
+        "//rust_kv/kv-tier-connector",
+        "//rust_kv/max-profiler",
+    ],
+)
+
+# Move the .so next to the package __init__.py so imports resolve.
+copy_files(
+    name = "_kv_tier_connector_pyo3",
+    srcs = [":_kv_tier_connector_pyo3_so"],
+    outs = ["python/kv_tier_connector/_kv_tier_connector_pyo3.so"],
+)
+
+modular_py_library(
+    name = "connector",
+    srcs = [
+        "python/kv_tier_connector/__init__.py",
+    ],
+    data = [":_kv_tier_connector_pyo3"],
+    imports = ["python"],
+    tags = [
+        "no-pydeps",
+    ],
+    target_compatible_with = GPU_PLATFORM,
+)

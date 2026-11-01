@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Architecture registration for the InternVL chat models."""
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture

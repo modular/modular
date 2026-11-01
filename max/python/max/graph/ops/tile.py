@@ -20,10 +20,8 @@ from .. import dtype_promotion
 from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
 from ..shape import Shape
-from ..type import DeviceRef, TensorType
+from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
-from .transfer_to import transfer_to
-from .validation import _check_device_placement
 
 
 def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
@@ -32,8 +30,7 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
     Each dimension ``i`` is copied ``repeats[i]`` times, so its output size is
     ``x.shape[i] * repeats[i]``.
 
-    This op runs on CPU. By default, an input on another device is copied to
-    CPU for the operation (emitting a warning) and the result is copied back.
+    The op runs on ``x``'s device; only ``repeats`` are host values.
 
     .. code-block:: python
 
@@ -60,10 +57,8 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
         A ``TensorValue`` representing the tiled input.
 
     Raises:
-        ValueError: If ``repeats`` doesn't have one value per dimension, if a
-            statically-known repeat isn't positive, or if ``x`` is on a
-            non-CPU device and
-            ``strict_device_placement=DevicePlacementPolicy.Error``.
+        ValueError: If ``repeats`` doesn't have one value per dimension, or if a
+            statically-known repeat isn't positive.
     """
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     shape = x.shape
@@ -82,18 +77,10 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
         dim * count for dim, count in zip(shape, repeats, strict=True)
     ]
 
-    old_device = x.device if not x.device.is_cpu() else None
-    if old_device is not None:
-        _check_device_placement("ops.tile", "TODO(GEX-2056).")
-        x = transfer_to(x, DeviceRef.CPU())
-    # TODO(GEX-2056): Add GPU kernel support for tile.
-    result = Graph.current._add_op_generated(
+    return Graph.current._add_op_generated(
         rmo.MoTileOp,
         TensorType(dtype=x.dtype, shape=output_dims, device=x.device),
         x,
         TensorValue(Shape(repeats)),
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-    if old_device is not None:
-        return transfer_to(result, old_device)
-    return result

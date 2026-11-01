@@ -16,10 +16,9 @@ from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
 from max.gpu import *
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.testing import assert_almost_equal, assert_equal, TestSuite
+from max.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import assert_almost_equal, TestSuite
 
-from std.utils import Index, IndexList
 from std.utils.coord import Coord
 
 comptime length = 8192
@@ -33,23 +32,23 @@ def run_elementwise[
 ](
     ctx: DeviceContext, in_device: DeviceBuffer[dtype]
 ) raises where dtype.is_floating_point():
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
 
     var in_buffer = Span(unsafe_ptr=in_device.unsafe_ptr(), length=length)
     var out_buffer = Span(unsafe_ptr=out_device.unsafe_ptr(), length=length)
 
-    @always_inline
-    @__copy_capture(out_buffer, in_buffer)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
-        var idx = Int(idx0[0].value())
+    @inline(.always)
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {var out_buffer, var in_buffer}:
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var result = math_fn(val)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, result)
 
-    elementwise[func, pack_size, target="gpu"](Coord(length), ctx)
+    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
 
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:
         for i in range(length):

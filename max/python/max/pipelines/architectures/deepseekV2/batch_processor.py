@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING
 
 from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputsInterface
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     SingleReplicaRaggedBatchProcessor,
@@ -46,6 +46,7 @@ class DeepseekV2BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The symbolic inputs the batch processor builds."""
         return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,
@@ -58,7 +59,7 @@ class DeepseekV2BatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         signal_buffers: list[Buffer],
     ) -> DeepseekV2Inputs:
         from .model import DeepseekV2Inputs

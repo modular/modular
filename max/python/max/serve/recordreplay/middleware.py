@@ -62,14 +62,7 @@ class RecorderMiddleware:
         *,
         recorder: Recorder,
         include_responses: bool = False,
-    ) -> None:
-        """Create a recorder middleware using a pre-initialized recorder.
-
-        The recorder must be provided as the 'recorder' parameter.
-
-        If include_responses is True, responses are recorded as well.
-        Otherwise, only the request will be recorded.
-        """
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -80,16 +73,7 @@ class RecorderMiddleware:
             [], contextlib.AbstractContextManager[Recorder]
         ],
         include_responses: bool = False,
-    ) -> None:
-        """Create a recorder middleware that manages lifetime of the recorder.
-
-        recorder_factory must be a callable that returns a context manager that
-        yields a recorder.  The context manager will be entered upon ASGI
-        lifespan start and will be exited upon ASGI lifespan end.
-
-        If include_responses is True, responses are recorded as well.
-        Otherwise, only the request will be recorded.
-        """
+    ) -> None: ...
 
     def __init__(
         self,
@@ -102,6 +86,19 @@ class RecorderMiddleware:
         | None = None,
         include_responses: bool = False,
     ) -> None:
+        """Creates the recording middleware.
+
+        Args:
+            app: The ASGI application to wrap.
+            recorder: A pre-initialized recorder. Mutually exclusive with
+                ``recorder_factory``.
+            recorder_factory: Callable returning a context manager that yields
+                the recorder. The manager is entered on ASGI lifespan start
+                and exited on lifespan end. Mutually exclusive with
+                ``recorder``.
+            include_responses: Whether to record responses as well as
+                requests.
+        """
         if (recorder is not None) + (recorder_factory is not None) != 1:
             raise TypeError(
                 "Exactly one of recorder and recorder_factory must be provided"
@@ -117,6 +114,7 @@ class RecorderMiddleware:
         receive: asgi_types.ASGIReceiveCallable,
         send: asgi_types.ASGISendCallable,
     ) -> None:
+        """Passes the request through, recording it when recording is on."""
         if scope["type"] == "lifespan" and self._recorder_factory is not None:
             await self._intercept_lifespan(scope, receive, send)
             return

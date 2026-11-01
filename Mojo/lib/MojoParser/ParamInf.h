@@ -63,8 +63,6 @@ public:
                                        evaluator.getIndexBindings());
   }
 
-  const ParameterEvaluator &getEvaluator() const { return evaluator; }
-
   /// Pre-seed an inferred parameter value by index.
   void setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
     setInferredValue(paramIdx, paramVal);
@@ -92,6 +90,10 @@ private:
   /// Infer still-unbound parameters from equality (`where a == b`) body
   /// constraints.
   LogicalResult inferFromBodyConstraints();
+
+  /// Bind each still-unbound singleton `Origin` parameter whose underlying
+  /// `!lit.origin` is already known.
+  void inferOriginParams();
 
   /// Convenience getters for fields from paramBindings.
   ASTDecl &getDeclScope() const { return paramBindings.declScope; }
@@ -197,12 +199,6 @@ private:
   OperandsNeedingOriginsList &operandsNeedingOrigins;
 
   LogicalResult inferOptionalLiteralSize();
-
-  /// Given an incomplete parameter binding set, try to infer parameters on
-  /// Self of a method from the first argument.
-  LogicalResult inferCTADParams();
-
-  LogicalResult inferSelfFromInitResult();
 
   LogicalResult inferResultSlot(RefType expectedRef, size_t argIdx,
                                 const ExprDest &dest);

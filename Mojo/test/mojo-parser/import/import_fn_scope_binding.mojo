@@ -23,7 +23,7 @@
 #  - `import a.b` also makes symbols of the parent package `a` reachable, and
 #    overlapping chain imports share the prefix.
 
-# RUN: %parse-mojo-isolated -I=%S/inputs %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I%S/inputs %s | FileCheck %s
 
 from wildcard_shadow_a import shadowed_fn
 

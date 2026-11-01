@@ -23,27 +23,22 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from algorithm.reductions import (
+from .rowwise_reductions import (
     reduce_argmax,
     reduce_argmin,
-    reduce_max,
-    reduce_mean,
-    reduce_min,
     reduce_min_and_max,
     reduce_product,
-    reduce_sum,
 )
 from algorithm.rowwise_types import RowCoord
 
-from max.gpu.host import DeviceContext, get_gpu_target
-from max.gpu.host.info import is_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
 from nn import arg_nonzero
 from nn.argsort import argsort
 from nn.cumsum import cumsum
 from nn.gather_scatter import _unsafe_normalize_neg_index
-from nn.normalization import (
-    apply_qk_rms_norm,
-    group_norm,
+from nn.normalization import apply_qk_rms_norm, group_norm
+from .rowwise_normalization import (
     layer_norm,
     layer_norm_rope_ragged,
     rms_norm_fused_residual_add,
@@ -52,17 +47,27 @@ from nn.normalization import (
     row_mean_of_squares_qk,
     row_mean_of_squares,
 )
-from nn.softmax import softmax
-from nn.topk import top_k, top_k_shape_impl
+from .rowwise_softmax import softmax
+from nn.topk import _top_k_cpu, top_k, top_k_shape_impl, topk_gpu
+from nn.topk_per_row import TOPK_PER_ROW_MAX_K, topk_per_row_gpu
 from state_space.rms_norm_fused_residual import (
     _rms_norm_fused_residual_cpu_entry,
     rms_norm_fused_residual,
 )
 from extensibility import (
+    Fused,
+    Input,
     InputTensor,
+    LoadAccess,
+    Loadable,
+    Output,
     OutputTensor,
+    Storable,
+    StoreAccess,
     Tensor,
     TileTensorable,
+    UnsafeFusedView,
+    unsafe_fused_view,
 )
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
@@ -71,6 +76,7 @@ from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
 )
 from std.logger import Logger
+from std.sys import align_of
 
 comptime logger = Logger()
 """Logger for the reductions module."""
@@ -91,19 +97,17 @@ struct ArgMax:
     @staticmethod
     def execute[
         target: StaticString,
-        rank: Int,
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[rank=rank, ...],
-        input: FusedInputTensor[rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.arg_max` graph op.
 
         Parameters:
             target: Compilation target string.
-            rank: Tensor rank of the input and output tensors.
             axis: Dimension along which to reduce.
             _trace_name: Name used for tracing and debugging.
 
@@ -117,30 +121,43 @@ struct ArgMax:
         """
         # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
         # the new impl handles CPU + GPU and any axis.
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
         comptime reduce_dim = axis if axis >= 0 else axis + rank
 
-        @always_inline
+        # Project the host proxy to its access-enabled view so the closures can
+        # load/store on the GPU lane the reduction dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
+
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[.int64, width]) {var output}:
-            output._lambda_store[width=width](
+        ](coords: Coord, val: SIMD[.int64, width]) {var out_view}:
+            out_view.store[width=width](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         reduce_argmax[
-            input.dtype,
+            dtype,
             target=target,
             reduce_dim=reduce_dim,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
+            name=_trace_name,
+        ](input_fn, output_fn, input.shape().flatten(), ctx)
 
 
 @extensibility.register("mo.reduce.arg_min")
@@ -150,19 +167,17 @@ struct ArgMin:
     @staticmethod
     def execute[
         target: StaticString,
-        rank: Int,
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[rank=rank, ...],
-        input: FusedInputTensor[rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.arg_min` graph op.
 
         Parameters:
             target: Compilation target string.
-            rank: Tensor rank of the input and output tensors.
             axis: Dimension along which to reduce.
             _trace_name: Name used for tracing and debugging.
 
@@ -176,30 +191,43 @@ struct ArgMin:
         """
         # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
         # the new impl handles CPU + GPU and any axis.
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
         comptime reduce_dim = axis if axis >= 0 else axis + rank
 
-        @always_inline
+        # Project the host proxy to its access-enabled view so the closures can
+        # load/store on the GPU lane the reduction dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
+
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[.int64, width]) {var output}:
-            output._lambda_store[width=width](
+        ](coords: Coord, val: SIMD[.int64, width]) {var out_view}:
+            out_view.store[width=width](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         reduce_argmin[
-            input.dtype,
+            dtype,
             target=target,
             reduce_dim=reduce_dim,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
+            name=_trace_name,
+        ](input_fn, output_fn, input.shape().flatten(), ctx)
 
 
 @extensibility.register("mo.arg_nonzero")
@@ -207,19 +235,31 @@ struct ArgNonZero:
     """Registers the `mo.arg_nonzero` graph op with the graph compiler."""
 
     @staticmethod
-    def execute(
-        output_buffer: OutputTensor[rank=2, ...],
-        input_buffer: InputTensor,
+    def execute[
+        target: StaticString,
+    ](
+        output_buffer: Some[Output & Tensor],
+        input_buffer: Some[Input & Tensor],
+        ctx: DeviceContext,
     ) raises:
         """Executes the `mo.arg_nonzero` graph op.
+
+        Parameters:
+            target: Compilation target string.
 
         Args:
             output_buffer: Output tensor receiving the nonzero indices.
             input_buffer: Input tensor whose nonzero indices are found.
+            ctx: Device context used to enqueue GPU work.
         """
-        arg_nonzero.arg_nonzero(
-            input_buffer.to_tile_tensor[.int64](),
-            output_buffer.to_tile_tensor[.int64](),
+        comptime assert conforms_to(type_of(output_buffer), TileTensorable)
+        comptime assert conforms_to(type_of(input_buffer), TileTensorable)
+        comptime assert type_of(output_buffer).rank == 2
+
+        arg_nonzero.arg_nonzero[target=target](
+            input_buffer.to_tile_tensor(),
+            output_buffer.to_tile_tensor(),
+            ctx,
         )
 
 
@@ -233,77 +273,9 @@ def arg_nonzero_shape(input_buffer: Some[TileTensorable]) -> IndexList[2]:
     Returns:
         The output shape as a rank-2 `IndexList` of nonzero element indices.
     """
-    return arg_nonzero.arg_nonzero_shape(input_buffer.to_tile_tensor())
-
-
-@extensibility.register("mo.reduce.mean")
-struct Mean:
-    """Registers the `mo.reduce.mean` graph op with the graph compiler."""
-
-    @staticmethod
-    def execute[
-        target: StaticString,
-        axis: Int,
-    ](
-        output: FusedOutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        """Executes the `mo.reduce.mean` graph op.
-
-        Parameters:
-            target: Compilation target string.
-            axis: Dimension along which to reduce.
-
-        Args:
-            output: Output tensor receiving the result.
-            input: Input tensor to reduce.
-            ctx: Device context used to enqueue the kernel.
-
-        Raises:
-            Error: If the operation parameters are invalid.
-        """
-
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
-            )
-
-        @always_inline
-        def output_fn[
-            width: SIMDLength
-        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
-            output._lambda_store[width=width](
-                coords,
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        reduce_mean[
-            output.dtype,
-            target=target,
-            reduce_dim=axis,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
-
-
-@extensibility.register_shape_function("mo.reduce.mean")
-def reduce_mean_shape[
-    axis: Int,
-](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
-    """Computes the output shape for the `mo.reduce.mean` graph op.
-
-    Parameters:
-        axis: Dimension along which to average the elements of `input`.
-
-    Args:
-        input: Input tensor reduced along `axis` by averaging.
-
-    Returns:
-        The output shape after reducing `input` along `axis` by averaging.
-    """
-    return reduce_shape(input, axis)
+    return coord_to_index_list(
+        arg_nonzero.arg_nonzero_shape(input_buffer.to_tile_tensor())
+    )
 
 
 @extensibility.register("mo.reduce.row_mean_of_squares")
@@ -320,10 +292,10 @@ struct RowMeanOfSquares:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[rank=2, ...],
-        input: FusedInputTensor[rank=2, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.row_mean_of_squares` graph op.
 
         Parameters:
@@ -338,25 +310,48 @@ struct RowMeanOfSquares:
         Raises:
             Error: If `output` does not have shape `[input_rows, 1]`.
         """
-        if output.shape()[0] != input.shape()[0] or output.shape()[1] != 1:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime in_dtype = type_of(input).dtype
+        comptime out_dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+
+        if (
+            Int(output.shape()[0].value()) != Int(input.shape()[0].value())
+            or Int(output.shape()[1].value()) != 1
+        ):
             raise Error("output must have shape [input_rows, 1]")
 
-        @always_inline
-        def input_fn[
-            width: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](coords)
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        var output_tile = output.to_tile_tensor()
 
-        @always_inline
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](coords: Coord) {var input_view} -> SIMD[in_dtype, width]:
+            return rebind[SIMD[in_dtype, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
+            )
+
+        @inline(.always)
         def output_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
+        ](coords: Coord, val: SIMD[out_dtype, width]) {var output_tile}:
             # `output` is `[M, 1]`, so `width` adjacent rows (tiled tier) at
             # column 0 sit contiguously -- one vector store, no lane splitting.
-            output.store[width=width](Index(Int(coords[0].value()), 0), val)
+            output_tile.store[width=width, alignment=align_of[out_dtype]()](
+                Coord(Int(coords[0]), 0),
+                rebind[SIMD[output_tile.dtype, width]](val),
+            )
 
-        row_mean_of_squares[input.dtype, output.dtype, 2, target=target](
-            input_fn, output_fn, input.shape_coord(), ctx
+        row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
+            input_fn, output_fn, input.shape().flatten(), ctx
         )
 
 
@@ -373,7 +368,7 @@ def reduce_row_mean_of_squares_shape(input: Some[Tensor]) -> IndexList[2]:
         mean of squares.
     """
     comptime assert type_of(input).rank == 2, "input must be rank 2"
-    var input_shape = coord_to_index_list(input.shape().tuple())
+    var input_shape = coord_to_index_list(input.shape())
     return Index(input_shape[0], 1)
 
 
@@ -393,11 +388,11 @@ struct RowMeanOfSquaresQK:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[rank=2, ...],
-        q: InputTensor[rank=2, ...],
-        k: InputTensor[rank=2, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        k: Some[Input & Tensor],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.row_mean_of_squares_qk` graph op.
 
         Parameters:
@@ -410,23 +405,39 @@ struct RowMeanOfSquaresQK:
             k: Key tensor of shape `[M, Nk]`.
             ctx: Device context used to enqueue the kernel.
         """
-        comptime assert q.dtype == k.dtype, "q and k must share a dtype"
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime in_dtype = type_of(q).dtype
+        comptime assert (
+            type_of(k).dtype == in_dtype
+        ), "q and k must share a dtype"
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(q).rank == 2
+        comptime assert type_of(k).rank == 2
+
+        var output_tile = output.to_tile_tensor()
+        var q_tile = q.to_tile_tensor()
+        var k_tile = k.to_tile_tensor()
+
+        # Each tile's `dim()` carries its own linear index type, so the two
+        # sides need a common type before they can be compared.
         if (
-            output.shape()[0] != q.shape()[0]
-            or output.shape()[0] != k.shape()[0]
-            or output.shape()[1] != 2
+            Int(output_tile.dim[0]()) != Int(q_tile.dim[0]())
+            or Int(output_tile.dim[0]()) != Int(k_tile.dim[0]())
+            or Int(output_tile.dim[1]()) != 2
         ):
             raise Error("output must have shape [rows, 2] matching q/k rows")
 
-        # `k` is bitcast to `q.dtype` to unify the single `in_dtype` kernel
+        # `k` is bitcast to `q`'s dtype to unify the single `in_dtype` kernel
         # parameter (q and k share a dtype, asserted above).
         row_mean_of_squares_qk[target=target](
-            output.to_tile_tensor[.int64](),
-            q.to_tile_tensor[.int64](),
-            k.to_tile_tensor[.int64]().bitcast[q.dtype](),
-            q.shape()[0],
-            q.shape()[1],
-            k.shape()[1],
+            output_tile,
+            q_tile,
+            k_tile.bitcast[in_dtype](),
+            Int(q_tile.dim[0]()),
+            Int(q_tile.dim[1]()),
+            Int(k_tile.dim[1]()),
             ctx,
         )
 
@@ -450,7 +461,7 @@ def reduce_row_mean_of_squares_qk_shape(
     comptime assert (
         type_of(q).rank == 2 and type_of(k).rank == 2
     ), "q and k must be rank 2"
-    var q_shape = coord_to_index_list(q.shape().tuple())
+    var q_shape = coord_to_index_list(q.shape())
     return Index(q_shape[0], 2)
 
 
@@ -478,16 +489,16 @@ struct ApplyQKRMSNorm:
     def execute[
         target: StaticString,
     ](
-        q_out: OutputTensor[rank=2, ...],
-        k_out: OutputTensor[rank=2, ...],
-        q: InputTensor[rank=2, ...],
-        k: InputTensor[rank=2, ...],
-        qk_var: InputTensor[dtype=.float32, rank=2, ...],
-        gamma_q: InputTensor[dtype=.float32, rank=1, ...],
-        gamma_k: InputTensor[dtype=.float32, rank=1, ...],
+        q_out: Some[Output & Tensor],
+        k_out: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        k: Some[Input & Tensor],
+        qk_var: Some[Input & Tensor],
+        gamma_q: Some[Input & Tensor],
+        gamma_k: Some[Input & Tensor],
         epsilon: Float32,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.norm.apply_qk_rms_norm` graph op.
 
         Parameters:
@@ -507,115 +518,79 @@ struct ApplyQKRMSNorm:
         Raises:
             Error: If output shapes do not match the corresponding inputs.
         """
-        comptime assert q.dtype == k.dtype, "q and k must share a dtype"
+        comptime assert conforms_to(type_of(q_out), TileTensorable)
+        comptime assert conforms_to(type_of(k_out), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(qk_var), TileTensorable)
+        comptime assert conforms_to(type_of(gamma_q), TileTensorable)
+        comptime assert conforms_to(type_of(gamma_k), TileTensorable)
+        comptime in_dtype = type_of(q).dtype
         comptime assert (
-            q_out.dtype == q.dtype and k_out.dtype == q.dtype
+            type_of(k).dtype == in_dtype
+        ), "q and k must share a dtype"
+        comptime out_dtype = type_of(q_out).dtype
+        comptime assert (
+            out_dtype == in_dtype and type_of(k_out).dtype == in_dtype
         ), "outputs must match the q/k dtype"
-        if q_out.shape()[0] != q.shape()[0] or q_out.shape()[1] != q.shape()[1]:
+        comptime assert type_of(qk_var).dtype == DType.float32
+        comptime assert type_of(gamma_q).dtype == DType.float32
+        comptime assert type_of(gamma_k).dtype == DType.float32
+        comptime assert type_of(q_out).rank == 2
+        comptime assert type_of(k_out).rank == 2
+        comptime assert type_of(q).rank == 2
+        comptime assert type_of(k).rank == 2
+        comptime assert type_of(qk_var).rank == 2
+        comptime assert type_of(gamma_q).rank == 1
+        comptime assert type_of(gamma_k).rank == 1
+
+        var q_out_tile = q_out.to_tile_tensor()
+        var k_out_tile = k_out.to_tile_tensor()
+        var q_tile = q.to_tile_tensor()
+        var k_tile = k.to_tile_tensor()
+        var qk_var_tile = qk_var.to_tile_tensor()
+        var gamma_q_tile = gamma_q.to_tile_tensor()
+        var gamma_k_tile = gamma_k.to_tile_tensor()
+
+        # Each tile's `dim()` carries its own linear index type, so the two
+        # sides need a common type before they can be compared.
+        if Int(q_out_tile.dim[0]()) != Int(q_tile.dim[0]()) or Int(
+            q_out_tile.dim[1]()
+        ) != Int(q_tile.dim[1]()):
             raise Error("q_out must have shape [rows, Nq] matching q")
-        if k_out.shape()[0] != k.shape()[0] or k_out.shape()[1] != k.shape()[1]:
+        if Int(k_out_tile.dim[0]()) != Int(k_tile.dim[0]()) or Int(
+            k_out_tile.dim[1]()
+        ) != Int(k_tile.dim[1]()):
             raise Error("k_out must have shape [rows, Nk] matching k")
         if (
-            qk_var.shape()[0] != q.shape()[0]
-            or qk_var.shape()[0] != k.shape()[0]
-            or qk_var.shape()[1] != 2
+            Int(qk_var_tile.dim[0]()) != Int(q_tile.dim[0]())
+            or Int(qk_var_tile.dim[0]()) != Int(k_tile.dim[0]())
+            or Int(qk_var_tile.dim[1]()) != 2
         ):
             raise Error("qk_var must have shape [rows, 2] matching q/k rows")
-        if gamma_q.shape()[0] != q.shape()[1]:
+        if Int(gamma_q_tile.dim[0]()) != Int(q_tile.dim[1]()):
             raise Error("gamma_q must have shape [Nq] matching q cols")
-        if gamma_k.shape()[0] != k.shape()[1]:
+        if Int(gamma_k_tile.dim[0]()) != Int(k_tile.dim[1]()):
             raise Error("gamma_k must have shape [Nk] matching k cols")
 
         # `out_dtype` is inferred from `q_out`; `k_out` shares the same dtype
-        # (asserted above), so bitcast its tile tensor to `q_out.dtype` to
-        # unify the single `out_dtype` parameter. Likewise `in_dtype` is
-        # inferred from `q`, so bitcast `k` to `q.dtype`.
+        # (asserted above), so bitcast its tile tensor to unify the single
+        # `out_dtype` parameter. Likewise `in_dtype` is inferred from `q`, so
+        # bitcast `k`.
         apply_qk_rms_norm[target=target,](
-            q_out.to_tile_tensor[.int64](),
-            k_out.to_tile_tensor[.int64]().bitcast[q_out.dtype](),
-            gamma_q.to_tile_tensor[.int64](),
-            gamma_k.to_tile_tensor[.int64](),
-            qk_var.to_tile_tensor[.int64](),
-            q.to_tile_tensor[.int64](),
-            k.to_tile_tensor[.int64]().bitcast[q.dtype](),
+            q_out_tile,
+            k_out_tile.bitcast[out_dtype](),
+            gamma_q_tile.bitcast[DType.float32](),
+            gamma_k_tile.bitcast[DType.float32](),
+            qk_var_tile.bitcast[DType.float32](),
+            q_tile,
+            k_tile.bitcast[in_dtype](),
             epsilon,
-            q.shape()[0],
-            q.shape()[1],
-            k.shape()[1],
+            Int(q_tile.dim[0]()),
+            Int(q_tile.dim[1]()),
+            Int(k_tile.dim[1]()),
             ctx,
         )
-
-
-@extensibility.register("mo.reduce.add")
-struct ReduceAdd:
-    """Registers the `mo.reduce.add` graph op with the graph compiler."""
-
-    @staticmethod
-    def execute[
-        target: StaticString,
-        axis: Int,
-        _trace_name: StaticString,
-    ](
-        output: FusedOutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        """Executes the `mo.reduce.add` graph op.
-
-        Parameters:
-            target: Compilation target string.
-            axis: Dimension along which to reduce.
-            _trace_name: Name used for tracing and debugging.
-
-        Args:
-            output: Output tensor receiving the result.
-            input: Input tensor to reduce.
-            ctx: Device context used to enqueue the kernel.
-
-        Raises:
-            Error: If the operation parameters are invalid.
-        """
-
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
-            )
-
-        @always_inline
-        def output_fn[
-            width: SIMDLength
-        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
-            output._lambda_store[width=width](
-                coords,
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        reduce_sum[
-            output.dtype,
-            target=target,
-            reduce_dim=axis,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
-
-
-@extensibility.register_shape_function("mo.reduce.add")
-def reduce_add_shape[
-    axis: Int,
-](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
-    """Computes the output shape for the `mo.reduce.add` graph op.
-
-    Parameters:
-        axis: Dimension along which to sum the elements of `input`.
-
-    Args:
-        input: Input tensor reduced along `axis` by summation.
-
-    Returns:
-        The output shape after reducing `input` along `axis` by summation.
-    """
-    return reduce_shape(input, axis)
 
 
 @extensibility.register("mo.reduce.mul")
@@ -628,10 +603,10 @@ struct ReduceMul:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.mul` graph op.
 
         Parameters:
@@ -647,29 +622,42 @@ struct ReduceMul:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        comptime dtype = type_of(input).dtype
+        comptime assert type_of(output).dtype == dtype
+        comptime assert type_of(input).rank == type_of(output).rank
 
-        @always_inline
+        # Project the host proxy to its access-enabled view so the closures can
+        # load/store on the GPU lane `reduce_product` dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
+
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
-            output._lambda_store[width=width](
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         reduce_product[
-            output.dtype,
+            dtype,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
+            name=_trace_name,
+        ](input_fn, output_fn, input.shape().flatten(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mul")
@@ -691,172 +679,24 @@ def reduce_mul_shape[
     return reduce_shape(input, axis)
 
 
-@extensibility.register("mo.reduce.max")
-struct ReduceMax:
-    """Registers the `mo.reduce.max` graph op with the graph compiler."""
-
-    @staticmethod
-    def execute[
-        target: StaticString,
-        axis: Int,
-        _trace_name: StaticString,
-    ](
-        output: FusedOutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        """Executes the `mo.reduce.max` graph op.
-
-        Parameters:
-            target: Compilation target string.
-            axis: Dimension along which to reduce.
-            _trace_name: Name used for tracing and debugging.
-
-        Args:
-            output: Output tensor receiving the result.
-            input: Input tensor to reduce.
-            ctx: Device context used to enqueue the kernel.
-
-        Raises:
-            Error: If the operation parameters are invalid.
-        """
-
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
-            )
-
-        @always_inline
-        def output_fn[
-            width: SIMDLength
-        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
-            output._lambda_store[width=width](
-                coords,
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        reduce_max[
-            output.dtype,
-            target=target,
-            reduce_dim=axis,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
-
-
-@extensibility.register_shape_function("mo.reduce.max")
-def reduce_max_shape[
-    axis: Int,
-](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
-    """Computes the output shape for the `mo.reduce.max` graph op.
-
-    Parameters:
-        axis: Dimension along which to take the maximum of `input`.
-
-    Args:
-        input: Input tensor reduced along `axis` by maximum.
-
-    Returns:
-        The output shape after reducing `input` along `axis` by maximum.
-    """
-    return reduce_shape(input, axis)
-
-
-@extensibility.register("mo.reduce.min")
-struct ReduceMin:
-    """Registers the `mo.reduce.min` graph op with the graph compiler."""
-
-    @staticmethod
-    def execute[
-        target: StaticString,
-        axis: Int,
-        _trace_name: StaticString,
-    ](
-        output: FusedOutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        """Executes the `mo.reduce.min` graph op.
-
-        Parameters:
-            target: Compilation target string.
-            axis: Dimension along which to reduce.
-            _trace_name: Name used for tracing and debugging.
-
-        Args:
-            output: Output tensor receiving the result.
-            input: Input tensor to reduce.
-            ctx: Device context used to enqueue the kernel.
-
-        Raises:
-            Error: If the operation parameters are invalid.
-        """
-
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
-            )
-
-        @always_inline
-        def output_fn[
-            width: SIMDLength
-        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
-            output._lambda_store[width=width](
-                coords,
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        reduce_min[
-            output.dtype,
-            target=target,
-            reduce_dim=axis,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
-
-
-@extensibility.register_shape_function("mo.reduce.min")
-def reduce_min_shape[
-    axis: Int,
-](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
-    """Computes the output shape for the `mo.reduce.min` graph op.
-
-    Parameters:
-        axis: Dimension along which to take the minimum of `input`.
-
-    Args:
-        input: Input tensor reduced along `axis` by minimum.
-
-    Returns:
-        The output shape after reducing `input` along `axis` by minimum.
-    """
-    return reduce_shape(input, axis)
-
-
 @extensibility.register("mo.reduce.layer_norm")
 struct LayerNorm:
     """Registers the `mo.reduce.layer_norm` graph op with the graph compiler."""
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        beta: InputTensor[dtype=dtype, rank=1, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
+        beta: Some[Input & Tensor],
         epsilon: Float32,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.layer_norm` graph op.
 
         Parameters:
-            dtype: Element type of the input and output tensors.
-            rank: Tensor rank of the input and output tensors.
             target: Compilation target string.
 
         Args:
@@ -870,28 +710,50 @@ struct LayerNorm:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime assert conforms_to(type_of(beta), TileTensorable)
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).dtype == dtype
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(gamma).rank == 1
+        comptime assert type_of(beta).rank == 1
+
+        # Project the host proxies to their access-enabled views so the
+        # closures can load and store on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
+
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
-        if Int(gamma.shape()[0]) != Int(input.shape()[rank - 1]):
+        if Int(gamma.shape()[0].value()) != Int(
+            input.shape()[rank - 1].value()
+        ):
             raise Error("Gamma size does not match dimension of reduction.")
-        if Int(beta.shape()[0]) != Int(input.shape()[rank - 1]):
+        if Int(beta.shape()[0].value()) != Int(input.shape()[rank - 1].value()):
             raise Error("Beta size does not match dimension of reduction.")
 
-        @always_inline
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var input_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
             )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
-            output._lambda_store[width=width, element_alignment=alignment](
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_view}:
+            output_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(output_view).dtype, width]](val),
             )
 
         # gamma / beta are passed as tile tensors (the Row body loads them
@@ -900,16 +762,16 @@ struct LayerNorm:
         # input strip (`_fuse`), avoiding a second global read of the input in
         # the map phase; a dynamic width falls back to streaming inside the
         # kernel.
-        comptime ln_cols = Int(input.static_spec.shape_tuple[rank - 1])
+        comptime ln_cols = type_of(input)._shape_types[rank - 1].static_value
 
         comptime if ln_cols != UNKNOWN_VALUE:
             layer_norm[dtype, rank, target=target](
                 input_fn,
                 output_fn,
-                input.shape_coord(),
+                input.shape().flatten(),
                 ComptimeInt[ln_cols](),
-                gamma.to_tile_tensor[.int64](),
-                beta.to_tile_tensor[.int64](),
+                gamma.to_tile_tensor[dtype](),
+                beta.to_tile_tensor[dtype](),
                 epsilon.cast[dtype](),
                 ctx,
             )
@@ -917,10 +779,10 @@ struct LayerNorm:
             layer_norm[dtype, rank, target=target](
                 input_fn,
                 output_fn,
-                input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[.int64](),
-                beta.to_tile_tensor[.int64](),
+                input.shape().flatten(),
+                Int(input.shape()[rank - 1].value()),
+                gamma.to_tile_tensor[dtype](),
+                beta.to_tile_tensor[dtype](),
                 epsilon.cast[dtype](),
                 ctx,
             )
@@ -954,7 +816,7 @@ def reduce_layer_norm_shape(
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
     comptime assert type_of(beta).rank == 1, "beta must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
+        coord_to_index_list(input.shape())
     )
 
 
@@ -964,78 +826,92 @@ struct ReduceRMSNorm:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
         multiply_before_cast: Bool = True,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Float32,
-        weight_offset: Scalar[dtype=dtype],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.rms_norm` graph op.
 
         Parameters:
-            dtype: Element type of the input and output tensors.
-            rank: Tensor rank of the input and output tensors.
             target: Compilation target string.
+            epsilon: Small constant for numerical stability.
+            weight_offset: Scalar offset added to the weight.
             multiply_before_cast: See the graph op signature.
 
         Args:
             output: Output tensor receiving the result.
             input: Input tensor to reduce.
             gamma: Per-column scale weights.
-            epsilon: Small constant for numerical stability.
-            weight_offset: Scalar offset added to the weight.
             ctx: Device context used to enqueue the kernel.
 
         Raises:
             Error: If the operation parameters are invalid.
         """
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).dtype == dtype
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(gamma).rank == 1
+
+        # Project the host proxies to their access-enabled views so the
+        # closures can load and store on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
+
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
-        # Shape passed via `input.shape_coord()` to preserve statically-known
-        # dims in the `Coord` type.
-        @always_inline
+        # Shape passed via `input.shape()` to preserve statically-known dims in
+        # the `Coord` type.
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var input_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
             )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
-            output._lambda_store[width=width, element_alignment=alignment](
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_view}:
+            output_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(output_view).dtype, width]](val),
             )
 
         # Pass the static row width when known so the Row register-caches the
         # input strip (`_fuse`), avoiding a second global read of the input in
         # the map phase; a dynamic width falls back to streaming.
-        comptime rms_cols = Int(input.static_spec.shape_tuple[rank - 1])
+        comptime rms_cols = type_of(input)._shape_types[rank - 1].static_value
 
         comptime if rms_cols != UNKNOWN_VALUE:
             rms_norm[
                 dtype,
                 rank,
                 target=target,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=multiply_before_cast,
             ](
                 input_fn,
                 output_fn,
-                input.shape_coord(),
+                input.shape().flatten(),
                 ComptimeInt[rms_cols](),
-                gamma.to_tile_tensor[.int64](),
-                epsilon.cast[dtype](),
-                weight_offset,
+                gamma.to_tile_tensor[dtype](),
                 ctx,
             )
         else:
@@ -1043,36 +919,29 @@ struct ReduceRMSNorm:
                 dtype,
                 rank,
                 target=target,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=multiply_before_cast,
             ](
                 input_fn,
                 output_fn,
-                input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[.int64](),
-                epsilon.cast[dtype](),
-                weight_offset,
+                input.shape().flatten(),
+                Int(input.shape()[rank - 1].value()),
+                gamma.to_tile_tensor[dtype](),
                 ctx,
             )
 
 
 @extensibility.register_shape_function("mo.reduce.rms_norm")
-def reduce_rms_norm_shape[
-    dtype: DType,
-](
+def reduce_rms_norm_shape(
     input: Some[Tensor],
     gamma: Some[Tensor],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype=dtype],
 ) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.rms_norm` graph op.
 
     Args:
         input: Input tensor normalized across the last dimension.
         gamma: Per-column scale weights applied after normalization.
-        epsilon: Small constant added inside the RMS normalization square
-            root for numerical stability.
-        weight_offset: Scalar offset added to `gamma` before scaling.
 
     Returns:
         The output shape, which matches the `input` shape.
@@ -1081,11 +950,8 @@ def reduce_rms_norm_shape[
         type_of(gamma).dtype == type_of(input).dtype
     ), "gamma dtype must match input dtype"
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
-    comptime assert (
-        dtype == type_of(input).dtype
-    ), "weight_offset dtype must match input dtype"
     return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
+        coord_to_index_list(input.shape())
     )
 
 
@@ -1100,62 +966,89 @@ struct ReduceRMSNormRoPE:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        output_dtype: DType,
-        cos_sin_dtype: DType,
-        rank: Int,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
         multiply_before_cast: Bool = True,
     ](
-        output: FusedOutputTensor[dtype=output_dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        weight: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Float32,
-        weight_offset: Scalar[dtype=dtype],
-        cos_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
-        sin_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
+        weight: Some[Input & Tensor],
+        cos_vals: Some[Input & Fused & LoadAccess],
+        sin_vals: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime dtype = type_of(input).dtype
+        comptime output_dtype = type_of(output).dtype
+        comptime cos_sin_dtype = type_of(cos_vals).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(weight).rank == 1
+        comptime assert type_of(cos_vals).rank == rank
+        comptime assert type_of(sin_vals).dtype == cos_sin_dtype
+        comptime assert type_of(sin_vals).rank == rank
+
+        # Project the host proxies to their access-enabled views so the
+        # closures can load and store on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        comptime assert conforms_to(type_of(cos_vals), UnsafeFusedView)
+        var cos_vals_view = unsafe_fused_view(cos_vals)
+        comptime assert conforms_to(type_of(cos_vals_view), Loadable)
+        comptime assert conforms_to(type_of(sin_vals), UnsafeFusedView)
+        var sin_vals_view = unsafe_fused_view(sin_vals)
+        comptime assert conforms_to(type_of(sin_vals_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
-        @always_inline
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var input_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
             )
 
-        @always_inline
+        @inline(.always)
         def cos_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var cos_vals} -> SIMD[cos_sin_dtype, width]:
-            return cos_vals._fused_load[
-                width=width, element_alignment=alignment
-            ](coords)
+        ](coords: Coord) {var cos_vals_view} -> SIMD[cos_sin_dtype, width]:
+            return rebind[SIMD[cos_sin_dtype, width]](
+                cos_vals_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
+            )
 
-        @always_inline
+        @inline(.always)
         def sin_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var sin_vals} -> SIMD[cos_sin_dtype, width]:
-            return sin_vals._fused_load[
-                width=width, element_alignment=alignment
-            ](coords)
+        ](coords: Coord) {var sin_vals_view} -> SIMD[cos_sin_dtype, width]:
+            return rebind[SIMD[cos_sin_dtype, width]](
+                sin_vals_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
+            )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](coords: Coord, val: SIMD[output_dtype, width]) {var output}:
-            output._lambda_store[width=width, element_alignment=alignment](
+        ](coords: Coord, val: SIMD[output_dtype, width]) {var output_view}:
+            output_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(output_view).dtype, width]](val),
             )
 
         # Pass the row width when statically known so the kernel can use a SIMD
         # rotate-half (needs `half` divisible by the SIMD width); a dynamic or
         # non-divisible width falls back to scalar inside the kernel.
-        comptime rope_cols = Int(input.static_spec.shape_tuple[rank - 1])
+        comptime rope_cols = type_of(input)._shape_types[rank - 1].static_value
 
         comptime if rope_cols != UNKNOWN_VALUE:
             rms_norm_rope[
@@ -1170,11 +1063,11 @@ struct ReduceRMSNormRoPE:
                 cos_fn,
                 sin_fn,
                 output_fn,
-                input.shape_coord(),
+                input.shape().flatten(),
                 ComptimeInt[rope_cols](),
-                weight.to_tile_tensor[.int64](),
+                weight.to_tile_tensor[dtype](),
                 epsilon.cast[dtype](),
-                weight_offset,
+                weight_offset.cast[dtype](),
                 ctx,
             )
         else:
@@ -1190,23 +1083,19 @@ struct ReduceRMSNormRoPE:
                 cos_fn,
                 sin_fn,
                 output_fn,
-                input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
-                weight.to_tile_tensor[.int64](),
+                input.shape().flatten(),
+                Int(input.shape()[rank - 1].value()),
+                weight.to_tile_tensor[dtype](),
                 epsilon.cast[dtype](),
-                weight_offset,
+                weight_offset.cast[dtype](),
                 ctx,
             )
 
 
 @extensibility.register_shape_function("mo.composite.rms_norm_rope")
-def composite_rms_norm_rope_shape[
-    dtype: DType,
-](
+def composite_rms_norm_rope_shape(
     input: Some[Tensor],
     weight: Some[Tensor],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype=dtype],
     cos_vals: Some[Tensor],
     sin_vals: Some[Tensor],
 ) -> IndexList[type_of(input).rank]:
@@ -1216,9 +1105,6 @@ def composite_rms_norm_rope_shape[
         input: Activation tensor normalized by RMS then rotated by RoPE;
             the last dimension must be even.
         weight: Per-column scale weights applied after RMS normalization.
-        epsilon: Small constant added inside the RMS normalization square
-            root for numerical stability.
-        weight_offset: Scalar offset added to `weight` before scaling.
         cos_vals: Cosine table used by the RoPE rotation, matching
             `input` rank.
         sin_vals: Sine table used by the RoPE rotation, matching `input`
@@ -1232,9 +1118,6 @@ def composite_rms_norm_rope_shape[
     ), "weight dtype must match input dtype"
     comptime assert type_of(weight).rank == 1, "weight must be rank 1"
     comptime assert (
-        dtype == type_of(input).dtype
-    ), "weight_offset dtype must match input dtype"
-    comptime assert (
         type_of(cos_vals).dtype == type_of(sin_vals).dtype
     ), "cos_vals and sin_vals must share a dtype"
     comptime assert (
@@ -1244,7 +1127,7 @@ def composite_rms_norm_rope_shape[
         type_of(sin_vals).rank == type_of(input).rank
     ), "sin_vals rank must match input rank"
     return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
+        coord_to_index_list(input.shape())
     )
 
 
@@ -1259,48 +1142,73 @@ struct LayerNormRopeRagged:
 
     @staticmethod
     def execute[
-        input_dtype: DType,
-        output_dtype: DType,
-        freq_dtype: DType,
-        rank: Int,
         target: StaticString,
         interleaved: Bool,
     ](
-        output: FusedOutputTensor[dtype=output_dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-        beta: InputTensor[dtype=input_dtype, rank=1, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
+        beta: Some[Input & Tensor],
         epsilon: Float32,
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        input_row_offsets: Some[Input & Tensor],
+        start_pos: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime assert conforms_to(type_of(beta), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(start_pos), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime input_dtype = type_of(input).dtype
+        comptime output_dtype = type_of(output).dtype
+        comptime freq_dtype = type_of(freqs_cis).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(gamma).rank == 1
+        comptime assert type_of(beta).rank == 1
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(start_pos).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+
+        # Project the host proxies to their access-enabled views so the
+        # closures can load and store on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
+
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
-        if Int(gamma.shape()[0]) != Int(input.shape()[rank - 1]):
+        if Int(gamma.shape()[0].value()) != Int(
+            input.shape()[rank - 1].value()
+        ):
             raise Error("Gamma size does not match dimension of reduction.")
-        if Int(beta.shape()[0]) != Int(input.shape()[rank - 1]):
+        if Int(beta.shape()[0].value()) != Int(input.shape()[rank - 1].value()):
             raise Error("Beta size does not match dimension of reduction.")
 
-        @always_inline
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input_dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var input_view} -> SIMD[input_dtype, width]:
+            return rebind[SIMD[input_dtype, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
             )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](coords: Coord, val: SIMD[output_dtype, width]) {var output}:
-            output._lambda_store[width=width, element_alignment=alignment](
+        ](coords: Coord, val: SIMD[output_dtype, width]) {var output_view}:
+            output_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(output_view).dtype, width]](val),
             )
 
-        comptime ln_cols = Int(input.static_spec.shape_tuple[rank - 1])
+        comptime ln_cols = type_of(input)._shape_types[rank - 1].static_value
 
         comptime if ln_cols != UNKNOWN_VALUE:
             layer_norm_rope_ragged[
@@ -1313,14 +1221,14 @@ struct LayerNormRopeRagged:
             ](
                 input_fn,
                 output_fn,
-                input.shape_coord(),
+                input.shape().flatten(),
                 ComptimeInt[ln_cols](),
-                gamma.to_tile_tensor[.int64](),
-                beta.to_tile_tensor[.int64](),
+                gamma.to_tile_tensor[input_dtype](),
+                beta.to_tile_tensor[input_dtype](),
                 epsilon.cast[input_dtype](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                start_pos.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                start_pos.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
                 ctx,
             )
         else:
@@ -1334,14 +1242,14 @@ struct LayerNormRopeRagged:
             ](
                 input_fn,
                 output_fn,
-                input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[.int64](),
-                beta.to_tile_tensor[.int64](),
+                input.shape().flatten(),
+                Int(input.shape()[rank - 1].value()),
+                gamma.to_tile_tensor[input_dtype](),
+                beta.to_tile_tensor[input_dtype](),
                 epsilon.cast[input_dtype](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                start_pos.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                start_pos.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
                 ctx,
             )
 
@@ -1393,7 +1301,7 @@ def composite_layer_norm_rope_ragged_shape(
     comptime assert type_of(start_pos).rank == 1, "start_pos must be rank 1"
     comptime assert type_of(freqs_cis).rank == 2, "freqs_cis must be rank 2"
     return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
+        coord_to_index_list(input.shape())
     )
 
 
@@ -1403,23 +1311,19 @@ struct ReduceGroupNorm:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
-        beta: FusedInputTensor[dtype=dtype, rank=1, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Fused & LoadAccess],
+        beta: Some[Input & Fused & LoadAccess],
         epsilon: Float32,
         num_groups: Int32,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.group_norm` graph op.
 
         Parameters:
-            dtype: Element type of the input and output tensors.
-            rank: Tensor rank of the input and output tensors.
             target: Compilation target string.
 
         Args:
@@ -1434,27 +1338,59 @@ struct ReduceGroupNorm:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(gamma).dtype == dtype
+        comptime assert type_of(gamma).rank == 1
+        comptime assert type_of(beta).dtype == dtype
+        comptime assert type_of(beta).rank == 1
 
-        @__parameter
-        @always_inline
-        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](coords)
+        # Project the host proxies to their access-enabled views so the
+        # closures can load and store on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        comptime assert conforms_to(type_of(gamma), UnsafeFusedView)
+        var gamma_view = unsafe_fused_view(gamma)
+        comptime assert conforms_to(type_of(gamma_view), Loadable)
+        comptime assert conforms_to(type_of(beta), UnsafeFusedView)
+        var beta_view = unsafe_fused_view(beta)
+        comptime assert conforms_to(type_of(beta_view), Loadable)
 
-        @__parameter
-        @always_inline
-        def gamma_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-            return gamma._lambda_load[width=width](coords)
+        @inline(.always)
+        def input_fn[
+            width: Int
+        ](coords: Coord) {var input_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_view.load[width=width](coords)
+            )
 
-        @__parameter
-        @always_inline
-        def beta_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-            return beta._lambda_load[width=width](coords)
+        @inline(.always)
+        def gamma_fn[
+            width: Int
+        ](coords: Coord) {var gamma_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                gamma_view.load[width=width](coords)
+            )
 
-        group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
-            shape=input.shape_coord(),
+        @inline(.always)
+        def beta_fn[
+            width: Int
+        ](coords: Coord) {var beta_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                beta_view.load[width=width](coords)
+            )
+
+        group_norm[dtype, rank, target=target](
+            input_fn,
+            gamma_fn,
+            beta_fn,
+            shape=input.shape().flatten(),
             epsilon=epsilon,
             groups=num_groups,
-            output=output.to_tile_tensor[.int64](),
+            output=output.to_tile_tensor[dtype](),
             ctx=ctx,
         )
 
@@ -1490,7 +1426,7 @@ def reduce_group_norm_shape(
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
     comptime assert type_of(beta).rank == 1, "beta must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
+        coord_to_index_list(input.shape())
     )
 
 
@@ -1503,57 +1439,74 @@ struct ReduceMinAndMax:
     def execute[
         target: StaticString,
         _trace_name: StaticString,
-        dtype: DType,
-        rank: Int,
         axis: Int,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
         writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
         the minimum reduction and [:, :, 1, :] contains the maximum reduction.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime rank = type_of(output).rank
+        comptime assert type_of(input).rank == rank
 
         comptime norm_axis = axis + rank if axis < 0 else axis
         comptime assert (
             0 <= norm_axis < rank
         ), "axis must be between [0, <input rank>)"
 
-        @always_inline
+        var output_tile = output.to_tile_tensor()
+        var input_tile = input.to_tile_tensor[dtype]()
+        comptime input_alignment = type_of(input).alignment
+
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[dtype, width]:
-            return input._fused_load[width=width, element_alignment=alignment](
-                coords
-            )
+        ](coords: Coord) {var input_tile} -> SIMD[dtype, width]:
+            return input_tile.load[
+                width=width,
+                alignment=min(input_alignment, alignment * align_of[dtype]()),
+            ](coords)
 
         # The op packs both reductions into one `[..., 2, ...]` output tensor:
         # min at slot 0, max at slot 1 of the reduced axis. A `Coord`'s
         # elements are immutable and typed per position, so the retarget goes
         # through `RowCoord`, whose axis element is dynamic and writable.
-        @always_inline
+        @inline(.always)
         def output_min_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
-            output._fused_store[width=width](
-                RowCoord[output.rank](coords).at_axis[norm_axis](0).coord, val
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tile}:
+            output_tile.store[width=width, alignment=align_of[dtype]()](
+                RowCoord[rank](coords).at_axis[norm_axis](0).coord,
+                rebind[SIMD[output_tile.dtype, width]](val),
             )
 
-        @always_inline
+        @inline(.always)
         def output_max_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
-            output._fused_store[width=width](
-                RowCoord[output.rank](coords).at_axis[norm_axis](1).coord, val
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tile}:
+            output_tile.store[width=width, alignment=align_of[dtype]()](
+                RowCoord[rank](coords).at_axis[norm_axis](1).coord,
+                rebind[SIMD[output_tile.dtype, width]](val),
             )
 
         reduce_min_and_max[
             dtype,
             target=target,
             reduce_dim=norm_axis,
-        ](input_fn, output_min_fn, output_max_fn, input.shape_coord(), ctx)
+            name=_trace_name,
+        ](
+            input_fn,
+            output_min_fn,
+            output_max_fn,
+            input.shape().flatten(),
+            ctx,
+        )
 
 
 @extensibility.register_shape_function("mo.reduce.reduce_min_and_max")
@@ -1572,7 +1525,7 @@ def reduce_reduce_min_and_max_shape[
         The output shape with `axis` replaced by 2 (for min and max).
     """
     var new_shape = rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
+        coord_to_index_list(input.shape())
     )
     new_shape[_unsafe_normalize_neg_index(axis, type_of(input).rank)] = 2
 
@@ -1586,29 +1539,29 @@ struct ReduceRMSNormFusedResidualAdd:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
-        multiply_before_cast: Bool = True,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        residual_output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        residual_input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma1: InputTensor[dtype=dtype, rank=1, ...],
-        gamma2: InputTensor[dtype=dtype, rank=1, ...],
         epsilon1: Float32,
         epsilon2: Float32,
-        weight_offset1: Scalar[dtype=dtype],
-        weight_offset2: Scalar[dtype=dtype],
+        weight_offset1: Float32,
+        weight_offset2: Float32,
+        multiply_before_cast: Bool = True,
+    ](
+        output: Some[Output & Tensor],
+        residual_output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        residual_input: Some[Input & Fused & LoadAccess],
+        gamma1: Some[Input & Tensor],
+        gamma2: Some[Input & Tensor],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.composite.rms_norm_fused_residual_add` graph op.
 
         Parameters:
-            dtype: Element type of the input and output tensors.
-            rank: Tensor rank of the input and output tensors.
             target: Compilation target string.
+            epsilon1: Stability constant for the first normalization.
+            epsilon2: Stability constant for the second normalization.
+            weight_offset1: Scalar offset for the first weight.
+            weight_offset2: Scalar offset for the second weight.
             multiply_before_cast: See the graph op signature.
 
         Args:
@@ -1618,78 +1571,107 @@ struct ReduceRMSNormFusedResidualAdd:
             residual_input: Residual tensor added to the normalized input.
             gamma1: Scale weights for the first normalization.
             gamma2: Scale weights for the second normalization.
-            epsilon1: Stability constant for the first normalization.
-            epsilon2: Stability constant for the second normalization.
-            weight_offset1: Scalar offset for the first weight.
-            weight_offset2: Scalar offset for the second weight.
             ctx: Device context used to enqueue the kernel.
 
         Raises:
             Error: If the operation parameters are invalid.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(residual_output), TileTensorable)
+        comptime assert conforms_to(type_of(gamma1), TileTensorable)
+        comptime assert conforms_to(type_of(gamma2), TileTensorable)
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(residual_output).rank == rank
+        comptime assert type_of(residual_input).dtype == dtype
+        comptime assert type_of(residual_input).rank == rank
+        comptime assert type_of(gamma1).rank == 1
+        comptime assert type_of(gamma2).rank == 1
+
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
         if input.shape() != residual_input.shape():
             raise Error("Input and residual input buffers are not same shape")
 
-        @always_inline
+        # Project the host proxies to their access-enabled views so the
+        # closures can load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        comptime assert conforms_to(type_of(residual_input), UnsafeFusedView)
+        var residual_input_view = unsafe_fused_view(residual_input)
+        comptime assert conforms_to(type_of(residual_input_view), Loadable)
+        var output_tile = output.to_tile_tensor[dtype]()
+        var residual_output_tile = residual_output.to_tile_tensor[dtype]()
+
+        @inline(.always)
         def input_fn[
-            width: Int
-        ](coords: Coord) {var input} -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
-                coords
+            width: Int, alignment: Int
+        ](coords: Coord) {var input_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
             )
 
-        @always_inline
+        @inline(.always)
         def residual_input_fn[
-            width: Int
-        ](coords: Coord) {var residual_input} -> SIMD[dtype, width]:
-            return residual_input._lambda_load[width=width](coords)
+            width: Int, alignment: Int
+        ](coords: Coord) {var residual_input_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                residual_input_view.load[
+                    width=width, element_alignment=alignment
+                ](coords)
+            )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
-            output._fused_store[width=width, element_alignment=alignment](
-                coords,
-                rebind[SIMD[output.dtype, width]](val),
-            )
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tile}:
+            output_tile.store[
+                width=width,
+                alignment=min(
+                    type_of(output).alignment, alignment * align_of[dtype]()
+                ),
+            ](coords, val)
 
-        @always_inline
+        @inline(.always)
         def residual_output_fn[
             width: SIMDLength, alignment: Int
-        ](coords: Coord, val: SIMD[dtype, width]) {var residual_output}:
-            residual_output._fused_store[
-                width=width, element_alignment=alignment
-            ](
-                coords,
-                rebind[SIMD[residual_output.dtype, width]](val),
-            )
+        ](coords: Coord, val: SIMD[dtype, width]) {var residual_output_tile}:
+            residual_output_tile.store[
+                width=width,
+                alignment=min(
+                    type_of(residual_output).alignment,
+                    alignment * align_of[dtype](),
+                ),
+            ](coords, val)
 
         # Preserve a statically-known reduced-axis length (enables the Row
         # register cache); dynamic dims fall back to streaming.
-        comptime cols = Int(input.static_spec.shape_tuple[rank - 1])
+        comptime cols = type_of(input)._shape_types[rank - 1].static_value
 
         comptime if cols != UNKNOWN_VALUE:
             rms_norm_fused_residual_add[
                 dtype,
                 rank,
                 target=target,
+                epsilon1=epsilon1,
+                weight_offset1=weight_offset1,
+                epsilon2=epsilon2,
+                weight_offset2=weight_offset2,
                 multiply_before_cast=multiply_before_cast,
             ](
                 input_fn,
                 residual_input_fn,
                 output_fn,
                 residual_output_fn,
-                input.shape_coord(),
+                input.shape().flatten(),
                 ComptimeInt[cols](),
-                gamma1.to_tile_tensor[.int64](),
-                epsilon1.cast[dtype](),
-                weight_offset1,
-                gamma2.to_tile_tensor[.int64](),
-                epsilon2.cast[dtype](),
-                weight_offset2,
+                gamma1.to_tile_tensor[dtype](),
+                gamma2.to_tile_tensor[dtype](),
                 ctx,
             )
         else:
@@ -1697,20 +1679,20 @@ struct ReduceRMSNormFusedResidualAdd:
                 dtype,
                 rank,
                 target=target,
+                epsilon1=epsilon1,
+                weight_offset1=weight_offset1,
+                epsilon2=epsilon2,
+                weight_offset2=weight_offset2,
                 multiply_before_cast=multiply_before_cast,
             ](
                 input_fn,
                 residual_input_fn,
                 output_fn,
                 residual_output_fn,
-                input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
-                gamma1.to_tile_tensor[.int64](),
-                epsilon1.cast[dtype](),
-                weight_offset1,
-                gamma2.to_tile_tensor[.int64](),
-                epsilon2.cast[dtype](),
-                weight_offset2,
+                input.shape().flatten(),
+                Int(input.shape()[rank - 1].value()),
+                gamma1.to_tile_tensor[dtype](),
+                gamma2.to_tile_tensor[dtype](),
                 ctx,
             )
 
@@ -1718,17 +1700,11 @@ struct ReduceRMSNormFusedResidualAdd:
 @extensibility.register_shape_function(
     "mo.composite.rms_norm_fused_residual_add"
 )
-def composite_rms_norm_fused_residual_add_shape[
-    dtype: DType,
-](
+def composite_rms_norm_fused_residual_add_shape(
     input: Some[Tensor],
     residual_input: Some[Tensor],
     gamma1: Some[Tensor],
     gamma2: Some[Tensor],
-    epsilon1: Float32,
-    epsilon2: Float32,
-    weight_offset1: Scalar[dtype=dtype],
-    weight_offset2: Scalar[dtype=dtype],
 ) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.composite.rms_norm_fused_residual_add` graph op.
 
@@ -1739,14 +1715,6 @@ def composite_rms_norm_fused_residual_add_shape[
             normalization.
         gamma2: Per-column scale weights applied to the second RMS
             normalization.
-        epsilon1: Small constant added inside the first RMS normalization
-            square root for numerical stability.
-        epsilon2: Small constant added inside the second RMS normalization
-            square root for numerical stability.
-        weight_offset1: Scalar offset added to `gamma1` before scaling the
-            first normalization.
-        weight_offset2: Scalar offset added to `gamma2` before scaling the
-            second normalization.
 
     Returns:
         The output shape, which matches the `input` shape.
@@ -1765,11 +1733,8 @@ def composite_rms_norm_fused_residual_add_shape[
     ), "gamma2 dtype must match input dtype"
     comptime assert type_of(gamma1).rank == 1, "gamma1 must be rank 1"
     comptime assert type_of(gamma2).rank == 1, "gamma2 must be rank 1"
-    comptime assert (
-        dtype == type_of(input).dtype
-    ), "weight_offset1/weight_offset2 dtype must match input dtype"
     return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
+        coord_to_index_list(input.shape())
     )
 
 
@@ -1788,130 +1753,123 @@ struct RMSNormResidualAdd:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
         multiply_before_cast: Bool = True,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        residual_output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        residual_input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Float32,
-        weight_offset: Scalar[dtype=dtype],
+        output: Some[Output & Tensor],
+        residual_output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        residual_input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(residual_output), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(residual_output).rank == rank
+        comptime assert type_of(residual_input).dtype == dtype
+        comptime assert type_of(residual_input).rank == rank
+        comptime assert type_of(gamma).rank == 1
+
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
         if input.shape() != residual_input.shape():
             raise Error("Input and residual input buffers are not same shape")
 
+        # Project the host proxies to their access-enabled views, which load
+        # on either lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        comptime assert conforms_to(type_of(residual_input), UnsafeFusedView)
+        var residual_input_view = unsafe_fused_view(residual_input)
+        comptime assert conforms_to(type_of(residual_input_view), Loadable)
+        var output_tile = output.to_tile_tensor[dtype]()
+        var residual_output_tile = residual_output.to_tile_tensor[dtype]()
+
+        @inline(.always)
+        def output_fn[
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tile} -> None:
+            output_tile.store[
+                width=width,
+                alignment=min(
+                    type_of(output).alignment, alignment * align_of[dtype]()
+                ),
+            ](coords, val)
+
+        @inline(.always)
+        def residual_output_fn[
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) {
+            var residual_output_tile
+        } -> None:
+            residual_output_tile.store[
+                width=width,
+                alignment=min(
+                    type_of(residual_output).alignment,
+                    alignment * align_of[dtype](),
+                ),
+            ](coords, val)
+
         comptime if is_gpu[target]():
-            # GPU path: the device kernel bakes the callbacks in as `capturing`
-            # comptime closures, so build them as comptime parameters. Reads go
-            # through `_lambda_load` so a fused producer op folds into the load.
-            @__parameter
-            @always_inline
+
+            @inline(.always)
             def input_fn[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-                return input._lambda_load[width=width, element_alignment=width](
-                    rebind[IndexList[input.rank]](coords)
+                width: Int
+            ](coords: Coord) {var input_view} -> SIMD[dtype, width]:
+                return rebind[SIMD[dtype, width]](
+                    input_view.load[width=width, element_alignment=width](
+                        coords
+                    )
                 )
 
-            @__parameter
-            @always_inline
+            @inline(.always)
             def residual_input_fn[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-                return residual_input._lambda_load[width=width](
-                    rebind[IndexList[input.rank]](coords)
-                )
-
-            @__parameter
-            @always_inline
-            def output_fn[
-                width: SIMDLength, _rank: Int, alignment: Int
-            ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-                output._fused_store[width=width, element_alignment=alignment](
-                    rebind[IndexList[output.rank]](coords),
-                    rebind[SIMD[output.dtype, width]](val),
-                )
-
-            @__parameter
-            @always_inline
-            def residual_output_fn[
-                width: SIMDLength, _rank: Int, alignment: Int
-            ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-                residual_output._fused_store[
-                    width=width, element_alignment=alignment
-                ](
-                    rebind[IndexList[residual_output.rank]](coords),
-                    rebind[SIMD[residual_output.dtype, width]](val),
+                width: Int
+            ](coords: Coord) {var residual_input_view} -> SIMD[dtype, width]:
+                return rebind[SIMD[dtype, width]](
+                    residual_input_view.load[width=width](coords)
                 )
 
             rms_norm_fused_residual[
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
                 input_fn,
                 residual_input_fn,
                 output_fn,
                 residual_output_fn,
-                target=target,
-                multiply_before_cast=multiply_before_cast,
-            ](
-                input.shape(),
-                gamma.to_tile_tensor[.int64](),
+                input.shape().flatten(),
+                gamma.to_tile_tensor[dtype](),
                 epsilon,
-                weight_offset,
+                weight_offset.cast[dtype](),
                 ctx,
             )
         else:
             # CPU path: the migrated CPU kernel takes unified closures that
-            # capture the tensors directly, so it can run the callbacks end to
-            # end at runtime (see `RMSNormFusedResidual`). `_fused_load` works
-            # whether or not a producer fused in, unlike the GPU-only comptime
-            # `_lambda_load`.
-            @always_inline
+            # capture the views directly, so it can run the callbacks end to
+            # end at runtime (see `RMSNormFusedResidual`).
+            @inline(.always)
             def input_fn_cpu[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
-                return input._fused_load[width=width](
-                    rebind[IndexList[input.rank]](coords)
+                width: Int
+            ](coords: Coord) {var input_view} -> SIMD[dtype, width]:
+                return rebind[SIMD[dtype, width]](
+                    input_view.load[width=width](coords)
                 )
 
-            @always_inline
+            @inline(.always)
             def residual_input_fn_cpu[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) {var residual_input} -> SIMD[
-                dtype, width
-            ]:
-                return residual_input._fused_load[width=width](
-                    rebind[IndexList[residual_input.rank]](coords)
-                )
-
-            @always_inline
-            def output_fn_cpu[
-                width: SIMDLength, alignment: Int
-            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-                var output
-            } -> None:
-                output._fused_store[width=width, element_alignment=alignment](
-                    rebind[IndexList[output.rank]](coords),
-                    rebind[SIMD[output.dtype, width]](val),
-                )
-
-            @always_inline
-            def residual_output_fn_cpu[
-                width: SIMDLength, alignment: Int
-            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-                var residual_output
-            } -> None:
-                residual_output._fused_store[
-                    width=width, element_alignment=alignment
-                ](
-                    rebind[IndexList[residual_output.rank]](coords),
-                    rebind[SIMD[residual_output.dtype, width]](val),
+                width: Int
+            ](coords: Coord) {var residual_input_view} -> SIMD[dtype, width]:
+                return rebind[SIMD[dtype, width]](
+                    residual_input_view.load[width=width](coords)
                 )
 
             _rms_norm_fused_residual_cpu_entry[
@@ -1919,24 +1877,20 @@ struct RMSNormResidualAdd:
             ](
                 input_fn_cpu,
                 residual_input_fn_cpu,
-                output_fn_cpu,
-                residual_output_fn_cpu,
-                input.shape(),
-                gamma.to_tile_tensor[.int64](),
+                output_fn,
+                residual_output_fn,
+                input.shape().flatten(),
+                gamma.to_tile_tensor[dtype](),
                 epsilon,
-                weight_offset,
+                weight_offset.cast[dtype](),
             )
 
 
 @extensibility.register_shape_function("mo.composite.rms_norm_residual_add")
-def composite_rms_norm_residual_add_shape[
-    dtype: DType,
-](
+def composite_rms_norm_residual_add_shape(
     input: Some[Tensor],
     residual_input: Some[Tensor],
     gamma: Some[Tensor],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype=dtype],
 ) -> IndexList[type_of(input).rank]:
     comptime assert (
         type_of(residual_input).dtype == type_of(input).dtype
@@ -1948,11 +1902,8 @@ def composite_rms_norm_residual_add_shape[
         type_of(gamma).dtype == type_of(input).dtype
     ), "gamma dtype must match input dtype"
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
-    comptime assert (
-        dtype == type_of(input).dtype
-    ), "weight_offset dtype must match input dtype"
     return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
+        coord_to_index_list(input.shape())
     )
 
 
@@ -1962,13 +1913,11 @@ struct BottomK:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
     ](
-        values: OutputTensor[dtype=dtype, rank=rank, ...],
-        indices: OutputTensor[dtype=.int64, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        values: Some[Output & Tensor],
+        indices: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         k: Scalar,
         axis: Scalar,
         sorted: Scalar[.bool],
@@ -1977,8 +1926,6 @@ struct BottomK:
         """Executes the `mo.bottom_k` graph op.
 
         Parameters:
-            dtype: Element type of the input and output tensors.
-            rank: Tensor rank of the input and output tensors.
             target: Compilation target string.
 
         Args:
@@ -1993,11 +1940,23 @@ struct BottomK:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        top_k[largest=False, target=target](
-            input.to_tile_tensor[.int64](),
+        comptime assert conforms_to(type_of(values), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(values).dtype
+        comptime assert type_of(input).rank == type_of(values).rank
+        comptime assert type_of(indices).rank == type_of(values).rank
+
+        var input_tile = input.to_tile_tensor[dtype]()
+        top_k[
+            KEngine=type_of(input_tile).Engine,
+            largest=False,
+            target=target,
+        ](
+            input_tile,
             Int(k),
             Int(axis),
-            values.to_tile_tensor[.int64](),
+            values.to_tile_tensor(),
             indices.to_tile_tensor[.int64](),
             sorted,
             ctx,
@@ -2023,10 +1982,12 @@ def bottom_k_shape(
         The output shape after selecting the bottom-k values along `axis`.
     """
     return rebind[IndexList[type_of(input).rank]](
-        top_k_shape_impl(
-            input.to_tile_tensor(),
-            Int(k),
-            Int(axis),
+        coord_to_index_list(
+            top_k_shape_impl(
+                input.to_tile_tensor(),
+                Int(k),
+                Int(axis),
+            )
         )
     )
 
@@ -2037,14 +1998,12 @@ struct TopK:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        values: OutputTensor[dtype=dtype, rank=rank, ...],
-        indices: OutputTensor[dtype=.int64, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        values: Some[Output & Tensor],
+        indices: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         k: Scalar,
         axis: Scalar,
         sorted: Scalar[.bool],
@@ -2053,8 +2012,6 @@ struct TopK:
         """Executes the `mo.top_k` graph op.
 
         Parameters:
-            dtype: Element type of the input and output tensors.
-            rank: Tensor rank of the input and output tensors.
             target: Compilation target string.
             _trace_name: Name used for tracing and debugging.
 
@@ -2070,11 +2027,23 @@ struct TopK:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        top_k[largest=True, target=target](
-            input.to_tile_tensor[.int64](),
+        comptime assert conforms_to(type_of(values), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(values).dtype
+        comptime assert type_of(input).rank == type_of(values).rank
+        comptime assert type_of(indices).rank == type_of(values).rank
+
+        var input_tile = input.to_tile_tensor[dtype]()
+        top_k[
+            KEngine=type_of(input_tile).Engine,
+            largest=True,
+            target=target,
+        ](
+            input_tile,
             Int(k),
             Int(axis),
-            values.to_tile_tensor[.int64](),
+            values.to_tile_tensor(),
             indices.to_tile_tensor[.int64](),
             sorted,
             ctx,
@@ -2100,12 +2069,109 @@ def top_k_shape(
         The output shape after selecting the top-k values along `axis`.
     """
     return rebind[IndexList[type_of(input).rank]](
-        top_k_shape_impl(
-            input.to_tile_tensor(),
-            Int(k),
-            Int(axis),
+        coord_to_index_list(
+            top_k_shape_impl(
+                input.to_tile_tensor(),
+                Int(k),
+                Int(axis),
+            )
         )
     )
+
+
+@extensibility.register("mo.top_k.per_row")
+struct TopKPerRow:
+    """Registers the `mo.top_k.per_row` graph op with the graph compiler.
+
+    `mo.top_k` over the last axis of a `[rows, n]` input, with a count per
+    row: row `r` keeps the first `k[r]` picks `mo.top_k` with `max_k` makes
+    for it, in descending order, and pads the rest of its `max_k` slots with
+    the dead value and index `-1`. Equal values may come out in any order,
+    and which of them fill the last slots is unspecified. The input must
+    not contain NaN. On GPU, float32 and bfloat16 rows with
+    `max_k <= 2048` run the block-wide top-k in `topk_per_row`, which
+    selects all picks without one serial reduction per pick.
+    """
+
+    @staticmethod
+    def execute[
+        max_k: Int,
+        target: StaticString,
+    ](
+        values: Some[Output & Tensor],
+        indices: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        k: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        """Executes the `mo.top_k.per_row` graph op.
+
+        Parameters:
+            max_k: Output width, the largest count any row may ask for.
+            target: Compilation target string.
+
+        Args:
+            values: `[rows, max_k]` selected values.
+            indices: `[rows, max_k]` their column indices.
+            input: `[rows, n]` values to select from.
+            k: `[rows]` picks per row, each in `[0, max_k]`.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+        comptime assert conforms_to(type_of(values), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime dtype = type_of(values).dtype
+        comptime assert type_of(values).rank == 2
+        comptime assert type_of(indices).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(k).rank == 1
+        # `top_k` fixes the layout of its `k`; the kernels it forwards to
+        # infer it, the way `sampler.fused_token_sampling` calls them.
+        var k_tt = k.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm()
+        comptime if is_cpu[target]():
+            _top_k_cpu[largest=True](
+                input.to_tile_tensor[dtype](),
+                max_k,
+                1,
+                values.to_tile_tensor(),
+                indices.to_tile_tensor[.int64](),
+                1000,
+                sorted=True,
+                ctx=Optional(ctx.assert_cpu_target()),
+                k=k_tt,
+            )
+        elif (
+            dtype in (DType.float32, DType.bfloat16)
+            and 0 < max_k <= TOPK_PER_ROW_MAX_K
+            and not ctx.target.is_apple_gpu()
+        ):
+            # The per-row kernel takes flat pointers; a non-pointer storage
+            # policy aborts here at run time.
+            topk_per_row_gpu(
+                ctx,
+                input.to_tile_tensor[dtype]()
+                .as_unsafe_any_origin()
+                .ptr.as_imm(),
+                k.to_tile_tensor[.int64]().as_unsafe_any_origin().ptr.as_imm(),
+                values.to_tile_tensor().as_unsafe_any_origin().ptr,
+                indices.to_tile_tensor[.int64]().as_unsafe_any_origin().ptr,
+                Int(input.shape()[0].value()),
+                Int(input.shape()[1].value()),
+                max_k,
+            )
+        else:
+            topk_gpu[sampling=False, largest=True](
+                ctx,
+                max_k,
+                input.to_tile_tensor[dtype](),
+                values.to_tile_tensor(),
+                indices.to_tile_tensor[.int64](),
+                k=k_tt,
+            )
 
 
 @extensibility.register("mo.reduce.softmax")
@@ -2116,18 +2182,16 @@ struct Softmax:
     def execute[
         target: StaticString,
         axis: Int,
-        has_prologue_fusion: Bool,
     ](
-        output: OutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.softmax` graph op.
 
         Parameters:
             target: Compilation target string.
             axis: Dimension along which to reduce.
-            has_prologue_fusion: See the graph op signature.
 
         Args:
             output: Output tensor receiving the result.
@@ -2138,35 +2202,47 @@ struct Softmax:
             Error: If the operation parameters are invalid.
         """
 
-        @always_inline
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime rank = type_of(output).rank
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(input).rank == rank
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane `softmax` dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
         # Pass the static reduced-axis width when known so the Row
         # register-caches the input strip (`_fuse`), avoiding a second global
         # read of the input in the map phase; a dynamic width falls back to
         # streaming.
-        comptime sm_cols = Int(input.static_spec.shape_tuple[axis])
+        comptime sm_cols = type_of(input)._shape_types[axis].static_value
 
         comptime if sm_cols != UNKNOWN_VALUE:
-            softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
+            softmax[dtype, rank, target=target, reduce_dim=axis](
                 input_fn,
-                Coord(output.shape()),
+                output.shape().flatten(),
                 ComptimeInt[sm_cols](),
-                output.to_tile_tensor[.int64](),
+                output.to_tile_tensor(),
                 axis,
                 context=ctx,
             )
         else:
-            softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
+            softmax[dtype, rank, target=target, reduce_dim=axis](
                 input_fn,
-                Coord(output.shape()),
-                Int(Int(input.shape()[axis])),
-                output.to_tile_tensor[.int64](),
+                output.shape().flatten(),
+                Int(input.shape()[axis].value()),
+                output.to_tile_tensor(),
                 axis,
                 context=ctx,
             )
@@ -2180,18 +2256,16 @@ struct LogSoftmax:
     def execute[
         target: StaticString,
         axis: Int,
-        has_prologue_fusion: Bool,
     ](
-        output: OutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.logsoftmax` graph op.
 
         Parameters:
             target: Compilation target string.
             axis: Dimension along which to reduce.
-            has_prologue_fusion: See the graph op signature.
 
         Args:
             output: Output tensor receiving the result.
@@ -2202,47 +2276,59 @@ struct LogSoftmax:
             Error: If the operation parameters are invalid.
         """
 
-        @always_inline
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime rank = type_of(output).rank
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(input).rank == rank
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane `softmax` dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
         # Pass the static reduced-axis width when known so the Row
         # register-caches the input strip (`_fuse`), avoiding a second global
         # read of the input in the map phase; a dynamic width falls back to
         # streaming.
-        comptime lsm_cols = Int(input.static_spec.shape_tuple[axis])
+        comptime lsm_cols = type_of(input)._shape_types[axis].static_value
 
         comptime if lsm_cols != UNKNOWN_VALUE:
             softmax[
-                output.dtype,
-                output.rank,
+                dtype,
+                rank,
                 target=target,
                 logsoftmax=True,
                 reduce_dim=axis,
             ](
                 input_fn,
-                Coord(output.shape()),
+                output.shape().flatten(),
                 ComptimeInt[lsm_cols](),
-                output.to_tile_tensor[.int64](),
+                output.to_tile_tensor(),
                 axis,
                 context=ctx,
             )
         else:
             softmax[
-                output.dtype,
-                output.rank,
+                dtype,
+                rank,
                 target=target,
                 logsoftmax=True,
                 reduce_dim=axis,
             ](
                 input_fn,
-                Coord(output.shape()),
-                Int(Int(input.shape()[axis])),
-                output.to_tile_tensor[.int64](),
+                output.shape().flatten(),
+                Int(input.shape()[axis].value()),
+                output.to_tile_tensor(),
                 axis,
                 context=ctx,
             )
@@ -2254,21 +2340,19 @@ struct CumSum:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
+        target: StaticString,
         exclusive: Int,
         reverse: Int,
         axis: Int,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
-    ):
+    ) raises:
         """Executes the `mo.cumsum` graph op.
 
         Parameters:
-            dtype: Element type of the input and output tensors.
-            rank: Tensor rank of the input and output tensors.
+            target: Compilation target string.
             exclusive: See the graph op signature.
             reverse: See the graph op signature.
             axis: Dimension along which to reduce.
@@ -2277,10 +2361,19 @@ struct CumSum:
             output: Output tensor receiving the result.
             input: Input tensor to reduce.
             ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the GPU kernel launch fails.
         """
-        cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis](
-            output.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+
+        cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis, target=target](
+            output.to_tile_tensor(),
+            input.to_tile_tensor[dtype](),
+            ctx,
         )
 
 
@@ -2292,8 +2385,8 @@ struct ArgSort[*, ascending: Bool]:
     def execute[
         target: StaticString
     ](
-        indices: OutputTensor[rank=1, ...],
-        input: InputTensor[rank=1, ...],
+        indices: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mx.argsort` graph op.
@@ -2309,8 +2402,13 @@ struct ArgSort[*, ascending: Bool]:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        var indices_tensor = indices.to_tile_tensor[.int64]()
-        var input_tensor = input.to_tile_tensor[.int64]()
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(indices).rank == 1
+        comptime assert type_of(input).rank == 1
+
+        var indices_tensor = indices.to_tile_tensor()
+        var input_tensor = input.to_tile_tensor()
 
         comptime if target == "cpu":
             argsort[ascending=Self.ascending](indices_tensor, input_tensor)

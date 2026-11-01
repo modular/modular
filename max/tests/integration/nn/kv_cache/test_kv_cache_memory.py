@@ -14,7 +14,7 @@
 import pytest
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheBuffer, KVCacheMemory
+from max.nn.legacy.kv_cache.cache_params import KVCacheBuffer, KVCacheMemory
 
 
 def _buffer(
@@ -117,6 +117,7 @@ def test_kv_cache_buffer_empty_values_fails() -> None:
     """An empty values list raises ValueError before the TP-shard check."""
     with pytest.raises(ValueError, match="List of values must be non-empty"):
         KVCacheBuffer(
+            leaf_id="full_group",
             values=[],
             replicates_kv_across_tp=True,
         )
@@ -126,6 +127,7 @@ def test_kv_cache_buffer_replicated_single_shard_fails() -> None:
     """replicates_kv_across_tp=True with a single shard raises ValueError."""
     with pytest.raises(ValueError, match="requires at least 2 TP shards"):
         KVCacheBuffer(
+            leaf_id="full_group",
             values=[_uint8_buffer(4, 256)],
             replicates_kv_across_tp=True,
         )
@@ -134,22 +136,26 @@ def test_kv_cache_buffer_replicated_single_shard_fails() -> None:
 def test_kv_cache_buffer_replicated_multi_shard_marks_replicated() -> None:
     """replicates_kv_across_tp=True yields one replicated unit of all shards."""
     kv_buffer = KVCacheBuffer(
+        leaf_id="full_group",
         values=[_uint8_buffer(4, 256), _uint8_buffer(4, 256)],
         replicates_kv_across_tp=True,
     )
     memory = kv_buffer.to_memory()
-    assert len(memory) == 1
-    assert memory[0].replicated
-    assert len(memory[0].buffers) == 2
+    assert list(memory) == ["full_group"]
+    assert memory["full_group"].replicated
+    assert len(memory["full_group"].buffers) == 2
 
 
 def test_kv_cache_buffer_sharded_single_shard_valid() -> None:
     """A non-replicated single-shard buffer validates and exposes its pages."""
     kv_buffer = KVCacheBuffer(
+        leaf_id="full_group",
         values=[_uint8_buffer(4, 256)],
         replicates_kv_across_tp=False,
     )
-    assert kv_buffer.total_num_pages == 4
+    assert [
+        unit.total_num_pages for unit in kv_buffer.to_memory().values()
+    ] == [4]
     assert kv_buffer.all_buffers == kv_buffer.values
 
 
@@ -157,6 +163,7 @@ def test_kv_cache_buffer_mismatched_value_dtypes_fails() -> None:
     """Values that disagree on dtype raise ValueError."""
     with pytest.raises(ValueError, match="All values must have the same dtype"):
         KVCacheBuffer(
+            leaf_id="full_group",
             values=[
                 _buffer(4, 256, dtype=DType.uint8),
                 _buffer(4, 256, dtype=DType.bfloat16),
@@ -169,6 +176,7 @@ def test_kv_cache_buffer_mismatched_value_shapes_fails() -> None:
     """Values that disagree on shape raise ValueError."""
     with pytest.raises(ValueError, match="All values must have the same shape"):
         KVCacheBuffer(
+            leaf_id="full_group",
             values=[_uint8_buffer(4, 256), _uint8_buffer(4, 512)],
             replicates_kv_across_tp=False,
         )
@@ -180,29 +188,34 @@ def test_kv_cache_buffer_mismatched_value_shapes_fails() -> None:
 def test_kv_cache_buffer_with_scales_valid() -> None:
     """Values and scales of equal length and page count validate."""
     kv_buffer = KVCacheBuffer(
+        leaf_id="full_group",
         values=[_buffer(4, 256, dtype=DType.uint8)],
         scales=[_buffer(4, 8, dtype=DType.float32)],
         replicates_kv_across_tp=False,
     )
     assert kv_buffer.scales is not None
-    assert kv_buffer.total_num_pages == 4
+    assert [
+        unit.total_num_pages for unit in kv_buffer.to_memory().values()
+    ] == [4, 4]
     assert kv_buffer.all_buffers == [*kv_buffer.values, *kv_buffer.scales]
 
 
 def test_kv_cache_buffer_with_scales_to_memory() -> None:
-    """to_memory emits one unit per kind, each carrying every TP shard."""
+    """to_memory names a unit per kind, each carrying every TP shard."""
     kv_buffer = KVCacheBuffer(
+        leaf_id="full_group",
         values=[_buffer(4, 256, dtype=DType.uint8) for _ in range(2)],
         scales=[_buffer(4, 8, dtype=DType.float32) for _ in range(2)],
         replicates_kv_across_tp=False,
     )
     memory = kv_buffer.to_memory()
 
-    # values before scales, each with both TP shards folded into uint8 pages.
-    assert len(memory) == 2
-    assert not any(m.replicated for m in memory)
-    assert [len(m.buffers) for m in memory] == [2, 2]
-    assert [m.bytes_per_page for m in memory] == [256, 8 * 4]
+    # The scales leaf sits beside the values leaf it belongs to, each with
+    # both TP shards folded into uint8 pages.
+    assert list(memory) == ["full_group", "full_group/scales"]
+    assert not any(m.replicated for m in memory.values())
+    assert [len(m.buffers) for m in memory.values()] == [2, 2]
+    assert [m.bytes_per_page for m in memory.values()] == [256, 8 * 4]
 
 
 def test_kv_cache_buffer_scales_length_mismatch_fails() -> None:
@@ -211,6 +224,7 @@ def test_kv_cache_buffer_scales_length_mismatch_fails() -> None:
         ValueError, match="Scales must be the same length as values"
     ):
         KVCacheBuffer(
+            leaf_id="full_group",
             values=[_uint8_buffer(4, 256), _uint8_buffer(4, 256)],
             scales=[_buffer(4, 8, dtype=DType.float32)],
             replicates_kv_across_tp=False,
@@ -221,6 +235,7 @@ def test_kv_cache_buffer_mismatched_scale_dtypes_fails() -> None:
     """Scales that disagree on dtype raise ValueError."""
     with pytest.raises(ValueError, match="All scales must have the same dtype"):
         KVCacheBuffer(
+            leaf_id="full_group",
             values=[_uint8_buffer(4, 256), _uint8_buffer(4, 256)],
             scales=[
                 _buffer(4, 8, dtype=DType.float32),
@@ -234,6 +249,7 @@ def test_kv_cache_buffer_mismatched_scale_shapes_fails() -> None:
     """Scales that disagree on shape raise ValueError."""
     with pytest.raises(ValueError, match="All scales must have the same shape"):
         KVCacheBuffer(
+            leaf_id="full_group",
             values=[_uint8_buffer(4, 256), _uint8_buffer(4, 256)],
             scales=[
                 _buffer(4, 8, dtype=DType.float32),
@@ -243,13 +259,14 @@ def test_kv_cache_buffer_mismatched_scale_shapes_fails() -> None:
         )
 
 
-def test_kv_cache_buffer_value_scale_page_count_mismatch_fails() -> None:
-    """Values and scales with differing page counts raise ValueError."""
-    with pytest.raises(
-        ValueError, match="Values and scales must have the same number of pages"
-    ):
-        KVCacheBuffer(
-            values=[_buffer(4, 256, dtype=DType.uint8)],
-            scales=[_buffer(8, 8, dtype=DType.float32)],
-            replicates_kv_across_tp=False,
-        )
+def test_kv_cache_buffer_values_and_scales_keep_own_page_counts() -> None:
+    """Values and scales may hold different page counts, as under Jenga."""
+    kv_buffer = KVCacheBuffer(
+        leaf_id="full_group",
+        values=[_buffer(4, 256, dtype=DType.uint8)],
+        scales=[_buffer(8, 8, dtype=DType.float32)],
+        replicates_kv_across_tp=False,
+    )
+
+    memory = kv_buffer.to_memory()
+    assert [unit.total_num_pages for unit in memory.values()] == [4, 8]

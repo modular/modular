@@ -13,11 +13,11 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys.info import simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from std.algorithm.functional import vectorize
-from layout import Coord, Layout, LayoutTensor, RuntimeLayout
-from layout import lt_to_tt
+from std.memory.alloc import unsafe_alloc
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -67,15 +67,16 @@ def test[
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    comptime if rank == 1:
-        pad_w = Index(pad[0], pad[1])
-    elif rank == 2:
-        pad_h = Index(pad[0], pad[1])
-        pad_w = Index(pad[2], pad[3])
-    elif rank == 3:
-        pad_d = Index(pad[0], pad[1])
-        pad_h = Index(pad[2], pad[3])
-        pad_w = Index(pad[4], pad[5])
+    comptime match rank:
+        case 1:
+            pad_w = Index(pad[0], pad[1])
+        case 2:
+            pad_h = Index(pad[0], pad[1])
+            pad_w = Index(pad[2], pad[3])
+        case 3:
+            pad_d = Index(pad[0], pad[1])
+            pad_h = Index(pad[2], pad[3])
+            pad_w = Index(pad[4], pad[5])
 
     var conv_shape = ConvShape[rank](
         n=N,
@@ -108,7 +109,7 @@ def test[
 
     # Kept as raw alloc because it's captured by closure bodies, which
     # require ImplicitlyCopyable.
-    var bias_ptr = alloc[Scalar[dtype]](F)
+    var bias_ptr = unsafe_alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
     # Find the tile size used in packing.
@@ -120,161 +121,137 @@ def test[
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
-    comptime layout_p2 = Layout.row_major[rank + 2]()
-    comptime layout_p3 = Layout.row_major[rank + 3]()
-    var input_shape = extend_shape(input_dims, N, C)
-    var input = LayoutTensor[dtype, layout_p2](
-        input_ptr, RuntimeLayout[layout_p2].row_major(input_shape)
-    )
+
+    var input_shape = extend_shape(Coord(input_dims), N, C)
+    var input = TileTensor(Span(input_ptr), row_major(input_shape))
 
     # Filter buffer.
-    var filter_shape = append_shape(filter_dims, C_per_group, F)
-    var filter = LayoutTensor[dtype, layout_p2](
-        filter_ptr, RuntimeLayout[layout_p2].row_major(filter_shape)
-    )
+    var filter_shape = append_shape(Coord(filter_dims), C_per_group, F)
+    var filter = TileTensor(Span(filter_ptr), row_major(filter_shape))
 
-    var packed_filter_shape = pack_conv_filter_shape(
-        lt_to_tt(filter), num_groups
-    )
+    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
     var packed_filter_ptr = List(
         length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
-    var packed_filter = LayoutTensor[dtype, layout_p3](
-        packed_filter_ptr,
-        RuntimeLayout[layout_p3].row_major(packed_filter_shape),
+    var packed_filter = TileTensor(
+        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
     )
 
-    var output_shape = extend_shape(output_dims, N, F)
-    var output = LayoutTensor[dtype, layout_p2](
-        output_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
-    )
-    var output_ref = LayoutTensor[dtype, layout_p2](
-        output_ref_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
-    )
+    var output_shape = extend_shape(Coord(output_dims), N, F)
+    var output = TileTensor(Span(output_ptr), row_major(output_shape))
+    var output_ref = TileTensor(Span(output_ref_ptr), row_major(output_shape))
 
     comptime if filter_packed:
-        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     comptime conv_attr = ConvInfoStatic[rank]()
 
-    @always_inline
-    @__parameter
-    def null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
+    @inline(.always)
+    def null_epilogue(coords: Coord, f_size: Int):
         pass
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p3,
-            layout_p2,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output_ref.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
-        ].run(
-            output_ref,
-            input,
-            packed_filter,
-            conv_shape,
-        )
+        ].run(output_ref, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p2,
-            layout_p2,
+            input.LayoutType,
+            filter.LayoutType,
+            output_ref.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
-        ].run(
-            output_ref,
-            input,
-            filter,
-            conv_shape,
-        )
+        ].run(output_ref, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Add bias and activatiion separately.
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref.ptr + F * (
-                i + output_image_size * n
-            )
+            var row_offset = F * (i + output_image_size * n)
 
-            @always_inline
+            @inline(.always)
             def body0[width: Int](offset: Int) {var}:
-                output_ref_ptr.store(
-                    offset,
+                var coord = output_ref.layout.idx2crd(row_offset + offset)
+                output_ref.store[alignment=align_of[dtype]()](
+                    coord,
                     10.0
                     * (
-                        output_ref_ptr.load[width=width](offset)
-                        + bias_ptr.load[width=width](offset)
+                        output_ref.load[
+                            width=width, alignment=align_of[dtype]()
+                        ](coord)
+                        + bias_ptr.unsafe_load[width=width](offset)
                     ),
                 )
 
             vectorize[simd_size](F, body0)
 
     # Test epilogue
-    @always_inline
-    @__parameter
-    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
-        @always_inline
+    @inline(.always)
+    def epilogue(coords: Coord, f_size: Int) {imm}:
+        @inline(.always)
         def body1[width: Int](idx: Int) {imm}:
-            var curr_coords = rebind[IndexList[rank + 2]](coords)
-            curr_coords[rank + 1] += idx
+            var f = Int(coords[rank + 1]) + idx
+            var curr_coords = coords
+            curr_coords.replace_dynamic[rank + 1](f)
 
             var vec = output.load[width=width](curr_coords)
 
             output.store(
-                curr_coords,
-                10.0
-                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
+                curr_coords, 10.0 * (vec + bias_ptr.unsafe_load[width=width](f))
             )
 
         vectorize[simd_size](f_size, body1)
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p3,
-            layout_p2,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
-            epilogue,
+            True,
+            type_of(epilogue),
         ].run(
             output,
-            input,
-            packed_filter,
+            input.as_imm(),
+            packed_filter.as_imm(),
             conv_shape,
+            epilogue,
         )
     else:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p2,
-            layout_p2,
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
-            epilogue,
-        ].run(
-            output,
-            input,
-            filter,
-            conv_shape,
-        )
+            True,
+            type_of(epilogue),
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape, epilogue)
 
     # Check results, return on the first failed comparison.
+    var output_flat = output.reshape(row_major(output_size))
+    var output_ref_flat = output_ref.reshape(row_major(output_size))
     for i in range(output_size):
         if not isclose(
-            output_ref.ptr[i],
-            output.ptr[i],
+            output_ref_flat[i],
+            output_flat[i],
             atol=1e-4,  # absolute error tolerance
             rtol=1e-4,  # relative error tolerance
         ):
@@ -283,14 +260,14 @@ def test[
             print("filter packed", filter_packed)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.ptr[i])
-            print("Actual value: ", output.ptr[i])
-            bias_ptr.free()
+            print("Golden value: ", output_ref_flat[i])
+            print("Actual value: ", output_flat[i])
+            bias_ptr.unsafe_free()
             return
 
     # CHECK: Succeed
     print("Succeed")
-    bias_ptr.free()
+    bias_ptr.unsafe_free()
     _ = output_ref_ptr^
     _ = output_ptr^
     _ = packed_filter_ptr^

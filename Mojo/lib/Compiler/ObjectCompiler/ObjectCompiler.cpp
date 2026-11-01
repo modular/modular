@@ -295,9 +295,8 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   // Add RuntimeLibraryInfoWrapper for libcall lowering decisions.
   // This is required by passes like ExpandFp and PreISelIntrinsicLowering.
   const llvm::TargetOptions &tmOptions = targetMachine.Options;
-  passMgr.add(new RuntimeLibraryInfoWrapper(
-      tmOptions.ExceptionModel, tmOptions.EABIVersion,
-      tmOptions.MCOptions.ABIName, tmOptions.VecLib));
+  passMgr.add(new RuntimeLibraryInfoWrapper(tmOptions.MCOptions.ABIName,
+                                            tmOptions.VecLib));
 
 #ifndef MODULAR_PRODUCTION
   // Verify module immediately to catch problems before doInitialization() is
@@ -343,7 +342,8 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   }
 
   const_cast<TargetLoweringObjectFile *>(llvmTargetMachine.getObjFileLowering())
-      ->Initialize(machineModInfoPass->getMMI().getContext(), targetMachine);
+      ->initialize(machineModInfoPass->getMMI().getContext(), targetMachine,
+                   module);
 
   passMgr.run(module);
 
@@ -892,7 +892,10 @@ ObjectCompiler::emitArchiveParallelCompilation(
     if (strategy == SplitStrategy::PerFunction)
       splitPerFunction(std::move(llvmModule), handleSplit, symbolLinkageTypes);
     else
-      splitPerExported(std::move(llvmModule), handleSplit);
+      // A kernel module must stay self-contained to be loadable.
+      splitPerExported(std::move(llvmModule), handleSplit, symbolLinkageTypes,
+                       /*outlineSharedSubtrees=*/!backend.isOffload(),
+                       cpuDevice.getWorkQueue()->getParallelismLevel());
   }
   return cacheResults;
 }
@@ -1304,7 +1307,7 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
 ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
                                            llvm::raw_pwrite_stream &os) {
   CompilerTimeTraceScope traceScope("emitBitcode");
-  // The backend owns the bitcode format (e.g. Metal emits AIR bitcode).
+  // The backend owns the bitcode format.
   ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(llvmModule.getTargetTriple());
   if (backendOr.isError())
@@ -1857,7 +1860,10 @@ ObjectCompiler::emitOffloadKernels(
         cachedResults.push_back(std::move(result.second));
       };
 
-  splitPerExported(std::move(llvmModule), handleSplit);
+  // Required by the signature; offload never outlines, so it stays empty.
+  llvm::StringMap<llvm::GlobalValue::LinkageTypes> unusedLinkageTypes;
+  splitPerExported(std::move(llvmModule), handleSplit, unusedLinkageTypes,
+                   /*outlineSharedSubtrees=*/false);
 
   auto result = AsyncRT::AsyncValueRef<
       DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(cpuDevice);

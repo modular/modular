@@ -54,9 +54,8 @@ the defect fires at all).
 from std.random import random_ui64, seed
 from std.testing import assert_equal, assert_true
 
-from layout import LayoutTensor, TileTensor
-from layout.coord import Coord, Idx
-from layout.runtime_layout import RuntimeLayout
+from layout import TileTensor
+from layout.coord import Idx
 from layout.tile_layout import row_major
 from max.gpu.host import DeviceContext
 
@@ -65,7 +64,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     mha_prefill_v2,
 )
 from nn.attention.mha_mask import NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 comptime Q_BLOCK_SIZE = 32
 comptime NUM_WARPS = 8
@@ -130,30 +129,22 @@ def _run(poison_row: Int, ctx: DeviceContext) raises -> Float32:
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH])
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH])
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
-    var k_op = LayoutTensorMHAOperand(k_tt)
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var k_op = TileTensorMHAOperand(k_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     mha_prefill_v2[CONFIG](
         q_tt,
@@ -186,11 +177,8 @@ def test_lazy_rescale_crossrow_canary(ctx: DeviceContext, rng_seed: Int) raises:
     # observed row 0 itself.
     var poison_row = Int(random_ui64(1, UInt64(Q_BLOCK_SIZE - 1)))
     print(
-        "  [AMD lazy-rescale crossrow canary] seed=",
-        rng_seed,
-        " poison_row=",
-        poison_row,
-        sep="",
+        t"  [AMD lazy-rescale crossrow canary]"
+        t" seed={rng_seed} poison_row={poison_row}"
     )
 
     # Clean run: EVERY row shares row 0's small Q (poison_row = -1, which
@@ -199,7 +187,7 @@ def test_lazy_rescale_crossrow_canary(ctx: DeviceContext, rng_seed: Int) raises:
     var clean = _run(-1, ctx)
     var poisoned = _run(poison_row, ctx)
 
-    print("     row0 sum clean=", clean, " poisoned=", poisoned, sep="")
+    print(t"     row0 sum clean={clean} poisoned={poisoned}")
     assert_equal(
         clean,
         poisoned,
@@ -219,7 +207,7 @@ def main() raises:
                 test_lazy_rescale_crossrow_canary(ctx, s)
             except e:
                 failures.append(String("seed=") + String(s))
-                print("     CANARY FAILED (seed=", s, "): ", e, sep="")
+                print(t"     CANARY FAILED (seed={s}): {e}")
 
         assert_true(
             len(failures) == 0,

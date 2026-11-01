@@ -1,0 +1,105 @@
+---
+title: Set up AI coding
+description: Use AI coding assistants such as Cursor, Claude Code, Copilot, and Windsurf with MAX skills, docs, and project context.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+AI coding assistants write better MAX code when they can use Modular-provided
+workflows and search the current docs. Use this page to set yours up:
+
+- **Get started**: Install the MAX skills and connect the docs MCP server.
+- **Use docs without MCP**: Add `llms.txt` files to your assistant's context.
+- **Work in the Modular repository**: Use the repository's project context
+  files.
+
+## Quickstart {#skills}
+
+Install the MAX skills and connect the docs MCP server.
+
+1. Install the MAX skills:
+
+   <Tabs groupId="assistant">
+   <TabItem value="claude-code" label="Claude Code">
+
+   ```text
+   /plugin marketplace add modular/skills
+   /plugin install skills@modular
+   ```
+
+   </TabItem>
+   <TabItem value="other" label="Other assistants">
+
+   ```sh
+   npx skills add modular/skills
+   ```
+
+   This command requires [Node.js](https://nodejs.org/en/download).
+
+   </TabItem>
+   </Tabs>
+
+2. Ask your assistant to connect to the docs MCP server:
+
+   ```text
+   Add the MAX docs MCP server at https://mcp.modular.com/mcp/ and verify it
+   by searching the docs.
+   ```
+
+   The server gives your assistant live access to the nightly MAX docs.
+
+3. Start a new session and try a prompt like this:
+
+   ```text
+   Create a new project with MAX installed, then serve a small LLM with an
+   OpenAI-compatible endpoint.
+   ```
+
+Your assistant now follows Modular's workflows and checks the current docs
+while it writes code.
+
+Writing kernels with Mojo? The `skills` plugin also includes the Mojo skills.
+You can find a list of all the skills and usage examples in the [Modular skills
+repository](https://github.com/modular/skills).
+
+## Provide documentation without MCP
+
+If your coding assistant doesn't support MCP, you can give MAX docs as context
+with our `llms.txt` files. These plain-text files follow the
+[`llms.txt`](https://llmstxt.org/) proposed standard.
+
+The following table lists the available files.
+
+| File                                                                              | Contents                               | Best for                      |
+|-----------------------------------------------------------------------------------|----------------------------------------|-------------------------------|
+| <a href="/llms.txt" target="_blank">llms.txt</a>                                  | Compact index linking to segment files | Starting point for all agents |
+| <a href="/llms-max-guides.txt" target="_blank">llms-max-guides.txt</a>            | MAX guides (develop, serve, deploy)    | Application development       |
+| <a href="/llms-python.txt" target="_blank">llms-python.txt</a>                    | MAX Python API indexes                 | Python-based MAX development  |
+| <a href="/llms-accelerator-api.txt" target="_blank">llms-accelerator-api.txt</a>  | MAX accelerator library API indexes    | Kernel and GPU development    |
+| <a href="/llms-c-api.txt" target="_blank">llms-c-api.txt</a>                      | MAX C API reference                    | C API integration             |
+| <a href="https://mojolang.org/llms.txt" target="_blank">mojolang.org/llms.txt</a> | Mojo language docs (external)          | Mojo development              |
+
+Ask your coding assistant to fetch the `llms.txt` files:
+
+```text
+Read https://max.modular.com/llms-python.txt for MAX Python API documentation
+```
+
+## Use AI agents in the Modular repository
+
+This section is for contributors who work in a clone of the
+[Modular repository](https://github.com/modular/modular).
+
+The repository includes two project context files that tell your assistant how
+to work in the codebase: `CLAUDE.md` and `AGENTS.md` (which is a symlink to
+`CLAUDE.md`). When you work in the repository, your assistant picks up the
+following context from those project files:
+
+- Build and test commands
+- Project architecture overview
+- Coding conventions and commit message guidelines
+- Common development workflows
+
+If your assistant doesn't load either file automatically, ask it to read
+`AGENTS.md` before you start.

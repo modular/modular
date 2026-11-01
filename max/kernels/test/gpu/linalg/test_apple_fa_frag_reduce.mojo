@@ -36,7 +36,7 @@ barriers (the Apple idiom). fp32 is shuffled at width 1 -- the only width the
 Apple shuffle intrinsic supports for non-half dtypes.
 """
 
-from max.gpu import WARP_SIZE, lane_id
+from max.gpu import lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.warp import shuffle_xor
 from std.sys.info import _accelerator_arch
@@ -44,7 +44,7 @@ from std.sys.info import _accelerator_arch
 comptime MMA_DIM = 16  # one 16x16 score sub-tile
 
 
-@always_inline
+@inline(.always)
 def _frag_row_max(frag: SIMD[.float32, 8]) -> SIMD[.float32, 2]:
     """Full-row max over a 16x16 score fragment, for the lane's two rows.
 
@@ -61,7 +61,7 @@ def _frag_row_max(frag: SIMD[.float32, 8]) -> SIMD[.float32, 2]:
     return SIMD[.float32, 2](r0, r1)
 
 
-@always_inline
+@inline(.always)
 def _frag_row_sum(frag: SIMD[.float32, 8]) -> SIMD[.float32, 2]:
     """Full-row sum over a 16x16 score fragment, for the lane's two rows."""
     var r0 = frag[0] + frag[1] + frag[2] + frag[3]
@@ -125,7 +125,7 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
         max_dev.unsafe_ptr(),
         sum_dev.unsafe_ptr(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
 
     var max_host = ctx.enqueue_create_host_buffer[.float32](MMA_DIM)
@@ -148,10 +148,10 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
             exp_max = max(exp_max, v)
             exp_sum += v
         if max_host[r] != exp_max:
-            print("FAIL max row", r, "got", max_host[r], "exp", exp_max)
+            print(t"FAIL max row {r} got {max_host[r]} exp {exp_max}")
             pass_ = False
         if abs(sum_host[r] - exp_sum) > Float32(1e-3):
-            print("FAIL sum row", r, "got", sum_host[r], "exp", exp_sum)
+            print(t"FAIL sum row {r} got {sum_host[r]} exp {exp_sum}")
             pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -163,7 +163,7 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
+    if ctx.compute_capability() < 5:
         print("SKIP: Apple M5 required (16x16 simdgroup MMA fragment)")
         return
     test_frag_row_reduce(ctx)

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps GPT-OSS checkpoint names onto the MAX tree."""
 
 from __future__ import annotations
 
@@ -74,6 +75,7 @@ def convert_safetensor_state_dict(
 
     Args:
         state_dict: Dictionary of weight tensors
+        **kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         Dictionary of converted weight data

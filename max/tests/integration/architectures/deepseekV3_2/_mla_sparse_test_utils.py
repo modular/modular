@@ -21,11 +21,13 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
+)
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 
 
 def random_weights(
@@ -62,8 +64,4 @@ def paged_kv_from_flat_graph_inputs(
     flat_kv_inputs: Sequence[object],
 ) -> PagedCacheValues:
     """Flattened graph inputs → :class:`PagedCacheValues` for one device."""
-    return (
-        kv_params.get_symbolic_inputs()
-        .unflatten(iter(flat_kv_inputs))
-        .inputs[0]
-    )
+    return kv_params.unflatten_kv_inputs(iter(flat_kv_inputs))[0]

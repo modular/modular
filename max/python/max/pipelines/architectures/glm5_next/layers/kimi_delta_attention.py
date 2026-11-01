@@ -18,7 +18,7 @@ that state already predicts for ``k`` rather than adding to it. KDA's one
 change from Gated DeltaNet is that the forget gate decays the state **per
 channel** -- ``alpha_t`` is a ``head_dim``-wide vector per head, so
 ``S_t = diag(alpha_t) S_{t-1} + k_t delta_t^T``. MAX's
-:mod:`~max.nn.state_space.gated_delta` recurrence takes one decay per head per
+:mod:`~max.nn.legacy.state_space.gated_delta` recurrence takes one decay per head per
 token and cannot express that, which is why this is a sibling of Qwen3.5's
 ``GatedDeltaNet`` rather than a branch inside it.
 
@@ -49,62 +49,47 @@ comment:
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterable
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    DimLike,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     Weight,
     ops,
 )
 from max.graph.weight import Segment
-from max.nn.comm import Allreduce
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.state_space import gated_delta_conv1d_fwd, kda_decode
-from max.nn.state_space.kimi_delta import (
-    KDA_GATE_LOWER_BOUND,
-    KdaGateMode,
-    KdaStateLayout,
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.state_space import (
+    gated_delta_conv1d_fwd,
+    gated_delta_conv1d_verify_fwd,
+    kda_chunk,
+    kda_decode,
+    kda_verify_ring,
+)
+from max.nn.legacy.state_space.kimi_delta import (
+    STATE_LAYOUT,
+    kda_chunk_predicate,
+    kda_chunk_servable,
+    kda_gate_mode,
 )
 
 from ..model_config import Glm5NextConfig
-from .kda import KdaReplayInputs, KdaSublayerInputs
+from .kda import KdaReplayInputs, KdaRing, KdaSublayerInputs
 
-__all__ = ["Glm5NextKdaSublayer", "KimiDeltaAttention"]
-
-STATE_LAYOUT: KdaStateLayout = "K_FIRST"
-"""Pool axis order, ``[max_slots, heads, head_dim, head_dim]``.
-
-Pinned here so both recurrence ops, the pool allocator and the memory planner
-cannot disagree; it also matches the ``[max_slots, num_v_heads, key_dim,
-val_dim]`` layout Qwen3.5's state cache already allocates, which core clones.
-"""
-
-
-def _gate_mode(lower_bound: float | None) -> KdaGateMode:
-    """Selects the kernel's forget-gate form from the config's lower bound.
-
-    Raises:
-        ValueError: If the bound is neither absent nor the one value the
-            ``"safe"`` kernel path hard-codes. The constant lives in the
-            kernel, so a checkpoint with a different bound would run and be
-            quietly wrong.
-    """
-    if lower_bound is None:
-        return "original"
-    if lower_bound != KDA_GATE_LOWER_BOUND:
-        raise ValueError(
-            f"KDA's bounded forget gate is compiled with a lower bound of "
-            f"{KDA_GATE_LOWER_BOUND}, but this checkpoint asks for "
-            f"{lower_bound}. Thread a new compile-time axis through the kernel "
-            "rather than accepting the mismatch."
-        )
-    return "safe"
+__all__ = [
+    "Glm5NextKdaSublayer",
+    "KimiDeltaAttention",
+]
 
 
 class KimiDeltaAttention(Module, Shardable):
@@ -142,7 +127,7 @@ class KimiDeltaAttention(Module, Shardable):
         self.device = device
         self.rms_norm_eps = rms_norm_eps
         self.lower_bound = lower_bound
-        self.gate_mode = _gate_mode(lower_bound)
+        self.gate_mode = kda_gate_mode(lower_bound)
         self._sharding_strategy: ShardingStrategy | None = None
 
         self.qkv_dim = num_heads * head_dim
@@ -244,16 +229,19 @@ class KimiDeltaAttention(Module, Shardable):
         """
         return True
 
-    def conv_pool_shape(self, max_slots: int) -> list[int]:
-        """Returns this shard's conv state pool shape."""
-        return [max_slots, self.conv_dim, self.conv_kernel_size - 1]
+    def state_row_shapes(
+        self,
+    ) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        """Returns this shard's ``(conv, recurrent)`` shapes for one row.
 
-    def recurrent_pool_shape(self, max_slots: int) -> list[int]:
-        """Returns this shard's recurrent state pool shape.
-
-        Laid out for :data:`STATE_LAYOUT`.
+        One row is one layer's state for one request, which is what a
+        recurrent cache leaf is declared in. The recurrent shape is laid out
+        for :data:`STATE_LAYOUT`.
         """
-        return [max_slots, self.num_heads, self.head_dim, self.head_dim]
+        return (
+            (self.conv_dim, self.conv_kernel_size - 1),
+            (self.num_heads, self.head_dim, self.head_dim),
+        )
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -385,27 +373,42 @@ class KimiDeltaAttention(Module, Shardable):
         self,
         x: TensorValue,
         conv_pool: BufferValue,
+        conv_row_id: TensorValue,
         recurrent_pool: BufferValue,
-        slot_idx: TensorValue,
+        recurrent_row_id: TensorValue,
         input_row_offsets: TensorValue,
         replay_capture: list[KdaReplayInputs] | None = None,
+        ring: KdaRing | None = None,
+        verify_width: TensorValue | None = None,
     ) -> TensorValue:
         """Runs one KDA layer, mutating both state pools in place.
 
-        Both pools are mutable graph inputs the kernels address at slot
-        ``slot_idx[batch_item]``, so there is no state graph output and no
+        Both pools are mutable graph inputs the kernels address at row
+        ``row_id[batch_item]``, so there is no state graph output and no
         Python-side gather or scatter.
 
         Args:
             x: ``[total_tokens, hidden_size]``, already normalized by the
                 decoder layer.
-            conv_pool: This layer's conv pool, mutated in place.
-            recurrent_pool: This layer's recurrent pool, mutated in place.
-            slot_idx: ``[batch_size]`` pool slot per sequence.
+            conv_pool: The conv leaf's pool, flat over blocks and layers,
+                mutated in place.
+            conv_row_id: ``[batch_size]`` row of ``conv_pool`` this layer
+                reads and writes. Already folded, so the layer never sees the
+                layout.
+            recurrent_pool: The recurrent leaf's pool, mutated in place.
+            recurrent_row_id: Its row for this layer.
             input_row_offsets: ``[batch_size + 1]`` exclusive prefix offsets.
             replay_capture: When given, this call's :class:`KdaReplayInputs`
                 are appended to it so a speculative rollback can re-run the
                 state kernels over a shorter prefix.
+            ring: The speculative verify's ring, set with ``verify_width``.
+                A verify records each token's state update into it instead of
+                writing ``recurrent_pool``, and the caller folds the accepted
+                records in before the pool is read again.
+            verify_width: The speculative graph's
+                :func:`~max.nn.legacy.state_space.verify_width_operand`. A launch at
+                width zero lands both pools on the forward, and a wider one
+                leaves them for the rollback.
 
         Returns:
             ``[total_tokens, hidden_size]``, a partial sum over the head axis
@@ -426,15 +429,26 @@ class KimiDeltaAttention(Module, Shardable):
             [self.conv_dim, self.conv_kernel_size],
         )
         row_offsets_uint32 = input_row_offsets.cast(DType.uint32)
-        conv_out = ops.silu(
-            gated_delta_conv1d_fwd(
+        qkv_window: TensorValue | None = None
+        if verify_width is None:
+            conv_out = gated_delta_conv1d_fwd(
                 qkv_input_ragged=qkv,
                 conv_weight=conv_weight,
                 conv_state=conv_pool,
-                slot_idx=slot_idx.cast(DType.uint32),
+                slot_idx=conv_row_id.cast(DType.uint32),
                 input_row_offsets=row_offsets_uint32,
             )
-        )
+        else:
+            conv_out, qkv_window = gated_delta_conv1d_verify_fwd(
+                qkv_input_ragged=qkv,
+                conv_weight=conv_weight,
+                conv_state=conv_pool,
+                slot_idx=conv_row_id.cast(DType.uint32),
+                input_row_offsets=row_offsets_uint32,
+                verify_width=verify_width,
+                rollback=False,
+            )
+        conv_out = ops.silu(conv_out)
         q, k, v = (
             ops.reshape(part, head_shape)
             for part in ops.split(conv_out, [self.qkv_dim] * 3, axis=-1)
@@ -456,30 +470,140 @@ class KimiDeltaAttention(Module, Shardable):
                     conv_weight=conv_weight,
                     raw_gate=raw_gate,
                     beta_logits=beta_logits,
+                    qkv_window=qkv_window,
                 )
             )
 
         a_log = self.A_log.to(device)
         dt_bias = ops.reshape(self.dt_bias.to(device), [heads, head_dim])
-        state_indices = slot_idx.cast(DType.int32)
-        # float32 out: the next stage is a float32 gated norm, so rounding to
-        # the compute dtype in between would cost a round trip for nothing.
-        core_out = kda_decode(
-            q,
-            k,
-            v,
-            raw_gate,
-            beta_logits,
-            a_log,
-            dt_bias,
-            input_row_offsets.cast(DType.int32),
-            recurrent_pool,
-            state_indices,
-            output_dtype=DType.float32,
-            gate_mode=self.gate_mode,
-            beta_mode="logits",
-            state_layout=STATE_LAYOUT,
+        state_indices = recurrent_row_id.cast(DType.int32)
+        cu_seqlens = input_row_offsets.cast(DType.int32)
+
+        # Both ops take the same tensors and differ only in how they walk the
+        # recurrence. On gfx950 the chunk-eligible configuration requires a
+        # float32 pool, so both ops write float32 state there. On NVIDIA q/k/v
+        # and the output stay float32 into the chunk op too. The gfx950 chunk
+        # kernels take only bf16 q/k/v and output, so that branch rounds at
+        # the op boundary and nowhere else; `test_kda_chunk_prefill.py` grades
+        # it against float32 decode. The output returns to float32 because the
+        # next stage is a float32 gated norm.
+        out_shape: list[DimLike] = [x.shape[0], heads, head_dim]
+
+        io_dtype_chunked = (
+            DType.bfloat16 if accelerator_api() == "hip" else DType.float32
         )
+
+        def _recurrence(
+            chunked: bool,
+            qkv_io: tuple[TensorValue, TensorValue, TensorValue] | None = None,
+        ) -> TensorValue:
+            # Decode pins its `fma`s so a verify and fold over the same tokens
+            # land on its state bit for bit, which the MTP rollback tests
+            # compare. Only AMD pays for it; NVIDIA always pins.
+            op = (
+                kda_chunk
+                if chunked
+                else functools.partial(kda_decode, pin_fma=True)
+            )
+            io_dtype = io_dtype_chunked if chunked else DType.float32
+            q_io, k_io, v_io = qkv_io or (
+                q.cast(io_dtype),
+                k.cast(io_dtype),
+                v.cast(io_dtype),
+            )
+            out = op(
+                q_io,
+                k_io,
+                v_io,
+                raw_gate,
+                beta_logits,
+                a_log,
+                dt_bias,
+                cu_seqlens,
+                recurrent_pool,
+                state_indices,
+                output_dtype=io_dtype,
+                gate_mode=self.gate_mode,
+                beta_mode="logits",
+                state_layout=STATE_LAYOUT,
+            ).cast(DType.float32)
+            return ops.rebind(out, out_shape, "kda recurrence output rebind")
+
+        def _verify_recurrence() -> TensorValue:
+            assert verify_width is not None
+            assert ring is not None, "a verify needs a ring"
+            out = kda_verify_ring(
+                q,
+                k,
+                v,
+                raw_gate,
+                beta_logits,
+                a_log,
+                dt_bias,
+                cu_seqlens,
+                recurrent_pool,
+                state_indices,
+                ring.pool,
+                ring.row_id,
+                verify_width,
+                output_dtype=DType.float32,
+                gate_mode=self.gate_mode,
+                beta_mode="logits",
+                state_layout=STATE_LAYOUT,
+            )
+            return ops.rebind(out, out_shape, "kda verify output rebind")
+
+        chunk_servable = kda_chunk_servable(
+            head_dim, self.gate_mode, recurrent_pool.dtype
+        )
+        if verify_width is None and chunk_servable:
+            # A decode batch (one token per sequence) must stay on float32
+            # `kda_decode`, and on NVIDIA `kda_chunk` also reads `cu_seqlens`
+            # back to the host to build its chunk map. `ops.cond` branches are
+            # separate regions, so a decode batch never launches the prefill
+            # side, and the device graph captured for decode never contains
+            # it. A mixed prefill+decode batch takes the chunk side whole,
+            # decode rows included.
+            total_tokens = ops.shape_to_tensor(x.shape)[0]
+            batch_size = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
+            core_out = ops.cond(
+                kda_chunk_predicate(total_tokens, batch_size, heads, head_dim),
+                [TensorType(DType.float32, out_shape, device)],
+                lambda: _recurrence(chunked=True),
+                lambda: _recurrence(chunked=False),
+            )[0]
+        elif verify_width is None:
+            core_out = _recurrence(chunked=False)
+        elif chunk_servable:
+            # A draft-free prefill has nothing to roll back, so it takes the
+            # forward's chunked kernel. A verify stays on the sequential
+            # recurrence, whose arithmetic the ring records and the fold
+            # replays.
+            total_tokens = ops.shape_to_tensor(x.shape)[0]
+            batch_size = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
+            no_drafts = ops.equal(ops.shape_to_tensor(verify_width.shape)[0], 0)
+            # TODO(KERN-3879): the gfx950 bf16 casts are made outside the
+            # cond because, made inside this branch, mo-hoist-param-exprs
+            # leaves the first cast's result on the outer token dim and the
+            # graph fails to verify. Move them back once the pass is fixed.
+            qkv_io = (
+                q.cast(io_dtype_chunked),
+                k.cast(io_dtype_chunked),
+                v.cast(io_dtype_chunked),
+            )
+            core_out = ops.cond(
+                ops.logical_and(
+                    no_drafts,
+                    kda_chunk_predicate(
+                        total_tokens, batch_size, heads, head_dim
+                    ),
+                ),
+                [TensorType(DType.float32, out_shape, device)],
+                lambda: _recurrence(chunked=True, qkv_io=qkv_io),
+                _verify_recurrence,
+            )[0]
+        else:
+            core_out = _verify_recurrence()
 
         # Normalize, scale by the learned weight, and only then gate. Gating
         # first is a different function of the same tensors.
@@ -500,6 +624,12 @@ class Glm5NextKdaSublayer(Module):
 
     Set by the speculative graph, which re-runs those kernels over the accepted
     prefix after the verify pass. ``None`` in the base graph.
+    """
+
+    verify_width: TensorValue | None = None
+    """The speculative graph's verify width operand, or ``None``.
+
+    Set alongside :attr:`replay_capture`. See :class:`KimiDeltaAttention`.
     """
 
     def __init__(self, config: Glm5NextConfig, layer_idx: int) -> None:
@@ -529,24 +659,34 @@ class Glm5NextKdaSublayer(Module):
 
         Args:
             xs: ``[total_tokens, hidden_size]`` per device, normalized.
-            inputs: This layer's per-step pools and offsets.
+            inputs: This layer's per-step pools, row ids and offsets.
 
         Returns:
             ``[total_tokens, hidden_size]`` per device.
         """
+        # Only the verify width keeps a captured call off `kda_chunk` and its
+        # own state writes, which the rollback would then advance again.
+        assert self.replay_capture is None or self.verify_width is not None
         return self.allreduce(
             [
                 shard(
                     xs[i],
                     conv_pool=inputs.conv_pools[i],
+                    conv_row_id=inputs.conv_row_ids[i],
                     recurrent_pool=inputs.recurrent_pools[i],
-                    slot_idx=inputs.slot_idx[i],
+                    recurrent_row_id=inputs.recurrent_row_ids[i],
                     input_row_offsets=inputs.input_row_offsets[i],
                     replay_capture=(
                         None
                         if self.replay_capture is None
                         else self.replay_capture[i]
                     ),
+                    ring=(
+                        KdaRing(inputs.ring_pools[i], inputs.ring_row_ids[i])
+                        if inputs.ring_pools
+                        else None
+                    ),
+                    verify_width=self.verify_width,
                 )
                 for i, shard in enumerate(self.shards)
             ],

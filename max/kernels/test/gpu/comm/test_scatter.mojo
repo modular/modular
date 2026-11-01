@@ -30,14 +30,14 @@ Uses the example from KERN-2435: DP=4, TP=2, 8 GPUs distributing row_offsets.
     Replica D [0,8,16]  -> GPU 6, GPU 7
 """
 
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from std.collections import Array
 from std.math import ceildiv
 from std.sys import size_of
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_true
 
-from comm import Signal, MAX_GPUS
+from comm import Signal
 from comm.scatter import scatter
 from comm.sync import enable_p2p, init_signal_buffer
 
@@ -53,13 +53,8 @@ def _test_pull[
 
     if DeviceContext.number_of_devices() < ngpus:
         print(
-            "Skipping scatter ngpus=",
-            ngpus,
-            " DP=",
-            dp_size,
-            ": need",
-            ngpus,
-            "GPUs",
+            t"Skipping scatter ngpus= {ngpus}  DP= {dp_size} : need"
+            t" {ngpus} GPUs"
         )
         return
 
@@ -77,9 +72,11 @@ def _test_pull[
     var input_devbufs = List[DeviceBuffer[dtype]]()
     var host_buf = ctxs[0].enqueue_create_host_buffer[dtype](max_chunk_size)
 
-    comptime InputTileType = TileTensor[
-        dtype, type_of(row_major(Int(0))), ImmutAnyOrigin
-    ]
+    comptime InputTileType = type_of(
+        TileTensor(input_devbufs[0], row_major(Int(0)))
+        .as_unsafe_any_origin()
+        .as_imm()
+    )
     var tt_input_bufs = Array[InputTileType, dp_size](uninitialized=True)
 
     for dp in range(dp_size):
@@ -89,7 +86,9 @@ def _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(n)).as_immut()
+        tt_input_bufs[dp] = (
+            TileTensor(dev_buf, row_major(n)).as_unsafe_any_origin().as_imm()
+        )
         input_devbufs.append(dev_buf)
 
     # Output buffers on each GPU (sized to its replica's chunk).
@@ -111,17 +110,17 @@ def _test_pull[
 
     # Signal buffers.
     var signal_bufs = List[DeviceBuffer[.uint8]]()
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
     for i in range(ngpus):
         var sig_buf = ctxs[i].create_buffer_sync[.uint8](size_of[Signal]())
         init_signal_buffer(sig_buf, ctxs[i])
         ctxs[i].synchronize()
-        rank_sigs[i] = (
-            sig_buf.unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
-        )
         signal_bufs.append(sig_buf)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_bufs[i])
+    )
 
     # Launch scatter.
     comptime for i in range(ngpus):
@@ -153,12 +152,8 @@ def _test_pull[
                     expected[replica][j],
                 )
     print(
-        "PASS: scatter ngpus=",
-        ngpus,
-        ", DP=",
-        dp_size,
-        ", max_elems=",
-        max_chunk_size,
+        t"PASS: scatter ngpus= {ngpus} , DP= {dp_size} , max_elems="
+        t" {max_chunk_size}"
     )
 
     _ = signal_bufs^

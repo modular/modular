@@ -30,8 +30,7 @@ from nn.sampling.coop_row import COOP_SLOT_FLOATS, CoopRow, coop_row_words
 comptime BLOCK_SIZE = 1024
 
 
-@always_inline
-@__parameter
+@inline(.always)
 def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
@@ -39,12 +38,12 @@ def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
 def coop_combine_kernel[
     group_size: Int
 ](
-    workspace: UnsafePointer[Int32, MutAnyOrigin],
-    sink: UnsafePointer[Float32, MutAnyOrigin],
+    workspace: MutPointer[Int32, MutAnyOrigin],
+    sink: MutPointer[Float32, MutAnyOrigin],
     iters: Int32,
 ):
-    var rank = Int(block_idx.x) % group_size
-    var row = Int(block_idx.x) // group_size
+    var rank = block_idx.x % group_size
+    var row = block_idx.x // group_size
     var coop = CoopRow[group_size](row, rank)
     var table = unsafe_stack_allocation[
         group_size * COOP_SLOT_FLOATS,
@@ -74,10 +73,9 @@ def main() raises:
         ctx.enqueue_memset(workspace, 0)
         ctx.synchronize()
 
-        @always_inline
+        @inline(.always)
         def launch(ctx: DeviceContext) raises {mut workspace, mut sink, imm}:
-            @__parameter
-            def go[g: Int]() raises:
+            def go[g: Int]() raises {imm}:
                 ctx.enqueue_function[coop_combine_kernel[g]](
                     workspace.unsafe_ptr(),
                     sink.unsafe_ptr(),
@@ -90,7 +88,7 @@ def main() raises:
                 if group_size == g:
                     return go[g]()
 
-        @always_inline
+        @inline(.always)
         def bench_fn(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, launch, ctx)
 

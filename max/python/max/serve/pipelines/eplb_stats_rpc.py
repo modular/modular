@@ -10,20 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# ===----------------------------------------------------------------------=== #
-# Copyright (c) 2026, Modular Inc. All rights reserved.
-#
-# Licensed under the Apache License v2.0 with LLVM Exceptions:
-# https://llvm.org/LICENSE.txt
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ===----------------------------------------------------------------------===
-"""ZMQ frontend/backend pair for fetching and resetting EPLB snapshots
-across the API-process / worker-process boundary."""
+"""ZMQ frontend/backend pair for fetching and resetting EPLB snapshots.
+
+Runs across the API-process / worker-process boundary.
+"""
 
 from __future__ import annotations
 
@@ -70,6 +60,7 @@ class EplbStatsFrontend:
     async def fetch_snapshot(
         self, timeout_s: float = DEFAULT_FETCH_TIMEOUT_S
     ) -> EplbStatsSnapshot:
+        """Fetches one EPLB snapshot from the worker."""
         async with self._lock:
             self._request_socket.send_request_nowait(EplbStatsRequest())
             deadline = time.monotonic() + timeout_s
@@ -102,6 +93,7 @@ class EplbStatsBackend:
         self._hostname = _socket.gethostname()
 
     def serve_pending_requests(self) -> None:
+        """Answers the pending snapshot requests."""
         try:
             _req, identity = self._reply_socket.recv_request_nowait()
         except queue.Empty:
@@ -121,6 +113,7 @@ class EplbStatsResetFrontend:
         )
 
     def enqueue_reset(self) -> None:
+        """Queues a reset request for the worker."""
         self._socket.put_nowait(None)
 
 
@@ -139,6 +132,7 @@ class EplbStatsResetBackend:
         self._accumulator = accumulator
 
     def serve_pending_requests(self) -> None:
+        """Serves the queued reset requests."""
         # Coalesce any number of queued resets into a single reset.
         reset = False
         while True:

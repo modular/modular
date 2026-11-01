@@ -29,7 +29,7 @@ embedding before a single MHA attention block. Layout matches
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from max.dtype import DType
@@ -40,29 +40,34 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention.attention_with_rope import (
+from max.nn.legacy.attention.attention_with_rope import (
     AttentionWithRope,
     DataParallelAttentionWithRope,
     TensorParallelAttentionWithRope,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    ReturnHiddenStates,
+    ReturnLogits,
+    logits_outputs,
+)
+from max.nn.legacy.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
-from max.nn.transformer.transformer import fuse_captured_hidden_states
+from max.nn.legacy.transformer.transformer import fuse_captured_hidden_states
 
 
 @dataclass(kw_only=True)
@@ -70,7 +75,7 @@ class Eagle3MHADraftConfig:
     """Minimal config for an Eagle3 MHA draft over a DeepseekV3-shaped MLA target.
 
     Held separate from ``DeepseekV3Config`` so MLA-specific fields
-    (``kv_lora_rank``, ``v_head_dim``, etc.) and validators don't apply to
+    (``kv_lora_rank``, ``v_head_dim`` and so on) and validators don't apply to
     the MHA draft.
     """
 
@@ -101,6 +106,9 @@ class Eagle3MHADraftConfig:
     fc_input_multiplier: int
     """Number of fused target hidden states (2 or 3). Set from the
     ``fc.weight`` shape in the draft checkpoint at load time."""
+
+    target_layer_ids: list[int] = field(default_factory=list)
+    """The target layers the draft fuses, as MAX indices."""
 
     sliding_window: int | None = None
     """If set, the draft attention uses a sliding-window causal mask of
@@ -177,7 +185,7 @@ class Eagle3MHADraft(Module):
         from max.driver import Accelerator, accelerator_count
         from max.dtype import DType
         from max.graph import DeviceRef
-        from max.nn.kv_cache import MHAKVCacheParams
+        from max.nn.legacy.kv_cache import MHAKVCacheParams
         from max.pipelines.architectures.eagle_common.eagle_mha_draft import (
             Eagle3MHADraft,
             Eagle3MHADraftConfig,
@@ -245,6 +253,10 @@ class Eagle3MHADraft(Module):
 
     See :meth:`__call__` for the full argument types.
     """
+
+    has_own_lm_head = True
+    """Whether the draft scores through its own ``lm_head``. One whose
+    checkpoint ships none scores through its target's."""
 
     def __init__(
         self,
@@ -534,7 +546,7 @@ class Eagle3MHADraft(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         split_prefix: str = "eagle3_mha_draft",
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Forward pass.
 
         Args mirror :meth:`Eagle3MLADraft.__call__` so the unified module can
@@ -603,13 +615,18 @@ class Eagle3MHADraft(Module):
         elif self.use_tp_dp:
             # Mixed TP+DP: ``tokens`` is the full merged batch broadcast to
             # every device by ``embed_tokens``. Split it per DP replica on the
-            # replica leader devices, then broadcast each replica's slice to
-            # its TP group (the "broadcast-full-and-slice-locally" workaround,
-            # since grouped broadcast is unavailable). Mirrors
-            # ``MiniMaxM3.__call__`` (minimax_m3.py). ``fused_hs`` already
-            # arrives per-device TP-replicated from the target, so it is only
-            # rebound (not re-split) to the per-device split dim so the concat
-            # with ``h_embed`` shares a symbolic seq length.
+            # replica leader devices, then redistribute each replica's slice
+            # to its TP group. ``fused_hs`` already arrives per-device
+            # TP-replicated from the target, so it is only rebound (not
+            # re-split) to the per-device split dim so the concat with
+            # ``h_embed`` shares a symbolic seq length.
+            # TODO(MXSERV-594): the redistribution is unnecessary. Every
+            # device already holds the whole batch and the split bounds are
+            # host-side, so each can cut its own replica's range with
+            # ``split_batch_replicated(..., group_size=self.tp_degree)`` and
+            # the gather below can go, as in ``MiniMaxM3.__call__``. Costs two
+            # group barriers per draft step until this path is exercised and
+            # the equivalence can be confirmed on it.
             host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
             replica_leader_indices = [
                 r * self.tp_degree for r in range(self.dp_degree)
@@ -861,7 +878,8 @@ class Eagle3MHADraft(Module):
             self.sampling_logits_dtype,
         )
 
-        ret_val: tuple[TensorValue, ...] = (last_logits,)
+        variable_logits: TensorValue | None = None
+        logit_offsets: TensorValue | None = None
 
         if self.return_logits == ReturnLogits.VARIABLE:
             # Compute the range on device 0 and broadcast to all
@@ -920,13 +938,16 @@ class Eagle3MHADraft(Module):
                 dtype=DType.int64,
                 device=devices[0],
             )
-            ret_val += (variable_logits, logit_offsets)
 
-        ret_val += extract_hs(
-            return_hidden_states=self.return_hidden_states,
-            last_token_hs_distributed=last_token_distributed,
-            all_hs_distributed=hs,
-            normalizer=self.norm_shards,
+        return logits_outputs(
+            last_logits,
+            variable_logits,
+            logit_offsets,
+            self.return_hidden_states,
+            extract_hs(
+                return_hidden_states=self.return_hidden_states,
+                last_token_hs_distributed=last_token_distributed,
+                all_hs_distributed=hs,
+                normalizer=self.norm_shards,
+            ),
         )
-
-        return ret_val

@@ -27,7 +27,7 @@ from std.random import random_float64, random_ui64
 from std.sys.info import _accelerator_arch
 from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import E2M1_TO_FLOAT32
 from linalg.mxfp4_dequant import dequant_mxfp4
 from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
@@ -53,7 +53,7 @@ def test_mxfp4_matmul[
     comptime scale_K = ceildiv(K, 32)
     comptime fp8_type = DType.float8_e4m3fn
 
-    print("  M=", M, " N=", N, " K=", K)
+    print(t"  M= {M}  N= {N}  K= {K}")
 
     # Device buffers for MXFP4 inputs
     var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
@@ -111,13 +111,13 @@ def test_mxfp4_matmul[
 
     # Step 3: Run vendor BLAS on the same shared FP8 data
     var c_ref_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
-    var c_ref_lt = LayoutTensor[.bfloat16, Layout.row_major(M, N)](c_ref_device)
+    var c_ref_tt = TileTensor(c_ref_device, row_major((M, Idx[N])))
 
     vendor_blas.matmul(
         ctx,
-        c_ref_lt,
-        a_fp8_tt.to_layout_tensor(),
-        b_fp8_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_fp8_tt,
+        b_fp8_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -148,16 +148,8 @@ def test_mxfp4_matmul[
             if num_mismatches < 5:
                 var row, col = divmod(i, N)
                 print(
-                    "    MISMATCH [",
-                    row,
-                    ",",
-                    col,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    expected,
-                    " rel_err=",
-                    rel_err,
+                    t"    MISMATCH [ {row} , {col} ]: got= {got}  expected="
+                    t" {expected}  rel_err= {rel_err}"
                 )
             num_mismatches += 1
 
@@ -186,7 +178,7 @@ def test_mxfp4_matmul_e2e[
     comptime scale_K = ceildiv(K, 32)
     comptime fp8_type = DType.float8_e4m3fn
 
-    print("  E2E M=", M, " N=", N, " K=", K)
+    print(t"  E2E M= {M}  N= {N}  K= {K}")
 
     var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
     var b_packed_device = ctx.enqueue_create_buffer[.uint8](N * packed_K)
@@ -231,13 +223,13 @@ def test_mxfp4_matmul_e2e[
     ctx.synchronize()
 
     var c_ref_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
-    var c_ref_lt = LayoutTensor[.bfloat16, Layout.row_major(M, N)](c_ref_device)
+    var c_ref_tt = TileTensor(c_ref_device, row_major((M, Idx[N])))
 
     vendor_blas.matmul(
         ctx,
-        c_ref_lt,
-        a_fp8_tt.to_layout_tensor(),
-        b_fp8_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_fp8_tt,
+        b_fp8_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -285,16 +277,8 @@ def test_mxfp4_matmul_e2e[
             if num_mismatches < 5:
                 var row, col = divmod(i, N)
                 print(
-                    "    E2E MISMATCH [",
-                    row,
-                    ",",
-                    col,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    expected,
-                    " rel_err=",
-                    rel_err,
+                    t"    E2E MISMATCH [ {row} , {col} ]: got= {got}  expected="
+                    t" {expected}  rel_err= {rel_err}"
                 )
             num_mismatches += 1
 
@@ -369,14 +353,8 @@ def test_dequant_only[N: Int, K: Int](ctx: DeviceContext) raises:
             if abs(got - expected) > 0.01:
                 if mismatches < 5:
                     print(
-                        "    DEQUANT MISMATCH [",
-                        row,
-                        ",",
-                        col,
-                        "]: got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"    DEQUANT MISMATCH [ {row} , {col} ]: got= {got} "
+                        t" expected= {expected}"
                     )
                 mismatches += 1
 
@@ -393,7 +371,7 @@ def test_fp8_kernel_vs_blas[
     comptime fp8_type = DType.float8_e4m3fn
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
-    print("  FP8 kernel-vs-BLAS: M=", M, " N=", N, " K=", K)
+    print(t"  FP8 kernel-vs-BLAS: M= {M}  N= {N}  K= {K}")
 
     # A: random BF16 activations cast to FP8
     var a_bf16 = ctx.enqueue_create_buffer[.bfloat16](M * K)
@@ -442,12 +420,12 @@ def test_fp8_kernel_vs_blas[
 
     # Path 2: vendor BLAS
     var c_blas = ctx.enqueue_create_buffer[.bfloat16](M * N)
-    var c_blas_lt = LayoutTensor[.bfloat16, Layout.row_major(M, N)](c_blas)
+    var c_blas_tt = TileTensor(c_blas, row_major((M, Idx[N])))
     vendor_blas.matmul(
         ctx,
-        c_blas_lt,
-        a_fp8_tt.to_layout_tensor(),
-        b_fp8_tt.to_layout_tensor(),
+        c_blas_tt,
+        a_fp8_tt,
+        b_fp8_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -475,16 +453,8 @@ def test_fp8_kernel_vs_blas[
             if num_mismatches < 5:
                 var row, col = divmod(i, N)
                 print(
-                    "    [",
-                    row,
-                    ",",
-                    col,
-                    "]: kernel=",
-                    got,
-                    " blas=",
-                    expected,
-                    " rel_err=",
-                    rel_err,
+                    t"    [ {row} , {col} ]: kernel= {got}  blas= {expected} "
+                    t" rel_err= {rel_err}"
                 )
             num_mismatches += 1
 

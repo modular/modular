@@ -20,7 +20,7 @@ from std.collections.dict import (
 )
 from std.collections._swisstable import GROUP_WIDTH
 
-from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
+from std.hash import Hasher, default_comp_time_hasher, default_hasher
 
 from test_utils import (
     CopyCounter,
@@ -331,12 +331,12 @@ def _test_iter_bounds[
     for i in range(dict_len):
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
-        assert_equal(dict_len - i, upper.value())
+        assert_equal(Optional(dict_len - i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 def test_iter() raises:
@@ -761,8 +761,8 @@ def test_string_dict_write_to_empty() raises:
 def test_find_get() raises:
     var some_dict: Dict[String, Int] = {}
     some_dict["key"] = 1
-    assert_equal(some_dict.find("key").value(), 1)
-    assert_equal(some_dict.get("key").value(), 1)
+    assert_equal(some_dict.find("key"), Optional(1))
+    assert_equal(some_dict.get("key"), Optional(1))
     assert_equal(some_dict.find("not_key").or_else(0), 0)
     assert_equal(some_dict.get("not_key", 0), 0)
 
@@ -904,8 +904,8 @@ def test_compile_time_dict() raises:
     comptime my_dict = _get_dict()
 
     comptime for i in range(N):
-        comptime val = my_dict.get(String(i)).value()
-        assert_equal(val, Int32(i))
+        comptime val = my_dict.get(String(i))
+        assert_equal(val, Optional(Int32(i)))
 
 
 def test_dict_comprehension() raises:
@@ -1332,11 +1332,11 @@ def test_compile_time_dict_with_rehash() raises:
 
     # Verify values survive compile-time in-place rehash
     comptime for i in range(10, 14):
-        comptime val = ct_dict.get(String(i)).value()
-        assert_equal(val, Int32(i))
+        comptime val = ct_dict.get(String(i))
+        assert_equal(val, Optional(Int32(i)))
 
-    comptime ct_val = ct_dict.get("ct").value()
-    assert_equal(ct_val, 42)
+    comptime ct_val = ct_dict.get("ct")
+    assert_equal(ct_val, Optional[Int32](42))
 
 
 def test_inplace_rehash_via_update() raises:

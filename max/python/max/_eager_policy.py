@@ -13,7 +13,7 @@
 
 """Cold-start policy for the eager interpreter's graph-compiler models.
 
-Standard-library only, so :mod:`max.experimental.executor` can read the policy
+Standard-library only, so :mod:`max.tensor.executor` can read the policy
 without importing the Mojo-backed :mod:`max._interpreter_ops`.
 """
 
@@ -34,6 +34,15 @@ _warned_cold_compile = False
 
 class EagerLazyCompileDisallowed(RuntimeError):
     """Raised when a process forbidden from compiling needs an eager op model."""
+
+
+class UnsupportedOpVariant(KeyError):
+    """Raised when an op's device or dtypes are outside its family's supported set.
+
+    This is a refusal, found at dispatch rather than up front, and the eager
+    executors treat it as one. It subclasses ``KeyError`` because a family's
+    model lookup raises it for a key outside the set.
+    """
 
 
 def allow_lazy_compile() -> bool:

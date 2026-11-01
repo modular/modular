@@ -11,135 +11,105 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Normalization layer."""
+"""Provides root mean square normalization layers."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from max import functional as F
+from max.graph import Dim, ops
+from max.tensor import Tensor
+from max.tensor.sharding.rules import rms_norm_rule
 
-from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    ShardingStrategy,
-    TensorValue,
-    Weight,
-    ops,
-)
+from ..module import Module
 
-from ..layer import Module, Shardable
+#: Functional form of RMS normalization for :class:`~max.tensor.Tensor` values.
+#:
+#: See :func:`max.graph.ops.rms_norm` for the underlying op, including the
+#: ``weight_offset`` and ``multiply_before_cast`` knobs used to switch
+#: between Llama-style and Gemma-style normalization.
+rms_norm = F.functional(ops.rms_norm, rule=rms_norm_rule)
 
 
-class RMSNorm(Module, Shardable):
-    """Computes the root mean square normalization on inputs.
+class RMSNorm(Module[[Tensor], Tensor]):
+    """Root mean square normalization over the last dimension of the input.
 
-    When called, ``RMSNorm`` normalizes the input using only the root mean
-    square statistic, without centering by the mean. It accepts a
-    :class:`~max.graph.TensorValue` of shape ``(..., dim)`` and returns a
-    normalized :class:`~max.graph.TensorValue` of the same shape.
+    Unlike :class:`LayerNorm`, the mean is not subtracted; only the
+    root-mean-square is used to rescale. See `Root Mean Square Layer
+    Normalization <https://arxiv.org/abs/1910.07467>`_ for the formulation.
+    For the Gemma variant that uses ``1 + weight`` and multiplies before
+    casting back, see :class:`GemmaRMSNorm`.
 
-    This is more efficient than LayerNorm while maintaining comparable
-    performance in transformer models. For more information, see `Root Mean
-    Square Layer Normalization <https://arxiv.org/abs/1910.07467>`_.
+    .. code-block:: python
+
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.nn.norm import RMSNorm
+        from max.tensor import Tensor, default_device
+
+        with default_device(CPU()):
+            norm = RMSNorm(2048, eps=1e-6)
+            x = Tensor.ones([2, 4, 2048], dtype=DType.float32)
+            y = norm(x)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert y.shape == [2, 4, 2048]
+        # An all-ones input has RMS 1, so it normalizes back to ones.
+        assert np.allclose(y.to_numpy(), 1.0, atol=1e-3)
+
 
     Args:
-        dim: Size of last dimension of the expected input.
-        eps: Value added to denominator for numerical stability.
-        weight_offset: Constant offset added to the learned weights at runtime.
-            For Gemma-style RMSNorm, this should be set to 1.0.
-        multiply_before_cast: True if we multiply the inputs by the learned
-            weights before casting to the input type (Gemma3-style). False if we
-            cast the inputs to the input type first, then multiply by the learned
-            weights (Llama-style).
+        dim: The size of the last dimension of the input.
+        eps: A small positive constant added to the mean of squares for
+            numerical stability. Defaults to ``1e-6``.
     """
 
-    def __init__(
-        self,
-        dim: int,
-        dtype: DType,
-        eps: float = 1e-6,
-        weight_offset: float = 0.0,
-        multiply_before_cast: bool = True,
-    ) -> None:
-        super().__init__()
-        self.weight = Weight("weight", dtype, [dim], device=DeviceRef.CPU())
-        self.dim = dim
-        self.dtype = dtype
+    weight: Tensor
+    """The learned per-element scale of shape ``[dim]``."""
+
+    eps: float
+    """The variance epsilon used for numerical stability."""
+
+    def __init__(self, dim: int, eps: float = 1e-6) -> None:
+        self.weight = Tensor.ones([dim])
         self.eps = eps
-        self.weight_offset = weight_offset
-        self.multiply_before_cast = multiply_before_cast
-        self._sharding_strategy: ShardingStrategy | None = None
-
-    def __call__(self, x: TensorValue) -> TensorValue:
-        # Validate that weight dimension matches input's last dimension if
-        # statically known.
-        input_last_dim = x.shape[-1]
-        weight_dim = self.weight.shape[0]
-
-        if input_last_dim != weight_dim:
-            raise ValueError(
-                f"RMSNorm weight dimension ({weight_dim}) must match the input's "
-                f"last dimension ({input_last_dim})"
-            )
-
-        weight: TensorValue = self.weight.cast(x.dtype)
-        if x.device:
-            weight = weight.to(x.device)
-        return ops.rms_norm(
-            x,
-            weight,
-            self.eps,
-            weight_offset=self.weight_offset,
-            multiply_before_cast=self.multiply_before_cast,
-        )
 
     @property
-    def sharding_strategy(self) -> ShardingStrategy | None:
-        """Get the RMSNorm sharding strategy."""
-        return self._sharding_strategy
+    def dim(self) -> Dim:
+        """The size of the last dimension over which normalization runs."""
+        return self.weight.shape[0]
 
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Set the sharding strategy for the RMSNorm layer.
+    def __rich_repr__(self):
+        """Yields fields for the rich debug repr."""
+        yield "dim", self.dim
+        yield "eps", self.eps, 1e-6
 
-        Args:
-            strategy: The sharding strategy to apply.
-        """
-        # RMSNorm always uses replicate strategy
-        if not strategy.is_replicate:
-            raise ValueError("RMSNorm only supports replicate strategy")
+    def forward(self, x: Tensor) -> Tensor:
+        """Returns ``x`` normalized by its root-mean-square over the last axis."""
+        return rms_norm(x, self.weight, self.eps)
 
-        self._sharding_strategy = strategy
-        self.weight.sharding_strategy = strategy
 
-    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[RMSNorm]:
-        """Creates sharded views of this RMSNorm across multiple devices.
+class GemmaRMSNorm(RMSNorm):
+    """Gemma-style root mean square normalization.
 
-        Args:
-            devices: Iterable of devices to place the shards on.
+    Subclasses :class:`RMSNorm` with two differences:
 
-        Returns:
-            List of sharded RMSNorm instances, one for each device.
-        """
-        if self.sharding_strategy is None:
-            raise ValueError("Sharding strategy is not set")
+    - Scales by ``1 + weight`` rather than ``weight``.
+    - Multiplies by the scale before casting back to the input dtype,
+      instead of after.
 
-        # Get sharded weights
-        weight_shards = self.weight.shard(devices)
+    The constructor signature is identical to :class:`RMSNorm`. Used by
+    the Gemma model family.
+    """
 
-        shards = []
-        for weight_shard in weight_shards:
-            # Create new RMSNorm instance with the same configuration
-            sharded = RMSNorm(
-                dim=self.dim,
-                dtype=self.dtype,
-                eps=self.eps,
-                weight_offset=self.weight_offset,
-                multiply_before_cast=self.multiply_before_cast,
-            )
-
-            # Assign the sharded weight
-            sharded.weight = weight_shard
-
-            shards.append(sharded)
-
-        return shards
+    def forward(self, x: Tensor) -> Tensor:
+        """Returns ``x`` normalized using the Gemma-style RMS variant."""
+        return rms_norm(
+            x,
+            self.weight,
+            self.eps,
+            weight_offset=1.0,
+            multiply_before_cast=True,
+        )

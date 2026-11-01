@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib._fnv1a import Fnv1a
+from std.hash._fnv1a import Fnv1a
 
 from std.memory import unsafe_memset_zero
 from test_utils import (
@@ -59,13 +59,13 @@ def test_avalanche() raises:
     # produce significantly different hash values
     var buffer = Array[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
-    hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
+    hashes.append(hash_bytes[Fnv1a](buffer))
 
     for i in range(256):
         unsafe_memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         buffer[i >> 3] = UInt8(v)
-        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
+        hashes.append(hash_bytes[Fnv1a](buffer))
 
     assert_dif_hashes(hashes, 15)
 
@@ -77,7 +77,7 @@ def test_trailing_zeros() raises:
     buffer[0] = 23
     var hashes = List[UInt64]()
     for i in range(1, 9):
-        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), i))
+        hashes.append(hash_bytes[Fnv1a](Span(buffer)[:i]))
 
     assert_dif_hashes(hashes, 21)
 
@@ -130,7 +130,7 @@ def test_hash_simd_values() raises:
     def hash(value: SIMD) -> UInt64:
         var hasher = Fnv1a()
         hasher._update_with_simd(value)
-        return hasher^.finish()
+        return hasher.finish()
 
     assert_equal(hash(Float16(1.5)), 12636464265834235359)
     assert_equal(hash(Float32(1.5)), 8026467504136239071)

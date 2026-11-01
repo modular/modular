@@ -79,6 +79,7 @@ class Ideogram4Config(MAXModelConfigBase):
 
     @property
     def head_dim(self) -> int:
+        """The width of one attention head."""
         return self.emb_dim // self.num_heads
 
     @classmethod
@@ -88,6 +89,7 @@ class Ideogram4Config(MAXModelConfigBase):
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> Self:
+        """Builds the config from the checkpoint's transformer section."""
         # Map the HuggingFace transformer/config.json field names onto our
         # canonical names, tolerating either spelling.
         alias = {

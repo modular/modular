@@ -29,6 +29,7 @@ from max.pipelines.architectures.qwen2_5vl import tokenizer as qwen_tokenizer
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     MAX_PIXELS,
     fetch_image,
+    to_rgb,
 )
 from max.pipelines.architectures.qwen2_5vl.tokenizer import (
     Qwen2_5VLImageProcessor,
@@ -285,3 +286,39 @@ class TestCachedPayloadsAreFrozen:
 
         pixels[0] = 0
         grid[0] = 1
+
+
+class TestToRgb:
+    """``to_rgb`` skips the convert an already-RGB image does not need.
+
+    ``convert("RGB")`` copies every pixel even when the source is already RGB.
+    Every vision architecture routes every image through here, and on the
+    MiniMax-M3 computer-use workload that copy measured 4.3% of the API
+    server's busy CPU (ENABLE-2953).
+    """
+
+    def test_an_rgb_image_is_passed_through(self) -> None:
+        image = Image.open(io.BytesIO(_IMAGE_A))
+        assert image.mode == "RGB"
+        assert to_rgb(image) is image
+
+    def test_the_rgb_pass_through_is_bit_identical(self) -> None:
+        image = Image.open(io.BytesIO(_IMAGE_A))
+        assert np.array_equal(
+            np.asarray(to_rgb(image)), np.asarray(image.convert("RGB"))
+        )
+
+    @pytest.mark.parametrize("mode", ["L", "P", "CMYK", "RGBA"])
+    def test_a_non_rgb_image_still_converts_bit_identically(
+        self, mode: str
+    ) -> None:
+        source = Image.open(io.BytesIO(_IMAGE_A)).convert(mode)
+        converted = to_rgb(source)
+        assert converted.mode == "RGB"
+        if mode == "RGBA":
+            # RGBA keeps its alpha-composite branch, which the guard sits above.
+            expected = Image.new("RGB", source.size, (255, 255, 255))
+            expected.paste(source, mask=source.split()[3])
+        else:
+            expected = source.convert("RGB")
+        assert np.array_equal(np.asarray(converted), np.asarray(expected))

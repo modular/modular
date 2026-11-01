@@ -28,5 +28,5 @@
 // CHECK-STATIC-NOT: GOTOFF
 kgen.generator export @main() -> !kgen.string {
   %0 = kgen.param.constant : !kgen.string = <"I am a string.">
-  kgen.return %0 : !kgen.string
+  hlcf.return %0 : !kgen.string
 }

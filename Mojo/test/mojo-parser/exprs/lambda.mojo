@@ -25,7 +25,7 @@
 # The var holds the promoted function's value, not a closure instance (the
 # NOT precedes the matches: storage structs print before the enclosing fn).
 # CHECK-NOT: @"{{.*}}`lambda_0::__storage"
-# CHECK: kgen.create_closure[{{.*}}("x": !Int) -> !{{.*}}Int{{[0-9]*}}>: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
+# CHECK: kgen.create_func_ptr[{{.*}}("x": !Int) -> !{{.*}}Int{{[0-9]*}}>: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
 
 # The synthetic def is named `lambda_<n> and promoted to module scope; its body
 # (x + 1) is a plain thin function's -- no capture machinery.
@@ -45,12 +45,12 @@ def withNoCapture():
 
 # Nested storage methods print inside the struct (before the enclosing fn's
 # init call), so body checks are CHECK-DAG.
-# CHECK-DAG: lit.struct.decl @"withCapturingMut()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
+# CHECK-DAG: lit.struct.decl @"closure$withCapturingMut()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
-# CHECK-DAG: lit.fn @"`lambda_0(::SIMD[DType.int, 1]){{.*}}"{{.*}} capturing -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
+# CHECK-DAG: lit.fn @"`lambda_0(::SIMD[DType.int, 1]){{.*}}"{{.*}} -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
 # CHECK-DAG: lit.ref.struct.ger %{{.*}}[z]
 # CHECK-DAG: lit.call tail @{{.*}}::@"__add__{{.*}}"{{.*}}(%x, %{{.*}})
-# CHECK: lit.call @{{.*}}::@"withCapturingMut()::`lambda_0::__storage"::@"__init__
+# CHECK: lit.call @{{.*}}::@"closure$withCapturingMut()::`lambda_0::__storage"::@"__init__
 
 
 def withCapturingMut():
@@ -62,7 +62,7 @@ def withCapturingMut():
 
 # COM: Named capture by imm (a bare `{z}` is equivalent): captured by immutable ref.
 
-# CHECK: lit.struct.decl @"withCapturingRead()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
+# CHECK: lit.struct.decl @"closure$withCapturingRead()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
 
 
@@ -76,7 +76,7 @@ def withCapturingRead():
 # COM: Named capture by var: captured by value (owned), so the storage field is the
 # COM: value itself, not a reference.
 
-# CHECK: lit.struct.decl @"withCapturingVar()::`lambda_0::__storage"({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
+# CHECK: lit.struct.decl @"closure$withCapturingVar()::`lambda_0::__storage"({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK: lit.struct.field z : !Int{{[0-9]*}}
 
 
@@ -89,11 +89,11 @@ def withCapturingVar():
 
 # COM: Multiple named captures with mixed conventions: z by imm, w by mut.
 
-# CHECK: lit.struct.decl @"withCapturingMixed()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
+# CHECK: lit.struct.decl @"closure$withCapturingMixed()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK-DAG: lit.struct.field w : !lit.ref<{{.*}}, mut {{.*}}>
 # The lambda instantiates the scope-qualified storage, capturing `z` and `w`.
-# CHECK: lit.call @{{.*}}::@"withCapturingMixed()::`lambda_0::__storage"::@"__init__
+# CHECK: lit.call @{{.*}}::@"closure$withCapturingMixed()::`lambda_0::__storage"::@"__init__
 
 
 def withCapturingMixed():
@@ -104,7 +104,7 @@ def withCapturingMixed():
 
 # // -----
 
-# CHECK: lit.struct.decl @"withCapturingOverride()::`lambda_0::__storage"<{{.*}}>({{.*}}) attributes {{{.*}}synthetic}
+# CHECK: lit.struct.decl @"closure$withCapturingOverride()::`lambda_0::__storage"<{{.*}}>({{.*}}) attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
 # CHECK-DAG: lit.struct.field w : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK: lit.call @{{.*}}List{{.*}}append
@@ -121,8 +121,8 @@ def withCapturingOverride():
 # COM: Parameter list: `[N: Int]` becomes a closure parameter (mangled into the symbol
 # COM: as `[::SIMD[DType.int, 1]]` and declared as `<N: ...>`).
 
-# CHECK: lit.struct.decl @"withParameter()::`lambda_0::__storage"
-# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]){{.*}}"<N: !Int{{[0-9]*}}>{{.*}} capturing -> {{.*}}
+# CHECK: lit.struct.decl @"closure$withParameter()::`lambda_0::__storage"
+# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]){{.*}}"<N: !Int{{[0-9]*}}>{{.*}} -> {{.*}}
 
 
 def withParameter():
@@ -172,8 +172,8 @@ def withVarArg():
 
 # // -----
 
-# CHECK: lit.struct.decl @"withRefArg()::`lambda_0::__storage"
-# CHECK: , %x: !lit.ref<{{.*}}> ref) capturing -> {{.*}}
+# CHECK: lit.struct.decl @"closure$withRefArg()::`lambda_0::__storage"
+# CHECK: , %x: !lit.ref<{{.*}}> ref) -> {{.*}}
 
 
 def withRefArg():
@@ -189,9 +189,9 @@ def withRefArg():
 
 # No storage struct for any of them, and each promoted fn takes the pack
 # directly (a closure instance would take its storage first and be `capturing`).
-# CHECK-NOT: @"withVariadics()::`lambda_0::__storage"
-# CHECK-NOT: @"withVariadics()::`lambda_1::__storage"
-# CHECK-NOT: @"withVariadics()::`lambda_2::__storage"
+# CHECK-NOT: @"closure$withVariadics()::`lambda_0::__storage"
+# CHECK-NOT: @"closure$withVariadics()::`lambda_1::__storage"
+# CHECK-NOT: @"closure$withVariadics()::`lambda_2::__storage"
 # CHECK-DAG: lit.fn @"{{.*}}`lambda_0[{{.*}}](::SIMD[DType.int, 1]*){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
 # CHECK-DAG: lit.fn @"{{.*}}`lambda_1(kwargs:::SIMD[DType.int, 1]**){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
 # CHECK-DAG: lit.fn @"{{.*}}`lambda_2[{{.*}}](::SIMD[DType.int, 1]*,kwargs:::SIMD[DType.int, 1]**){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
@@ -209,9 +209,9 @@ def withVariadics():
 # COM: return type. The symbol mangles the parameter (`[::SIMD[DType.int, 1]]`) and owned arg (`::Int$`),
 # COM: declares the parameter `<N: ...>`, captures `z`, and is throwing.
 
-# CHECK: lit.struct.decl @"withEverything()::`lambda_0::__storage"
+# CHECK: lit.struct.decl @"closure$withEverything()::`lambda_0::__storage"
 # CHECK: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
-# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}} throws|capturing -> {{.*}}
+# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}} throws -> {{.*}}
 
 
 def withEverything():
@@ -243,10 +243,10 @@ def withComptimeBound() -> Int:
 # COM: thin (promotes, no storage); `g` captures `lst`, so it stays a closure.
 # COM: Nested `lambda_1` methods print inside storage before thin `lambda_0`.
 
-# CHECK-NOT: @"withElidedReturn()::`lambda_0::__storage"
-# CHECK-DAG: lit.struct.decl @"withElidedReturn()::`lambda_1::__storage"
+# CHECK-NOT: @"closure$withElidedReturn()::`lambda_0::__storage"
+# CHECK-DAG: lit.struct.decl @"closure$withElidedReturn()::`lambda_1::__storage"
 # CHECK-DAG: lit.struct.field lst : !lit.ref<{{.*}}, mut {{.*}}>
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_1(){{.*}}"{{.*}} capturing -> !kgen.none
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_1(){{.*}}"{{.*}} -> !kgen.none
 # CHECK-DAG: lit.call @{{.*}}List{{.*}}append
 # CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"(%x: !Int) -> !kgen.none
 
@@ -265,11 +265,11 @@ def withElidedReturn():
 # COM: several free variables at once. (Structs emit in reverse order, hence CHECK-DAG.)
 
 # CHECK-NOT: @"{{.*}}`lambda_0::__storage"
-# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_1::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
-# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_2::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
+# CHECK-DAG: lit.struct.decl @"closure$withOmittedCaptures()::`lambda_1::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
+# CHECK-DAG: lit.struct.decl @"closure$withOmittedCaptures()::`lambda_2::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK-DAG: lit.struct.field w : !lit.ref<{{.*}}, imm {{.*}}>
-# CHECK: lit.call @{{.*}}::@"withOmittedCaptures()::`lambda_2::__storage"::@"__init__({{.*}},{{.*}})"{{.*}}("z": {{.*}}, "w": {{.*}} ref, |
+# CHECK: lit.call @{{.*}}::@"closure$withOmittedCaptures()::`lambda_2::__storage"::@"__init__({{.*}},{{.*}})"{{.*}}("z": {{.*}}, "w": {{.*}} ref, |
 # CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"(%x: !Int)
 
 
@@ -287,9 +287,9 @@ def withOmittedCaptures():
 # COM: capture list (`z` imm-captured) and an omitted return type (`None`). The body is a
 # COM: `None`-returning call that reads the captured `z`.
 
-# CHECK: lit.struct.decl @"withEverythingAndWithElision()::`lambda_0::__storage"
+# CHECK: lit.struct.decl @"closure$withEverythingAndWithElision()::`lambda_0::__storage"
 # CHECK: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
-# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}}!lit.ref<none, {{.*}}> byref_result{{.*}} throws|capturing -> {{.*}}
+# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}}!lit.ref<none, {{.*}}> byref_result{{.*}} throws -> {{.*}}
 
 
 def noop(v: Int):
@@ -326,8 +326,8 @@ def withComptimeBoundElided() -> Int:
 # COM: the call through the var is indirect.
 
 # CHECK: lit.var.decl "f" var : !lit.ref<!lit.generator<("x": !Int) -> !{{.*}}Int{{[0-9]*}}>
-# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
-# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_1(::SIMD[DType.int, 1]){{.*}}"]()
+# CHECK: kgen.create_func_ptr[{{.*}}: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
+# CHECK: kgen.create_func_ptr[{{.*}}: @{{.*}}::@"{{.*}}`lambda_1(::SIMD[DType.int, 1]){{.*}}"]()
 # CHECK: lit.call_indirect
 
 
@@ -344,7 +344,7 @@ def typedDecay() -> Int:
 # COM: use site binds it, exactly as a stateless nested `def` using `N` does.
 # COM: (Only a lambda's OWN unbound parameters keep the closure-instance form.)
 
-# CHECK: kgen.create_closure[{{.*}}@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"<:!Int N>]()
+# CHECK: kgen.create_func_ptr[{{.*}}@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"<:!Int N>]()
 # CHECK: lit.call_indirect
 
 

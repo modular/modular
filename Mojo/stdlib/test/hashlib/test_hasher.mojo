@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib._ahash import AHasher
-from std.hashlib.hasher import Hasher
+from std.hash._ahash import AHasher
+from std.hash.hasher import Hasher
 from std.collections import Span
 from std.pathlib import Path
 
@@ -20,23 +20,20 @@ from std.testing import assert_equal
 from std.testing import TestSuite
 
 
-struct DummyHasher(Hasher):
+struct DummyHasher(Defaultable, Hasher):
     var _dummy_value: UInt64
 
     def __init__(out self):
         self._dummy_value = 0
 
-    def _update_with_bytes(mut self, data: Span[Byte, _]):
+    def update(mut self, data: ImmSpan[Byte, _]):
         for i in range(len(data)):
             self._dummy_value += data[i].cast[.uint64]()
 
     def _update_with_simd(mut self, value: SIMD[_, _]):
         self._dummy_value += value.cast[.uint64]().reduce_add()
 
-    def update(mut self, value: ImmSpan[Byte, _]):
-        value.__hash__(self)
-
-    def finish(var self) -> UInt64:
+    def finish(self) -> UInt64:
         return self._dummy_value
 
 
@@ -49,7 +46,7 @@ def test_hasher() raises:
     var hasher = DummyHasher()
     var hashable = SomeHashableStruct(42)
     hashable.__hash__(hasher)
-    assert_equal(hasher^.finish(), 42)
+    assert_equal(hasher.finish(), 42)
 
 
 def test_hash_with_hasher() raises:
@@ -73,7 +70,7 @@ def test_complex_hasher() raises:
         SomeHashableStruct(42), SomeHashableStruct(10)
     )
     hashable.__hash__(hasher)
-    assert_equal(hasher^.finish(), 52)
+    assert_equal(hasher.finish(), 52)
 
 
 def test_complex_hash_with_hasher() raises:
@@ -94,7 +91,7 @@ struct ComplexHashableStructWithList(Hashable):
         self._value2.__hash__(hasher)
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
-        hasher._update_with_bytes(
+        hasher.update(
             Span(unsafe_ptr=self._value3.unsafe_ptr(), length=len(self._value3))
         )
 
@@ -111,7 +108,7 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
         self._value2.__hash__(hasher)
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
-        hasher._update_with_bytes(
+        hasher.update(
             Span(unsafe_ptr=self._value3.unsafe_ptr(), length=len(self._value3))
         )
         self._value4.__hash__(hasher)
@@ -123,7 +120,7 @@ def test_update_with_bytes() raises:
         SomeHashableStruct(42), SomeHashableStruct(10), [UInt8(1), 2, 3]
     )
     hashable.__hash__(hasher)
-    assert_equal(hasher^.finish(), 58)
+    assert_equal(hasher.finish(), 58)
 
 
 comptime _hash_with_hasher = hash[

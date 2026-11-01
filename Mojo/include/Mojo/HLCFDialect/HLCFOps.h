@@ -16,12 +16,15 @@
 
 #include "Mojo/HLCFDialect/HLCFInterfaces.h"
 #include "Mojo/Interpreter/InterpreterInterface.h"
+#include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/Bytecode/BytecodeOpInterface.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 //===----------------------------------------------------------------------===//
@@ -29,6 +32,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/HLCFDialect/HLCFAttrs.h"
+
+// DeclInterface / ParamOpInterface method signatures use these KGEN types
+// unqualified; bring them into the HLCF namespace for the generated op classes.
+namespace M::HLCF {
+using KGEN::ParamDeclAttr;
+using KGEN::ParamDefValue;
+} // namespace M::HLCF
 
 #define GET_OP_CLASSES
 #include "Mojo/HLCFDialect/HLCF.h.inc"

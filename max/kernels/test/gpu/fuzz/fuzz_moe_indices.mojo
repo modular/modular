@@ -140,13 +140,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_moe_indices seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "num_experts=",
-        num_experts,
-        "===",
+        t"=== fuzz_moe_indices seed= {the_seed} budget="
+        t" {the_budget} num_experts= {num_experts} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

@@ -17,11 +17,11 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 
 class EncoderAttention(Module):
@@ -92,7 +92,7 @@ class EncoderAttention(Module):
         batch_size = x.shape[0]
         seq_len = x.shape[1]
         x = ops.unsqueeze(x, 3)
-        x = ops.concat([x] * n_rep, axis=3)
+        x = ops.tile(x, [1, 1, 1, n_rep, 1])
         return ops.reshape(
             x,
             [batch_size, seq_len, self.n_kv_heads * n_rep, self.head_dim],

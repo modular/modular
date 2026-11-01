@@ -35,44 +35,45 @@ using namespace KGEN;
 // Utils
 //===----------------------------------------------------------------------===//
 
-SymbolConstantAttr KGEN::extractSymbolConstantAttr(TypedAttr attr) {
+FuncSymbolGenerator KGEN::extractFuncSymbolGenerator(TypedAttr attr) {
   if (auto literal = dyn_cast<FuncLiteralTypeGeneratorType>(attr.getType()))
-    return literal.getSymbolConstantAttr();
+    return literal.getFuncSymbolAttr();
   if (auto literal = dyn_cast<FuncLiteralType>(attr.getType())) {
-    auto funcSymbol = cast<FuncSymbolAttr>(literal.getFuncLiteral());
-    return SymbolConstantAttr::get(
-        funcSymbol.getSymbol(),
-        FuncTypeGeneratorType::get({}, funcSymbol.getType(), nullptr),
-        funcSymbol.getParamValues());
+    // The literal is fully bound; its values move into the generator body.
+    IndexDepthAdjuster adjuster(1);
+    auto funcSymbol =
+        cast<FuncSymbolAttr>(adjuster.replace(literal.getFuncLiteral()));
+    return FuncSymbolGenerator::get(/*inputParamTypes=*/{}, funcSymbol);
   }
-  if (auto genSymbol = dyn_cast<GeneratorAttr>(attr)) {
-    assert(genSymbol.getInputParamTypes().empty());
-    auto funcSymbol = cast<FuncSymbolAttr>(genSymbol.getBody());
-    return SymbolConstantAttr::get(
-        funcSymbol.getSymbol(),
-        FuncTypeGeneratorType::get({}, funcSymbol.getType(), nullptr),
-        funcSymbol.getParamValues());
-  }
+  return FuncSymbolGenerator::dynCast(attr);
+}
 
-  return dyn_cast<SymbolConstantAttr>(attr);
+bool KGEN::hasUnresolvedParamValue(FuncSymbolGenerator symbol) {
+  if (!symbol)
+    return false;
+  // Input parameters still left on the generator are unbound.
+  if (!symbol.isFullyBound())
+    return true;
+  return llvm::any_of(symbol.getParamValues(), [](TypedAttr value) {
+    return isa<UnboundAttr, UnknownAttr>(value);
+  });
 }
 
 ErrorTreeOr<OffloadFunc> KGEN::extractOffloadFunc(CompileOffloadOp op,
                                                   mlir::SymbolTable &symtab) {
   Location loc = op.getLoc();
-  SymbolConstantAttr symbol = extractSymbolConstantAttr(op.getFuncAttr());
+  FuncSymbolGenerator symbol = extractFuncSymbolGenerator(op.getFuncAttr());
   if (!symbol) {
     return ErrorTree(loc, "'compile_offload' func argument did not resolve to "
                           "a concrete function");
   }
 
-  if (!symbol.getType().isFullyBound()) {
+  if (!symbol.isFullyBound()) {
     std::string errMsg;
     llvm::raw_string_ostream os(errMsg);
     os << "'compile_offload' func is not fully bound: "
        << symbol.getSymbol().getLeafReference().getValue() << " missing "
-       << symbol.getType().getInputParamTypes().size()
-       << " parameter binding(s)";
+       << symbol.getInputParamTypes().size() << " parameter binding(s)";
     return ErrorTree(loc, errMsg);
   }
 
@@ -150,19 +151,34 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
 
 FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
     GetSourceNameAttr getSourceNameAttr) {
-  auto symbol = extractSymbolConstantAttr(getSourceNameAttr.getFunc());
+  /// Returns the symbol of the function `attr` references.
+  auto getFuncSymbolRef = [](TypedAttr attr) -> SymbolRefAttr {
+    if (auto symbol = FuncSymbolGenerator::dynCast(attr))
+      return symbol.getSymbol();
+    if (auto literal = dyn_cast<FuncLiteralTypeGeneratorType>(attr.getType()))
+      return literal.getBody().getTargetLiteral().getSymbol();
+    if (auto literal = dyn_cast<FuncLiteralType>(attr.getType()))
+      return literal.getTargetLiteral().getSymbol();
+    return {};
+  };
+
+  SymbolRefAttr symbol = getFuncSymbolRef(getSourceNameAttr.getFunc());
   if (!symbol) {
-    emitError({*errorLoc, "'get_source_name' function argument did not resolve "
-                          "to a concrete function"});
+    emitError({*errorLoc, "'get_source_name' function argument does not "
+                          "name a function generator"});
     return failure();
   }
 
-  auto func = getGenerator(symbol.getSymbol());
+  auto func = getGenerator(symbol);
+  if (!func) {
+    emitError({*errorLoc, "'get_source_name' function argument does not "
+                          "name a function generator"});
+    return failure();
+  }
 
   std::optional<StringRef> sourceName = func.getSourceName();
   if (!sourceName) {
-    emitError({*errorLoc, "function '" +
-                              symbol.getSymbol().getLeafReference().getValue() +
+    emitError({*errorLoc, "function '" + symbol.getLeafReference().getValue() +
                               "' has no source name"});
     return failure();
   }
@@ -348,7 +364,7 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
   StringRef emissionOptionsStr =
       cast<StringAttr>(attr.getEmissionOptions()).getValue();
   bool propagateError = cast<BoolAttr>(attr.getPropagateError()).getValue();
-  SymbolConstantAttr symbol = extractSymbolConstantAttr(attr.getFunc());
+  FuncSymbolGenerator symbol = extractFuncSymbolGenerator(attr.getFunc());
   ErrorTreeOr<StringAttr> nameOrError = evaluateMangledName(
       symbol, /*sanitize=*/false, *errorLoc, "compile_assembly");
   if (nameOrError.isError()) {
@@ -363,14 +379,8 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
 
   GeneratorOp func = getGenerator(symbol.getSymbol());
 
-  // Construct the expected result type.
   MLIRContext *ctx = attr.getContext();
   Builder b(ctx);
-  auto noneType = KGEN::NoneType::get(ctx);
-  auto populateFnType = FuncTypeGeneratorType::get(
-      /*inputParamTypes=*/{},
-      b.getFunctionType(PointerType::get(noneType), noneType),
-      {ArgConvention::ImmReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it
@@ -385,8 +395,9 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
 
   // Capture the diagnostics that may be emitted.
   DiagnosticHandler handler(ctx);
-  ErrorOr<CrossDeviceFunction> closure = compileAsm(
-      ctx, func, symbol, name, target, emissionKind, emissionOptions);
+  ErrorOr<CrossDeviceFunction> closure =
+      compileAsm(ctx, func, symbol.getInstantiatedFuncSymbol(), name, target,
+                 emissionKind, emissionOptions);
   handler.release();
 
   if (closure.isError()) {
@@ -405,17 +416,11 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
     handler.emitDiagnostics(
         [&](Diagnostic &diag) { emitDiagnosticToStream(os, diag); });
     // Note: return -1 to indicate an error state.
-    return {StructAttr::get({StringAttr::get(os.str(), StringType::get(ctx)),
-                             b.getIndexAttr(-1),
-                             UninitMemAttr::get(populateFnType)})};
+    return {StructAttr::get(
+        {StringAttr::get(os.str(), StringType::get(ctx)), b.getIndexAttr(-1)})};
   }
 
-  auto populate = cast<FuncOp>(closure->populateCapturesFn.release());
-  auto populateFnRef = SymbolConstantAttr::get(populate);
-  addDeferredFunction(populate);
-  return {
-      StructAttr::get({closure->contents, b.getIndexAttr(closure->numCaptures),
-                       populateFnRef})};
+  return {StructAttr::get({closure->contents, b.getIndexAttr(0)})};
 }
 
 /// Resolve the linkageName of @p gen to a concrete string for the given
@@ -430,7 +435,7 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
 ///                          and the caller should retry
 ///   - success(TypedAttr) — the resolved linkage name expression
 static FailureOr<TypedAttr>
-evaluateLinkageName(GeneratorOp gen, SymbolConstantAttr symbol,
+evaluateLinkageName(GeneratorOp gen, FuncSymbolGenerator symbol,
                     ParameterEvaluationContext *evalCtx) {
   assert(gen.getLinkageNameAttr() &&
          "evaluateLinkageName requires gen to have a linkageName attribute");
@@ -456,9 +461,9 @@ evaluateLinkageName(GeneratorOp gen, SymbolConstantAttr symbol,
   return failure();
 }
 
-std::optional<ErrorTreeOr<SymbolConstantAttr>>
+std::optional<ErrorTreeOr<FuncSymbolGenerator>>
 IREvaluatorContext::resolveTransparentThunkCallee(GeneratorOp generator,
-                                                  SymbolConstantAttr symbol,
+                                                  FuncSymbolGenerator symbol,
                                                   Location loc) {
   auto calleeExpr =
       generator->getAttrOfType<TypedAttr>(kTransparentThunkCalleeExprAttr);
@@ -480,31 +485,30 @@ IREvaluatorContext::resolveTransparentThunkCallee(GeneratorOp generator,
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
 
-  // Plug `this` in as the evaluation context so the rebind dispatches
-  // parameter operators through the subclass's `evaluateContextSpecific`
-  // hook (and routes any materialization errors back through `emitError`).
-  ParameterEvaluator evaluator(generator.getInputParams(),
-                               symbol.getParamValues());
-  evaluator.setEvaluationContext(this);
-  Attribute rebound =
-      extractSymbolConstantAttr(evaluator.getReboundAttribute(calleeExpr));
+  // Transparent Thunks are transitive.
+  while (true) {
+    // Plug `this` in as the evaluation context so the rebind dispatches
+    // parameter operators through the subclass's `evaluateContextSpecific`
+    // hook (and routes any materialization errors back through `emitError`).
+    ParameterEvaluator evaluator(generator.getInputParams(),
+                                 symbol.getParamValues());
+    evaluator.setEvaluationContext(this);
+    FuncSymbolGenerator rebound =
+        extractFuncSymbolGenerator(evaluator.getReboundAttribute(calleeExpr));
 
-  if (error)
-    return ErrorTreeOr<SymbolConstantAttr>(std::move(*error));
-  if (!rebound)
-    return ErrorTreeOr<SymbolConstantAttr>(SymbolConstantAttr());
-  if (auto resolved = dyn_cast<SymbolConstantAttr>(rebound))
-    return ErrorTreeOr<SymbolConstantAttr>(resolved);
+    if (error)
+      return ErrorTreeOr<FuncSymbolGenerator>(std::move(*error));
+    if (!rebound)
+      return ErrorTreeOr<FuncSymbolGenerator>(FuncSymbolGenerator());
 
-  // Defensive: the callee expression rebound to a non-symbol attr. A
-  // well-formed `kgen.transparent_thunk_callee_expr` should always resolve to
-  // a `SymbolConstantAttr`; reaching this branch means the attribute is
-  // malformed (likely a compiler bug at the producer site). Surface as an
-  // internal error rather than crashing in `cast`.
-  return ErrorTreeOr<SymbolConstantAttr>(ErrorTree(
-      loc, "internal error: transparent thunk callee expression resolved to "
-           "non-symbol attr: " +
-               mlir::debugString(rebound)));
+    symbol = rebound;
+    generator = getGenerator(symbol.getSymbol());
+    calleeExpr = generator ? generator->getAttrOfType<TypedAttr>(
+                                 kTransparentThunkCalleeExprAttr)
+                           : TypedAttr();
+    if (!calleeExpr)
+      return ErrorTreeOr<FuncSymbolGenerator>(symbol);
+  }
 }
 
 /// Evaluate the mangled name of a function. Returns an empty StringAttr to
@@ -513,7 +517,7 @@ ErrorTreeOr<StringAttr>
 IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
                                         Location errorLoc,
                                         StringRef errorContext) {
-  auto symbol = extractSymbolConstantAttr(symCst);
+  auto symbol = extractFuncSymbolGenerator(symCst);
   if (!symbol) {
     return ErrorTree(errorLoc,
                      "'" + errorContext +
@@ -521,13 +525,12 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
                          "function");
   }
 
-  if (!symbol.getType().isFullyBound()) {
+  if (!symbol.isFullyBound()) {
     std::string errMsg;
     llvm::raw_string_ostream os(errMsg);
     os << "'" << errorContext << "' function is not fully bound: "
        << symbol.getSymbol().getLeafReference().getValue() << " missing "
-       << symbol.getType().getInputParamTypes().size()
-       << " parameter binding(s)";
+       << symbol.getInputParamTypes().size() << " parameter binding(s)";
     return ErrorTree(errorLoc, errMsg);
   }
 
@@ -549,7 +552,7 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
           resolveTransparentThunkCallee(generator, symbol, errorLoc)) {
     if (thunkCallee->isError())
       return thunkCallee->takeError();
-    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
+    FuncSymbolGenerator calleeSym = thunkCallee->takeValue();
     if (!calleeSym)
       return StringAttr(); // not ready: retry
     return evaluateMangledName(calleeSym, sanitize, errorLoc, errorContext);
@@ -596,85 +599,6 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
   if (sanitize)
     name = sanitizeSymbolToAlnum(name);
   return name;
-}
-
-FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
-    CompileOffloadClosureAttr compileOffloadClosureAttr) {
-  // Create the signature and an empty body of the populate capture for offload
-  // closures as part of elaboration step.
-  // We currently only support capturing closure as a parameter. So this closure
-  // has to be created during elaboration time as a compile time constant.
-  // However, bundling offload compilation means
-  // that the actual compilation of the offload functions will happen later
-  // once all of them are seen and collected, and the actual body of this
-  // closure will not be known until the offload function is compiled
-  // (so that we know what needs to be captured).
-  // We will generated the actual body of this closure later.
-
-  // Slice out a standalone module to re-elaborate with the new target later.
-
-  // compile_offload_closure attrs are compiler-generated; these invariants
-  // must hold.
-  auto closureSymbolForLookup =
-      extractSymbolConstantAttr(compileOffloadClosureAttr.getFunc());
-  assert(closureSymbolForLookup &&
-         "compile_offload_closure func must resolve to a SymbolConstantAttr");
-  assert(closureSymbolForLookup.getType().isFullyBound() &&
-         "compile_offload_closure func must be fully bound");
-  GeneratorOp generator = getGenerator(closureSymbolForLookup.getSymbol());
-  assert(generator &&
-         "compile_offload_closure must reference a valid GeneratorOp");
-
-  // If `generator` is a transparent thunk, mirror what `processCompileOffload`
-  // does and look through it to the wrapped function. The offload-side
-  // `writeCaptureArgs` names the populate function body after the *redirected*
-  // (user-kernel) generator, so this stub must be named the same way for the
-  // fill step to match them up.
-  if (auto thunkCallee = resolveTransparentThunkCallee(
-          generator, closureSymbolForLookup, *errorLoc)) {
-    if (thunkCallee->isError()) {
-      emitError(thunkCallee->takeError());
-      return failure();
-    }
-    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
-    if (!calleeSym)
-      return TypedAttr(); // Not ready yet — signal retry.
-    if (GeneratorOp calleeGen = getGenerator(calleeSym.getSymbol())) {
-      generator = calleeGen;
-      closureSymbolForLookup = calleeSym;
-    }
-  }
-
-  // Construct the expected result type.
-  MLIRContext *ctx = compileOffloadClosureAttr.getContext();
-  auto noneType = KGEN::NoneType::get(ctx);
-
-  // The location to use for generated code. Remove all debuginfo from it.
-  Location loc = DebugInfo::stripDebugScopesRecursively(*errorLoc);
-
-  // The expected signature is `fn(Pointer[None]) capturing -> None`.
-  ImplicitLocOpBuilder bb(loc, ctx);
-  auto nonePtr = PointerType::get(noneType);
-  auto sig = FuncType::get(bb.getFunctionType(nonePtr, noneType),
-                           ArgConvention::ImmReg, FnEffects().setCapturing());
-
-  // Use the auto-mangled sym_name (NOT @__name) for the stub name. Each
-  // distinct closure instantiation gets its own stub keyed by the pre-rename
-  // sym, even when multiple instantiations share the same @__name value
-  // (e.g. closures capturing uint32 vs uint64). writeCaptureArgs in the
-  // offload compilation path names the populate function body using the same
-  // pre-rename sym, so the fill step can match stub to body by name.
-  std::string stubBaseName =
-      mangleParameterValues(generator, closureSymbolForLookup.getParamValues());
-
-  OwningOpRef<FuncOp> populateFunc =
-      FuncOp::create(bb, bb.getStringAttr(stubBaseName + "_populate_captures"),
-                     sig, InlineLevel::Always);
-
-  auto populate = cast<FuncOp>(populateFunc.get());
-  auto populateFnRef = SymbolConstantAttr::get(populate);
-  addDeferredFunction(std::move(populateFunc));
-  return {populateFnRef};
 }
 
 /// Print a KGENDType, following the naming scheme in the Mojo DType struct.
@@ -751,7 +675,7 @@ void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
         if (!isScalarOf<KGENDType::kBool>(simdAttr.getType())) {
           os << " : ";
           if (qualifiedBuiltins)
-            os << "std.builtin.simd.";
+            os << "std.simd.";
           os << "SIMD[";
           printDType(os, dType, qualifiedBuiltins);
           os << ", " << values.size() << "]";
@@ -770,7 +694,7 @@ IREvaluatorContext::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
       {"std::builtin::bool::Bool", "Bool"},
       {"std::builtin::int::Int", "Int"},
       {"std::collections::list::List", "List"},
-      {"std::builtin::simd::SIMD", "SIMD"},
+      {"std::simd::SIMD", "SIMD"},
       {"std::collections::string::string::String", "String"},
       {"std::builtin::uint::UInt", "UInt"},
   };
@@ -851,7 +775,7 @@ FailureOr<StringAttr> IREvaluatorContext::evaluateStringPart(TypedAttr part,
                                                              bool reset) {
   // Get the two parts of the struct, StructExtract will fold.
   TypedAttr lengthAttr = StructExtractAttr::get(part, 1);
-  ErrorOr<int64_t> lengthOr = POP::getScalarIndexValue(lengthAttr);
+  ErrorOr<int64_t> lengthOr = getScalarIndexValue(lengthAttr);
   if (lengthOr.isError()) {
     emitError(
         {*errorLoc,

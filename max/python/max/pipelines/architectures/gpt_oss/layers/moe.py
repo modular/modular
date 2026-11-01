@@ -19,9 +19,9 @@ from copy import copy
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.clamp import clamp
-from max.nn.linear import Linear
-from max.nn.moe import GateUpFormat, MoEGate, StackedMoE
+from max.nn.legacy.clamp import clamp
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.moe import GateUpFormat, MoEGate, StackedMoE
 from typing_extensions import Self
 
 from ..model_config import GptOssConfig
@@ -54,7 +54,8 @@ class GptOssMoEGate(MoEGate):
         num_experts_per_token: int,
         dtype: DType,
     ) -> None:
-        """
+        """Initializes the gate.
+
         Args:
             devices: List of devices to use for the MoEGate.
             hidden_dim: The dimension of the hidden state.
@@ -83,7 +84,8 @@ class GptOssMoEGate(MoEGate):
     def __call__(
         self, hidden_state: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
-        """
+        """Scores each token's experts and returns the top-k picks.
+
         Args:
             hidden_state: The hidden state of the model.
 
@@ -112,10 +114,12 @@ class GptOssMoE(StackedMoE):
         config: GptOssConfig,
         is_sharding: bool = False,
     ):
-        """
+        """Initializes the MoE block.
+
         Args:
             config: The configuration for the GPT OSS Model.
-            is_sharding: Set by shard() to skip weight init for sharded instances.
+            is_sharding: Set by ``shard()`` to skip weight init for sharded
+                instances.
         """
         self.config = config
 

@@ -76,5 +76,5 @@ kgen.func @foo() {
   // CHECK: debuginfo.value #local_variable1 = %[[EMPTY]]
   %empty = kgen.param.constant: array<0, i32> = <[]> loc(#loc)
   debuginfo.value #local_variable1 = %empty : !pop.array<0, i32> loc(#loc)
-  kgen.return loc(#loc)
+  hlcf.return loc(#loc)
 } loc(#loc)

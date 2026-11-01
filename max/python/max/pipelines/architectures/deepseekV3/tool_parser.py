@@ -36,7 +36,6 @@ inspects the chat template and returns the matching registered parser
 name.
 
 References:
-
 - vllm/tool_parsers/deepseekv3_1_tool_parser.py
 - sglang/srt/function_call/deepseekv3_detector.py
 - sglang/srt/function_call/deepseekv3_1_detector.py
@@ -191,7 +190,7 @@ class DeepseekV3ToolParser(StructuralTagToolParser):
     def _split_tool_call_body(
         self, body: str, is_complete: bool
     ) -> tuple[str | None, str | None]:
-        """Body format: ``function<｜tool▁sep｜>{name}\\n```json\\n{args}\\n``` ``.
+        r"""Body format: ``function<｜tool▁sep｜>{name}\n```json\n{args}\n``` ``.
 
         While streaming, the closing markdown fence may not yet be
         present; we hold back any trailing characters that partially
@@ -313,7 +312,7 @@ def _load_chat_template(repo: HuggingFaceRepo) -> str | None:
 
 
 def resolve_deepseekv3_tool_parser(repo: HuggingFaceRepo) -> str:
-    """Picks the registered parser name for a DeepSeek V3-family checkpoint.
+    r"""Picks the registered parser name for a DeepSeek V3-family checkpoint.
 
     DeepSeek V3 (original) and V3.1+ share the same architecture name but
     emit tool calls in different grammars. This resolver inspects the
@@ -321,7 +320,7 @@ def resolve_deepseekv3_tool_parser(repo: HuggingFaceRepo) -> str:
     and ``repo.trust_remote_code``) to choose between them:
 
     - ``"deepseekv3"`` for checkpoints whose chat template wraps tool
-      arguments in a ``\\`\\`\\`json`` markdown block (original V3).
+      arguments in a ``\`\`\`json`` markdown block (original V3).
     - ``"deepseekv3_1"`` for checkpoints whose chat template emits raw JSON
       between ``<｜tool▁sep｜>`` and ``<｜tool▁call▁end｜>`` (V3.1 and
       later).

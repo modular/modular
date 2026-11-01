@@ -14,6 +14,7 @@
 from std.itertools import product
 from layout import TileTensor, row_major
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
+from std.math import nan
 from std.testing import assert_equal
 
 
@@ -179,9 +180,41 @@ def test_where_bool() raises:
         assert_equal(computed_outputs[i, j], golden_outputs[i, j])
 
 
+def test_float_semantics_and_data_dependent_size() raises:
+    comptime values_shape = row_major[2, 3]()
+    var values_stack = Array[Float32, values_shape.product()](fill={})
+    var values = TileTensor(values_stack, values_shape)
+    values[0, 0] = -0.0
+    values[0, 1] = nan[.float32]()
+    values[1, 0] = 2.0
+    values[1, 2] = -3.0
+
+    var output_shape = arg_nonzero_shape[.float32](
+        values.make_dynamic[.int64]()
+    )
+    assert_equal(output_shape[0], 3)
+    assert_equal(output_shape[1], 2)
+
+    var computed_stack = Array[Int, 6](fill={})
+    var computed_outputs = TileTensor(computed_stack, row_major[3, 2]())
+    arg_nonzero(
+        values.make_dynamic[.int64](),
+        computed_outputs.make_dynamic[.int64](),
+    )
+
+    var expected = Array[Int, 6](fill={})
+    expected[1] = 1
+    expected[2] = 1
+    expected[4] = 1
+    expected[5] = 2
+    for i in range(6):
+        assert_equal(computed_stack[i], expected[i])
+
+
 def main() raises:
     test_where_size()
     test_where_size_bool()
     test_where()
     test_where_1d()
     test_where_bool()
+    test_float_semantics_and_data_dependent_size()

@@ -11,24 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Build-time tests for the MXFP8 fused QKV matmul kernel in max.nn.kernels."""
+"""Build-time tests for the MXFP8 fused QKV matmul kernel in max.nn.legacy.kernels."""
 
 from __future__ import annotations
 
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     _fused_qkv_ragged_matmul_scaled_mxfp8 as fused_qkv_ragged_matmul_scaled_mxfp8,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     block_scales_interleave,
     quantize_dynamic_block_scaled,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
+    packed_page_stride,
 )
 
 _HIDDEN = 512
@@ -137,6 +138,7 @@ def _build_graph(device: DeviceRef) -> TensorValue:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
 
         tester = FusedQKVRaggedMatmulScaledMXFP8(
@@ -224,6 +226,7 @@ def test_fused_qkv_ragged_matmul_scaled_mxfp8_device_mismatch() -> None:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
         with pytest.raises(ValueError, match="same device"):
             fused_qkv_ragged_matmul_scaled_mxfp8(

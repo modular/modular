@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import random_float64
-from std.sys import get_defined_dtype
+from std.sys import align_of, get_defined_dtype
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, Idx, TileTensor, row_major
-from nn.normalization import rms_norm_fused_residual_add
+from builtin_kernels.rowwise_normalization import rms_norm_fused_residual_add
 
 from std.utils.index import Index, IndexList
 
@@ -60,10 +60,10 @@ def bench_rms_norm_fused_residual_add_gpu[
     )
     var gamma1 = TileTensor(gamma1_d, row_major(Coord(param_shape)))
     var gamma2 = TileTensor(gamma2_d, row_major(Coord(param_shape)))
-    var epsilon1 = Float32(0.001)
-    var epsilon2 = Float32(0.001)
-    var weight_offset1 = Scalar[dtype](0.0)
-    var weight_offset2 = Scalar[dtype](0.0)
+    comptime epsilon1 = Float32(0.001)
+    comptime epsilon2 = Float32(0.001)
+    comptime weight_offset1 = Float32(0.0)
+    comptime weight_offset2 = Float32(0.0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(residual_d, residual_h)
@@ -72,52 +72,60 @@ def bench_rms_norm_fused_residual_add_gpu[
 
     # `Output0Fn` precedes `OutputResidualFn`, the reverse of the deleted
     # `..._gpu` kernel's order.
-    @always_inline
+    @inline(.always)
     def input_fn[
-        width: Int
+        width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        return data_buf.load[width=width](coords)
+        # `alignment` counts elements; `load` takes bytes.
+        return data_buf.load[
+            width=width, alignment=alignment * align_of[dtype]()
+        ](coords)
 
-    @always_inline
+    @inline(.always)
     def residual_input_fn[
-        width: Int
+        width: Int, alignment: Int
     ](coords: Coord) {var residual_buf} -> SIMD[dtype, width]:
-        return residual_buf.load[width=width](coords)
+        # `alignment` counts elements; `load` takes bytes.
+        return residual_buf.load[
+            width=width, alignment=alignment * align_of[dtype]()
+        ](coords)
 
-    @always_inline
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var output_buf} -> None:
-        output_buf.store[alignment=alignment](coords, val)
+        output_buf.store[alignment=alignment * align_of[dtype]()](coords, val)
 
-    @always_inline
+    @inline(.always)
     def residual_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var residual_output_buf} -> None:
-        residual_output_buf.store[alignment=alignment](coords, val)
+        residual_output_buf.store[alignment=alignment * align_of[dtype]()](
+            coords, val
+        )
 
-    @always_inline
+    @inline(.always)
     def bench_fn(
         mut b: Bencher,
     ) raises {
         var gamma1,
-        var epsilon1,
-        var weight_offset1,
         var gamma2,
-        var epsilon2,
-        var weight_offset2,
         var input_fn,
         var residual_input_fn,
         var output_fn,
         var residual_output_fn,
         imm,
     }:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             rms_norm_fused_residual_add[
                 dtype,
                 rank,
                 target="gpu",
+                epsilon1=epsilon1,
+                weight_offset1=weight_offset1,
+                epsilon2=epsilon2,
+                weight_offset2=weight_offset2,
                 multiply_before_cast=True,
             ](
                 input_fn,
@@ -127,11 +135,7 @@ def bench_rms_norm_fused_residual_add_gpu[
                 Coord(shape),
                 Int(cols),
                 gamma1,
-                epsilon1.cast[dtype](),
-                weight_offset1,
                 gamma2,
-                epsilon2.cast[dtype](),
-                weight_offset2,
                 ctx,
             )
 

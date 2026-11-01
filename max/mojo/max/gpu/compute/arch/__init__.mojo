@@ -19,7 +19,7 @@ multiply-accumulate (MMA) operations:
 - **mma_nvidia_sm100**: NVIDIA Blackwell (SM100) tensor cores - 5th gen tensor cores
 - **mma_amd**: AMD Matrix Cores (CDNA2/3/4) - Data center GPUs
 - **mma_amd_rdna**: AMD WMMA (RDNA3/4) - Consumer GPUs
-- **mma_apple**: Apple Silicon (M5) - 1st gen neural accelerator
+- **mma_apple**: Apple Silicon (M5, M6) - neural accelerator
 
 ## Module Organization
 
@@ -56,8 +56,8 @@ And dispatches based on compile-time architecture detection:
 comptime if is_nvidia_gpu():
     _mma_nvidia(d, a, b, c)
 elif is_amd_gpu():
-    _mma_amd[block_size](d, a, b, c)
-elif is_apple_m5():
+    _mma_amd(d, a, b, c)
+elif _is_apple_m5_or_newer():
     _mma_apple(d, a, b, c)
 ```
 """

@@ -113,6 +113,9 @@ struct RangeSink {
                            uint32_t color);
   void (*rangeEnd)();
   void (*registerCurrentThread)();
+  bool (*requestBurst)(StringRef reason);
+  // Null when the attached profiler predates it.
+  void (*setTraceMetadata)(StringRef key, StringRef value);
 };
 
 // Why a sink is being requested; the integration decides per request kind
@@ -182,6 +185,13 @@ void rangeEnd();
 // rangeEnd() is shared with rangeBegin (per-thread LIFO).
 void rangeBeginWithId(uint64_t correlationId, StringRef name, uint32_t color);
 
+// Attach a top-level metadata field to the live trace, if any. The first value
+// set for a key in a trace wins and later calls for it are cheap, so callers
+// may set it on every occurrence of the event it describes. `value` is
+// inserted into the trace JSON verbatim: it must be valid JSON containing no
+// backslashes or newlines. Outside a live trace this is one predicted branch.
+void setTraceMetadata(StringRef key, StringRef value);
+
 // Advance the step counter. Drives the warmup/active state machine for
 // fixed-window profiling. MAX calls this internally at the end of
 // Model::execute(); user code should not call it directly.
@@ -212,8 +222,17 @@ void disable();
 // the backend is not yet ready.
 void activatePendingTrace();
 
-// Block until the most recent disable()'s trace has been serialized.
+// Block until the most recent disable()'s trace has been serialized, along
+// with any step-window burst still being written in the background.
 void waitForTrace();
+
+// Asks a repeating step-window capture for an extra burst, opened now, for
+// an event the periodic schedule would likely miss (`reason` labels it in
+// the trace, e.g. "prefill"). Returns true iff a burst opened: requests are
+// honored only between bursts, after the first scheduled one, at most once
+// per gap, and only when the burst can close before the next scheduled one
+// is prepared. A single predicted branch when profiling is disabled.
+bool requestBurst(StringRef reason);
 
 // Returns the message recorded by the most recent trace stop — disable() or
 // a daemon-driven stop — or empty when the trace was written successfully

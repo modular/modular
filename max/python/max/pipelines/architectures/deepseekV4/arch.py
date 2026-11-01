@@ -1,0 +1,48 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for DeepSeek-V4."""
+
+from max.graph.weights import WeightsFormat
+from max.pipelines.context import TextContext
+from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import PipelineTask
+
+from . import weight_adapters
+from .memory_planner import DeepseekV4MemoryPlanner
+from .model import DeepseekV4Model
+from .model_config import DeepseekV4Config
+from .tokenizer import DeepseekV4Tokenizer
+
+deepseekV4_arch = SupportedArchitecture(
+    name="DeepseekV4ForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=[
+        "deepseek-ai/DeepSeek-V4-Flash-0731",
+    ],
+    default_encoding=DeepseekV4Config.DEFAULT_ENCODING,
+    supported_encodings=DeepseekV4Config.SUPPORTED_ENCODINGS,
+    multi_gpu_supported=True,
+    pipeline_model=DeepseekV4Model,
+    tokenizer=DeepseekV4Tokenizer,
+    context_type=TextContext,
+    default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
+    config=DeepseekV4Config,
+    memory_planner=DeepseekV4MemoryPlanner,
+    reasoning_parser="deepseekv4",
+    tool_parser="deepseekv4",
+    checkpoint_drafts={"dspark": "DSparkDeepseekV4DraftModel"},
+    spec_decode_graph_names={"dspark": "unified_dspark_deepseekV4"},
+)

@@ -40,16 +40,14 @@ inkling_arch = SupportedArchitecture(
     context_type=TextAndVisionContext,
     config=InklingConfig,
     tool_parser="inkling",
-    # The tool-call grammar is an xgrammar structural tag, so llguidance cannot
-    # compile it.
-    default_structured_output_backend="xgrammar",
     weight_adapters={
         WeightsFormat.safetensors: convert_safetensor_state_dict,
     },
-    # Prefix caching not yet supported for SSM/hybrid models.
-    required_arguments={"enable_prefix_caching": False},
     multi_gpu_supported=True,
     supports_device_graph_capture=True,
+    checkpoints_recurrent_state=True,
     memory_planner=InklingMemoryPlanner,
     reasoning_parser="inkling",
+    checkpoint_drafts={"mtp": "MTPInklingDraftModel"},
+    spec_decode_graph_names={"mtp": "inkling_with_mtp_graph"},
 )

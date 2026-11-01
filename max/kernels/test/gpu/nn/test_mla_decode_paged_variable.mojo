@@ -26,25 +26,15 @@ The key stress scenarios:
 
 from std.math import align_up, ceildiv
 from std.random import randn, seed
-from std.sys import (
-    argv,
-    get_defined_int,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv, get_defined_int
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from std.memory import alloc
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
 from nn.attention.mha_utils import MHAConfig
@@ -54,7 +44,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from std.testing import assert_almost_equal
 from max.gpu.host.info import B200, _is_sm10x_gpu
-from std.utils.index import Index, IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -84,19 +73,16 @@ def run_test_paged_variable[
     q_type: DType,
     kv_type: DType,
     num_heads: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+](
+    name: StringLiteral,
+    cache_lengths: List[Int],
+    ctx: DeviceContext,
+    num_partitions: Optional[Int] = None,
+) raises:
     var batch_size = len(cache_lengths)
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -124,14 +110,6 @@ def run_test_paged_variable[
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1]=1
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -251,53 +229,39 @@ def run_test_paged_variable[
     ctx.synchronize()
 
     # -----------------------------------------------------------------------
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection on device
+    # Step 6: Build TileTensors and PagedKVCacheCollection on device
     # -----------------------------------------------------------------------
 
-    # First create mutable LayoutTensors from device buffers
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Idx[NUM_LAYERS],
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
-
-    # Build PagedKVCacheCollection using the pattern from existing tests:
-    # wrap .ptr into LayoutTensors with appropriate origins
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ](
+        blocks_tt.as_unsafe_any_origin(),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -349,6 +313,7 @@ def run_test_paged_variable[
         ctx,
         scalar_args_buf_tt,
         q_max_seq_len=q_max_seq_len,
+        num_partitions=num_partitions,
     )
 
     ctx.synchronize()
@@ -386,8 +351,7 @@ def run_test_paged_variable[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (
@@ -447,11 +411,11 @@ def run_test_paged_variable[
         # Run mha_gpu_naive: batch_size=1, num_keys=ref_num_keys
         # K passed as both K and V (MLA: V = K[:,:,:512])
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             1,  # seq_len
@@ -546,18 +510,8 @@ def run_test_paged_variable_multiq[
     """
     var batch_size = len(cache_lengths)
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " q_max_seq_len:",
-        q_max_seq_len,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  q_max_seq_len: {q_max_seq_len}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -583,14 +537,6 @@ def run_test_paged_variable_multiq[
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1]=1
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -703,50 +649,39 @@ def run_test_paged_variable_multiq[
     ctx.synchronize()
 
     # -----------------------------------------------------------------------
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection on device
+    # Step 6: Build TileTensors and PagedKVCacheCollection on device
     # -----------------------------------------------------------------------
 
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Idx[NUM_LAYERS],
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
-
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ](
+        blocks_tt.as_unsafe_any_origin(),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -829,8 +764,7 @@ def run_test_paged_variable_multiq[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (
@@ -891,11 +825,11 @@ def run_test_paged_variable_multiq[
         # Run mha_gpu_naive: batch_size=1, seq_len=q_max_seq_len
         # K passed as both K and V (MLA: V = K[:,:,:512])
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             q_max_seq_len,  # seq_len
@@ -1019,29 +953,14 @@ def run_test_paged_variable_ragged_q[
         total_q_tokens += seq_lens[i]
 
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " q_max_seq_len:",
-        q_max_seq_len,
-        " total_q_tokens:",
-        total_q_tokens,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  q_max_seq_len:"
+        t" {q_max_seq_len}  total_q_tokens: {total_q_tokens}"
     )
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " q_seq_len=",
-            seq_lens[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  q_seq_len="
+            t" {seq_lens[i]}"
         )
 
     var max_cache_len = 0
@@ -1063,14 +982,6 @@ def run_test_paged_variable_ragged_q[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -1187,52 +1098,39 @@ def run_test_paged_variable_ragged_q[
     ctx.synchronize()
 
     # -----------------------------------------------------------------------
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection on device
+    # Step 6: Build TileTensors and PagedKVCacheCollection on device
     # -----------------------------------------------------------------------
 
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Idx[NUM_LAYERS],
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
-
-    # max_seq_length = q_max_seq_len (the maximum across all batches)
-    # max_cache_length = max_cache_len (the maximum cache length)
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ](
+        blocks_tt.as_unsafe_any_origin(),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -1320,8 +1218,7 @@ def run_test_paged_variable_ragged_q[
             page_base_b += ceildiv(cache_lengths[bi] + seq_lens[bi], PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (
@@ -1381,11 +1278,11 @@ def run_test_paged_variable_ragged_q[
 
         # Run mha_gpu_naive: batch_size=1, seq_len=b_seq_len
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             b_seq_len,  # this batch's seq_len
@@ -1419,18 +1316,8 @@ def run_test_paged_variable_ragged_q[
                         max_abs_err = abs_err
                     if abs_err > 1e-1:
                         print(
-                            "batch",
-                            b,
-                            "tok",
-                            s,
-                            "head",
-                            h,
-                            "dim",
-                            d,
-                            "actual",
-                            actual,
-                            "expect",
-                            expect,
+                            t"batch {b} tok {s} head {h} dim {d} actual"
+                            t" {actual} expect {expect}"
                         )
                     assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 
@@ -1484,16 +1371,8 @@ def run_bench_paged_variable[
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
     var batch_size = len(cache_lengths)
     print(
-        "bench:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
+        t"bench: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -1517,14 +1396,6 @@ def run_bench_paged_variable[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -1625,48 +1496,37 @@ def run_bench_paged_variable[
 
     ctx.synchronize()
 
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    # Step 6: Build TileTensors and PagedKVCacheCollection
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Idx[NUM_LAYERS],
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
-
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ](
+        blocks_tt.as_unsafe_any_origin(),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -1700,7 +1560,7 @@ def run_bench_paged_variable[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
         ctx: DeviceContext,
     ) raises {
@@ -1736,7 +1596,7 @@ def run_bench_paged_variable[
         nrun
     )
     var mstime = nstime / 1000000
-    print("  ", nrun, "runs avg", mstime, "ms")
+    print(t"   {nrun} runs avg {mstime} ms")
     print()
 
     # Cleanup
@@ -1763,7 +1623,12 @@ def run_bench_paged_variable[
 
 def run_test_paged_variable_native_fp8[
     num_heads: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+](
+    name: StringLiteral,
+    cache_lengths: List[Int],
+    ctx: DeviceContext,
+    num_partitions: Optional[Int] = None,
+) raises:
     """Test native FP8 MLA decode through the paged path.
 
     In the native FP8 path:
@@ -1783,18 +1648,9 @@ def run_test_paged_variable_native_fp8[
 
     var batch_size = len(cache_lengths)
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " output_type:",
-        ref_type,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  output_type: {ref_type} "
+        t" num_partitions: {num_partitions.value() if num_partitions else -1}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -1821,14 +1677,6 @@ def run_test_paged_variable_native_fp8[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -1955,49 +1803,38 @@ def run_test_paged_variable_native_fp8[
     ctx.synchronize()
 
     # -----------------------------------------------------------------------
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection on device
+    # Step 6: Build TileTensors and PagedKVCacheCollection on device
     # -----------------------------------------------------------------------
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Idx[NUM_LAYERS],
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
-
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ](
+        blocks_tt.as_unsafe_any_origin(),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -2049,6 +1886,7 @@ def run_test_paged_variable_native_fp8[
         ctx,
         scalar_args_buf_tt,
         q_max_seq_len=q_max_seq_len,
+        num_partitions=num_partitions,
     )
 
     ctx.synchronize()
@@ -2082,8 +1920,7 @@ def run_test_paged_variable_native_fp8[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (
@@ -2143,11 +1980,11 @@ def run_test_paged_variable_native_fp8[
 
         # Run mha_gpu_naive with BF16 inputs
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             1,  # seq_len
@@ -2265,29 +2102,14 @@ def run_test_paged_variable_ragged_q_native_fp8[
         total_q_tokens += seq_lens[i]
 
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " q_max_seq_len:",
-        q_max_seq_len,
-        " total_q_tokens:",
-        total_q_tokens,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  q_max_seq_len:"
+        t" {q_max_seq_len}  total_q_tokens: {total_q_tokens}"
     )
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " q_seq_len=",
-            seq_lens[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  q_seq_len="
+            t" {seq_lens[i]}"
         )
 
     var max_cache_len = 0
@@ -2308,14 +2130,6 @@ def run_test_paged_variable_ragged_q_native_fp8[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -2431,49 +2245,38 @@ def run_test_paged_variable_ragged_q_native_fp8[
     ctx.synchronize()
 
     # -----------------------------------------------------------------------
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection on device
+    # Step 6: Build TileTensors and PagedKVCacheCollection on device
     # -----------------------------------------------------------------------
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Idx[NUM_LAYERS],
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
-
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ](
+        blocks_tt.as_unsafe_any_origin(),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -2559,8 +2362,7 @@ def run_test_paged_variable_ragged_q_native_fp8[
             page_base_b += ceildiv(cache_lengths[bi] + seq_lens[bi], PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (
@@ -2616,11 +2418,11 @@ def run_test_paged_variable_ragged_q_native_fp8[
         )
 
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             mask,
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             b_seq_len,  # this batch's seq_len
@@ -2651,18 +2453,8 @@ def run_test_paged_variable_ragged_q_native_fp8[
                         max_abs_err = abs_err
                     if abs_err > 2e-1:
                         print(
-                            "batch",
-                            b,
-                            "tok",
-                            s,
-                            "head",
-                            h,
-                            "dim",
-                            d,
-                            "actual",
-                            actual,
-                            "expect",
-                            expect,
+                            t"batch {b} tok {s} head {h} dim {d} actual"
+                            t" {actual} expect {expect}"
                         )
                     assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 
@@ -2717,18 +2509,8 @@ def run_bench_paged_variable_native_fp8[
 
     var batch_size = len(cache_lengths)
     print(
-        "bench:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " output_type:",
-        ref_type,
+        t"bench: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  output_type: {ref_type}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -2751,14 +2533,6 @@ def run_bench_paged_variable_native_fp8[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -2864,48 +2638,37 @@ def run_bench_paged_variable_native_fp8[
 
     ctx.synchronize()
 
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    # Step 6: Build TileTensors and PagedKVCacheCollection
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Idx[NUM_LAYERS],
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
-
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ](
+        blocks_tt.as_unsafe_any_origin(),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -2939,7 +2702,7 @@ def run_bench_paged_variable_native_fp8[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
         ctx: DeviceContext,
     ) raises {
@@ -2975,7 +2738,7 @@ def run_bench_paged_variable_native_fp8[
         nrun
     )
     var mstime = nstime / 1000000
-    print("  ", nrun, "runs avg", mstime, "ms")
+    print(t"   {nrun} runs avg {mstime} ms")
     print()
 
     # Cleanup
@@ -3142,7 +2905,7 @@ def main() raises:
     seed(42)
 
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             if is_benchmark():
@@ -3478,7 +3241,7 @@ def main() raises:
                 print("=" * 72)
                 print("ALL TESTS PASSED")
                 print("=" * 72)
-        elif has_amd_gpu_accelerator():
+        elif ctx.target.is_amd_gpu():
             # ---------------------------------------------------------------
             # AMD MI355 / gfx950 path. The AMD MLA decode kernel supports
             # single-token decode (S=1) for any num_heads; the MTP token fold
@@ -3516,6 +3279,33 @@ def main() raises:
             )
             run_test_paged_variable_native_fp8[16](
                 "amd_s1_native_fp8", amd_cl, ctx
+            )
+
+            # GLM-5.3 TP8 per-rank shape: 8 heads, depth 576 (kv_lora 512 + rope
+            # 64), FP8 paged KV, page 128, S=1 decode; run np=1 and np=4.
+            print("--- Group A: S=1 paged decode (8 heads, GLM-5.3 TP8) ---")
+
+            var amd_cl_h8: List[Int] = [30, 256, 640, 1024]
+            run_test_paged_variable_native_fp8[8](
+                "amd_s1_native_fp8_h8_np1", amd_cl_h8, ctx
+            )
+            run_test_paged_variable_native_fp8[8](
+                "amd_s1_native_fp8_h8_np4",
+                amd_cl_h8,
+                ctx,
+                num_partitions=Optional(4),
+            )
+
+            # GLM-5.3 stages the decode Q in bf16; exercise that shape (8 heads,
+            # depth 576, v 512, page 128), variable lengths, np=1 and split-K.
+            run_test_paged_variable[.bfloat16, DType.bfloat16, 8](
+                "amd_s1_bf16_h8_np1", amd_cl_h8, ctx
+            )
+            run_test_paged_variable[.bfloat16, DType.bfloat16, 8](
+                "amd_s1_bf16_h8_np4",
+                amd_cl_h8,
+                ctx,
+                num_partitions=Optional(4),
             )
 
             # -----------------------------------------------------------

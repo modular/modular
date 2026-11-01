@@ -460,6 +460,44 @@ def test_openresponses_audio_request_accepts_wav_in_any_case(
     assert response.json()["output"][0]["content"][0]["format"] == "wav"
 
 
+class CountingImagePipelineHandler(MockGeneralPipelineHandler):
+    """Records whether the model was ever asked to render."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.renders = 0
+
+    async def next(
+        self, request: OpenResponsesRequest
+    ) -> AsyncGenerator[GenerationOutput, None]:
+        self.renders += 1
+        async for output in super().next(request):
+            yield output
+
+
+def test_openresponses_image_request_rejects_too_many_images(
+    app: FastAPI,
+) -> None:
+    """A request over the image cap is refused before anything renders."""
+    handler = CountingImagePipelineHandler()
+    app.state.handler = handler
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/responses",
+            json={
+                "model": "test-model",
+                "input": "a red fox in snow",
+                "provider_options": {"image": {"num_images": 5}},
+            },
+        )
+
+    assert response.status_code == 422
+    assert "num_images" in response.text
+    assert "less than or equal to 4" in response.text
+    assert handler.renders == 0
+
+
 class _PromptTooLongPipelineHandler(GeneralPipelineHandler):
     """Mock handler whose generator raises ``PromptTooLongError`` on first
     iteration — simulating a tokenizer that rejected an over-length prompt."""

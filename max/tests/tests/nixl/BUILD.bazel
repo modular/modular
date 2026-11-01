@@ -34,10 +34,14 @@ sh_test(
     args = [
         "$(rootpath @llvm-project//llvm:llvm-readelf)",
         "$(rootpath @nixl_upstream//:cpu-verbs/libplugin_UCX.so)",
+        "$(rootpath @nixl_upstream//:cuda-verbs/libplugin_UCX.so)",
+        "$(rootpath @nixl_upstream//:rocm-verbs/libplugin_UCX.so)",
     ],
     data = [
         "@llvm-project//llvm:llvm-readelf",
         "@nixl_upstream//:cpu-verbs/libplugin_UCX.so",
+        "@nixl_upstream//:cuda-verbs/libplugin_UCX.so",
+        "@nixl_upstream//:rocm-verbs/libplugin_UCX.so",
     ],
     target_compatible_with = ["@platforms//os:linux"],
 )

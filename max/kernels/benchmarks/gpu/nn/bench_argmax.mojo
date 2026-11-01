@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Benchmarks `argmax_gpu`, the top-k K=1 path it replaced, and the
-`algorithm.rowwise` reduction `ops.argmax` actually launches.
+"""Benchmarks the `algorithm.rowwise` reduction `ops.argmax` launches against
+the top-k K=1 path.
 
 All variants run in the same process so they see identical clocks, which
 matters on hosts where the SM clock cannot be pinned.
@@ -19,9 +19,8 @@ matters on hosts where the SM clock cannot be pinned.
 
 from std.random import random_float64, seed
 from std.sys import get_defined_dtype, size_of
-from std.sys.info import size_of as _size_of
 
-from algorithm.reductions import reduce_argmax
+from builtin_kernels.rowwise_reductions import reduce_argmax
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -32,10 +31,8 @@ from std.benchmark import (
 )
 from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
-from layout import Coord, TileTensor, coord_to_index_list, row_major
-from nn.argmaxmin_gpu import argmax_gpu
+from layout import Coord, TileTensor, row_major
 from nn.topk import topk_gpu
-from std.utils.index import IndexList
 
 
 def bench_argmax[
@@ -52,36 +49,16 @@ def bench_argmax[
     ctx.enqueue_copy(in_dev, in_host)
     ctx.synchronize()
 
-    var in_tensor = TileTensor(
-        in_dev, row_major(Coord(IndexList[2](batch, num_elements)))
-    )
-    var out_tensor = TileTensor(
-        out_dev, row_major(Coord(IndexList[2](batch, 1)))
-    )
-    var vals_tensor = TileTensor(
-        vals_dev, row_major(Coord(IndexList[2](batch, 1)))
-    )
+    var in_tensor = TileTensor(in_dev, row_major(batch, num_elements))
+    var out_tensor = TileTensor(out_dev, row_major(batch, 1))
+    var vals_tensor = TileTensor(vals_dev, row_major(batch, 1))
 
     var num_bytes = batch * num_elements * size_of[Scalar[dtype]]()
     var suffix = String("/N=", num_elements, "/batch=", batch, "/", dtype)
 
-    @always_inline
-    def bench_streaming(mut b: Bencher) raises {imm}:
-        @always_inline
-        def launch(ctx: DeviceContext) raises {imm}:
-            argmax_gpu(ctx, in_tensor, out_tensor)
-
-        bencher_iter_custom(b, launch, ctx)
-
-    m.bench_function(
-        bench_streaming,
-        BenchId(String("argmax-streaming", suffix)),
-        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
-    )
-
-    @always_inline
+    @inline(.always)
     def bench_topk_k1(mut b: Bencher) raises {imm}:
-        @always_inline
+        @inline(.always)
         def launch(ctx: DeviceContext) raises {imm}:
             topk_gpu[sampling=False, largest=True](
                 ctx, 1, in_tensor, vals_tensor, out_tensor
@@ -95,29 +72,29 @@ def bench_argmax[
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
-    var in_shape = Coord(IndexList[2](batch, num_elements))
+    var in_shape = Coord(batch, num_elements)
 
-    @always_inline
+    @inline(.always)
     def launch_rowwise(
         ctx: DeviceContext,
     ) raises {mut out_tensor, imm}:
-        @always_inline
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
         ](coords: Coord) {var in_tensor} -> SIMD[dtype, width]:
             return in_tensor.load[width=width](coords)
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength
         ](coords: Coord, val: SIMD[.int64, width]) {var out_tensor}:
-            out_tensor.store[width=Int(width)](coords, val.cast[out_idx_type]())
+            out_tensor.store(coords, val.cast[out_idx_type]())
 
         reduce_argmax[dtype, target="gpu", reduce_dim=1](
             input_fn, output_fn, in_shape, ctx
         )
 
-    @always_inline
+    @inline(.always)
     def bench_rowwise(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, launch_rowwise, ctx)
 

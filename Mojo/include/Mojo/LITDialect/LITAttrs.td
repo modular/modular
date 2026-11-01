@@ -923,7 +923,8 @@ def LIT_StructAttr : LITTypedAttr<"LITStruct", "struct", [
 //===----------------------------------------------------------------------===//
 
 def LIT_StructExtractAttr : LITTypedAttr<"StructExtract", "struct.extract", [
-    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
+    DeclareAttrInterfaceMethods<ParameterAttrInterface,
+                                ["isLessThan", "printDisplayValue"]>
   ]> {
   let summary = "Extract an element from a struct value";
   let description = [{

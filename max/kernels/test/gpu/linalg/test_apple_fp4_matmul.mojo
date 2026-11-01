@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Unit tests for the Apple M5 weight-only NVFP4 (W4A16) matmul.
 
-All stages require `compute_capability() == 5` (Apple M5, Metal 4). This file
+All stages require `compute_capability() >= 5` (Apple M5, Metal 4). This file
 covers all three W4A16 dispatch paths: the fused in-register B-loader (Stages
 1-4) and the `matmul2d` deep-K path (Stage 5).
 
@@ -62,8 +62,8 @@ from layout.tile_layout import row_major
 from linalg.fp4_utils import E2M1_TO_FLOAT32, NVFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
+from std.math import ceildiv
 from linalg.matmul.gpu.apple.fp4_matmul import (
-    _enqueue_apple_fp4_materialize_dense,
     _launch_apple_fp4_matmul,
     enqueue_apple_fp4_matmul,
 )
@@ -103,7 +103,7 @@ def _fill_random_fp4_weight(
     weight stays in a sane range for the bf16 MMA.
     """
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
     for i in range(N * packed_k):
         # Two random nibbles packed into one byte.
         var lo = UInt8(random_si64(Int64(0), Int64(15)).cast[.uint8]())
@@ -133,7 +133,7 @@ def _check_vs_host_ref(
     O(M*N*K)). Tolerance matches the bf16-MMA bound used elsewhere.
     """
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
     var pass_ = True
     for i in range(M):
         for j in range(N):
@@ -147,7 +147,7 @@ def _check_vs_host_ref(
             var got = out_host[i * N + j]
             if abs(got - acc) > Float32(1e-2) + Float32(1.6e-2) * abs(acc):
                 if pass_:
-                    print("FAIL[", name, "]:", i, j, "got", got, "exp", acc)
+                    print(t"FAIL[ {name} ]: {i} {j} got {got} exp {acc}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (", name, "; see FAIL lines above)")
@@ -166,9 +166,9 @@ def _run_stage1_oracle(
     `out = activation[M, K] @ weight[N, K]^T` (transpose_b=True). The host
     reference dequantizes the weight per the formula and accumulates in fp32.
     """
-    print("== stage1", name, M, "x", N, "x", K)
+    print(t"== stage1 {name} {M} x {N} x {K}")
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     # Host inputs.
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
@@ -191,18 +191,18 @@ def _run_stage1_oracle(
     # Materialize the weight to dense bf16.
     var packed_tt = TileTensor(
         packed_dev.unsafe_ptr(), row_major(N, packed_k)
-    ).as_immut()
+    ).as_imm()
     var scale_tt = TileTensor(
         scale_dev.unsafe_ptr(), row_major(N, scale_k)
-    ).as_immut()
+    ).as_imm()
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(N, K))
     enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
 
     # Existing bf16 matmul: out = act @ wdense^T.
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
     enqueue_apple_matmul[in_type=.bfloat16, c_type=.float32, transpose_b=True](
-        out_tt, act_tt, wdense_tt.as_immut(), ctx
+        out_tt, act_tt, wdense_tt.as_imm(), ctx
     )
 
     var out_host = ctx.enqueue_create_host_buffer[.float32](M * N)
@@ -230,7 +230,7 @@ def _run_stage1_oracle(
             # bf16 MMA tolerance (matches the matmul test's bf16 bound).
             if abs(got - acc) > Float32(1e-2) + Float32(1.6e-2) * abs(acc):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", acc)
+                    print(t"FAIL: {i} {j} got {got} exp {acc}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -251,9 +251,9 @@ def _run_stage2_fused(
     Both paths do identical dequant arithmetic into bf16 and the same bf16 MMA,
     so they must match to the last bit on every shape.
     """
-    print("== stage2", name, M, "x", N, "x", K)
+    print(t"== stage2 {name} {M} x {N} x {K}")
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
@@ -274,18 +274,18 @@ def _run_stage2_fused(
 
     var packed_tt = TileTensor(
         packed_dev.unsafe_ptr(), row_major(N, packed_k)
-    ).as_immut()
+    ).as_imm()
     var scale_tt = TileTensor(
         scale_dev.unsafe_ptr(), row_major(N, scale_k)
-    ).as_immut()
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    ).as_imm()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_imm()
 
     # Reference: materialize then run the stock bf16 matmul.
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(N, K))
     enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
     var out_ref_tt = TileTensor(out_ref_dev.unsafe_ptr(), row_major(M, N))
     enqueue_apple_matmul[in_type=.bfloat16, c_type=.float32, transpose_b=True](
-        out_ref_tt, act_tt, wdense_tt.as_immut(), ctx
+        out_ref_tt, act_tt, wdense_tt.as_imm(), ctx
     )
 
     # Fused: FP4 weight stays packed; dequant at the loader seam.
@@ -314,7 +314,7 @@ def _run_stage2_fused(
         # Bit-exact: identical dequant + identical MMA.
         if r != f:
             if pass_:
-                print("FAIL: idx", i, "ref", r, "fused", f)
+                print(t"FAIL: idx {i} ref {r} fused {f}")
             pass_ = False
     if not pass_:
         raise Error("FAILED (fused != materialized; see FAIL lines)")
@@ -340,9 +340,9 @@ def _run_stage3_global_scale(
     agree within the bf16-MMA tolerance (the global scalar is applied in fp32 on
     BOTH sides, so it adds no extra error beyond the matmul itself).
     """
-    print("== stage3", name, M, "x", N, "x", K, "scale2", scale2)
+    print(t"== stage3 {name} {M} x {N} x {K} scale2 {scale2}")
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
@@ -361,11 +361,11 @@ def _run_stage3_global_scale(
 
     var packed_tt = TileTensor(
         packed_dev.unsafe_ptr(), row_major(N, packed_k)
-    ).as_immut()
+    ).as_imm()
     var scale_tt = TileTensor(
         scale_dev.unsafe_ptr(), row_major(N, scale_k)
-    ).as_immut()
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    ).as_imm()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
 
     # Kernel applies block scales only (no global scalar).
@@ -398,7 +398,7 @@ def _run_stage3_global_scale(
             var got = out_host[i * N + j] * scale2
             if abs(got - exp) > Float32(1e-2) + Float32(1.6e-2) * abs(exp):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", exp)
+                    print(t"FAIL: {i} {j} got {got} exp {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -435,9 +435,9 @@ def _run_stage4_dispatch_paths(
 
     Keep `N*K` small: the host reference is O(M*N*K).
     """
-    print("== stage4", name, M, "x", N, "x", K)
+    print(t"== stage4 {name} {M} x {N} x {K}")
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
@@ -455,9 +455,9 @@ def _run_stage4_dispatch_paths(
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
 
-    var act_tt = TileTensor(act_dev, row_major(M, K)).as_immut()
-    var packed_tt = TileTensor(packed_dev, row_major(N, packed_k)).as_immut()
-    var scale_tt = TileTensor(scale_dev, row_major(N, scale_k)).as_immut()
+    var act_tt = TileTensor(act_dev, row_major(M, K)).as_imm()
+    var packed_tt = TileTensor(packed_dev, row_major(N, packed_k)).as_imm()
+    var scale_tt = TileTensor(scale_dev, row_major(N, scale_k)).as_imm()
 
     # (1) Production dispatch (materialize->dense for this M).
     var out_disp_tt = TileTensor(out_disp_dev.unsafe_ptr(), row_major(M, N))
@@ -472,7 +472,6 @@ def _run_stage4_dispatch_paths(
     var out_fused_tt = TileTensor(out_fused_dev, row_major(M, N))
     _launch_apple_fp4_matmul[
         c_type=.float32,
-        elementwise_lambda_fn=None,
         BM=128,
         BK=64,
         coalesce_scales=True,
@@ -531,11 +530,11 @@ def _parity_and_hostref[
     At small shapes also checks the fused output against an independent fp32 host
     reduction (so a bug shared by both device paths cannot pass silently).
     """
-    print("== stage5", "smem" if use_smem else "reg", name, M, "x", N, "x", K)
+    print(t"== stage5 {"smem" if use_smem else "reg"} {name} {M} x {N} x {K}")
     comptime a_type = DType.bfloat16
     comptime c_type = DType.float32
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     var a_host = ctx.enqueue_create_host_buffer[a_type](M * K)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
@@ -557,13 +556,13 @@ def _parity_and_hostref[
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
 
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var packed_tt = TileTensor(
         packed_dev.unsafe_ptr(), row_major(N, packed_k)
-    ).as_immut()
+    ).as_imm()
     var scale_tt = TileTensor(
         scale_dev.unsafe_ptr(), row_major(N, scale_k)
-    ).as_immut()
+    ).as_imm()
     var co_tt = TileTensor(c_oracle.unsafe_ptr(), row_major(M, N))
     var wdense_tt = TileTensor(wdense.unsafe_ptr(), row_major(N, K))
 
@@ -573,9 +572,9 @@ def _parity_and_hostref[
     # the entry points' Storage threading) while the oracle keeps the
     # pointer-backed views above.
     var cf_tt = TileTensor(c_fused, row_major(M, N))
-    var a_dp_tt = TileTensor(a_dev, row_major(M, K)).as_immut()
-    var packed_dp_tt = TileTensor(packed_dev, row_major(N, packed_k)).as_immut()
-    var scale_dp_tt = TileTensor(scale_dev, row_major(N, scale_k)).as_immut()
+    var a_dp_tt = TileTensor(a_dev, row_major(M, K)).as_imm()
+    var packed_dp_tt = TileTensor(packed_dev, row_major(N, packed_k)).as_imm()
+    var scale_dp_tt = TileTensor(scale_dev, row_major(N, scale_k)).as_imm()
     comptime if use_smem:
         enqueue_matmul2d_fp4_smem[c_type=c_type](
             cf_tt, a_dp_tt, packed_dp_tt, scale_dp_tt, ctx
@@ -588,7 +587,7 @@ def _parity_and_hostref[
     # --- materialize -> dense oracle (identical dequant + bf16 MMA) ---
     enqueue_fp4_materialize[a_type](wdense_tt, packed_tt, scale_tt, ctx)
     enqueue_apple_matmul[in_type=a_type, c_type=c_type, transpose_b=True](
-        co_tt, a_tt, wdense_tt.as_immut(), ctx
+        co_tt, a_tt, wdense_tt.as_imm(), ctx
     )
     ctx.synchronize()
 
@@ -623,14 +622,8 @@ def _parity_and_hostref[
             nmis += 1
             if nmis <= 8:
                 print(
-                    "  PARITY MISMATCH [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "] fused",
-                    f,
-                    "oracle",
-                    o,
+                    t"  PARITY MISMATCH [ {i // N} , {i % N} ] fused"
+                    t" {f} oracle {o}"
                 )
     if nmis == 0:
         comptime if bit_exact:
@@ -646,14 +639,7 @@ def _parity_and_hostref[
             )
     else:
         print(
-            "  PARITY FAIL:",
-            nmis,
-            "/",
-            M * N,
-            "maxabs=",
-            maxabs,
-            "maxrel=",
-            maxrel,
+            t"  PARITY FAIL: {nmis} / {M * N} maxabs= {maxabs} maxrel= {maxrel}"
         )
         raise Error("matmul2d_fp4 parity mismatch " + name)
 
@@ -681,7 +667,7 @@ def _parity_and_hostref[
         if hmis == 0:
             print("  HOST-REF OK (maxrel=", hmaxrel, ")")
         else:
-            print("  HOST-REF FAIL:", hmis, "/", M * N, "maxrel=", hmaxrel)
+            print(t"  HOST-REF FAIL: {hmis} / {M * N} maxrel= {hmaxrel}")
             raise Error("matmul2d_fp4 host-ref mismatch " + name)
 
     _ = a_dev^
@@ -836,8 +822,8 @@ def test_stage4_dispatch_paths(ctx: DeviceContext) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     test_stage1_oracle(ctx)
     test_stage2_fused(ctx)

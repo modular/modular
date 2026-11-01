@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Integer arithmetic."""
+
 
 def ceildiv(a: int, b: int) -> int:
     """Ceiling division."""

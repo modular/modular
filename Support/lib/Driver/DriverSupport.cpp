@@ -22,6 +22,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Option/OptTable.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -103,6 +104,40 @@ M::resolveMojoInputFileOrPackage(StringRef path) {
   return fullPath;
 }
 
+static bool isInputArg(const llvm::opt::Arg *arg) {
+  return arg->getOption().getKind() == llvm::opt::Option::InputClass;
+}
+
+std::vector<std::string> M::getInputValues(const llvm::opt::ArgList &args) {
+  std::vector<std::string> values;
+  for (const llvm::opt::Arg *arg : args) {
+    if (isInputArg(arg)) {
+      arg->claim();
+      values.push_back(arg->getValue());
+    }
+  }
+  return values;
+}
+
+const llvm::opt::Arg *M::getFirstInputArg(const llvm::opt::ArgList &args) {
+  for (const llvm::opt::Arg *arg : args) {
+    if (isInputArg(arg)) {
+      arg->claim();
+      return arg;
+    }
+  }
+  return nullptr;
+}
+
+#if __cplusplus >= 202002
+HelpTexts::HelpTexts(std::u8string_view help, std::u8string_view helpHidden)
+    : HelpTexts(
+          std::string_view(reinterpret_cast<const char *>(help.data()),
+                           help.size()),
+          std::string_view(reinterpret_cast<const char *>(helpHidden.data()),
+                           helpHidden.size())) {}
+#endif
+
 //===----------------------------------------------------------------------===//
 // State
 //===----------------------------------------------------------------------===//
@@ -137,43 +172,6 @@ void State::reportWarning(const Twine &message) const {
   }
 }
 
-int State::parseDiagnosticFormatArguments(
-    llvm::opt::InputArgList &args,
-    llvm::opt::OptSpecifier diagnosticFormatOptionID,
-    llvm::opt::OptSpecifier disableWarningsOptionID,
-    llvm::opt::OptSpecifier warningsAsErrorsOptionID,
-    llvm::opt::OptSpecifier noWarningsAsErrorsOptionID) {
-  StringLiteral kDiagnosticFormatText = "text";
-  StringLiteral kDiagnosticFormatJSON = "json";
-  StringRef format =
-      args.getLastArgValue(diagnosticFormatOptionID, kDiagnosticFormatText);
-  if (!llvm::is_contained({kDiagnosticFormatText, kDiagnosticFormatJSON},
-                          format)) {
-    return reportError(
-        llvm::formatv("invalid diagnostic format '{0}', expected one of: `{1}` "
-                      "(the default), or `{2}`",
-                      format, kDiagnosticFormatText, kDiagnosticFormatJSON));
-  }
-
-  diagnosticFormat = llvm::StringSwitch<DiagnosticFormat>(format)
-                         .Case(kDiagnosticFormatText, DiagnosticFormat::Text)
-                         .Case(kDiagnosticFormatJSON, DiagnosticFormat::JSON);
-
-  if (disableWarningsOptionID.isValid())
-    disableWarnings = args.hasArg(disableWarningsOptionID);
-
-  // Use hasFlag for -Werror/-Wno-error with "last one wins" semantics.
-  if (warningsAsErrorsOptionID.isValid()) {
-    if (noWarningsAsErrorsOptionID.isValid())
-      warningsAsErrors = args.hasFlag(warningsAsErrorsOptionID,
-                                      noWarningsAsErrorsOptionID, false);
-    else
-      warningsAsErrors = args.hasArg(warningsAsErrorsOptionID);
-  }
-
-  return EXIT_SUCCESS;
-}
-
 #if __cplusplus >= 202002
 int State::printHelp(std::u8string_view helpText) const {
   return printHelp(std::string_view(
@@ -186,15 +184,50 @@ int State::printHelp(std::string_view helpText) const {
   return EXIT_SUCCESS;
 }
 
-int State::rejectUnknownArguments(
-    llvm::opt::InputArgList &args,
-    llvm::opt::OptSpecifier unknownOptionID) const {
-  if (!args.hasArg(unknownOptionID))
-    return EXIT_SUCCESS;
+std::optional<int>
+State::parseArguments(const llvm::opt::OptTable &optTable,
+                      const HelpTexts &helpTexts, llvm::opt::InputArgList &args,
+                      bool stopAtFirstInput,
+                      llvm::function_ref<int(std::string_view)> printHelpText) {
+  unsigned missingIndex = 0;
+  unsigned missingCount = 0;
+  args = optTable.ParseArgs(arguments, missingIndex, missingCount);
+  if (stopAtFirstInput) {
+    auto input = llvm::find_if(args, isInputArg);
+    if (input != args.end())
+      args = optTable.ParseArgs(arguments.slice(0, (*input)->getIndex() + 1),
+                                missingIndex, missingCount);
+  }
+  missingValueOption = missingCount ? args.getArgString(missingIndex) : nullptr;
 
-  for (llvm::opt::Arg *arg : args.filtered(unknownOptionID))
-    reportError("unrecognized argument '" + arg->getSpelling() + "'");
-  return EXIT_FAILURE;
+  // The help options come from CommonOptions.td, which every command includes,
+  // but each table gives them its own IDs.
+  bool help = false;
+  bool helpHidden = false;
+  for (const llvm::opt::Arg *arg : args) {
+    StringRef name = arg->getOption().getName();
+    help |= name == "help";
+    helpHidden |= name == "help-hidden";
+  }
+  if (!help && !helpHidden)
+    return std::nullopt;
+  std::string_view text = help ? helpTexts.help : helpTexts.helpHidden;
+  return printHelpText ? printHelpText(text) : printHelp(text);
+}
+
+int State::rejectInvalidArguments(const llvm::opt::InputArgList &args,
+                                  ArrayRef<std::string> errors) const {
+  if (!errors.empty())
+    return reportError(errors.front());
+  int result = EXIT_SUCCESS;
+  if (missingValueOption)
+    result =
+        reportError(Twine("missing value for '") + missingValueOption + "'");
+  for (const llvm::opt::Arg *arg : args)
+    if (arg->getOption().getKind() == llvm::opt::Option::UnknownClass)
+      result =
+          reportError("unrecognized argument '" + arg->getSpelling() + "'");
+  return result;
 }
 
 void State::assertNoUnusedArguments(const llvm::opt::InputArgList &args) const {

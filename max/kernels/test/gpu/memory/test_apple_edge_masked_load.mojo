@@ -32,27 +32,31 @@ comptime IN_COLS = 3
 comptime OUT_COLS = 4
 
 
-def _gmem_kernel(
-    in_ptr: MutPointer[BFloat16, MutAnyOrigin],
-    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
+def _gmem_kernel[
+    in_origin: MutOrigin, out_origin: MutOrigin
+](
+    in_ptr: MutPointer[BFloat16, in_origin],
+    out_ptr: MutPointer[BFloat16, out_origin],
 ):
-    var lane = Int(thread_idx.x)
+    var lane = thread_idx.x
     var base = lane * IN_COLS
     var mask = build_edge_mask(Int32(base), Int32(0), Int32(base + IN_COLS))
-    var v = gmem_edge_masked_load[4](in_ptr + base, mask)
-    (out_ptr + lane * OUT_COLS).store(v)
+    var v = gmem_edge_masked_load[4](in_ptr.unsafe_offset(base), mask)
+    (out_ptr.unsafe_offset(lane * OUT_COLS)).unsafe_store(v)
 
 
-def _general_kernel(
-    in_ptr: MutPointer[BFloat16, MutAnyOrigin],
-    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
+def _general_kernel[
+    in_origin: MutOrigin, out_origin: MutOrigin
+](
+    in_ptr: MutPointer[BFloat16, in_origin],
+    out_ptr: MutPointer[BFloat16, out_origin],
 ):
-    var lane = Int(thread_idx.x)
+    var lane = thread_idx.x
     var base = lane * IN_COLS
     var mask = build_edge_mask(Int32(base), Int32(0), Int32(base + IN_COLS))
-    var src = (in_ptr + base).address_space_cast[.GLOBAL]()
+    var src = in_ptr.unsafe_offset(base).unsafe_address_space_cast[.GLOBAL]()
     var v = edge_masked_load[4](src, mask)
-    (out_ptr + lane * OUT_COLS).store(v)
+    (out_ptr.unsafe_offset(lane * OUT_COLS)).unsafe_store(v)
 
 
 def _check(buf: HostBuffer[.bfloat16]) raises:
@@ -66,8 +70,8 @@ def _check(buf: HostBuffer[.bfloat16]) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
 
     var in_host = ctx.enqueue_create_host_buffer[.bfloat16](ROWS * IN_COLS)
@@ -82,7 +86,7 @@ def main() raises:
     for i in range(ROWS * OUT_COLS):
         out_host[i] = BFloat16(-1)
     ctx.enqueue_copy(out_dev, out_host)
-    ctx.enqueue_function[_gmem_kernel](
+    ctx.enqueue_function[_gmem_kernel[origin_of(in_dev), origin_of(out_dev)]](
         in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -92,9 +96,9 @@ def main() raises:
     for i in range(ROWS * OUT_COLS):
         out_host[i] = BFloat16(-1)
     ctx.enqueue_copy(out_dev, out_host)
-    ctx.enqueue_function[_general_kernel](
-        in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS
-    )
+    ctx.enqueue_function[
+        _general_kernel[origin_of(in_dev), origin_of(out_dev)]
+    ](in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS)
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
     _check(out_host)

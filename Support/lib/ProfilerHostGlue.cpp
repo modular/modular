@@ -299,6 +299,22 @@ void sinkRangeEnd() { api()->rangeEnd(); }
 
 void sinkRegisterCurrentThread() { api()->registerCurrentThread(); }
 
+// An older (1.0) plugin has no requestBurst: no event bursts, nothing else
+// changes.
+bool sinkRequestBurst(StringRef reason) {
+  const M_ProfilerPluginAPI *table = api();
+  if (!M_PROFILER_API_HAS(table, requestBurst))
+    return false;
+  return table->requestBurst(reason.data(), reason.size());
+}
+
+void sinkSetTraceMetadata(StringRef key, StringRef value) {
+  const M_ProfilerPluginAPI *table = api();
+  if (!M_PROFILER_API_HAS(table, setTraceMetadata))
+    return;
+  table->setTraceMetadata(key.data(), key.size(), value.data(), value.size());
+}
+
 constexpr RangeSink kSink = {
     .enable = sinkEnable,
     .disable = sinkDisable,
@@ -312,6 +328,8 @@ constexpr RangeSink kSink = {
     .rangeBeginWithId = sinkRangeBeginWithId,
     .rangeEnd = sinkRangeEnd,
     .registerCurrentThread = sinkRegisterCurrentThread,
+    .requestBurst = sinkRequestBurst,
+    .setTraceMetadata = sinkSetTraceMetadata,
 };
 
 } // namespace

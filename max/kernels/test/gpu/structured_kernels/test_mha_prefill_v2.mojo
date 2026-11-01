@@ -35,9 +35,8 @@ within a row of V. So o_reg[i, m] = mean over all k_global of
 from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
-from layout import LayoutTensor, TileTensor
-from layout.coord import Coord, Idx
-from layout.runtime_layout import RuntimeLayout
+from layout import TileTensor
+from layout.coord import Idx
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
@@ -45,7 +44,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     mha_prefill_v2,
 )
 from nn.attention.mha_mask import NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 
 comptime Q_BLOCK_SIZE = 32  # per warp
@@ -79,17 +78,8 @@ def test_v2_main_loop[
     )
 
     print(
-        "--- MhaPrefillV2 8-warp (BM=",
-        BM,
-        " Q/warp=",
-        Q_BLOCK_SIZE,
-        " KV=",
-        KV_BLOCK,
-        " D=",
-        depth,
-        " tiles=",
-        NUM_TILES,
-        ") ---",
+        t"--- MhaPrefillV2 8-warp (BM= {BM}  Q/warp= {Q_BLOCK_SIZE}  KV="
+        t" {KV_BLOCK}  D= {depth}  tiles= {NUM_TILES} ) ---"
     )
 
     var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
@@ -111,53 +101,25 @@ def test_v2_main_loop[
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[depth]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[depth]),
     )
-    # Wrap K/V TileTensors as LayoutTensorMHAOperand for the kernel's
+    # Wrap K/V TileTensors as TileTensorMHAOperand for the kernel's
     # paged-aware signature; the operand infers `buffer_layout` from the
     # passed TileTensor, so pass the existing row-major TileTensors directly.
-    var k_op = LayoutTensorMHAOperand(k_tt)
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var k_op = TileTensorMHAOperand(k_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     mha_prefill_v2[CONFIG](
         q_tt,
@@ -194,14 +156,8 @@ def test_v2_main_loop[
                     mismatches += 1
                     if mismatches <= 5:
                         print(
-                            "MISMATCH q=",
-                            q,
-                            " d=",
-                            d,
-                            " got=",
-                            got,
-                            " expected=",
-                            expected,
+                            t"MISMATCH q= {q}  d= {d}  got= {got}  expected="
+                            t" {expected}"
                         )
 
     print("  mismatches=", mismatches, " max_diff=", max_diff)

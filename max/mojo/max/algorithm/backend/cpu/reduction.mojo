@@ -32,23 +32,33 @@ from max.algorithm.reduction import _get_nd_indices_from_flat_index
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _reduce_generator_cpu[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: Int](Coord) -> SIMD[dtype, width],
+    OutputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
+    ) -> None,
+    ReduceFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
+    ) -> SIMD[ty, width],
+    //,
     *,
     reduce_dim: Int,
-](shape_coord: Coord, init: StaticTuple[Scalar[init_type], num_reductions],):
+](
+    shape_coord: Coord,
+    init: StaticTuple[Scalar[init_type], num_reductions],
+    input_0_fn: InputFnType,
+    output_0_fn: OutputFnType,
+    reduce_function: ReduceFnType,
+):
     """Reduce the given tensor using the given reduction function on CPU. The
     num_reductions parameter enables callers to execute fused reductions. The
     reduce_0_fn and output_0_fn should be implemented in a way which routes
@@ -57,14 +67,17 @@ def _reduce_generator_cpu[
     Parameters:
         num_reductions: The number of fused reductions to perform.
         init_type: The initial accumulator value for each reduction.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
+        InputFnType: The type of `input_0_fn` (inferred).
+        OutputFnType: The type of `output_0_fn` (inferred).
+        ReduceFnType: The type of `reduce_function` (inferred).
         reduce_dim: The dimension we are reducing.
 
     Args:
         shape_coord: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to store to the output tensor.
+        reduce_function: The lambda implementing the reduction.
     """
 
     # The inner/outer reduction helpers index the shape by a runtime
@@ -79,53 +92,45 @@ def _reduce_generator_cpu[
     ) if reduce_dim < 0 else reduce_dim
 
     comptime if shape.size == 1:
-        _reduce_along_inner_dimension[
-            num_reductions,
-            init_type,
-            input_0_fn,
-            output_0_fn,
-            reduce_function,
-            reduce_dim=reduce_dim_normalized,
-        ](shape, init)
+        _reduce_along_inner_dimension[reduce_dim=reduce_dim_normalized](
+            shape, init, input_0_fn, output_0_fn, reduce_function
+        )
     else:
         comptime if rank - 1 == reduce_dim_normalized:
-            _reduce_along_inner_dimension[
-                num_reductions,
-                init_type,
-                input_0_fn,
-                output_0_fn,
-                reduce_function,
-                reduce_dim=reduce_dim_normalized,
-            ](shape, init)
+            _reduce_along_inner_dimension[reduce_dim=reduce_dim_normalized](
+                shape, init, input_0_fn, output_0_fn, reduce_function
+            )
         else:
-            _reduce_along_outer_dimension[
-                num_reductions,
-                init_type,
-                input_0_fn,
-                output_0_fn,
-                reduce_function,
-                reduce_dim=reduce_dim_normalized,
-            ](shape, init)
+            _reduce_along_outer_dimension[reduce_dim=reduce_dim_normalized](
+                shape, init, input_0_fn, output_0_fn, reduce_function
+            )
 
 
 def _reduce_along_inner_dimension[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: Int](Coord) -> SIMD[dtype, width],
+    OutputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
+    ) -> None,
+    ReduceFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
+    ) -> SIMD[ty, width],
+    //,
     *,
     reduce_dim: Int,
 ](
     shape: IndexList[_, element_type=.int64],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
+    input_0_fn: InputFnType,
+    output_0_fn: OutputFnType,
+    reduce_function: ReduceFnType,
 ):
     """Reduces the innermost (or specified) dimension of a tensor using SIMD-
     vectorized accumulation with optional parallelism across rows.
@@ -133,14 +138,17 @@ def _reduce_along_inner_dimension[
     Parameters:
         num_reductions: The number of fused reductions to perform.
         init_type: The dtype of the initial accumulator value.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to store to the output tensor.
-        reduce_function: The lambda implementing the reduction.
+        InputFnType: The type of `input_0_fn` (inferred).
+        OutputFnType: The type of `output_0_fn` (inferred).
+        ReduceFnType: The type of `reduce_function` (inferred).
         reduce_dim: The dimension being reduced.
 
     Args:
         shape: The shape of the tensor being reduced.
         init_value: The initial accumulator value for each reduction.
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to store to the output tensor.
+        reduce_function: The lambda implementing the reduction.
     """
     var total_size: Int = shape.flattened_length()
     if total_size == 0:
@@ -163,49 +171,55 @@ def _reduce_along_inner_dimension[
     )
     var simd_compatible_size = align_down(reduce_dim_size, simd_width)
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def simd_reduce_helper_fn[
         in_width: SIMDLength,
         out_width: Int,
-    ](
-        in_acc_tup: StaticTuple[SIMD[init_type, in_width], num_reductions]
-    ) -> StaticTuple[SIMD[init_type, out_width], num_reductions]:
+    ](in_acc_tup: StaticTuple[SIMD[init_type, in_width], num_reductions]) {
+        imm
+    } -> StaticTuple[SIMD[init_type, out_width], num_reductions]:
         var out_acc_tup = StaticTuple[
             SIMD[init_type, out_width], num_reductions
         ]()
 
         comptime for i in range(num_reductions):
-            out_acc_tup[i] = in_acc_tup[i].reduce[
-                reduce_function[init_type, reduction_idx=i, ...], out_width
-            ]()
+
+            @inline(.always)
+            def reduce_wrapper[
+                width: SIMDLength
+            ](lhs: SIMD[init_type, width], rhs: SIMD[init_type, width]) {
+                imm
+            } -> SIMD[init_type, width]:
+                return reduce_function[init_type, width, i](lhs, rhs)
+
+            out_acc_tup[i] = in_acc_tup[i].reduce[out_width](reduce_wrapper)
 
         return out_acc_tup
 
-    @always_inline
-    @__parameter
-    def reduce_rows_unrolled(start_row: Int, end_row: Int):
+    @inline(.always)
+    def reduce_rows_unrolled(start_row: Int, end_row: Int) {imm}:
         # Iterate over the non reduced dimensions.
         for flat_index in range(start_row, end_row):
             # In normal elementwise get_nd_indices skips the last dimension as
             # it is the dimension being iterated over. In our case we don't know
             # this yet so we do have to calculate the extra one.
             var indices = _get_nd_indices_from_flat_index(
-                flat_index, shape, reduce_dim
+                flat_index, Coord(shape), reduce_dim
             )
 
-            @always_inline
-            @__parameter
+            @inline(.always)
             def unrolled_reduce_helper_fn[
                 width: SIMDLength,
             ](
                 start: Int,
                 finish: Int,
                 init: StaticTuple[SIMD[init_type, width], num_reductions],
-            ) -> StaticTuple[SIMD[init_type, width], num_reductions]:
+            ) {mut indices, imm} -> StaticTuple[
+                SIMD[init_type, width], num_reductions
+            ]:
                 var acc = init
                 for idx in range(start, finish, width):
-                    indices[reduce_dim] = idx
+                    indices.replace_dynamic[reduce_dim](idx)
                     var load_value = input_0_fn[init_type, width](indices)
 
                     comptime for i in range(num_reductions):
@@ -260,10 +274,10 @@ def _reduce_along_inner_dimension[
             )
 
             # Store the result back to the output.
-            indices[reduce_dim] = 0
+            indices.replace_dynamic[reduce_dim](0)
             output_0_fn(indices, acc_scalar_tup)
 
-    @always_inline
+    @inline(.always)
     def reduce_rows(i: Int) {imm}:
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
@@ -285,21 +299,28 @@ def _reduce_along_inner_dimension[
 def _reduce_along_outer_dimension[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: Int](Coord) -> SIMD[dtype, width],
+    OutputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
+    ) -> None,
+    ReduceFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
+    ) -> SIMD[ty, width],
+    //,
     *,
     reduce_dim: Int,
 ](
     shape: IndexList[_, element_type=.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
+    input_0_fn: InputFnType,
+    output_0_fn: OutputFnType,
+    reduce_function: ReduceFnType,
 ):
     """Reduce the given tensor using the given reduction function. The
     num_reductions parameter enables callers to execute fused reductions. The
@@ -309,14 +330,17 @@ def _reduce_along_outer_dimension[
     Parameters:
         num_reductions: The number of fused reductions to execute in parallel.
         init_type: The initial accumulator value for each reduction.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
+        InputFnType: The type of `input_0_fn` (inferred).
+        OutputFnType: The type of `output_0_fn` (inferred).
+        ReduceFnType: The type of `reduce_function` (inferred).
         reduce_dim: The dimension we are reducing.
 
     Args:
         shape: The shape of the tensor we are reducing
         init: The value to start the reduction from.
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to store to the output tensor.
+        reduce_function: The lambda implementing the reduction.
     """
     comptime rank = shape.size
     comptime dtype = init.element_type
@@ -353,7 +377,7 @@ def _reduce_along_outer_dimension[
 
         for var slice_idx in range(start_parallel_offset, end_parallel_offset):
 
-            @always_inline
+            @inline(.always)
             def reduce_chunk[simd_width: Int](inner_dim_idx: Int) {imm}:
                 var acc_simd_tup = StaticTuple[
                     SIMD[init_type, simd_width], num_reductions
@@ -364,23 +388,19 @@ def _reduce_along_outer_dimension[
 
                 var reduce_vector_idx = slice_idx * inner_dim + inner_dim_idx
                 var indices = _get_nd_indices_from_flat_index(
-                    reduce_vector_idx, shape, reduce_dim
+                    reduce_vector_idx, Coord(shape), reduce_dim
                 )
                 for reduce_dim_idx in range(reduce_dim_size):
-                    indices[reduce_dim] = reduce_dim_idx
-                    var load_value = input_0_fn[
-                        init_type, simd_width, shape.size
-                    ](indices)
+                    indices.replace_dynamic[reduce_dim](reduce_dim_idx)
+                    var load_value = input_0_fn[init_type, simd_width](indices)
 
                     comptime for i in range(num_reductions):
                         acc_simd_tup[i] = reduce_function[
                             init_type, simd_width, i
                         ](load_value, acc_simd_tup[i])
 
-                indices[reduce_dim] = 0
-                output_0_fn[init_type, simd_width, indices.size](
-                    indices, acc_simd_tup
-                )
+                indices.replace_dynamic[reduce_dim](0)
+                output_0_fn[init_type, simd_width](indices, acc_simd_tup)
 
             vectorize[simd_width](inner_dim, reduce_chunk)
 

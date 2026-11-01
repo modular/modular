@@ -43,11 +43,12 @@ from std.sys.defines import get_defined_bool, get_defined_int
 from std.memory.unsafe import bitcast
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_mxfp8_dispatch,
     grouped_matmul_swiglu_mxfp8_dispatch,
 )
+from linalg.swiglu_activation import get_swiglu_activation
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
@@ -77,6 +78,9 @@ comptime H = N // 2
 comptime CLAMP = get_defined_bool["clamp_activation", True]()
 comptime ALPHA = Float32(1.702)
 comptime LIMIT = Float32(7.0)
+comptime ACTIVATION = get_swiglu_activation[
+    "swigluoai" if CLAMP else "silu", ALPHA, LIMIT if CLAMP else 0.0
+]
 
 comptime MAX_M_PER_EXPERT = 512
 
@@ -173,27 +177,23 @@ def run_one_case(
     rand(b_host.unsafe_ptr(), num_experts * N * K)
 
     var a_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var a_scales_total = a_scales_shape.product()
     var a_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
         a_scales_total
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups_b],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups_b],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_total = b_scales_shape.product()
     var b_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
@@ -237,13 +237,11 @@ def run_one_case(
     var o_test_dev = ctx.enqueue_create_buffer[fp8_dtype](M * H)
 
     var swiglu_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups_swiglu],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups_swiglu],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var s_size = swiglu_scales_shape.product()
     var s_ref_dev = ctx.enqueue_create_buffer[scales_dtype](s_size)
@@ -274,18 +272,14 @@ def run_one_case(
     ctx.enqueue_copy(eids_dev, eids_host)
     ctx.enqueue_copy(escale_dev, escale_host)
 
-    var a_tt = TileTensor(a_dev, row_major(Coord(M, Idx[K])))
-    var b_tt = TileTensor(
-        b_dev, row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
-    )
-    var a_off_tt = TileTensor(a_off_dev, row_major(Coord(Idx[num_experts + 1])))
-    var a_sc_off_tt = TileTensor(
-        a_sc_off_dev, row_major(Coord(Idx[num_experts]))
-    )
-    var eids_tt = TileTensor(eids_dev, row_major(Coord(Idx[num_experts])))
-    var c_ref_tt = TileTensor(c_ref_dev, row_major(Coord(M, Idx[N])))
-    var o_ref_tt = TileTensor(o_ref_dev, row_major(Coord(M, Idx[H])))
-    var o_test_tt = TileTensor(o_test_dev, row_major(Coord(M, Idx[H])))
+    var a_tt = TileTensor(a_dev, row_major(M, Idx[K]))
+    var b_tt = TileTensor(b_dev, row_major(Idx[num_experts], Idx[N], Idx[K]))
+    var a_off_tt = TileTensor(a_off_dev, row_major(Idx[num_experts + 1]))
+    var a_sc_off_tt = TileTensor(a_sc_off_dev, row_major(Idx[num_experts]))
+    var eids_tt = TileTensor(eids_dev, row_major(Idx[num_experts]))
+    var c_ref_tt = TileTensor(c_ref_dev, row_major(M, Idx[N]))
+    var o_ref_tt = TileTensor(o_ref_dev, row_major(M, Idx[H]))
+    var o_test_tt = TileTensor(o_test_dev, row_major(M, Idx[H]))
     var s_ref_tt = TileTensor(s_ref_dev, swiglu_scales_shape)
     var s_test_tt = TileTensor(s_test_dev, swiglu_scales_shape)
 
@@ -296,7 +290,7 @@ def run_one_case(
         b_scales_dev, b_scales_shape
     ).as_unsafe_any_origin()
     var escale_tt = TileTensor(
-        escale_dev, row_major(Coord(Int64(num_experts)))
+        escale_dev, row_major(Int64(num_experts))
     ).as_unsafe_any_origin()
 
     # ---- REF: unfused matmul -> bf16 -> standalone SwiGLU epilogue. ----
@@ -315,9 +309,9 @@ def run_one_case(
         ctx,
     )
     comptime hw_info = ctx.default_device_info
-    var c_ref_immut = c_ref_tt.as_immut()
-    var a_off_immut = a_off_tt.as_immut()
-    var a_sc_off_immut = a_sc_off_tt.as_immut()
+    var c_ref_immut = c_ref_tt.as_imm()
+    var a_off_immut = a_off_tt.as_imm()
+    var a_sc_off_immut = a_sc_off_tt.as_imm()
     comptime ref_epilogue = fused_silu_mxfp8_interleaved_kernel[
         fp8_dtype,
         scales_dtype,
@@ -329,7 +323,12 @@ def run_one_case(
         a_sc_off_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
-        clamp_activation=CLAMP,
+        activation=ACTIVATION,
+        OutputEngine=type_of(o_ref_tt).Engine,
+        ScalesEngine=type_of(s_ref_tt).Engine,
+        InputEngine=type_of(c_ref_immut).Engine,
+        RowOffsetsEngine=type_of(a_off_immut).Engine,
+        ScalesOffsetsEngine=type_of(a_sc_off_immut).Engine,
     ]
     ctx.enqueue_function[ref_epilogue](
         o_ref_tt,
@@ -337,8 +336,6 @@ def run_one_case(
         c_ref_immut,
         a_off_immut,
         a_sc_off_immut,
-        ALPHA,
-        LIMIT,
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )
@@ -348,7 +345,7 @@ def run_one_case(
         transpose_b=transpose_b,
         match_bf16=True,
         use_inplace=True,
-        clamp_activation=CLAMP,
+        activation=ACTIVATION,
     ](
         o_test_tt,
         s_test_tt,
@@ -363,8 +360,6 @@ def run_one_case(
         nae,
         M,
         ctx,
-        ALPHA,
-        LIMIT,
     )
     ctx.synchronize()
 
@@ -393,14 +388,8 @@ def run_one_case(
                 s_mismatch += 1
         if o_mismatch != 0 or s_mismatch != 0:
             print(
-                "FUZZ_NUMERIC_FAIL kind=fusion_equiv o_mismatch=",
-                o_mismatch,
-                "of",
-                M * H,
-                "s_mismatch=",
-                s_mismatch,
-                "of",
-                s_size,
+                t"FUZZ_NUMERIC_FAIL kind=fusion_equiv o_mismatch="
+                t" {o_mismatch} of {M * H} s_mismatch= {s_mismatch} of {s_size}"
             )
             raise Error("fused dispatch disagrees with unfused reference chain")
 
@@ -431,12 +420,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "num_active_experts=",
-                specs[i].num_active_experts,
-                "tok_seed=",
-                specs[i].tok_seed,
+                t"FUZZ_SPEC idx= {i} num_active_experts="
+                t" {specs[i].num_active_experts} tok_seed= {specs[i].tok_seed}"
             )
         return
 
@@ -444,16 +429,8 @@ def main() raises:
         var nae = flag_int(args, "--num_active_experts", 3)
         var ts = flag_int(args, "--tok_seed", 1)
         print(
-            "FUZZ_SINGLE num_active_experts=",
-            nae,
-            "tok_seed=",
-            ts,
-            "num_experts=",
-            num_experts,
-            "N=",
-            N,
-            "K=",
-            K,
+            t"FUZZ_SINGLE num_active_experts= {nae} tok_seed= {ts} num_experts="
+            t" {num_experts} N= {N} K= {K}"
         )
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(nae, ts), check)
@@ -461,17 +438,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_fused_swiglu_dispatch seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "num_experts=",
-        num_experts,
-        "N=",
-        N,
-        "K=",
-        K,
-        "===",
+        t"=== fuzz_fused_swiglu_dispatch seed= {the_seed} budget="
+        t" {the_budget} num_experts= {num_experts} N= {N} K= {K} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

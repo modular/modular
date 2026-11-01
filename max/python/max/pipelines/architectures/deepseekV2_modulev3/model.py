@@ -15,19 +15,16 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
-from max.driver import Buffer, Device, DeviceSpec
+from max import tree
+from max.driver import Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-)
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -43,30 +40,21 @@ from typing_extensions import override
 
 from .batch_processor import DeepseekV2ModuleV3BatchProcessor
 from .deepseekV2 import DeepseekV2
+from .inputs import DeepseekV2Inputs
 from .model_config import DeepseekV2Config
 
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass
-class DeepseekV2Inputs(ModelInputs):
-    """Inputs for the DeepseekV2 model."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-
-    return_n_logits: Buffer = field(kw_only=True)
-
-
 class DeepseekV2Model(
     LogProbabilitiesMixin, ModuleV3PipelineModelWithKVCache[TextContext]
 ):
+    """DeepSeek-V2 model for the modulev3 pipeline."""
+
     model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
     batch_processor_cls: ClassVar[type[DeepseekV2ModuleV3BatchProcessor]] = (
         DeepseekV2ModuleV3BatchProcessor
     )
-
-    model: Callable[..., Any]
 
     def __init__(
         self,
@@ -98,9 +86,8 @@ class DeepseekV2Model(
             memory_plan=memory_plan,
         )
 
-        self.model = self.load_model()
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, DeepseekV2Inputs)
 
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs
@@ -109,18 +96,9 @@ class DeepseekV2Model(
             model_inputs.tokens,
             model_inputs.return_n_logits,
             model_inputs.input_row_offsets,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
         )
-        if len(model_outputs) == 3:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
-            )
-        return ModelOutputs(
-            logits=cast(Buffer, model_outputs[0].driver_tensor),
-            next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-        )
+        return self._to_model_outputs(model_outputs)
 
     @classmethod
     def get_kv_params(
@@ -131,6 +109,7 @@ class DeepseekV2Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache parameters this model was traced with."""
         return DeepseekV2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

@@ -27,21 +27,23 @@ These primitives are essential for implementing complex GPU execution pipelines 
 multiple kernels need to execute in a specific order with minimal overhead. They
 eliminate the need for host-side synchronization when orchestrating dependent GPU work.
 """
-from max.gpu.host.launch_attribute import (
+from max.gpu.host import (
     LaunchAttribute,
     LaunchAttributeID,
     LaunchAttributeValue,
 )
-from std.sys import has_nvidia_gpu_accelerator
-from std.sys.info import _accelerator_arch
+from std._gpu.host.info import TargetAccelerator
+from std.sys import CompilationTarget
 
-from ..host.info import H100, GPUInfo
+from max._plugin._overlay import TARGETS
+
+from ..host.info import H100
 
 comptime _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
 
 
 @doc_hidden
-@always_inline("nodebug")
+@inline(.nodebug)
 def _support_pdl_launch() -> Bool:
     """Determines if programmatic dependency launch (PDL) is supported.
 
@@ -52,9 +54,11 @@ def _support_pdl_launch() -> Bool:
         True if PDL is supported and enabled, False otherwise.
     """
 
+    comptime default = TargetAccelerator.default_accelerator[TARGETS]()
+
     comptime if (
-        has_nvidia_gpu_accelerator()
-        and GPUInfo.from_name[_accelerator_arch()]().compute >= H100.compute
+        default.target.is_nvidia_gpu()
+        and default.gpu_info.compute >= H100.compute
     ):
         return True
     else:
@@ -62,7 +66,7 @@ def _support_pdl_launch() -> Bool:
 
 
 @doc_hidden
-@always_inline("nodebug")
+@inline(.nodebug)
 def pdl_launch_attributes(
     pdl_level: PDLLevel = PDLLevel(),
 ) -> List[LaunchAttribute]:
@@ -92,7 +96,7 @@ def pdl_launch_attributes(
         return List[LaunchAttribute]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def launch_dependent_grids():
     """Launches dependent grids that were previously configured to depend on the
     current grid.
@@ -108,29 +112,66 @@ def launch_dependent_grids():
           should trigger the execution of other grids.
     """
 
-    comptime if _SUPPORT_PDL_LAUNCH:
+    # `_SUPPORT_PDL_LAUNCH` reads the default accelerator, which is the host's
+    # device even when this function is cross-compiled for another target.
+    # `griddepcontrol` only exists for NVPTX, so gate on the compilation
+    # target: emitting it in an AMD module fails instruction selection.
+    comptime if (
+        _SUPPORT_PDL_LAUNCH and CompilationTarget.current().is_nvidia_gpu()
+    ):
         comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action<launch_dependents>`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
 
-@always_inline("nodebug")
-def wait_on_dependent_grids():
-    """Waits for all dependent grids launched by this grid to complete execution.
+@doc_hidden
+@inline(.never)
+def _griddepcontrol_wait():
+    """Issues `griddepcontrol.wait` from a function `ptxas` does not inline.
 
-    This function blocks the calling grid until all dependent grids that were launched
-    by this grid have completed their execution. It provides a synchronization point
-    between parent and child grids in a multi-grid dependency chain.
+    `ptxas` treats `ld.global.nc` data as invariant, so it schedules those
+    loads (`LDG.E.CONSTANT`) above an inlined `griddepcontrol.wait`
+    (`ACQBULK`), where they read what the predecessor grid has not written yet.
+    A CTA barrier or a fence after the wait does not reliably stop that.
+    `ptxas` does not move them above a call, so the loads on a path through
+    this call stay below the wait. That is observed `ptxas` behaviour, not a
+    documented guarantee; `test_pdl_wait_sass.mojo` checks it in the SASS.
+    """
+
+    comptime if (
+        _SUPPORT_PDL_LAUNCH and CompilationTarget.current().is_nvidia_gpu()
+    ):
+        comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action<wait>`
+        __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
+
+
+@inline(.nodebug)
+def wait_on_dependent_grids():
+    """Waits for the prerequisite grids of this grid to complete.
+
+    This function blocks the calling grid until every grid it was launched
+    behind with programmatic dependent launch (the prerequisite grids) has
+    completed and its memory operations are performed and visible to this grid.
+    It does not wait on, or make visible the output of, a grid this grid
+    launches with `launch_dependent_grids`.
 
     Note:
         - Only supported on NVIDIA SM90+ (Hopper architecture and newer) GPUs.
         - Must be called by all threads in a thread block to avoid undefined behavior.
-        - Can be used to ensure dependent grid work is complete before proceeding
-          with subsequent operations in the parent grid.
+        - Reads of data a prerequisite grid produces belong below the wait,
+          including loads through immutable origins (`ld.global.nc`). Only
+          the loads on a path through this call stay below it. A warp that
+          skips the wait and relies on a CTA barrier after another warp's wait
+          is not protected: `ptxas` can move its `ld.global.nc` loads above
+          that barrier, so such a warp must read the data through a mutable
+          origin.
+        - LLVM can merge an immutable-origin load below the wait with a load of
+          the same address above it, leaving only the load above. Do not read
+          data a prerequisite grid produces through an immutable origin before
+          the wait, even when it is read again after it.
     """
 
     comptime if _SUPPORT_PDL_LAUNCH:
-        comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action<wait>`
-        __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
+        _griddepcontrol_wait()
 
 
 @fieldwise_init
@@ -154,12 +195,12 @@ struct PDLLevel(Defaultable, Equatable, TrivialRegisterPassable):
     comptime NO_WAIT_OVERLAP_AT_END = PDLLevel(3)
     """PDL no-wait overlap at end of kernel."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Initialize the PDL level to OFF."""
         self = PDLLevel.OFF
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Int) -> Bool:
         """Check if the PDL level is equal to another PDL level.
 
@@ -171,7 +212,7 @@ struct PDLLevel(Defaultable, Equatable, TrivialRegisterPassable):
         """
         return self._level == other
 
-    @always_inline
+    @inline(.always)
     def __gt__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is greater than another PDL level.
 
@@ -183,7 +224,7 @@ struct PDLLevel(Defaultable, Equatable, TrivialRegisterPassable):
         """
         return self._level > other._level
 
-    @always_inline
+    @inline(.always)
     def __ge__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is greater than or equal to another PDL level.
 
@@ -221,19 +262,19 @@ struct PDL[overlap_at_beginning: Bool = False](Defaultable):
         - Only supported on NVIDIA SM90+ (Hopper architecture and newer) GPUs.
     """
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Initialize the PDL control structure."""
         pass
 
-    @always_inline
+    @inline(.always)
     def __enter__(self):
         """Wait for the predecessor grids to complete."""
         wait_on_dependent_grids()
         comptime if Self.overlap_at_beginning:
             launch_dependent_grids()
 
-    @always_inline
+    @inline(.always)
     def __exit__(self):
         """Release the grids that depend on this one."""
         comptime if not Self.overlap_at_beginning:

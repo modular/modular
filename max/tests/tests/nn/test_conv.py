@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for Conv2d layer in max.nn, focusing on sharding functionality."""
+"""Tests for Conv2d layer in max.nn.legacy, focusing on sharding functionality."""
 
 from __future__ import annotations
 
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.nn.conv import Conv2d
+from max.nn.legacy.conv import Conv2d
 
 
 def test_conv2d_shard_replicate() -> None:

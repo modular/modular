@@ -25,7 +25,7 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.memory.maybe_uninit import MaybeUninit
 from std.memory.alloc import (
     alloc,
@@ -34,11 +34,12 @@ from std.memory.alloc import (
     ThinAllocation,
     Layout,
 )
+from std.utils._nicheable import _FieldNicheable
 
 
 @doc_hidden
-struct _ArcPointerInner[T: Movable & Deinitable](
-    Movable where False,
+struct _ArcPointerInner[T: Movable](
+    not Movable,
 ):
     """
     The backing _shared_ piece of an ArcPointer.
@@ -134,23 +135,28 @@ struct _ArcPointerInner[T: Movable & Deinitable](
         collectively by all strong references."""
         return self.weak.load[ordering=Ordering.RELAXED]()
 
-    def destroy_payload(mut self):
-        """Run the destructor of the held value. Caller must ensure this
-        runs exactly once, on the last strong drop."""
-        self.payload.unsafe_ptr().unsafe_deinit_pointee()
+    def destroy_payload(mut self, deinit_func: Some[def(var Self.T)]):
+        """Pass the held value to `deinit_func` to destroy it. Caller must
+        ensure this runs exactly once, on the last strong drop."""
+        self.payload.unsafe_ptr().unsafe_deinit_pointee_with(deinit_func)
 
     def payload_ref(ref self) -> ref[self.payload] Self.T:
         """Return a reference to the (assumed-initialized) payload."""
         return self.payload.unsafe_assume_init()
 
 
-struct ArcPointer[T: Movable & Deinitable](
+struct ArcPointer[T: Movable](
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy an `ArcPointer` whose"
+        " element type is not `Deinitable`"
+    ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Identifiable,
     ImplicitlyCopyable,
     RegisterPassable,
     Writable where conforms_to(T, Writable),
+    _FieldNicheable,
 ):
     """Atomic reference-counted pointer.
 
@@ -265,26 +271,63 @@ struct ArcPointer[T: Movable & Deinitable](
         """
         self._inner = _inner
 
-    @no_inline
-    def __deinit__(deinit self):
+    @inline(.never)
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         """Delete the smart pointer.
 
         Decrement the reference count for the stored value. If there are no more
-        references, delete the object and free its memory."""
+        references, delete the object and free its memory.
+
+        Constraints:
+            `T` must be `Deinitable`. When it is not, consume the
+            `ArcPointer` with `deinit_with()`.
+        """
+        self^.deinit_with(deinit[Self.T])
+
+    def deinit_with(deinit self, var f: Some[def(var Self.T)], /):
+        """Consumes this pointer, passing the managed value to `f` if this is
+        the last strong reference.
+
+        This decrements the reference count like the implicit destructor. If
+        other `ArcPointer`s to the value remain, `f` is not called. Use this
+        to destroy an `ArcPointer` whose element type is not `Deinitable`.
+
+        Args:
+            f: The function that takes ownership of the managed value to
+                destroy it. Called only by the last strong reference.
+
+        Examples:
+
+        ```mojo
+        from std.memory import ArcPointer
+
+        @fieldwise_init
+        struct Resource(Movable, not Deinitable):
+            var id: Int
+
+            def close(deinit self):
+                pass
+
+        var p = ArcPointer(Resource(1))
+        var p2 = p.copy()
+        p^.deinit_with(Resource.close)  # `p2` still holds the value.
+        p2^.deinit_with(Resource.close)  # Calls `Resource.close`.
+        ```
+        """
         if not self._inner[].drop_strong():
             return
 
         # Last strong reference: destroy the payload. The control block
         # itself stays alive while any Weak references still hold the
         # implicit-weak refcount.
-        self._inner[].destroy_payload()
+        self._inner[].destroy_payload(f)
 
         # Drop the implicit weak reference held collectively by all strong
         # pointers. If we are also the last weak, free the allocation.
         if self._inner[].drop_weak():
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._inner).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
 
@@ -466,10 +509,10 @@ struct ArcPointer[T: Movable & Deinitable](
             TypeNames[Self.T](),
         ).fields(Repr(self[]))
 
+    comptime _KgenNichedFieldName = "_inner".value
 
-struct WeakPointer[T: Movable & Deinitable](
-    ImplicitlyCopyable, RegisterPassable
-):
+
+struct WeakPointer[T: Movable](ImplicitlyCopyable, RegisterPassable):
     """Non-owning atomic reference to an `ArcPointer`'s allocation.
 
     A `WeakPointer` may _not_ be directly subscripted to dereference
@@ -540,18 +583,18 @@ struct WeakPointer[T: Movable & Deinitable](
         Args:
             copy: The existing `WeakPointer` to share an allocation with.
         """
-        if copy._inner:
-            copy._inner.unsafe_value()[].add_weak()
+        if case .Some(inner) = copy._inner:
+            inner[].add_weak()
         self._inner = copy._inner
 
-    @no_inline
+    @inline(.never)
     def __deinit__(deinit self):
         """Decrement the weak count and free the allocation if last."""
         if self._inner and self._inner.unsafe_value()[].drop_weak():
             dealloc(
                 ThinAllocation(
                     unsafe_owned_ptr=self._inner.unsafe_value()
-                ).unsafe_with_layout({count = 1})
+                ).unsafe_with_layout({length = 1})
             )
 
     def try_upgrade(self) -> Optional[ArcPointer[Self.T]]:
@@ -571,8 +614,8 @@ struct WeakPointer[T: Movable & Deinitable](
         Returns:
             The current number of strong references to the allocation.
         """
-        if self._inner:
-            return self._inner.unsafe_value()[].strong_count()
+        if case .Some(inner) = self._inner:
+            return inner[].strong_count()
         else:
             return 0
 
@@ -585,9 +628,9 @@ struct WeakPointer[T: Movable & Deinitable](
             The approximate number of outstanding `WeakPointer`s.
         """
 
-        if self._inner:
-            var w = self._inner.unsafe_value()[].weak_count_with_implicit()
-            if self._inner.unsafe_value()[].strong_count() == 0:
+        if case .Some(inner) = self._inner:
+            var w = inner[].weak_count_with_implicit()
+            if inner[].strong_count() == 0:
                 return w
             # If there are any strong remaining, we don't want to
             # include the implicit weak in the returned count.

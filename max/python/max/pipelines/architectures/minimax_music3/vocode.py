@@ -42,11 +42,11 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import CompiledModel
-from max.experimental.tensor import Tensor, default_dtype
+from max.tensor import Tensor, default_dtype
+from max.tensor.compilation import CompiledCallable
 
 from .components.vocoder import Vocoder
 from .model_config import VocoderConfig
@@ -85,10 +85,10 @@ class ChunkedVocoder:
         # `compile` binds the real values.
         with F.lazy(), default_dtype(dtype):
             self.vocoder = Vocoder(config).to(device)
-        self._models: dict[int, CompiledModel[..., Any]] = {}
+        self._models: dict[int, CompiledCallable[..., Any]] = {}
         self.model = self._model_for(self.window_frames)
 
-    def _model_for(self, frames: int) -> CompiledModel[..., Any]:
+    def _model_for(self, frames: int) -> CompiledCallable[..., Any]:
         """Compile the decoder for a latent length, memoized."""
         if frames not in self._models:
             self._models[frames] = self.vocoder.compile(
@@ -139,7 +139,7 @@ class ChunkedVocoder:
         hop = self.config.hop_length
 
         def decode_window(
-            model: CompiledModel[..., Any], window: np.ndarray
+            model: CompiledCallable[..., Any], window: np.ndarray
         ) -> np.ndarray:
             waveform = model(Tensor.from_dlpack(window).to(self.device))
             return waveform.to_numpy()[0]

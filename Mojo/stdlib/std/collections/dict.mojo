@@ -14,7 +14,7 @@
 
 Dict provides an efficient, O(1) amortized
 average-time complexity for insert, lookup, and removal of dictionary elements.
-It uses a Swiss Table implementation with SIMD group probing for fast lookups:
+It uses a SwissTable implementation with SIMD group probing for fast lookups:
 
 - Performance and size are heavily optimized for small dictionaries, but can
   scale to large dictionaries.
@@ -41,15 +41,14 @@ See the `Dict` docs for more details.
 """
 
 from std.builtin.rebind import downcast
-from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
+from std.hash import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
 
-from std.memory import alloc, dealloc, ThinAllocation, unsafe_memset
+from std.memory import alloc, dealloc, unsafe_memset
 from std.memory.alloc import Layout
 
 from ._swisstable import (
     CTRL_DELETED,
-    CTRL_EMPTY,
     INITIAL_CAPACITY,
     SwissTable,
     SwissTableEntry,
@@ -144,7 +143,7 @@ struct _DictEntryIter[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -181,7 +180,7 @@ struct _DictEntryIter[
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
@@ -210,7 +209,7 @@ struct _DictEntryIter[
         ), "_order exhausted but not all entries seen: _len out of sync"
         raise StopIteration()
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self.src[]) - self.seen
         return (len, {len})
@@ -220,7 +219,7 @@ struct _DictEntryIter[
 struct _TakeDictEntryIter[
     K: KeyElement & Deinitable,
     V: Movable & Deinitable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: MutOrigin,
 ](Copyable, Iterable, Iterator):
     """Iterator over mutable DictEntry references that moves entries out of the dictionary.
@@ -244,11 +243,11 @@ struct _TakeDictEntryIter[
         self.index = 0
         self.src = Pointer(to=dict)
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(
         mut self,
     ) raises StopIteration -> Self.Element:
@@ -277,7 +276,7 @@ struct _TakeDictEntryIter[
 struct _DictEntryIterOwned[
     K: KeyElement & Deinitable,
     V: Movable & Deinitable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over DictEntry values that consumes the dictionary.
 
@@ -293,16 +292,16 @@ struct _DictEntryIterOwned[
     var _dict: Dict[Self.K, Self.V, Self.H]
     var _index: Int
 
-    @always_inline
+    @inline(.always)
     def __deinit__(deinit self):
         # Dict.__deinit__ handles destroying remaining occupied slots.
         pass
 
-    @always_inline
+    @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> Self.Element:
         while self._index < len(self._dict._order):
             var slot = Int(self._dict._order[self._index])
@@ -322,7 +321,7 @@ struct _DictEntryIterOwned[
         )
         raise StopIteration()
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return (self._dict._table._len, {self._dict._table._len})
 
@@ -331,7 +330,7 @@ struct _DictEntryIterOwned[
 struct _DictKeyIterOwned[
     K: KeyElement & Deinitable,
     V: Movable & Deinitable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over Dict keys that consumes the dictionary.
 
@@ -346,15 +345,15 @@ struct _DictKeyIterOwned[
 
     var _inner: _DictEntryIterOwned[Self.K, Self.V, Self.H]
 
-    @always_inline
+    @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> Self.Element:
         return self._inner.__next__().reap_key()
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
 
@@ -365,7 +364,7 @@ struct _DictKeyIter[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -390,17 +389,17 @@ struct _DictKeyIter[
 
     var iter: Self.dict_entry_iter
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(
         mut self,
     ) raises StopIteration -> ref[self.iter.__next__().key] Self.Element:
         return self.iter.__next__().key
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self.iter.bounds()
 
@@ -411,7 +410,7 @@ struct _DictValueIter[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -454,7 +453,7 @@ struct _DictValueIter[
         # _DictEntryIter.next erases it.
         return Pointer(to=entry_ref.value).unsafe_origin_cast[Self.origin]()[]
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self.iter.bounds()
 
@@ -464,19 +463,20 @@ struct _DictValueIter[
 # ===-----------------------------------------------------------------------===#
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `Dict` with"
-    " non-`Deinitable` keys or values"
-)
 struct Dict[
     K: KeyElement,
     V: Movable,
-    H: Hasher = default_hasher,
+    H: Hasher & Defaultable & Deinitable = default_hasher,
 ](
     Boolable,
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
     Defaultable,
-    Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
+    Deinitable where (
+        conforms_to(K, Deinitable) and conforms_to(V, Deinitable)
+    ) else (
+        "Use `deinit_with()` to explicitly destroy a `Dict` with"
+        " non-`Deinitable` keys or values"
+    ),
     Equatable where conforms_to(K, Copyable) and conforms_to(V, Equatable),
     Hashable where conforms_to(K, Copyable) and conforms_to(V, Hashable),
     Iterable,
@@ -665,8 +665,8 @@ struct Dict[
 
     # Implementation:
     #
-    # This Dict uses a Swiss Table design with flat layout + insertion-order
-    # side array. The core Swiss Table logic (control bytes, SIMD probing,
+    # This Dict uses a SwissTable design with flat layout + insertion-order
+    # side array. The core SwissTable logic (control bytes, SIMD probing,
     # slot management) lives in _swisstable.SwissTable. Dict adds:
     #
     # - Insertion-order array: A separate List[Int32] tracks the order of
@@ -708,7 +708,7 @@ struct Dict[
     # ===-------------------------------------------------------------------===#
 
     var _table: SwissTable[Self.K, Self.V, Self.H]
-    """The underlying Swiss Table managing ctrl bytes, slots, and probing."""
+    """The underlying SwissTable managing ctrl bytes, slots, and probing."""
 
     var _order: List[Int32]
     """Insertion-order array of slot indices. Stale entries (from deleted slots)
@@ -719,13 +719,13 @@ struct Dict[
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Initialize an empty dictionary."""
         self._table = SwissTable[Self.K, Self.V, Self.H]()
         self._order = List[Int32]()
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, capacity: Int):
         """Initialize an empty dictionary with a pre-reserved capacity.
 
@@ -746,7 +746,7 @@ struct Dict[
         self._table = SwissTable[Self.K, Self.V, Self.H](capacity=capacity)
         self._order = List[Int32](capacity=self._table._capacity * 7 // 8)
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         var keys: List[Self.K],
@@ -774,7 +774,7 @@ struct Dict[
 
     # TODO: add @property when Mojo supports it to make
     # it possible to do `self._reserved`.
-    @always_inline
+    @inline(.always)
     def _reserved(self) -> Int:
         return self._table._capacity
 
@@ -907,7 +907,7 @@ struct Dict[
         """
         return self._find_ref(key)
 
-    @always_inline
+    @inline(.always)
     def __setitem__(
         mut self, var key: Self.K, var value: Self.V
     ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
@@ -959,7 +959,7 @@ struct Dict[
         self._place_new_entry(slot_idx, entry^)
         return None
 
-    @always_inline
+    @inline(.always)
     def __contains__(self, key: Self.K) -> Bool:
         """Check if a given key is in the dictionary or not.
 
@@ -1138,10 +1138,10 @@ struct Dict[
         # entries with similar hashes don't cancel under XOR.
         var combined = UInt64(0)
         for entry in self.items():
-            var entry_hasher = H2()
+            var entry_hasher = Self.H()
             entry.key.__hash__(entry_hasher)
             entry.value.__hash__(entry_hasher)
-            var h = entry_hasher^.finish()
+            var h = entry_hasher.finish()
             h = ((h ^ 89869747) ^ (h << 16)) * 3644798167
             combined ^= h
         hasher._update_with_simd(combined)
@@ -1168,7 +1168,7 @@ struct Dict[
 
         writer.write_string("}")
 
-    @no_inline
+    @inline(.never)
     def write_to(
         self, mut writer: Some[Writer]
     ) where (
@@ -1186,7 +1186,7 @@ struct Dict[
             f_val=fmt.write_to[Self.V],
         ](writer)
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(
         self, mut writer: Some[Writer]
     ) where (
@@ -1322,7 +1322,7 @@ struct Dict[
 
         raise DictKeyError[Self.K]()
 
-    @always_inline
+    @inline(.always)
     def get(
         self, key: Self.K
     ) -> Optional[Self.V] where conforms_to(Self.V, Copyable):
@@ -1353,7 +1353,7 @@ struct Dict[
         """
         return self.find(key)
 
-    @always_inline
+    @inline(.always)
     def get(
         self, key: Self.K, var default: Self.V
     ) -> Self.V where conforms_to(Self.V, Copyable & Deinitable):
@@ -1767,7 +1767,7 @@ struct Dict[
         self._table.clear_with(destroy_func)
         self._order.clear()
 
-    @always_inline
+    @inline(.always)
     def setdefault(
         mut self, var key: Self.K, var default: Self.V
     ) -> ref[
@@ -1824,7 +1824,7 @@ struct Dict[
     # Internal methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def _find_slot(self, hash: UInt64, key: Self.K) -> Tuple[Bool, Int]:
         """Find a slot matching the given key, or an empty slot for insertion.
 
@@ -1840,7 +1840,7 @@ struct Dict[
         """
         return self._table.find_slot(hash, key)
 
-    @always_inline
+    @inline(.always)
     def _set_ctrl(mut self, index: Int, value: UInt8):
         """Set a control byte. Forwards to the underlying SwissTable.
 
@@ -1850,7 +1850,7 @@ struct Dict[
         """
         self._table.set_ctrl(index, value)
 
-    @always_inline
+    @inline(.always)
     def _place_new_entry(
         mut self, slot_idx: Int, var entry: DictEntry[Self.K, Self.V, Self.H]
     ):
@@ -1874,13 +1874,13 @@ struct Dict[
             self._table._growth_left >= 0
         ), "_growth_left went negative after insert"
 
-    @always_inline
+    @inline(.always)
     def _insert(
         mut self, var key: Self.K, var value: Self.V
     ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
         self._insert(DictEntry[Self.K, Self.V, Self.H](key^, value^))
 
-    @always_inline
+    @inline(.always)
     def _insert[
         safe_context: Bool = False
     ](mut self, var entry: DictEntry[Self.K, Self.V, Self.H]) where conforms_to(
@@ -1898,7 +1898,7 @@ struct Dict[
             # New entry
             self._place_new_entry(slot_idx, entry^)
 
-    @always_inline
+    @inline(.always)
     def _ensure_capacity(mut self):
         """Ensures the table has room for one more insertion.
 
@@ -1927,7 +1927,7 @@ struct Dict[
         else:
             self._maybe_compact_order()
 
-    @no_inline
+    @inline(.never)
     def _grow_slow(mut self):
         """Grows or rehashes the table. See `_ensure_capacity`."""
         # First allocation from the lazy empty state: no entries to rehash and
@@ -1954,10 +1954,10 @@ struct Dict[
         # Build old_slot -> new_slot mapping and a set of relocated old slots
         # so we can filter stale _order entries (DELETED slots won't appear
         # in relocations since resize only moves occupied entries).
-        var slot_map = alloc(Layout[Int32](count=old_capacity)).unsafe_leak()
-        var relocated_set = alloc(
-            Layout[UInt8](count=old_capacity)
-        ).unsafe_leak()
+        var slot_map_alloc = alloc(Layout[Int32](length=old_capacity))
+        var slot_map = slot_map_alloc.unsafe_ptr()
+        var relocated_set_alloc = alloc(Layout[UInt8](length=old_capacity))
+        var relocated_set = relocated_set_alloc.unsafe_ptr()
         unsafe_memset(relocated_set, 0, old_capacity)
         for i in range(len(relocations)):
             slot_map.unsafe_store(relocations[i][0], Int32(relocations[i][1]))
@@ -1974,18 +1974,10 @@ struct Dict[
             len(self._order) == self._table._len
         ), "order length doesn't match _len after resize"
 
-        dealloc(
-            ThinAllocation(unsafe_owned_ptr=slot_map).unsafe_with_layout(
-                {count = old_capacity}
-            )
-        )
-        dealloc(
-            ThinAllocation(unsafe_owned_ptr=relocated_set).unsafe_with_layout(
-                {count = old_capacity}
-            )
-        )
+        dealloc(slot_map_alloc^)
+        dealloc(relocated_set_alloc^)
 
-    @no_inline
+    @inline(.never)
     def _rehash_in_place(mut self):
         """Rehash the table in place without changing capacity."""
         # Compact _order to remove stale entries before we lose
@@ -1998,7 +1990,8 @@ struct Dict[
         self._order = compacted^
 
         # Delegate the actual rehash to the table, get slot mapping back
-        var slot_map = self._table.rehash_in_place()
+        var slot_map_alloc = self._table.rehash_in_place()
+        var slot_map = slot_map_alloc.unsafe_ptr()
 
         # Update _order with new slot indices
         for j in range(len(self._order)):
@@ -2008,11 +2001,7 @@ struct Dict[
             len(self._order) == self._table._len
         ), "order length doesn't match _len after in-place rehash"
 
-        dealloc(
-            ThinAllocation(unsafe_owned_ptr=slot_map).unsafe_with_layout(
-                {count = self._table._capacity}
-            )
-        )
+        dealloc(slot_map_alloc^)
 
     def _maybe_compact_order(mut self):
         """Compact the order array if it has too many stale entries."""
@@ -2096,7 +2085,7 @@ struct StringDict[V: Movable](
     # ===-------------------------------------------------------------------===#
 
     @__unsafe_nested_origins_read_only
-    @always_inline
+    @inline(.always)
     def __getitem__(
         ref self, ref key: Self.key_type
     ) raises DictKeyError[Self.key_type] -> ref[self._dict[key]] Self.V:
@@ -2114,9 +2103,9 @@ struct StringDict[V: Movable](
         return self._dict[key]
 
     @__unsafe_nested_origins_read_only
-    @always_inline
+    @inline(.always)
     def __getitem__(
-        ref self, key: ImmStringSpan
+        ref self, key: StringSpan
     ) raises DictKeyError[Self.key_type] -> ref[
         origin_of(self._dict)._get_owned_interior["value"]
     ] Self.V:
@@ -2139,7 +2128,7 @@ struct StringDict[V: Movable](
             ),
         )
 
-    @always_inline
+    @inline(.always)
     def __setitem__(
         mut self, key: Self.key_type, var value: Self.V
     ) where conforms_to(Self.V, Deinitable):
@@ -2160,7 +2149,7 @@ struct StringDict[V: Movable](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __contains__(self, key: Self.key_type) -> Bool:
         """Check if a given key is in the keyword dictionary or not.
 
@@ -2173,7 +2162,7 @@ struct StringDict[V: Movable](
         """
         return key in self._dict
 
-    @always_inline
+    @inline(.always)
     def __len__(self) -> Int:
         """The number of elements currently stored in the keyword dictionary.
 
@@ -2182,7 +2171,7 @@ struct StringDict[V: Movable](
         """
         return len(self._dict)
 
-    @no_inline
+    @inline(.never)
     def write_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.V, Writable):
@@ -2193,7 +2182,7 @@ struct StringDict[V: Movable](
         """
         self._dict.write_to(writer)
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.V, Writable):
@@ -2219,7 +2208,7 @@ struct StringDict[V: Movable](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def find(
         self, key: Self.key_type
     ) -> Optional[Self.V] where conforms_to(Self.V, Copyable):
@@ -2234,7 +2223,7 @@ struct StringDict[V: Movable](
         """
         return self._dict.find(key)
 
-    @always_inline
+    @inline(.always)
     def insert(
         mut self, var key: Self.key_type, var value: Self.V
     ) -> Optional[DictEntry[Self.key_type, Self.V, default_comp_time_hasher]]:
@@ -2256,7 +2245,7 @@ struct StringDict[V: Movable](
         """
         return self._dict.insert(key^, value^)
 
-    @always_inline
+    @inline(.always)
     def popitem(
         mut self,
     ) raises EmptyDictError -> DictEntry[
@@ -2276,7 +2265,7 @@ struct StringDict[V: Movable](
         """
         return self._dict.popitem()
 
-    @always_inline
+    @inline(.always)
     def pop(
         mut self, key: self.key_type, var default: Self.V
     ) -> Self.V where conforms_to(Self.V, Deinitable):
@@ -2298,7 +2287,7 @@ struct StringDict[V: Movable](
         """
         return self._dict.pop(key, default^)
 
-    @always_inline
+    @inline(.always)
     def pop(
         mut self, ref key: self.key_type
     ) raises DictKeyError[Self.key_type] -> Self.V:
@@ -2390,13 +2379,13 @@ struct StringDict[V: Movable](
         # return self[]._dict.items()
         return self._dict.items()
 
-    @always_inline
+    @inline(.always)
     def _insert(
         mut self, var key: Self.key_type, var value: Self.V
     ) where conforms_to(Self.V, Deinitable):
         self._dict._insert(key^, value^)
 
-    @always_inline
+    @inline(.always)
     def _insert(
         mut self, key: StringLiteral, var value: Self.V
     ) where conforms_to(Self.V, Deinitable):

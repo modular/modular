@@ -54,7 +54,6 @@ diffusion_gemma_arch = SupportedArchitecture(
     config=DiffusionGemmaForBlockDiffusionConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
-    default_structured_output_backend="xgrammar",
     memory_planner=Gemma4MemoryPlanner,
     # The decoder writes canvas K/V into uncommitted cache slots and reads
     # them back within a step; prefix-cache block reuse across requests is

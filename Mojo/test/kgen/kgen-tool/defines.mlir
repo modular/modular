@@ -5,5 +5,5 @@ kgen.generator export @main() -> i1 {
   // CHECK: constant: i1 = <1>
   // UNDEF: constant: i1 = <0>
   %0 = kgen.param.constant: i1 = <get_env("foo")>
-  kgen.return %0 : i1
+  hlcf.return %0 : i1
 }

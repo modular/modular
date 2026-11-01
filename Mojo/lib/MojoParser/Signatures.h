@@ -35,6 +35,7 @@ class raw_indented_ostream;
 namespace M::KGEN::LIT {
 class ASTDecl;
 class ASTType;
+class DefASTDecl;
 class IREmitter;
 class ExprNode;
 class FnTypeGeneratorType;
@@ -81,20 +82,35 @@ enum class CaptureConvention : uint8_t {
 /// cannot have a destructor!
 struct ParsedConstraint {
   SMLoc loc;
-  ExprNode *propExpr;
-  /// Optional user-provided failure message from `where (condition,
-  /// "message")` syntax. Null if no message was written.
+  /// The condition. Null when the condition is implied rather than written,
+  /// as it is for a `not Trait` conformance entry: the clause exists only to
+  /// carry its `message`.
+  ExprNode *propExpr = nullptr;
+  /// Optional user-provided failure message, from either the
+  /// `where (condition, "message")` or the `where condition else "message"`
+  /// form. Null if no message was written.
   StringAttr message;
 
-  ParseResult parse(ParserBase &p);
+  /// Parse a `where` clause's condition and its optional message.
+  ParseResult parse(ParserBase &p, std::optional<size_t> stmtIndent);
 
-  /// Split the parsed `where` expression into `propExpr` (the condition) and
-  /// `message`. If `parsed` has the shape `(condition, "message")` -- a
-  /// parenthesized two-element tuple whose second element is a string literal
-  /// -- both fields are set; a tuple whose second element is not a string
-  /// literal is a targeted error (only string-literal messages are supported).
-  /// Any other expression becomes `propExpr` as the bare condition.
+  /// Split the already-parsed `where` expression into `propExpr` (the
+  /// condition) and `message`. `parsed` carries a message when it has the
+  /// shape `(condition, "message")` -- a parenthesized two-element tuple whose
+  /// second element is a string literal; any other expression is the bare
+  /// condition. A tuple whose second element is not a string literal is a
+  /// targeted error (only string-literal messages are supported).
+  ///
+  /// The other spelling, `where condition else "message"`, is left to
+  /// `parseElseMessage`: the `else` suffix is shared with the `not Trait`
+  /// conformance opt-out, so the two are parsed separately.
   ParseResult extractParenthesizedMessage(ParserBase &p, ExprNode *parsed);
+
+  /// Consume an optional `else "message"` suffix into `message`. An already
+  /// set `message` means a parenthesized message was written too, which is an
+  /// error. `what` names the construct carrying the message, for diagnostics.
+  ParseResult parseElseMessage(ParserBase &p, std::optional<size_t> stmtIndent,
+                               StringRef what = "a 'where' clause");
 
   /// Print the constraint for debugging.
   void print(mlir::raw_indented_ostream &os) const;
@@ -182,10 +198,13 @@ public:
 
   /// Parse trailing constraints if present.
   ///
-  /// constraint_clauses ::= ("where" expression)*
-  /// A message is carried inside the expression as a parenthesized pair:
-  /// `where ( condition , string_literal )`.
-  ParseResult parseTrailingConstraintsIfPresent(ParserBase &p);
+  /// constraint_clauses ::= ("where" constraint)*
+  /// constraint         ::= expression ["else" message]
+  ///                      | "(" expression "," message ")"
+  /// message            ::= string_literal+ | "(" string_literal+ ")"
+  ParseResult
+  parseTrailingConstraintsIfPresent(ParserBase &p,
+                                    std::optional<size_t> stmtIndent);
 };
 
 /// This contains the result state from type checking a parameter signature.
@@ -193,6 +212,10 @@ class TypeCheckedParamList {
 private:
   /// Private constructor - use the static create method instead.
   TypeCheckedParamList(ASTDecl &declScope);
+
+  /// Set when an implicit parameter can't be prepended to the list because of
+  /// what its type depends on.
+  bool hadImplicitParamErrors = false;
 
 public:
   /// This is the declaration that we do name lookup against.
@@ -214,9 +237,35 @@ public:
   /// Get an PogListAttr for this parameter list.
   PogListAttr getParamListAttr() const;
 
+  /// Owns the `DeferredTypingContext` for one emission into this list, and
+  /// installs it on `emitter` (if any) while alive. If `argName` is set, holes
+  /// may be declared as implicit parameters, named after it. When the scope
+  /// ends, they are added to the list: appended as `Implicit` parameters if
+  /// `append` is set, otherwise prepended as `Inferred` parameters after any
+  /// existing infer-only parameters. Deferred constraints on them are added to
+  /// the body constraints, and all other deferred constraints to
+  /// `deferredConstraints`.
+  class DeferredTypingScope {
+  public:
+    DeferredTypingScope(TypeCheckedParamList &paramList, IREmitter *emitter,
+                        StringAttr argName = {}, bool append = false);
+    DeferredTypingScope(const DeferredTypingScope &) = delete;
+    DeferredTypingScope &operator=(const DeferredTypingScope &) = delete;
+    ~DeferredTypingScope();
+
+    DeferredTypingContext &getContext() { return context; }
+
+  private:
+    TypeCheckedParamList &paramList;
+    IREmitter *emitter;
+    bool append;
+    DeferredTypingContext context;
+  };
+
   // These are the results of type checking 'params' in typeCheck.
   /// One ParamDeclAttr for each parameter being declared.
   SmallVector<ParamDeclAttr> paramDeclAttrs;
+  SmallVector<ASTDecl *> paramASTDecls;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
   SmallVector<VariadicKind> variadicKinds;
@@ -225,8 +274,9 @@ public:
   /// Default values for params.
   SmallVector<TypedAttr> defaults;
 
-  /// Deferred typing context from emitting parameter declaration types.
-  DeferredTypingContext deferredTypingContext;
+  /// Unprovable constraints deferred while emitting the signature, which the
+  /// trailing `where` clauses must imply.
+  SmallVector<DeferredConstraint> deferredConstraints;
 
   /// Constraints emitted for the body of the generator.
   SmallVector<ConstraintAttr> emittedBodyConstraints;
@@ -254,7 +304,6 @@ public:
   /// Tracks the Mojo-only `thin` effect on function types.
   bool isThin = false;
 
-  bool isExperimentalParamTrait = false;
   /// True if an explicit `abi(...)` effect was written on this function.
   /// Distinguishes `abi("Mojo")` (no-op on the type, but explicit) from the
   /// absence of any abi annotation.
@@ -271,9 +320,8 @@ public:
 
   /// Returns true when a function type should be interpreted as a closure
   /// trait rather than a thin function pointer or legacy capturing function.
-  bool isClosureFunctionType() const {
-    return !effects.isCapturing() && !isThin;
-  }
+  bool isParsingClosure = false;
+  bool isClosureTrait() const { return isParsingClosure; }
 };
 
 /// This is all the state built up when parsing a capture signature.
@@ -302,11 +350,11 @@ public:
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.
   ///
-  /// 'fnDecl' will be null when this is a function type, which doesn't have a
-  /// declaration.
+  /// 'fnDecl' will be null when this is a function type, whose declarations
+  /// are owned by `paramList.declScope`.
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
-                         const ExprNode *originExpr, ASTDecl *fnDecl,
+                         const ExprNode *originExpr, DefASTDecl *fnDecl,
                          StringAttr baseName);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
@@ -330,6 +378,8 @@ public:
   /// This is the type checked argument types with argument conventions and
   /// origins applied, e.g. "!lit.ref<String>" or "!kgen.param_list<Int>"
   SmallVector<Type> fullArgTypes;
+  /// Argument declarations created while type-checking a function signature.
+  SmallVector<ASTDecl *> argASTDecls;
   SmallVector<ParamDeclAttr> implicitOriginDecls;
 
   /// This is the result type + variant for throwing functions.  This is what
@@ -356,7 +406,7 @@ public:
   /// the function's name (e.g. a deprecated '__del__' becomes '__deinit__'),
   /// so the caller's downstream use of the name (mangling, the symbol and
   /// source-name attributes) always sees the canonical form.
-  void verifyFunctionNameBinding(ASTDecl &decl, StringAttr &name);
+  void verifyFunctionNameBinding(DefASTDecl &decl, StringAttr &name);
 
   /// In a method with a self argument, check to make sure it has the correct
   /// type and invariants. "isSelfResult" is true for initializers that return

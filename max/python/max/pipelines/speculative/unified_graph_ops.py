@@ -17,13 +17,22 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
-from max.nn.kernels import (
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Dim,
+    DimLike,
+    TensorType,
+    TensorValue,
+    ops,
+)
+from max.nn.legacy.kernels import (
     eagle_prefill_shift_tokens,
     inplace_memcpy,
     wait_host_value_with_dep,
 )
-from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.nn.legacy.sampling.penalties import LogitPenalties
+from max.nn.legacy.sampling.rejection_sampler import AcceptanceSampler
 
 from .ragged_token_merger import (
     RaggedTokenMerger,
@@ -34,10 +43,74 @@ from .ragged_token_merger import (
 __all__ = [
     "accept_and_pick_next_tokens",
     "apply_overlap_bitmask",
+    "broadcast_per_device",
     "gather_accepted_hidden_states",
+    "gather_rows_per_device",
+    "mask_padded_tail",
     "merge_tokens_and_host_offsets",
     "shift_corrected_tokens",
 ]
+
+# The stream a side-stream bitmask copy runs on. Its host wait holds every
+# later launch on that stream until the grammar masks are published, so it
+# must not share stream 1, where expert-parallel MoE runs its shared expert.
+_BITMASK_STREAM_ID = 2
+
+
+def broadcast_per_device(
+    value: TensorValue,
+    signal_buffers: Sequence[BufferValue],
+    n_devs: int,
+) -> list[TensorValue]:
+    """One entry per device, broadcasting only when there is more than one.
+
+    A ``distributed=False`` graph declares no signal buffers and so cannot
+    broadcast at all; at one device the per-device list is the value itself.
+    """
+    if n_devs == 1:
+        return [value]
+    return ops.distributed_broadcast(value, list(signal_buffers))
+
+
+def mask_padded_tail(
+    logits: TensorValue, vocab_size: int, unpadded_vocab_size: int | None
+) -> TensorValue:
+    """Sends the padding rows of a padded vocabulary to negative infinity.
+
+    A head padded past its tokenizer has live weights in those rows, so a
+    sampler could pick a token id no tokenizer decodes.
+    """
+    if unpadded_vocab_size is None or unpadded_vocab_size >= vocab_size:
+        return logits
+    device = logits.device
+    # Two broadcast scalars rather than a materialized row: keeps a
+    # vocab-sized fp32 constant out of the graph.
+    keep = ops.broadcast_to(
+        ops.constant(0.0, DType.float32, device=device), [unpadded_vocab_size]
+    )
+    drop = ops.broadcast_to(
+        ops.constant(float("-inf"), DType.float32, device=device),
+        [vocab_size - unpadded_vocab_size],
+    )
+    return logits + ops.cast(ops.concat([keep, drop]), logits.dtype)
+
+
+def gather_rows_per_device(
+    values: Sequence[TensorValue],
+    row_ids_per_device: Sequence[TensorValue],
+    rows: Dim,
+    trailing_dim: DimLike,
+) -> list[TensorValue]:
+    """Gathers rows out of each device's copy of a ``[B, D]`` tensor.
+
+    ``row_ids_per_device`` holds each device's own copy of the row indices,
+    from :func:`broadcast_per_device`, so no gather reads its indices from
+    another device. Each result is rebound to ``[rows, trailing_dim]``.
+    """
+    return [
+        ops.gather(value, ids, axis=0).rebind([rows, trailing_dim])
+        for value, ids in zip(values, row_ids_per_device, strict=True)
+    ]
 
 
 def gather_accepted_hidden_states(
@@ -48,8 +121,8 @@ def gather_accepted_hidden_states(
     num_accepted: TensorValue,
     num_draft_tokens: Dim,
     data_parallel_degree: int,
-    data_parallel_splits: TensorValue,
-    signal_buffers: list[BufferValue],
+    data_parallel_splits: TensorValue | None,
+    signal_buffers: Sequence[BufferValue],
     device: DeviceRef,
     split_prefix: str,
 ) -> list[TensorValue]:
@@ -66,12 +139,13 @@ def gather_accepted_hidden_states(
     # either slice by DP splits (DP mode, each device holds its local batch
     # shard) or gather directly (TP mode, each device holds a full replica).
     last_accepted_idx_i64 = last_accepted_idx.cast(DType.int64)
-    last_accepted_idx_per_dev = ops.distributed_broadcast(
-        last_accepted_idx_i64, signal_buffers
+    last_accepted_idx_per_dev = broadcast_per_device(
+        last_accepted_idx_i64, signal_buffers, n_devs
     )
 
     draft_hs: list[TensorValue] = []
     if data_parallel_degree > 1:
+        assert data_parallel_splits is not None
         tp_degree = n_devs // data_parallel_degree
         for i in range(n_devs):
             replica = i // tp_degree
@@ -103,8 +177,14 @@ def apply_overlap_bitmask(
     *,
     num_steps: Dim,
     device: DeviceRef,
+    side_stream: bool = False,
 ) -> TensorValue | None:
-    """Gate the model stream on the constrained-decoding bitmask H2D."""
+    """Gate the model stream on the constrained-decoding bitmask H2D.
+
+    With ``side_stream``, the wait and the copy run on their own stream, which
+    the model stream waits for only where it reads the returned bitmask. Issued
+    ahead of the forward, the copy then overlaps it.
+    """
     if not (
         (pinned_bitmask is None)
         == (wait_payload is None)
@@ -123,18 +203,35 @@ def apply_overlap_bitmask(
         or device_bitmask_scratch is None
     ):
         return None
-    wait_host_value_with_dep(
-        wait_payload, device_bitmask_scratch, device=device
+    pinned, payload, scratch = (
+        pinned_bitmask,
+        wait_payload,
+        device_bitmask_scratch,
     )
-    inplace_memcpy(device_bitmask_scratch, pinned_bitmask)
-    # Trim the persistent buffer's worst-case num_speculative_tokens + 1
-    # rows down to num_steps + 1 so the acceptance sampler's rebind to
-    # num_steps + 1 lines up. Position i holds the FSM state with i
-    # drafts consumed, so positions 0..num_steps cover the num_steps
-    # draft-verification slots plus the bonus slot at index num_steps; the
-    # target never emits logits for the trailing worst-case rows this iteration.
-    num_steps_plus_one = num_steps + 1
-    return device_bitmask_scratch[:, :num_steps_plus_one, :]
+
+    def copy() -> TensorValue:
+        wait_host_value_with_dep(payload, scratch, device=device)
+        inplace_memcpy(scratch, pinned)
+        # Trim the persistent buffer's worst-case num_speculative_tokens + 1
+        # rows down to num_steps + 1 so the acceptance sampler's rebind to
+        # num_steps + 1 lines up. Position i holds the FSM state with i
+        # drafts consumed, so positions 0..num_steps cover the num_steps
+        # draft-verification slots plus the bonus slot at index num_steps; the
+        # target never emits logits for the trailing worst-case rows this
+        # iteration.
+        return scratch[:, : num_steps + 1, :]
+
+    if not side_stream:
+        return copy()
+    # The region's result type is declared up front, so pin the slice to it.
+    shape = [scratch.shape[0], num_steps + 1, scratch.shape[2]]
+    (bitmask,) = ops.side_stream(
+        [],
+        lambda: [copy().rebind(shape)],
+        result_types=[TensorType(scratch.dtype, shape, device=device)],
+        stream_id=_BITMASK_STREAM_ID,
+    )
+    return bitmask
 
 
 def merge_tokens_and_host_offsets(
@@ -142,16 +239,22 @@ def merge_tokens_and_host_offsets(
     tokens: TensorValue,
     input_row_offsets: TensorValue,
     draft_tokens: TensorValue,
-    host_input_row_offsets: TensorValue,
-) -> tuple[TensorValue, TensorValue, TensorValue]:
-    """Merge prompt + draft tokens and compute the CPU-side merged offsets."""
+    host_input_row_offsets: TensorValue | None,
+) -> tuple[TensorValue, TensorValue, TensorValue | None]:
+    """Merge prompt + draft tokens and compute the CPU-side merged offsets.
+
+    The host mirror is ``None`` for a single-device graph, whose signature
+    declares no host offsets to mirror.
+    """
     merged_tokens, merged_offsets = merger(
         tokens, input_row_offsets, draft_tokens
     )
     merged_tokens = ops.rebind(merged_tokens, ["merged_seq_len"])
     merged_offsets = ops.rebind(merged_offsets, ["input_row_offsets_len"])
-    host_merged_offsets = compute_host_merged_offsets(
-        host_input_row_offsets, draft_tokens
+    host_merged_offsets = (
+        compute_host_merged_offsets(host_input_row_offsets, draft_tokens)
+        if host_input_row_offsets is not None
+        else None
     )
     return merged_tokens, merged_offsets, host_merged_offsets
 
@@ -170,6 +273,7 @@ def accept_and_pick_next_tokens(
     in_thinking_phase: TensorValue | None = None,
     token_bitmasks: TensorValue | None = None,
     draft_probs_full: TensorValue | None = None,
+    penalties: LogitPenalties | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
     """Run acceptance sampling and pick the next token at the first reject."""
     # AcceptanceSampler defaults in_thinking_phase to None, so passing it
@@ -186,6 +290,7 @@ def accept_and_pick_next_tokens(
         in_thinking_phase=in_thinking_phase,
         token_bitmasks=token_bitmasks,
         draft_probs_full=draft_probs_full,
+        penalties=penalties,
     )
     # concat([recovered, bonus]) -> [batch, K+1]; gather_nd picks the token at
     # index num_accepted[b] per batch element (target argmax at first reject).

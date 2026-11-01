@@ -69,6 +69,7 @@ ErrorOr<std::filesystem::path> M::getCrashpadHandlerPath(Config *settings) {
 }
 
 static ErrorOrSuccess tryInitCrashpad(StringRef program, StringRef machineID,
+                                      StringRef machineIDSource,
                                       StringRef sessionID, Config *settings) {
   // Crashpad needs a few paths and other configuration bits:
   //   - Path of the handler executable (This runs alongside the Mojo driver;
@@ -111,6 +112,7 @@ static ErrorOrSuccess tryInitCrashpad(StringRef program, StringRef machineID,
   // Must match the usage telemetry lane's machineid/sessionid resource
   // attributes so crash reports can be joined with usage events.
   annotations["machineid"] = std::string(machineID);
+  annotations["machineid.source"] = std::string(machineIDSource);
   annotations["sessionid"] = std::string(sessionID);
 
   // Launch Crashpad handler.
@@ -126,8 +128,10 @@ static ErrorOrSuccess tryInitCrashpad(StringRef program, StringRef machineID,
 }
 
 void M::initCrashpadForProgram(StringRef program, StringRef machineID,
-                               StringRef sessionID, Config *settings) {
-  if (auto error = tryInitCrashpad(program, machineID, sessionID, settings))
+                               StringRef machineIDSource, StringRef sessionID,
+                               Config *settings) {
+  if (auto error = tryInitCrashpad(program, machineID, machineIDSource,
+                                   sessionID, settings))
     llvm::errs() << "Failed to initialize Crashpad.  "
                     "Crash reporting will not be available.  "
                     "Cause: "

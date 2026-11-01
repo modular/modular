@@ -18,4 +18,4 @@ current tile.
 | `fig15_7_coalesced_exc.mojo` | Write with SIMD vector stores; uses vector-width writes for better memory coalescing                                                      |
 | `fig15_9.mojo`               | Register blocking; each thread computes a tM x tN submatrix of the output, keeping results in registers across the k-dimension loop       |
 | `fig15_14.mojo`              | Double buffering (software pipelining); prefetches the next tile into a second shared memory buffer while computing with the current tile |
-| `fig15_14_LayoutTensor.mojo` | Same double buffering kernel using `LayoutTensor`; shows how Mojo's tensor abstraction maps to the tiled memory layout                    |
+| `fig15_14_TileTensor.mojo`   | Same double buffering kernel using `TileTensor`; shows how Mojo's tensor abstraction maps to the tiled memory layout                      |

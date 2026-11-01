@@ -13,24 +13,14 @@
 
 from std.math import ceildiv
 from std.random import rand
-from std.sys import align_of
 
-from layout import (
-    Coord,
-    Idx,
-    LTToTTLayout,
-    Layout,
-    LayoutTensor,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, LTToTTLayout, Layout, TileTensor
 from max.gpu.host import DeviceContext
 from nn.conv.conv import (
     Naive2dConvolution,
     conv3d_gpu_naive_ndhwc_qrscf,
     conv_gpu,
 )
-from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.conv.gpu.im2col_matmul_2d import dispatch_im2col_matmul_conv2d
 from nn.conv.gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from nn.conv.gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
@@ -126,10 +116,16 @@ def test_conv3d_gpu[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    # create ndbuffer views, making it easier to work with
-    var input_buf = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_buf = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
-    var output_buf = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
+    # Create dense tensor views for the GPU kernel.
+    var input_buf = TileTensor(
+        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
+    )
+    var filter_buf = TileTensor(
+        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
+    )
+    var output_buf = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
+    )
 
     # define grid and block dimensions for the gpu kernel
     comptime block_size = 16
@@ -140,21 +136,23 @@ def test_conv3d_gpu[
     var grid_dim_z = N  # batch size is the z dimension
 
     comptime kernel = conv3d_gpu_naive_ndhwc_qrscf[
-        input_layout,
-        filter_layout,
-        output_layout,
+        input_buf.LayoutType,
+        filter_buf.LayoutType,
+        output_buf.LayoutType,
         dtype,
         dtype,
         dtype,
         block_size,
-        None,
+        input_buf.Engine,
+        filter_buf.Engine,
+        output_buf.Engine,
     ]
 
     # run gpu implementation
     ctx.enqueue_function[kernel](
-        input_buf,
-        filter_buf,
-        output_buf,
+        input_buf.as_unsafe_any_origin(),
+        filter_buf.as_unsafe_any_origin(),
+        output_buf.as_unsafe_any_origin(),
         stride,
         dilation,
         pad,
@@ -270,7 +268,6 @@ def test_conv3d_gpu_dispatch[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
-    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -281,25 +278,17 @@ def test_conv3d_gpu_dispatch[
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
 
-    @__parameter
-    @always_inline
-    @__copy_capture(output_lt)
-    def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-        var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-        output_lt.store[
-            width=_width, store_alignment=align_of[dtype]() * _alignment
-        ](
-            rebind[IndexList[5]](coords),
-            rebind[SIMD[dtype, _width]](scaled),
-        )
+    @inline(.always)
+    def scale_compute[
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> SIMD[_dtype, _width]:
+        return (val.cast[.float32]() * 2.0).cast[_dtype]()
 
     conv_gpu[
         dtype,
         dtype,
         dtype,
-        Optional[elementwise_simd_epilogue_type](scale_epilogue),
+        has_compute_fn=True,
     ](
         input_tt,
         filter_tt,
@@ -309,6 +298,7 @@ def test_conv3d_gpu_dispatch[
         IndexList[6](pad[0], pad[0], pad[1], pad[1], pad[2], pad[2]),
         1,
         ctx,
+        compute_fn=scale_compute,
     )
 
     ctx.synchronize()
@@ -425,7 +415,6 @@ def test_conv3d_im2col_multi_tile[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
-    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -438,34 +427,25 @@ def test_conv3d_im2col_multi_tile[
 
     comptime if with_epilogue:
 
-        @__parameter
-        @always_inline
-        @__copy_capture(output_lt)
-        def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
-            ](
-                rebind[IndexList[5]](coords),
-                rebind[SIMD[dtype, _width]](scaled),
-            )
+        @inline(.always)
+        def scale_compute[
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> SIMD[_dtype, _width]:
+            return (val.cast[.float32]() * 2.0).cast[_dtype]()
 
         var handled = dispatch_im2col_matmul_conv3d[
-            maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
-                scale_epilogue
-            ),
+            has_compute_fn=True,
             m_tile_byte_budget=m_tile_byte_budget,
         ](
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            dilation,
-            pad,
+            (stride[0], stride[1], stride[2]),
+            (dilation[0], dilation[1], dilation[2]),
+            (pad[0], pad[1], pad[2]),
             1,
             ctx,
+            compute_fn=scale_compute,
         )
         if not handled:
             print("SKIP: dispatcher declined this shape (likely 1x1x1 or K<16)")
@@ -480,9 +460,9 @@ def test_conv3d_im2col_multi_tile[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            dilation,
-            pad,
+            (stride[0], stride[1], stride[2]),
+            (dilation[0], dilation[1], dilation[2]),
+            (pad[0], pad[1], pad[2]),
             1,
             ctx,
         )
@@ -601,7 +581,6 @@ def test_conv2d_im2col_multi_tile[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     comptime output_layout_ = Layout.row_major(N, H_out, W_out, F)
-    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -615,24 +594,14 @@ def test_conv2d_im2col_multi_tile[
     var handled: Bool
     comptime if with_epilogue:
 
-        @__parameter
-        @always_inline
-        @__copy_capture(output_lt)
-        def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
-            ](
-                rebind[IndexList[4]](coords),
-                rebind[SIMD[dtype, _width]](scaled),
-            )
+        @inline(.always)
+        def scale_compute[
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> SIMD[_dtype, _width]:
+            return (val.cast[.float32]() * 2.0).cast[_dtype]()
 
         handled = dispatch_im2col_matmul_conv2d[
-            maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
-                scale_epilogue
-            ),
+            has_compute_fn=True,
             m_tile_byte_budget=m_tile_byte_budget,
         ](
             input_tt,
@@ -643,6 +612,7 @@ def test_conv2d_im2col_multi_tile[
             pad,
             1,
             ctx,
+            compute_fn=scale_compute,
         )
     else:
         handled = dispatch_im2col_matmul_conv2d[
@@ -761,7 +731,6 @@ def test_conv3d_1x1x1_matmul_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -774,25 +743,13 @@ def test_conv3d_1x1x1_matmul_direct[
 
     comptime if with_epilogue:
 
-        @__parameter
-        @always_inline
-        @__copy_capture(output_lt)
-        def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
-            ](
-                rebind[IndexList[5]](coords),
-                rebind[SIMD[dtype, _width]](scaled),
-            )
+        @inline(.always)
+        def scale_compute[
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> SIMD[_dtype, _width]:
+            return (val.cast[.float32]() * 2.0).cast[_dtype]()
 
-        var handled = dispatch_1x1x1_matmul_conv3d[
-            maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
-                scale_epilogue
-            ),
-        ](
+        var handled = dispatch_1x1x1_matmul_conv3d[has_compute_fn=True,](
             input_tt,
             filter_tt,
             output_tt,
@@ -801,6 +758,7 @@ def test_conv3d_1x1x1_matmul_direct[
             pad,
             1,
             ctx,
+            compute_fn=scale_compute,
         )
         if not handled:
             print("SKIP: 1x1x1 dispatcher declined this shape")
@@ -852,9 +810,9 @@ def main() raises:
             Layout.row_major(1, 4, 4, 4, 2),  # input (NDHWC)
             Layout.row_major(2, 2, 2, 2, 3),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](1, 1, 1),  # stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](0, 0, 0),  # padding
+            (1, 1, 1),  # stride
+            (1, 1, 1),  # dilation
+            (0, 0, 0),  # padding
         ](ctx)
 
         # test case 2: medium dimensions with padding
@@ -862,9 +820,9 @@ def main() raises:
             Layout.row_major(2, 6, 6, 6, 4),  # input (NDHWC)
             Layout.row_major(3, 3, 3, 4, 8),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](2, 2, 2),  # stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](1, 1, 1),  # padding
+            (2, 2, 2),  # stride
+            (1, 1, 1),  # dilation
+            (1, 1, 1),  # padding
         ](ctx)
 
         # test case 3: non-square dimensions
@@ -872,9 +830,9 @@ def main() raises:
             Layout.row_major(1, 5, 7, 9, 3),  # input (NDHWC)
             Layout.row_major(2, 3, 2, 3, 4),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](1, 1, 1),  # stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](0, 1, 0),  # padding
+            (1, 1, 1),  # stride
+            (1, 1, 1),  # dilation
+            (0, 1, 0),  # padding
         ](ctx)
 
         # test case 4: varying filter dimensions, getting creative
@@ -882,9 +840,9 @@ def main() raises:
             Layout.row_major(1, 9, 8, 5, 1),  # input (NDHWC)
             Layout.row_major(2, 2, 3, 1, 32),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](1, 3, 2),  # stride - mixed stride values
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](0, 0, 0),  # padding
+            (1, 3, 2),  # stride - mixed stride values
+            (1, 1, 1),  # dilation
+            (0, 0, 0),  # padding
         ](ctx)
 
         # test case 5: with padding on all dimensions
@@ -892,9 +850,9 @@ def main() raises:
             Layout.row_major(1, 5, 7, 6, 7),  # input (NDHWC)
             Layout.row_major(3, 4, 3, 7, 24),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](1, 1, 1),  # stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](1, 1, 1),  # padding
+            (1, 1, 1),  # stride
+            (1, 1, 1),  # dilation
+            (1, 1, 1),  # padding
         ](ctx)
 
         # test case 6: large dimensions with asymmetric padding
@@ -902,9 +860,9 @@ def main() raises:
             Layout.row_major(1, 10, 11, 6, 2),  # input (NDHWC)
             Layout.row_major(3, 4, 3, 2, 31),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](2, 3, 1),  # stride - mixed stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](1, 2, 1),  # padding - asymmetric
+            (2, 3, 1),  # stride - mixed stride
+            (1, 1, 1),  # dilation
+            (1, 2, 1),  # padding - asymmetric
         ](ctx)
 
         # test case 7: 3d-unet style small dimensions
@@ -912,9 +870,9 @@ def main() raises:
             Layout.row_major(1, 8, 8, 8, 320),  # input (NDHWC)
             Layout.row_major(3, 3, 3, 320, 320),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](2, 2, 2),  # stride - downsampling
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](1, 1, 1),  # padding
+            (2, 2, 2),  # stride - downsampling
+            (1, 1, 1),  # dilation
+            (1, 1, 1),  # padding
         ](ctx)
 
         # --- bfloat16 coverage ---
@@ -923,9 +881,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(1, 1, 1, 16, 16),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -935,9 +893,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(3, 3, 3, 16, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -947,9 +905,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 96),
             Layout.row_major(3, 3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -959,9 +917,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 0, 0),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -971,9 +929,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 3),
             Layout.row_major(3, 3, 3, 3, 16),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -983,9 +941,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 10),
             Layout.row_major(3, 3, 3, 10, 16),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -1001,9 +959,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(3, 3, 3, 16, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1013,9 +971,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 96),
             Layout.row_major(3, 3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1025,9 +983,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 0, 0),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1046,9 +1004,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(3, 3, 3, 16, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             m_tile_byte_budget=64 * 1024,
             with_epilogue=False,
             rtol=2e-2,
@@ -1064,9 +1022,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(3, 3, 3, 16, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             m_tile_byte_budget=64 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1079,9 +1037,9 @@ def main() raises:
             Layout.row_major(2, 4, 8, 8, 96),
             Layout.row_major(3, 3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             m_tile_byte_budget=256 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1094,9 +1052,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 0, 0),
             m_tile_byte_budget=128 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1115,9 +1073,9 @@ def main() raises:
             Layout.row_major(1, 8, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](2, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (2, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1127,9 +1085,9 @@ def main() raises:
             Layout.row_major(1, 8, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](2, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (2, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             m_tile_byte_budget=64 * 1024,
             with_epilogue=False,
             rtol=2e-2,
@@ -1143,9 +1101,9 @@ def main() raises:
             Layout.row_major(1, 8, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](2, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (2, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             m_tile_byte_budget=64 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1159,9 +1117,9 @@ def main() raises:
             Layout.row_major(1, 32, 32, 96),
             Layout.row_major(3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
+            (1, 1),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=False,
             rtol=2e-2,
@@ -1174,9 +1132,9 @@ def main() raises:
             Layout.row_major(1, 32, 32, 96),
             Layout.row_major(3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
+            (1, 1),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1189,9 +1147,9 @@ def main() raises:
             Layout.row_major(1, 16, 16, 96),
             Layout.row_major(3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
+            (1, 1),
             m_tile_byte_budget=32 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1204,9 +1162,9 @@ def main() raises:
             Layout.row_major(2, 16, 16, 192),
             Layout.row_major(3, 1, 192, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
-            IndexList[2](1, 0),
+            (1, 1),
+            (1, 1),
+            (1, 0),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1219,9 +1177,9 @@ def main() raises:
             Layout.row_major(1, 16, 16, 64),
             Layout.row_major(3, 3, 64, 128),
             DType.bfloat16,
-            IndexList[2](2, 2),
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (2, 2),
+            (1, 1),
+            (1, 1),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=False,
             rtol=2e-2,
@@ -1240,9 +1198,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(1, 1, 1, 16, 16),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1252,9 +1210,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 192),
             Layout.row_major(1, 1, 1, 192, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1268,9 +1226,9 @@ def main() raises:
             Layout.row_major(2, 5, 6, 6, 192),
             Layout.row_major(3, 3, 3, 192, 192),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (0, 1, 1),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)

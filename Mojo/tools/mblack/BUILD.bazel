@@ -6,6 +6,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
+    "src/mblib2to3/LICENSE",
 ])
 
 modular_py_library(
@@ -61,8 +62,11 @@ _VALIDATE_EXCLUDE = [
     # MLIR `__mlir_attr` samples need their dialect to `mojo build`; the test
     # only exercises the formatter's backtick bracket-scan behavior.
     "tests/test_backtick_bracket_scan.py",
-    # `__match` is parsed but not yet implemented in the Mojo compiler.
+    # Keep the deprecated `__match` spelling parseable for source migration.
     "tests/test_match_formatting.py",
+    # Samples include `__enum` declarations the compiler rejects (e.g. a body
+    # of `pass`).
+    "tests/test_enum_formatting.py",
 ]
 
 # Companion to `unit_tests` that compiles every sample with `mojo build`.
@@ -100,7 +104,6 @@ filegroup(
         "scripts/diff_shades_gha_helper.py",
         "scripts/fuzz.py",
         "scripts/migrate-black.py",
-        "src/mblib2to3/LICENSE",
         "src/mblib2to3/README",
     ],
     tags = ["maybe-unused"],

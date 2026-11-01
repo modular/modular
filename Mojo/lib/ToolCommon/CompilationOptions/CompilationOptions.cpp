@@ -29,15 +29,13 @@ CompilationOptions::CompilationOptions(
     std::string targetAccelerator, int elaborationErrorLimit,
     bool elaborationErrorIncludePrelude,
     ErrorVerboseLevel elaborationErrorVerbose, unsigned elaborationMaxDepth,
-    DebugInfoLanguage debugInfoLanguage, std::string searchPaths,
-    SmallVector<std::string> extraSearchPaths)
+    DebugInfoLanguage debugInfoLanguage)
     : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
       debugAtLevel(debugAtLevel), sanitizers(sanitizers),
       targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
       targetFeatures(std::move(targetFeatures)),
       targetAccelerator(std::move(targetAccelerator)),
-      debugInfoLanguage(debugInfoLanguage), searchPaths(searchPaths),
-      extraSearchPaths(extraSearchPaths),
+      debugInfoLanguage(debugInfoLanguage),
       elaborationErrorLimit(elaborationErrorLimit),
       elaborationErrorIncludePrelude(elaborationErrorIncludePrelude),
       elaborationErrorVerbose(elaborationErrorVerbose),
@@ -182,15 +180,20 @@ bool M::KGEN::isGPUTriple(const llvm::Triple &triple) {
 }
 
 bool M::KGEN::isMetalTriple(const llvm::Triple &triple) {
-  // Metal GPU targets use ARM64 during compilation, then get converted to AIR
-  // iOS/tvOS/watchOS don't have discrete GPUs suitable for compute kernels
-  StringRef tripleStr = triple.str();
-
-  return tripleStr.starts_with("air64-");
+  // Which triples are Metal's lives in its TargetTraits.
+  ErrorOr<const TargetTraits *> traitsOr =
+      TargetTraitsRegistry::get().lookup(triple);
+  const TargetTraits *traits = traitsOr.isError() ? nullptr : *traitsOr;
+  return traits && traits->name() == "metal";
 }
 
 bool M::KGEN::overrideExported(const llvm::Triple &triple) {
-  return isGPUTriple(triple);
+  if (isGPUTriple(triple))
+    return true;
+  ErrorOr<const TargetTraits *> traitsOr =
+      TargetTraitsRegistry::get().lookup(triple);
+  const TargetTraits *traits = traitsOr.isError() ? nullptr : *traitsOr;
+  return traits && traits->forcesExportedSymbols();
 }
 
 bool M::KGEN::overrideExported(const CompilationOptions &options) {

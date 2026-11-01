@@ -27,7 +27,11 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.quant_config import QuantFormat, ScaleGranularity, ScaleOrigin
+from max.nn.legacy.quant_config import (
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+)
 from max.pipelines.architectures.qwen3_5.model import _check_weights_match
 from max.pipelines.architectures.qwen3_5.quantization import parse_quant_scheme
 

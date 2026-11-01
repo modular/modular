@@ -150,7 +150,7 @@ class Qwen3TextEncoderModel(ComponentModel):
         ) as graph:
             outputs = nn_model(*(value.tensor for value in graph.inputs))
             if isinstance(outputs, tuple):
-                graph.output(*outputs)
+                graph.output(outputs)
             else:
                 graph.output(outputs)
 
@@ -166,6 +166,7 @@ class Qwen3TextEncoderModel(ComponentModel):
         *,
         expected_seq_len: int | None = None,
     ) -> np.ndarray:
+        """Turns a padded attention mask into the additive bias the encoder reads."""
         additive_mask = causal_attention_mask_with_token_mask(
             [0],
             attention_mask,
@@ -191,6 +192,7 @@ class Qwen3TextEncoderModel(ComponentModel):
         *,
         hidden_state_index: int | None = None,
     ) -> Buffer:
+        """Runs the text encoder over the tokens."""
         if len(tokens.shape) == 2:
             if int(tokens.shape[0]) != 1:
                 raise ValueError(
@@ -227,7 +229,7 @@ class Qwen3TextEncoderModel(ComponentModel):
     ) -> Buffer:
         """Execute the compiled encoder with an already-built attention bias.
 
-        Use this when the caller has pre-computed the additive bias (e.g.,
+        Use this when the caller has pre-computed the additive bias (such as
         to share bias construction across positive and negative CFG
         streams). ``tokens`` may be 1D ``(S,)`` or 2D ``(1, S)``; 2D
         tokens are squeezed. ``attention_bias`` must be shape

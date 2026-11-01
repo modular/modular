@@ -15,6 +15,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "ClosureEmitter.h"
 #include "IREmitter.h"
 #include "Mojo/lib/MojoParser/Traits.h"
 #include "ParserEvaluationContext.h"
@@ -22,12 +23,14 @@
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
-#include "Mojo/MojoParser/DeclResolver.h"
 
 #include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/LITDialect/LITOps.h"
+#include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/POPDialect/POPAttrs.h"
+
+#include "llvm/ADT/DenseMap.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -69,10 +72,13 @@ static StringRef getNameFromSymbolRef(SymbolRefAttr symbol) {
 /// decoding failed.
 static std::pair<SymbolRefAttr, ArrayRef<TypedAttr>>
 tryGetSymbolNameAndParams(TypedAttr param) {
-  param = ParamOperatorAttr::stripRebind(param);
-  if (auto symbolCst = sugarDynCast<SymbolConstantAttr>(param))
-    return {symbolCst.getSymbol(), symbolCst.getParamValues()};
-  return {{}, {}};
+  auto symbol =
+      FuncSymbolGenerator::dynCast(ParamOperatorAttr::stripRebind(param));
+  if (!symbol)
+    return {{}, {}};
+  if (!symbol.isFullyBound())
+    return {symbol.getSymbol(), {}};
+  return {symbol.getSymbol(), symbol.getParamValues()};
 }
 
 /// If the value is a call to an implicit constructor of the value's type,
@@ -106,11 +112,8 @@ static void removeImplicitCtorCall(TypedAttr &value, SharedState *shared) {
     return;
 
   if (shared) {
-    ASTDecl *decl = shared->getDeclResolver().getDeclForFuncSymbol(nameAttr);
-    if (!decl)
-      return;
-    auto calleeFn = cast<FnOp>(decl->getIfOperation());
-    if (!calleeFn.isImplicitConversion())
+    DefASTDecl *decl = shared->getDeclResolver().getDeclForFuncSymbol(nameAttr);
+    if (!decl || !decl->getOp().isImplicitConversion())
       return; // If it's not an implicit conversion, don't remove it.
   }
 
@@ -291,10 +294,11 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
     for (auto [idx, pog, paramValue] :
          llvm::enumerate(paramInfo.getPogs(), params)) {
 
+      VariadicKind variadicKind = VariadicKind::None;
       // Inline variadic parameter values if they are known.
       if (pog.isPosVarArg()) {
         auto info = ASTType(paramValue.getType()).getParameterListInfo();
-        if (auto values = dyn_cast<ParamListAttr>(info.valueList)) {
+        if (auto values = dyn_cast_if_present<ParamListAttr>(info.valueList)) {
           // Each value is passed as an individual value to the vararg, not an
           // unpack.
           for (auto elt : values.getValues())
@@ -307,7 +311,7 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
               {StringAttr(), info.valueList, VariadicKind::PosVarArg});
           continue;
         }
-        // TODO: Should add "*" ahead of splatted lists.
+        variadicKind = VariadicKind::PosVarArg;
       }
 
       auto passingKind = pog.getPassingKind();
@@ -345,7 +349,7 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
         name = paramInfo.getName(idx);
         break;
       }
-      paramsToPrint.push_back({name, paramValue, VariadicKind::None});
+      paramsToPrint.push_back({name, paramValue, variadicKind});
     }
 
   } else {
@@ -570,7 +574,8 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
   }
 
   // If this is a function, it may be an auto-param for an argument type.
-  if (auto fnDecl = dyn_cast_if_present<LIT::FnOp>(curDecl->getIfOperation())) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(curDecl); defDecl) {
+    auto fnDecl = defDecl->getOp();
     auto fnSig = fnDecl.getFuncTypeGenerator();
     for (auto [idx, argType] :
          llvm::enumerate(fnDecl.getFunctionType().getInputs())) {
@@ -623,17 +628,16 @@ static ParamDeclRefAttr findDeclRefForIndexRef(ParamIndexRefAttr idxRef,
   // Find the named param decl from the param list and print a reference
   // to it instead.
   for (; ctxDecl; ctxDecl = ctxDecl->getParentDecl()) {
-    if (auto op = ctxDecl->getIfOperation()) {
-      if (auto fn = dyn_cast<LIT::FnOp>(op)) {
-        auto paramDecls = fn.collectAllParams(/*implicitOrigins*/ false);
+    if (auto *defDecl = dyn_cast<DefASTDecl>(ctxDecl)) {
+      LIT::FnOp fn = defDecl->getOp();
+      auto paramDecls = fn.collectAllParams(/*implicitOrigins*/ false);
+      if (idxRef.getIndex() < paramDecls.size())
+        return ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]);
+
+      if (auto declIntf = dyn_cast<DeclInterface>(fn.getOperation())) {
+        ArrayRef<ParamDeclAttr> paramDecls = declIntf.getInputParams();
         if (idxRef.getIndex() < paramDecls.size())
           return ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]);
-
-        if (auto declIntf = dyn_cast<DeclInterface>(op)) {
-          ArrayRef<ParamDeclAttr> paramDecls = declIntf.getInputParams();
-          if (idxRef.getIndex() < paramDecls.size())
-            return ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]);
-        }
       }
     }
   }
@@ -655,14 +659,13 @@ findArgNameForImplicitOriginRef(ImplicitOriginRefAttr originRef,
   // Find the named param decl from the param list and print a reference
   // to it instead.
   for (; ctxDecl; ctxDecl = ctxDecl->getParentDecl()) {
-    if (auto op = ctxDecl->getIfOperation()) {
-      if (auto fn = dyn_cast<LIT::FnOp>(op)) {
-        for (auto [idx, argType] :
-             llvm::enumerate(fn.getFuncTypeGenerator().getArguments())) {
-          if (auto refType = dyn_cast<RefType>(argType))
-            if (refType.getOrigin() == originRef)
-              return fn.getFuncTypeGenerator().getArgName(idx);
-        }
+    if (auto *defDecl = dyn_cast<DefASTDecl>(ctxDecl)) {
+      LIT::FnOp fn = defDecl->getOp();
+      for (auto [idx, argType] :
+           llvm::enumerate(fn.getFuncTypeGenerator().getArguments())) {
+        if (auto refType = dyn_cast<RefType>(argType))
+          if (refType.getOrigin() == originRef)
+            return fn.getFuncTypeGenerator().getArgName(idx);
       }
     }
   }
@@ -678,6 +681,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return printParam(os, cast.getArg(), ctx);
   if (auto cast = dyn_cast<CastToBuiltinAttr>(param))
     return printParam(os, cast.getArg(), ctx);
+  if (auto upcast = dyn_cast<UpcastAttr>(param))
+    return printParam(os, upcast.getInputTypeValue(), ctx);
 
   // It is pretty common for function arguments to use default conversions
   // from the actual value they want, and may not be an
@@ -693,6 +698,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     removeImplicitCtorCall(param, ctx.shared);
     if (param != oldParam) // Only allow one implicit conversion.
       hasContextualType = false;
+  }
+
+  // Checked after the transparent unwrapping above so elided wrappers don't
+  // consume labels of their own.
+  if (ctx.dedup && isNonTrivialParamAttr(param)) {
+    bool isRepeat = false;
+    os << ctx.dedup->mark(param.getAsOpaquePointer(), isRepeat);
+    if (isRepeat)
+      return;
   }
 
   auto printOperands =
@@ -713,6 +727,17 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   if (auto bindParams = dyn_cast<BindParamsAttr>(param)) {
     printParam(os, bindParams.getGenerator(), ctx);
+    // Ensure keyword-only args are named and defaulted and infer-only ones are
+    // elided.
+    PogListAttr paramList =
+        sugarCast<GeneratorType>(bindParams.getGenerator().getType())
+            .getParamListAttrs();
+    if (ctx.shared && paramList &&
+        paramList.size() == bindParams.getParamValues().size()) {
+      printParamList(os, paramList, bindParams.getParamValues(), ctx,
+                     /*typesImplied=*/true);
+      return;
+    }
     printOperands(bindParams.getParamValues(), ", ", "[", "]");
     return;
   }
@@ -740,10 +765,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
-    printSymbol(os, symbolCst.getSymbol(), diagShared);
-    if (!symbolCst.getParamValues().empty())
-      printOperands(symbolCst.getParamValues(), ", ", "[", "]");
+  if (auto symbol = FuncSymbolGenerator::dynCast(param)) {
+    printSymbol(os, symbol.getSymbol(), diagShared);
+    if (symbol.isFullyBound() && !symbol.getParamValues().empty())
+      printOperands(symbol.getParamValues(), ", ", "[", "]");
     return;
   }
   if (auto refPack = dyn_cast<RefPackAttr>(param)) {
@@ -935,9 +960,9 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       FnOp calleeFn;
       bool calleeIsMethod = false;
       if (diagShared) {
-        if (ASTDecl *decl =
+        if (DefASTDecl *decl =
                 diagShared->getDeclResolver().getDeclForFuncSymbol(nameAttr)) {
-          calleeFn = cast<FnOp>(decl->getIfOperation());
+          calleeFn = decl->getOp();
           calleeIsMethod = decl->tryGetMethodParentDecl() != nullptr;
         }
       }
@@ -1099,9 +1124,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     ASTType(typeAttr.getMlirType()).print(os, ctx);
     return;
   }
-  if (auto upcast = dyn_cast<UpcastAttr>(param))
-    return printParam(os, upcast.getInputTypeValue(), ctx);
-
   if (auto downcast = dyn_cast<DowncastAttr>(param)) {
     printParam(os, downcast.getInputTypeValue(), ctx);
     os << "(";
@@ -1542,15 +1564,15 @@ static void printRef(RefType refType, raw_ostream &os,
 
 static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
                                  raw_ostream &os, ASTTypePrinterContext ctx) {
-  bool suppressThin = ctx.suppressThin;
-  ctx.suppressThin = false;
+  bool isClosureSignature = ctx.isClosureSignature;
+  ctx.isClosureSignature = false;
   if (type.isAsync())
-    os << "async ";
+    os << "__async ";
   os << "def";
   if (auto fnLiteralGen = type.getIfFnLiteralTypeGenerator()) {
     os << " "
        << getNameFromSymbolRef(
-              fnLiteralGen.getSymbolConstantAttr().getSymbol());
+              fnLiteralGen.getBody().getTargetLiteral().getSymbol());
   }
 
   FuncType fnType = type.getBodyFnType();
@@ -1646,10 +1668,8 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       os << ", /";
   }
   os << ')';
-  for (auto [enabled, effect] :
-       {std::make_pair(fnType.isThrows(), "raises"),
-        std::make_pair(fnType.isCapturing(), "capturing"),
-        std::make_pair(fnType.isCABI(), "abi(\"C\")")})
+  for (auto [enabled, effect] : {std::make_pair(fnType.isThrows(), "raises"),
+                                 std::make_pair(fnType.isCABI(), "abi(\"C\")")})
 
     if (enabled)
       os << ' ' << effect;
@@ -1666,7 +1686,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
     }
   }
 
-  os << (suppressThin ? " -> " : " thin -> ");
+  os << (isClosureSignature ? " -> " : " thin -> ");
   Type resultType = fnType.getUserResultType();
 
   if (fnType.isRefResult()) {
@@ -1682,28 +1702,92 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
 }
 
-/// If `decl` is a closure (struct or trait), print its readable source name and
-/// return true. A closure may have no source name (it is only set when the
-/// signature is available), in which case this returns false and the caller
-/// prints the mangled form.
-static bool tryPrintClosureSourceName(raw_ostream &os, ASTDecl *decl) {
-  if (!decl)
-    return false;
-  Operation *op = decl->getIfOperation();
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(op)) {
-    if (structOp.getDefinesClosure())
-      if (auto sourceName = structOp.getSourceName()) {
-        os << sourceName->getName().getValue();
-        return true;
-      }
-  } else if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(op)) {
-    if (traitOp.getDefinesClosure())
-      if (auto sourceName = traitOp.getSourceName()) {
-        os << sourceName->getName().getValue();
-        return true;
-      }
+static bool tryPrintParamClosureSourceName(ASTTypePrinterContext ctx,
+                                           raw_ostream &os,
+                                           LIT::StructType closureStruct) {
+  StringRef structName = closureStruct.getSymbol().getLeafReference().strref();
+  if (ctx.shared && structName.starts_with(kClosurePrefix)) {
+    // We have a deterministic naming scheme for closures.
+    auto closureTrait = extractClosureSymbol(
+        *ctx.shared, ASTType(closureStruct).getProvidedTrait(*ctx.shared));
+    assert(closureTrait);
+
+    FnTypeGeneratorType sig =
+        ctx.shared->getClosureFnSigWithoutSelf(closureTrait);
+
+    // Not a thin function.
+    ctx.isClosureSignature = true;
+    printFnGeneratorType(sig, os, ctx);
+    return true;
   }
   return false;
+}
+
+static bool tryPrintParamClosureSourceName(ASTTypePrinterContext ctx,
+                                           raw_ostream &os,
+                                           TraitSymbolAttr trait) {
+  if (ctx.shared && ctx.shared->isUniversalParametricClosureTrait(trait)) {
+    // We have a deterministic naming scheme for closures.
+    FnTypeGeneratorType sig = ctx.shared->getClosureFnSigWithoutSelf(trait);
+    // Not a thin function.
+    ctx.isClosureSignature = true;
+    printFnGeneratorType(sig, os, ctx);
+    return true;
+  }
+  return false;
+}
+
+static std::optional<StringRef>
+getScalarTypeName(ArrayRef<TypedAttr> simdParams) {
+  assert(simdParams.size() == 2 && "SIMD takes a dtype and a size");
+  // DType and Int look like #lit.struct<{value: index = 42}>
+  auto dtype = getSingleElementStructAttr<DTypeConstantAttr>(simdParams[0]);
+  auto size = getSingleElementStructAttr<IntegerAttr>(simdParams[1]);
+  if (!dtype || !size || size.getInt() != 1)
+    return std::nullopt;
+
+  // This list should be kept in sync with the aliases in simd.mojo.
+  static std::pair<KGENDType, const char *> dtypeAliases[] = {
+      {KGENDType::index, "Int"},
+      {KGENDType::uindex, "UInt"},
+      {KGENDType::si8, "Int8"},
+      {KGENDType::ui8, "UInt8"},
+      {KGENDType::si16, "Int16"},
+      {KGENDType::ui16, "UInt16"},
+      {KGENDType::si32, "Int32"},
+      {KGENDType::ui32, "UInt32"},
+      {KGENDType::si64, "Int64"},
+      {KGENDType::ui64, "UInt64"},
+      {KGENDType::si128, "Int128"},
+      {KGENDType::ui128, "UInt128"},
+      {KGENDType::si256, "Int256"},
+      {KGENDType::ui256, "UInt256"},
+      {KGENDType::f4e2m1fn, "Float4_e2m1fn"},
+      {KGENDType::f6e2m3fn, "Float6_e2m3fn"},
+      {KGENDType::f6e3m2fn, "Float6_e3m2fn"},
+      {KGENDType::f8e8m0fnu, "Float8_e8m0fnu"},
+      {KGENDType::f8e5m2, "Float8_e5m2"},
+      {KGENDType::f8e5m2fnuz, "Float8_e5m2fnuz"},
+      {KGENDType::f8e4m3fn, "Float8_e4m3fn"},
+      {KGENDType::f8e4m3fnuz, "Float8_e4m3fnuz"},
+      {KGENDType::f8e3m4, "Float8_e3m4"},
+      {KGENDType::bf16, "BFloat16"},
+      {KGENDType::f16, "Float16"},
+      {KGENDType::f32, "Float32"},
+      {KGENDType::f64, "Float64"},
+  };
+  for (auto [dtypeValue, dtypeName] : dtypeAliases)
+    if (dtype.getDType() == dtypeValue)
+      return StringRef(dtypeName);
+  return std::nullopt;
+}
+
+bool KGEN::LIT::isScalarSIMDType(StructType type) {
+  ArrayRef<TypedAttr> params = type.getParamValues();
+  if (type.getName() != "SIMD" || params.size() != 2)
+    return false;
+  auto size = getSingleElementStructAttr<IntegerAttr>(params[1]);
+  return size && size.getInt() == 1;
 }
 
 void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
@@ -1727,9 +1811,9 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
                            ASTDecl *typeDecl) {
     // Handle special cases that should be aliased.
     // FIXME(MOCO-367): maintain "typedef" sugar in the type system.
-    if (typeDecl &&
-        isa_and_nonnull<LIT::StructDeclOp>(typeDecl->getIfOperation())) {
-      auto structDecl = cast<LIT::StructDeclOp>(typeDecl->getIfOperation());
+    if (auto *structASTDecl =
+            dyn_cast_if_present<LIT::StructASTDecl>(typeDecl)) {
+      LIT::StructDeclOp structDecl = structASTDecl->getOp();
       if (params.size() == 2 && structDecl.getDeclName().strref() == "Origin") {
         // Check to see if we have a Bool with a known constant parameter.
         //   #lit.struct<{value: i1 = 1}>
@@ -1749,52 +1833,15 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
       // Handle SIMD[dt, 1] with various aliases. Note that the dtype and size
       // may be parametric.
       if (params.size() == 2 && structDecl.getDeclName().strref() == "SIMD") {
-        // DType and Int looks like #lit.struct<{value: index = 42}>, dig.
-        DTypeConstantAttr dtype =
-            getSingleElementStructAttr<DTypeConstantAttr>(params[0]);
+        if (auto name = getScalarTypeName(params)) {
+          os << *name;
+          return;
+        }
+
         IntegerAttr size = getSingleElementStructAttr<IntegerAttr>(params[1]);
         if (size && size.getInt() == 1) {
-          // This list should be kept in sync with the aliases in simd.mojo.
-          static std::pair<KGENDType, const char *> dtypeAliases[] = {
-              {KGENDType::index, "Int"},
-              {KGENDType::uindex, "UInt"},
-              {KGENDType::si8, "Int8"},
-              {KGENDType::ui8, "UInt8"},
-              {KGENDType::si16, "Int16"},
-              {KGENDType::ui16, "UInt16"},
-              {KGENDType::si32, "Int32"},
-              {KGENDType::ui32, "UInt32"},
-              {KGENDType::si64, "Int64"},
-              {KGENDType::ui64, "UInt64"},
-              {KGENDType::si128, "Int128"},
-              {KGENDType::ui128, "UInt128"},
-              {KGENDType::si256, "Int256"},
-              {KGENDType::ui256, "UInt256"},
-              {KGENDType::f4e2m1fn, "Float4_e2m1fn"},
-              {KGENDType::f6e2m3fn, "Float6_e2m3fn"},
-              {KGENDType::f6e3m2fn, "Float6_e3m2fn"},
-              {KGENDType::f8e8m0fnu, "Float8_e8m0fnu"},
-              {KGENDType::f8e5m2, "Float8_e5m2"},
-              {KGENDType::f8e5m2fnuz, "Float8_e5m2fnuz"},
-              {KGENDType::f8e4m3fn, "Float8_e4m3fn"},
-              {KGENDType::f8e4m3fnuz, "Float8_e4m3fnuz"},
-              {KGENDType::f8e3m4, "Float8_e3m4"},
-              {KGENDType::bf16, "BFloat16"},
-              {KGENDType::f16, "Float16"},
-              {KGENDType::f32, "Float32"},
-              {KGENDType::f64, "Float64"},
-          };
-          if (dtype) {
-            for (auto [dtypeValue, dtypeName] : dtypeAliases) {
-              if (dtype.getDType() == dtypeValue) {
-                os << dtypeName;
-                return;
-              }
-            }
-          }
-
-          // Otherwise if we know the size is 1, we can use Scalar[] alias,
-          // even if the dtype is parametric.
+          // If we know the size is 1, we can use Scalar[] alias, even if the
+          // dtype is parametric.
           os << "Scalar[";
           printParam(os, params[0], ctx);
           os << "]";
@@ -1809,7 +1856,8 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     // Print any type parameters if we can find the struct.
     PogListAttr paramInfo;
     if (typeDecl) {
-      paramInfo = cast<StructDeclOp>(typeDecl->getIfOperation())
+      paramInfo = cast<StructASTDecl>(typeDecl)
+                      ->getOp()
                       .getSignature()
                       .getParamListAttrs();
     }
@@ -1822,14 +1870,14 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     ASTDecl *decl = nullptr;
     if (diagShared)
       decl = ASTType(type).getDecl(*diagShared);
-    if (tryPrintClosureSourceName(os, decl))
+    if (tryPrintParamClosureSourceName(ctx, os, structTy))
       return;
     printUserType(structTy.getSymbol(), structTy.getParamValues(), decl);
   } else if (auto anyStruct = dyn_cast<StructMetaType>(type)) {
     ASTDecl *decl = nullptr;
     if (diagShared)
       decl = ASTType(anyStruct.getType()).getDecl(*diagShared);
-    if (tryPrintClosureSourceName(os, decl))
+    if (tryPrintParamClosureSourceName(ctx, os, anyStruct.getType()))
       return;
     os << "AnyStruct[";
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(), decl);
@@ -1844,14 +1892,19 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
         reduced, os,
         [&](TraitSymbolAttr traitSymbol) {
           SymbolRefAttr symbol = traitSymbol.getSymbol();
-          ASTDecl *decl =
-              diagShared
-                  ? diagShared->declResolver->getDeclForTypeSymbolIfExists(
-                        symbol)
-                  : nullptr;
-          if (tryPrintClosureSourceName(os, decl))
+          if (tryPrintParamClosureSourceName(ctx, os, traitSymbol))
             return;
           printSymbol(os, symbol, diagShared);
+          if (traitSymbol.getParamValues().empty())
+            return;
+
+          os << '[';
+          llvm::interleaveComma(
+              traitSymbol.getParamValues(), os, [&](TypedAttr param) {
+                ASTType::printParam(os, param, ctx,
+                                    /*hasContextualType=*/false);
+              });
+          os << ']';
         },
         " & ");
   } else if (auto anyTrait = dyn_cast<AnyTraitType>(type)) {

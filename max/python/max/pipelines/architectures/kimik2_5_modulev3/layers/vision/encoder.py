@@ -15,9 +15,9 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module, ModuleList
-from max.experimental.nn.norm.layer_norm import LayerNorm
-from max.experimental.tensor import Tensor
+from max.nn import Module, ModuleList
+from max.nn.norm.layer_norm import LayerNorm
+from max.tensor import Tensor
 
 from .attention import Attention
 from .mlp import MLP2

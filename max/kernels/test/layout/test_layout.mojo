@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Array
-from layout.layout_tensor import LayoutTensorIter
 from layout import *
 from layout._fillers import arange
+from layout.tile_layout import Layout as TileLayout
 from layout.layout import (
     MakeLayoutList,
     blocked_product,
@@ -32,10 +32,9 @@ from layout.layout import (
     upcast,
     zipped_divide,
 )
-from std.math import ceildiv
 from std.testing import assert_equal, assert_raises
 
-from std.utils import IndexList
+from std.utils.coord import coord
 
 
 # CHECK-LABEL: test_layout_basic
@@ -90,34 +89,33 @@ def test_layout_basic() raises:
         Layout.row_major[2](),
     )
 
-    # test index list construction
+    # test coordinate construction
     assert_equal(
-        Layout.row_major(IndexList[2](2, 3)),
+        Layout.row_major(coord[2, 3]),
         Layout.row_major(2, 3),
     )
 
     # testing col major
     assert_equal(
-        Layout.col_major[3](IndexList[3](3, 64, 128)),
+        Layout.col_major(coord[3, 64, 128]),
         Layout(IntTuple(3, 64, 128), IntTuple(1, 3, 192)),
     )
 
     assert_equal(
-        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 64, 128)),
+        Layout.col_major(coord[UNKNOWN_VALUE, 64, 128]),
         Layout(
             IntTuple(UNKNOWN_VALUE, 64, 128),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
         ),
     )
 
-    var idx_list = IndexList[3](32, 8, 16)
     assert_equal(
-        Layout.col_major[3](idx_list),
+        Layout.col_major(coord[32, 8, 16]),
         Layout(IntTuple(32, 8, 16), IntTuple(1, 32, 256)),
     )
 
     assert_equal(
-        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 8, 16)),
+        Layout.col_major(coord[UNKNOWN_VALUE, 8, 16]),
         Layout(
             IntTuple(UNKNOWN_VALUE, 8, 16),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
@@ -898,23 +896,19 @@ def test_iter() raises:
 def test_arange_nested_layout() raises:
     """Test arange function with nested layout structures."""
     # Test nested layout with tile structure similar to GPU shared memory tiles
-    var nested_tensor = LayoutTensor[
-        .float32,
-        Layout(
-            IntTuple(IntTuple(16, 8), IntTuple(32, 2)),
-            IntTuple(IntTuple(32, 1024), IntTuple(1, 512)),
+    var nested_storage = Array[Float32, 128 * 64](fill={})
+    var nested_tensor = TileTensor(
+        nested_storage,
+        TileLayout(
+            Coord(coord[16, 8], coord[32, 2]),
+            Coord(coord[32, 1024], coord[1, 512]),
         ),
-        MutAnyOrigin,
-        alignment=16,
-    ].stack_allocation()
+    )
     arange(nested_tensor)
 
     # Test simple 2D layout with row-major for comparison
-    var simple_tensor = LayoutTensor[
-        .float32,
-        Layout.row_major(4, 4),
-        MutAnyOrigin,
-    ].stack_allocation()
+    var simple_storage = Array[Float32, 16](fill={})
+    var simple_tensor = TileTensor(simple_storage, row_major[4, 4]())
     arange(simple_tensor)
 
     # Verify values are filled in logical order (row-major)
@@ -928,11 +922,8 @@ def test_arange_nested_layout() raises:
     assert_equal(simple_tensor[1, 3], 7.0)
 
     # Test column-major layout
-    var col_major_tensor = LayoutTensor[
-        .float32,
-        Layout.col_major(4, 4),
-        MutAnyOrigin,
-    ].stack_allocation()
+    var col_major_storage = Array[Float32, 16](fill={})
+    var col_major_tensor = TileTensor(col_major_storage, col_major[4, 4]())
     arange(col_major_tensor)
 
     # For column-major, values should still be in logical row-major order
@@ -941,39 +932,6 @@ def test_arange_nested_layout() raises:
     assert_equal(col_major_tensor[0, 1], 1.0)
     assert_equal(col_major_tensor[1, 0], 4.0)
     assert_equal(col_major_tensor[1, 1], 5.0)
-
-
-def test_layout_tensor_iterator_print() raises:
-    """Test case for MSTDL-1984: Tensors generated from LayoutTensorIter won't print.
-    """
-    comptime buf_size = 16
-    var storage = Array[Int16, buf_size](
-        fill_with=lambda (i: Int) -> Int16: Int16(i)
-    )
-    comptime tile_layout = Layout.row_major(2, 2)
-    var iter = LayoutTensorIter[
-        DType.int16,
-        tile_layout,
-        masked=True,
-    ](storage.unsafe_ptr(), buf_size)
-
-    for _i in range(ceildiv(buf_size, comptime (tile_layout.size()))):
-        var tile = iter[]
-        # CHECK: 0 1
-        # CHECK-NEXT: 2 3
-        print(tile)
-        # CHECK: runtime_layout.size(): 4
-        print("  runtime_layout.size():", tile.runtime_layout.size())
-        iter += 1
-        # CHECK: 4 5
-        # CHECK-NEXT: 6 7
-        # CHECK: runtime_layout.size(): 4
-        # CHECK: 8 9
-        # CHECK-NEXT: 10 11
-        # CHECK: runtime_layout.size(): 4
-        # CHECK: 12 13
-        # CHECK-NEXT: 14 15
-        # CHECK: runtime_layout.size(): 4
 
 
 def main() raises:
@@ -999,4 +957,3 @@ def main() raises:
     test_transpose()
     test_iter()
     test_arange_nested_layout()
-    test_layout_tensor_iterator_print()

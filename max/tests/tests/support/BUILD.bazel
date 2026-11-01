@@ -8,10 +8,21 @@ package(default_visibility = [
 
 modular_py_test(
     name = "tests",
-    srcs = glob(["**/*.py"]),
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["test_host_memory.py"],
+    ),
     deps = [
         "@mojo//:python",
         requirement("hypothesis"),
         requirement("ipython"),
     ],
+)
+
+# Separate from :tests, whose Mojo driver fails to load max._core's staged
+# transport libraries on some hosts.
+modular_py_test(
+    name = "host_memory",
+    srcs = ["test_host_memory.py"],
+    deps = ["//max/python/max/support"],
 )

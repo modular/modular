@@ -1,9 +1,3 @@
-# ===----------------------------------------------------------------------=== #
-#
-# This file is Modular Inc proprietary.
-#
-# ===----------------------------------------------------------------------=== #
-
 """Benchmark targets comparing MAX kernels against external baselines.
 
 These benchmarks run on B200 GPUs and compare MAX's MHA/GEMM implementations
@@ -15,10 +9,19 @@ Usage:
 """
 
 load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 load("//max/kernels/benchmarks/misc/blackwell_bench:wheels.bzl", "blackwell_bench_wheel")
 
 package(default_visibility = ["//max:consumers"])
+
+# The default lock resolves flashinfer-python to wheels (nvidia-cutlass-dsl,
+# cuda-bindings) that have no macOS build, so a platform-incompatible target
+# must be skipped before Bazel analyzes its pip deps.
+_CUTLASS_DSL_COMPATIBLE = [
+    "//:nvidia_gpu",
+    "@platforms//cpu:x86_64",
+    "@platforms//os:linux",
+]
 
 # aiter (AMD AI Tensor Engine for ROCm) — cp313 binary wheel with prebuilt
 # gfx950 kernels; the excluded mha ops JIT-compile at first use via hipcc.
@@ -49,10 +52,10 @@ modular_py_library(
     # cutlass reaches sys.path through the :cutlass-imports dep below, whose
     # `imports` propagates transitively via PyInfo.
     tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer
+    target_compatible_with = _CUTLASS_DSL_COMPATIBLE,
     deps = [
-        blackwell_bench_wheel("flash-attn"),
-        blackwell_bench_wheel("flashinfer"),
         blackwell_bench_wheel("deep-gemm"),
+        requirement("flashinfer-python"),
         requirement("packaging"),
         requirement("torch"),
         ":bench_decode_lib",
@@ -65,8 +68,13 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-    ],
+        "//max/python/max/nn/legacy",
+    ] + select({
+        # flash-attn-4 b31 resolves only in the bench lock group; the bench
+        # scripts import it optionally.
+        "//:use_bench_setting": [requirement("flash-attn-4")],
+        "//conditions:default": [],
+    }),
 )
 
 # Softmax benchmark: MAX vs PyTorch
@@ -102,10 +110,14 @@ modular_py_library(
     name = "bench_decode_lib",
     srcs = ["bench_blackwell_decode.py"],
     imports = ["."],
-    tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer
+    tags = ["no-pydeps"],  # :cutlass-imports is itself off the pydeps enforcer
+    target_compatible_with = _CUTLASS_DSL_COMPATIBLE,
     deps = [
         "//max/kernels/benchmarks/misc/utils:bench_utils",
-        blackwell_bench_wheel("flashinfer"),
+        # flashinfer's cute-dsl paths import the `cutlass` module, which only
+        # reaches sys.path through :cutlass-imports under Bazel.
+        "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
+        requirement("flashinfer-python"),
         requirement("torch"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
         "//max/python/max/driver",
@@ -113,7 +125,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -199,7 +211,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -233,7 +245,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -265,37 +277,95 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines/weights",
+        "//max/python/max/nn/legacy",
+    ],
+)
+
+modular_py_library(
+    name = "gpu_telemetry",
+    srcs = ["gpu_telemetry.py"],
+    imports = ["."],
+    deps = [requirement("torch")],
+)
+
+modular_py_library(
+    name = "moe_routing",
+    srcs = ["moe_routing.py"],
+    imports = ["."],
+    deps = [requirement("numpy")],
+)
+
+modular_py_test(
+    name = "test_moe_routing",
+    size = "small",
+    srcs = ["test_moe_routing.py"],
+    deps = [
+        ":moe_routing",
+        requirement("numpy"),
     ],
 )
 
 modular_py_binary(
-    name = "bench_mla_prefill_sparse",
-    srcs = ["bench_blackwell_mla_prefill_sparse.py"],
-    main = "bench_blackwell_mla_prefill_sparse.py",
+    name = "bench_mega_ffn_nvfp4_graph",
+    srcs = ["bench_mega_ffn_nvfp4_graph.py"],
+    main = "bench_mega_ffn_nvfp4_graph.py",
     tags = [
         "gpu",
         "manual",
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
-        ":bench_baseline_lib",
+        ":gpu_telemetry",
+        ":moe_routing",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("numpy"),
         requirement("torch"),
     ],
 )
 
+modular_py_library(
+    name = "sparse_mla_indices",
+    srcs = ["sparse_mla_indices.py"],
+    imports = ["."],
+    deps = [requirement("numpy")],
+)
+
+modular_py_test(
+    name = "test_sparse_mla_indices",
+    size = "small",
+    srcs = ["test_sparse_mla_indices.py"],
+    deps = [
+        ":sparse_mla_indices",
+        requirement("numpy"),
+    ],
+)
+
 modular_py_binary(
-    name = "bench_mla_prefill_sparse_fp8",
-    srcs = ["bench_blackwell_mla_prefill_sparse_fp8.py"],
-    main = "bench_blackwell_mla_prefill_sparse_fp8.py",
+    name = "bench_mla_sparse_graph",
+    srcs = ["bench_mla_sparse_graph.py"],
+    main = "bench_mla_sparse_graph.py",
     tags = [
         "gpu",
         "manual",
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
-        ":bench_baseline_lib",
+        ":gpu_telemetry",
+        ":sparse_mla_indices",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
         requirement("torch"),
     ],
 )
@@ -319,7 +389,67 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
+)
+
+# MiniMax-M3 MoE FFN chain bench (MAX only, gfx950): gemm1 -> SwiGLU
+# + requant -> gemm2, device-graph replay, rotating cold weights.
+modular_py_binary(
+    name = "bench_amd_m3_moe_chain",
+    srcs = ["bench_amd_m3_moe_chain.py"],
+    main = "bench_amd_m3_moe_chain.py",
+    tags = [
+        "gpu",
+        "manual",
+        "no-mypy",
+        "no-pydeps",
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("torch"),
+    ],
+)
+
+# MAX's MXFP8 activation quantize against vLLM's; run with
+# `--//:use_vllm=true` for the vLLM arms.
+modular_py_test(
+    name = "bench_mxfp8_quant_vllm",
+    size = "enormous",
+    srcs = ["bench_mxfp8_quant_vllm.py"],
+    env = {
+        # MAX's memory manager would otherwise take what torch needs.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "17179869184",
+    },
+    exec_properties = {"test.resources:gpu-memory": "40"},
+    gpu_constraints = ["//:b200_gpu"],
+    main = "bench_mxfp8_quant_vllm.py",
+    tags = [
+        "gpu",
+        "manual",
+        "no-mypy",
+        "no-pydeps",
+    ],
+    deps = [
+        ":gpu_telemetry",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("torch"),
+    ] + select({
+        "//:use_vllm_setting": [
+            requirement("flashinfer-python"),
+            requirement("nvidia-cutlass-dsl"),
+            requirement("vllm"),
+        ],
+        "//conditions:default": [],
+    }),
 )

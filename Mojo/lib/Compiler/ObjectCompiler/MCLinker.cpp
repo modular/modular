@@ -350,9 +350,8 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
   // Add RuntimeLibraryInfoWrapper for libcall lowering decisions.
   // This is required by passes like ExpandFp and PreISelIntrinsicLowering.
   const llvm::TargetOptions &tmOptions = llvmTargetMachine.Options;
-  passMgr.add(new llvm::RuntimeLibraryInfoWrapper(
-      tmOptions.ExceptionModel, tmOptions.EABIVersion,
-      tmOptions.MCOptions.ABIName, tmOptions.VecLib));
+  passMgr.add(new llvm::RuntimeLibraryInfoWrapper(tmOptions.MCOptions.ABIName,
+                                                  tmOptions.VecLib));
 
   if (KGEN::addPassesToAsmPrint(options, llvmTargetMachine, passMgr, *linkedObj,
                                 emitAssembly
@@ -369,11 +368,12 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
     return Error("failed to add to ObjectFile Print pass");
   }
 
+  llvm::Module &moduleToRun = hasOneSplit ? *oneSplitModule : *linkedModule;
+
   const_cast<llvm::TargetLoweringObjectFile *>(
       llvmTargetMachine.getObjFileLowering())
-      ->Initialize(machineModInfoPass->getMMI().getContext(), targetMachine);
-
-  llvm::Module &moduleToRun = hasOneSplit ? *oneSplitModule : *linkedModule;
+      ->initialize(machineModInfoPass->getMMI().getContext(), targetMachine,
+                   moduleToRun);
   passMgr.run(moduleToRun);
 
   // Release some of the AsyncValue memory to avoid

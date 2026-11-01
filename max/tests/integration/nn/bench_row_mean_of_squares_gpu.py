@@ -23,7 +23,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import row_mean_of_squares
+from max.nn.legacy.kernels import row_mean_of_squares
 
 _SHAPES = [(16, 1536), (16, 256)]
 _ITERS = 200

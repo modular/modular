@@ -15,7 +15,7 @@
 #define KGEN_MOJOTOOLING_PARSERDRIVER_H
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
+#include "Mojo/MojoParser/ASTType.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <filesystem>
@@ -29,23 +29,24 @@ class SourceMgr;
 namespace M {
 namespace KGEN {
 class CompilationOptions;
+struct FrontendOptions;
 namespace LIT {
+class ASTDecl;
 class SharedState;
-struct ParserConfig;
+class MojoParserContext;
 } // namespace LIT
 namespace Mojo {
 struct CodeCompletionResult;
 struct SignatureHelpResult;
 } // namespace Mojo
 } // namespace KGEN
-
-class PublicDecl;
-class MojoASTDeclRef;
-class MojoASTTypeRef;
+} // namespace M
 
 //===----------------------------------------------------------------------===//
 // MojoParserREPLListener
 //===----------------------------------------------------------------------===//
+
+namespace M::KGEN::LIT {
 
 /// This class provides a listener for interacting with the parser for REPL
 /// like expressions. It contains various hooks to allow for customizing the
@@ -96,8 +97,9 @@ public:
 /// modules.
 class MojoParserContext {
 public:
-  MojoParserContext(llvm::SourceMgr &sourceMgr,
-                    KGEN::LIT::ParserConfig &config);
+  MojoParserContext(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+                    const KGEN::CompilationOptions &options,
+                    const FrontendOptions &frontendOptions);
   ~MojoParserContext();
 
   /// Return the current module being parsed.
@@ -107,7 +109,7 @@ public:
   llvm::SourceMgr &getSourceMgr();
 
   /// Return the shared state user by the parser.
-  KGEN::LIT::SharedState &getSharedState();
+  SharedState &getSharedState();
 
   /// Return the full list of directories considered for module lookup from
   /// the given file.
@@ -116,17 +118,20 @@ public:
   /// Return the compilation options used by the parser.
   const KGEN::CompilationOptions &getCompilationOptions();
 
+  /// Return the frontend options used by the parser.
+  const FrontendOptions &getFrontendOptions();
+
   /// Parse a SourceMgr file given its id as a module.
   ///
   /// In the case of success, the decl corresponding to the module is returned.
   /// In the case of an error, a null decl is returned. If `eraseUnparsedDecls`
   /// is true, any unparsed decls are removed from the module.
-  MojoASTDeclRef parseFile(unsigned fileId, bool eraseUnparsedDecls = true);
+  ASTDecl *parseFile(unsigned fileId, bool eraseUnparsedDecls = true);
 
   /// Parse a SourceMgr file given its ID as a module. This is a specialized
   /// variant of parseFile that does as little work as possible while still
   /// producing a decl that is usable for the language server.
-  MojoASTDeclRef parseFileForLSP(unsigned fileId);
+  ASTDecl *parseFileForLSP(unsigned fileId);
 
   /// Ensures that all parsed decls have been signature-resolved. This is a
   /// required step to ensure the IR is well-formed.
@@ -136,13 +141,13 @@ public:
   ///
   /// In the case of success, the decl corresponding to the package is returned.
   /// In the case of an error, a null decl is returned.
-  MojoASTDeclRef parsePackage(const std::filesystem::path &path);
+  ASTDecl *parsePackage(const std::filesystem::path &path);
 
   /// Parse a module or package with the given path.
   ///
   /// In the case of success, the corresponding decl is returned.
   /// In the case of an error, a null decl is returned.
-  MojoASTDeclRef parseFileOrPackage(const std::filesystem::path &path);
+  ASTDecl *parseFileOrPackage(const std::filesystem::path &path);
 
   /// Parse a module or package with the given path, without resolving any of
   /// the nested decls. The returned decl provides only a partial view of the
@@ -150,15 +155,14 @@ public:
   ///
   /// In the case of success, the corresponding decl is returned.
   /// In the case of an error, a null decl is returned.
-  MojoASTDeclRef
-  parseFileOrPackageNonRecursive(const std::filesystem::path &path);
+  ASTDecl *parseFileOrPackageNonRecursive(const std::filesystem::path &path);
 
   /// Parse a module or package with the given path, without resolving
   /// "external" decls that originate from other modules/packages.
   ///
   /// In the case of success, the corresponding decl is returned.
   /// In the case of an error, a null decl is returned.
-  MojoASTDeclRef parseIsolatedFileOrPackage(const std::filesystem::path &path);
+  ASTDecl *parseIsolatedFileOrPackage(const std::filesystem::path &path);
 
   /// Returns true if an error occurred during parsing.
   bool wasErrorEmitted() const;
@@ -266,11 +270,11 @@ public:
 
     /// The module decl corresponding to the REPL expression. This field is
     /// always valid.
-    MojoASTDeclRef moduleDecl;
+    ASTDecl *moduleDecl;
 
     /// The function decl corresponding to the REPL expression. If the REPL
     /// expression failed to parse, this will be null.
-    MojoASTDeclRef exprFnDecl;
+    ASTDecl *exprFnDecl;
   };
 
   /// Return the location mapper used for REPL expressions.
@@ -319,7 +323,7 @@ public:
   parseREPLExpression(MojoParserREPLListener &listener, unsigned exprFileId,
                       StringRef exprText, StringRef replExprFnName,
                       ArrayRef<std::pair<StringRef, Type>> replVariables,
-                      MojoASTDeclRef prevReplExpr, bool parseForLSP);
+                      ASTDecl *prevReplExpr, bool parseForLSP);
 
   /// Return the code completion results for the given REPL expression.
   std::vector<KGEN::Mojo::CodeCompletionResult> codeCompleteREPLExpression(
@@ -332,15 +336,14 @@ public:
   std::vector<KGEN::Mojo::CodeCompletionResult>
   codeCompleteREPLExpression(StringRef exprText, uint64_t completionPosition,
                              ArrayRef<std::pair<StringRef, Type>> replVariables,
-                             MojoASTDeclRef replDecl);
+                             ASTDecl *replDecl);
 
   /// Return a signature help result for the given REPL expression. `replDecl`
   /// corresponds to the decl of a previously parsed repl expression. Signature
   /// results will only consider state before that expression was parsed.
   std::optional<KGEN::Mojo::SignatureHelpResult> signatureHelpREPLExpression(
       StringRef exprText, uint64_t position,
-      ArrayRef<std::pair<StringRef, Type>> replVariables,
-      MojoASTDeclRef replDecl);
+      ArrayRef<std::pair<StringRef, Type>> replVariables, ASTDecl *replDecl);
 
   /// Remove the previously parsed REPL expression. This allows for removing an
   /// erroneous expression when it is only detected as invalid after it has been
@@ -354,22 +357,16 @@ public:
   //===--------------------------------------------------------------------===//
   // Types
 
-  /// Get the declaration that defined an AST type.
-  MojoASTDeclRef getDecl(MojoASTTypeRef type);
-
-  /// Get the declaration that defined the trait.
-  MojoASTDeclRef getTraitDecl(KGEN::TraitSymbolAttr traitSymbol);
-
   /// Substitute parameters into a type and resolve them into a different type.
-  MojoASTTypeRef concretizeType(MojoASTTypeRef base, ArrayRef<TypedAttr> params,
-                                MojoASTTypeRef type);
+  ASTType concretizeType(ASTType base, ArrayRef<TypedAttr> params,
+                         ASTType type);
 
 private:
   /// Ensure the completion cache is up-to-date for a completion request.
   /// Collects the target module list, incrementally updates the cache, and
   /// returns the buffer identifier to use for the completion buffer (derived
   /// from replDecl's source buffer for correct import resolution).
-  StringRef prepareCompletionCache(MojoASTDeclRef replDecl);
+  StringRef prepareCompletionCache(ASTDecl *replDecl);
 
 protected:
   /// A struct representing the internal state of the parser.
@@ -379,6 +376,11 @@ protected:
   std::unique_ptr<Impl> impl;
 };
 
+} // namespace M::KGEN::LIT
+
+namespace M {
+using KGEN::LIT::MojoParserContext;
+using KGEN::LIT::MojoParserREPLListener;
 } // namespace M
 
 #endif // KGEN_MOJOTOOLING_PARSERDRIVER_H

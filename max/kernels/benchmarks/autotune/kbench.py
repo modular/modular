@@ -133,6 +133,12 @@ def run(
         # Just load an empty Spec with identical name and file as shape
         spec = Spec(shape.name, shape.file)
 
+    if spec.sweep:
+        logging.info(
+            "sweep spec: one process per params group; $-parameters run as"
+            " comma lists within one process"
+        )
+
     # Set output_dir='./kbench-output' if it is not specified.
     if not output_dir:
         output_dir = Path("./kbench-output")

@@ -24,7 +24,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.argsort import argsort
 
 
@@ -60,11 +60,11 @@ def bench_argsort[
     ctx.enqueue_copy(device_input, input_host_ptr)
     ctx.synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_ascending(
         mut b: Bencher,
     ) raises {var device_input_tensor, var device_indices_tensor, imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             argsort[ascending=True, target="gpu"](
                 device_indices_tensor, device_input_tensor, ctx

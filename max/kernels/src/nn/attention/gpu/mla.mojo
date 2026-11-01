@@ -26,8 +26,6 @@ from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
 from std.math.constants import log2e
 from std.sys import (
     align_of,
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
     get_defined_int,
     simd_width_of,
     size_of,
@@ -36,15 +34,18 @@ from std.sys import (
     CompilationTarget,
 )
 
-from nn.attention.gpu.mha import (
-    mha_splitk_reduce,
-    q_num_matrix_view_rows,
-)
+from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
+from nn.attention.gpu.mha import mha_splitk_reduce
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    AMD_MLA_BF16_DECODE_BLOCK_M,
     mha_decoding_num_partitions,
 )
 import max.gpu.primitives.warp as warp
-from max.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from std.algorithm.functional import (
     tile_and_unswitch,
     unswitch,
@@ -66,11 +67,11 @@ from max.gpu.sync import barrier
 from max.gpu.host import (
     DeviceContext,
     FuncAttribute,
-    get_gpu_target,
     DeviceBuffer,
     Dim as LaunchDim,
+    default_accelerator,
 )
-from max.gpu.host.info import A100, H100, B200, _is_sm10x_gpu
+from max.gpu.host.info import A100, H100, _is_sm10x_gpu
 from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
@@ -80,26 +81,23 @@ from kv_cache.types import KVCacheT
 from layout import (
     Coord,
     Idx,
-    IntTuple,
-    LayoutTensor,
     RowMajorLayout,
-    RuntimeLayout,
-    RuntimeTuple,
     TensorLayout,
     TileTensor,
     coord_to_index_list,
     row_major,
 )
 from layout.layout import *
-from layout.layout_tensor import (
-    LayoutTensorIter,
-    copy_dram_to_sram_async,
+from layout.tile_io import (
     copy_local_to_dram,
     copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
+from layout.tile_async_copy import copy_dram_to_sram_async_ldmatrix
+from layout.tile_iterator import TileTensorIter
+from layout.tile_layout import Layout as TileLayout
 from layout.tile_tensor import NullableTileTensor
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
@@ -109,19 +107,23 @@ from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    LayoutTensorMHAOperand,
+    TileTensorMHAOperand,
     RaggedMHAOperand,
 )
 from nn.attention.mha_utils import (
     FlashAttentionAlgorithm,
     MHAConfig,
+    NullPointer,
+    OptionalPointer,
     _copy_frag_to_smem,
     _kernel_mask,
     DynamicInt,
+    null_pointer,
+    unread_pointer,
 )
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import Index, IndexList
+from std.utils import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
@@ -138,6 +140,8 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
     mla_decode_sm100_dispatch,
 )
+from nn.attention.gpu.nvidia.sm100.mla_decode_utils import SparseRowLayout
+from nn.attention.gpu.nvidia.sm100.nvfp4_kv_dequant import mla_kv_is_nvfp4
 from .nvidia.sm100.mla_prefill_per_token_scale import (
     mla_sm100_prefill_per_token_scale,
 )
@@ -168,8 +172,10 @@ comptime MLA_DECODE_MAX_SEQ_LEN = 8
 comptime AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS = 16
 
 
-@always_inline
-def mla_decode_max_seq_len[dtype: DType, num_heads: Int]() -> Int:
+@inline(.always)
+def mla_decode_max_seq_len[
+    dtype: DType, num_heads: Int, sparse_mla: Bool
+]() -> Int:
     """Max query tokens (S) the MLA *decode* branch can fold for this config.
 
     On AMD the S>1 fold is FP8-only AND num_heads<=AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
@@ -178,16 +184,24 @@ def mla_decode_max_seq_len[dtype: DType, num_heads: Int]() -> Int:
     Mirrors the host-side fold gate in `flare_mla_decoding_dispatch` so the router
     never hands the gate an S>1 batch it would reject.
 
+    Sparse MLA on AMD is a different composition -- one gather slot per row of
+    `q`, so the batch geometry is only correct at S=1 -- and it has no fold at
+    any head count. Its S>1 work goes to the AMD sparse *prefill* arm, which
+    gathers per query token and so serves any S.
+
     Parameters:
         dtype: Element type of the query tensor. On AMD the S>1 fold is
             FP8-only, so non-FP8 routes S>1 to MLA prefill.
         num_heads: Number of query attention heads. On AMD the S>1 fold
             requires `num_heads <= AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS`.
+        sparse_mla: Whether top-k sparse attention is in use. On AMD this
+            forces S>1 to prefill regardless of dtype and head count.
     """
     return 1 if (
-        has_amd_gpu_accelerator()
+        default_accelerator().is_amd_gpu()
         and (
-            not dtype.is_float8()
+            sparse_mla
+            or not dtype.is_float8()
             or num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
         )
     ) else MLA_DECODE_MAX_SEQ_LEN
@@ -213,7 +227,7 @@ comptime AMD_MLA_DECODE_FOLD_M_MAX = 128
 # so the check is a false positive here (proper fix: give the cache views
 # provably-disjoint origins instead of sharing the collection's).
 @__unsafe_nested_origins_read_only
-@always_inline
+@inline(.always)
 def flare_mla_decoding[
     rank: Int,
     cache_t: KVCacheT,
@@ -235,6 +249,16 @@ def flare_mla_decoding[
     # identical topk list, so the sparse fp8 decode gathers it ONCE. False
     # (default) -> unchanged per-position behavior.
     fold_shared_index: Bool = False,
+    # Whether `extra_k` is supplied; must match `extra_k is not None`.
+    has_extra_k: Bool = False,
+    physical_indices: Bool = True,
+    # Presence of `attn_sink_ptr` / `topk_lengths` + `extra_topk_lengths`
+    # (inferred from those arguments).
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
+    # How the sparse index producer packs each row; SM100 bounds each row by
+    # its closed-form valid length. See mla_decode_utils.mojo.
+    sparse_row: SparseRowLayout = SparseRowLayout(),
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -247,38 +271,41 @@ def flare_mla_decoding[
         DType.int64, address_space=.GENERIC, ...
     ],
     q_max_seq_len: OptionalReg[Int] = None,
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
     num_partitions: Optional[Int] = None,
     # Per-token Q scale pointer: float32 array with one scale per Q token.
     # sigma_Q[q_token_idx] is folded into scale_log2e inside the Softmax function.
     # Default is null (sigma_Q = 1.0, no effect).
-    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    q_scale_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
     # Sparse indices: when non-null, the kernel uses gather4 TMA with
     # pre-computed physical row indices instead of page-table lookups.
     # d_indices[batch * indices_stride + token] = physical KV row index.
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     # Per-batch topk lengths: when non-null, topk_lengths[batch_idx] gives
     # the actual number of valid sparse indices for that batch. indices_stride
     # is the allocation stride (max topk across all batches).
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     # Extra KV: separate always-attend cache. Tokens from extra_k are
     # appended after the topk tokens in a unified attention loop.
     extra_k: OptionalReg[cache_t] = None,
-    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
+        TopkLengthsPtrType
+    ](),
+    extra_scales_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar from the Python resolver. When set, the
     # SM100 dispatcher uses this instead of recomputing num_partitions
     # at grid time.
     num_partitions_in: Optional[Int] = None,
     # Logical sparse indices for position-based causal masking; `None` keeps
     # the prior slot-count behavior. See mla_decode_utils.mojo.
-    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
+    # Positions between the token each sparse row was computed for and the
+    # token that reads it, for a selection reused at a later position.
+    selection_lag: Int = 0,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -328,6 +355,20 @@ def flare_mla_decoding[
         fold_shared_index: Whether to use the read-once shared-index fold
             that packs folded output/LSE slots into one CTA (defaults to
             `False`).
+        has_extra_k: Whether `extra_k` is supplied (defaults to `False`).
+            Must match `extra_k is not None`; comptime so callers without an
+            extra cache do not build the extra-KV sparse kernels.
+        physical_indices: Whether `d_indices` holds paged
+            `physical_block * page_size + offset` rows rather than token
+            positions, which the kernels decode through the cache's lookup
+            table (defaults to `True`).
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred, defaults to `NullPointer`).
+        TopkLengthsPtrType: `OptionalPointer` type shared by `topk_lengths`
+            and `extra_topk_lengths` (inferred, defaults to `NullPointer`).
+        sparse_row: How the sparse index producer packs each row; SM100
+            masks the `-1` padding past each row's closed-form valid length
+            (defaults to plain top-k, which adds no bound).
 
     Args:
         output: Output tensor with shape `[batch, num_heads, depth_v]`
@@ -360,13 +401,15 @@ def flare_mla_decoding[
             1.0.
         d_indices: Optional sparse indices: `d_indices[batch *
             indices_stride + token]` gives the physical KV row index.
-            `None` for non-sparse.
+            Valid entries must form a prefix of each row, followed by
+            `-1`: the scan covers only `min(topk_length, cache_len +
+            q_len)` entries. `None` for non-sparse.
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
         topk_lengths: Optional per-batch array of actual valid sparse
-            index counts; `None` for non-sparse.
+            index counts; null means every batch uses `indices_stride`.
         attn_sink_ptr: Optional attention-sink scale pointer
-            (`float32`); `None` to disable.
+            (`float32`); null to disable.
         extra_k: Optional separate always-attend KV cache operand,
             appended after the topk tokens in the attention loop; `None`
             to disable.
@@ -375,7 +418,7 @@ def flare_mla_decoding[
         extra_indices_stride: Allocation stride for `extra_d_indices`
             (defaults to 0).
         extra_topk_lengths: Optional per-batch valid index counts for
-            `extra_k`; `None` for non-sparse extra KV.
+            `extra_k`; null means every batch uses `extra_indices_stride`.
         extra_scales_ptr: Optional per-token scale pointer for
             `extra_k`; `None` to disable.
         num_partitions_in: Optional capturable-graph scalar from the
@@ -383,6 +426,8 @@ def flare_mla_decoding[
             instead of recomputing `num_partitions` at grid time.
         logical_indices: Logical sparse indices for position-based causal
             masking; `None` keeps the prior slot-count behavior.
+        selection_lag: Positions between the token each sparse row was
+            computed for and the token that reads it (defaults to 0).
     """
     comptime assert (
         ragged or rank == 4
@@ -399,7 +444,7 @@ def flare_mla_decoding[
         " output=bfloat16."
     )
 
-    @always_inline
+    @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
@@ -421,15 +466,15 @@ def flare_mla_decoding[
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         comptime kv_num_heads = cache_t.kv_params.num_heads
 
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())
 
-        if q_max_seq_len:
-            max_prompt_len = q_max_seq_len.value()
+        if case .Some(q_max_seq_len) = q_max_seq_len:
+            max_prompt_len = q_max_seq_len
         else:
             max_prompt_len = Int(k.max_prompt_length())
 
@@ -441,8 +486,8 @@ def flare_mla_decoding[
             comptime rope_aware_config = MHAConfig[dtype](config.num_heads, 576)
             # Build extra_k_operand when extra_k is provided.
             var extra_k_operand: OptionalReg[type_of(k_operand)] = None
-            if extra_k is not None:
-                extra_k_operand = KVCacheMHAOperand(extra_k.value())
+            if case .Some(extra_k) = extra_k:
+                extra_k_operand = KVCacheMHAOperand(extra_k)
 
             flare_mla_decoding_dispatch[
                 kv_num_heads=kv_num_heads,
@@ -453,6 +498,9 @@ def flare_mla_decoding[
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
+                has_extra_k=has_extra_k,
+                physical_indices=physical_indices,
+                sparse_row=sparse_row,
             ](
                 output,
                 q,
@@ -478,12 +526,13 @@ def flare_mla_decoding[
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
                 logical_indices=logical_indices,
+                selection_lag=selection_lag,
             )
         else:
             # Build extra_k_operand when extra_k is provided.
             var extra_k_operand: OptionalReg[type_of(k_operand)] = None
-            if extra_k is not None:
-                extra_k_operand = KVCacheMHAOperand(extra_k.value())
+            if case .Some(extra_k) = extra_k:
+                extra_k_operand = KVCacheMHAOperand(extra_k)
 
             flare_mla_decoding_dispatch[
                 kv_num_heads=kv_num_heads,
@@ -494,6 +543,9 @@ def flare_mla_decoding[
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
+                has_extra_k=has_extra_k,
+                physical_indices=physical_indices,
+                sparse_row=sparse_row,
             ](
                 output,
                 q,
@@ -519,6 +571,7 @@ def flare_mla_decoding[
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
                 logical_indices=logical_indices,
+                selection_lag=selection_lag,
             )
 
 
@@ -549,16 +602,14 @@ def flare_mla_decoding[
     # Runtime dimensions.
     var num_keys = Int(k.dim[1]())
 
-    # Re-view `k` as a row-major TileTensor directly (no throwaway
-    # LayoutTensor round-trip). `shape_coord()` preserves the static/runtime
-    # dim types, and the operand infers `buffer_layout` from this TileTensor.
-    var k_operand = LayoutTensorMHAOperand(
-        TileTensor(k.ptr, row_major(k.layout.shape_coord()))
+    # Preserve static/runtime dimension types for the operand's buffer layout.
+    var k_operand = TileTensorMHAOperand(
+        k.reshape(row_major(k.layout.shape_coord()))
     )
 
     var valid_length = TileTensor(
-        UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
-        row_major(Coord(Idx[0])),
+        MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
     )
 
     flare_mla_decoding_dispatch[
@@ -584,7 +635,85 @@ def flare_mla_decoding[
     )
 
 
-@always_inline
+def flare_mla_decoding_rows[
+    k_t: MHAOperand,
+    mask_t: MHAMask,
+    dtype: DType,
+    //,
+    config: MHAConfig[dtype],
+](
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: k_t,
+    num_keys: Int,
+    mask_functor: mask_t,
+    scale: Float32,
+    ctx: DeviceContext,
+    scalar_args_buf: NullableTileTensor[
+        DType.int64, address_space=.GENERIC, ...
+    ],
+    num_partitions: Optional[Int] = None,
+) raises:
+    """Runs MLA decode over a K operand with `num_keys` keys per entry.
+
+    The operand form of the `TileTensor` overload: `k` decides where each
+    key row lives, so a `SparseRowsMHAOperand` attends a top-k selection
+    straight from the paged cache, with no gathered copy. Each entry has one
+    absorbed-latent KV head.
+
+    Parameters:
+        k_t: The K operand type (inferred).
+        mask_t: The mask type (inferred).
+        dtype: Q's element type (inferred).
+        config: The attention configuration.
+
+    Args:
+        output: `[batch, 1, num_heads, v_depth]` output.
+        q: `[batch, 1, num_heads, depth]` queries.
+        k: The K (and aliased V) operand.
+        num_keys: Keys per batch entry; `mask_functor` hides the invalid ones.
+        mask_functor: The attention mask.
+        scale: The softmax scale.
+        ctx: The device context.
+        scalar_args_buf: Precomputed dispatch scalars, or null.
+        num_partitions: Split-K partition count; `None` picks heuristically.
+    """
+    comptime assert q.rank == 4, "only support rank 4 inputs."
+    # Only the AMD decode loader honors `rows_indexed`; the SM100 kernels
+    # would read the base operand's dense rows instead.
+    comptime assert (
+        not k_t.rows_indexed or ctx.target.is_amd_gpu()
+    ), "row-indexed K operands are only supported on AMD"
+
+    var valid_length = TileTensor(
+        MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
+    )
+
+    flare_mla_decoding_dispatch[
+        kv_num_heads=1,
+        config=config,
+        ragged=False,
+        _is_cache_length_accurate=True,
+        _use_valid_length=False,
+        decoding_warp_split_k=False,
+    ](
+        output,
+        q,
+        k,
+        mask_functor,
+        valid_length,
+        Int(q.dim[1]()),
+        num_keys,
+        scale,
+        ctx,
+        scalar_args_buf,
+        kv_input_row_offsets=None,
+        num_partitions=num_partitions,
+    )
+
+
+@inline(.always)
 def flare_mla_decoding_dispatch[
     k_t: MHAOperand,
     mask_t: MHAMask,
@@ -609,6 +738,14 @@ def flare_mla_decoding_dispatch[
     rope_aware_kv_sparse: Bool = False,
     # Read-once shared-index MTP fold (KERN-3141); see flare_mla_decoding.
     fold_shared_index: Bool = False,
+    # See flare_mla_decoding.
+    has_extra_k: Bool = False,
+    physical_indices: Bool = True,
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
+    # How the sparse index producer packs each row; SM100 bounds each row by
+    # its closed-form valid length. See mla_decode_utils.mojo.
+    sparse_row: SparseRowLayout = SparseRowLayout(),
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -622,27 +759,30 @@ def flare_mla_decoding_dispatch[
     scalar_args_buf: NullableTileTensor[
         DType.int64, address_space=.GENERIC, ...
     ],
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
     num_partitions: Optional[Int] = None,
-    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    q_scale_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     # Extra KV: separate always-attend cache operand.
     extra_k: OptionalReg[k_t] = None,
-    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
+        TopkLengthsPtrType
+    ](),
+    extra_scales_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar: forwarded by the Python resolver so grid-time
     # dispatch matches the kernel's device-side divmod.
     num_partitions_in: Optional[Int] = None,
     # Logical sparse indices for position-based causal masking; `None` keeps
     # the prior slot-count behavior. See mla_decode_utils.mojo.
-    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
+    # Positions between the token each sparse row was computed for and the
+    # token that reads it, for a selection reused at a later position.
+    selection_lag: Int = 0,
 ) raises:
     """Dispatches an MLA decoding request to the platform-specific kernel.
 
@@ -655,7 +795,7 @@ def flare_mla_decoding_dispatch[
     Parameters:
         k_t: KV cache operand type backing `k` (inferred). Either
             `KVCacheMHAOperand` (paged cache) or
-            `LayoutTensorMHAOperand` (TileTensor input).
+            `TileTensorMHAOperand` (TileTensor input).
         mask_t: Mask functor type applied to attention scores (inferred).
         dtype: Element type of `q` (inferred). Must be a half-float or
             `float8_e4m3fn`.
@@ -688,6 +828,20 @@ def flare_mla_decoding_dispatch[
         fold_shared_index: Whether to use the read-once shared-index fold
             that packs folded output/LSE slots into one CTA (defaults to
             `False`).
+        has_extra_k: Whether `extra_k` is supplied (defaults to `False`).
+            Must match `extra_k is not None`; comptime so callers without an
+            extra cache do not build the extra-KV sparse kernels.
+        physical_indices: Whether `d_indices` holds paged
+            `physical_block * page_size + offset` rows rather than token
+            positions, which the kernels decode through the cache's lookup
+            table (defaults to `True`).
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred, defaults to `NullPointer`).
+        TopkLengthsPtrType: `OptionalPointer` type shared by `topk_lengths`
+            and `extra_topk_lengths` (inferred, defaults to `NullPointer`).
+        sparse_row: How the sparse index producer packs each row; SM100
+            masks the `-1` padding past each row's closed-form valid length
+            (defaults to plain top-k, which adds no bound).
 
     Args:
         output: Output tensor with shape `[batch, num_heads, depth_v]`
@@ -721,13 +875,15 @@ def flare_mla_decoding_dispatch[
             1.0.
         d_indices: Optional sparse indices: `d_indices[batch *
             indices_stride + token]` gives the physical KV row index.
-            `None` for non-sparse.
+            Valid entries must form a prefix of each row, followed by
+            `-1`: the scan covers only `min(topk_length, cache_len +
+            q_len)` entries. `None` for non-sparse.
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
         topk_lengths: Optional per-batch array of actual valid sparse
-            index counts; `None` for non-sparse.
+            index counts; null means every batch uses `indices_stride`.
         attn_sink_ptr: Optional attention-sink scale pointer
-            (`float32`); `None` to disable.
+            (`float32`); null to disable.
         extra_k: Optional separate always-attend KV cache operand,
             appended after the topk tokens in the attention loop; `None`
             to disable.
@@ -736,7 +892,7 @@ def flare_mla_decoding_dispatch[
         extra_indices_stride: Allocation stride for `extra_d_indices`
             (defaults to 0).
         extra_topk_lengths: Optional per-batch valid index counts for
-            `extra_k`; `None` for non-sparse extra KV.
+            `extra_k`; null means every batch uses `extra_indices_stride`.
         extra_scales_ptr: Optional per-token scale pointer for
             `extra_k`; `None` to disable.
         num_partitions_in: Optional capturable-graph scalar from the
@@ -744,6 +900,8 @@ def flare_mla_decoding_dispatch[
             instead of recomputing `num_partitions` at grid time.
         logical_indices: Logical sparse indices for position-based causal
             masking; `None` keeps the prior slot-count behavior.
+        selection_lag: Positions between the token each sparse row was
+            computed for and the token that reads it (defaults to 0).
     """
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -786,7 +944,7 @@ def flare_mla_decoding_dispatch[
         kv_num_heads == 1
     ), "flareMLA_decoding only supports kv_num_heads == 1."
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()
     ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
     comptime assert (
@@ -802,7 +960,7 @@ def flare_mla_decoding_dispatch[
     # so it fires in every build). A `debug_assert` backstop would be wrong: under
     # `-D ASSERT=all` it aborts before the catchable `raise` and breaks the
     # `assert_raises` unsupported-fold tests.
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         # Hard launch-time rejection, and the single source of truth for the
         # fold envelope. Supported: S == 1 (any), or S > 1 with FP8 Q, num_heads
         # <= 16, S <= MLA_DECODE_MAX_SEQ_LEN, and num_heads*S <= 128. The other
@@ -865,6 +1023,9 @@ def flare_mla_decoding_dispatch[
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
+                has_extra_k=has_extra_k,
+                physical_indices=physical_indices,
+                sparse_row=sparse_row,
             ](
                 q,
                 k,
@@ -889,6 +1050,7 @@ def flare_mla_decoding_dispatch[
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
                 logical_indices=logical_indices,
+                selection_lag=selection_lag,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -901,7 +1063,9 @@ def flare_mla_decoding_dispatch[
                 return
 
             comptime num_heads_val = type_of(q).static_shape[q.rank - 2]
-            comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+            comptime _is_fp8_kv = (
+                k_t.dtype == DType.float8_e4m3fn or mla_kv_is_nvfp4[k_t]()
+            )
             var local_args = MLADispatchScalarArgs[
                 num_heads=num_heads_val,
                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -924,6 +1088,9 @@ def flare_mla_decoding_dispatch[
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
+                has_extra_k=has_extra_k,
+                physical_indices=physical_indices,
+                sparse_row=sparse_row,
             ](
                 q,
                 k,
@@ -932,7 +1099,7 @@ def flare_mla_decoding_dispatch[
                 valid_length,
                 mask_functor,
                 TileTensor(
-                    rebind[UnsafePointer[Int64, origin=MutAnyOrigin]](
+                    rebind[MutPointer[Int64, origin=MutAnyOrigin]](
                         local_args.gpu_buf.unsafe_ptr()
                     ),
                     row_major[3](),
@@ -951,10 +1118,16 @@ def flare_mla_decoding_dispatch[
                 extra_indices_stride=extra_indices_stride,
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
+                selection_lag=selection_lag,
             )
             _ = local_args^
 
     else:
+        comptime assert (
+            not sparse_row.is_bounded()
+        ), "sparse_row row bounds are only implemented for SM100."
+        if selection_lag != 0:
+            raise Error("selection_lag is only implemented for SM100.")
         var batch_size: Int
         comptime if ragged:
             batch_size = Int(valid_length.dim[0]()) - 1
@@ -963,6 +1136,29 @@ def flare_mla_decoding_dispatch[
 
         if batch_size == 0:
             return
+
+        comptime assert not sparse, (
+            "Sparse MLA decode is implemented only for SM100 (B200). This"
+            " architecture would otherwise silently compute dense attention"
+            " over the whole KV cache."
+        )
+        comptime assert not rope_aware_kv_sparse, (
+            "rope_aware_kv_sparse is a sparse-only SM100 routing flag and is"
+            " not honored by this architecture's dense MLA decode path."
+        )
+        comptime assert not fold_shared_index, (
+            "Read-once shared-index fold (fold_shared_index) is implemented"
+            " only for SM100 (B200); this architecture would ignore the flag."
+        )
+        comptime assert not per_token_scale_rope_aware, (
+            "per_token_scale_rope_aware is implemented only for SM100 (B200);"
+            " this architecture's dense MLA decode path would ignore the"
+            " interleaved FP8+BF16 layout."
+        )
+        comptime assert not decoding_warp_split_k, (
+            "decoding_warp_split_k is not supported by this architecture's MLA"
+            " decode kernel. Use split-K via num_partitions instead."
+        )
 
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
@@ -977,22 +1173,22 @@ def flare_mla_decoding_dispatch[
         # kernel reaches the bandwidth-bound regime; otherwise BM=64's 2×
         # per-block compute (more MFMAs, more SMEM round-trip) loses out.
         # See heuristic dispatch below.
-        comptime amd_fp8 = has_amd_gpu_accelerator() and q.dtype.is_float8()
+        comptime amd_fp8 = ctx.target.is_amd_gpu() and q.dtype.is_float8()
 
-        @always_inline
-        @__parameter
+        @inline(.always)
         def launch_with_BM[
             BM: Int,
             q_seq_len: Int = 1,
             WM: Int = BM,
-            WN: Int = (16 if has_nvidia_gpu_accelerator() else 32),
-        ]() raises:
+            WN: Int = (16 if ctx.target.is_nvidia_gpu() else 32),
+        ]() raises {imm}:
             # `q_seq_len` (S) folds H*S query rows into the MMA M dimension.
             # Default 1 = single-token decode. `WM`/`WN` default to the legacy
             # (1,4) geometry (WM=BM, WN=32 AMD / 16 NVIDIA), so S=1 call sites are
             # byte-identical; warp-local passes `WM=16, WN=128` (num_warps_m=
             # BM//16, num_warps_n=1, one 16-row tile per warp).
-            comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
+            comptime warp_size = ctx.default_device_info.warp_size
+            comptime BN = 64 if ctx.target.is_nvidia_gpu() else 128
             # AMD-structured config picks 16x16x128 for MLA decode when
             # `num_heads <= 16` (Kimi-K2.5 TP=4) or `depth % 128 == 0`;
             # both need BK=128 so each MFMA call consumes 128 elements
@@ -1002,10 +1198,10 @@ def flare_mla_decoding_dispatch[
                 num_heads <= 16 or depth % 128 == 0
             )
             comptime BK = 128 if amd_fp8_16x16x128 else (
-                64 if (has_nvidia_gpu_accelerator() or amd_fp8) else 32
+                64 if (ctx.target.is_nvidia_gpu() or amd_fp8) else 32
             )  # 8 mma_tile per row resolves bank conflict on nvidia
             # num warps in M and N, multiplied by warp size.
-            comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+            comptime num_threads = (BM // WM) * (BN // WN) * warp_size
 
             comptime accum_type = get_accum_type[q.dtype]()
             comptime num_pipeline_stages = 6
@@ -1014,7 +1210,7 @@ def flare_mla_decoding_dispatch[
 
             shared_mem_bytes += BN * depth * size_of[k_t.dtype]()
 
-            comptime num_warps = ceildiv(num_threads, WARP_SIZE)
+            comptime num_warps = ceildiv(num_threads, warp_size)
 
             # smem for p and warp_scratch
             shared_mem_bytes += (
@@ -1023,7 +1219,7 @@ def flare_mla_decoding_dispatch[
             )
 
             shared_mem_bytes = (
-                shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
+                shared_mem_bytes if ctx.target.is_nvidia_gpu() else 0
             )
 
             # M-based, not num_heads-based: the fold makes M = num_heads *
@@ -1068,12 +1264,13 @@ def flare_mla_decoding_dispatch[
 
             # Pick num_partitions for split-K. Only AMD has a tuned heuristic
             # today; non-SM10x NVIDIA stays at 1 to preserve existing behavior.
-            # Partition count is independent of BM; both BM variants share it.
+            # The AMD default assumes block-M 32 whichever BM launches; see
+            # `AMD_MLA_BF16_DECODE_BLOCK_M`.
             var num_partitions_value: Int
-            if num_partitions:
-                num_partitions_value = num_partitions.value()
+            if case .Some(num_partitions) = num_partitions:
+                num_partitions_value = num_partitions
             else:
-                comptime if has_amd_gpu_accelerator():
+                comptime if ctx.target.is_amd_gpu():
                     # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
                     num_partitions_value = mha_decoding_num_partitions(
                         batch_size,
@@ -1092,12 +1289,8 @@ def flare_mla_decoding_dispatch[
             # one CTA per row. At S=1 == num_heads, byte-identical.
             comptime _split_k_rows = num_heads * q_seq_len
 
-            var q_device = DeviceBuffer[q.dtype](
-                ctx, q.ptr, q.num_elements(), owning=False
-            )
-            var output_device = DeviceBuffer[output.dtype](
-                ctx, output.ptr, output.num_elements(), owning=False
-            )
+            var q_device = q.to_device_buffer(ctx)
+            var output_device = output.to_device_buffer(ctx)
 
             if num_partitions_value == 1:
                 # Single-partition fast path — no intermediate buffers, no reduce.
@@ -1112,7 +1305,7 @@ def flare_mla_decoding_dispatch[
                     Int32(batch_size),
                     Int32(num_partitions_value),
                     Int32(max_cache_valid_length),
-                    valid_length.as_immut(),
+                    valid_length.as_imm(),
                     mask_functor,
                     grid_dim=(1, num_blocks_y, batch_size),
                     block_dim=(num_threads, 1, 1),
@@ -1123,6 +1316,7 @@ def flare_mla_decoding_dispatch[
                             - 4096
                         )
                     ),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
             else:
                 # Split-K: per-partition output (depth_v) and softmax stats.
@@ -1144,7 +1338,7 @@ def flare_mla_decoding_dispatch[
                 )
                 var qk_max_device = DeviceBuffer[accum_type](
                     ctx,
-                    exp_sum_qk_max_data.unsafe_ptr() + data_len,
+                    exp_sum_qk_max_data.unsafe_ptr().unsafe_offset(data_len),
                     data_len,
                     owning=False,
                 )
@@ -1159,7 +1353,7 @@ def flare_mla_decoding_dispatch[
                     Int32(batch_size),
                     Int32(num_partitions_value),
                     Int32(max_cache_valid_length),
-                    valid_length.as_immut(),
+                    valid_length.as_imm(),
                     mask_functor,
                     grid_dim=(
                         num_partitions_value,
@@ -1174,11 +1368,12 @@ def flare_mla_decoding_dispatch[
                             - 4096
                         )
                     ),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
 
                 # AMD softmax always uses exp2; CUDA non-FA3 path uses exp.
-                comptime reduce_use_exp2 = has_amd_gpu_accelerator()
-                comptime if has_amd_gpu_accelerator():
+                comptime reduce_use_exp2 = ctx.target.is_amd_gpu()
+                comptime if ctx.target.is_amd_gpu():
                     # W per kernel: target parts_per_warp = MAX_PARTITIONS/W
                     # = 8, the sweet spot for step-2 software pipelining
                     # (~HBM_latency / FMA_throughput loads in flight). So
@@ -1263,9 +1458,10 @@ def flare_mla_decoding_dispatch[
                             qk_max_device,
                             Int32(batch_size),
                             Int32(num_partitions_value),
-                            valid_length.as_immut(),
+                            valid_length.as_imm(),
                             grid_dim=(D_TILES, _split_k_rows, batch_size),
-                            block_dim=(W_PARTS_64 * WARP_SIZE, 1, 1),
+                            block_dim=(W_PARTS_64 * warp_size, 1, 1),
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
                     elif num_partitions_value <= 128:
                         ctx.enqueue_function[kernel_reduce_128](
@@ -1275,9 +1471,10 @@ def flare_mla_decoding_dispatch[
                             qk_max_device,
                             Int32(batch_size),
                             Int32(num_partitions_value),
-                            valid_length.as_immut(),
+                            valid_length.as_imm(),
                             grid_dim=(D_TILES, _split_k_rows, batch_size),
-                            block_dim=(W_PARTS_128 * WARP_SIZE, 1, 1),
+                            block_dim=(W_PARTS_128 * warp_size, 1, 1),
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
                     else:
                         ctx.enqueue_function[kernel_reduce_256](
@@ -1287,9 +1484,10 @@ def flare_mla_decoding_dispatch[
                             qk_max_device,
                             Int32(batch_size),
                             Int32(num_partitions_value),
-                            valid_length.as_immut(),
+                            valid_length.as_imm(),
                             grid_dim=(D_TILES, _split_k_rows, batch_size),
-                            block_dim=(W_PARTS_256 * WARP_SIZE, 1, 1),
+                            block_dim=(W_PARTS_256 * warp_size, 1, 1),
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
                 else:
                     comptime kernel_reduce = mha_splitk_reduce[
@@ -1297,7 +1495,7 @@ def flare_mla_decoding_dispatch[
                         output.dtype,
                         depth=depth_v,
                         num_heads=num_heads,
-                        num_threads=WARP_SIZE,
+                        num_threads=warp_size,
                         use_exp2=reduce_use_exp2,
                     ]
                     ctx.enqueue_function[kernel_reduce](
@@ -1308,7 +1506,7 @@ def flare_mla_decoding_dispatch[
                         Int32(batch_size),
                         Int32(num_partitions_value),
                         grid_dim=(1, num_heads, batch_size),
-                        block_dim=(WARP_SIZE, 1, 1),
+                        block_dim=(warp_size, 1, 1),
                         attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                     )
                 _ = exp_sum_qk_max_data^
@@ -1391,12 +1589,18 @@ def flare_mla_decoding_dispatch[
                 launch_with_BM[32]()
         else:
             # BF16 AMD or non-AMD: keep original BM choice.
+            # AMD decode MMA is 16x16x32, so BM is a multiple of 16: one 16-row
+            # tile, masking padding at num_heads<16; NVIDIA clamps instead.
             comptime preferred_BM_default = (
-                16 if (not has_enough_smem or has_amd_gpu_accelerator()) else 32
+                AMD_MLA_BF16_DECODE_BLOCK_M if ctx.target.is_amd_gpu() else (
+                    16 if not has_enough_smem else 32
+                )
             )
+            # Round up, not clamp: the kernel asserts `BM % 16 == 0`, so e.g.
+            # 12 heads per device must use BM=16.
             comptime BM_default = preferred_BM_default if (
                 preferred_BM_default <= num_heads
-            ) else num_heads
+            ) else align_up(num_heads, 16)
             launch_with_BM[BM_default]()
 
 
@@ -1435,14 +1639,12 @@ def mla_splitk_reduce[
     # byte-identically.
     ragged: Bool = False,
 ](
-    intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[
+    intermediate_ptr: ImmPointer[Scalar[intermediate_type], ImmutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: MutPointer[
         Scalar[get_accum_type[output_type]()], MutAnyOrigin
     ],
-    qk_max_ptr: UnsafePointer[
-        Scalar[get_accum_type[output_type]()], MutAnyOrigin
-    ],
+    qk_max_ptr: MutPointer[Scalar[get_accum_type[output_type]()], MutAnyOrigin],
     batch_size: Int32,
     num_partitions: Int32,
     # input_row_offsets `[batch_size + 1]`. Read only on the `ragged and
@@ -1534,146 +1736,136 @@ def mla_splitk_reduce[
     # intermediate/stat reads below stay keyed by (batch_idx, row_idx)).
     var out_row = batch_idx * num_rows + row_idx
 
-    # Variable per-sequence query length: on the ragged S>1 path remap the store
-    # to `[total_q_tokens, H, depth]`. `valid_length` is the input_row_offsets,
-    # so `seq_len_rt = valid_length[b+1] - valid_length[b]`; skip pad rows
-    # (row_idx >= H*seq_len_rt, never written by the decode kernel) and send live
-    # rows to `start_of_seq*H + row_idx`. Comptime-dead at S=1 / non-ragged
-    # (byte-identical `out_row`).
-    comptime if ragged and q_seq_len > 1:
-        var valid_length = valid_length_tt.to_layout_tensor()
-        var start_of_seq = Int(valid_length[batch_idx])
-        var seq_len_rt = Int(valid_length[batch_idx + 1]) - start_of_seq
-        if Int(row_idx) >= num_heads * seq_len_rt:
-            return
-        out_row = start_of_seq * num_heads + Int(row_idx)
+    with PDL():
+        comptime if ragged and q_seq_len > 1:
+            var valid_length = valid_length_tt
+            var start_of_seq = Int(valid_length[batch_idx])
+            var seq_len_rt = Int(valid_length[batch_idx + 1]) - start_of_seq
+            if Int(row_idx) >= num_heads * seq_len_rt:
+                return
+            out_row = start_of_seq * num_heads + Int(row_idx)
 
-    # Step 1: warp 0 computes per-partition scales. Each lane owns
-    # `parts_per_lane` partitions strided by WARP_SIZE; `parts_per_lane`
-    # is comptime so the `comptime for` unrolls to the right shape (and
-    # to a single iteration when MAX_PARTITIONS == WARP_SIZE).
-    if warp_idx == 0:
-        comptime exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
-        var np_last = _num_partitions - 1
-        var lse_lane = SIMD[accum_type, parts_per_lane](
-            min_or_neg_inf[accum_type]()
-        )
-        var local_max: Scalar[accum_type] = min_or_neg_inf[accum_type]()
-        # Clamp the partition index so the load stays in-bounds for lanes
-        # whose partition_idx >= _num_partitions; ternary-select to -inf
-        # for OOB lanes so neither lse_lane nor local_max are polluted.
-        comptime for k in range(parts_per_lane):
-            var partition_idx = Int(lane_idx) + k * WARP_SIZE
-            var pi_safe = min(partition_idx, np_last)
-            var v_raw = qk_max_tt[pi_safe, batch_idx, row_idx]
-            var v = (
-                v_raw if partition_idx
-                < _num_partitions else min_or_neg_inf[accum_type]()
+        # Step 1: warp 0 computes per-partition scales. Each lane owns
+        # `parts_per_lane` partitions strided by WARP_SIZE; `parts_per_lane`
+        # is comptime so the `comptime for` unrolls to the right shape (and
+        # to a single iteration when MAX_PARTITIONS == WARP_SIZE).
+        if warp_idx == 0:
+            comptime exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
+            var np_last = _num_partitions - 1
+            var lse_lane = SIMD[accum_type, parts_per_lane](
+                min_or_neg_inf[accum_type]()
             )
-            lse_lane[k] = v
-            local_max = max(local_max, v)
-
-        var qk_max_global = warp.max(local_max)
-        # exp_sum == 0 only if every partition had qk_max == -inf;
-        # emit scale=0 instead of NaN so step 2 produces clean zero.
-        if qk_max_global == min_or_neg_inf[accum_type]():
-            qk_max_global = 0
-
-        var rescaled_lane = SIMD[accum_type, parts_per_lane](0)
-        var local_sum: Scalar[accum_type] = 0
-        # No predicate needed: for OOB lanes lse_lane[k] is -inf so
-        # exp_fn(-inf - qk_max_global) == 0, making r == 0 regardless of
-        # the (clamped) exp_sum value loaded.
-        comptime for k in range(parts_per_lane):
-            var partition_idx = Int(lane_idx) + k * WARP_SIZE
-            var pi_safe = min(partition_idx, np_last)
-            var r = exp_sum_tt[pi_safe, batch_idx, row_idx] * exp_fn(
-                lse_lane[k] - qk_max_global
-            )
-            rescaled_lane[k] = r
-            local_sum += r
-
-        var exp_sum = warp.sum(local_sum)
-        var inv_global_exp_sum: Scalar[accum_type] = 0
-        if exp_sum > 0:
-            inv_global_exp_sum = recip(exp_sum)
-
-        # partition_idx is in [0, MAX_PARTITIONS) by construction, so no
-        # bounds check is needed.
-        comptime for k in range(parts_per_lane):
-            var partition_idx = Int(lane_idx) + k * WARP_SIZE
-            scales_tt[partition_idx] = rescaled_lane[k] * inv_global_exp_sum
-
-    barrier()
-
-    # Step 2: per-warp partition accumulation.
-    #
-    # Warp-level bail: when `part_start_warp >= _num_partitions` the entire
-    # warp has no real work, so it just leaves `acc = 0` and jumps to the
-    # step-3 barrier. This matches the old per-iter-predicated code's
-    # behavior for fully-OOB warps (critical for small-np / large-grid
-    # shapes like num_heads=128 bs=8 where np=16 → most warps would
-    # otherwise issue clamped loads + zero-FMAs for nothing).
-    #
-    # Warps that pass the bail issue all `parts_per_warp` partitions
-    # together (no per-iter predicate) so the compiler can
-    # software-pipeline the HBM loads with a single `vmcnt` drain. For
-    # the boundary warp (some real partitions, some OOB):
-    #   - The HBM index is clamped to `_num_partitions - 1` so the load
-    #     stays in-bounds. The clamped data is irrelevant because:
-    #   - `scales_tt[p]` is 0 (step 1 writes 0 for slots whose lse stayed
-    #     at -inf, i.e. partitions outside [0, _num_partitions)), and
-    #   - the `scale > 0` mask zeros out the contribution.
-    var part_start_warp = warp_idx * parts_per_warp
-    var acc = SIMD[accum_type, elems_per_lane](0)
-
-    if part_start_warp < _num_partitions:
-        var np_last_s2 = _num_partitions - 1
-        var xs = Array[SIMD[accum_type, elems_per_lane], parts_per_warp](
-            fill=SIMD[accum_type, elems_per_lane](0)
-        )
-        var scales_local = Array[Scalar[accum_type], parts_per_warp](
-            fill=Scalar[accum_type](0)
-        )
-        comptime for k in range(parts_per_warp):
-            var p = part_start_warp + k
-            var p_safe = min(p, np_last_s2)
-            scales_local[k] = scales_tt[p]
-            xs[k] = intermediate_tt.load[width=elems_per_lane](
-                Coord(
-                    p_safe,
-                    batch_idx,
-                    row_idx,
-                    depth_global,
+            var local_max: Scalar[accum_type] = min_or_neg_inf[accum_type]()
+            # Clamp the partition index so the load stays in-bounds for lanes
+            # whose partition_idx >= _num_partitions; ternary-select to -inf
+            # for OOB lanes so neither lse_lane nor local_max are polluted.
+            comptime for k in range(parts_per_lane):
+                var partition_idx = Int(lane_idx) + k * WARP_SIZE
+                var pi_safe = min(partition_idx, np_last)
+                var v_raw = qk_max_tt[pi_safe, batch_idx, row_idx]
+                var v = (
+                    v_raw if partition_idx
+                    < _num_partitions else min_or_neg_inf[accum_type]()
                 )
-            ).cast[accum_type]()
-        comptime for k in range(parts_per_warp):
-            var scale_k = scales_local[k]
-            var safe = SIMD[.bool, elems_per_lane](fill=scale_k > 0).select(
-                xs[k], type_of(xs[k])(0)
-            )
-            acc += safe * type_of(safe)(scale_k)
+                lse_lane[k] = v
+                local_max = max(local_max, v)
 
-    # Step 3: cross-warp reduction and output store (`out_row` set above).
-    comptime if W_PARTS == 1:
-        output_tt.store(
-            Coord(out_row, depth_global),
-            acc.cast[output_type](),
-        )
-    else:
-        warp_partial_tt.store(Coord(warp_idx, depth_in_tile), acc)
+            var qk_max_global = warp.max(local_max)
+            # exp_sum == 0 only if every partition had qk_max == -inf;
+            # emit scale=0 instead of NaN so step 2 produces clean zero.
+            if qk_max_global == min_or_neg_inf[accum_type]():
+                qk_max_global = 0
+
+            var rescaled_lane = SIMD[accum_type, parts_per_lane](0)
+            var local_sum: Scalar[accum_type] = 0
+            # No predicate needed: for OOB lanes lse_lane[k] is -inf so
+            # exp_fn(-inf - qk_max_global) == 0, making r == 0 regardless of
+            # the (clamped) exp_sum value loaded.
+            comptime for k in range(parts_per_lane):
+                var partition_idx = Int(lane_idx) + k * WARP_SIZE
+                var pi_safe = min(partition_idx, np_last)
+                var r = exp_sum_tt[pi_safe, batch_idx, row_idx] * exp_fn(
+                    lse_lane[k] - qk_max_global
+                )
+                rescaled_lane[k] = r
+                local_sum += r
+
+            var exp_sum = warp.sum(local_sum)
+            var inv_global_exp_sum: Scalar[accum_type] = 0
+            if exp_sum > 0:
+                inv_global_exp_sum = recip(exp_sum)
+
+            # partition_idx is in [0, MAX_PARTITIONS) by construction, so no
+            # bounds check is needed.
+            comptime for k in range(parts_per_lane):
+                var partition_idx = Int(lane_idx) + k * WARP_SIZE
+                scales_tt[partition_idx] = rescaled_lane[k] * inv_global_exp_sum
+
         barrier()
 
-        if warp_idx == 0:
-            var final_acc = SIMD[accum_type, elems_per_lane](0)
-            comptime for w in range(W_PARTS):
-                final_acc += warp_partial_tt.load[width=elems_per_lane](
-                    Coord(Idx[w], depth_in_tile)
-                )
-            output_tt.store(
-                Coord(out_row, depth_global),
-                final_acc.cast[output_type](),
+        # Step 2: per-warp partition accumulation.
+        #
+        # Warp-level bail: when `part_start_warp >= _num_partitions` the entire
+        # warp has no real work, so it just leaves `acc = 0` and jumps to the
+        # step-3 barrier. This matches the old per-iter-predicated code's
+        # behavior for fully-OOB warps (critical for small-np / large-grid
+        # shapes like num_heads=128 bs=8 where np=16 → most warps would
+        # otherwise issue clamped loads + zero-FMAs for nothing).
+        #
+        # Warps that pass the bail issue all `parts_per_warp` partitions
+        # together (no per-iter predicate) so the compiler can
+        # software-pipeline the HBM loads with a single `vmcnt` drain. For
+        # the boundary warp (some real partitions, some OOB):
+        #   - The HBM index is clamped to `_num_partitions - 1` so the load
+        #     stays in-bounds. The clamped data is irrelevant because:
+        #   - `scales_tt[p]` is 0 (step 1 writes 0 for slots whose lse stayed
+        #     at -inf, i.e. partitions outside [0, _num_partitions)), and
+        #   - the `scale > 0` mask zeros out the contribution.
+        var part_start_warp = warp_idx * parts_per_warp
+        var acc = SIMD[accum_type, elems_per_lane](0)
+
+        if part_start_warp < _num_partitions:
+            var np_last_s2 = _num_partitions - 1
+            var xs = Array[SIMD[accum_type, elems_per_lane], parts_per_warp](
+                fill=SIMD[accum_type, elems_per_lane](0)
             )
+            var scales_local = Array[Scalar[accum_type], parts_per_warp](
+                fill=Scalar[accum_type](0)
+            )
+            comptime for k in range(parts_per_warp):
+                var p = part_start_warp + k
+                var p_safe = min(p, np_last_s2)
+                scales_local[k] = scales_tt[p]
+                xs[k] = intermediate_tt.load[width=elems_per_lane](
+                    (p_safe, batch_idx, row_idx, depth_global)
+                ).cast[accum_type]()
+            comptime for k in range(parts_per_warp):
+                var scale_k = scales_local[k]
+                var safe = SIMD[.bool, elems_per_lane](fill=scale_k > 0).select(
+                    xs[k], type_of(xs[k])(0)
+                )
+                acc += safe * type_of(safe)(scale_k)
+
+        # Step 3: cross-warp reduction and output store (`out_row` set above).
+        comptime if W_PARTS == 1:
+            output_tt.store(
+                (out_row, depth_global),
+                acc.cast[output_type](),
+            )
+        else:
+            warp_partial_tt.store((warp_idx, depth_in_tile), acc)
+            barrier()
+
+            if warp_idx == 0:
+                var final_acc = SIMD[accum_type, elems_per_lane](0)
+                comptime for w in range(W_PARTS):
+                    final_acc += warp_partial_tt.load[width=elems_per_lane](
+                        (Idx[w], depth_in_tile)
+                    )
+                output_tt.store(
+                    (out_row, depth_global),
+                    final_acc.cast[output_type](),
+                )
 
 
 @__llvm_metadata(
@@ -1708,11 +1900,11 @@ def mla_decoding[
     # it (its fold path is selected separately).
     q_seq_len: Int = 1,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     batch_size_dev: Int32,
     num_partitions_dev: Int32,
@@ -1792,7 +1984,7 @@ def mla_decoding[
     var batch_size = Int(batch_size_dev)
     var num_partitions = Int(num_partitions_dev)
     var max_cache_valid_length = Int(max_cache_valid_length_dev)
-    var valid_length = valid_length_tt.to_layout_tensor()
+    var valid_length = valid_length_tt
     var batch_idx = block_idx.z
 
     # split-k offsets
@@ -1814,123 +2006,124 @@ def mla_decoding[
     # split-k intermediate buffers — only used when num_partitions > 1
     var qk_max_batch_ptr = qk_max_ptr
     if num_partitions > 1:
-        qk_max_batch_ptr = qk_max_ptr + qk_max_offset
+        qk_max_batch_ptr = qk_max_ptr.unsafe_offset(qk_max_offset)
 
     var exp_sum_batch_ptr = exp_sum_ptr
     if num_partitions > 1:
-        exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
+        exp_sum_batch_ptr = exp_sum_ptr.unsafe_offset(exp_sum_offset)
 
     var seq_len: Int
     var q_batch_offset: Int
 
-    comptime if ragged:
-        # treat valid_lengths as a input_row_offsets
-        var start_of_seq = Int(valid_length[batch_idx])
-        var end_of_seq = Int(valid_length[batch_idx + 1])
-        seq_len = end_of_seq - start_of_seq
-        q_batch_offset = start_of_seq * depth * num_heads
+    with PDL():
+        comptime if ragged:
+            # treat valid_lengths as a input_row_offsets
+            var start_of_seq = Int(valid_length[batch_idx])
+            var end_of_seq = Int(valid_length[batch_idx + 1])
+            seq_len = end_of_seq - start_of_seq
+            q_batch_offset = start_of_seq * depth * num_heads
 
-        # Variable per-sequence query length: at num_partitions == 1 `output_ptr`
-        # is the final ragged output, so the per-batch base is the ragged row
-        # start `start_of_seq * H * depth_v`, not the comptime-uniform
-        # `q_seq_len * H * depth_v * batch_idx`. (The kernel still reads M =
-        # q_seq_len*H rows; the mask + SRD clamp drop short-sequence pad rows.)
-        # At num_partitions > 1 the output is the padded intermediate workspace —
-        # keep the dense offset; the reducer does the ragged remap. Comptime-dead
-        # at S=1.
-        comptime if q_seq_len > 1:
-            if num_partitions == 1:
-                output_batch_offset = start_of_seq * depth_v * num_heads
-    elif _use_valid_length:
-        # treat valid_lengths as valid lengths
-        # Q is [B, S, H, depth] → batch stride = q_seq_len * H * depth.
-        q_batch_offset = q_seq_len * depth * num_heads * batch_idx
-        seq_len = Int(valid_length[batch_idx])
-    else:
-        # No valid-length path (standalone S>1 tests): dense Q is [B, S, H,
-        # depth], seq_len is the comptime fold S. Bit-identical at S=1.
-        seq_len = q_seq_len
-        q_batch_offset = q_seq_len * depth * num_heads * batch_idx
+            # Variable per-sequence query length: at num_partitions == 1 `output_ptr`
+            # is the final ragged output, so the per-batch base is the ragged row
+            # start `start_of_seq * H * depth_v`, not the comptime-uniform
+            # `q_seq_len * H * depth_v * batch_idx`. (The kernel still reads M =
+            # q_seq_len*H rows; the mask + SRD clamp drop short-sequence pad rows.)
+            # At num_partitions > 1 the output is the padded intermediate workspace —
+            # keep the dense offset; the reducer does the ragged remap. Comptime-dead
+            # at S=1.
+            comptime if q_seq_len > 1:
+                if num_partitions == 1:
+                    output_batch_offset = start_of_seq * depth_v * num_heads
+        elif _use_valid_length:
+            # treat valid_lengths as valid lengths
+            # Q is [B, S, H, depth] → batch stride = q_seq_len * H * depth.
+            q_batch_offset = q_seq_len * depth * num_heads * batch_idx
+            seq_len = Int(valid_length[batch_idx])
+        else:
+            # No valid-length path (standalone S>1 tests): dense Q is [B, S, H,
+            # depth], seq_len is the comptime fold S. Bit-identical at S=1.
+            seq_len = q_seq_len
+            q_batch_offset = q_seq_len * depth * num_heads * batch_idx
 
-    var num_keys = k.cache_length(batch_idx)
+        var num_keys = k.cache_length(batch_idx)
 
-    comptime if not _is_cache_length_accurate:
-        num_keys += seq_len
+        comptime if not _is_cache_length_accurate:
+            num_keys += seq_len
 
-    comptime if is_nvidia_gpu():
-        mla_decoding_single_batch[
-            BM=BM,
-            BN=BN,
-            BK=BK,
-            WM=WM,
-            WN=WN,
-            depth=depth,
-            depth_v=depth_v,
-            num_threads=num_threads,
-            num_pipeline_stages=num_pipeline_stages,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
-            q_ptr + q_batch_offset,
-            k,
-            output_ptr + output_batch_offset,
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            scale,
-            num_keys,
-            num_partitions,
-            mask,
-            batch_idx,
-        )
-    elif is_amd_gpu():
-        comptime config = MHAConfig[q_type](
-            num_heads,
-            depth,
-            num_queries_per_block=BM,
-            num_keys_per_block=BN,
-            BK=BK,
-            WM=WM,
-            WN=WN,
-            num_pipeline_stages=num_pipeline_stages,
-            k_group_size=group,
-        )
+        comptime if is_nvidia_gpu():
+            mla_decoding_single_batch[
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                depth_v=depth_v,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q_ptr.unsafe_offset(q_batch_offset),
+                k,
+                output_ptr.unsafe_offset(output_batch_offset),
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                scale,
+                num_keys,
+                num_partitions,
+                mask,
+                batch_idx,
+            )
+        elif is_amd_gpu():
+            comptime config = MHAConfig[q_type](
+                num_heads,
+                depth,
+                num_queries_per_block=BM,
+                num_keys_per_block=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                num_pipeline_stages=num_pipeline_stages,
+                k_group_size=group,
+            )
 
-        var attention = Attention[
-            config,
-            group,
-            False,  # sink
-            token_gen=True,
-            q_depth=depth,
-            output_depth=depth_v,
-            mla_mode=True,
-            # K==V in MLA — load once, let PV reuse K's SMEM.
-            mla_kv_alias=True,
-            # MTP token fold: M = num_heads * q_seq_len query rows.
-            q_seq_len=q_seq_len,
-        ](
-            output_ptr + output_batch_offset,
-            q_ptr + q_batch_offset,
-            k,
-            k,
-            mask,
-            None,
-            batch_idx,
-            scale,
-            seq_len,
-            num_keys,
-            0,
-        )
-        attention.mla_decode(
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            num_partitions,
-        )
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+            var attention = Attention[
+                config,
+                group,
+                False,  # sink
+                token_gen=True,
+                q_depth=depth,
+                output_depth=depth_v,
+                mla_mode=True,
+                # K==V in MLA — load once, let PV reuse K's SMEM.
+                mla_kv_alias=True,
+                # MTP token fold: M = num_heads * q_seq_len query rows.
+                q_seq_len=q_seq_len,
+            ](
+                output_ptr.unsafe_offset(output_batch_offset),
+                q_ptr.unsafe_offset(q_batch_offset),
+                k,
+                k,
+                mask,
+                None,
+                batch_idx,
+                scale,
+                seq_len,
+                num_keys,
+                0,
+            )
+            attention.mla_decode(
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                num_partitions,
+            )
+        else:
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
 
 
-@always_inline
+@inline(.always)
 def mla_decoding_single_batch[
     q_type: DType,
     k_t: MHAOperand,
@@ -1948,11 +2141,11 @@ def mla_decoding_single_batch[
     num_pipeline_stages: Int,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     num_keys: Int,
     num_partitions: Int,
@@ -2046,30 +2239,15 @@ def mla_decoding_single_batch[
         address_space=.SHARED,
         alignment=alignment,
     ]()
-    comptime IteratorTypeQ = LayoutTensorIter[
-        q_type,
-        Layout.row_major(BM, BK),
-        _,
-        address_space=.SHARED,
-        alignment=alignment,
-    ]
-    var q_smem_iter = IteratorTypeQ(
-        rebind[
-            type_of(
-                LayoutTensorIter[
-                    q_type,
-                    Layout.row_major(BM, BK),
-                    q_smem.origin,
-                    address_space=.SHARED,
-                    alignment=alignment,
-                ]().ptr
-            )
-        ](q_smem),
-        IteratorTypeQ.layout_uint_type(q_smem_size),
-    )
+    comptime q_smem_layout = row_major[BM, BK]()
+    var q_smem_iter = TileTensorIter[
+        q_type, type_of(q_smem_layout), _, address_space=.SHARED
+    ](q_smem, q_smem_layout, bound=q_smem_size)
 
     comptime kv_smem_size = BN * depth
-    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
+    var k_smem = q_smem.unsafe_offset(q_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
 
     # For MLA, We define V = K[:, :nope_dim], thus we split the K tensor
     # in two parts when storing it in the smem: K[:, :nope_dim] and
@@ -2078,42 +2256,40 @@ def mla_decoding_single_batch[
     # (BN, BK) like standard mha kernels, we manually set the following
     # layout. This ensures that once Q @ K calculation is complete, the
     # K[:, :nope_dim] tensor stored continuously in the smem.
-    comptime IteratorTypeKV = LayoutTensorIter[
+    comptime kv_nope_smem_layout = TileLayout(
+        Coord(Idx[BN], Idx[BK]), Coord(Idx[nope_dim], Idx[1])
+    )
+    var kv_nope_smem_iter = TileTensorIter[
         k_type,
-        Layout(IntTuple(BN, BK), IntTuple(nope_dim, 1)),
+        type_of(kv_nope_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var kv_nope_smem_iter = IteratorTypeKV(
-        k_smem,
-        IteratorTypeKV.layout_uint_type(nope_dim),
-        stride=IteratorTypeKV.layout_uint_type(BK),
-    )
+    ](k_smem, kv_nope_smem_layout, bound=nope_dim, stride=BK)
 
     # view the K[:, :nope_dim] as V tensor.
-    comptime IteratorTypeV = LayoutTensorIter[
+    comptime v_smem_layout = row_major[BK, nope_dim]()
+    var v_smem_iter = TileTensorIter[
         k_type,
-        Layout.row_major(BK, nope_dim),
+        type_of(v_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var v_smem_iter = IteratorTypeV(
-        k_smem, IteratorTypeV.layout_uint_type(BN * nope_dim)
-    )
+    ](k_smem, v_smem_layout, bound=BN * nope_dim)
 
     # smem for the last rope_dim of each head, will only be used during
     # Q @ K calculation.
-    comptime IteratorTypeK = LayoutTensorIter[
+    comptime k_rope_smem_layout = row_major[BN, BK]()
+    var k_rope_smem_iter = TileTensorIter[
         k_type,
-        Layout.row_major(BN, BK),
+        type_of(k_rope_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var k_rope_smem_iter = IteratorTypeK(
-        k_smem + BN * nope_dim, IteratorTypeK.layout_uint_type(BN * rope_dim)
+    ](
+        k_smem.unsafe_offset(BN * nope_dim),
+        k_rope_smem_layout,
+        bound=BN * rope_dim,
     )
 
     comptime mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
@@ -2128,25 +2304,15 @@ def mla_decoding_single_batch[
     comptime p_frag_size = frag_size[2]
     comptime p_frag_simdwidth = p_frag_size // 2
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
+    var p_reg_tile = tt_stack_allocation[accum_type, address_space=.LOCAL](
+        row_major[num_m_mmas * num_n_mmas, p_frag_size]()
+    )
 
     comptime num_output_rows = num_m_mmas * (WN_O // MMA_N)  # num_n_mmas
     comptime num_output_rows_full = num_output_rows
-    var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_output_rows_full, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0.0)
-    )
+    var output_reg_tile = tt_stack_allocation[accum_type, address_space=.LOCAL](
+        row_major[num_output_rows_full, p_frag_size]()
+    ).fill(0)
 
     # Rowwise max and sum for online softmax
     comptime row_alignment = align_of[
@@ -2164,24 +2330,20 @@ def mla_decoding_single_batch[
         rowsum[i] = 0.0
 
     # Shared memory for P = Q * K^t
-    var p_smem = (k_smem + kv_smem_size).bitcast[Scalar[k_type]]()
+    var p_smem = k_smem.unsafe_offset(kv_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
     comptime p_smem_size = BM * BN
-    comptime IteratorTypeP = LayoutTensorIter[
-        k_type,
-        Layout.row_major(BM, BK),
-        _,
-        address_space=.SHARED,
-    ]
-    var p_smem_iter = IteratorTypeP(
-        p_smem, IteratorTypeP.layout_uint_type(BM * BN)
-    )
+    comptime p_smem_layout = row_major[BM, BK]()
+    var p_smem_iter = TileTensorIter[
+        k_type, type_of(p_smem_layout), _, address_space=.SHARED
+    ](p_smem, p_smem_layout, bound=BM * BN)
 
-    # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    # Each warp group needs separate maximum and sum slots.
+    var warp_scratch = TileTensor(
+        p_smem.unsafe_offset(BM * BN).unsafe_bitcast[Scalar[accum_type]](),
+        row_major[2 * num_warps_n, BM](),
+    )
 
     comptime kv_num_heads = 1
     comptime kv_head_idx = 0
@@ -2189,9 +2351,15 @@ def mla_decoding_single_batch[
 
     var q_offset = depth * BM * q_head_group
 
-    comptime q_gmem_layout = Layout.row_major(BM, depth)
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout](q_ptr + q_offset)
-    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
+    comptime q_gmem_tile_layout = TileLayout(
+        Coord(Idx[BM], Idx[BK]), Coord(Idx[depth], Idx[1])
+    )
+    var q_gmem_iter = TileTensorIter[q_type, type_of(q_gmem_tile_layout), _](
+        q_ptr.unsafe_offset(q_offset),
+        q_gmem_tile_layout,
+        bound=BM * depth,
+        stride=BK,
+    )
 
     var start, end = get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
@@ -2203,30 +2371,26 @@ def mla_decoding_single_batch[
 
     comptime q_num_vecs = BM * BK // simd_size
 
-    comptime async_copy_q_layout = Layout.row_major(
+    comptime async_copy_q_layout = row_major[
         min(num_threads, q_num_vecs) * simd_size // BK,
         BK // simd_size,
-    )
+    ]()
 
     comptime for q_id in range(depth // BK):
-        var q_smem_tile = q_smem_iter.next_unsafe(
-            q_smem_iter.layout_uint_type(q_id)
-        )[]
+        var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
-        copy_dram_to_sram_async[
-            thread_layout=async_copy_q_layout,
+        copy_dram_to_sram_async_ldmatrix[
+            async_copy_q_layout,
+            simd_size=simd_size,
             swizzle=True,
             num_threads=num_threads,
-        ](
-            q_smem_tile.vectorize[1, simd_size](),
-            q_gmem_iter[].vectorize[1, simd_size](),
-        )
+        ](q_smem_tile, q_gmem_iter[])
 
         async_copy_commit_group()
 
         q_gmem_iter._incr()
 
-    @always_inline
+    @inline(.always)
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int) {
@@ -2240,62 +2404,50 @@ def mla_decoding_single_batch[
             UInt32(batch_idx), UInt32(kv_tile_start_row), kv_head_idx, 0
         )
 
-        comptime kv_gmem_layout = Layout(
-            IntTuple(BN, depth),
-            IntTuple(kv_num_heads * depth, 1),
+        comptime k_gmem_tile_layout = TileLayout(
+            Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
+        # kv cache gmem has to clip num rows when masked.
         var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
-
-        # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[
-            element_type=.int32, linear_idx_type=.int32
-        ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type=.int32](
-                kv_tile_num_rows, depth
-            ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type=.int32](
-                kv_num_heads * depth, 1
-            ),
-        )
 
         _ = p_reg_tile.fill(0)
 
-        var k_gmem_block = LayoutTensor[
+        var k_gmem_iter = TileTensorIter[
             k_type,
-            kv_gmem_layout,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
+            type_of(k_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
         ](
             k_ptr,
-            kv_runtime_layout,
+            k_gmem_tile_layout,
+            bound=BN * kv_num_heads * depth,
+            stride=BK,
+            num_valid_rows=kv_tile_num_rows,
         )
-        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
         # load K[:, nope_dim:(nope_dim+rope_dim)], this would be used later
         comptime k_rope_num_ves = BN * rope_dim // simd_size
-        comptime async_copy_k_rope_layout = Layout.row_major(
+        comptime async_copy_k_rope_layout = row_major[
             ufloordiv(
                 min(num_threads, k_rope_num_ves) * simd_size,
-                k_rope_smem_iter.layout.shape[1].value(),
+                type_of(k_rope_smem_layout).static_shape[1],
             ),
-            k_rope_smem_iter.layout.shape[1].value() // simd_size,
-        )
+            type_of(k_rope_smem_layout).static_shape[1] // simd_size,
+        ]()
 
         comptime for k_id in range(ufloordiv(rope_dim, BK)):
-            var k_rope_smem_tile = k_rope_smem_iter.next_unsafe(
-                k_rope_smem_iter.layout_uint_type(k_id)
-            )[]
+            var k_rope_smem_tile = k_rope_smem_iter.next_unsafe(k_id)[]
 
-            copy_dram_to_sram_async[
-                thread_layout=async_copy_k_rope_layout,
+            copy_dram_to_sram_async_ldmatrix[
+                async_copy_k_rope_layout,
+                simd_size=simd_size,
                 swizzle=True,
+                masked=not not_last_iter,
                 num_threads=num_threads,
             ](
-                k_rope_smem_tile.vectorize[1, simd_size](),
-                k_gmem_iter.next(ufloordiv(nope_dim, BK) + k_id)[].vectorize[
-                    1, simd_size
-                ](),
+                k_rope_smem_tile,
+                k_gmem_iter.next(ufloordiv(nope_dim, BK) + k_id)[],
+                kv_tile_num_rows,
             )
 
         # Calculate Q[:, :nope_dim] @ K[:, :nope_dim] (K transposed)
@@ -2335,13 +2487,9 @@ def mla_decoding_single_batch[
             static_num_iters=ufloordiv(rope_dim, BK),
         ](
             p_reg_tile,
-            q_smem_iter.next_unsafe(
-                q_smem_iter.linear_uint_type(ufloordiv(nope_dim, BK))
-            ),
+            q_smem_iter.next_unsafe(ufloordiv(nope_dim, BK)),
             k_rope_smem_iter,
-            q_smem_iter.next_unsafe(
-                q_smem_iter.linear_uint_type(ufloordiv(nope_dim, BK))
-            ),
+            q_smem_iter.next_unsafe(ufloordiv(nope_dim, BK)),
             k_rope_smem_iter,
             ufloordiv(nope_dim, BK),
         )
@@ -2389,11 +2537,11 @@ def mla_decoding_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=.uint32](
+                                (
                                     block_idx.z,
-                                    score_head_idx,
-                                    score_row_with_start_pos,
-                                    score_col,
+                                    Int(score_head_idx),
+                                    Int(score_row_with_start_pos),
+                                    Int(score_col),
                                 ),
                                 p_reg_vec2[mma_id, i] * scale_log2e,
                             )
@@ -2407,26 +2555,18 @@ def mla_decoding_single_batch[
                                 p_reg_vec2[mma_id, i] * log2e
                             )
 
-                        if not not_last_iter:
+                        comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    score_row, score_col
-                                ),
-                                IndexList[2, element_type=.uint32](
-                                    seq_len,
-                                    num_keys,
-                                ),
+                                (score_row, Int(score_col)),
+                                (seq_len, num_keys),
                                 p_reg_vec2[mma_id, i],
                             )
 
         unswitch(
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
-                    num_keys,
-                    kv_tile_start_row,
-                ),
-                Index[dtype=DType.uint32](1, BN),
+                (Int(num_keys), Int(kv_tile_start_row)),
+                (Int(1), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK,
             _apply_mask,
@@ -2435,13 +2575,13 @@ def mla_decoding_single_batch[
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
 
-        comptime reg_layout_by_mma_unit = Layout.row_major(
+        comptime reg_layout_by_mma_unit = row_major[
             2 * num_m_mmas * num_n_mmas, 2
-        )
+        ]()
 
-        comptime output_layout_by_mma_unit = Layout.row_major(
+        comptime output_layout_by_mma_unit = row_major[
             2 * num_m_mmas * (WN_O // MMA_N), 2
-        )
+        ]()
         _online_softmax_iter_for_mma_output[
             accum_type,
             # score layout by mma unit
@@ -2452,11 +2592,13 @@ def mla_decoding_single_batch[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[output_layout_by_mma_unit]().vectorize[
-                1, 2
-            ](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, warp_y),
+            output_reg_tile.reshape[type_of(output_layout_by_mma_unit)](
+                output_layout_by_mma_unit
+            ).vectorize[1, 2](),
+            p_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
+                reg_layout_by_mma_unit
+            ).vectorize[1, 2](),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, warp_y)),
             rowmax,
             rowsum,
         )
@@ -2513,13 +2655,13 @@ def mla_decoding_single_batch[
 
     var o_offset = nope_dim * BM * q_head_group
 
-    comptime output_gmem_layout = Layout(
-        IntTuple(BM, nope_dim), IntTuple(nope_dim, 1)
+    comptime output_gmem_layout = row_major[BM, nope_dim]()
+    var output_gmem_tile = TileTensor(
+        output_ptr.unsafe_offset(o_offset), output_gmem_layout
     )
-    var output_gmem_tile = LayoutTensor[output_type, output_gmem_layout](
-        output_ptr + o_offset,
+    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN_O](
+        Coord(warp_y, warp_x)
     )
-    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN_O](warp_y, warp_x)
 
     # Write to global memory.
     comptime if output_type.is_half_float():
@@ -2527,19 +2669,16 @@ def mla_decoding_single_batch[
             num_rows=MMA_M // 2, row_size=nope_dim, access_size=MMA_N
         ]()
         # Reuse a_smem for c tile in smem
-        var accum_smem_tile = LayoutTensor[
-            output_type,
-            Layout.row_major(BM, nope_dim),
-            address_space=.SHARED,
-        ](q_smem.bitcast[Scalar[output_type]]())
-
-        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN_O](
-            warp_y, warp_x
+        comptime accum_smem_layout = row_major[BM, nope_dim]()
+        var accum_smem_tile = TileTensor(
+            q_smem.unsafe_bitcast[Scalar[output_type]](), accum_smem_layout
         )
 
-        copy_local_to_shared[
-            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN_O](
+            Coord(warp_y, warp_x)
+        )
+
+        copy_local_to_shared[row_major[8, 4](), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -2551,9 +2690,7 @@ def mla_decoding_single_batch[
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
         copy_sram_to_dram[
-            thread_layout=Layout.row_major(
-                WARP_SIZE * simd_size // WN_O, WN_O // simd_size
-            ),
+            row_major[WARP_SIZE * simd_size // WN_O, WN_O // simd_size](),
             swizzle=swizzle,
         ](
             output_gmem_warp_tile.vectorize[1, simd_size](),
@@ -2561,7 +2698,7 @@ def mla_decoding_single_batch[
         )
 
     else:
-        copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
+        copy_local_to_dram[row_major[8, 4]()](
             output_gmem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -2572,7 +2709,7 @@ def mla_decoding_single_batch[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _ragged_kv_view(
     src: TileTensor[address_space=.GENERIC, ...],
 ) -> TileTensor[
@@ -2584,20 +2721,24 @@ def _ragged_kv_view(
 
     The MLA prefill K/V operands are contiguous row-major
     `[total_keys, num_heads, depth]` tensors. Rebuilding the view directly
-    from the source pointer (instead of round-tripping through a
-    `LayoutTensor` + `lt_to_tt`) normalizes the origin, address space, and
+    from the source pointer normalizes the origin, address space, and
     linear-index type to the canonical GENERIC + `ImmutAnyOrigin` form the
     `RaggedMHAOperand` buffer field expects.
     """
-    return TileTensor(
-        rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
-        row_major(
-            Coord(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]()))
-        ),
+    return rebind[
+        TileTensor[
+            src.dtype,
+            RowMajorLayout[*Coord[Int, Int, Int].element_types],
+            ImmutAnyOrigin,
+        ]
+    ](
+        src.reshape(
+            row_major(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]()))
+        )
     )
 
 
-@always_inline
+@inline(.always)
 def _ragged_offsets_view(
     src: TileTensor[.uint32, address_space=.GENERIC, ...],
 ) -> TileTensor[
@@ -2607,13 +2748,14 @@ def _ragged_offsets_view(
 
     Mirrors `_ragged_kv_view` for the rank-1 `cache_row_offsets` operand.
     """
-    return TileTensor(
-        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](src.ptr),
-        row_major(Coord(Int(src.dim[0]()))),
-    )
+    return rebind[
+        TileTensor[
+            .uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
+        ]
+    ](src.reshape(row_major(Int(src.dim[0]()))))
 
 
-@always_inline
+@inline(.always)
 def _ragged_scales_view(
     src: TileTensor[address_space=.GENERIC, ...],
 ) -> TileTensor[
@@ -2624,14 +2766,17 @@ def _ragged_scales_view(
     Mirrors `_ragged_kv_view` for the rank-2 `[total_keys, 1]` `k_scales`
     operand, normalizing to the GENERIC + `ImmutAnyOrigin` scale-buffer form.
     """
-    return TileTensor(
-        rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
-        row_major(Coord(Int(src.dim[0]()), Int(src.dim[1]()))),
-    )
+    return rebind[
+        TileTensor[
+            src.dtype,
+            RowMajorLayout[*Coord[Int, Int].element_types],
+            ImmutAnyOrigin,
+        ]
+    ](src.reshape(row_major(Int(src.dim[0]()), Int(src.dim[1]()))))
 
 
 # entrypoint for MLA prefill kernels
-@always_inline
+@inline(.always)
 def flare_mla_prefill[
     rank: Int,
     cache_t: KVCacheT,
@@ -2642,8 +2787,8 @@ def flare_mla_prefill[
 ](
     output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
-    k: LayoutTensor[mut=False, _, address_space=.GENERIC, ...],
-    v: LayoutTensor[mut=False, _, address_space=.GENERIC, ...],
+    k: TileTensor[mut=False, address_space=.GENERIC, ...],
+    v: TileTensor[mut=False, address_space=.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
     valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
@@ -2651,9 +2796,7 @@ def flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
     """MLA prefill kernel that would only be called in the optimized compute
     graph. Only supports ragged Q/K/V inputs.
@@ -2716,162 +2859,31 @@ def flare_mla_prefill[
     """
     comptime assert rank == 3, "only support ragged inputs"
 
-    comptime if q.dtype == .bfloat16 and cache_t.dtype == .bfloat16:
-        comptime assert (
-            q.dtype == k.dtype == v.dtype == cache_t.dtype == output.dtype
-        ), "Q, K, V, output should have same type if q.dtype is bfloat16"
-    elif q.dtype == .bfloat16 and cache_t.dtype == .float8_e4m3fn:
-        comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
-            "Q, K, V, output should have same type if q.dtype is bfloat16 and"
-            " k_rope.dtype is float8_e4m3fn"
-        )
-    elif q.dtype == .float8_e4m3fn and cache_t.dtype == .float8_e4m3fn:
-        comptime assert (
-            q.dtype == k.dtype == v.dtype == cache_t.dtype
-            and output.dtype == .bfloat16
-        ), (
-            "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
-            " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
-        )
-    else:
-        comptime assert False, "Q, K, V, output dtype combination not supported"
-
-    @always_inline
-    def description_fn() {imm} -> String:
-        return String(";").join(
-            Span(
-                [
-                    trace_arg(
-                        "q",
-                        coord_to_index_list(q.layout.shape_coord()),
-                    ),
-                    trace_arg("k", k.runtime_layout.shape.value),
-                    trace_arg("v", v.runtime_layout.shape.value),
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                ]
+    comptime match (q.dtype, cache_t.dtype):
+        case (.bfloat16, .bfloat16):
+            comptime assert (
+                q.dtype == k.dtype == v.dtype == cache_t.dtype == output.dtype
+            ), "Q, K, V, output should have same type if q.dtype is bfloat16"
+        case (.bfloat16, .float8_e4m3fn):
+            comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
+                "Q, K, V, output should have same type if q.dtype is bfloat16"
+                " and k_rope.dtype is float8_e4m3fn"
             )
-        )
+        case (.float8_e4m3fn, .float8_e4m3fn):
+            comptime assert (
+                q.dtype == k.dtype == v.dtype == cache_t.dtype
+                and output.dtype == .bfloat16
+            ), (
+                "Q, K, V, output should have same type if q.dtype is"
+                " float8_e4m3fn and k_rope.dtype is float8_e4m3fn and"
+                " output.dtype is bfloat16"
+            )
+        case _:
+            comptime assert (
+                False
+            ), "Q, K, V, output dtype combination not supported"
 
-    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
-        "flare_mla_prefill",
-        Trace[
-            TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
-    ):
-        var max_prompt_len: Int
-
-        if q_max_seq_len:
-            max_prompt_len = q_max_seq_len.value()
-        else:
-            max_prompt_len = Int(k_rope.max_prompt_length())
-
-        var cro_buf = _ragged_offsets_view(cache_row_offsets)
-        var k_operand = RaggedMHAOperand(
-            TileTensor(
-                k.ptr,
-                row_major(
-                    Coord(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]()))
-                ),
-            ),
-            cro_buf,
-        )
-        var v_operand = RaggedMHAOperand(
-            TileTensor(
-                v.ptr,
-                row_major(
-                    Coord(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]()))
-                ),
-            ),
-            cro_buf,
-        )
-        var k_rope_operand = KVCacheMHAOperand(k_rope)
-
-        comptime kv_num_heads = cache_t.kv_params.num_heads
-        comptime cache_depth = cache_t.kv_params.head_size
-        comptime q_depth = type_of(q).static_shape[rank - 1]
-
-        comptime num_keys_per_block = 64
-
-        comptime mha_config = MHAConfig[dtype](
-            type_of(q).static_shape[rank - 2],  # num_heads
-            Int(k.layout.shape[rank - 1]),  # depth
-            num_keys_per_block=num_keys_per_block,
-            WN=num_keys_per_block,
-            algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
-        )
-
-        flare_mla_prefill_dispatch[
-            kv_num_heads=kv_num_heads,
-            q_depth=q_depth,
-            cache_depth=cache_depth,
-            config=mha_config,
-        ](
-            output,
-            q,
-            k_operand,
-            v_operand,
-            k_rope_operand,
-            mask_functor,
-            valid_length,
-            max_prompt_len,
-            scale,
-            ctx,
-            cache_offsets,
-        )
-
-
-# entrypoint for TileTensor as K_rope input, used by tests.
-@always_inline
-def flare_mla_prefill[
-    rank: Int,
-    mask_t: MHAMask,
-    dtype: DType,
-    //,
-](
-    output: TileTensor[mut=True, address_space=.GENERIC, ...],
-    q: TileTensor[dtype, address_space=.GENERIC, ...],
-    k: TileTensor[address_space=.GENERIC, ...],
-    v: TileTensor[address_space=.GENERIC, ...],
-    k_rope: TileTensor[address_space=.GENERIC, ...],
-    mask_functor: mask_t,
-    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
-    cache_row_offsets: TileTensor[
-        mut=True, .uint32, address_space=.GENERIC, ...
-    ],
-    scale: Float32,
-    ctx: DeviceContext,
-    q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
-) raises:
-    comptime assert rank == 3, "only support ragged inputs"
-
-    comptime if q.dtype == .bfloat16 and k_rope.dtype == .bfloat16:
-        comptime assert (
-            q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
-        ), "Q, K, V, output should have same type if q.dtype is bfloat16"
-    elif q.dtype == .bfloat16 and k_rope.dtype == .float8_e4m3fn:
-        comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
-            "Q, K, V, output should have same type if q.dtype is bfloat16 and"
-            " k_rope.dtype is float8_e4m3fn"
-        )
-    elif q.dtype == .float8_e4m3fn and k_rope.dtype == .float8_e4m3fn:
-        comptime assert (
-            q.dtype == k.dtype == v.dtype == k_rope.dtype
-            and output.dtype == .bfloat16
-        ), (
-            "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
-            " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
-        )
-    else:
-        comptime assert False, "Q, K, V, output dtype combination not supported"
-
-    @always_inline
+    @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
@@ -2901,17 +2913,140 @@ def flare_mla_prefill[
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
-        var max_prompt_len: Int = Int(q.dim[0]())
+        var max_prompt_len: Int
 
-        if q_max_seq_len:
-            max_prompt_len = q_max_seq_len.value()
+        if case .Some(q_max_seq_len) = q_max_seq_len:
+            max_prompt_len = q_max_seq_len
+        else:
+            max_prompt_len = Int(k_rope.max_prompt_length())
+
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
-        var k_rope_operand = LayoutTensorMHAOperand(
-            TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
+        var k_rope_operand = KVCacheMHAOperand(k_rope)
+
+        comptime kv_num_heads = cache_t.kv_params.num_heads
+        comptime cache_depth = cache_t.kv_params.head_size
+        comptime q_depth = type_of(q).static_shape[rank - 1]
+
+        comptime num_keys_per_block = 64
+
+        comptime mha_config = MHAConfig[dtype](
+            type_of(q).static_shape[rank - 2],  # num_heads
+            type_of(k).static_shape[rank - 1],  # depth
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
+            algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
+        )
+
+        flare_mla_prefill_dispatch[
+            kv_num_heads=kv_num_heads,
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            config=mha_config,
+        ](
+            output,
+            q,
+            k_operand,
+            v_operand,
+            k_rope_operand,
+            mask_functor,
+            valid_length,
+            max_prompt_len,
+            scale,
+            ctx,
+            cache_offsets,
+        )
+
+
+# entrypoint for TileTensor as K_rope input, used by tests.
+@inline(.always)
+def flare_mla_prefill[
+    rank: Int,
+    mask_t: MHAMask,
+    dtype: DType,
+    //,
+](
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
+    v: TileTensor[address_space=.GENERIC, ...],
+    k_rope: TileTensor[address_space=.GENERIC, ...],
+    mask_functor: mask_t,
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
+    cache_row_offsets: TileTensor[
+        mut=True, .uint32, address_space=.GENERIC, ...
+    ],
+    scale: Float32,
+    ctx: DeviceContext,
+    q_max_seq_len: OptionalReg[Int] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
+) raises:
+    comptime assert rank == 3, "only support ragged inputs"
+
+    comptime if q.dtype == .bfloat16 and k_rope.dtype == .bfloat16:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
+        ), "Q, K, V, output should have same type if q.dtype is bfloat16"
+    elif q.dtype == .bfloat16 and k_rope.dtype == .float8_e4m3fn:
+        comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
+            "Q, K, V, output should have same type if q.dtype is bfloat16 and"
+            " k_rope.dtype is float8_e4m3fn"
+        )
+    elif q.dtype == .float8_e4m3fn and k_rope.dtype == .float8_e4m3fn:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == k_rope.dtype
+            and output.dtype == .bfloat16
+        ), (
+            "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
+            " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
+        )
+    else:
+        comptime assert False, "Q, K, V, output dtype combination not supported"
+
+    @inline(.always)
+    def description_fn() {imm} -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg(
+                        "q",
+                        coord_to_index_list(q.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "k",
+                        coord_to_index_list(k.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "v",
+                        coord_to_index_list(v.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
+        "flare_mla_prefill",
+        Trace[
+            TraceLevel.OP, target=ctx.default_device_info.api
+        ]._get_detail_str(description_fn),
+        task_id=Int(ctx.device().id),
+    ):
+        var max_prompt_len: Int = Int(q.dim[0]())
+
+        if case .Some(q_max_seq_len) = q_max_seq_len:
+            max_prompt_len = q_max_seq_len
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
+        var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
+        var k_rope_operand = TileTensorMHAOperand(
+            k_rope.reshape(row_major(k_rope.layout.shape_coord()))
         )
 
         comptime output_type = output.dtype
@@ -2948,7 +3083,7 @@ def flare_mla_prefill[
 
 
 # entrypoint for TileTensor as K_rope input with scales, used by tests.
-@always_inline
+@inline(.always)
 def flare_mla_prefill[
     rank: Int,
     mask_t: MHAMask,
@@ -2969,9 +3104,7 @@ def flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
     comptime assert (
@@ -2986,7 +3119,7 @@ def flare_mla_prefill[
         q.dtype == .float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
-    @always_inline
+    @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
@@ -3016,20 +3149,19 @@ def flare_mla_prefill[
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var max_prompt_len: Int = Int(q.dim[0]())
 
-        if q_max_seq_len:
-            max_prompt_len = q_max_seq_len.value()
+        if case .Some(q_max_seq_len) = q_max_seq_len:
+            max_prompt_len = q_max_seq_len
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
-        var k_rope_operand = LayoutTensorMHAOperand(
-            TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord())),
-            TileTensor(
-                k_rope_scales.ptr,
-                row_major(k_rope_scales.layout.shape_coord()),
+        var k_rope_operand = TileTensorMHAOperand(
+            k_rope.reshape(row_major(k_rope.layout.shape_coord())),
+            k_rope_scales.reshape(
+                row_major(k_rope_scales.layout.shape_coord())
             ),
         )
 
@@ -3066,7 +3198,7 @@ def flare_mla_prefill[
         )
 
 
-@always_inline
+@inline(.always)
 def flare_mla_prefill[
     rank: Int,
     mask_t: MHAMask,
@@ -3090,11 +3222,9 @@ def flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
-    @always_inline
+    @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
@@ -3128,7 +3258,7 @@ def flare_mla_prefill[
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var max_prompt_len: Int = Int(q_nope.dim[0]())
 
@@ -3136,16 +3266,14 @@ def flare_mla_prefill[
             "q_scale must be a per token scale 2D tensor of [batch_size *"
             " seq_len, 1]"
         )
-        if q_max_seq_len:
-            max_prompt_len = q_max_seq_len.value()
+        if case .Some(q_max_seq_len) = q_max_seq_len:
+            max_prompt_len = q_max_seq_len
 
         comptime assert k_scales.rank == 2, (
             "k_scales must be a per token scale 2D tensor of [batch_size *"
             " num_keys, 1]"
         )
 
-        var q_rope_lt = q_rope.to_layout_tensor()
-        var q_scale_lt = q_scale.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
             _ragged_kv_view(k),
@@ -3154,8 +3282,8 @@ def flare_mla_prefill[
         )
 
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
-        var k_rope_operand = LayoutTensorMHAOperand(
-            TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
+        var k_rope_operand = TileTensorMHAOperand(
+            k_rope.reshape(row_major(k_rope.layout.shape_coord()))
         )
 
         var batch_size: Int = Int(valid_length.dim[0]()) - 1
@@ -3187,8 +3315,8 @@ def flare_mla_prefill[
         ](
             output,
             q_nope,
-            q_rope_lt,
-            q_scale_lt,
+            q_rope,
+            q_scale,
             k_operand,
             k_rope_operand,
             v_operand,
@@ -3205,7 +3333,7 @@ def flare_mla_prefill[
 # used by tests. Mirrors the contiguous per-token-scale entrypoint
 # above but swaps K_rope from a TileTensor to a paged KVCacheT
 # operand (matching the generic paged entrypoint at ~:1517).
-@always_inline
+@inline(.always)
 def flare_mla_prefill[
     rank: Int,
     cache_t: KVCacheT,
@@ -3230,11 +3358,9 @@ def flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
-    @always_inline
+    @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
@@ -3268,12 +3394,12 @@ def flare_mla_prefill[
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var max_prompt_len: Int
 
-        if q_max_seq_len:
-            max_prompt_len = q_max_seq_len.value()
+        if case .Some(q_max_seq_len) = q_max_seq_len:
+            max_prompt_len = q_max_seq_len
         else:
             max_prompt_len = Int(k_rope.max_prompt_length())
 
@@ -3286,8 +3412,6 @@ def flare_mla_prefill[
             " num_keys, 1]"
         )
 
-        var q_rope_lt = q_rope.to_layout_tensor()
-        var q_scale_lt = q_scale.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
             _ragged_kv_view(k),
@@ -3326,8 +3450,8 @@ def flare_mla_prefill[
         ](
             output,
             q_nope,
-            q_rope_lt,
-            q_scale_lt,
+            q_rope,
+            q_scale,
             k_operand,
             k_rope_operand,
             v_operand,
@@ -3340,7 +3464,7 @@ def flare_mla_prefill[
         )
 
 
-@always_inline
+@inline(.always)
 def flare_mla_prefill_dispatch[
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -3365,9 +3489,7 @@ def flare_mla_prefill_dispatch[
     max_prompt_len: Int,
     scale: Float32,
     ctx: DeviceContext,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
     """Dispatches an MLA prefill request to the platform-specific kernel.
 
@@ -3377,11 +3499,11 @@ def flare_mla_prefill_dispatch[
 
     Parameters:
         k_t: Key operand type backing `k` (inferred). Either
-            `RaggedMHAOperand` or `LayoutTensorMHAOperand`.
+            `RaggedMHAOperand` or `TileTensorMHAOperand`.
         v_t: Value operand type backing `v` (inferred). Either
-            `RaggedMHAOperand` or `LayoutTensorMHAOperand`.
+            `RaggedMHAOperand` or `TileTensorMHAOperand`.
         k_rope_t: KV cache operand type backing `k_rope` (inferred).
-            Either `KVCacheMHAOperand` or `LayoutTensorMHAOperand`.
+            Either `KVCacheMHAOperand` or `TileTensorMHAOperand`.
         mask_t: Mask functor type applied to attention scores (inferred).
         dtype: Element type of `q` (inferred). Must be `bfloat16` or
             `float8_e4m3fn`.
@@ -3435,7 +3557,7 @@ def flare_mla_prefill_dispatch[
     comptime assert q_depth == type_of(q).static_shape[rank - 1]
     comptime assert num_heads == type_of(q).static_shape[rank - 2]
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()
     ), "flareMLA_prefill currently only supports Nvidia and AMD GPUs."
 
     var batch_size: Int = Int(valid_length.dim[0]()) - 1
@@ -3455,7 +3577,7 @@ def flare_mla_prefill_dispatch[
 
     comptime smem_use = (q_smem + k_smem + v_smem) * size_of[
         config.dtype
-    ]() if has_nvidia_gpu_accelerator() else 0
+    ]() if ctx.target.is_nvidia_gpu() else 0
 
     comptime if _is_sm10x_gpu(ctx.default_device_info):
         comptime assert (
@@ -3485,18 +3607,14 @@ def flare_mla_prefill_dispatch[
 
     else:
         comptime assert (
-            k_rope_t.dtype == .bfloat16 or has_amd_gpu_accelerator()
+            k_rope_t.dtype == .bfloat16 or ctx.target.is_amd_gpu()
         ), (
             "Only support bfloat16 for non-SM100 Nvidia GPUs; AMD supports"
             " bfloat16 and float8_e4m3fn"
         )
 
-        var q_device = DeviceBuffer[q.dtype](
-            ctx, q.ptr, q.num_elements(), owning=False
-        )
-        var output_device = DeviceBuffer[output.dtype](
-            ctx, output.ptr, output.num_elements(), owning=False
-        )
+        var q_device = q.to_device_buffer(ctx)
+        var output_device = output.to_device_buffer(ctx)
 
         comptime kernel = mla_prefill[
             config.dtype,
@@ -3511,12 +3629,13 @@ def flare_mla_prefill_dispatch[
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+            v_depth=v_depth,
         ]
         var grid_dim = LaunchDim(
             ceildiv(max_prompt_len, BM),
             config.num_heads,
             batch_size,
-        ) if has_nvidia_gpu_accelerator() else LaunchDim(
+        ) if ctx.target.is_nvidia_gpu() else LaunchDim(
             config.num_heads,
             ceildiv(max_prompt_len, BM),
             batch_size,
@@ -3530,7 +3649,7 @@ def flare_mla_prefill_dispatch[
             scale,
             Int32(batch_size),
             Int32(max_prompt_len),
-            valid_length.as_immut(),
+            valid_length.as_imm(),
             cache_offsets,
             mask_functor,
             grid_dim=grid_dim,
@@ -3539,6 +3658,7 @@ def flare_mla_prefill_dispatch[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(smem_use)
             ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -3564,24 +3684,23 @@ def mla_prefill[
     q_depth: Int = 192,
     cache_depth: Int = 576,
     _ndbuffer_mha_operand: Bool = False,
+    v_depth: Int = config.depth,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     batch_size: Int32,
     seq_len_arg: Int32,
     valid_length_tt: TileTensor[.uint32, valid_layout, ImmutAnyOrigin],
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ],
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
     mask: mask_t,
 ):
     var _batch_size = Int(batch_size)
     var _seq_len_arg = Int(seq_len_arg)
-    var valid_length = valid_length_tt.to_layout_tensor()
+    var valid_length = valid_length_tt
     comptime depth = config.depth
     var batch_idx = block_idx.z
 
@@ -3592,83 +3711,85 @@ def mla_prefill[
     var start_pos: UInt32 = 0
     var cache_start_pos: UInt32 = 0
 
-    # treat valid_lengths as a input_row_offsets
-    var start_of_seq = Int(valid_length[batch_idx])
-    var end_of_seq = Int(valid_length[batch_idx + 1])
-    seq_len = end_of_seq - start_of_seq
+    with PDL():
+        # treat valid_lengths as a input_row_offsets
+        var start_of_seq = Int(valid_length[batch_idx])
+        var end_of_seq = Int(valid_length[batch_idx + 1])
+        seq_len = end_of_seq - start_of_seq
 
-    @always_inline
-    def q_block_idx() -> Int:
-        return block_idx.x if is_nvidia_gpu() else block_idx.y
+        @inline(.always)
+        def q_block_idx() -> Int:
+            return block_idx.x if is_nvidia_gpu() else block_idx.y
 
-    # @always_inline
-    # def head_idx() -> Int:
-    #     return block_idx.y if is_nvidia_gpu() else block_idx.x
+        # @inline(.always)
+        # def head_idx() -> Int:
+        #     return block_idx.y if is_nvidia_gpu() else block_idx.x
 
-    if seq_len < q_block_idx() * config.block_m():
-        return
+        if seq_len < q_block_idx() * config.block_m():
+            return
 
-    comptime if _ndbuffer_mha_operand:
-        num_keys = k_rope.cache_length(batch_idx)
-        start_pos = UInt32(num_keys - seq_len)
+        comptime if _ndbuffer_mha_operand:
+            num_keys = k_rope.cache_length(batch_idx)
+            start_pos = UInt32(num_keys - seq_len)
 
-    else:
-        start_pos = UInt32(k_rope.cache_length(batch_idx))
-        num_keys = Int(start_pos) + seq_len
+        else:
+            start_pos = UInt32(k_rope.cache_length(batch_idx))
+            num_keys = Int(start_pos) + seq_len
 
-    if cache_offsets:
-        var cache_offsets_nd = cache_offsets.value()
-        cache_start_pos = cache_offsets_nd[batch_idx][0]
+        if case .Some(cache_offsets_nd) = cache_offsets:
+            cache_start_pos = cache_offsets_nd[batch_idx][0]
 
-    var q_batch_offset = start_of_seq * q_depth * config.num_heads
-    var o_batch_offset = start_of_seq * depth * config.num_heads
+        var q_batch_offset = start_of_seq * q_depth * config.num_heads
+        var o_batch_offset = start_of_seq * v_depth * config.num_heads
 
-    comptime if is_nvidia_gpu():
-        mla_prefill_single_batch[
-            config=config,
-            group=group,
-            q_depth=q_depth,
-            cache_depth=cache_depth,
-        ](
-            q_ptr + q_batch_offset,
-            k,
-            v,
-            k_rope,
-            output_ptr + o_batch_offset,
-            scale,
-            seq_len,
-            max_seq_len,
-            start_pos,
-            cache_start_pos,
-            num_keys,
-            mask,
-            batch_idx,
-        )
-    elif is_amd_gpu():
-        var attention = Attention[config, 1, False, q_depth=q_depth](
-            output_ptr + o_batch_offset,
-            q_ptr + q_batch_offset,
-            k,
-            v,
-            mask,
-            None,
-            batch_idx,
-            scale,
-            seq_len,
-            num_keys,
-            Int(start_pos),
-            Int(cache_start_pos),
-        )
-        attention.mla_prefill(
-            k_rope,
-        )
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+        comptime if is_nvidia_gpu():
+            mla_prefill_single_batch[
+                config=config,
+                group=group,
+                q_depth=q_depth,
+                cache_depth=cache_depth,
+            ](
+                q_ptr.unsafe_offset(q_batch_offset),
+                k,
+                v,
+                k_rope,
+                output_ptr.unsafe_offset(o_batch_offset),
+                scale,
+                seq_len,
+                max_seq_len,
+                start_pos,
+                cache_start_pos,
+                num_keys,
+                mask,
+                batch_idx,
+            )
+        elif is_amd_gpu():
+            var attention = Attention[
+                config, 1, False, q_depth=q_depth, output_depth=v_depth
+            ](
+                output_ptr.unsafe_offset(o_batch_offset),
+                q_ptr.unsafe_offset(q_batch_offset),
+                k,
+                v,
+                mask,
+                None,
+                batch_idx,
+                scale,
+                seq_len,
+                num_keys,
+                Int(start_pos),
+                Int(cache_start_pos),
+            )
+            attention.mla_prefill(
+                k_rope,
+            )
+        else:
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
 
 
-@always_inline
+@inline(.always)
 def mla_prefill_single_batch[
     q_type: DType,
     k_t: MHAOperand,
@@ -3682,11 +3803,11 @@ def mla_prefill_single_batch[
     q_depth: Int = 192,
     cache_depth: Int = 576,
 ](
-    q_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
+    q_ptr: MutPointer[Scalar[q_type], _],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[mut=True, Scalar[output_type], _],
+    output_ptr: MutPointer[Scalar[output_type], _],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
@@ -3772,7 +3893,6 @@ def mla_prefill_single_batch[
         num_warps_m * num_warps_n == num_threads // WARP_SIZE
     ), "Number of warps doesn't match warp tile sizes."
 
-    var tid: Int = thread_idx.x
     var warp_id = UInt32(warp_id[broadcast=True]())
     var lane = UInt32(lane_id())
 
@@ -3787,62 +3907,44 @@ def mla_prefill_single_batch[
         address_space=.SHARED,
         alignment=alignment,
     ]()
-    comptime IteratorTypeQ = LayoutTensorIter[
-        q_type,
-        Layout.row_major(BM, BK),
-        _,
-        address_space=.SHARED,
-        alignment=alignment,
-    ]
-    var q_smem_iter = IteratorTypeQ(
-        rebind[
-            type_of(
-                LayoutTensorIter[
-                    q_type,
-                    Layout.row_major(BM, BK),
-                    q_smem.origin,
-                    address_space=.SHARED,
-                    alignment=alignment,
-                ]().ptr
-            )
-        ](q_smem),
-        IteratorTypeQ.layout_uint_type(q_smem_size),
-    )
+    comptime q_smem_layout = row_major[BM, BK]()
+    var q_smem_iter = TileTensorIter[
+        q_type, type_of(q_smem_layout), _, address_space=.SHARED
+    ](q_smem, q_smem_layout, bound=q_smem_size)
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
     comptime k_smem_size = BN * q_depth
-    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
-    comptime IteratorTypeK = LayoutTensorIter[
+    var k_smem = q_smem.unsafe_offset(q_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
+    comptime k_smem_layout = row_major[BN, BK]()
+    var k_smem_iter = TileTensorIter[
         k_type,
-        Layout.row_major(BN, BK),
+        type_of(k_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var k_smem_iter = IteratorTypeK(
-        k_smem, IteratorTypeK.layout_uint_type(k_smem_size)
-    )
+    ](k_smem, k_smem_layout, bound=k_smem_size)
 
     comptime v_smem_size = BN * depth
-    var v_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
-    comptime IteratorTypeV = LayoutTensorIter[
+    var v_smem = k_smem.unsafe_offset(k_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
+    comptime v_smem_layout = row_major[BK, depth]()
+    var v_smem_iter = TileTensorIter[
         v_type,
-        Layout.row_major(BK, depth),
+        type_of(v_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var v_smem_iter = IteratorTypeV(
-        v_smem, IteratorTypeV.layout_uint_type(v_smem_size)
-    )
+    ](v_smem, v_smem_layout, bound=v_smem_size)
 
     var head_idx = UInt32(block_idx.y)
     var q_tile_idx = UInt32(block_idx.x)
 
     # Query global memory iterator
-    comptime q_gmem_layout = Layout(
-        IntTuple(BM, q_depth),
-        IntTuple(num_heads * q_depth, 1),
+    comptime q_gmem_tile_layout = TileLayout(
+        Coord(Idx[BM], Idx[BK]), Coord(Idx[num_heads * q_depth], Idx[1])
     )
     var q_tile_num_rows = min(
         UInt32(BM), UInt32(seq_len) - q_tile_idx * UInt32(BM)
@@ -3851,24 +3953,15 @@ def mla_prefill_single_batch[
         head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
     )
 
-    var q_gmem_block = LayoutTensor[
-        q_type,
-        q_gmem_layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
+    var q_gmem_iter = TileTensorIter[
+        q_type, type_of(q_gmem_tile_layout), _, masked=True
     ](
-        q_ptr + Int(q_offset),
-        RuntimeLayout[element_type=.int32, linear_idx_type=.int32](
-            RuntimeTuple[q_gmem_layout.shape, element_type=.int32](
-                Int(q_tile_num_rows), q_depth
-            ),
-            RuntimeTuple[q_gmem_layout.stride, element_type=.int32](
-                num_heads * q_depth, 1
-            ),
-        ),
+        q_ptr.unsafe_offset(Int(q_offset)),
+        q_gmem_tile_layout,
+        bound=BM * num_heads * q_depth,
+        stride=BK,
+        num_valid_rows=Int(q_tile_num_rows),
     )
-    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
     # q tile has valid shape q_tile_num_rows x q_depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
@@ -3888,23 +3981,13 @@ def mla_prefill_single_batch[
     comptime p_frag_size = frag_size[2]
     comptime p_frag_simdwidth = p_frag_size // 2
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
-
-    var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
+    var p_reg_tile = tt_stack_allocation[accum_type, address_space=.LOCAL](
+        row_major[num_m_mmas * num_n_mmas, p_frag_size]()
     )
+
+    var output_reg_tile = tt_stack_allocation[accum_type, address_space=.LOCAL](
+        row_major[num_m_mmas * num_n_mmas_output, p_frag_size]()
+    ).fill(0)
 
     # Rowwise max and sum for online softmax
     comptime row_alignment = align_of[
@@ -3918,32 +4001,31 @@ def mla_prefill_single_batch[
     ]()
 
     comptime for i in range(0, WM, 2):
-        rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
-        rowsum.store(i, SIMD[accum_type, 2](0))
+        rowmax.unsafe_store(
+            i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]())
+        )
+        rowsum.unsafe_store(i, SIMD[accum_type, 2](0))
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
-    var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
-    comptime IteratorTypeP = LayoutTensorIter[
+    var p_smem = v_smem.unsafe_offset(v_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
+    comptime p_smem_layout = row_major[BM, BK]()
+    var p_smem_iter = TileTensorIter[
         v_type,
-        Layout.row_major(BM, BK),
+        type_of(p_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var p_smem_iter = IteratorTypeP(
-        p_smem, IteratorTypeP.layout_uint_type(BM * BN)
-    )
+    ](p_smem, p_smem_layout, bound=BM * BN)
 
-    # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ](
-        (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
+    # Each warp group needs separate maximum and sum slots.
+    var warp_scratch = TileTensor(
+        p_smem.unsafe_offset(BM * BN if num_warps_n > 1 else 0).unsafe_bitcast[
             Scalar[accum_type]
-        ]()
+        ](),
+        row_major[2 * num_warps_n, BM](),
     )
 
     # Mask global memory iterator.
@@ -3955,24 +4037,21 @@ def mla_prefill_single_batch[
 
     comptime q_num_vecs = BM * BK // simd_size
 
-    comptime async_copy_q_layout = Layout.row_major(
+    comptime async_copy_q_layout = row_major[
         min(num_threads, q_num_vecs) * simd_size // BK,
         BK // simd_size,
-    )
+    ]()
 
     comptime for q_id in range(q_depth // BK):
-        var q_smem_tile = q_smem_iter.next_unsafe(
-            q_smem_iter.linear_uint_type(q_id)
-        )[]
+        var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
-        copy_dram_to_sram_async[
-            thread_layout=async_copy_q_layout,
+        copy_dram_to_sram_async_ldmatrix[
+            async_copy_q_layout,
+            simd_size=simd_size,
             swizzle=True,
+            masked=True,
             num_threads=num_threads,
-        ](
-            q_smem_tile.vectorize[1, simd_size](),
-            q_gmem_iter[].vectorize[1, simd_size](),
-        )
+        ](q_smem_tile, q_gmem_iter[], q_gmem_iter.num_valid_rows)
 
         async_copy_commit_group()
 
@@ -3987,7 +4066,7 @@ def mla_prefill_single_batch[
     #       loop_over_kvcache[tile_size, True]
     #   ```
     # Only the last iteration is doing boundary check.
-    @always_inline
+    @inline(.always)
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int) {
@@ -4002,40 +4081,34 @@ def mla_prefill_single_batch[
         if (
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     Int(UInt32(kv_tile_start_row) + cache_start_pos),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
             return
 
-        comptime kv_gmem_layout = Layout(
-            IntTuple(BN, depth),
-            IntTuple(num_heads * depth, 1),
+        comptime k_gmem_tile_layout = TileLayout(
+            Coord(Idx[BN], Idx[BK]), Coord(Idx[num_heads * depth], Idx[1])
+        )
+        comptime v_gmem_tile_layout = TileLayout(
+            Coord(Idx[BK], Idx[depth]), Coord(Idx[num_heads * depth], Idx[1])
+        )
+        comptime k_rope_gmem_tile_layout = TileLayout(
+            Coord(Idx[BN], Idx[BK]),
+            Coord(Idx[cache_num_heads * cache_depth], Idx[1]),
         )
 
+        # kv cache gmem has to clip num rows when masked.
         var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
-        # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[
-            element_type=.int32, linear_idx_type=.int32
-        ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type=.int32](
-                kv_tile_num_rows, depth
-            ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type=.int32](
-                num_heads * depth, 1
-            ),
-        )
-
-        var k_gmem_block = LayoutTensor[
+        var k_gmem_iter = TileTensorIter[
             k_type,
-            kv_gmem_layout,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
+            type_of(k_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
         ](
             k.block_paged_ptr[BN](
@@ -4044,15 +4117,16 @@ def mla_prefill_single_batch[
                 UInt32(Int(head_idx)),
                 0,
             ),
-            kv_runtime_layout,
+            k_gmem_tile_layout,
+            bound=BN * num_heads * depth,
+            stride=BK,
+            num_valid_rows=kv_tile_num_rows,
         )
-        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
-        var v_gmem_block = LayoutTensor[
+        var v_gmem_iter = TileTensorIter[
             v_type,
-            kv_gmem_layout,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
+            type_of(v_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
         ](
             v.block_paged_ptr[BN](
@@ -4061,32 +4135,16 @@ def mla_prefill_single_batch[
                 UInt32(Int(head_idx)),
                 0,
             ),
-            kv_runtime_layout,
-        )
-        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, depth, axis=0](0, 0)
-
-        # here we set up variables for k_rope tensor
-        comptime k_rope_gmem_layout = Layout(
-            IntTuple(BN, cache_depth),
-            IntTuple(cache_num_heads * cache_depth, 1),
+            v_gmem_tile_layout,
+            bound=BN * num_heads * depth,
+            stride=BK * num_heads * depth,
+            num_valid_rows=kv_tile_num_rows,
         )
 
-        var k_rope_runtime_layout = RuntimeLayout[
-            element_type=.int32, linear_idx_type=.int32
-        ](
-            RuntimeTuple[k_rope_gmem_layout.shape, element_type=.int32](
-                kv_tile_num_rows, cache_depth
-            ),
-            RuntimeTuple[k_rope_gmem_layout.stride, element_type=.int32](
-                cache_num_heads * cache_depth, 1
-            ),
-        )
-
-        var k_rope_gmem_block = LayoutTensor[
+        var k_rope_gmem_iter = TileTensorIter[
             k_rope_type,
-            k_rope_gmem_layout,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
+            type_of(k_rope_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
         ](
             k_rope.block_paged_ptr[BN](
@@ -4095,63 +4153,52 @@ def mla_prefill_single_batch[
                 UInt32(Int(head_idx // UInt32(group))),
                 UInt32(cache_depth - rope_depth),
             ),
-            k_rope_runtime_layout,
-        )
-        var k_rope_gmem_iter = k_rope_gmem_block.tiled_iterator[BN, BK, axis=1](
-            0, 0
+            k_rope_gmem_tile_layout,
+            bound=BN * cache_num_heads * cache_depth,
+            stride=BK,
+            num_valid_rows=kv_tile_num_rows,
         )
 
         # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
 
-        @always_inline
-        def _mask_tensor_row(
-            tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
-        ) {imm}:
-            return {
-                tensor.ptr,
-                {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
-            }
-
         comptime kv_num_vecs = BN * BK // simd_size
-        comptime async_copy_k_layout = Layout.row_major(
+        comptime async_copy_k_layout = row_major[
             min(num_threads, kv_num_vecs)
             * simd_size
-            // k_smem_iter.layout.stride[0].value(),
-            k_smem_iter.layout.stride[0].value() // simd_size,
-        )
+            // type_of(k_smem_layout).static_stride[0],
+            type_of(k_smem_layout).static_stride[0] // simd_size,
+        ]()
 
         # load K tile into smem
         comptime for k_id in range(depth // BK):
-            var k_smem_tile = k_smem_iter.next_unsafe(
-                k_smem_iter.layout_uint_type(k_id)
-            )[]
+            var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
-            copy_dram_to_sram_async[
-                thread_layout=async_copy_k_layout,
+            copy_dram_to_sram_async_ldmatrix[
+                async_copy_k_layout,
+                simd_size=simd_size,
                 swizzle=True,
+                masked=not not_last_iter,
                 num_threads=num_threads,
-            ](
-                k_smem_tile.vectorize[1, simd_size](),
-                k_gmem_iter[].vectorize[1, simd_size](),
-            )
+            ](k_smem_tile, k_gmem_iter[], k_gmem_iter.num_valid_rows)
 
             async_copy_commit_group()
 
             k_gmem_iter._incr()
 
         comptime for k_id in range(depth // BK, q_depth // BK):
-            var k_smem_tile = k_smem_iter.next_unsafe(
-                k_smem_iter.linear_uint_type(k_id)
-            )[]
+            var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
-            copy_dram_to_sram_async[
-                thread_layout=async_copy_k_layout,
+            copy_dram_to_sram_async_ldmatrix[
+                async_copy_k_layout,
+                simd_size=simd_size,
                 swizzle=True,
+                masked=not not_last_iter,
                 num_threads=num_threads,
             ](
-                k_smem_tile.vectorize[1, simd_size](),
-                k_rope_gmem_iter[].vectorize[1, simd_size](),
+                k_smem_tile,
+                k_rope_gmem_iter[],
+                k_rope_gmem_iter.num_valid_rows,
             )
 
             async_copy_commit_group()
@@ -4228,7 +4275,7 @@ def mla_prefill_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=.uint32](
+                                (
                                     block_idx.z,
                                     block_idx.y,
                                     Int(score_row_with_start_pos),
@@ -4246,26 +4293,21 @@ def mla_prefill_single_batch[
                                 p_reg_vec2[mma_id, i] * log2e
                             )
 
-                        if not not_last_iter:
+                        comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
-                                IndexList[2, element_type=.uint32](
-                                    seq_len,
-                                    num_keys,
-                                ),
+                                (Int(score_row), Int(score_col)),
+                                (seq_len, num_keys),
                                 p_reg_vec2[mma_id, i],
                             )
 
         unswitch(
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    UInt32(kv_tile_start_row) + cache_start_pos,
+                    Int(UInt32(kv_tile_start_row) + cache_start_pos),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK,
             _apply_mask,
@@ -4274,12 +4316,12 @@ def mla_prefill_single_batch[
         # Increment mask to next BM x BN block.
         mask_warp_col += UInt32(BN)
 
-        comptime reg_layout_by_mma_unit = Layout.row_major(
+        comptime reg_layout_by_mma_unit = row_major[
             2 * num_m_mmas * num_n_mmas, 2
-        )
-        comptime reg_output_layout_by_mma_unit = Layout.row_major(
+        ]()
+        comptime reg_output_layout_by_mma_unit = row_major[
             2 * num_m_mmas * num_n_mmas_output, 2
-        )
+        ]()
 
         _online_softmax_iter_for_mma_output[
             accum_type,
@@ -4291,45 +4333,39 @@ def mla_prefill_single_batch[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[reg_output_layout_by_mma_unit]().vectorize[
-                1, 2
-            ](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+            output_reg_tile.reshape[type_of(reg_output_layout_by_mma_unit)](
+                reg_output_layout_by_mma_unit
+            ).vectorize[1, 2](),
+            p_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
+                reg_layout_by_mma_unit
+            ).vectorize[1, 2](),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
         )
 
-        comptime async_copy_v_layout = Layout.row_major(
+        comptime async_copy_v_layout = row_major[
             min(num_threads, kv_num_vecs)
             * simd_size
-            // v_smem_iter.layout.stride[0].value(),
-            v_smem_iter.layout.stride[0].value() // simd_size,
-        )
+            // type_of(v_smem_layout).static_stride[0],
+            type_of(v_smem_layout).static_stride[0] // simd_size,
+        ]()
 
-        var v_tensor: type_of(v_gmem_iter[])
         # load V tile into smem
         comptime for v_id in range(BN // BK):
-            var v_smem_tile = v_smem_iter.next_unsafe(
-                v_smem_iter.layout_uint_type(v_id)
-            )[]
+            var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
+            var num_rows_bound = BK
             comptime if not not_last_iter:
-                var num_rows_bound = min(
-                    BK, end - (kv_tile_start_row + v_id * BK)
-                )
-                v_tensor = _mask_tensor_row(v_gmem_iter[], num_rows_bound)
-            else:
-                v_tensor = v_gmem_iter[]
+                num_rows_bound = min(BK, end - (kv_tile_start_row + v_id * BK))
 
-            copy_dram_to_sram_async[
-                thread_layout=async_copy_v_layout,
-                swizzle=v_smem_tile.dtype.is_half_float(),
+            copy_dram_to_sram_async_ldmatrix[
+                async_copy_v_layout,
+                simd_size=simd_size,
+                swizzle=v_type.is_half_float(),
+                masked=not not_last_iter,
                 num_threads=num_threads,
-            ](
-                v_smem_tile.vectorize[1, simd_size](),
-                v_tensor.vectorize[1, simd_size](),
-            )
+            ](v_smem_tile, v_gmem_iter[], num_rows_bound)
 
             async_copy_commit_group()
 
@@ -4376,9 +4412,19 @@ def mla_prefill_single_batch[
         else:
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
             # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
-            var p_reg_iter = p_reg_tile.tiled_iterator[
+            comptime p_reg_tile_layout = row_major[
                 MMA_K // MMA_N * num_m_mmas, p_frag_size
-            ](0, 0)
+            ]()
+            var p_reg_iter = TileTensorIter[
+                accum_type,
+                type_of(p_reg_tile_layout),
+                _,
+                address_space=.LOCAL,
+            ](
+                p_reg_tile,
+                p_reg_tile_layout,
+                bound=num_m_mmas * num_n_mmas * p_frag_size,
+            )
 
             async_copy_wait_all()
             barrier()
@@ -4407,35 +4453,20 @@ def mla_prefill_single_batch[
 
     tile_and_unswitch[[BN]](0, num_keys, loop_over_kvcache)
 
-    comptime output_gmem_layout = Layout(
-        IntTuple(BM, depth), IntTuple(num_heads * depth, 1)
-    )
-
     var output_offset = UInt32(depth) * (
         head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
     )
-    var output_gemm_runtime_layout = RuntimeLayout[
-        element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[output_gmem_layout.shape, element_type=.int32](
-            Int(q_tile_num_rows), depth
-        ),
-        RuntimeTuple[output_gmem_layout.stride, element_type=.int32](
-            num_heads * depth, 1
-        ),
+    # The tile keeps its static BM-row shape so the copies distribute threads
+    # the same way as the shared-memory source; `q_tile_num_rows` bounds the
+    # rows actually stored.
+    comptime output_gmem_layout = TileLayout(
+        Coord(Idx[BM], Idx[depth]), Coord(Idx[num_heads * depth], Idx[1])
     )
-    var output_gmem_tile = LayoutTensor[
-        output_type,
-        output_gmem_layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
-    ](
-        output_ptr + Int(output_offset),
-        output_gemm_runtime_layout,
+    var output_gmem_tile = TileTensor[linear_idx_type=.int32](
+        output_ptr.unsafe_offset(Int(output_offset)), output_gmem_layout
     )
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN_O](
-        Int(warp_y), Int(warp_x)
+        Coord(Int(warp_y), Int(warp_x))
     )
 
     # Apply softmax denumerator.
@@ -4456,18 +4487,15 @@ def mla_prefill_single_batch[
             num_rows=MMA_M // 2, row_size=depth, access_size=MMA_N
         ]()
         # Reuse a_smem for c tile in smem
-        var accum_smem_tile = LayoutTensor[
-            output_type,
-            Layout.row_major(BM, depth),
-            address_space=.SHARED,
-        ](q_smem.bitcast[Scalar[output_type]]())
+        comptime accum_smem_layout = row_major[BM, depth]()
+        var accum_smem_tile = TileTensor(
+            q_smem.unsafe_bitcast[Scalar[output_type]](), accum_smem_layout
+        )
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, depth](
-            Int(warp_y), Int(warp_x)
+            Coord(Int(warp_y), Int(warp_x))
         )
-        copy_local_to_shared[
-            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy_local_to_shared[row_major[8, 4](), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -4479,19 +4507,19 @@ def mla_prefill_single_batch[
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
         copy_sram_to_dram[
-            thread_layout=Layout.row_major(
-                num_threads * simd_size // depth,
-                depth // simd_size,
-            ),
+            row_major[num_threads * simd_size // depth, depth // simd_size](),
             swizzle=swizzle,
+            masked=True,
         ](
             output_gmem_tile.vectorize[1, simd_size](),
             accum_smem_tile.vectorize[1, simd_size](),
+            Int(q_tile_num_rows),
         )
     else:
-        copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
+        copy_local_to_dram[row_major[8, 4]()](
             output_gmem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
+            Int(q_tile_num_rows) - Int(warp_y) * WM,
         )
 
 
@@ -4523,11 +4551,12 @@ def set_buffer_lengths_to_zero[
     comptime assert buffer_lengths.flat_rank == 1
     comptime MAX_CHUNKS = buffer_lengths.static_shape[0]
 
-    comptime for chunk_idx in range(MAX_CHUNKS):
-        buffer_lengths[chunk_idx] = 0
+    with PDL():
+        comptime for chunk_idx in range(MAX_CHUNKS):
+            buffer_lengths[chunk_idx] = 0
 
 
-@always_inline
+@inline(.always)
 def mla_prefill_plan[
     cache_t: KVCacheT,
 ](
@@ -4582,7 +4611,12 @@ def mla_prefill_plan[
     if batch_size == 0:
         # Fill buffer lengths with 0
         comptime kernel = set_buffer_lengths_to_zero[buffer_lengths.LayoutType,]
-        ctx.enqueue_function[kernel](buffer_lengths, grid_dim=1, block_dim=1)
+        ctx.enqueue_function[kernel](
+            buffer_lengths,
+            grid_dim=1,
+            block_dim=1,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
     else:
         comptime kernel = mla_prefill_plan_kernel[
             buffer_row_offsets.LayoutType,
@@ -4596,11 +4630,12 @@ def mla_prefill_plan[
             buffer_row_offsets,
             cache_offsets,
             buffer_lengths,
-            input_row_offsets.as_immut(),
+            input_row_offsets.as_imm(),
             k_cache,
             buffer_token_size,
             grid_dim=(ceildiv(batch_size, 128), 1, 1),
             block_dim=(128, 1, 1),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -4685,71 +4720,84 @@ def mla_prefill_plan_kernel[
     if seq_idx >= batch_size:
         return
 
-    # Calculate starting position for this sequence.
-    # Note: the total cache length of each sequence is aligned to the page size.
-    var prev_row_offset = Int(input_row_offsets[0])
-    for i in range(seq_idx):
-        # The cache length that has been prefilled in previous forward passes.
-        var cache_length = k_cache.cache_length(i)
+    with PDL():
+        # Calculate starting position for this sequence.
+        # Note: the total cache length of each sequence is aligned to the page size.
+        var prev_row_offset = Int(input_row_offsets[0])
+        for i in range(seq_idx):
+            # The cache length that has been prefilled in previous forward passes.
+            var cache_length = k_cache.cache_length(i)
 
-        # account for the new input tokens.
-        var row_offset_i = Int(input_row_offsets[i + 1])
-        cache_length += row_offset_i - prev_row_offset
-        prev_row_offset = row_offset_i
+            # account for the new input tokens.
+            var row_offset_i = Int(input_row_offsets[i + 1])
+            cache_length += row_offset_i - prev_row_offset
+            prev_row_offset = row_offset_i
 
-        seq_start_pos += align_up(cache_length, page_size)
+            seq_start_pos += align_up(cache_length, page_size)
 
-    var curr_seq_len = align_up(
-        k_cache.cache_length(seq_idx)
-        + Int(input_row_offsets[seq_idx + 1])
-        - prev_row_offset,
-        page_size,
-    )
-
-    # which chunk this sequence starts in
-    var start_chunk = seq_start_pos // buffer_size
-    var processed_seq_len = UInt32(0)
-    var seq_len_left = curr_seq_len
-
-    # Fill buffer offsets for this sequence
-    comptime for chunk_idx in range(MAX_CHUNKS):
-        if chunk_idx < start_chunk:
-            buffer_row_offsets[chunk_idx, seq_idx] = UInt32(buffer_size)
-        elif chunk_idx == start_chunk:
-            buffer_row_offsets[chunk_idx, seq_idx] = UInt32(
-                seq_start_pos % buffer_size
-            )
-        else:
-            buffer_row_offsets[chunk_idx, seq_idx] = 0
-
-        cache_offsets[chunk_idx, seq_idx] = processed_seq_len
-
-        var chunk_len = min(
-            seq_len_left,
-            buffer_size - Int(buffer_row_offsets[chunk_idx, seq_idx]),
+        var curr_seq_len = align_up(
+            k_cache.cache_length(seq_idx)
+            + Int(input_row_offsets[seq_idx + 1])
+            - prev_row_offset,
+            page_size,
         )
-        processed_seq_len += UInt32(chunk_len)
-        seq_len_left -= chunk_len
 
-    # If this is the last sequence in the batch
-    if seq_idx == batch_size - 1:
-        var seq_end_pos = seq_start_pos + curr_seq_len
-        var end_chunk = ceildiv(seq_end_pos, buffer_size) - 1
+        # which chunk this sequence starts in
+        var start_chunk = seq_start_pos // buffer_size
+        # The batch scheduler is expected to cap combined context so this
+        # never fires in practice. This is a backstop against that invariant ever
+        # breaking (which has happened before).
+        debug_assert(
+            start_chunk < MAX_CHUNKS,
+            (
+                "mla_prefill_plan_kernel: start_chunk exceeds MAX_CHUNKS; the"
+                " batch's combined context overflowed the prefill buffer"
+            ),
+        )
+        var processed_seq_len = UInt32(0)
+        var seq_len_left = curr_seq_len
 
-        # Set buffer lengths for all chunks
+        # Fill buffer offsets for this sequence
         comptime for chunk_idx in range(MAX_CHUNKS):
-            if chunk_idx < end_chunk:
-                buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(buffer_size)
-                buffer_lengths[chunk_idx] = Int32(buffer_size)
-            elif chunk_idx == end_chunk:
-                var last_chunk_len = seq_end_pos - end_chunk * buffer_size
-                buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(
-                    last_chunk_len
+            if chunk_idx < start_chunk:
+                buffer_row_offsets[chunk_idx, seq_idx] = UInt32(buffer_size)
+            elif chunk_idx == start_chunk:
+                buffer_row_offsets[chunk_idx, seq_idx] = UInt32(
+                    seq_start_pos % buffer_size
                 )
-                buffer_lengths[chunk_idx] = Int32(last_chunk_len)
             else:
-                buffer_row_offsets[chunk_idx, seq_idx + 1] = 0
-                buffer_lengths[chunk_idx] = -1
+                buffer_row_offsets[chunk_idx, seq_idx] = 0
+
+            cache_offsets[chunk_idx, seq_idx] = processed_seq_len
+
+            var chunk_len = min(
+                seq_len_left,
+                buffer_size - Int(buffer_row_offsets[chunk_idx, seq_idx]),
+            )
+            processed_seq_len += UInt32(chunk_len)
+            seq_len_left -= chunk_len
+
+        # If this is the last sequence in the batch
+        if seq_idx == batch_size - 1:
+            var seq_end_pos = seq_start_pos + curr_seq_len
+            var end_chunk = ceildiv(seq_end_pos, buffer_size) - 1
+
+            # Set buffer lengths for all chunks
+            comptime for chunk_idx in range(MAX_CHUNKS):
+                if chunk_idx < end_chunk:
+                    buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(
+                        buffer_size
+                    )
+                    buffer_lengths[chunk_idx] = Int32(buffer_size)
+                elif chunk_idx == end_chunk:
+                    var last_chunk_len = seq_end_pos - end_chunk * buffer_size
+                    buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(
+                        last_chunk_len
+                    )
+                    buffer_lengths[chunk_idx] = Int32(last_chunk_len)
+                else:
+                    buffer_row_offsets[chunk_idx, seq_idx + 1] = 0
+                    buffer_lengths[chunk_idx] = -1
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4757,7 +4805,7 @@ def mla_prefill_plan_kernel[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _k_cache_to_buffer[
     dtype: DType,
     cache_t: KVCacheT,
@@ -4777,15 +4825,24 @@ def _k_cache_to_buffer[
     comptime assert buffer_row_offsets.flat_rank == 1
     comptime assert cache_offsets.flat_rank == 1
 
-    @always_inline
-    @__parameter
-    @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
+    @inline(.always)
     def copy_fn[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+    ](idx: IndexList[rank]) {var}:
         comptime assert rank == 2, "rank should be equal to 2"
 
         var global_token_idx = idx[0]
+
+        # KERN-3412: `length` can exceed the plan's real total. Past it, a
+        # gather would read the shared null page through the LUT sentinel,
+        # so write zero instead; that also keeps these rows finite for the
+        # up-projection matmuls without a caller-side memset.
+        var real_total_rows = Int(
+            buffer_row_offsets[buffer_row_offsets.num_elements() - 1]
+        )
+        if global_token_idx >= real_total_rows:
+            buffer.store(Coord(idx), SIMD[dtype, width](0))
+            return
 
         var batch_idx: Int = get_batch_from_row_offsets(
             buffer_row_offsets, global_token_idx
@@ -4805,12 +4862,14 @@ def _k_cache_to_buffer[
             ).cast[dtype]()
         )
 
-        buffer.store_linear(idx, cache_val)
+        buffer.store(Coord(idx), cache_val)
 
     var launch_shape = Coord(Int(length), Int(buffer.dim[1]()))
-    comptime target_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime target_simd_width = simd_width_of[dtype, target=context.target]()
 
-    def copy_fn_unified[width: Int, alignment: Int = 1](idx: Coord):
+    def copy_fn_unified[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var copy_fn}:
         copy_fn[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[

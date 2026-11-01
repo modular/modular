@@ -15,11 +15,11 @@
 from __future__ import annotations
 
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn.identity import Identity
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.transformer import TransformerBlock
+from max.nn.legacy.identity import Identity
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.transformer import DecoderOutputs, TransformerBlock
 
 from ..llama3.llama3 import Llama3
 from ..llama3.model_config import Llama3Config
@@ -58,14 +58,13 @@ class EagleLlama3(Llama3):
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         hidden_states: TensorValue | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
+        """Runs one draft step for the target's hidden states."""
         assert isinstance(hidden_states, TensorValue)
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
         fused = ops.concat([h, hidden_states], axis=-1)
         h = self.fc(fused)
 

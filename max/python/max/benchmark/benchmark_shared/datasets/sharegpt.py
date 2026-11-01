@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""ShareGPT dataset."""
+
 from __future__ import annotations
 
 import json
@@ -25,7 +27,10 @@ from .types import RequestSamples, SampledRequest
 
 
 class ShareGPTBenchmarkDataset(HuggingFaceBenchmarkDataset):
+    """ShareGPT conversation dataset."""
+
     def fetch(self) -> None:
+        """Downloads the ShareGPT file from Hugging Face."""
         self.dataset_path = hf_hub_download_with_retry(
             repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
             filename="ShareGPT_V3_unfiltered_cleaned_split.json",

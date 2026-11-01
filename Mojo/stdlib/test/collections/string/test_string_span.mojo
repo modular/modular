@@ -14,8 +14,6 @@
 from std.collections.string import (
     ImmStringSpan,
     ImmStringSlice,
-    MutStringSpan,
-    MutStringSlice,
 )
 from std.collections.string.string_span import (
     _to_string_list,
@@ -23,8 +21,9 @@ from std.collections.string.string_span import (
 )
 from std.sys.info import size_of, simd_width_of
 
-from std.testing import assert_equal, assert_false, assert_true, assert_raises
+from std.testing import assert_equal, assert_false, assert_true
 from std.testing import TestSuite
+from test_utils import check_niches
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
@@ -64,10 +63,10 @@ def test_string_span_layout() raises:
     # `llvm::StringRef`
 
     # StringSpan should be two words in size.
-    assert_equal(size_of[StringSpan[MutAnyOrigin]](), 2 * size_of[Int]())
+    assert_equal(size_of[StringSpan[ImmutAnyOrigin]](), 2 * size_of[Int]())
     assert_equal(
-        size_of[StringSlice[MutAnyOrigin]](),
-        size_of[StringSpan[MutAnyOrigin]](),
+        size_of[StringSlice[ImmutAnyOrigin]](),
+        size_of[StringSpan[ImmutAnyOrigin]](),
     )
 
     var string_span = StringSpan("")
@@ -83,35 +82,40 @@ def test_string_span_layout() raises:
 
 
 def test_constructors() raises:
-    def some_func_immut(b: StringSlice[mut=False, ...]) raises:
-        assert_false(b.mut)
-
-    def some_func_mut(b: StringSlice[mut=True, ...]) raises:
-        assert_true(b.mut)
+    def take_string_span(b: StringSlice[_]) raises:
+        comptime assert not type_of(b.as_bytes()).mut
 
     var a = "123"
-    some_func_immut(a)
-    some_func_mut(StringSlice(a))
+    take_string_span(a)
+    take_string_span(StringSlice(a))
 
 
 def test_string_slice_from_string_static_repr() raises:
     """Tests special case of StringSlice from String pointing to static data."""
 
-    def is_static_string(s: String) -> Bool:
-        return not s._is_inline() and not s._is_ref_counted()
+    var is_static_string = lambda (s: String) -> Bool: (
+        not s._is_inline() and not s._is_ref_counted()
+    )
 
     var s1 = String("foo")
     assert_true(is_static_string(s1))
 
-    # Borrowing as immutable doesn't change `s1`
-    var str1 = StringSlice[mut=False, ...](s1)
+    # Borrowing doesn't change `s1`.
+    var str1 = StringSlice(s1)
     assert_equal(str1, "foo")
     assert_true(is_static_string(s1))
 
-    # Borrowing as mutable changes `s1` to a different representation
-    var str2 = StringSlice[mut=True, ...](s1)
-    assert_equal(str2, "foo")
-    assert_false(is_static_string(s1))
+
+def test_string_span_from_shared_heap_string_does_not_copy() raises:
+    var original = String("a long string that uses reference-counted storage")
+    original += "!"
+    assert_true(original._is_ref_counted())
+    var shared = original
+    assert_equal(Int(original.unsafe_ptr()), Int(shared.unsafe_ptr()))
+
+    var span = StringSpan(original)
+    assert_equal(Int(span.unsafe_ptr()), Int(original.unsafe_ptr()))
+    assert_equal(Int(original.unsafe_ptr()), Int(shared.unsafe_ptr()))
 
 
 def test_string_literal_byte_span() raises:
@@ -692,6 +696,27 @@ def test_split() raises:
     assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
+def _check_empty_sep_split(s: StaticString) raises:
+    var parts = s.split("")
+    assert_equal(len(parts), s.count_codepoints() + 2)
+    # An empty slice compares equal to "" wherever it points, so only these
+    # addresses tell a correct split from an out-of-bounds one.
+    assert_equal(Int(parts[0].unsafe_ptr()), Int(s.unsafe_ptr()))
+    assert_equal(
+        Int(parts[len(parts) - 1].unsafe_ptr()),
+        Int(s.unsafe_ptr()) + s.byte_length(),
+    )
+    assert_equal(StaticString("").join(parts), s)
+
+
+def test_split_empty_separator_bounds() raises:
+    _check_empty_sep_split("")
+    _check_empty_sep_split("1")
+    _check_empty_sep_split("123")
+    _check_empty_sep_split("héllo")
+    _check_empty_sep_split("🔥ab🔥")
+
+
 def test_splitlines() raises:
     comptime S = StaticString
 
@@ -707,6 +732,13 @@ def test_splitlines() raises:
     )
     assert_equal(
         S("hello\r\nworld").splitlines(), [StaticString("hello"), "world"]
+    )
+    assert_equal(
+        S("hello\rworld\nmojo").splitlines(),
+        [StaticString("hello"), "world", "mojo"],
+    )
+    assert_equal(
+        S("a\r\nb\rc\nd").splitlines(), [StaticString("a"), "b", "c", "d"]
     )
 
     # Test with multiple different line breaks
@@ -881,11 +913,6 @@ def test_strip_mutable_chars() raises:
     assert_equal(StringSlice("himojohi").rstrip(chars), "himojo")
     assert_equal(StringSlice("himojohi").strip(chars), "mojo")
 
-    var mut_chars = MutStringSpan(chars)
-    assert_equal(StringSlice("himojohi").lstrip(mut_chars), "mojohi")
-    assert_equal(StringSlice("himojohi").rstrip(mut_chars), "himojo")
-    assert_equal(StringSlice("himojohi").strip(mut_chars), "mojo")
-
     var self_aliasing = StaticString("aabbaa")
     assert_equal(self_aliasing.lstrip(self_aliasing), "")
     assert_equal(self_aliasing.rstrip(self_aliasing), "")
@@ -930,6 +957,78 @@ def test_endswith() raises:
     assert_true(ab.endswith("b", start=1))
     assert_true(ab.endswith("a", end=1))
     assert_true(ab.endswith("ab"))
+
+
+def test_startswith_endswith_no_match_long() raises:
+    var long = StringSlice(
+        "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+    )
+    assert_false(long.startswith("zzz"))
+    assert_false(long.endswith("zzz"))
+
+    # An affix that occurs, but not at the end being checked.
+    assert_false(long.startswith("bcd"))
+    assert_false(long.endswith("hi"))
+    assert_true(long.startswith("abc"))
+    assert_true(long.endswith("hij"))
+
+    assert_false(long.startswith(StringSlice(String(long) + "x")))
+    assert_false(long.endswith(StringSlice(String(long) + "x")))
+
+    assert_false(long.startswith("a", start=long.byte_length()))
+    assert_false(long.startswith("", start=long.byte_length() + 1))
+    assert_false(long.endswith("", start=long.byte_length() + 1))
+
+    for i in range(long.byte_length() + 1):
+        assert_true(long.startswith("", start=i))
+        assert_true(long.endswith("", start=i))
+
+    assert_true(long.startswith("ghij", start=-4))
+    assert_false(long.startswith("ghia", start=-4))
+    assert_true(long.endswith("hij", start=-3))
+    assert_false(long.endswith("hij", start=-2))
+
+    # Must fail the bounds check rather than overflow it.
+    assert_false(long.startswith("abc", start=Int.MAX))
+    assert_false(long.startswith("", start=Int.MAX))
+    assert_false(long.endswith("hij", start=Int.MAX))
+    assert_false(long.endswith("", start=Int.MAX))
+
+
+def test_startswith_endswith_explicit_end() raises:
+    var s = StringSlice("hello")
+
+    assert_true(s.startswith("ell", start=1, end=4))
+    assert_false(s.startswith("ello", start=1, end=4))
+    assert_true(s.endswith("ll", start=1, end=4))
+    assert_false(s.endswith("llo", start=1, end=4))
+
+    assert_true(s.startswith("ell", start=-4, end=4))
+    assert_true(s.endswith("el", start=-4, end=-2))
+    assert_false(s.endswith("ll", start=-4, end=-2))
+
+    # `end=-1` means the whole string, not one byte before the end.
+    assert_true(s.endswith("o", start=0, end=-1))
+    assert_true(s.startswith("hello", start=0, end=-1))
+
+    assert_true(s.startswith("hello", start=0, end=Int.MAX))
+    assert_true(s.endswith("hello", start=0, end=Int.MAX))
+    assert_false(s.startswith("h", start=4, end=2))
+    assert_false(s.startswith("", start=99, end=100))
+    assert_false(s.endswith("", start=99, end=100))
+    assert_true(s.startswith("", start=2, end=2))
+
+
+def test_mul() raises:
+    assert_equal(StringSlice("ab") * 3, "ababab")
+    assert_equal(StringSlice("ab") * 1, "ab")
+    assert_equal(StringSlice("ab") * 0, "")
+    assert_equal(StringSlice("ab") * -1, "")
+    assert_equal(StringSlice("") * 5, "")
+    # Multi-byte codepoints must not be split across the repetitions.
+    assert_equal(StringSlice("🔥é") * 2, "🔥é🔥é")
+    # A result past the inline capacity exercises the heap-allocated path.
+    assert_equal(StringSlice("abcde") * 5, "abcdeabcdeabcdeabcdeabcde")
 
 
 def test_isupper() raises:
@@ -1020,18 +1119,33 @@ def test_ascii_rjust() raises:
     assert_equal(StringSlice("hello").ascii_rjust(4), "hello")
     assert_equal(StringSlice("hello").ascii_rjust(8), "   hello")
     assert_equal(StringSlice("hello").ascii_rjust(8, "*"), "***hello")
+    # Must not reach the uninitialized allocation with a non-positive size.
+    assert_equal(StringSlice("hello").ascii_rjust(5), "hello")
+    assert_equal(StringSlice("hello").ascii_rjust(-3), "hello")
+    assert_equal(StringSlice("").ascii_rjust(3, "*"), "***")
+    # Width is in bytes, so a multi-byte subject pads by byte count.
+    assert_equal(StringSlice("🔥").ascii_rjust(6, "*"), "**🔥")
+    # A result past the inline capacity exercises the heap-allocated path.
+    assert_equal(
+        StringSlice("y").ascii_rjust(24, "-"), "-----------------------y"
+    )
 
 
 def test_ascii_ljust() raises:
     assert_equal(StringSlice("hello").ascii_ljust(4), "hello")
     assert_equal(StringSlice("hello").ascii_ljust(8), "hello   ")
     assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
+    assert_equal(StringSlice("hello").ascii_ljust(5), "hello")
+    assert_equal(StringSlice("").ascii_ljust(3, "*"), "***")
 
 
 def test_ascii_center() raises:
     assert_equal(StringSlice("hello").ascii_center(4), "hello")
     assert_equal(StringSlice("hello").ascii_center(8), " hello  ")
     assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
+    assert_equal(StringSlice("hello").ascii_center(5), "hello")
+    assert_equal(StringSlice("hello").ascii_center(0), "hello")
+    assert_equal(StringSlice("").ascii_center(3, "*"), "***")
 
 
 def test_count() raises:
@@ -1211,30 +1325,14 @@ def test_grapheme_indexing() raises:
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=2], "क्षि")
 
 
-def test_mut_string_slice_alias() raises:
-    def capitalize(s: MutStringSpan[_]):
-        s.as_bytes()[0] -= Byte(ord("a") - ord("A"))
-
-    def capitalize_compat(s: MutStringSlice[_]):
-        capitalize(s)
-
-    var canonical_data = String("hello")
-    var compatibility_data = String("world")
-    capitalize(canonical_data)
-    capitalize_compat(compatibility_data)
-    assert_equal(canonical_data, "Hello")
-    assert_equal(compatibility_data, "World")
-
-
-def test_imm_string_slice_alias() raises:
+def test_immutable_string_span_compatibility_aliases() raises:
     def byte_sum(s: ImmStringSpan[_]) -> Int:
         var total = 0
         for b in s.as_bytes():
             total += Int(b)
         return total
 
-    def byte_sum_compat(s: ImmStringSlice[_]) -> Int:
-        return byte_sum(s)
+    var byte_sum_compat = lambda (s: ImmStringSlice[_]) -> Int: byte_sum(s)
 
     var mutable_data = String("abc")
     var immutable_data = StaticString("abc")
@@ -1242,6 +1340,23 @@ def test_imm_string_slice_alias() raises:
     # Both names work with mutable and immutable data.
     assert_equal(byte_sum(mutable_data), 294)
     assert_equal(byte_sum_compat(immutable_data), 294)
+
+
+def test_string_span_niche() raises:
+    assert_equal(StaticString.niche_count(), Int.MAX)
+    assert_equal(size_of[Optional[StaticString]](), size_of[StaticString]())
+    check_niches[StaticString]()
+
+    var some = Optional(StaticString("hello"))
+    assert_true(some)
+    assert_equal(some.value(), "hello")
+
+    var empty = Optional(StaticString())
+    assert_true(empty)
+    assert_equal(empty.value(), "")
+
+    var none = Optional[StaticString](None)
+    assert_false(none)
 
 
 def main() raises:

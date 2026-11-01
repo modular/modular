@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.tensor import Tensor
 from max.graph import Dim
-from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.tensor import Tensor
 
 
 def _yarn_get_mscale(scale: float = 1.0, mscale: float = 1.0) -> float:
@@ -77,6 +77,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         )
 
     def freqs_cis_base(self) -> Tensor:
+        """The base rotary frequencies before YaRN scaling."""
         if self._freqs_cis is None:
             if self.scaling_params is None:
                 raise ValueError("scaling_params must be provided")
@@ -188,17 +189,14 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         base: float,
         max_position_embeddings: int,
     ) -> Tensor:
-        max_pos = F.constant(
-            float(max_position_embeddings),
-            dtype=DType.float32,
-            device=CPU(),
-        )
         base_tensor = F.constant(float(base), dtype=DType.float32, device=CPU())
-        dim_tensor = F.constant(float(dim), dtype=DType.float32, device=CPU())
 
-        return (dim_tensor * F.log(max_pos / (num_rotations * 2 * math.pi))) / (
-            2 * F.log(base_tensor)
-        )
+        return (
+            float(dim)
+            * F.log(
+                float(max_position_embeddings) / (num_rotations * 2 * math.pi)
+            )
+        ) / (2 * F.log(base_tensor))
 
     def _yarn_linear_ramp_mask(
         self, min_val: Tensor, max_val: Tensor, dim: Dim
@@ -206,7 +204,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         diff = max_val - min_val
         diff = F.where(
             diff == 0,
-            F.constant(0.001, dtype=DType.float32, device=CPU()),
+            0.001,
             diff,
         )
 

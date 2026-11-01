@@ -15,7 +15,6 @@
 Script to generate random inputs and expected output values:
 
 ```python
-import std.math
 import torch
 
 def run_fold(output_size, kernel_size, stride=1, dilation=1, padding=0, batch=1, channel=1) raises:
@@ -107,8 +106,8 @@ def test[
     fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
         input=input,
         output=output,
-        output_size=output_size,
-        kernel_size=kernel_size,
+        output_size=(Int(output_size[0]), Int(output_size[1])),
+        kernel_size=(Int(kernel_size[0]), Int(kernel_size[1])),
         ctx=DeviceContext(api="cpu"),
     )
 
@@ -156,16 +155,17 @@ def _copy_values_to_tile_tensor[
     if num_elements != len(values):
         raise Error("Tensor size and values size mismatch")
 
+    var flat = tensor.reshape(row_major(num_elements))
     for i in range(num_elements):
-        tensor.raw_store(i, values[i])
+        flat.store((i,), values[i])
 
 
 def main() raises:
     comptime dtype = DType.float32
     # fmt: off
     test[
-        input_shape = IndexList[3](1, 6, 15),
-        output_shape = IndexList[4](1, 1, 5, 6),
+        input_shape = (1, 6, 15),
+        output_shape = (1, 1, 5, 6),
         stride=(1, 1),
         dilation=(1, 1),
         padding=(0, 0),
@@ -191,8 +191,8 @@ def main() raises:
 
     # Test with dilation.
     test[
-        input_shape = IndexList[3](1, 6, 4),
-        output_shape = IndexList[4](1, 1, 5, 6),
+        input_shape = (1, 6, 4),
+        output_shape = (1, 1, 5, 6),
         stride=(1, 1),
         dilation=(2, 2),
         padding=(0, 0),
@@ -218,8 +218,8 @@ def main() raises:
 
     # Test with stride and dilation.
     test[
-        input_shape = IndexList[3](1, 6, 2),
-        output_shape = IndexList[4](1, 1, 5, 6),
+        input_shape = (1, 6, 2),
+        output_shape = (1, 1, 5, 6),
         stride=(2, 2),
         dilation=(2, 2),
         padding=(0, 0),
@@ -245,8 +245,8 @@ def main() raises:
 
     # Test with stride, dilation and padding.
     test[
-        input_shape = IndexList[3](1, 6, 12),
-        output_shape = IndexList[4](1, 1, 5, 6),
+        input_shape = (1, 6, 12),
+        output_shape = (1, 1, 5, 6),
         stride=(2, 2),
         dilation=(1, 1),
         padding=(1, 1),
@@ -272,8 +272,8 @@ def main() raises:
 
     # Test with batch > 1.
     test[
-        input_shape = IndexList[3](2, 4, 2),
-        output_shape = IndexList[4](2, 1, 2, 3),
+        input_shape = (2, 4, 2),
+        output_shape = (2, 1, 2, 3),
         stride=(1, 1),
         dilation=(1, 1),
         padding=(0, 0),
@@ -301,8 +301,8 @@ def main() raises:
 
     # Test with channel size > 1.
     test[
-        input_shape = IndexList[3](1, 8, 2),
-        output_shape = IndexList[4](1, 2, 2, 3),
+        input_shape = (1, 8, 2),
+        output_shape = (1, 2, 2, 3),
         stride=(1, 1),
         dilation=(1, 1),
         padding=(0, 0),

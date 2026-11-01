@@ -40,8 +40,10 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
   // Only LLVM struct types need C ABI classification
   auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type);
   if (!structType) {
-    // Non-struct (scalar, pointer, etc.): pass through directly, no coercion
-    return CoercionInfo{}; // Identity: argClass=NoClass
+    // Non-struct (scalar, pointer, etc.): pass through directly, no coercion.
+    // Apple's arm64 ABI, unlike AAPCS64, requires the caller to extend
+    // narrow integers.
+    return isDarwin ? CabiUtils::classifyExtendedScalar(type) : CoercionInfo{};
   }
 
   // HFA (Homogeneous Float Aggregate) classification:
@@ -94,8 +96,9 @@ CoercionInfo AAPCSABIInfo::classifyReturnType(mlir::Type type,
   // Only LLVM struct types need C ABI classification
   auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type);
   if (!structType) {
-    // Non-struct (scalar, pointer, etc.): return directly, no coercion
-    return CoercionInfo{}; // Identity: argClass=NoClass
+    // Non-struct (scalar, pointer, etc.): return directly, no coercion.
+    // On Darwin the callee extends a narrow integer result, as clang does.
+    return isDarwin ? CabiUtils::classifyExtendedScalar(type) : CoercionInfo{};
   }
 
   // All-float structs require HFA classification (not yet implemented).

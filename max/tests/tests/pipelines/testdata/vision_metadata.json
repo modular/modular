@@ -1,0 +1,111 @@
+{
+  "gemma4": {
+    "image": {
+      "patch_size": 16,
+      "merge_size": 3,
+      "strategy": {
+        "rule": "aspect_ratio_preserving",
+        "max_patches": 2520
+      },
+      "span": {
+        "static": {
+          "image_token_id": 258880,
+          "begin_marker": 255999,
+          "end_marker": 258882
+        }
+      },
+      "template_markers": null,
+      "video_layout": {
+        "mode": "per_frame"
+      }
+    },
+    "video": {
+      "patch_size": 16,
+      "merge_size": 3,
+      "strategy": {
+        "rule": "aspect_ratio_preserving",
+        "max_patches": 630
+      },
+      "span": {
+        "static": {
+          "image_token_id": 258884,
+          "begin_marker": 255999,
+          "end_marker": 258882
+        }
+      },
+      "template_markers": null,
+      "video_layout": {
+        "mode": "per_frame"
+      }
+    },
+    "max_image_bytes": 0,
+    "max_video_bytes": 67108864,
+    "prompt": {
+      "video_unit_separator": " ",
+      "video_label_suffix": " ",
+      "video_clip_open": "",
+      "video_clip_close": "",
+      "text_part_separator": ""
+    }
+  },
+  "qwen3_5": {
+    "image": {
+      "patch_size": 16,
+      "merge_size": 2,
+      "strategy": {
+        "rule": "smart_resize",
+        "min_pixels": 65536,
+        "max_pixels": 16777216,
+        "min_short_side_pixel": 0,
+        "default_max_long_side_pixel": 0
+      },
+      "span": {
+        "static": {
+          "image_token_id": 248056,
+          "begin_marker": null,
+          "end_marker": null
+        }
+      },
+      "template_markers": {
+        "begin": 248053,
+        "end": 248054
+      },
+      "video_layout": {
+        "mode": "per_frame"
+      }
+    },
+    "video": {
+      "patch_size": 16,
+      "merge_size": 2,
+      "strategy": {
+        "rule": "video_smart_resize",
+        "temporal_patch_size": 2,
+        "min_pixels": 4096,
+        "max_pixels": 25165824
+      },
+      "span": {
+        "static": {
+          "image_token_id": 248057,
+          "begin_marker": null,
+          "end_marker": null
+        }
+      },
+      "template_markers": {
+        "begin": 248053,
+        "end": 248054
+      },
+      "video_layout": {
+        "mode": "per_clip"
+      }
+    },
+    "max_image_bytes": 0,
+    "max_video_bytes": 536870912,
+    "prompt": {
+      "video_unit_separator": "",
+      "video_label_suffix": "",
+      "video_clip_open": "<|vision_start|>",
+      "video_clip_close": "<|vision_end|>",
+      "text_part_separator": ""
+    }
+  }
+}

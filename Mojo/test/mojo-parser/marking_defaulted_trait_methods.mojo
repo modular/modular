@@ -57,10 +57,10 @@ trait Foo:
 
     # CHECK: lit.fn @"bar
     # CHECK-SAME: defaultedTraitFn
-    def bar(self) capturing raises -> Int:
+    def bar(self) raises -> Int:
         return Int()
 
     # CHECK: lit.fn @"bar
-    # CHECK-SAME: attributes {sourceName = "bar", specialFnKind = 0 : i8}
-    def bar(self, x: Int) capturing raises -> Int:
+    # CHECK-SAME: sourceName = "bar", specialFnKind = 0 : i8}
+    def bar(self, x: Int) raises -> Int:
         ...

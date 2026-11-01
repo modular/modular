@@ -26,46 +26,61 @@ import functools
 import math
 from collections.abc import Callable, Iterable, Sequence
 from enum import Enum, auto
+from pathlib import Path
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
     Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.comm import Signals
-from max.nn.comm.allreduce import Allreduce
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, SubgraphInput
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import MoE, make_concatenated_gated_activation_fn
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.moe import (
+    GatedActivation,
+    MoE,
+    make_concatenated_gated_activation_fn,
+)
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
-from max.nn.transformer import forward_sequential_layers
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    ReturnHiddenStates,
+    forward_sequential_layers,
+    logits_outputs,
+)
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
+from max.tree import Tree
 
 from .layers.attention import Step3p5Attention
 from .layers.moe_gate import Step3p5MoEGate
@@ -357,6 +372,7 @@ class Step3p5TransformerBlock(Module):
         input_row_offsets: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
+        """Runs the block over its sharded hidden states."""
         # Input layer norm
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -472,11 +488,13 @@ class Step3p5MoEWithSharedExpert(Module):
                 norm_topk_prob=config.norm_expert_weight,
             ),
             dtype=config.dtype,
-            gated_activation_fn=make_concatenated_gated_activation_fn(
-                ops.silu, swiglu_limit
-            )
-            if swiglu_limit > 0
-            else None,
+            activation=GatedActivation(
+                gated_activation_fn=make_concatenated_gated_activation_fn(
+                    ops.silu, swiglu_limit
+                )
+                if swiglu_limit > 0
+                else None
+            ),
             ep_size=ep_size,
             ep_batch_manager=ep_batch_manager,
         )
@@ -493,6 +511,7 @@ class Step3p5MoEWithSharedExpert(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Routes ``x`` through the experts and adds the shared expert's output."""
         if self._ep_batch_manager is not None:
             # In EP mode, ``forward_moe_sharded_layers`` drives this layer
             # via the per-shard helpers (``gate``, ``_local_ep_compute``,
@@ -514,14 +533,17 @@ class Step3p5MoEWithSharedExpert(Module):
 
     @property
     def gate(self) -> Callable[[TensorValue], tuple[TensorValue, TensorValue]]:
+        """The router these experts share."""
         return self.moe.gate
 
     @property
     def num_experts_per_token(self) -> int:
+        """How many experts each token routes to."""
         return self.moe.num_experts_per_token
 
     @property
     def ep_batch_manager(self) -> EPBatchManager:
+        """The expert-parallel batch manager."""
         assert self._ep_batch_manager is not None, (
             "EPBatchManager must be provided to use expert-parallel forward"
         )
@@ -529,12 +551,14 @@ class Step3p5MoEWithSharedExpert(Module):
 
     @property
     def has_shared_experts(self) -> bool:
+        """Whether the block carries a shared expert."""
         # The shared expert is always present for Step-3.5; advertise that
         # to the EP forward path so it adds the shared-expert output after
         # the combine step.
         return True
 
     def shared_experts(self, x: TensorValue) -> TensorValue:
+        """Runs the shared expert over ``x``."""
         return self.share_expert(x)
 
     def _ep_dispatch_input_scales(self) -> TensorValue | None:
@@ -545,11 +569,14 @@ class Step3p5MoEWithSharedExpert(Module):
         expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
         estimated_total_m: TensorValue,
-    ) -> TensorValue:
+    ) -> TensorValue | None:
+        # Pure delegation, so it inherits the wrapped layer's contract:
+        # `None` means that layer already sent its output to the peers.
         return self.moe._local_ep_compute(expert_inputs, x, estimated_total_m)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the experts' weights are split across devices."""
         return self.moe.sharding_strategy
 
     @sharding_strategy.setter
@@ -567,6 +594,7 @@ class Step3p5MoEWithSharedExpert(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Step3p5MoEWithSharedExpert]:
+        """Splits the experts and the shared expert across ``devices``."""
         devices_list = list(devices)
         moe_shards = self.moe.shard(devices_list)
         share_expert_shards = self.share_expert.shard(devices_list)
@@ -777,7 +805,8 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         host_input_row_offsets: TensorValue | None = None,
         data_parallel_splits: TensorValue | None = None,
         ep_inputs: list[Value[Any]] | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
+        """Runs the language graph over tokens and the KV collections."""
         # Embeddings
         h = self.embed_tokens(tokens, signal_buffers)
 
@@ -810,7 +839,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
 
         def inputs_for_layer(
             idx: int, hs: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        ) -> list[Tree[Any]]:
             layer = self.layers[idx]
             assert isinstance(layer, Step3p5TransformerBlock)
             kv_collections = (
@@ -818,7 +847,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
                 if layer.is_sliding
                 else global_kv_collections
             )
-            values: list[SubgraphInput] = [
+            values: list[Tree[Any]] = [
                 ops.constant(
                     layer.self_attn.layer_idx,
                     DType.uint32,
@@ -875,7 +904,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         ],
         signal_buffers: list[BufferValue],
         devices: list[DeviceRef],
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Logits post-processing for DP mode.
 
         Each device holds the hidden states for its own batch shard. We
@@ -901,11 +930,14 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
             DType.float32,
         )
 
-        return (last_logits,)
+        return logits_outputs(
+            last_logits, None, None, ReturnHiddenStates.NONE, ()
+        )
 
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types for ``kv_params``."""
         device_ref = self.devices[0]
 
         tokens_type = TensorType(
@@ -946,7 +978,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
 
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         # EP communication buffers are appended at the very end so the
         # graph-builder can split off ``len(ep_manager.input_types())``
@@ -960,4 +992,81 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
             + signal_buffer_types
             + flattened_kv_types
             + ep_input_types
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits them into
+        the batch, the data-parallel splits, a signal buffer per device, the
+        sliding-window and global KV caches, and the expert-parallel buffers.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.devices)
+        kv_params = self.config.kv_params
+
+        def forward(*inputs: Value[Any]) -> DecoderOutputs:
+            inputs_iter = iter(inputs)
+            tokens = next(inputs_iter)
+            input_row_offsets = next(inputs_iter)
+            return_n_logits = next(inputs_iter)
+            host_input_row_offsets = None
+            data_parallel_splits = None
+            if self.mode == ParallelismMode.DP_EP:
+                host_input_row_offsets = next(inputs_iter).tensor
+                data_parallel_splits = next(inputs_iter).tensor
+
+            signal_buffers = [
+                next(inputs_iter).buffer for _ in range(n_devices)
+            ]
+            kv_input_count = len(kv_params.flattened_kv_inputs())
+            kv_inputs = [next(inputs_iter) for _ in range(kv_input_count)]
+            sliding_kv, global_kv = kv_params.unflatten_basic_kv_tree(
+                iter(kv_inputs)
+            )
+            # The EP communication buffers are the tail, present for both
+            # TP_EP and DP_EP.
+            ep_inputs = (
+                list(inputs_iter) if self.ep_manager is not None else None
+            )
+
+            return self(
+                tokens.tensor,
+                sliding_kv,
+                global_kv,
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+                signal_buffers,
+                host_input_row_offsets=host_input_row_offsets,
+                data_parallel_splits=data_parallel_splits,
+                ep_inputs=ep_inputs,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
         )

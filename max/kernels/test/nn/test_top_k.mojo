@@ -17,7 +17,6 @@ from std.random import rand, seed
 
 from layout import (
     Coord,
-    Idx,
     DefaultEngine,
     TileTensor,
     coord_to_index_list,
@@ -126,14 +125,14 @@ def test_case_sampling[
     var temperature_buf = Optional(
         TileTensor(temperature_ptr, row_major(Int64(batch_size)))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
 
     var seed_ptr = List(length=batch_size, fill=UInt64(12))
     var seed_buf = Optional(
         TileTensor(seed_ptr, row_major(Int64(batch_size)))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
 
     _top_k_sampling(
@@ -149,8 +148,9 @@ def test_case_sampling[
     var _xx_no_lifetimes = out_vals
     var _x_no_lifetimes = out_idxs
 
-    for i in range(out_idxs.num_elements()):
-        print(out_idxs.raw_load(i), end="")
+    var out_idxs_flat = out_idxs.reshape(row_major(out_idxs.num_elements()))
+    for i in range(out_idxs_flat.num_elements()):
+        print(out_idxs_flat[i], end="")
         print(",", end="")
     print("")
 
@@ -228,7 +228,7 @@ def main() raises:
 
     def test_1d_sorted():
         print("== test_1d_sorted")
-        test_case[1, .float32](fill_iota, 5, 0, IndexList[1](10), sorted=True)
+        test_case[1, .float32](fill_iota, 5, 0, (10,), sorted=True)
 
     # CHECK-LABEL: test_1d_sorted
     # CHECK: 9.0,8.0,7.0,6.0,5.0,
@@ -237,7 +237,7 @@ def main() raises:
 
     def test_1d_notsorted():
         print("== test_1d_notsorted")
-        test_case[1, .float32](fill_iota, 5, 0, IndexList[1](10), sorted=False)
+        test_case[1, .float32](fill_iota, 5, 0, (10,), sorted=False)
 
     # CHECK-LABEL: test_1d_notsorted
     # CHECK: 8.0,7.0,6.0,9.0,5.0,
@@ -246,7 +246,7 @@ def main() raises:
 
     def test_axis_1():
         print("== test_axis_1")
-        test_case[2, .float32](fill_iota, 2, 1, IndexList[2](4, 4), sorted=True)
+        test_case[2, .float32](fill_iota, 2, 1, (4, 4), sorted=True)
 
     # CHECK-LABEL: test_axis_1
     # CHECK: 3.0,2.0,7.0,6.0,11.0,10.0,15.0,14.0,
@@ -255,9 +255,7 @@ def main() raises:
 
     def test_axis_1_notsorted():
         print("== test_axis_1_notsorted")
-        test_case[2, .float32](
-            fill_iota, 2, 1, IndexList[2](4, 4), sorted=False
-        )
+        test_case[2, .float32](fill_iota, 2, 1, (4, 4), sorted=False)
 
     # CHECK-LABEL: test_axis_1_notsorted
     # CHECK: 3.0,2.0,7.0,6.0,11.0,10.0,15.0,14.0,
@@ -266,9 +264,7 @@ def main() raises:
 
     def test_smallest():
         print("== test_smallest")
-        test_case[2, .float32, largest=False](
-            fill_iota, 2, 1, IndexList[2](4, 4), False
-        )
+        test_case[2, .float32, largest=False](fill_iota, 2, 1, (4, 4), False)
 
     # CHECK-LABEL: test_smallest
     # CHECK: 0.0,1.0,4.0,5.0,8.0,9.0,12.0,13.0,
@@ -277,7 +273,7 @@ def main() raises:
 
     def test_axis_0():
         print("== test_axis_0")
-        test_case[2, .float32](fill_iota, 2, 0, IndexList[2](4, 4))
+        test_case[2, .float32](fill_iota, 2, 0, (4, 4))
 
     # CHECK-LABEL: test_axis_0
     # CHECK: 12.0,13.0,14.0,15.0,8.0,9.0,10.0,11.0,
@@ -295,7 +291,7 @@ def main() raises:
 
     def test_identical():
         print("== test_identical")
-        test_case[2, .float32](fill_identical, 3, 0, IndexList[2](4, 4))
+        test_case[2, .float32](fill_identical, 3, 0, (4, 4))
 
     # CHECK-LABEL: test_identical
     # CHECK: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
@@ -304,7 +300,7 @@ def main() raises:
 
     def test_identical_large():
         print("== test_identical_large")
-        test_case[2, .float32](fill_identical, 3, 0, IndexList[2](33, 33))
+        test_case[2, .float32](fill_identical, 3, 0, (33, 33))
 
     # CHECK-LABEL: test_identical_large
     # CHECK: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
@@ -313,7 +309,7 @@ def main() raises:
 
     def test_max_k():
         print("== test_max_k")
-        test_case[2, .float32](fill_iota, 3, 0, IndexList[2](3, 4))
+        test_case[2, .float32](fill_iota, 3, 0, (3, 4))
 
     # CHECK-LABEL: test_max_k
     # CHECK: 8.0,9.0,10.0,11.0,4.0,5.0,6.0,7.0,0.0,1.0,2.0,3.0,
@@ -327,21 +323,15 @@ def main() raises:
             mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
         ]
     ):
-        var flat_buf = TileTensor(
-            buf._storage,
-            row_major(buf.num_elements()),
-        )
+        var flat_buf = buf.reshape(row_major(buf.num_elements()))
 
         for i in range(flat_buf.num_elements()):
-            var idx = flat_buf.layout(Coord(i))
-            flat_buf.raw_store(
-                idx, Scalar[dtype](flat_buf.num_elements() - i - 1)
-            )
+            flat_buf[i] = Scalar[dtype](flat_buf.num_elements() - i - 1)
         flat_buf[0] = -1
 
     def test_5d():
         print("== test_5d")
-        test_case[5, .float32](fill_custom, 1, 1, IndexList[5](1, 4, 3, 2, 1))
+        test_case[5, .float32](fill_custom, 1, 1, (1, 4, 3, 2, 1))
 
     # CHECK-LABEL: == test_5d
     # CHECK: 17.0,22.0,21.0,20.0,19.0,18.0,
@@ -355,7 +345,7 @@ def main() raises:
             fill_iota,
             5,
             0,
-            IndexList[1](10),
+            (10,),
             temperature=0,
         )
 
@@ -398,17 +388,15 @@ def main() raises:
             mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
         ]
     ):
-        for i in range(
-            coord_to_index_list(buf.layout.shape_coord()).flattened_length()
-        ):
-            buf.raw_store(i, 1)
+        var n = coord_to_index_list(buf.layout.shape_coord()).flattened_length()
+        var flat = buf.reshape(row_major(n))
+        for i in range(n):
+            flat[i] = 1
 
     def test_1d_sorted_sampling_temp() raises:
         print("== test_1d_sorted_sampling_temp")
         comptime rank = 1
-        test_case_sampling[1, .float32](
-            fill_rand, 5, 0, IndexList[1](10), temperature=0.7
-        )
+        test_case_sampling[1, .float32](fill_rand, 5, 0, (10,), temperature=0.7)
 
     # CHECK-LABEL: test_1d_sorted_sampling_temp
     # CHECK: 4,

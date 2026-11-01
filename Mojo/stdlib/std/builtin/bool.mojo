@@ -15,11 +15,14 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from std.builtin.variadics import _MLIR
 from std.collections import List, Set
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
+from std.ffi import c_long
 
 from std.python import (
     ConvertibleFromPython,
+    ConvertibleToPython,
     Python,
     PythonObject,
 )
@@ -68,7 +71,9 @@ struct Bool(
     Boolable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     Defaultable,
+    EnumLike,
     Floatable,
     Hashable,
     ImplicitlyCopyable,
@@ -94,6 +99,17 @@ struct Bool(
 
     comptime MAX: Bool = True
     """The maximum value of a Bool."""
+
+    # ===-------------------------------------------------------------------===#
+    # EnumLike
+    # ===-------------------------------------------------------------------===#
+
+    comptime _enum_case_names = ParameterList.of[
+        "False".value, "True".value
+    ].values
+    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
+        Trait=AnyType, NoneType, NoneType
+    ].values
 
     # ===-------------------------------------------------------------------===#
     # Trivial bits for special functions.
@@ -136,7 +152,7 @@ struct Bool(
         """
         self._mlir_value = mlir_value
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __init__[T: Boolable, //](out self, value: T):
         """Set the bool representation of the object.
 
@@ -157,7 +173,7 @@ struct Bool(
         """
         self = False
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     @implicit
     def __init__(out self, value: Scalar[.bool]):
         """Convert a scalar SIMD value to a Bool.
@@ -203,7 +219,7 @@ struct Bool(
             self._mlir_value
         )
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         """
         Formats this boolean to the provided Writer.
@@ -220,7 +236,7 @@ struct Bool(
             StaticString("True") if self else StaticString("False")
         )
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this boolean to a writer.
 
@@ -241,7 +257,23 @@ struct Bool(
         """
         return select[Int](self, 1, 0)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
+    def _get_enum_discriminant(self) -> Int:
+        """Return 0 for `False` and 1 for `True`."""
+        return self.__int__()
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """Bool cases have no payload; this is never called for a valid match.
+        """
+        while True:
+            pass
+
+    @inline(.nodebug)
     def __float__(self) -> Float64:
         """Convert this Bool to a float.
 
@@ -364,7 +396,7 @@ struct Bool(
         """
         return __mlir_op.`pop.simd.and`(self._mlir_value, rhs._mlir_value)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __iand__(mut self, rhs: Bool):
         """Computes `self & rhs` and store the result in `self`.
 
@@ -400,7 +432,7 @@ struct Bool(
         """
         return __mlir_op.`pop.simd.or`(self._mlir_value, rhs._mlir_value)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __ior__(mut self, rhs: Bool):
         """Computes `self | rhs` and store the result in `self`.
 
@@ -436,7 +468,7 @@ struct Bool(
         """
         return __mlir_op.`pop.simd.xor`(self._mlir_value, rhs._mlir_value)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __ixor__(mut self, rhs: Bool):
         """Computes `self ^ rhs` and stores the result in `self`.
 
@@ -467,6 +499,15 @@ struct Bool(
             hasher: The hasher instance.
         """
         hasher._update_with_simd(Scalar[.bool](self))
+
+    def to_python_object(var self) -> PythonObject:
+        """Convert this value to a `PythonObject`.
+
+        Returns:
+            A `PythonObject` representing the value.
+        """
+        ref cpy = Python().cpython()
+        return PythonObject(from_owned=cpy.PyBool_FromLong(c_long(Int(self))))
 
     @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:

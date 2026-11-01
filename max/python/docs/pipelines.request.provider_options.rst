@@ -44,3 +44,10 @@ Image and video options
    ImageProviderOptions
    PixelProviderOptionsBase
    VideoProviderOptions
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   MAX_NUM_IMAGES

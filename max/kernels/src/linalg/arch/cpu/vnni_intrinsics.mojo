@@ -55,19 +55,20 @@ def vpdpwssd[
     """
     comptime assert c_type == .int32, "the type of C must be int32"
 
-    comptime if width == 16:
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpwssd.512", SIMD[c_type, width]
-        ](src, a, b)
-    elif width == 8:
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpwssd.256", SIMD[c_type, width]
-        ](src, a, b)
-    else:
-        comptime assert width == 4
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpwssd.128", SIMD[c_type, width]
-        ](src, a, b)
+    comptime match width:
+        case 16:
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpwssd.512", SIMD[c_type, width]
+            ](src, a, b)
+        case 8:
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpwssd.256", SIMD[c_type, width]
+            ](src, a, b)
+        case _:
+            comptime assert width == 4
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpwssd.128", SIMD[c_type, width]
+            ](src, a, b)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -102,19 +103,20 @@ def vpdpwssds[
     """
     comptime assert c_type == .int32, "the type of C must be int32"
 
-    comptime if width == 16:
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpwssds.512", SIMD[c_type, width]
-        ](src, a, b)
-    elif width == 8:
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpwssds.256", SIMD[c_type, width]
-        ](src, a, b)
-    else:
-        comptime assert width == 4
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpwssds.128", SIMD[c_type, width]
-        ](src, a, b)
+    comptime match width:
+        case 16:
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpwssds.512", SIMD[c_type, width]
+            ](src, a, b)
+        case 8:
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpwssds.256", SIMD[c_type, width]
+            ](src, a, b)
+        case _:
+            comptime assert width == 4
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpwssds.128", SIMD[c_type, width]
+            ](src, a, b)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -149,31 +151,32 @@ def vpdpbusd[
     """
     comptime assert c_type == .int32, "the type of C must be int32"
 
-    comptime if width == 16:
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpbusd.512", SIMD[c_type, width]
-        ](
-            src,
-            bitcast[.uint8, width * 4](a),
-            bitcast[.uint8, width * 4](b),
-        )
-    elif width == 8:
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpbusd.256", SIMD[c_type, width]
-        ](
-            src,
-            bitcast[.uint8, width * 4](a),
-            bitcast[.uint8, width * 4](b),
-        )
-    else:
-        comptime assert width == 4
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpbusd.128", SIMD[c_type, width]
-        ](
-            src,
-            bitcast[.uint8, width * 4](a),
-            bitcast[.uint8, width * 4](b),
-        )
+    comptime match width:
+        case 16:
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpbusd.512", SIMD[c_type, width]
+            ](
+                src,
+                bitcast[.uint8, width * 4](a),
+                bitcast[.uint8, width * 4](b),
+            )
+        case 8:
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpbusd.256", SIMD[c_type, width]
+            ](
+                src,
+                bitcast[.uint8, width * 4](a),
+                bitcast[.uint8, width * 4](b),
+            )
+        case _:
+            comptime assert width == 4
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpbusd.128", SIMD[c_type, width]
+            ](
+                src,
+                bitcast[.uint8, width * 4](a),
+                bitcast[.uint8, width * 4](b),
+            )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -206,31 +209,32 @@ def vpdpbusds[
     """
     comptime assert c_type == .int32, "the type of C must be int32"
 
-    comptime if width == 16:
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpbusds.512", SIMD[c_type, width]
-        ](
-            src,
-            bitcast[.uint8, width * 4](a),
-            bitcast[.uint8, width * 4](b),
-        )
-    elif width == 8:
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpbusds.256", SIMD[c_type, width]
-        ](
-            src,
-            bitcast[.uint8, width * 4](a),
-            bitcast[.uint8, width * 4](b),
-        )
-    else:
-        comptime assert width == 4
-        return llvm_intrinsic[
-            "llvm.x86.avx512.vpdpbusds.128", SIMD[c_type, width]
-        ](
-            src,
-            bitcast[.uint8, width * 4](a),
-            bitcast[.uint8, width * 4](b),
-        )
+    comptime match width:
+        case 16:
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpbusds.512", SIMD[c_type, width]
+            ](
+                src,
+                bitcast[.uint8, width * 4](a),
+                bitcast[.uint8, width * 4](b),
+            )
+        case 8:
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpbusds.256", SIMD[c_type, width]
+            ](
+                src,
+                bitcast[.uint8, width * 4](a),
+                bitcast[.uint8, width * 4](b),
+            )
+        case _:
+            comptime assert width == 4
+            return llvm_intrinsic[
+                "llvm.x86.avx512.vpdpbusds.128", SIMD[c_type, width]
+            ](
+                src,
+                bitcast[.uint8, width * 4](a),
+                bitcast[.uint8, width * 4](b),
+            )
 
 
 def _dot_i8_to_i32_16(
@@ -317,38 +321,41 @@ def pmaddubs[
         a: Int32-typed SIMD vector reinterpreted as unsigned bytes.
         b: Int32-typed SIMD vector reinterpreted as signed bytes.
     """
-    comptime if width == 16:
-        return rebind[SIMD[.int32, width]](
-            bitcast[.int32, 16](
-                llvm_intrinsic[
-                    "llvm.x86.avx512.pmaddubs.w.512", SIMD[.int16, 32]
-                ](
-                    bitcast[.int8, 64](a),
-                    bitcast[.int8, 64](b),
+    comptime match width:
+        case 16:
+            return rebind[SIMD[.int32, width]](
+                bitcast[.int32, 16](
+                    llvm_intrinsic[
+                        "llvm.x86.avx512.pmaddubs.w.512", SIMD[.int16, 32]
+                    ](
+                        bitcast[.int8, 64](a),
+                        bitcast[.int8, 64](b),
+                    )
                 )
             )
-        )
-    elif width == 8:
-        return rebind[SIMD[.int32, width]](
-            bitcast[.int32, 8](
-                llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[.int16, 16]](
-                    bitcast[.int8, 32](a),
-                    bitcast[.int8, 32](b),
+        case 8:
+            return rebind[SIMD[.int32, width]](
+                bitcast[.int32, 8](
+                    llvm_intrinsic[
+                        "llvm.x86.avx2.pmadd.ub.sw", SIMD[.int16, 16]
+                    ](
+                        bitcast[.int8, 32](a),
+                        bitcast[.int8, 32](b),
+                    )
                 )
             )
-        )
-    else:
-        comptime assert width == 4
-        return rebind[SIMD[.int32, width]](
-            bitcast[.int32, 4](
-                llvm_intrinsic[
-                    "llvm.x86.ssse3.pmadd.ub.sw.128", SIMD[.int16, 8]
-                ](
-                    bitcast[.int8, 16](a),
-                    bitcast[.int8, 16](b),
+        case _:
+            comptime assert width == 4
+            return rebind[SIMD[.int32, width]](
+                bitcast[.int32, 4](
+                    llvm_intrinsic[
+                        "llvm.x86.ssse3.pmadd.ub.sw.128", SIMD[.int16, 8]
+                    ](
+                        bitcast[.int8, 16](a),
+                        bitcast[.int8, 16](b),
+                    )
                 )
             )
-        )
 
 
 def pmaddw[
@@ -363,36 +370,41 @@ def pmaddw[
         a: Int32-typed SIMD vector reinterpreted as signed int16 pairs.
         b: Int32-typed SIMD vector reinterpreted as signed int16 pairs.
     """
-    comptime if width == 16:
-        return rebind[SIMD[.int32, width]](
-            bitcast[.int32, 16](
-                llvm_intrinsic[
-                    "llvm.x86.avx512.pmaddw.d.512", SIMD[.int32, width]
-                ](
-                    bitcast[.int16, 32](a),
-                    bitcast[.int16, 32](b),
+    comptime match width:
+        case 16:
+            return rebind[SIMD[.int32, width]](
+                bitcast[.int32, 16](
+                    llvm_intrinsic[
+                        "llvm.x86.avx512.pmaddw.d.512", SIMD[.int32, width]
+                    ](
+                        bitcast[.int16, 32](a),
+                        bitcast[.int16, 32](b),
+                    )
                 )
             )
-        )
-    elif width == 8:
-        return rebind[SIMD[.int32, width]](
-            bitcast[.int32, 8](
-                llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[.int32, width]](
-                    bitcast[.int16, 16](a),
-                    bitcast[.int16, 16](b),
+        case 8:
+            return rebind[SIMD[.int32, width]](
+                bitcast[.int32, 8](
+                    llvm_intrinsic[
+                        "llvm.x86.avx2.pmadd.wd", SIMD[.int32, width]
+                    ](
+                        bitcast[.int16, 16](a),
+                        bitcast[.int16, 16](b),
+                    )
                 )
             )
-        )
-    else:
-        comptime assert width == 4
-        return rebind[SIMD[.int32, width]](
-            bitcast[.int32, 16](
-                llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[.int32, width]](
-                    bitcast[.int16, 8](a),
-                    bitcast[.int16, 8](b),
+        case _:
+            comptime assert width == 4
+            return rebind[SIMD[.int32, width]](
+                bitcast[.int32, 16](
+                    llvm_intrinsic[
+                        "llvm.x86.sse2.pmadd.wd", SIMD[.int32, width]
+                    ](
+                        bitcast[.int16, 8](a),
+                        bitcast[.int16, 8](b),
+                    )
                 )
             )
-        )
 
 
 def _dot_i8_to_i32_saturated_16(
@@ -459,31 +471,32 @@ def dot_i8_to_i32_AVX2[
         A SIMD vector of width elements.
     """
 
-    comptime if width == 16:
-        return rebind[SIMD[c_type, width]](
-            _dot_i8_to_i32_16(
-                rebind[SIMD[.int32, 16]](src),
-                bitcast[.int8, 64](rebind[SIMD[.int32, 16]](a)),
-                bitcast[.int8, 64](rebind[SIMD[.int32, 16]](b)),
+    comptime match width:
+        case 16:
+            return rebind[SIMD[c_type, width]](
+                _dot_i8_to_i32_16(
+                    rebind[SIMD[.int32, 16]](src),
+                    bitcast[.int8, 64](rebind[SIMD[.int32, 16]](a)),
+                    bitcast[.int8, 64](rebind[SIMD[.int32, 16]](b)),
+                )
             )
-        )
-    elif width == 8:
-        return rebind[SIMD[c_type, width]](
-            _dot_i8_to_i32_8(
-                rebind[SIMD[.int32, 8]](src),
-                bitcast[.int8, 32](rebind[SIMD[.int32, 8]](a)),
-                bitcast[.int8, 32](rebind[SIMD[.int32, 8]](b)),
+        case 8:
+            return rebind[SIMD[c_type, width]](
+                _dot_i8_to_i32_8(
+                    rebind[SIMD[.int32, 8]](src),
+                    bitcast[.int8, 32](rebind[SIMD[.int32, 8]](a)),
+                    bitcast[.int8, 32](rebind[SIMD[.int32, 8]](b)),
+                )
             )
-        )
-    else:
-        comptime assert width == 4
-        return rebind[SIMD[c_type, width]](
-            _dot_i8_to_i32_4(
-                rebind[SIMD[.int32, 4]](src),
-                bitcast[.int8, 16](rebind[SIMD[.int32, 4]](a)),
-                bitcast[.int8, 16](rebind[SIMD[.int32, 4]](b)),
+        case _:
+            comptime assert width == 4
+            return rebind[SIMD[c_type, width]](
+                _dot_i8_to_i32_4(
+                    rebind[SIMD[.int32, 4]](src),
+                    bitcast[.int8, 16](rebind[SIMD[.int32, 4]](a)),
+                    bitcast[.int8, 16](rebind[SIMD[.int32, 4]](b)),
+                )
             )
-        )
 
 
 def dot_i8_to_i32_saturated_AVX2[
@@ -514,31 +527,32 @@ def dot_i8_to_i32_saturated_AVX2[
         A SIMD vector of width elements.
     """
 
-    comptime if width == 16:
-        return rebind[SIMD[c_type, width]](
-            _dot_i8_to_i32_saturated_16(
-                rebind[SIMD[.int32, 16]](src),
-                bitcast[.int8, 64](rebind[SIMD[.int32, 16]](a)),
-                bitcast[.int8, 64](rebind[SIMD[.int32, 16]](b)),
+    comptime match width:
+        case 16:
+            return rebind[SIMD[c_type, width]](
+                _dot_i8_to_i32_saturated_16(
+                    rebind[SIMD[.int32, 16]](src),
+                    bitcast[.int8, 64](rebind[SIMD[.int32, 16]](a)),
+                    bitcast[.int8, 64](rebind[SIMD[.int32, 16]](b)),
+                )
             )
-        )
-    elif width == 8:
-        return rebind[SIMD[c_type, width]](
-            _dot_i8_to_i32_saturated_8(
-                rebind[SIMD[.int32, 8]](src),
-                bitcast[.int8, 32](rebind[SIMD[.int32, 8]](a)),
-                bitcast[.int8, 32](rebind[SIMD[.int32, 8]](b)),
+        case 8:
+            return rebind[SIMD[c_type, width]](
+                _dot_i8_to_i32_saturated_8(
+                    rebind[SIMD[.int32, 8]](src),
+                    bitcast[.int8, 32](rebind[SIMD[.int32, 8]](a)),
+                    bitcast[.int8, 32](rebind[SIMD[.int32, 8]](b)),
+                )
             )
-        )
-    else:
-        comptime assert width == 4
-        return rebind[SIMD[c_type, width]](
-            _dot_i8_to_i32_saturated_4(
-                rebind[SIMD[.int32, 4]](src),
-                bitcast[.int8, 16](rebind[SIMD[.int32, 4]](a)),
-                bitcast[.int8, 16](rebind[SIMD[.int32, 4]](b)),
+        case _:
+            comptime assert width == 4
+            return rebind[SIMD[c_type, width]](
+                _dot_i8_to_i32_saturated_4(
+                    rebind[SIMD[.int32, 4]](src),
+                    bitcast[.int8, 16](rebind[SIMD[.int32, 4]](a)),
+                    bitcast[.int8, 16](rebind[SIMD[.int32, 4]](b)),
+                )
             )
-        )
 
 
 def dot_i8_to_i32_x86[
@@ -640,15 +654,20 @@ def dot_i16_to_i32_AVX2[
 
     var t: SIMD[c_type, width]
 
-    comptime if width == 16:
-        t = llvm_intrinsic["llvm.x86.avx512.pmaddw.d.512", SIMD[c_type, width]](
-            a, b
-        )
-    elif width == 8:
-        t = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[c_type, width]](a, b)
-    else:
-        comptime assert width == 4
-        t = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[c_type, width]](a, b)
+    comptime match width:
+        case 16:
+            t = llvm_intrinsic[
+                "llvm.x86.avx512.pmaddw.d.512", SIMD[c_type, width]
+            ](a, b)
+        case 8:
+            t = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[c_type, width]](
+                a, b
+            )
+        case _:
+            comptime assert width == 4
+            t = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[c_type, width]](
+                a, b
+            )
 
     return src + t
 

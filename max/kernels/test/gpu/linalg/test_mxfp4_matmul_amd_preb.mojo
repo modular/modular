@@ -23,7 +23,7 @@ Usage:
 """
 
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
-from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext
 from max.gpu.memory import CacheOperation
 from max.gpu.host.info import MI355X
 from std.math import ceildiv
@@ -34,7 +34,6 @@ from std.utils import StaticTuple
 
 from internal_utils import assert_almost_equal
 from layout import (
-    Coord,
     Idx,
     TensorLayout,
     TensorEngine,
@@ -67,7 +66,7 @@ def block_scaled_matmul_ref(
     var N = Int(N_dev)
     var K = Int(K_dev)
 
-    @always_inline
+    @inline(.always)
     def cast_fp4x2_to_fp32x2[
         byte_select: Int
     ](packed: Int32, scale: Float32) -> SIMD[.float32, 2]:
@@ -84,11 +83,11 @@ def block_scaled_matmul_ref(
 
     var k_groups = K // MXFP4_SF_VECTOR_SIZE
 
-    var am_scales_ptr = a_scales_ptr + m * k_groups
-    var bn_scales_ptr = b_scales_ptr + n * k_groups
+    var am_scales_ptr = a_scales_ptr.unsafe_offset(m * k_groups)
+    var bn_scales_ptr = b_scales_ptr.unsafe_offset(n * k_groups)
 
-    var am_ptr = a_ptr + m * (K // 2)
-    var bn_ptr = b_ptr + n * (K // 2)
+    var am_ptr = a_ptr.unsafe_offset(m * (K // 2))
+    var bn_ptr = b_ptr.unsafe_offset(n * (K // 2))
 
     var accum = SIMD[.float32, 2](0)
 
@@ -97,16 +96,16 @@ def block_scaled_matmul_ref(
         var b_scale = bn_scales_ptr[ko].cast[.float32]()
 
         for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[.int32, 1](am_ptr.load[width=4](ki))
-            var b_data = bitcast[.int32, 1](bn_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](am_ptr.unsafe_load[width=4](ki))
+            var b_data = bitcast[.int32, 1](bn_ptr.unsafe_load[width=4](ki))
 
             comptime for byte_select in range(4):
                 accum += cast_fp4x2_to_fp32x2[byte_select](
                     a_data, a_scale
                 ) * cast_fp4x2_to_fp32x2[byte_select](b_data, b_scale)
 
-        am_ptr += MXFP4_SF_VECTOR_SIZE // 2
-        bn_ptr += MXFP4_SF_VECTOR_SIZE // 2
+        am_ptr = am_ptr.unsafe_offset(MXFP4_SF_VECTOR_SIZE // 2)
+        bn_ptr = bn_ptr.unsafe_offset(MXFP4_SF_VECTOR_SIZE // 2)
 
     c_ptr[m * N + n] = accum.reduce_add()
 
@@ -186,7 +185,7 @@ def _preb_grid_kernel[
         N,
         K_BYTES,
     ](
-        c, a, b_pre, sfa, sfb, Int(block_idx.x), Int(block_idx.y)
+        c, a, b_pre, sfa, sfb, block_idx.x, block_idx.y
     )
 
 
@@ -225,24 +224,8 @@ def _test_case[
     comptime padded_M = ceildiv(M_static, 32) * 32
 
     print(
-        "  ",
-        name,
-        " M=",
-        M_static,
-        " N=",
-        N_static,
-        " K=",
-        K_static,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK_ELEMS=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        " b_prefetch=",
-        b_prefetch,
+        t"   {name}  M= {M_static}  N= {N_static}  K= {K_static}  BM= {BM}  BN="
+        t" {BN}  BK_ELEMS= {BK_ELEMS}  WN= {WN}  b_prefetch= {b_prefetch}"
     )
 
     # ---- Host buffers + random init ----
@@ -268,10 +251,10 @@ def _test_case[
         sfb_h[i] = UInt8(random_ui64(125, 129))
 
     var sfa_h_tt = TileTensor(
-        sfa_h, row_major(Coord(Idx[1], Idx[M_static], Idx[scale_K]))
+        sfa_h, row_major(Idx[1], Idx[M_static], Idx[scale_K])
     )
     var sfb_h_tt = TileTensor(
-        sfb_h, row_major(Coord(Idx[1], Idx[N_static], Idx[scale_K]))
+        sfb_h, row_major(Idx[1], Idx[N_static], Idx[scale_K])
     )
     _ = Shuffler[1].preshuffle_scale_4d[MN=M_static, K_SCALES=scale_K](
         sfa_h_tt, sfa_pre_h
@@ -301,9 +284,7 @@ def _test_case[
     ctx.enqueue_copy(sfb_pre_d, sfb_pre_h)
 
     # ---- GPU preshuffle B → b_pre_d ----
-    var b_raw_tt = TileTensor(
-        b_d, row_major[1, N_static, packed_K]()
-    ).as_immut()
+    var b_raw_tt = TileTensor(b_d, row_major[1, N_static, packed_K]()).as_imm()
     var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[1].b_5d_grouped_layout[N=N_static, K_BYTES=packed_K],
@@ -319,8 +300,8 @@ def _test_case[
     ctx.enqueue_function[block_scaled_matmul_ref](
         a_d,
         b_d,
-        sfa_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
-        sfb_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         c_ref_d,
         Int32(M_static),
         Int32(N_static),
@@ -330,23 +311,21 @@ def _test_case[
     )
 
     # ---- Preb kernel under test ----
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(M_static, Idx[packed_K]))
-    ).as_immut()
+    var a_tt = TileTensor(a_d, row_major(M_static, Idx[packed_K])).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[1, N_static * packed_K]()
-    ).as_immut()
+    ).as_imm()
     # Scales: pass the preshuffled buffers but wrap them with a row-major
     # layout — the kernel uses the underlying bytes through
     # `PreshuffledScaleLoader`, the TileTensor layout is unused.
     var sfa_tt = TileTensor(
-        sfa_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
-        sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
-    ).as_immut()
+    ).as_imm()
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
 
     comptime kernel = _preb_grid_kernel[

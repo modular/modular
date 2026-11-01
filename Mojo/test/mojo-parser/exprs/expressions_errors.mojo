@@ -137,6 +137,11 @@ def test_var_decl_patterns(cond: Bool):
 
   y = (var 42) # expected-error {{'var' patterns are only valid on the left side of an assignment}}
 
+
+def test_value_pattern_expression(value: Int):
+  _ = ==value # expected-error {{prefix '==' is only valid in a pattern}}
+
+
 import std.builtin
 def test_member_access() raises:
     # MOCO-2006: This crashed because it was trying to synthesize the vardecl in
@@ -188,22 +193,22 @@ def throws_int() raises Int:
 def test_func_type():
     # expected-error @below {{def(Int) thin -> Int}}
     comptime float0: def(Int) thin -> Int = test_func_type
-    # expected-error @below {{async def() thin -> None}}
-    comptime float1: async def() thin -> None = test_func_type
+    # expected-error @below {{__async def() thin -> None}}
+    comptime float1: __async def() thin -> None = test_func_type
     # expected-error @below {{def[a: Int]() thin -> MemType}}
     comptime float2: def[a: Int]() thin -> MemType = test_func_type
     # expected-error @below {{def[a: Int](var Int) thin -> MemType}}
     comptime float3: def[a: Int](var Int) thin -> MemType = test_func_type
     # expected-error @below {{def[a: Int](mut *Int) thin -> None}}
     comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
-    # expected-error @below {{'def(*MemType) raises capturing thin -> None'}}
-    comptime float5: def(*MemType) raises capturing -> None = test_func_type
-    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing thin -> None'}}
-    comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing thin -> None'}}
-    comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) capturing thin -> None'}}
-    comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
+    # expected-error @below {{'def(*MemType) raises -> None'}}
+    comptime float5: def(*MemType) raises -> None = test_func_type
+    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) -> None'}}
+    comptime float6: def[*Ts: AnyType](var* *Ts) -> None = test_func_type
+    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) -> None'}}
+    comptime float6a: def[*Ts: AnyType](var* *Ts) -> None = test_func_type
+    # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) -> None'}}
+    comptime float7: def[T: TrivialRegisterPassable](mut *T) -> None = test_func_type
     # expected-error @below {{'def(var **args: Int) -> None'}}
     comptime float8: def(var **args: Int) = test_func_type
 
@@ -230,7 +235,7 @@ def test_func_type():
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
     comptime f3: def (*, Int) thin -> Int
     # expected-error @below {{unnamed argument must be positional-only}}
-    comptime f4 = def (Int, b: Int) capturing -> Int
+    comptime f4 = def (Int, b: Int) -> Int
 
     # expected-error @below {{unnamed parameter cannot follow named parameter}}
     comptime f5: def [a: Int, Int]() thin -> Int
@@ -239,7 +244,7 @@ def test_func_type():
     # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
     comptime f7: def [*, Int] thin -> Int = test_func_type
     # expected-error @below {{unnamed parameter must be positional-only}}
-    comptime f8 = def [Int, b: Int] capturing -> Int
+    comptime f8 = def [Int, b: Int] -> Int
     # expected-error @below {{'def throws_int() raises Int thin -> None' value to 'def() raises String thin -> None'}}
     # expected-note @below {{error type of the first type is 'Int' but the second type is 'String'}}
     comptime f9: def () thin raises String = throws_int
@@ -388,6 +393,7 @@ def no_unused_values_in_def() raises:
   var bcd = *_
 
   _ = *x # expected-error {{can't use starred expression here}}
+  _ = [*x] # expected-error {{can't use starred expression here}}
 
 # expected-note @+1 {{function declared here}}
 def func_with_static_param[x: Int]() -> Int:
@@ -413,6 +419,37 @@ def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
 
     ref r2 = 42 # expected-error {{value of type 'Int' doesn't have a memory origin in 'ref' binding}}
     ref r3 = r2 # no follow-on error.
+
+
+# An origin has to name storage that outlives the expression naming it.  A
+# temporary has storage, so it escapes the check for a value with no memory
+# origin at all, but that storage dies with the expression.
+
+@fieldwise_init
+struct OriginHolder(Movable):
+    var s: String
+
+def test_origin_of_temporary():
+    # expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+    comptime o = origin_of(String("lit"))
+
+# A projection reads out of the temporary, so the origin still names the
+# temporary's own declaration rather than the projection.
+def test_origin_of_projection_of_temporary():
+    # expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+    var p = origin_of(OriginHolder(String("x")).s)
+
+# A union is reported per member, so one dying member condemns it even though
+# the other names storage that outlives the expression.
+def test_origin_of_union_with_temporary():
+    var s = String("keep")
+    # expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+    comptime o = origin_of(s, String("lit"))
+
+# Having no storage at all is a different failure, with its own diagnostic.
+def test_origin_of_register_temporary():
+    # expected-error @+1 {{value of type 'Int' doesn't have a memory origin in origin specifier}}
+    comptime o = origin_of(Int(3))
 
 
 ##===----------------------------------------------------------------------===##
@@ -443,9 +480,21 @@ def tuple_pattern(a: Int) raises:
   # expected-error @+1 {{cannot unpack value of type 'Int' into 2 values}}
   (b, c) = a
 
-def list_pattern():
-  # expected-error @+1 {{'Int' value has no attribute '__len__'}}
+struct LengthOnly(Sized):
+  def __len__(self) -> Int:
+    return 1
+
+
+def list_pattern(value: LengthOnly) raises:
+  # expected-error @+1 {{'LengthOnly' value has no attribute '__getitem__'}}
+  [_] = value
+  # expected-error @+1 {{value of type 'Int' does not conform to 'Sized'}}
   [_] = 4
+
+
+def multiple_starred_list_pattern(value: List[Int]) raises:
+  # expected-error @+1 {{multiple starred expressions in list pattern}}
+  [*a, *b] = value
 
 
 # Issue https://github.com/modular/mojo/issues/1917
@@ -572,7 +621,7 @@ def unused_assignments():
   a = a  # ok of course.
   a := a # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
 
-async def async_function() -> Int:
+__async def async_function() -> Int:
     return 0
 
 # See Issue #15578
@@ -761,8 +810,7 @@ def takesFnParam[F: def(x: Int) -> Int]():
   pass
 
 def testLambdaNonThinCallParam() raises:
-  # expected-error @+2 {{'takesFnParam' parameter 'F' has 'def(x: Int) -> Int' type}}
-  # expected-note @+1 {{a thin function cannot bind to a closure trait}}
+  # expected-error @+1 {{invalid call to 'takesFnParam': 'takesFnParam' parameter 'F' has 'def(x: Int) -> Int' type, but value has type 'def `lambda_6(x: Int) thin -> Int'}}
   takesFnParam[lambda (x: Int) {} -> Int: x + 1]()
 
 # A `def` reference is rejected identically -- def-parity, not a lambda-specific
@@ -775,8 +823,7 @@ def takesFnParam2[F: def(x: Int) -> Int]():
   pass
 
 def testDefRefNonThinCallParam() raises:
-  # expected-error @+2 {{'takesFnParam2' parameter 'F' has 'def(x: Int) -> Int' type}}
-  # expected-note @+1 {{a thin function cannot bind to a closure trait; use 'type_of(someIntFn)'}}
+  # expected-error @+1 {{'takesFnParam2' parameter 'F' has 'def(x: Int) -> Int' type}}
   takesFnParam2[someIntFn]()
 
 # expected-error @+1 {{value to 'def(x: Int) -> Int'}}
@@ -871,6 +918,105 @@ def transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNon
   # DLValue.
   # expected-error @+1 {{expression does not designate a value with an origin}}
   _ = vararg[1]^
+
+struct HoldsMem(Movable):
+  var field: CopyAndInitMemType
+  def __init__(out self): self.field = CopyAndInitMemType()
+  def peek_self(self): pass
+  def peek_ref_self(ref self): pass
+
+struct ConvertsFromMem(Movable):
+  @implicit
+  def __init__(out self, var other: CopyAndInitMemType): pass
+
+struct BorrowsFromMem(Movable):
+  @implicit
+  def __init__(out self, imm src: CopyAndInitMemType): pass
+
+def take_imm(imm_arg: CopyAndInitMemType): pass
+def take_ref(ref ref_arg: CopyAndInitMemType): pass
+def take_var(var var_arg: CopyAndInitMemType): pass
+def take_imm_int(int_arg: Int): pass
+def take_imm_variadic(*elts: CopyAndInitMemType): pass
+def take_imm_converted(converted: ConvertsFromMem): pass
+def take_imm_borrow_converted(converted: BorrowsFromMem): pass
+
+comptime MemAlias = CopyAndInitMemType
+
+# Transfers into borrowed arguments leave the value alive.
+def transfer_into_borrowed_args():
+  var a = CopyAndInitMemType()
+  take_imm(a^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var b = CopyAndInitMemType()
+  take_ref(b^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var c = CopyAndInitMemType()
+  take_imm((c^)) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var d = CopyAndInitMemType()
+  take_imm_variadic(d^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var e = HoldsMem()
+  take_imm(e.field^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var f = HoldsMem()
+  f^.peek_self() # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var g = HoldsMem()
+  g^.peek_ref_self() # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  # Parentheses around the transfer don't hide it.
+  var k = CopyAndInitMemType()
+  take_imm(((k^))) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var l = CopyAndInitMemType()
+  take_ref((l^)) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var m = HoldsMem()
+  (m^).peek_self() # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var n = HoldsMem()
+  (n^).peek_ref_self() # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  # Matching the alias's sugar to the argument type isn't a conversion.
+  var o: MemAlias = CopyAndInitMemType()
+  take_imm(o^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  # The existing "has no effect" warnings are not duplicated.
+  take_imm(CopyAndInitMemType()^) # expected-warning {{transfer from an owned value has no effect and can be removed}}
+  var someInt = 4
+  take_imm_int(someInt^) # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
+  take_imm_borrow_converted(CopyAndInitMemType()^) # expected-warning {{transfer from an owned value has no effect and can be removed}}
+
+  # These consume the value, so they don't warn.
+  var h = CopyAndInitMemType()
+  take_var(h^)
+
+  # `i` is moved due to the implicit conversion to `ConvertsFromMem`, so this shouldn't warn.
+  var i = CopyAndInitMemType()
+  take_imm_converted(i^)
+
+  # The implicit conversion only borrows `j`, so the transfer has no effect.
+  # The warning names the argument at the call site, not the conversion's.
+  var j = CopyAndInitMemType()
+  take_imm_borrow_converted(j^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+# Transfers outside of call arguments that only borrow the value.
+def transfer_into_borrows() raises:
+  var a = HoldsMem()
+  take_imm(a^.field) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var b = HoldsMem()
+  _ = b^.field # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var c = (CopyAndInitMemType(), CopyAndInitMemType())
+  var x: CopyAndInitMemType
+  var y: CopyAndInitMemType
+  x, y = c^ # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var d: List[CopyAndInitMemType] = [CopyAndInitMemType(), CopyAndInitMemType()]
+  [x, y] = d^ # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
 
 # Issue #1708: https://github.com/modular/mojo/issues/1708
 # Issue #1699: https://github.com/modular/mojo/issues/1699
@@ -1320,7 +1466,7 @@ struct Color(ImplicitlyCopyable):
   def __init__(out self):
     pass
 
-def takes_color(c: Color):  # expected-note {{function declared here}}
+def takes_color(c: Color):
   pass
 
 def takes_colors(colors: List[Color]):
@@ -1359,7 +1505,6 @@ def test_inferred_attribute_ref():
   var wrong: Color = .size
 
   # expected-error @below {{cannot implicitly convert 'Int' value to 'Color'}}
-  # expected-error @below {{invalid call to 'takes_color': cannot resolve inferred attribute reference}}
   takes_color(.size)
 
 def test_dtype_error_message():

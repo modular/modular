@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "modular_py_binary", "requirement")
+
+package(default_visibility = ["//visibility:private"])
+
+# Visible to GraphCompiler test packages that run lit tests using this helper.
+_TEST_VISIBILITY = ["//GraphCompiler/test:__subpackages__"]
+
+exports_files(
+    ["test_vs_numpy.py"],
+    visibility = _TEST_VISIBILITY,
+)
+
+modular_py_binary(
+    name = "test_vs_numpy",
+    srcs = glob(["*.py"]),
+    imports = ["."],
+    visibility = _TEST_VISIBILITY,
+    deps = [
+        requirement("numpy"),
+    ],
+)

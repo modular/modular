@@ -65,17 +65,17 @@ def test_peekable_bounds() raises:
 
     var lower, upper = iter.bounds()
     assert_equal(lower, 3)
-    assert_equal(upper.value(), 3)
+    assert_equal(upper, Optional(3))
 
     _ = iter.peek()
     lower, upper = iter.bounds()
     assert_equal(lower, 3)
-    assert_equal(upper.value(), 3)
+    assert_equal(upper, Optional(3))
 
     _ = next(iter)
     lower, upper = iter.bounds()
     assert_equal(lower, 2)
-    assert_equal(upper.value(), 2)
+    assert_equal(upper, Optional(2))
 
 
 def test_peekable_owned() raises:

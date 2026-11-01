@@ -656,6 +656,18 @@ def test_typed_raises_fn7() raises Float32:
     var str: String
     var tmp = callee_7(str)
 
+struct TypedRaisesInit[n: Int]:
+    def __init__(out self) raises Int:
+        pass
+
+# A constructor of a parametric struct whose thrown type needs converting.
+# CHECK-LABEL: lit.fn @"test_typed_raises_init
+def test_typed_raises_init() raises Float32:
+    # CHECK: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
+    # CHECK-NEXT: lit.try %__call_error_tmp__
+    # CHECK-NEXT: lit.call {{.*}}TypedRaisesInit{{.*}}__init__{{.*}}(%__call_error_tmp__,
+    _ = TypedRaisesInit[1]()
+
 # CHECK-LABEL: lit.fn @"call_test_typed_raises_fn
 def call_test_typed_raises_fn() raises Int:
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
@@ -802,7 +814,7 @@ struct StructWithInit(Movable where False):
     # CHECK: lit.fn @"__init__
     # CHECK-SAME: %self: !lit.ref<!StructWithInit, mut {{.*}}> byref_result)
     def __init__(out self, a: Int, b: Int):
-        # CHECK: hlcf.elif
+        # CHECK: hlcf.if
         if a == b:
             # CHECK:  lit.call {{.*}}__init__{{.*}}(%a, %self)
             self = StructWithInit(a)
@@ -878,19 +890,19 @@ def callMaybeStatic(a: Int, b: EmptyStruct):
 def initializersAsFunctions():
     # Register passable trivial.
     # CHECK-NEXT: %def_ptr1 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::SIMD[DType.int, 1])")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::SIMD[DType.int, 1])")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr1
     var def_ptr1: def (:Int) thin -> MyInt = MyInt.__init__
 
     # Register passable non-trivial.
 
     # CHECK-NEXT: %def_ptr2 = lit.var.decl "def_ptr2"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr2
     var def_ptr2: def () thin -> StructExample = StructExample.__init__
 
     # CHECK-NEXT: %def_ptr4 = lit.var.decl "def_ptr4"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__init__(copy:{{.*}}"]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr{{.*}}@StructExample::@"__init__(copy:{{.*}}"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr4
     var def_ptr4: def (
         *, copy: StructExample
@@ -898,7 +910,7 @@ def initializersAsFunctions():
 
     # Memory
     # CHECK-NEXT: %def_ptr5 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::SIMD[DType.int, 1])")
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::SIMD[DType.int, 1])")
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr5
     var def_ptr5: def (Int) thin -> StructWithInit = StructWithInit.__init__
 
@@ -948,21 +960,21 @@ struct Container[T: AnyType](TrivialRegisterPassable):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
 
-async def load(server_ptr: Container[__mlir_type.index]):
+__async def load(server_ptr: Container[__mlir_type.index]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"awaitSomething()"
-async def awaitSomething():
+__async def awaitSomething():
     var ptr = Container[__mlir_type.index]()
     # CHECK: [[CORO:%.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>(%{{.*}}) :
     # CHECK-SAME: !lit.generator<("handle": !alias_AnyCoroutine1) -> !lit.struct<#Coroutine <:!AnyType
-    await load(ptr)
+    __await load(ptr)
 
 
 # CHECK-LABEL: lit.fn @"coroutine
 # CHECK-SAME: [mut [[LT:.*]]](?, %__result__: !lit.ref<:meta<!Int> #alias_Int, mut [[LT]]> byref_result) async -> !kgen.none
-async def coroutine() -> Int:
+__async def coroutine() -> Int:
     # CHECK: lit.ref.store %0, %__result__
     # CHECK: lit.return %none
     return 0
@@ -971,7 +983,7 @@ async def coroutine() -> Int:
 # CHECK-LABEL: lit.struct.decl @StructWithAsync
 struct StructWithAsync(Movable where False):
     # CHECK-LABEL: lit.fn @"do_something{{.*}}({{.*}}) async
-    async def do_something(self: StructWithAsync):
+    __async def do_something(self: StructWithAsync):
         # CHECK-NEXT: [[CORO:%.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<:meta<!Int> #alias_Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
         # CHECK-NEXT: %1 = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
         # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType !Int, :origin.set {}>(%1)
@@ -980,7 +992,7 @@ struct StructWithAsync(Movable where False):
 
 # CHECK-LABEL: lit.fn @"call_struct_async
 # CHECK-SAME: [imm [[LT:.*]], mut {{.*}}]{{.*}}) async -> !kgen.none
-async def call_struct_async(f: StructWithAsync):
+__async def call_struct_async(f: StructWithAsync):
     # CHECK-NEXT: lit.async.call[!lit.generator<[2]({{.*}}, "__result__":{{.*}}) async -> !kgen.none>: @{{.*}}][imm [[LT]], imm {}](%f)
     _ = f.do_something()
 
@@ -997,26 +1009,26 @@ struct Awaitable(Movable where False):
 def awaitable() -> Int:
     # CHECK: call {{.*}}@Awaitable::@"__await__{{.*}}(%aw)
     var aw = Awaitable()
-    return await aw
+    return __await aw
 
 
 # COM: https://github.com/modular/mojo/issues/951
 @always_inline
-async def inline_async() -> Int:
+__async def inline_async() -> Int:
     return 0
 
 
 # CHECK-LABEL: lit.fn @"use_inline_async()"
-async def use_inline_async() -> Int:
+__async def use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
     # CHECK: [[TMP2:%.*]] = kgen.rebind [[ASYNC_RESULT]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: [[TMP:%.*]] = lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[TMP2]]) :
     # CHECK: lit.ref.store [[TMP]], [[CORO:%.*]] : <
     # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %{{.*}})
-    return await inline_async()
+    return __await inline_async()
 
 
-async def capture_byref(mut x: Awaitable, y: Awaitable):
+__async def capture_byref(mut x: Awaitable, y: Awaitable):
     pass
 
 
@@ -1025,7 +1037,7 @@ struct LifetimeAccess[origin: __mlir_type.`!lit.origin<true>`](RegisterPassable)
     pass
 
 
-async def lifetime_access(var x: LifetimeAccess[_]):
+__async def lifetime_access(var x: LifetimeAccess[_]):
     pass
 
 
@@ -1049,7 +1061,7 @@ def coroutine_origins():
 
 
 # CHECK-LABEL: lit.fn @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
-async def mem_result() -> Awaitable:
+__async def mem_result() -> Awaitable:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_result()"][imm {}]()
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}([[CORO2]])
@@ -1057,87 +1069,16 @@ async def mem_result() -> Awaitable:
 
 
 # CHECK-LABEL: lit.fn @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<:meta<!Int> #alias_Int, {{.*}}> byref_result) throws|async -> !kgen.scalar<bool>
-async def mem_raises() raises -> Int:
+__async def mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][imm {}, imm {}]()
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}([[CORO2]])
     var coro = mem_raises()
 
 
-# CHECK-LABEL: lit.fn @"async_closure_capture
-def async_closure_capture(x: String):
-    @__parameter
-    # CHECK: lit.fn *"capture_it
-    async def capture_it():
-        _ = x
-
-    # CHECK: lit.async.call[{{.*}}capture_it
-    # CHECK:  %coro = lit.var.decl{{.*}}Coroutine <{{.*}}{imm *"x`
-    var coro = capture_it()
-
-
 ##===----------------------------------------------------------------------===##
 # Nested Functions
 ##===----------------------------------------------------------------------===##
-
-
-# CHECK-LABEL: lit.fn @"topLevelFunction()"
-def topLevelFunction() -> Int:
-    var a = 0
-
-    # CHECK: lit.fn *"nestedFunction()"
-    @__parameter
-    def nestedFunction() -> Int:
-        # CHECK-NEXT: lit.ref.load %a
-        return a
-
-    # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut *"a`"}:() capturing -> !alias_Int1> = <*"nestedFunction()">
-    comptime b = nestedFunction
-    # CHECK: lit.call[!lit.generator<:{mut *"a`"}:() capturing -> !alias_Int1>: *"nestedFunction()"]()
-    return nestedFunction()
-
-
-# CHECK-LABEL: lit.struct.decl @SomeStruct
-struct SomeStruct(Movable where False):
-    # CHECK-LABEL: @"someMethod({{.*}})"
-    def someMethod(self) -> Int:
-        var a = 0
-
-        # CHECK: lit.fn *"nestedFunction()"
-        @__parameter
-        def nestedFunction() -> Int:
-            # CHECK-NEXT: lit.ref.load %a
-            return a
-
-        # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut [[A_LT:\*"a`.*"]]}:() capturing -> !alias_Int1> = <*"nestedFunction()">
-        comptime b = nestedFunction
-        # CHECK: lit.call[!lit.generator<:{mut [[A_LT]]}:() capturing -> !alias_Int1>: *"nestedFunction()"]()
-        return nestedFunction()
-
-
-# CHECK-LABEL: lit.fn @"closureParameter[def() capturing thin -> index]()"
-# CHECK-SAME: capturing ->
-def closureParameter[func: def () capturing -> __mlir_type.index]():
-    pass
-
-
-# CHECK-LABEL: lit.fn @"closureParameterCaptures
-# CHECK-SAME: :*(0,0):
-# CHECK-SAME: func: !lit.generator<:origins:() capturing -> !kgen.none>
-def closureParameterCaptures[
-    origins: OriginSet, //, func: def () capturing [origins] -> None
-]():
-    pass
-
-
-struct HasParam[p: Int](TrivialRegisterPassable):
-    pass
-
-
-def closureParameterInference[
-    p: Int, //, f: def () capturing -> None
-](arg: HasParam[p]):
-    pass
 
 
 struct HasLifetimeParam[p: Origin[mut=True]](TrivialRegisterPassable):
@@ -1156,97 +1097,6 @@ def inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @CapturingStruct
-struct CapturingStruct[a: Int](Movable where False):
-    @staticmethod
-    def takeClosure[
-        origins: OriginSet, //,
-        f: def () capturing [origins] -> None,
-    ]():
-        pass
-
-
-# CHECK-LABEL: lit.trait.decl @CapturingTrait
-trait CapturingTrait:
-    # CHECK: lit.fn @"takeClosure{{.*}}:*(0,0):
-    def takeClosure[
-        origins: OriginSet, //,
-        f: def () capturing [origins] -> None,
-    ](self):
-        ...
-
-
-# CHECK-LABEL: lit.struct.decl @CapturingStructTrait
-struct CapturingStructTrait(CapturingTrait, RegisterPassable):
-    # CHECK: lit.fn @"takeClosure{{.*}}:*(0,0):
-    def takeClosure[
-        origins: OriginSet, //,
-        f: def () capturing [origins] -> None,
-    ](self):
-        pass
-
-
-# CHECK-LABEL: lit.fn @"inferCaptureOrigins
-def inferCaptureOrigins[
-    lt: Origin[mut=True], param: HasLifetimeParam[lt]
-](mut x: Int, mut y: Int, arg: HasParam):
-    @__parameter
-    def bareFunc():
-        pass
-
-    @__parameter
-    def captureSomething():
-        _ = x
-
-    # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {}),
-    # CHECK-SAME: !lit.generator<() capturing -> !kgen.none>
-    closureParameterCaptures[bareFunc]()
-    # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {mut *"x`1"}),
-    # CHECK-SAME: !lit.generator<:{mut *"x`1"}:() capturing -> !kgen.none>
-    closureParameterCaptures[captureSomething]()
-    # CHECK: call {{.*}}closureParameterInference{{.*}}<:!Int *"arg.p`{{.*}}",
-    # CHECK-SAME: rebind(:!lit.generator<:{mut *"x`1"}:{{.*}} *"captureSomething
-    closureParameterInference[captureSomething](arg)
-
-    # CHECK: lit.alias.decl *"unboundSet{{.*}}!kgen.func.literal<:!lit.fn<:*(0,0):
-    comptime unboundSet = closureParameterCaptures
-    # CHECK: lit.alias.decl *"boundSet{{.*}}!kgen.func.literal<:!lit.fn<:rebind(:origin.set {mut *"x`1"}):
-    comptime boundSet = closureParameterCaptures[captureSomething]
-
-    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}:origin<true> *(0,0)>
-    comptime unboundSingleParam = explicitLifetime
-    # CHECK: lit.alias.decl *"boundSingleParam{{.*}}:origin<true> *"lt._mlir_origin`"
-    comptime boundSingleParam = explicitLifetime[param]
-
-    # CHECK: lit.alias.decl *"memberFunction{{.*}}!kgen.func.literal<:!lit.fn<:*(0,1):
-    comptime memberFunction = CapturingStruct.takeClosure
-
-    # CHECK: lit.fn *"captureWithClosure
-    # CHECK-SAME: :{mut *"y`{{.*}}", mut |*(0,0)|}:
-    @__parameter
-    def captureWithClosure[
-        lts: OriginSet, //, f: def () capturing [lts] -> None
-    ]():
-        _ = y
-
-    # CHECK: lit.alias.decl *"boundClosure{{.*}} !lit.generator<:{mut *"y`2", mut |rebind(:origin.set {mut *"x`1"})|}:
-    comptime boundClosure = captureWithClosure[captureSomething]
-
-
-# CHECK-LABEL: lit.fn @"testParameterCapture
-def testParameterCapture(mut x: Int, mut y: Int):
-    # CHECK: lit.fn *"capture()":{mut *"x`"}
-    @__parameter
-    def capture():
-        _ = x
-
-    # CHECK: lit.fn *"do_it()":{mut *"x`", mut *"y`
-    @__parameter
-    def do_it():
-        _ = y
-        capture()
-
-
 # CHECK-LABEL: lit.fn @"topLevelParamFn[index]()"<a_param>
 def topLevelParamFn[a_param: __mlir_type.index]():
     def nestedFunction[b_param: __mlir_type.index]():
@@ -1256,16 +1106,6 @@ def topLevelParamFn[a_param: __mlir_type.index]():
     comptime thinref = nestedFunction
     # CHECK: lit.call tail @decls::@"nestedFunction[index](){{.*}}"<2>()
     nestedFunction[Int(2).__mlir_index__()]()
-
-    var value = 0
-
-    @__copy_capture(value)
-    @__parameter
-    def capturingNestedFunction() -> Int:
-        return value
-
-    # CHECK: lit.alias.decl *"fatRef{{.*}}": !lit.generator<() capturing -> !alias_Int1> = <*"capturingNestedFunction()">
-    comptime fatRef = capturingNestedFunction
 
 
 struct SomeParamStruct[c_param: Int](Movable where False):
@@ -1550,9 +1390,10 @@ def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]() where x > 0:
     need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(#lit.struct.extract<:!Bool apply(:!lit.generator<("self": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"<:!DType {:dtype index}, :!SIMDLength {1}>, *"cs.a`", {:scalar<index> 0}), "_mlir_value">, ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), {{.*}}>}>>>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
+# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(#lit.struct.extract<:!Bool apply(:!lit.generator<("self": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"<:!DType {:dtype index}, :!SIMDLength {1}>, *"cs.a`", {:scalar<index> 0}), "_mlir_value">, ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), {{.*}}>}>>, {<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), {{.*}}>}>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
+# CHECK: lit.call {{.*}}need_positive_int{{.*}}<:!Int *"cs.a`">
 def use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
-    pass
+    need_positive_int[cs.a]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct_in_constraint
 # CHECK-SAME: <x: !Int, {<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 1)){{.*}}>, <sugar_preserved({{.*}}ge(:scalar<index> add(#lit.struct.extract<:!Int x, "_mlir_value">, 1), 2)){{.*}}>}

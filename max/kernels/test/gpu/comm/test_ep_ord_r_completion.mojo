@@ -34,7 +34,7 @@ Per-expert words are progress data only; the consumer never waits on them.
 """
 
 from comm.sync import enable_p2p
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceContext
 from shmem.ep_comm import ep_signal_completion
 from std.atomic import Atomic, Ordering
 from max.gpu import block_idx, thread_idx
@@ -49,9 +49,10 @@ comptime N_GENERATIONS = 8
 
 
 def producer_kernel(
-    peer_recv_count: UnsafePointer[UInt64, MutUntrackedOrigin],
-    peer_payload: UnsafePointer[UInt64, MutUntrackedOrigin],
-    rank_completion_counter: UnsafePointer[Int32, MutUntrackedOrigin],
+    peer_recv_count: MutPointer[UInt64, MutUntrackedOrigin],
+    peer_payload: MutPointer[UInt64, MutUntrackedOrigin],
+    rank_completion_counter: MutPointer[Int32, MutUntrackedOrigin],
+    tickets: MutPointer[Int32, MutUntrackedOrigin],
     generation: UInt64,
 ):
     """One single-thread block per expert on the SOURCE GPU (peer writes).
@@ -61,7 +62,7 @@ def producer_kernel(
     cross-warp ordering production adds on top is the monitor ACQUIRE chain,
     which is out of scope for this primitive test.
     """
-    var expert = Int(block_idx.x)
+    var expert = block_idx.x
 
     # Unique per-(generation, expert, slot) payload markers, stored directly
     # into the destination GPU's buffer, BEFORE the election.
@@ -71,12 +72,12 @@ def producer_kernel(
         )
 
     if thread_idx.x == 0:
-        var ptrs = Array[UnsafePointer[UInt64, MutUntrackedOrigin], 1](
+        var ptrs = Array[MutPointer[UInt64, MutUntrackedOrigin], 1](
             fill=peer_recv_count
         )
         # The 1-entry peer array already points AT the peer, so index 0 is
         # the true remote buffer.
-        ep_signal_completion[
+        tickets[expert] = ep_signal_completion[
             False,
             n_experts_per_device=N_EXPERTS,
             has_rank_flag=True,
@@ -93,9 +94,9 @@ def producer_kernel(
 
 
 def consumer_kernel(
-    recv_count: UnsafePointer[UInt64, MutUntrackedOrigin],
-    payload: UnsafePointer[UInt64, MutUntrackedOrigin],
-    result: UnsafePointer[Int32, MutUntrackedOrigin],
+    recv_count: MutPointer[UInt64, MutUntrackedOrigin],
+    payload: MutPointer[UInt64, MutUntrackedOrigin],
+    result: MutPointer[Int32, MutUntrackedOrigin],
     generation: UInt64,
 ):
     """Destination GPU: one system-scope ACQUIRE on the rank flag only."""
@@ -105,11 +106,11 @@ def consumer_kernel(
     # Spin exactly as the fused activation gate does: sentinel until the
     # elected producer's release lands from the peer GPU.
     var flag = Atomic[UInt64].load[ordering=Ordering.ACQUIRE](
-        recv_count + RANK_FLAG_OFFSET
+        recv_count.unsafe_offset(RANK_FLAG_OFFSET)
     )
     while flag == SENTINEL:
         flag = Atomic[UInt64].load[ordering=Ordering.ACQUIRE](
-            recv_count + RANK_FLAG_OFFSET
+            recv_count.unsafe_offset(RANK_FLAG_OFFSET)
         )
 
     var bad: Int32 = 0
@@ -132,7 +133,7 @@ def consumer_kernel(
     # sentinel after consuming the dispatch, so a stale flag can never satisfy
     # the next generation's wait.
     Atomic[UInt64].store[ordering=Ordering.RELEASE](
-        recv_count + RANK_FLAG_OFFSET, SENTINEL
+        recv_count.unsafe_offset(RANK_FLAG_OFFSET), SENTINEL
     )
 
 
@@ -149,6 +150,7 @@ def _run_direction(
     var result = dst.enqueue_create_buffer[DType.int32](1)
     # The election counter is SOURCE-local, exactly as in production.
     var counter = src.enqueue_create_buffer[DType.int32](1)
+    var tickets = src.enqueue_create_buffer[DType.int32](N_EXPERTS)
 
     dst.enqueue_memset(recv_count, SENTINEL)
     src.enqueue_memset(counter, Int32(0))
@@ -164,12 +166,15 @@ def _run_direction(
                 h[e] = SENTINEL
         dst.enqueue_memset(payload, UInt64(0))
         dst.enqueue_memset(result, Int32(-1))
+        src.enqueue_memset(tickets, Int32(-2))
         dst.synchronize()
+        src.synchronize()
 
         src.enqueue_function[producer_kernel](
             recv_count.unsafe_ptr(),
             payload.unsafe_ptr(),
             counter.unsafe_ptr(),
+            tickets.unsafe_ptr(),
             UInt64(gen),
             grid_dim=N_EXPERTS,
             block_dim=1,
@@ -203,6 +208,29 @@ def _run_direction(
                 + " generation "
                 + String(gen)
                 + ": rank-flag sentinel was not restored by the consumer",
+            )
+        # Each producer gets a distinct election ticket, so the generation's
+        # tickets are 0..N_EXPERTS-1 and exactly one producer saw
+        # N_EXPERTS - 1 and wrote the rank flag.
+        with tickets.map_to_host() as h:
+            var seen = UInt64(0)
+            for e in range(N_EXPERTS):
+                var t = Int(h[e])
+                assert_true(
+                    t >= 0 and t < N_EXPERTS,
+                    String(label)
+                    + " generation "
+                    + String(gen)
+                    + ": election ticket out of range: "
+                    + String(t),
+                )
+                seen |= UInt64(1) << UInt64(t)
+            assert_true(
+                seen == (UInt64(1) << UInt64(N_EXPERTS)) - 1,
+                String(label)
+                + " generation "
+                + String(gen)
+                + ": election tickets are not a permutation of 0..N_EXPERTS-1",
             )
         # The elected producer must have reset the source-local counter.
         with counter.map_to_host() as h:

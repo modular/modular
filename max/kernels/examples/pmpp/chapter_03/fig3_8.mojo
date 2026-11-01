@@ -18,13 +18,14 @@ from std.math import ceildiv
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
 
 def blur_kernel(
-    input: UnsafePointer[UInt8, MutUntrackedOrigin],
-    output: UnsafePointer[UInt8, MutUntrackedOrigin],
+    input: MutPointer[UInt8, MutUntrackedOrigin],
+    output: MutPointer[UInt8, MutUntrackedOrigin],
     m_dev: Int32,
     n_dev: Int32,
 ):
@@ -70,8 +71,8 @@ def blur_kernel(
 
 
 def cpu_blur(
-    h_in: UnsafePointer[UInt8, MutUntrackedOrigin],
-    h_ref: UnsafePointer[UInt8, MutUntrackedOrigin],
+    h_in: ImmPointer[UInt8, _],
+    h_ref: MutPointer[UInt8, MutUntrackedOrigin],
     n: Int,
     m: Int,
 ):
@@ -108,7 +109,7 @@ def cpu_blur(
         h_ref[curr_idx] = avg
 
 
-def initialize(h_in: UnsafePointer[UInt8, MutUntrackedOrigin], size: Int):
+def initialize(h_in: MutPointer[UInt8, MutUntrackedOrigin], size: Int):
     """Initialize input array with test data.
 
     Args:
@@ -126,9 +127,9 @@ def main() raises:
     var total_pixels = m * n
 
     # Allocate host memory
-    var h_in = alloc[UInt8](total_pixels)
-    var h_out = alloc[UInt8](total_pixels)
-    var h_ref = alloc[UInt8](total_pixels)
+    var h_in = unsafe_alloc[UInt8](total_pixels)
+    var h_out = unsafe_alloc[UInt8](total_pixels)
+    var h_ref = unsafe_alloc[UInt8](total_pixels)
 
     # Initialize input
     initialize(h_in, total_pixels)
@@ -183,6 +184,6 @@ def main() raises:
         print("Success")
 
     # Cleanup
-    h_in.free()
-    h_out.free()
-    h_ref.free()
+    h_in.unsafe_free()
+    h_out.unsafe_free()
+    h_ref.unsafe_free()

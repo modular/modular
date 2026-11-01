@@ -15,12 +15,11 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mlp import MLP
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 
 class Olmo3TransformerBlock(
@@ -50,6 +49,7 @@ class Olmo3TransformerBlock(
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         attn_out = self.self_attn(
             x,
             kv_collection,
@@ -58,10 +58,7 @@ class Olmo3TransformerBlock(
         attn_out = self.post_attention_layernorm(attn_out)
 
         if self.residual_multiplier != 1.0:
-            multiplier = F.constant(
-                self.residual_multiplier, x.dtype, device=x.device
-            )
-            attn_out = attn_out * multiplier
+            attn_out = attn_out * float(self.residual_multiplier)
 
         h = x + attn_out
         residual = h
@@ -70,9 +67,6 @@ class Olmo3TransformerBlock(
         mlp_out = self.post_feedforward_layernorm(mlp_out)
 
         if self.residual_multiplier != 1.0:
-            multiplier = F.constant(
-                self.residual_multiplier, x.dtype, device=x.device
-            )
-            mlp_out = mlp_out * multiplier
+            mlp_out = mlp_out * float(self.residual_multiplier)
 
         return mlp_out + residual

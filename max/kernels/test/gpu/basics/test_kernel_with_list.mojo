@@ -14,7 +14,9 @@
 from max.gpu.host import DeviceContext
 
 
-def kernel_with_list(res: MutPointer[Float32, MutAnyOrigin]):
+def kernel_with_list[
+    res_origin: MutOrigin
+](res: MutPointer[Float32, res_origin]):
     var list: List[Float32] = [10]
     for i in range(4):
         list.append(Float32(i + 1))
@@ -35,7 +37,7 @@ def test_kernel_with_list(ctx: DeviceContext) raises:
     # CHECK: (
     # CHECK: param0
     # CHECK: );
-    comptime kernel = kernel_with_list
+    comptime kernel = kernel_with_list[origin_of(res_device)]
     ctx.enqueue_function[kernel, dump_asm=True](
         res_device, block_dim=(1), grid_dim=(1)
     )

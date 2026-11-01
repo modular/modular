@@ -118,7 +118,7 @@ def use_aligned():
     var stack_value = CacheAligned(42)
 
     # Heap allocation
-    var heap_alloc = alloc[CacheAligned]({count = 1})
+    var heap_alloc = alloc[CacheAligned]({length = 1})
     dealloc(heap_alloc^)
 ```
 
@@ -141,7 +141,7 @@ struct CacheAligned:
     var data: Int  # 8 bytes
 
 def demonstrate_array_stride():
-    var allocation = alloc[CacheAligned]({count = 4})
+    var allocation = alloc[CacheAligned]({length = 4})
     var arr = allocation.unsafe_ptr()
 
     print(align_of[CacheAligned]())  # 64
@@ -285,7 +285,7 @@ struct TensorMap:
     pass
 
 var tensormap = TensorMap()
-var heap_tensormap = alloc[TensorMap]({count = 1})
+var heap_tensormap = alloc[TensorMap]({length = 1})
 ```
 
 Alignment is enforced automatically everywhere the type is used.

@@ -31,36 +31,15 @@ branches is the column ordering of W and the matching load pattern in the
 SwiGLU kernel; the matmul reduces over K independently per output cell so
 no FP-noise is expected.
 """
-from std.math import align_up, ceildiv, exp, recip
-from std.math.uutils import udivmod
+from std.math import align_up, ceildiv
 from max.gpu.host import DeviceContext
 from std.memory import alloc
-from std.memory.unsafe import bitcast
+from std.memory.alloc import unsafe_alloc
 from std.random import random_ui64, seed, rand
-from std.builtin.simd import _convert_f32_to_float8_scalar
-from max.gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
-    thread_idx,
-    block_idx,
-    lane_id,
-    warp_id,
-)
-from max.gpu.primitives.grid_controls import (
-    PDL,
-    PDLLevel,
-    pdl_launch_attributes,
-)
-import max.gpu.primitives.warp as warp
-from std.utils.index import StaticTuple
+from std.simd import _convert_f32_to_float8_scalar
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 
-from layout import (
-    Coord,
-    Idx,
-    TensorLayout,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
@@ -70,7 +49,6 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
-    cast_fp32_to_fp4e2m1,
     get_scale_factor,
     set_scale_factor,
 )
@@ -118,40 +96,29 @@ def _test_swiglu_interleave[
     var M = total_num_tokens
 
     print(
-        "  N=",
-        N,
-        " K=",
-        K,
-        " H=",
-        H,
-        " M=",
-        M,
-        " active=",
-        num_active_experts,
-        "/",
-        num_experts,
+        t"  N={N} K={K} H={H} M={M} active={num_active_experts}/{num_experts}",
         sep="",
     )
 
     # ---- Matmul I/O buffers ----
-    var a_shape = row_major(Coord(Int(M), Idx[packed_K]))
-    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K]))
-    var c_shape = row_major(Coord(Int(M), Idx[N]))
+    var a_shape = row_major(M, Idx[packed_K])
+    var b_shape = row_major(Idx[num_experts], Idx[N], Idx[packed_K])
+    var c_shape = row_major(M, Idx[N])
 
     var a_size = M * packed_K
     var b_size = num_experts * N * packed_K
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var b_perm_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_perm_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
     var b_perm_host = TileTensor(b_perm_host_ptr, b_shape)
 
-    var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_ref_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_ref_host = TileTensor(c_ref_host_ptr, c_shape)
-    var c_perm_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_perm_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_perm_host = TileTensor(c_perm_host_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -167,44 +134,44 @@ def _test_swiglu_interleave[
 
     # ---- Per-expert offsets / IDs (static lengths so the SwiGLU kernel's
     # ----  comptime n_groups = scales_offsets.static_shape[0] resolves) ----
-    var a_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
-    var a_scale_offsets_ptr = alloc[UInt32](num_active_experts)
-    var expert_ids_host_ptr = alloc[Int32](num_active_experts)
-    var expert_scales_host_ptr = alloc[Float32](num_experts)
-    var input_scales_host_ptr = alloc[Float32](num_active_experts)
+    var a_offsets_host_ptr = unsafe_alloc[UInt32](num_active_experts + 1)
+    var a_scale_offsets_ptr = unsafe_alloc[UInt32](num_active_experts)
+    var expert_ids_host_ptr = unsafe_alloc[Int32](num_active_experts)
+    var expert_scales_host_ptr = unsafe_alloc[Float32](num_experts)
+    var input_scales_host_ptr = unsafe_alloc[Float32](num_active_experts)
 
     var a_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device,
-        row_major(Coord(Idx[num_active_experts + 1])),
+        row_major(Idx[num_active_experts + 1]),
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device,
-        row_major(Coord(Idx[num_active_experts])),
+        row_major(Idx[num_active_experts]),
     )
     var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device,
-        row_major(Coord(Idx[num_active_experts])),
+        row_major(Idx[num_active_experts]),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
-        row_major(Coord(Idx[num_experts])),
+        row_major(Idx[num_experts]),
     )
     var input_scales_device = ctx.enqueue_create_buffer[.float32](
         num_active_experts
     )
     var input_scales_tensor = TileTensor(
         input_scales_device,
-        row_major(Coord(Idx[num_active_experts])),
+        row_major(Idx[num_active_experts]),
     )
 
     for i in range(num_experts):
@@ -231,33 +198,31 @@ def _test_swiglu_interleave[
     comptime n_groups_b = ceildiv(N, SF_MN_GROUP_SIZE)
 
     var a_scales_shape = row_major(
-        Coord(
-            Int(a_scale_dim0),
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups_b],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups_b],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
+    var a_scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](a_scales_total)
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var b_scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](b_scales_total)
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
-    var b_scales_perm_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var b_scales_perm_host_ptr = unsafe_alloc[Scalar[scales_dtype]](
+        b_scales_total
+    )
     var b_scales_perm_host = TileTensor(b_scales_perm_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
@@ -272,16 +237,14 @@ def _test_swiglu_interleave[
 
     # ---- SwiGLU output buffers (NVFP4 packed + 5D e4m3 SF tile) ----
     comptime k_groups_swiglu = ceildiv(H, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
-    var O_shape = row_major(Coord(Int(M), Idx[packed_H]))
+    var O_shape = row_major(M, Idx[packed_H])
     var O_size = M * packed_H
     var swiglu_scales_shape = row_major(
-        Coord(
-            Int(a_scale_dim0),
-            Idx[k_groups_swiglu],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups_swiglu],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var S_size = swiglu_scales_shape.product()
 
@@ -293,19 +256,19 @@ def _test_swiglu_interleave[
     var S_ref_tensor = TileTensor(S_ref_device, swiglu_scales_shape)
     var S_perm_device = ctx.enqueue_create_buffer[scales_dtype](S_size)
     var S_perm_tensor = TileTensor(S_perm_device, swiglu_scales_shape)
-    var O_ref_host_ptr = alloc[Scalar[fp4_dtype]](O_size)
-    var O_perm_host_ptr = alloc[Scalar[fp4_dtype]](O_size)
-    var S_ref_host_ptr = alloc[Scalar[scales_dtype]](S_size)
-    var S_perm_host_ptr = alloc[Scalar[scales_dtype]](S_size)
+    var O_ref_host_ptr = unsafe_alloc[Scalar[fp4_dtype]](O_size)
+    var O_perm_host_ptr = unsafe_alloc[Scalar[fp4_dtype]](O_size)
+    var S_ref_host_ptr = unsafe_alloc[Scalar[scales_dtype]](S_size)
+    var S_perm_host_ptr = unsafe_alloc[Scalar[scales_dtype]](S_size)
 
     # ---- Init data: random uint8 weights/activations, power-of-2 e4m3
     #      input scales, random (zeroed-OOB) e4m3 weight scales ----
-    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
 
     for i in range(a_scales_host.num_elements()):
         a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(b_scales_host.as_span())
     for i in range(b_scales_perm_host.num_elements()):
         b_scales_perm_host._storage[i] = Scalar[scales_dtype](0.0)
 
@@ -343,15 +306,13 @@ def _test_swiglu_interleave[
     )
     for e in range(num_experts):
         var expert_view = TileTensor(
-            b_scales_host_ptr + e * b_expert_sf_size,
+            b_scales_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
-                Coord(
-                    Idx[n_groups_b],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups_b],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         for idx0 in range(align_up(N, SF_MN_GROUP_SIZE)):
@@ -384,27 +345,23 @@ def _test_swiglu_interleave[
     # [N, align_up(N, SF_MN_GROUP_SIZE)) stay zero (already zero-initialized).
     for e in range(num_experts):
         var src_view = TileTensor(
-            b_scales_host_ptr + e * b_expert_sf_size,
+            b_scales_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
-                Coord(
-                    Idx[n_groups_b],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups_b],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         var dst_view = TileTensor(
-            b_scales_perm_host_ptr + e * b_expert_sf_size,
+            b_scales_perm_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
-                Coord(
-                    Idx[n_groups_b],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups_b],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         # NB: each row of the SF tile has K / NVFP4_SF_VECTOR_SIZE = 448 scale
@@ -446,44 +403,38 @@ def _test_swiglu_interleave[
     var a_scales_tt = TileTensor(
         a_scales_device,
         row_major(
-            Coord(
-                Int64(a_scale_dim0),
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Int64(a_scale_dim0),
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups_b],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups_b],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_perm_tt = TileTensor(
         b_scales_perm_device,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups_b],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups_b],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
         expert_scales_device,
-        row_major(Coord(Int64(num_experts))),
+        row_major(Int64(num_experts)),
     ).as_unsafe_any_origin()
 
     # ---- Path REF: matmul on W ----
@@ -557,12 +508,8 @@ def _test_swiglu_interleave[
 
     if bf16_mismatch_count != 0:
         print(
-            "    BF16 mismatch count =",
-            bf16_mismatch_count,
-            " first @ m=",
-            first_bad_m,
-            " i=",
-            first_bad_i,
+            t"    BF16 mismatch count = {bf16_mismatch_count}  first @ m="
+            t" {first_bad_m}  i= {first_bad_i}"
         )
         raise Error(
             "BF16 sanity check failed: permuted matmul disagrees with REF"
@@ -573,11 +520,11 @@ def _test_swiglu_interleave[
 
     # Store the immutable views as named vars so .LayoutType resolves to a
     # stable comptime type rather than being read off a chained method call.
-    var c_ref_immut = c_ref_tensor.as_immut()
-    var c_perm_immut = c_perm_tensor.as_immut()
-    var a_offsets_immut = a_offsets_tensor.as_immut()
-    var a_scale_offsets_immut = a_scale_offsets_tensor.as_immut()
-    var input_scales_immut = input_scales_tensor.as_immut()
+    var c_ref_immut = c_ref_tensor.as_imm()
+    var c_perm_immut = c_perm_tensor.as_imm()
+    var a_offsets_immut = a_offsets_tensor.as_imm()
+    var a_scale_offsets_immut = a_scale_offsets_tensor.as_imm()
+    var input_scales_immut = input_scales_tensor.as_imm()
 
     comptime fused_silu_nvfp4 = fused_silu_nvfp4_kernel[
         fp4_dtype,
@@ -591,6 +538,12 @@ def _test_swiglu_interleave[
         input_scales_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
+        OutputEngine=type_of(O_ref_tensor).Engine,
+        ScalesEngine=type_of(S_ref_tensor).Engine,
+        InputEngine=type_of(c_ref_immut).Engine,
+        RowOffsetsEngine=type_of(a_offsets_immut).Engine,
+        ScalesOffsetsEngine=type_of(a_scale_offsets_immut).Engine,
+        InputScalesEngine=type_of(input_scales_immut).Engine,
     ]
     ctx.enqueue_function[fused_silu_nvfp4](
         O_ref_tensor,
@@ -616,6 +569,12 @@ def _test_swiglu_interleave[
         input_scales_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
+        OutputEngine=type_of(O_perm_tensor).Engine,
+        ScalesEngine=type_of(S_perm_tensor).Engine,
+        InputEngine=type_of(c_perm_immut).Engine,
+        RowOffsetsEngine=type_of(a_offsets_immut).Engine,
+        ScalesOffsetsEngine=type_of(a_scale_offsets_immut).Engine,
+        InputScalesEngine=type_of(input_scales_immut).Engine,
     ]
     ctx.enqueue_function[fused_silu_nvfp4_interleaved](
         O_perm_tensor,
@@ -655,23 +614,13 @@ def _test_swiglu_interleave[
 
     if O_mismatch != 0:
         print(
-            "    O mismatch count =",
-            O_mismatch,
-            " first idx =",
-            first_bad_O_idx,
-            " (out of ",
-            O_size,
-            ")",
+            t"    O mismatch count = {O_mismatch}  first idx ="
+            t" {first_bad_O_idx}  (out of  {O_size} )"
         )
     if S_mismatch != 0:
         print(
-            "    S mismatch count =",
-            S_mismatch,
-            " first idx =",
-            first_bad_S_idx,
-            " (out of ",
-            S_size,
-            ")",
+            t"    S mismatch count = {S_mismatch}  first idx ="
+            t" {first_bad_S_idx}  (out of  {S_size} )"
         )
     if O_mismatch != 0 or S_mismatch != 0:
         raise Error(
@@ -683,23 +632,23 @@ def _test_swiglu_interleave[
     print("    PASSED")
 
     # ---- Cleanup ----
-    a_host_ptr.free()
-    b_host_ptr.free()
-    b_perm_host_ptr.free()
-    c_ref_host_ptr.free()
-    c_perm_host_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-    b_scales_perm_host_ptr.free()
-    a_offsets_host_ptr.free()
-    a_scale_offsets_ptr.free()
-    expert_ids_host_ptr.free()
-    expert_scales_host_ptr.free()
-    input_scales_host_ptr.free()
-    O_ref_host_ptr.free()
-    O_perm_host_ptr.free()
-    S_ref_host_ptr.free()
-    S_perm_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    b_perm_host_ptr.unsafe_free()
+    c_ref_host_ptr.unsafe_free()
+    c_perm_host_ptr.unsafe_free()
+    a_scales_host_ptr.unsafe_free()
+    b_scales_host_ptr.unsafe_free()
+    b_scales_perm_host_ptr.unsafe_free()
+    a_offsets_host_ptr.unsafe_free()
+    a_scale_offsets_ptr.unsafe_free()
+    expert_ids_host_ptr.unsafe_free()
+    expert_scales_host_ptr.unsafe_free()
+    input_scales_host_ptr.unsafe_free()
+    O_ref_host_ptr.unsafe_free()
+    O_perm_host_ptr.unsafe_free()
+    S_ref_host_ptr.unsafe_free()
+    S_perm_host_ptr.unsafe_free()
     _ = a_device^
     _ = b_device^
     _ = b_perm_device^

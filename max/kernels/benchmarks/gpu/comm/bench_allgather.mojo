@@ -31,17 +31,17 @@ from max.benchmark import (
     bench_multicontext,
     bencher_iter_custom,
 )
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from comm.sync import enable_p2p
 from comm.allgather import allgather
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
 
 from std.testing import assert_true
 
 
-@always_inline
+@inline(.always)
 def _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
     return Scalar[dtype](Scalar[dtype](gpu_rank + 1) + Scalar[dtype](j % 251))
@@ -63,23 +63,24 @@ def _compute_lengths[
     var base_length = num_bytes // elem_size
     var lengths = Array[Int, ngpus](fill=base_length)
 
-    comptime if length_mode == "uniform":
-        pass
-    elif length_mode == "halved_last":
-        lengths[ngpus - 1] = base_length // 2
-    elif length_mode == "doubled_first":
-        lengths[0] = base_length * 2
-    elif length_mode == "staircase":
-        for i in range(ngpus):
-            lengths[i] = base_length * (i + 1) // ngpus
-    elif length_mode == "uneven":
-        # First ceil(ngpus/2) GPUs get base_length, rest get base_length - 1.
-        # If base_length is 0 the shorter ones clamp to 0.
-        var half = (ngpus + 1) // 2
-        for i in range(half, ngpus):
-            lengths[i] = max(base_length - 1, 0)
-    else:
-        comptime assert False, "unknown length_mode: " + length_mode
+    comptime match length_mode:
+        case "uniform":
+            pass
+        case "halved_last":
+            lengths[ngpus - 1] = base_length // 2
+        case "doubled_first":
+            lengths[0] = base_length * 2
+        case "staircase":
+            for i in range(ngpus):
+                lengths[i] = base_length * (i + 1) // ngpus
+        case "uneven":
+            # First ceil(ngpus/2) GPUs get base_length, rest get base_length - 1.
+            # If base_length is 0 the shorter ones clamp to 0.
+            var half = (ngpus + 1) // 2
+            for i in range(half, ngpus):
+                lengths[i] = max(base_length - 1, 0)
+        case _:
+            comptime assert False, t"unknown length_mode: {length_mode}"
 
     return lengths^
 
@@ -140,9 +141,6 @@ def bench_allgather[
 
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
 
     for gpu_idx in range(ngpus):
         var length = lengths[gpu_idx]
@@ -191,12 +189,12 @@ def bench_allgather[
             list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Build TileTensor arrays for allgather.
     comptime InTileType = TileTensor[
@@ -218,11 +216,11 @@ def bench_allgather[
             )
         list_of_ctx[gpu_idx].synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut tt_in, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut tt_in, imm}:
@@ -231,17 +229,13 @@ def bench_allgather[
                 tt_in[i] = TileTensor(
                     cb_inputs[i].offset_ptr(cache_iter),
                     row_major(lengths[i]),
-                ).as_immut()
+                ).as_imm()
 
-            var device_out = Array[OutTileType, ngpus](
-                fill_with_unrolled=lambda [
-                    src_idx: Int
-                ]() -> OutTileType: tt_out[ctx_idx * ngpus + src_idx]
-            )
-
+            # `tt_out` is already the world-view output array `allgather`
+            # expects (`ngpus * ngpus` for this full-world, ungrouped bench).
             allgather(
                 tt_in,
-                device_out,
+                tt_out,
                 rank_sigs,
                 ctx_inner,
                 ctx_idx,
@@ -265,17 +259,8 @@ def bench_allgather[
     # See: https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md
     var busbw = gbps * Float64(ngpus - 1) / Float64(ngpus)
     print(
-        "|",
-        name,
-        "| slowest mean time",
-        max_time,
-        "ms |",
-        "algbw:",
-        gbps,
-        "GB/s |",
-        "busbw:",
-        busbw,
-        "GB/s |",
+        t"| {name} | slowest mean time {max_time} ms | algbw: {gbps} GB/s |"
+        t" busbw: {busbw} GB/s |"
     )
 
     # Copy results back and verify the benchmarked outputs directly.
@@ -297,12 +282,8 @@ def bench_allgather[
                 var expected = _per_gpu_value[dtype](src_idx, j)
                 if verify_host[j] != expected:
                     print(
-                        "Verification failed at GPU",
-                        gpu_idx,
-                        "source",
-                        src_idx,
-                        "index",
-                        j,
+                        t"Verification failed at GPU {gpu_idx} source"
+                        t" {src_idx} index {j}"
                     )
                     print("Value:", verify_host[j])
                     print("Expected:", expected)

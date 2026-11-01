@@ -32,6 +32,7 @@ from max.experimental.cascade.interfaces.gen_ai import (
     GenAIRequest,
     ImageGenOptions,
 )
+from max.experimental.cascade.telemetry import measured
 from max.pipelines.request.open_responses import (
     InputTextContent,
     Message,
@@ -206,6 +207,7 @@ def build_router(pipeline: GenAIInterface) -> APIRouter:
     router = APIRouter(prefix="/v1")
 
     @router.post("/responses", response_model=None)
+    @measured
     async def create_response(
         body: _CascadeRequestBody,
     ) -> ResponseResource | EventSourceResponse:

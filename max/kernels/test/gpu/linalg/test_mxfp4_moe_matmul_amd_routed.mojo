@@ -42,7 +42,7 @@ from std.math import ceildiv
 from std.random import rand
 from std.testing import assert_almost_equal
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from linalg.matmul.gpu.amd import (
     InputRowMode,
@@ -56,7 +56,7 @@ from linalg.matmul.gpu.amd import (
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _fp4_nibble_to_fp32(nibble: UInt8) -> Float32:
     """Decodes a 4-bit FP4 E2M1 nibble (lower 4 bits) to FP32."""
     var n = Int(nibble) & 0xF
@@ -72,7 +72,7 @@ def _fp4_nibble_to_fp32(nibble: UInt8) -> Float32:
     return -mag if sign == 1 else mag
 
 
-@always_inline
+@inline(.always)
 def _fp4_byte_to_fp32_pair(byte: UInt8) -> Tuple[Float32, Float32]:
     """Returns the (low, high) FP32 values stored in a packed FP4 byte."""
     var low = _fp4_nibble_to_fp32(byte & UInt8(0xF))
@@ -80,7 +80,7 @@ def _fp4_byte_to_fp32_pair(byte: UInt8) -> Tuple[Float32, Float32]:
     return (low, high)
 
 
-@always_inline
+@inline(.always)
 def _e8m0_to_fp32(byte: UInt8) -> Float32:
     """Decodes an E8M0 (exponent-only) byte to FP32. Byte 127 = 1.0."""
     var e = Int(byte)
@@ -136,7 +136,7 @@ def cpu_routed_reference(
     # Zero-fill output (inactive pairs / out-of-range t,s leave zeros here).
     for c_row in range(num_tokens * topk):
         for n in range(N):
-            c_out[Coord(c_row, n)] = Float32(0.0)
+            c_out[c_row, n] = Float32(0.0)
 
     for t in range(num_tokens):
         for s in range(topk):
@@ -150,18 +150,18 @@ def cpu_routed_reference(
             for n in range(N):
                 var acc: Float32 = 0.0
                 for kg in range(k_groups):
-                    var a_scale = _e8m0_to_fp32(sfa[Coord(a_row, kg)][0])
-                    var b_scale = _e8m0_to_fp32(sfb[Coord(expert, n, kg)][0])
+                    var a_scale = _e8m0_to_fp32(sfa[a_row, kg][0])
+                    var b_scale = _e8m0_to_fp32(sfb[expert, n, kg][0])
                     for ki in range(_MXFP4_GROUP // 2):
                         var k_byte_idx = kg * (_MXFP4_GROUP // 2) + ki
-                        var a_byte = a[Coord(a_row, k_byte_idx)][0]
-                        var b_byte = b[Coord(expert, n, k_byte_idx)][0]
+                        var a_byte = a[a_row, k_byte_idx][0]
+                        var b_byte = b[expert, n, k_byte_idx][0]
                         var a_pair = _fp4_byte_to_fp32_pair(a_byte)
                         var b_pair = _fp4_byte_to_fp32_pair(b_byte)
                         acc += a_pair[0] * a_scale * b_pair[0] * b_scale
                         acc += a_pair[1] * a_scale * b_pair[1] * b_scale
 
-                c_out[Coord(c_row, n)] = Float32(acc)
+                c_out[c_row, n] = Float32(acc)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -223,8 +223,7 @@ def build_routing_metadata(
                 var sti_offset = (blk_idx + blk) * sort_block_m + r
                 var local_idx = blk * sort_block_m + r
                 if local_idx < n:
-                    var t = pair_idx // topk
-                    var s = pair_idx % topk
+                    var t, s = divmod(pair_idx, topk)
                     sti_out[sti_offset] = UInt32(t) | (UInt32(s) << 24)
                     pair_idx += 1
                 else:
@@ -324,12 +323,7 @@ def run_routed_test_case[
     rand(a_h.unsafe_ptr(), num_input_rows * k_bytes, min=0, max=255)
     rand(b_h.unsafe_ptr(), num_experts * N * k_bytes, min=0, max=255)
     rand(sfa_h.unsafe_ptr(), num_input_rows * k_scales, min=125, max=129)
-    rand(
-        sfb_h.unsafe_ptr(),
-        num_experts * N * k_scales,
-        min=125,
-        max=129,
-    )
+    rand(sfb_h.unsafe_ptr(), num_experts * N * k_scales, min=125, max=129)
 
     # ---- Routing tables ----
     var sti_h = ctx.enqueue_create_host_buffer[.uint32](
@@ -355,7 +349,7 @@ def run_routed_test_case[
 
     var sfb_h_tt = TileTensor(
         sfb_h,
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[k_scales])),
+        row_major(Idx[num_experts], Idx[N], Idx[k_scales]),
     )
     _ = Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=k_scales](
         sfb_h_tt, sfb_pre_hb
@@ -385,7 +379,7 @@ def run_routed_test_case[
                     sfa_block_gathered[r * k_scales + kg] = UInt8(0)
         var sfa_block_tt = TileTensor(
             sfa_block_gathered,
-            row_major(Coord(Idx[1], Idx[sort_block_m], Idx[k_scales])),
+            row_major(Idx[1], Idx[sort_block_m], Idx[k_scales]),
         )
         _ = Shuffler[1].preshuffle_scale_4d[MN=sort_block_m, K_SCALES=k_scales](
             sfa_block_tt, sfa_scratch_hb
@@ -433,28 +427,26 @@ def run_routed_test_case[
 
     # ---- TileTensors ----
     var a_tt = TileTensor[mut=False, ...](
-        a_dev, row_major(Coord(num_input_rows, Idx[k_bytes]))
+        a_dev, row_major(num_input_rows, Idx[k_bytes])
     )
     var b_pre_tt = TileTensor[mut=False, ...](
         b_pre_dev,
-        row_major(Coord(Idx[1], Idx[num_experts * N * k_bytes])),
+        row_major(Idx[1], Idx[num_experts * N * k_bytes]),
     )
     var sfa_pre_tt = TileTensor[mut=False, ...](
         sfa_pre_dev,
-        row_major(Coord(Idx[1], size_expert_ids * sfa_per_block_bytes)),
+        row_major(Idx[1], size_expert_ids * sfa_per_block_bytes),
     )
     var sfb_pre_tt = TileTensor[mut=False, ...](
         sfb_pre_dev,
-        row_major(Coord(Idx[1], Idx[num_experts * sfb_per_expert_bytes])),
+        row_major(Idx[1], Idx[num_experts * sfb_per_expert_bytes]),
     )
     var sti_tt = TileTensor[mut=False, ...](
-        sti_dev, row_major(Coord(size_expert_ids * sort_block_m))
+        sti_dev, row_major(size_expert_ids * sort_block_m)
     )
-    var ei_tt = TileTensor[mut=False, ...](
-        ei_dev, row_major(Coord(size_expert_ids))
-    )
+    var ei_tt = TileTensor[mut=False, ...](ei_dev, row_major(size_expert_ids))
     var c_tt = TileTensor[mut=True, ...](
-        c_dev, row_major(Coord(num_tokens * topk, Idx[N]))
+        c_dev, row_major(num_tokens * topk, Idx[N])
     )
 
     # ---- Launch kernel ----
@@ -481,23 +473,17 @@ def run_routed_test_case[
     ctx.enqueue_copy(c_kernel_h, c_dev)
     ctx.synchronize()
 
-    var a_cpu_tt = TileTensor(
-        a_h, row_major(Coord(num_input_rows, Idx[k_bytes]))
-    )
+    var a_cpu_tt = TileTensor(a_h, row_major(num_input_rows, Idx[k_bytes]))
     var b_cpu_tt = TileTensor(
         b_h,
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[k_bytes])),
+        row_major(Idx[num_experts], Idx[N], Idx[k_bytes]),
     )
-    var sfa_cpu_tt = TileTensor(
-        sfa_h, row_major(Coord(num_input_rows, Idx[k_scales]))
-    )
+    var sfa_cpu_tt = TileTensor(sfa_h, row_major(num_input_rows, Idx[k_scales]))
     var sfb_cpu_tt = TileTensor(
         sfb_h,
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[k_scales])),
+        row_major(Idx[num_experts], Idx[N], Idx[k_scales]),
     )
-    var c_ref_tt = TileTensor(
-        c_ref_h, row_major(Coord(num_tokens * topk, Idx[N]))
-    )
+    var c_ref_tt = TileTensor(c_ref_h, row_major(num_tokens * topk, Idx[N]))
     var pair_to_expert = build_pair_to_expert(
         n_e, expert_ids_input, num_tokens, topk
     )

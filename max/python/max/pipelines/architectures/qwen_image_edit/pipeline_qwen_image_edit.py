@@ -25,12 +25,11 @@ from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device
+from max.driver import CPU, Buffer, Device, float32_to_bfloat16_as_uint16
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
 from max.pipelines.context import PixelContext, TokenBuffer
 from max.pipelines.diffusion.interface import DiffusionPipeline, max_compile
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,
     _select_quantization_encoding,
@@ -546,7 +545,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         return QwenImageEditModelInputs.from_context(context)
 
     def _patchify_and_pack(self, latents: TensorValue) -> TensorValue:
-        """(B,C,H//2,2,W//2,2) → (B, H//2*W//2, C*4)"""
+        """(B,C,H//2,2,W//2,2) → (B, H//2*W//2, C*4)."""
         latents = ops.cast(latents, self.transformer.config.dtype)
         batch = latents.shape[0]
         c = latents.shape[1]
@@ -642,6 +641,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         latent_image_ids: TensorValue,
         image_latent_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
+        """Joins the image latents to the noise latents."""
         return (
             ops.concat([latents, image_latents], axis=1),
             ops.concat([latent_image_ids, image_latent_ids], axis=1),
@@ -677,10 +677,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         updated_latents = ops.cast(updated_latents, lat_dtype)
 
         token_types = img_ids[:, :, 0]
-        is_condition_token = ops.not_equal(
-            token_types,
-            ops.constant(0, DType.int64, device=token_types.device),
-        )
+        is_condition_token = ops.not_equal(token_types, 0)
         condition_token_mask = ops.broadcast_to(
             ops.unsqueeze(is_condition_token, -1),
             latents.shape,
@@ -716,6 +713,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         tokens: TokenBuffer,
         num_images_per_prompt: int = 1,
     ) -> Buffer:
+        """Encodes the prompts through the text encoder."""
         device = self.text_encoder.devices[0]
         text_input_ids_np = np.asarray(tokens.array).flatten()
         token_key = tuple(int(token) for token in text_input_ids_np.tolist())
@@ -807,7 +805,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
 
         For multi-image editing each condition image needs a distinct T
         coordinate so the transformer can distinguish them via RoPE:
-        noise → T=0, first image → T=1, second image → T=2, etc.
+        noise → T=0, first image → T=1, second image → T=2, and so on.
         """
         t_coords = np.full((height, width), image_index + 1, dtype=np.int64)
         h_c = np.arange(height, dtype=np.int64) - (height - height // 2)
@@ -845,6 +843,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         latents: npt.NDArray[np.float32],
         latent_image_ids: npt.NDArray[np.float32],
     ) -> tuple[Buffer, Buffer]:
+        """Scales and packs the latents for the transformer."""
         latents_np = np.asarray(latents)
         b, c, h, w = latents_np.shape
         latents_6d = latents_np.reshape(b, c, h // 2, 2, w // 2, 2)
@@ -908,6 +907,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
     def prepare_image_latents(
         self, images: list[Buffer], batch_size: int, device: Device
     ) -> tuple[Buffer, Buffer]:
+        """Encodes each image into its packed latents."""
         all_latents: list[Buffer] = []
         all_ids: list[Buffer] = []
         for idx, img in enumerate(images):
@@ -1000,7 +1000,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         try:
             return np.from_dlpack(cpu_image).astype(np.float32)
         except (RuntimeError, TypeError):
-            from max.experimental.tensor import Tensor as _Tensor
+            from max.tensor import Tensor as _Tensor
 
             if isinstance(cpu_image, _Tensor):
                 return np.from_dlpack(cpu_image.cast(DType.float32)).astype(

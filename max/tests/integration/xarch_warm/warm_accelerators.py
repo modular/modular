@@ -14,21 +14,16 @@
 
 Sets the virtual device (api/arch from ``--target``, count =
 ``WARM_DEVICE_COUNT``) so a GPU-less builder presents that many virtual
-accelerators of the requested arch, then compiles + exports one MEF per
-accelerator slot. It does NOT compile the CPU slot, that is ``warm_cpu``'s
-job, and keeping it out of here is the whole point of the split: the CPU sweep
-must run once per host arch, not once per (lane-keyed) GPU action.
-
-Writes ``matmul_slot_{i}.mef`` / ``unary_slot_{i}.mef``, an accel manifest
-FRAGMENT (only the gpu envelope bits this action owns, ``gpu.arch`` +
-``device_count``, plus the gpu entries; ``compose`` merges it with
-``warm_cpu``'s manifest), and the GPU-context warm stamp
-(``accelerators=WARM_DEVICE_COUNT;...;accel=<arch>``).
+accelerators of the requested arch, then exports one artifact per family and
+accelerator slot (``matmul_slot_0.mef``, ...) into a
+:class:`~max.engine.MefStore` at ``--out``. It does NOT compile the CPU slot,
+that is ``warm_cpu``'s job, and keeping it out of here is the whole point of
+the split: the CPU sweep must run once per host arch, not once per (lane-keyed)
+GPU action.
 """
 
 from __future__ import annotations
 
-import os
 import platform
 import sys
 
@@ -39,11 +34,17 @@ from max.driver import (
     set_virtual_device_count,
     set_virtual_device_target_arch,
 )
+from max.engine import MefStore
 from max.tests.integration.xarch_warm import warm_lib
 from max.tests.integration.xarch_warm.warm_config import WARM_DEVICE_COUNT
 
 
 @click.command()
+@click.option(
+    "--out",
+    required=True,
+    help="Directory to write the warm store into.",
+)
 @click.option(
     "--target",
     required=True,
@@ -60,7 +61,7 @@ from max.tests.integration.xarch_warm.warm_config import WARM_DEVICE_COUNT
     default=None,
     help="Warm only this GC family (a GC_FAMILIES name); default warms all.",
 )
-def main(target: str, cpu_target: str, family: str | None) -> None:
+def main(out: str, target: str, cpu_target: str, family: str | None) -> None:
     device_api, _, device_arch = target.partition(":")
     if not device_api or not device_arch:
         raise click.BadParameter(
@@ -91,31 +92,12 @@ def main(target: str, cpu_target: str, family: str | None) -> None:
     set_virtual_device_target_arch(device_arch)
     set_virtual_device_count(WARM_DEVICE_COUNT)
 
-    derived = os.environ["MODULAR_DERIVED_PATH"]
-    entries = warm_lib.export_slots(
-        derived,
+    warm_lib.export_slots(
+        MefStore.for_export(out),
         include_cpu=False,
         include_accelerators=True,
         only_family=family,
     )
-    # Unset MODULAR_DERIVED_PATH means the warm wasn't pinned to the output dir,
-    # so nothing consumable was produced, hard-fail the build action.
-    if not warm_lib.write_stamp():
-        print(
-            "XARCH_WARM_ACCELERATORS: MODULAR_DERIVED_PATH unset; cache not "
-            "pinned",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    # Fragment: only the gpu envelope bits this action owns, the arch a
-    # consumer must match + the warmed slot count (a ceiling). compose adds
-    # host_arch/cpu_target/toolchain from warm_cpu's manifest.
-    envelope: dict[str, object] = {
-        "gpu": {"arch": device_arch},
-        "device_count": WARM_DEVICE_COUNT,
-    }
-    warm_lib.write_manifest(envelope, entries)
-    # The device classes below never include "cpu", the dedup guarantee.
 
 
 if __name__ == "__main__":

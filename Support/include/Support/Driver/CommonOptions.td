@@ -27,11 +27,11 @@ include "llvm/Option/OptParser.td"
 
 def CommonOptionGroup : OptionGroup<"Common options">, Index<99>;
 
-def help : Flag<["--", "-"], "help">, Group<CommonOptionGroup>, Index<99>,
+def help : Flag<["--", "-"], "help">, Group<CommonOptionGroup>,
   HelpText<"Displays help information.">;
-def h : Flag<["-"], "h">, Group<CommonOptionGroup>, Alias<help>, Index<0>;
+def h : Flag<["-"], "h">, Group<CommonOptionGroup>, Alias<help>;
 
-def help_hidden : Flag<["--", "-"], "help-hidden">, Group<CommonOptionGroup>, Index<100>,
+def help_hidden : Flag<["--", "-"], "help-hidden">, Group<CommonOptionGroup>,
   HelpText<"Displays help for hidden options.">;
 
 #endif // SUPPORT_DRIVER_COMMONOPTIONS_TD

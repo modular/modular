@@ -8,5 +8,5 @@
 // expected-error @below {{during header emission for this function}}
 kgen.func export @someNDBufferKernel(%a: !kgen.struct<(pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype)>) cabi -> index {
   %size = kgen.struct.extract %a[1] : !kgen.struct<(pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype)>
-  kgen.return %size : index
+  hlcf.return %size : index
 }

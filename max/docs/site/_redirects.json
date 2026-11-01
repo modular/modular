@@ -1,0 +1,92 @@
+[
+  {
+    "source": "/max/extensibility/custom-op/?",
+    "dest": "/develop/custom-ops/",
+    "status": 302
+  },
+  {
+    "source": "/max/extensibility/graph-custom-op/?",
+    "dest": "/develop/custom-ops/",
+    "status": 302
+  },
+  {
+    "source": "/max/api/?",
+    "dest": "/api/python/",
+    "status": 302
+  },
+  {
+    "source": "/max/api/kernels(/.*)?",
+    "dest": "/api/mojo/",
+    "status": 302
+  },
+  {
+    "source": "/max/deploy/cloud/?",
+    "dest": "https://docs.modular.com/",
+    "status": 302
+  },
+  {
+    "source": "/max/develop/build-an-mlp-block/?",
+    "dest": "/develop/modules/",
+    "status": 302
+  },
+  {
+    "source": "/max/(.*)",
+    "dest": "/{0}",
+    "status": 302
+  },
+  {
+    "source": "/intro/",
+    "dest": "/",
+    "status": 302
+  },
+  {
+    "source": "/faq/",
+    "dest": "/",
+    "status": 302
+  },
+  {
+    "source": "/serving/?",
+    "dest": "/get-started/",
+    "status": 302
+  },
+  {
+    "source": "/serving/(.*)",
+    "dest": "/serve/{0}",
+    "status": 302
+  },
+  {
+    "source": "/tutorials/custom-kernels-pytorch/",
+    "dest": "/develop/custom-kernels-pytorch/",
+    "status": 301
+  },
+  {
+    "source": "/graph/get-started/",
+    "dest": "/develop/modules/",
+    "status": 301
+  },
+  {
+    "source": "/changelog/(.*)",
+    "dest": "/releases/",
+    "status": 302
+  },
+  {
+    "source": "/inference/(.*)",
+    "dest": "/serve/{0}",
+    "status": 302
+  },
+  {
+    "source": "/deploy/(.*)",
+    "dest": "/serve/{0}",
+    "status": 302
+  },
+  {
+    "source": "/llms-kernels.txt",
+    "dest": "/llms-accelerator-api.txt",
+    "status": 302
+  },
+  {
+    "source": "/api/mojo/max/gpu/host/device_context/DeviceContext/?",
+    "dest": "/api/mojo/max/gpu/host/device_context/DeviceContextBase/",
+    "status": 302
+  }
+]

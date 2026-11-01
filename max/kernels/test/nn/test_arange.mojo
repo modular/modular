@@ -14,23 +14,15 @@
 
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
-from layout import (
-    TileTensor,
-    Coord,
-    Idx,
-    row_major,
-    coord_to_index_list,
-)
+from layout import TileTensor, Coord, row_major
 from nn.arange import arange, arange_shape
-
-from std.utils.index import IndexList
 
 
 def print_elements(tensor: TileTensor) raises:
     print("New shape:", tensor.layout.shape_coord())
     print("New strides:", tensor.layout.stride_coord())
 
-    @always_inline
+    @inline(.always)
     def print_elements_lambda[
         simd_width: Int, alignment: Int = 1
     ](idx: Coord) {var}:
@@ -47,11 +39,11 @@ def print_elements(tensor: TileTensor) raises:
 def test_arange[
     dtype: DType,
 ](start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]) raises:
-    var outshape: IndexList[1]
+    var outshape: Int
     try:
         outshape = arange_shape(start, stop, step)
     except e:
-        outshape = IndexList[1]()
+        outshape = 0
         print(e)
     print("Expected output shape: ")
     print(outshape)
@@ -65,13 +57,13 @@ def test_arange[
     var memory4 = Array[Scalar[dtype], max_output_size](fill={})
     var out_tensor = TileTensor(memory4, row_major(Coord(outshape)))
 
-    @always_inline
+    @inline(.always)
     def arange_lambda[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        var index = IndexList[1](Int(idx[0].value()))
+        var index = Int(idx[0])
         var range_val = arange[dtype, simd_width](start, stop, step, index)
         # Extract first element only: idx may have rank > 1 from elementwise,
         # but out_tensor is 1D so we need a single-element coordinate.
-        out_tensor.store[width=simd_width](Coord(idx[0]), range_val)
+        out_tensor.store(Coord(idx[0]), range_val)
 
     elementwise[1](
         arange_lambda,
@@ -87,7 +79,7 @@ def test_arrange_basic() raises:
     print("== test_arrange_basic")
 
     # CHECK-NEXT: Expected output shape:
-    # CHECK-NEXT: (6,)
+    # CHECK-NEXT: 6
     # CHECK-NEXT: New shape: (6)
     # CHECK-NEXT: New strides: (1)
     # CHECK-NEXT: 0
@@ -101,7 +93,7 @@ def test_arrange_basic() raises:
     test_arange[.int32](0, 6, 1)
 
     # CHECK-NEXT: Expected output shape:
-    # CHECK-NEXT: (3,)
+    # CHECK-NEXT: 3
     # CHECK-NEXT: New shape: (3)
     # CHECK-NEXT: New strides: (1)
     # CHECK-NEXT: 38

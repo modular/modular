@@ -213,7 +213,7 @@ def function(arg: Foo):
       `
 from std.collections import Deque
 from std.collections import Deque as RenamedDeque
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.math import sqrt
 from std import collections
 
@@ -295,7 +295,7 @@ def function() -> Int:
 def main() raises -> :
   pass
 
-alias T = Tuple[StringLiteral, StringLiteral, StringLiteral]
+comptime T = Tuple[StringLiteral, StringLiteral, StringLiteral]
 
 def f[T: Equatable](s: T):
   pass
@@ -333,7 +333,7 @@ def function(arg: Int)`
         "test:///if_no_colon.mojo",
         `
 def function(arg: Int):
-  if arg.value`
+  if arg.value:`
       );
       await checkSnippet(doc, "value");
     });
@@ -346,18 +346,7 @@ def function(arg: Int):
 def function(arg: Int):
   if False:
     return
-  elif arg.value`
-      );
-      await checkSnippet(doc, "value");
-    });
-
-    it("should complete for partial while", async function () {
-      let doc = new Document(
-        server,
-        "test:///while_no_colon.mojo",
-        `
-def function(arg: Int):
-  while arg.value`
+  elif arg.value:`
       );
       await checkSnippet(doc, "value");
     });

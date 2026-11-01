@@ -13,7 +13,9 @@
 """Implements comparison and equality traits for Mojo types."""
 
 from std.builtin.constrained import _field_conforms_to_error
-from std.builtin.range import _ZeroStartingRange
+from std.builtin.enum_like import EnumLike
+from std.builtin.variadics import ParameterList, TypeList
+from std.os import abort
 from std.reflection import reflect
 
 
@@ -50,7 +52,7 @@ trait Equatable:
     in the cycle.
     """
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self, /) -> Bool:
         """Define whether two instances of the object are equal to each other.
 
@@ -65,23 +67,15 @@ trait Equatable:
             of equality, False otherwise.
         """
 
-        # Default implementation using reflection: compare all fields
-        comptime r = reflect[Self]
-        comptime names = r.field_names()
-        comptime types = r.field_types()
+        # An `EnumLike` type compares its active case and that case's payload.
+        # Its fields are storage: an `__enum` has one field that holds the
+        # payload of whichever case is active.
+        comptime if conforms_to(Self, EnumLike):
+            return _enum_reflection_eq(self, other)
+        else:
+            return _fieldwise_reflection_eq(self, other)
 
-        comptime for i in range(names.length):
-            comptime T = types[i]
-            comptime assert conforms_to(T, Equatable), _field_conforms_to_error[
-                Parent=Self,
-                FieldIndex=i,
-                ParentConformsTo="Equatable",
-            ]()
-            if r.field_ref[i](self) != r.field_ref[i](other):
-                return False
-        return True
-
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self, /) -> Bool:
         """Define whether two instances of the object are not equal to each
         other.
@@ -94,6 +88,70 @@ trait Equatable:
             definition of equality, False otherwise.
         """
         return not self == other
+
+
+@inline(.always)
+def _fieldwise_reflection_eq[T: Equatable](this: T, other: T) -> Bool:
+    """Compares every field of `T`."""
+    comptime r = reflect[T]
+    comptime names = r.field_names()
+    comptime types = r.field_types()
+
+    comptime for i in range(names.length):
+        comptime FieldType = types[i]
+        comptime assert conforms_to(
+            FieldType, Equatable
+        ), _field_conforms_to_error[
+            Parent=T,
+            FieldIndex=i,
+            ParentConformsTo="Equatable",
+        ]()
+        if r.field_ref[i](this) != r.field_ref[i](other):
+            return False
+    return True
+
+
+@inline(.always)
+def _enum_reflection_eq[T: EnumLike & Equatable](this: T, other: T) -> Bool:
+    """Compares the index of the active case, then the payloads of that case."""
+    var discriminant = this._get_enum_discriminant()
+    if discriminant != other._get_enum_discriminant():
+        return False
+    comptime if T._enum_has_no_payloads:
+        return True
+    else:
+        return _enum_payload_eq(this, other, discriminant)
+
+
+# Not always-inline: the case loop unrolls to one branch per case, which would
+# otherwise be copied into every `==` on the type.
+def _enum_payload_eq[
+    T: EnumLike & Equatable
+](this: T, other: T, discriminant: Int) -> Bool:
+    """Compares the payloads of case `discriminant`, active in both values.
+
+    In an open enum, a discriminant that is not a case index has no payload.
+    """
+    comptime names = ParameterList[T._enum_case_names]()
+    comptime types = TypeList[Trait=AnyType, T._enum_case_types]()
+    comptime for i in range(names.length):
+        if discriminant == i:
+            comptime PayloadType = types[i]
+            comptime if PayloadType != NoneType:
+                comptime assert conforms_to(PayloadType, Equatable), (
+                    "the payload of every case must conform to `Equatable` to"
+                    " use the default `Equatable` implementation for an"
+                    " `EnumLike` type"
+                )
+                return (
+                    this._unsafe_get_enum_payload[i]()
+                    == other._unsafe_get_enum_payload[i]()
+                )
+            return True
+    comptime if T._enum_is_exhaustive:
+        abort("`_get_enum_discriminant` returned an index that names no case")
+    else:
+        return True
 
 
 trait Comparable(Equatable):
@@ -117,7 +175,7 @@ trait Comparable(Equatable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def __gt__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than `rhs`.
 
@@ -129,7 +187,7 @@ trait Comparable(Equatable):
         """
         return rhs < self
 
-    @always_inline
+    @inline(.always)
     def __le__(self, rhs: Self) -> Bool:
         """Define whether `self` is less than or equal to `rhs`.
 
@@ -141,7 +199,7 @@ trait Comparable(Equatable):
         """
         return not rhs < self
 
-    @always_inline
+    @inline(.always)
     def __ge__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than or equal to `rhs`.
 

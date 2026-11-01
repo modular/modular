@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import torch
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     VISION_HEAD_DIM,
     torch_apply_multidimensional_rope,
 )

@@ -174,7 +174,7 @@ def test_parametric_field_offset_alignment() raises:
 def test_parametric_align_heap() raises:
     """Test that heap allocations respect parametric @align."""
     # Allocate on the heap with 64-byte alignment.
-    var ptr64_alloc = alloc[AlignedBuffer[64]]({count = 1}).into_managed()
+    var ptr64_alloc = alloc[AlignedBuffer[64]]({length = 1}).into_managed()
     var ptr64 = ptr64_alloc.unsafe_ptr()
     var addr64 = Int(ptr64)
     assert_true(
@@ -183,7 +183,7 @@ def test_parametric_align_heap() raises:
     dealloc(ptr64_alloc^)
 
     # Allocate on the heap with 128-byte alignment.
-    var ptr128_alloc = alloc[AlignedBuffer[128]]({count = 1}).into_managed()
+    var ptr128_alloc = alloc[AlignedBuffer[128]]({length = 1}).into_managed()
     var ptr128 = ptr128_alloc.unsafe_ptr()
     var addr128 = Int(ptr128)
     assert_true(
@@ -193,7 +193,7 @@ def test_parametric_align_heap() raises:
     dealloc(ptr128_alloc^)
 
     # Allocate on the heap with 256-byte alignment.
-    var ptr256_alloc = alloc[AlignedBuffer[256]]({count = 1}).into_managed()
+    var ptr256_alloc = alloc[AlignedBuffer[256]]({length = 1}).into_managed()
     var ptr256 = ptr256_alloc.unsafe_ptr()
     var addr256 = Int(ptr256)
     assert_true(
@@ -204,7 +204,7 @@ def test_parametric_align_heap() raises:
 
     # Test multiple separate allocations to verify each respects alignment.
     for _ in range(4):
-        var ptr_alloc = alloc[AlignedBuffer[64]]({count = 1}).into_managed()
+        var ptr_alloc = alloc[AlignedBuffer[64]]({length = 1}).into_managed()
         var ptr = ptr_alloc.unsafe_ptr()
         var addr = Int(ptr)
         assert_true(

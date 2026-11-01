@@ -18,43 +18,76 @@ For example, here's how to print to a file
 
 ```mojo
 var f = open("my_file.txt", "w")
-var fd = FileDescriptor(f)
+var fd = RawFileDescriptor(f)
 print("hello", file=fd)
-f.close()
+f^.close()
 ```
 
 """
-from std.os import abort
-from std.sys import (
-    CompilationTarget,
-    is_amd_gpu,
-    is_gpu,
-    is_nvidia_gpu,
-)
+from std.sys import CompilationTarget, is_gpu
 from std.ffi import (
     c_ssize_t,
     c_int,
     external_call,
-    _external_call_const,
-    get_errno,
 )
 
 from std.collections import Span
+from std.memory import MaybeUninit
+from std.os import abort
+from std.sys._libc import FcntlCommands, close as libc_close, fcntl
+from std.utils._nicheable import UnsafeSingleNicheable, _FieldNicheable
+
+from ._syscall import check
+from .error import IOError
 
 
-struct FileDescriptor(TrivialRegisterPassable, Writer):
-    """File descriptor of a file."""
+struct RawFileDescriptor(
+    TrivialRegisterPassable, UnsafeSingleNicheable, Writer
+):
+    """File descriptor of a file.
 
-    var value: Int
+    A file descriptor is always a non-negative integer, so `-1` is never a
+    valid descriptor. `RawFileDescriptor` exposes `-1` as its niche, which
+    makes `Optional[RawFileDescriptor]` the same size as
+    `RawFileDescriptor`; use `Optional[RawFileDescriptor]` (not a `-1`
+    value) to represent an absent descriptor.
+    """
+
+    var _value: c_int
     """The underlying value of the file descriptor."""
 
-    def __init__(out self, value: Int = 1):
+    def __init__(out self, value: c_int = 1):
         """Constructs the file descriptor from an integer.
 
         Args:
             value: The file identifier (Default 1 = stdout).
+
+        Constraints:
+            `value` must be non-negative. File descriptors are never
+            negative, and `-1` is the type's niche value, so a negative
+            `value` aborts at runtime. Use `Optional[RawFileDescriptor]` to
+            represent an absent descriptor.
         """
-        self.value = value
+        if value < 0:
+            abort(
+                "invalid file descriptor: file descriptors are non-negative;"
+                " use Optional[RawFileDescriptor] to represent an absent"
+                " descriptor"
+            )
+        self._value = value
+
+    @doc_hidden
+    def __init__(out self, *, unsafe_unchecked_value: c_int):
+        """Constructs the file descriptor without validating the value.
+
+        The standard streams are built with this at compile time. The checked
+        constructor reports through `print`, which reaches `stdout`, so
+        building `stdout` through the checked constructor would recurse.
+
+        Args:
+            unsafe_unchecked_value: The file identifier, assumed non-negative.
+        """
+        self._value = unsafe_unchecked_value
 
     def __init__(out self, f: FileHandle):
         """Constructs the file descriptor from a file handle.
@@ -62,9 +95,31 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         Args:
             f: The file handle.
         """
-        self.value = f._get_raw_fd()
+        self = f._get_raw_fd()
 
-    @always_inline
+    @inline(.always)
+    def _raw(self) -> c_int:
+        return self._value
+
+    # ===------------------------------------------------------------------===#
+    # UnsafeSingleNicheable
+    # ===------------------------------------------------------------------===#
+
+    comptime _InvalidFd: c_int = -1
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
+        memory.unsafe_bitcast[c_int]().write(Self._InvalidFd)
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
+        return memory.unsafe_bitcast[c_int]()[] == Self._InvalidFd
+
+    @inline(.always)
     def write_bytes(mut self, bytes: Span[Byte, _]):
         """
         Write a span of bytes to the file.
@@ -73,7 +128,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             bytes: The byte span to write to this file.
         """
         var written = external_call["write", c_ssize_t](
-            self.value.__mlir_index__(),
+            self._value,
             bytes.unsafe_ptr(),
             len(bytes).__mlir_index__(),
         )
@@ -81,17 +136,17 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
     def write_string(mut self, string: StringSlice):
         """
-        Write a `StringSlice` to this `FileDescriptor`.
+        Write a `StringSlice` to this `RawFileDescriptor`.
 
         This method is required by the `Writer` trait.
 
         Args:
-            string: The `StringSlice` to write to this `FileDescriptor`.
+            string: The `StringSlice` to write to this `RawFileDescriptor`.
         """
         self.write_bytes(string.as_bytes())
 
-    @always_inline
-    def read_bytes(mut self, buffer: MutSpan[Byte, _]) raises -> Int:
+    @inline(.always)
+    def read_bytes(mut self, buffer: MutSpan[Byte, _]) raises IOError -> Int:
         """Read a number of bytes from the file into a buffer.
 
         Args:
@@ -114,12 +169,12 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         comptime assert (
             CompilationTarget.is_macos() or CompilationTarget.is_linux()
         ), "`read_bytes()` is not yet implemented for unknown platform."
-        var read = external_call["read", c_ssize_t](
-            self.value, buffer.unsafe_ptr(), len(buffer)
+        return check(
+            external_call["read", c_ssize_t](
+                self._value, buffer.unsafe_ptr(), len(buffer)
+            ),
+            "read",
         )
-        if read < 0:
-            raise Error("Failed to read bytes.")
-        return read
 
     def isatty(self) -> Bool:
         """Checks whether a file descriptor refers to a terminal.
@@ -145,9 +200,18 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         comptime if is_gpu():
             return False
-        return external_call["isatty", c_int](c_int(self.value)) != 0
+        return external_call["isatty", c_int](self._value) != 0
 
-    def fchdir(self) raises:
+    def close(self) raises IOError:
+        """Closes the file descriptor.
+
+        Raises:
+            If the descriptor is not open, or if the close fails. A failed
+            close can mean buffered writes never reached the file.
+        """
+        _ = check(libc_close(self._value), "close")
+
+    def fchdir(self) raises IOError:
         """Changes the current working directory to the one
            represented by this fd.
 
@@ -155,7 +219,117 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             If the operations fails. In particular if the fd is
             not a directory.
         """
-        var result = external_call["fchdir", c_int](c_int(self.value))
-        if result < 0:
-            var err = get_errno()
-            raise Error("fchdir failed err: ", String(err))
+        _ = check(external_call["fchdir", c_int](self._value), "fchdir")
+
+
+struct FileDescriptor(
+    not Deinitable else "close it with `fd^.close()`, since closing can fail",
+    Movable,
+    _FieldNicheable,
+):
+    """Owning file descriptor that is closed explicitly with `close()`.
+
+    Movable but not copyable, so exactly one value owns the descriptor. `-1`
+    is the niche, so `Optional[FileDescriptor]` is the size of a descriptor.
+
+    Examples:
+        ```mojo
+        from std.io import FileDescriptor
+
+        def release(var fd: FileDescriptor) raises:
+            fd^.close()
+        ```
+    """
+
+    var _value: RawFileDescriptor
+
+    def __init__(out self, *, unsafe_raw_fd: RawFileDescriptor):
+        """Takes ownership of a raw file descriptor.
+
+        Args:
+            unsafe_raw_fd: The descriptor to own. Nothing else may close it,
+                so never pass `stdin`, `stdout`, `stderr` or the descriptor
+                behind a `FileHandle`.
+        """
+        self._value = unsafe_raw_fd
+
+    def __init__(
+        out self, *, copy_borrowed: BorrowedFileDescriptor[_]
+    ) raises IOError:
+        """Constructs a new owner by duplicating a borrowed descriptor.
+
+        The new `FileDescriptor` owns a fresh descriptor that refers to the
+        same open file description as `copy_borrowed`, so the two share the
+        file offset and status flags but are closed independently. The copy
+        is close-on-exec, so child processes don't inherit it.
+
+        Args:
+            copy_borrowed: The descriptor to duplicate.
+
+        Raises:
+            If the duplication fails.
+        """
+        # From 3 up, so the copy can't take the place of a closed standard
+        # stream.
+        var fd = check(
+            fcntl(
+                copy_borrowed._value._value,
+                FcntlCommands.F_DUPFD_CLOEXEC,
+                c_int(3),
+            ),
+            "fcntl",
+        )
+        self._value = RawFileDescriptor(unsafe_unchecked_value=fd)
+
+    def close(deinit self) raises IOError:
+        """Closes the owned file descriptor.
+
+        Raises:
+            If the close fails. A failed close can mean buffered writes never
+            reached the file.
+        """
+        self._value.close()
+
+    @inline(.always)
+    def _raw(self) -> c_int:
+        return self._value._raw()
+
+    comptime _KgenNichedFieldName = "_value".value
+
+
+struct BorrowedFileDescriptor[origin: ImmOrigin](
+    TrivialRegisterPassable, _FieldNicheable
+):
+    """Copyable, non-owning view of a `FileDescriptor`.
+
+    The view carries the owner's origin, so it cannot outlive the owner, and
+    it never closes the descriptor. `-1` is the niche, so
+    `Optional[BorrowedFileDescriptor]` is the size of a descriptor.
+
+    Parameters:
+        origin: The origin of the `FileDescriptor` this view refers to.
+
+    Examples:
+        ```mojo
+        from std.io import BorrowedFileDescriptor, FileDescriptor
+
+        def share(var fd: FileDescriptor) raises:
+            var first = BorrowedFileDescriptor(fd)
+            var second = first
+            fd^.close()
+        ```
+    """
+
+    var _value: RawFileDescriptor
+    """The viewed descriptor; the owning `FileDescriptor` closes it."""
+
+    @implicit
+    def __init__(out self, ref[Self.origin] fd: FileDescriptor):
+        """Constructs a view of a `FileDescriptor`.
+
+        Args:
+            fd: The owning descriptor to view.
+        """
+        self._value = fd._value
+
+    comptime _KgenNichedFieldName = "_value".value

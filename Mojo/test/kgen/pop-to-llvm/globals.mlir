@@ -13,7 +13,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
     // CHECK: llvm.call @bar
     %2 = pop.external_call @bar(%b) attributes {argAttrs = [{llvm.noalias}], resAttrs = {llvm.signext}} : (!kgen.pointer<i32>) -> i32
-    kgen.return %0 : !kgen.simd<4, f64>
+    hlcf.return %0 : !kgen.simd<4, f64>
   }
   // CHECK: llvm.func @foo(i32) -> vector<4xf64>
   // CHECK-SAME: memory_effects = #llvm.memory_effects<other = read, argMem = read, inaccessibleMem = read, errnoMem = none, targetMem0 = none, targetMem1 = none>
@@ -30,7 +30,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     pop.external_call @foo (%a) attributes {numFixedArgs = 1 : index} : (!kgen.simd<1, ui32>) -> ()
     // CHECK: llvm.call @foo
     pop.external_call @foo (%a, %a) attributes {numFixedArgs = 1 : index} : (!kgen.simd<1, ui32>, !kgen.simd<1, ui32>) -> ()
-    kgen.return
+    hlcf.return
   }
   // CHECK: llvm.func @foo(i32, ...)
 }
@@ -46,7 +46,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %1 = pop.global_constant: ui32 = <5>
     // CHECK: llvm.mlir.addressof @global_constant_1 : !llvm.ptr
     %2 = pop.global_constant: simd<2, si32> = <<2, 5>>
-    kgen.return
+    hlcf.return
   }
 
   // CHECK-LABEL: kgen.func @global_alloc
@@ -54,7 +54,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK-NEXT: %0 = llvm.mlir.addressof @my_alloc : !llvm.ptr<3>
     // CHECK-NEXT: %1 = llvm.bitcast %0 : !llvm.ptr<3> to !llvm.ptr<3>
     %0 = pop.global_alloc "my_alloc" 2 x !kgen.scalar<f32> address_space 3 align 4
-    kgen.return %0 : !kgen.pointer<scalar<f32>, 3>
+    hlcf.return %0 : !kgen.pointer<scalar<f32>, 3>
   }
 
   // CHECK-LABEL: llvm.mlir.global internal @my_alloc() {addr_space = 3 : i32, alignment = 4 : i64} : !llvm.array<2 x f32>
@@ -68,7 +68,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: llvm.mlir.addressof @my_init : !llvm.ptr
     // CHECK: llvm.bitcast
     %0 = pop.global_alloc "my_init" 1 x !kgen.scalar<si32> align 4 = <31>
-    kgen.return %0 : !kgen.pointer<scalar<si32>>
+    hlcf.return %0 : !kgen.pointer<scalar<si32>>
   }
 
   // CHECK: llvm.mlir.global internal @my_init() {addr_space = 0 : i32, alignment = 4 : i64} : !llvm.array<1 x i32> {
@@ -96,7 +96,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
     // CHECK: llvm.mlir.addressof @global_constant_1
     %3 = pop.global_constant: simd<2, si32> = <<2, 5>> align 64
-    kgen.return
+    hlcf.return
   }
 
   // CHECK: llvm.mlir.global internal constant @global_constant() {addr_space = 0 : i32, alignment = 4 : i64} : i32 {
@@ -116,7 +116,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   kgen.func @global_array_constant() {
     // CHECK: llvm.mlir.addressof @global_constant
     %0 = pop.global_constant: array<4, ui32> = <[1, 2, 3, 4]>
-    kgen.return
+    hlcf.return
   }
   // CHECK: llvm.mlir.global internal constant @global_constant() {
   // CHECK: %0 = llvm.mlir.undef : !llvm.array<4 x i32>
@@ -162,7 +162,7 @@ kgen.func @external_call(%a : !kgen.struct<(scalar<si32>)>,
 
    // CHECK: llvm.call @call3(%{{.*}}) : (!llvm.struct<(i32, f32, f32)>) -> i32
    %1 = pop.external_call @call3(%b) : (!kgen.struct<(scalar<si32>, scalar<f32>, scalar<f32>)>) -> !kgen.scalar<si32>
-   kgen.return
+   hlcf.return
 }
 }
 
@@ -175,7 +175,7 @@ kgen.func @noalias_cast(%arg0: !kgen.pointer<index>) -> index {
   // CHECK: llvm.call @__kgen_noalias_cast(%0)
   %0 = pop.noalias_pointer_cast %arg0 : !kgen.pointer<index>
   %1 = pop.load %0 : !kgen.pointer<index>
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK: llvm.func internal @__kgen_noalias_cast

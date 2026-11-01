@@ -67,6 +67,20 @@ def test_convert_safetensor_state_dict() -> None:
         # dropped rather than loaded.
         "model.layers.0.self_attn.k_scale": _mock_weight(),
         "model.layers.0.self_attn.v_scale": _mock_weight(),
+        # A layer the checkpoint left unquantized: a routed expert that ships a
+        # plain ``.weight`` and must survive with its name intact.
+        "model.layers.40.mlp.experts.3.down_proj.weight": _mock_weight(),
+        # The dense MLP of layer 0, also unquantized.
+        "model.layers.0.mlp.gate_proj.weight": _mock_weight(),
+        # Per-head attention gate: one output per query head, not per channel.
+        "model.layers.1.self_attn.g_proj.weight": _mock_weight(
+            WeightData.from_numpy(
+                np.zeros((72, 3072), dtype=np.float32), "g_proj"
+            )
+        ),
+        # Nothing but the leading ``model.`` is a prefix; a substring replace
+        # would corrupt a name that mentions it again.
+        "model.layers.2.mlp.model.weight": _mock_weight(),
     }
 
     out = convert_safetensor_state_dict(
@@ -95,3 +109,16 @@ def test_convert_safetensor_state_dict() -> None:
     # Per-group uint8 weight_scale reinterpreted as float8_e4m3fn (not rescaled).
     ws = out["layers.0.mlp.experts.gate_proj.weight_scale"]
     assert ws.dtype == DType.float8_e4m3fn
+
+    # Unquantized tensors keep their names: no NVFP4 suffix matches them, so
+    # the packed-weight rename must not fire and nothing may still be packed.
+    assert "layers.40.mlp.experts.3.down_proj.weight" in out
+    assert "layers.0.mlp.gate_proj.weight" in out
+    assert not any(k.endswith("weight_packed") for k in out)
+
+    # Per-head gate: ``[heads, hidden]``, not ``[heads * head_dim, hidden]``.
+    g_proj = out["layers.1.self_attn.g_proj.weight"]
+    assert list(g_proj.shape) == [72, 3072]
+
+    # Only the leading ``model.`` is stripped.
+    assert "layers.2.mlp.model.weight" in out

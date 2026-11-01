@@ -26,12 +26,13 @@ from typing import Any, Protocol, cast
 
 import numpy as np
 import numpy.typing as npt
-from max import _core, graph
+from max import _core, _eager_policy, graph
 from max._core.dialects import builtin, kgen, mo, mosh
 from max._interpreter_ops import (
     band_part_gc,
     cast_gc,
     conv_gc,
+    custom_gc,
     data_movement_gc,
     elementwise_binary_gc,
     gather_gc,
@@ -55,8 +56,16 @@ from max._interpreter_ops import (
     topk_gc,
     unary_elementwise_gc,
 )
-from max.driver import CPU, Buffer, Device
+from max.driver import (
+    CPU,
+    Buffer,
+    Device,
+    bfloat16_as_uint16_to_float32,
+    float32_to_bfloat16_as_uint16,
+)
 from max.dtype import DType
+from max.functional import custom_op as custom
+from max.graph.ops.rms_norm import _float32_attr_value
 
 
 class _HasAxis(Protocol):
@@ -92,7 +101,7 @@ def register_op_handler(
     """Decorator to register an MO op handler.
 
     Args:
-        op_type: The MO operation class to handle (e.g., mo.AddOp).
+        op_type: The MO operation class to handle (such as mo.AddOp).
 
     Returns:
         Decorator function that registers the handler.
@@ -174,6 +183,23 @@ def _get_target_device(op: _core.Operation) -> Device:
     """
     result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
     return graph.DeviceRef.from_mlir(result_mlir_type.device_ref).to_device()
+
+
+def _buffer_to_numpy_safe(buf: Buffer) -> npt.NDArray[Any]:
+    """Converts a host buffer to NumPy, handling dtypes NumPy can't hold."""
+    if buf.dtype == DType.bfloat16:
+        return bfloat16_as_uint16_to_float32(buf.view(DType.uint16).to_numpy())
+    return buf.to_numpy()
+
+
+def _numpy_to_buffer_safe(
+    arr: npt.NDArray[Any], dtype: DType, device: Device
+) -> Buffer:
+    """Inverse of `_buffer_to_numpy_safe`."""
+    if dtype == DType.bfloat16:
+        bf16_bits = float32_to_bfloat16_as_uint16(arr.astype(np.float32))
+        return Buffer.from_numpy(bf16_bits).view(DType.bfloat16).to(device)
+    return Buffer.from_numpy(arr).to(device)
 
 
 # Constant operations
@@ -370,7 +396,7 @@ def _handle_transfer(
 ) -> Sequence[Buffer | None]:
     """Handle mo.transfer by transferring buffer between devices.
 
-    TransferOp transfers tensor contents between devices (e.g. CPU<->GPU).
+    TransferOp transfers tensor contents between devices (such as CPU<->GPU).
     When source and destination devices match and alwaysElideSameDeviceCopy is
     True, the result aliases the input. When the flag is False, a driver copy
     is made.
@@ -417,7 +443,7 @@ def _handle_buffer_create(
     ``BufferCreateOp`` has no operands and a single ``!mo.buffer<shape, dtype,
     device>`` result.  Shape, dtype, and target device are extracted from the
     result type.  The interpreter allocates a zeroed buffer so that downstream
-    ops (e.g. ``buffer.transfer``) have valid storage to write into.
+    ops (such as ``buffer.transfer``) have valid storage to write into.
     """
     result_type = graph.BufferType.from_mlir(
         list(op.results)[0].type  # type: ignore[arg-type]
@@ -504,7 +530,7 @@ def _handle_debug_tensor_print(
     tensor_buf = inputs[1]
     label = op.label
     if tensor_buf is not None:
-        np_array = tensor_buf.to_numpy()
+        np_array = _buffer_to_numpy_safe(tensor_buf)
         if label:
             print(f"[{label}] {np_array}")
         else:
@@ -796,14 +822,16 @@ def _handle_matmul(
     """Routes eager matmul and batch_matmul through a GC model.
 
     Looks up the rank-3 batched-matmul :class:`~max.engine.Model` for the
-    realized input's device and dtype (see :func:`matmul_gc.matmul_model`),
-    view-shims the two operands to canonical rank 3, executes the model, and
-    view-shims the output back to the result rank. All views are zero-copy.
+    operands' device, their dtypes and the result dtype (see
+    :func:`matmul_gc.matmul_model`), view-shims the two operands to canonical
+    rank 3, executes the model, and view-shims the output back to the result
+    rank. All views are zero-copy.
 
     The same handler serves both ``mo.matmul`` (rank 2) and ``mo.batch_matmul``
-    (rank 3+). The RMO->MO lowering already casts both operands to a common
-    dtype and broadcasts them to equal batch/rank before these ops are created,
-    so reading device, dtype, and the equal-batch shape from ``lhs`` is exact.
+    (rank 3+). The RMO->MO lowering broadcasts both operands to equal batch and
+    rank before these ops are created, so reading the device and the
+    equal-batch shape from ``lhs`` is exact. The operands and the result each
+    keep their own dtype.
 
     Args:
         op: The ``mo.matmul`` or ``mo.batch_matmul`` operation being handled.
@@ -816,7 +844,11 @@ def _handle_matmul(
     assert isinstance(lhs, Buffer)
     assert isinstance(rhs, Buffer)
 
-    model = matmul_gc.matmul_model(lhs.device, lhs.dtype)
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    model = matmul_gc.matmul_model(
+        lhs.device, lhs.dtype, rhs.dtype, result_type.dtype
+    )
 
     # Forward rank shim: flatten leading dims to one batch dim (zero-copy).
     lhs_view = lhs.view(lhs.dtype, matmul_gc.canonical_shape(lhs.shape))
@@ -882,9 +914,10 @@ def _handle_squeeze_shape(
 ) -> Sequence[Buffer]:
     """Handle mo.squeeze_shape - computes shape with specified dimensions removed.
 
-    This is a CPU-side shape metadata operation. Given an input shape vector
-    and a list of indices, returns a new shape vector with the indicated
-    dimensions removed. The indicated dimensions must have size 1.
+    Given an input shape vector and a list of indices, returns a new shape
+    vector with the indicated dimensions removed. The indicated dimensions
+    must have size 1. The shape is computed on the host and the result is
+    placed on the op's target device.
 
     Args:
         op: The squeeze shape operation.
@@ -892,12 +925,14 @@ def _handle_squeeze_shape(
             indices tensor specifying which dimensions to remove.
 
     Returns:
-        List containing the new shape vector as a 1D si64 buffer.
+        List containing the new shape vector as a 1D buffer with the input
+        shape's dtype.
     """
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
 
-    input_shape = inputs[0].to_numpy().tolist()
+    input_np = inputs[0].to_numpy()
+    input_shape = input_np.tolist()
     remove_indices = inputs[1].to_numpy().tolist()
 
     rank = len(input_shape)
@@ -913,8 +948,8 @@ def _handle_squeeze_shape(
     result_shape = [
         dim for i, dim in enumerate(input_shape) if i not in normalized
     ]
-    result_np = np.array(result_shape, dtype=np.int64)
-    return [Buffer.from_numpy(result_np)]
+    result_np = np.array(result_shape, dtype=input_np.dtype)
+    return [Buffer.from_numpy(result_np).to(_get_target_device(op))]
 
 
 @register_op_handler(mo.UnsqueezeShapeOp)
@@ -924,10 +959,10 @@ def _handle_unsqueeze_shape(
 ) -> Sequence[Buffer]:
     """Handle mo.unsqueeze_shape - computes shape with size-1 dimensions inserted.
 
-    This is a CPU-side shape metadata operation. Given an input shape vector
-    of rank N and a list of M indices, returns a new shape vector of rank N+M
-    where the indicated positions are filled with 1 and the original dimensions
-    fill the remaining positions.
+    Given an input shape vector of rank N and a list of M indices, returns a
+    new shape vector of rank N+M where the indicated positions are filled with
+    1 and the original dimensions fill the remaining positions. The shape is
+    computed on the host and the result is placed on the op's target device.
 
     Args:
         op: The unsqueeze shape operation.
@@ -935,12 +970,14 @@ def _handle_unsqueeze_shape(
             padding indices tensor specifying where to insert size-1 dims.
 
     Returns:
-        List containing the new shape vector as a 1D si64 buffer.
+        List containing the new shape vector as a 1D buffer with the input
+        shape's dtype.
     """
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
 
-    input_shape = inputs[0].to_numpy().tolist()
+    input_np = inputs[0].to_numpy()
+    input_shape = input_np.tolist()
     padding_indices = inputs[1].to_numpy().tolist()
 
     new_rank = len(input_shape) + len(padding_indices)
@@ -962,68 +999,8 @@ def _handle_unsqueeze_shape(
             result_shape.append(int(input_shape[input_idx]))
             input_idx += 1
 
-    result_np = np.array(result_shape, dtype=np.int64)
-    return [Buffer.from_numpy(result_np)]
-
-
-@register_op_handler(mo.AddSingletonDimOp)
-def _handle_add_singleton_dim(
-    op: mo.AddSingletonDimOp,
-    inputs: Sequence[Buffer | None],
-) -> Sequence[Buffer]:
-    """Handle mo.add_singleton_dim - adds a dimension of size 1 at the given axis.
-
-    This is a shape-change op that does not copy data. It uses numpy.reshape
-    with the target shape from the MLIR result type.
-
-    Args:
-        op: The add singleton dim operation.
-        inputs: Input buffers - contains the tensor to reshape.
-
-    Returns:
-        List containing the reshaped tensor buffer.
-    """
-    return _reshape_common(op, inputs, "add_singleton_dim")
-
-
-@register_op_handler(mo.SplitDimOp)
-def _handle_split_dim(
-    op: mo.SplitDimOp,
-    inputs: Sequence[Buffer | None],
-) -> Sequence[Buffer]:
-    """Handle mo.split_dim - splits one dimension into two dimensions.
-
-    E.g., a tensor of shape [N, K] with axis=0 becomes [S1, S2, K] where
-    S1 * S2 = N. The target shape comes from the MLIR result type.
-
-    Args:
-        op: The split dim operation.
-        inputs: Input buffers - contains the tensor to reshape.
-
-    Returns:
-        List containing the reshaped tensor buffer.
-    """
-    return _reshape_common(op, inputs, "split_dim")
-
-
-@register_op_handler(mo.MergeDimOp)
-def _handle_merge_dim(
-    op: mo.MergeDimOp,
-    inputs: Sequence[Buffer | None],
-) -> Sequence[Buffer]:
-    """Handle mo.merge_dim - merges two adjacent dimensions into one.
-
-    E.g., a tensor of shape [A, B, C, D] with axis=1 becomes [A, B*C, D].
-    The target shape comes from the MLIR result type.
-
-    Args:
-        op: The merge dim operation.
-        inputs: Input buffers - contains the tensor to reshape.
-
-    Returns:
-        List containing the reshaped tensor buffer.
-    """
-    return _reshape_common(op, inputs, "merge_dim")
+    result_np = np.array(result_shape, dtype=input_np.dtype)
+    return [Buffer.from_numpy(result_np).to(_get_target_device(op))]
 
 
 @register_op_handler(mo.TransposeOp)
@@ -1278,7 +1255,9 @@ def _handle_reduce_axis(
     assert isinstance(x, Buffer)
     _check_buffers_on_device(inputs, target_device)
 
-    axis = cast(_HasAxis, op).axis
+    axis = _reduction_axis(op, x.shape, result_type.shape)
+    if axis is None:
+        return [x]
     variant = reduce_axis_gc.variant_for(op)
     model = reduce_axis_gc.reduce_model(type(op), x.device, x.dtype, variant)
 
@@ -1287,6 +1266,24 @@ def _handle_reduce_axis(
     (out,) = model(x_view)
     out_shape = tuple(int(dim) for dim in result_type.shape)
     return [out.view(result_type.dtype, out_shape)]
+
+
+def _reduction_axis(
+    op: _core.Operation, in_shape: Sequence[int], out_shape: Sequence[Any]
+) -> int | None:
+    """Returns ``op``'s ``axis``, or the dimension reduced to 1.
+
+    For an op without an ``axis``, the result is the dimension that becomes 1
+    in the output, or ``None`` when none does: the op is then the identity.
+    """
+    if hasattr(op, "axis"):
+        return cast(_HasAxis, op).axis
+    for axis, (in_dim, out_dim) in enumerate(
+        zip(in_shape, out_shape, strict=True)
+    ):
+        if int(in_dim) != int(out_dim):
+            return axis
+    return None
 
 
 # Wrapped in a function so the REDUCE_AXIS_GC_OPS access is deferred past the
@@ -1347,32 +1344,34 @@ def _handle_rms_norm(
     """Routes eager rms_norm through a GC model.
 
     Looks up the rank-2 rms_norm :class:`~max.engine.Model` for the realized
-    input's device, dtype, and compile-time ``multiply_before_cast`` variant
-    (see :func:`rms_norm_gc.rms_norm_model`), view-shims the input to
-    canonical rank 2 ``[rows, features]``, executes the model, and
-    view-shims the result back. All views are zero-copy.
+    input's device and dtype and the op's compile-time ``epsilon``,
+    ``weight_offset`` and ``multiply_before_cast`` (see
+    :func:`rms_norm_gc.rms_norm_model`), view-shims the input to canonical
+    rank 2 ``[rows, features]``, executes the model, and view-shims the
+    result back. All views are zero-copy.
 
     Args:
         op: The rms_norm operation being handled.
-        inputs: Input buffers -- input tensor, weight, epsilon,
-            weight_offset. Epsilon and weight_offset are always on CPU
-            (MO_SingleDeviceWithHostOperands).
+        inputs: Input buffers -- input tensor and weight.
 
     Returns:
         A single-element list holding the normalized tensor buffer.
     """
-    x, weight, epsilon, weight_offset = inputs
+    x, weight = inputs
     assert isinstance(x, Buffer)
     assert isinstance(weight, Buffer)
-    assert isinstance(epsilon, Buffer)
-    assert isinstance(weight_offset, Buffer)
 
-    multiply_before_cast = bool(op.multiply_before_cast)
-    model = rms_norm_gc.rms_norm_model(x.device, x.dtype, multiply_before_cast)
+    model = rms_norm_gc.rms_norm_model(
+        x.device,
+        x.dtype,
+        _float32_attr_value(op.epsilon),
+        _float32_attr_value(op.weight_offset),
+        bool(op.multiply_before_cast),
+    )
 
     rows, features = rms_norm_gc.canonical_rank2(x.shape)
     x_view = x.view(x.dtype, (rows, features))
-    (out,) = model(x_view, weight, epsilon, weight_offset)
+    (out,) = model(x_view, weight)
 
     return [out.view(out.dtype, x.shape)]
 
@@ -1450,7 +1449,7 @@ def _handle_range(
 
     Raises:
         RuntimeError: If the declared static result length disagrees with the
-            model's actual output length, i.e. the start/stop/step interval
+            model's actual output length; that is, the start/stop/step interval
             is not evenly divisible by the step -- matching the ``RuntimeError``
             ``ops.range`` and ``Tensor.arange`` document for this same
             declared-vs-actual mismatch.
@@ -1689,13 +1688,17 @@ def _handle_gather_sum(
     assert isinstance(x, Buffer)
     assert isinstance(indices, Buffer)
 
-    input_np = x.to_numpy()
+    input_np = _buffer_to_numpy_safe(x)
     indices_np = indices.to_numpy().astype(np.intp)
 
     gathered = np.take(input_np, indices_np, axis=0)
     result = gathered.sum(axis=1, keepdims=True)
 
-    return [Buffer.from_numpy(np.ascontiguousarray(result))]
+    return [
+        _numpy_to_buffer_safe(
+            np.ascontiguousarray(result), x.dtype, target_device
+        )
+    ]
 
 
 @register_op_handler(mo.GatherNdOp)
@@ -1751,8 +1754,7 @@ def _handle_gather_nd(
 def _handle_scatter_nd_family(
     op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Dispatches an eager scatter-nd op via scatter_nd_gc's single fused
-    model.
+    """Dispatches an eager scatter-nd op through scatter_nd_gc's fused model.
 
     Args:
         op: The scatter-nd / scatter-nd-reduce operation being handled.
@@ -1928,6 +1930,8 @@ def _handle_conv(
         List containing the convolution output buffer.
 
     Raises:
+        UnsupportedOpVariant: If the input or filter rank is not 4, allowing
+            the eager executor to compile an unsupported convolution instead.
         NotImplementedError: If groups != 1 -- grouped conv needs a
             pre-packed filter layout, and there's no Python-exposed op to
             produce one (the packing kernel is only invoked by an internal
@@ -1942,6 +1946,14 @@ def _handle_conv(
     assert isinstance(dilations, Buffer)
     assert isinstance(paddings, Buffer)
     assert isinstance(num_groups, Buffer)
+
+    if len(input_buffer.shape) != 4 or len(filter_buffer.shape) != 4:
+        raise _eager_policy.UnsupportedOpVariant(
+            "Unsupported conv rank: the eager interpreter only supports "
+            "2-D convolution with rank-4 NHWC inputs and rank-4 RSCF "
+            f"filters, got input rank {len(input_buffer.shape)} and filter "
+            f"rank {len(filter_buffer.shape)}."
+        )
 
     groups = int(num_groups.to_numpy().item())
     if groups != 1:
@@ -1999,13 +2011,12 @@ def _handle_max_pool(
 def _handle_tile(
     op: mo.TileOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.tile via rmo.MoTileOp with runtime repeats. CPU-only.
+    """Handle mo.tile via rmo.MoTileOp with runtime repeats.
 
-    Operands: input (device tensor), repeats (host int64 rank-1). Output
+    Operands: input (any device), repeats (host int64 rank-1;
+    ``to_numpy`` syncs a device-resident repeats to the host). Output
     shape[i] = input shape[i] * repeats[i].
     """
-    target_device = _get_target_device(op)
-    _check_cpu_only(op, target_device)
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
     input_buffer = inputs[0]
@@ -2113,11 +2124,12 @@ def _handle_roi_align(
 ) -> Sequence[Buffer]:
     """Dispatches eager roi_align to its GC model.
 
-    ``MO_HostOnly`` keeps every operand on CPU. ``aligned`` and ``mode`` are
-    MLIR attributes the GC kernel takes as comptime params, so they join
-    dtype in the model cache key (see ``roi_align_gc``'s module docstring);
-    the four numeric scalars stay ordinary runtime operands, re-materialized
-    at the dtypes the graph declares.
+    ``input``/``rois`` and the result live on the device inferred from the
+    first device operand; the four numeric scalars stay host-side. ``aligned``
+    and ``mode`` are MLIR attributes the GC kernel takes as comptime params, so
+    they join dtype in the model cache key (see ``roi_align_gc``'s module
+    docstring); the scalars stay ordinary runtime operands, re-materialized at
+    the dtypes the graph declares.
 
     Args:
         op: The roi_align operation.
@@ -2160,7 +2172,7 @@ def _handle_roi_align(
         )
 
     model = roi_align_gc.roi_align_model(
-        input_buffer.dtype, bool(op.aligned), mode_str
+        input_buffer.device, input_buffer.dtype, bool(op.aligned), mode_str
     )
     # Re-materialized at the dtypes the graph declares: one compiled graph
     # fixes int64 + float32.
@@ -2246,12 +2258,9 @@ def _handle_arg_nonzero(
 ) -> Sequence[Buffer]:
     """Dispatches eager arg_nonzero to its GC model.
 
-    ``MO_HostOnly`` keeps the input on CPU. The compiled graph is canonicalized
-    to rank 1: the handler flattens the input, runs the flat model, and unravels
-    the resulting flat indices back into ``[nnz, rank]`` row-major coordinates
-    against the input's real shape with ``np.unravel_index`` -- the op's shape
-    function computes the exact nonzero count, so the model sizes its own flat
-    output and the handler neither counts nor allocates.
+    The compiled graph preserves rank and uses symbolic dimensions, so the
+    kernel writes final ``[nnz, rank]`` coordinates directly on the input
+    device. The op's shape function computes the exact nonzero count.
 
     Args:
         op: The arg_nonzero operation.
@@ -2279,16 +2288,9 @@ def _handle_arg_nonzero(
     graph_dtype = (
         dtype if dtype.is_float() else gc_compile.uint_view_dtype(dtype)
     )
-    flat = input_buffer.view(graph_dtype, (prod(shape),))
-
-    model = nonzero_gc.nonzero_model(graph_dtype)
-    (flat_idx,) = model(flat)
-    flat_np = flat_idx.to_numpy().reshape(-1)
-    # np.unravel_index already returns int64, so astype would otherwise copy.
-    coords_np = np.stack(np.unravel_index(flat_np, shape), axis=-1).astype(
-        np.int64, copy=False
-    )
-    return [Buffer.from_numpy(coords_np)]
+    model = nonzero_gc.nonzero_model(input_buffer.device, graph_dtype, rank)
+    (coordinates,) = model(input_buffer.view(graph_dtype, shape))
+    return [coordinates]
 
 
 # Padding operations
@@ -2337,8 +2339,7 @@ def _handle_pad_constant(
 def _handle_pad_reflect(
     op: mo.PadReflectOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.reflect via rmo.MoPadReflectOp (CPU-only)."""
-    _check_cpu_only(op, _get_target_device(op))
+    """Handle mo.pad.reflect via rmo.MoPadReflectOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadReflectOp)
 
 
@@ -2346,8 +2347,7 @@ def _handle_pad_reflect(
 def _handle_pad_repeat(
     op: mo.PadRepeatOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.repeat (edge pad) via rmo.MoPadRepeatOp (CPU-only)."""
-    _check_cpu_only(op, _get_target_device(op))
+    """Handle mo.pad.repeat (edge pad) via rmo.MoPadRepeatOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadRepeatOp)
 
 
@@ -2355,7 +2355,7 @@ def _handle_pad_repeat(
 def _handle_resize_linear(
     op: mo.ResizeLinearOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.resize.linear (CPU-only).
+    """Handle mo.resize.linear.
 
     Args:
         op: The resize-linear operation.
@@ -2384,7 +2384,9 @@ def _handle_resize_linear(
 def _handle_resize_nearest(
     op: mo.ResizeNearestOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.resize.nearest (CPU-only).
+    """Handle mo.resize.nearest.
+
+    Nearest runs on the input's device (CPU or accelerator).
 
     Args:
         op: The resize-nearest operation.
@@ -2409,14 +2411,29 @@ def _handle_resize_nearest(
     return model(input_buffer, size_buffer)
 
 
-# TODO(GEX-3990): GraphCompiler has no shape-fallback registration for
-# MO::ResizeBicubicOp (unlike Linear/Nearest); resize_ops.mojo has been
-# deleted rather than kept as a fallback that can't be reached.
 @register_op_handler(mo.ResizeBicubicOp)
 def _handle_resize_bicubic(
     op: mo.ResizeBicubicOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    raise NotImplementedError("resize_bicubic is not yet supported")
+    """Handle mo.resize.bicubic.
+
+    Runs on the input's device like nearest (single-device MO op with a
+    host ``size`` operand); the kernel is rank-4 only. The cache key carries
+    ``antialias`` as its variant.
+    """
+    input_buffer, size_buffer = inputs
+    assert isinstance(input_buffer, Buffer)
+    assert isinstance(size_buffer, Buffer)
+
+    rank = len(input_buffer.shape)
+    model = resize_gc.resize_model(
+        mo.ResizeBicubicOp,
+        input_buffer.device,
+        input_buffer.dtype,
+        rank,
+        (int(op.antialias),),
+    )
+    return model(input_buffer, size_buffer)
 
 
 # Distributed operations
@@ -2455,9 +2472,10 @@ def _handle_distributed_allreduce_sum(
     group_size = op.group_size or num_inputs
     totals: list[npt.NDArray[Any]] = []
     for group_start in range(0, num_inputs, group_size):
-        total = bufs[group_start].to(CPU()).to_numpy().copy()
+        # `to(CPU())` doesn't copy a host buffer, so `+=` would mutate the input.
+        total = _buffer_to_numpy_safe(bufs[group_start].to(CPU())).copy()
         for buf in bufs[group_start + 1 : group_start + group_size]:
-            total += buf.to(CPU()).to_numpy()
+            total += _buffer_to_numpy_safe(buf.to(CPU()))
         totals.extend([total] * group_size)
 
     # Place each group's sum on its output devices.
@@ -2466,7 +2484,9 @@ def _handle_distributed_allreduce_sum(
     for i, result in enumerate(results[:-1]):
         result_type: mo.TensorType = result.type  # type: ignore[assignment]
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
-        output_buffers.append(Buffer.from_numpy(totals[i]).to(device))
+        output_buffers.append(
+            _numpy_to_buffer_safe(totals[i], bufs[i].dtype, device)
+        )
 
     # Trailing None for the output chain.
     output_buffers.append(None)
@@ -2515,7 +2535,21 @@ def _handle_distributed_allgather(
         input_idx = group_start + local_input_idx
         result_type: mo.TensorType = result.type  # type: ignore[assignment]
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
-        output_buffers.append(bufs[input_idx].to(device))
+        source = bufs[input_idx]
+        if op.slice_rows:
+            rows = source.shape[0]
+            if rows % num_inputs != 0:
+                raise ValueError(
+                    "allgather_rows_slice requires the row count to be a "
+                    "multiple of the device count"
+                )
+            rows_per_device = rows // num_inputs
+            start = device_idx * rows_per_device
+            indices = (slice(start, start + rows_per_device),) + (
+                slice(None),
+            ) * (len(source.shape) - 1)
+            source = source[indices]
+        output_buffers.append(source.to(device))
 
     output_buffers.append(None)
     return output_buffers
@@ -2632,9 +2666,10 @@ def _handle_non_maximum_suppression(
 ) -> Sequence[Buffer]:
     """Dispatches eager non-maximum suppression to its GC model.
 
-    ``MO_HostOnly`` keeps every operand on CPU. The op's shape function runs the
-    real suppression to size the output, so the handler no longer allocates an
-    upper-bound buffer or truncates the result.
+    The interpreter executes this op on the host; any device-resident
+    ``boxes``/``scores`` transfer to CPU here (compiled graphs run the
+    op on-device). The op's shape function runs the real suppression to
+    size the output, so the handler allocates no upper-bound buffer.
 
     Args:
         op: The non-maximum suppression operation.
@@ -2657,6 +2692,12 @@ def _handle_non_maximum_suppression(
     assert isinstance(max_output, Buffer)
     assert isinstance(iou_threshold, Buffer)
     assert isinstance(score_threshold, Buffer)
+
+    # The interpreter path runs NMS on the host: device-resident
+    # operands transfer to CPU (the compiled-graph path executes
+    # on-device via the op's device support).
+    boxes = boxes.to(CPU())
+    scores = scores.to(CPU())
 
     if boxes.dtype != scores.dtype:
         raise ValueError(
@@ -2749,3 +2790,131 @@ def _handle_distributed_reducescatter_sum(
     # Trailing None for the output chain.
     output_buffers.append(None)
     return output_buffers
+
+
+# User custom operations (MXF-353)
+
+
+def _resolve_spec(op: mo.CustomOp) -> custom.CustomOp | None:
+    """Resolves the ``CustomOp`` used to stage *op*, or ``None``.
+
+    Reads the registry token ``CustomOp._stage`` stamps onto the op's
+    discardable attributes at trace time, verified to survive
+    ``graph.copy()`` and RMO->MO lowering. ``None`` covers both an op never
+    staged through a ``CustomOp`` and a stamped token whose spec can no
+    longer be resolved; the two are indistinguishable to the caller, which
+    refuses the graph either way.
+
+    A resolved def that disagrees with *op* is refused too. The token is
+    ``f"{name}#{content_digest}"`` (see ``CustomOp.token``), so
+    two defs sharing one token already share a name; reaching an unrelated
+    declaration through this lookup takes a 64-bit digest collision or a
+    hand-forged attribute value, not an honest replay in another process. The
+    name check here only guards against that forged or foreign input -- the
+    arity comparison (operand and result counts) is the check still doing
+    real work, catching a resolved def whose signature no longer matches what
+    *op* was staged with. Either mismatch degrades to ``None``, which the
+    caller treats as the compile fallback.
+    """
+    attrs = op.discardable_attributes
+    if custom._SPEC_ATTR_KEY not in attrs:
+        return None
+    token = attrs[custom._SPEC_ATTR_KEY]
+    if not isinstance(token, builtin.StringAttr):
+        return None
+    defn = custom._SPEC_REGISTRY.get(token.value)
+    if defn is None:
+        return None
+    if (
+        defn.name != op.symbol
+        or len(defn.inputs) != len(op.operands)
+        or len(defn.outputs) != len(op.results)
+    ):
+        return None
+    return defn
+
+
+def _check_realized_shape(out: Buffer, result: _core.Value[Any]) -> None:
+    """Raises when *out* disagrees with *result*'s staged type.
+
+    Checks realized rank, dtype, device, and any statically-known dim.
+
+    A binding compiled from a ``CustomOp`` (:mod:`custom_gc`) is
+    rank-polymorphic: only rank, dtype, and device key the compiled model,
+    not shape. So a defn whose declared signature computed something the
+    kernel doesn't actually produce would otherwise silently corrupt the
+    slot instead of raising.
+
+    A hard error, not an ``UnsupportedGraphError``: the kernel contradicting
+    its own declaration is a contract violation, and falling back to
+    compilation would both hide it and rerun any mutation an earlier op in
+    this graph already applied.
+    """
+    result_type = graph.TensorType.from_mlir(result.type)
+    staged_shape = tuple(result_type.shape)
+    realized_shape = tuple(out.shape)
+    staged_device = result_type.device.to_device()
+
+    def mismatch(kind: str, realized: object, staged: object) -> RuntimeError:
+        return RuntimeError(
+            f"custom op result {kind} mismatch: model produced "
+            f"{realized}, staged type declared {staged}"
+        )
+
+    if len(realized_shape) != len(staged_shape):
+        raise mismatch("rank", len(realized_shape), len(staged_shape))
+    if out.dtype != result_type.dtype:
+        raise mismatch("dtype", out.dtype, result_type.dtype)
+    if out.device != staged_device:
+        raise mismatch("device", out.device, staged_device)
+    # A symbolic staged dim has no expected static size, since the kernel's
+    # shape function is authoritative for it.
+    if not all(
+        int(staged) == realized
+        for staged, realized in zip(staged_shape, realized_shape, strict=True)
+        if isinstance(staged, graph.StaticDim)
+    ):
+        raise mismatch("shape", realized_shape, staged_shape)
+
+
+@register_op_handler(mo.CustomOp)
+def _handle_custom(
+    op: mo.CustomOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer | None]:
+    """Executes a user custom op via its rank-polymorphic interpreter binding.
+
+    ``_is_interpretable_custom`` (``_interpreter.py``) has already admitted
+    the op: it is pure tensor-in/tensor-out, single-device, and carries a
+    resolvable ``CustomOp``. Realized output shapes are validated against
+    the staged types before being trusted.
+    """
+    defn = _resolve_spec(op)
+    if defn is None:
+        raise RuntimeError(
+            f"custom op {op.symbol!r} reached the interpreter with no "
+            "resolvable CustomOp; can_execute should have refused it"
+        )
+
+    # Raises rather than asserting so it still fires under `python -O`: the
+    # staged types agree on one device by admission, so a realized buffer
+    # elsewhere is an interpreter bug, not a graph to hand back to the
+    # compiler.
+    target_device = _get_target_device(op)
+    _check_buffers_on_device(inputs, target_device)
+
+    in_types = []
+    for v in op.operands:
+        v_type: mo.TensorType = v.type  # type: ignore[assignment]
+        in_types.append(graph.TensorType.from_mlir(v_type))
+    realized_inputs: list[Buffer] = []
+    for b in inputs:
+        assert isinstance(b, Buffer)
+        realized_inputs.append(b)
+
+    model = custom_gc.binding_for(
+        defn, target_device, in_types, defn.extensions
+    )
+    outs = model(*realized_inputs)
+    for out, result in zip(outs, op.results, strict=True):
+        _check_realized_shape(out, result)
+    return list(outs)

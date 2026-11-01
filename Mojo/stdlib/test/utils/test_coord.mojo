@@ -94,6 +94,43 @@ def test_construction_from_array_narrow_dtype() raises:
     assert_equal(t[1].value(), 9)
 
 
+def to_int[T: CoordLike](c: T) -> Int:
+    """Convert any scalar coordinate value to an `Int`.
+
+    Exercising the conversion through a `CoordLike` bound, rather than on a
+    concrete type, is what `CoordLike` deriving from `Intable` enables.
+    """
+    return Int(c)
+
+
+def test_int_conversion_from_comptime_value() raises:
+    assert_equal(Int(ComptimeInt[5]()), 5)
+    assert_equal(Int(Idx[3]), 3)
+
+
+def test_int_conversion_from_runtime_scalar() raises:
+    assert_equal(Int(Int(8)), 8)
+    assert_equal(Int(Int32(-7)), -7)
+    assert_equal(Int(UInt16(9)), 9)
+
+
+def test_int_conversion_through_coordlike_bound() raises:
+    assert_equal(to_int(ComptimeInt[6]()), 6)
+    assert_equal(to_int(Idx[4]), 4)
+    assert_equal(to_int(Int(9)), 9)
+    assert_equal(to_int(Int32(5)), 5)
+    assert_equal(to_int(UInt8(3)), 3)
+
+
+def test_int_conversion_of_coord_elements() raises:
+    # Converting an element straight out of a `Coord`, without unwrapping
+    # `.value()` first.
+    var c = Coord(Idx[3], Int(5), Int32(7))
+    assert_equal(Int(c[0]), 3)
+    assert_equal(Int(c[1]), 5)
+    assert_equal(Int(c[2]), 7)
+
+
 def test_static_product() raises:
     comptime p = coord[1, 2, 3].static_product
     assert_equal(p, 6)
@@ -549,6 +586,26 @@ def test_crd2idx_narrow_uint32_within_range() raises:
     assert_equal(Int(idx_u32), Int(idx_i64))
 
 
+def test_crd2idx_narrow_uint32_scalar_split() raises:
+    """A scalar coordinate splits across nested modes correctly in `uint32`.
+
+    The coordinate splits first across the two top-level modes, then within
+    each mode, first sub-mode fastest.
+    """
+    var tiles = 3
+    var shape = Coord(Coord(tiles, Idx[16]), coord[2, 8])
+    var stride = Coord(Coord(Int(512), Idx[2]), coord[1, 64])
+
+    for i in range(tiles * 16 * 16):
+        var row = i % (tiles * 16)
+        var col = i // (tiles * 16)
+        var expected = (
+            512 * (row % tiles) + 2 * (row // tiles) + col % 2 + 64 * (col // 2)
+        )
+        var idx = crd2idx[out_type=DType.uint32](Coord(i), shape, stride)
+        assert_equal(Int(idx), expected)
+
+
 def test_cast_preserves_static_dims() raises:
     var c = Coord[
         ComptimeInt[5],
@@ -579,9 +636,9 @@ def test_replace_keeps_other_dims_static() raises:
     var c = Coord(ComptimeInt[3](), ComptimeInt[4](), ComptimeInt[5]())
     var moved = c.replace[1](Int64(7))
 
-    assert_equal(Int(moved[0].value()), 3)
-    assert_equal(Int(moved[1].value()), 7)
-    assert_equal(Int(moved[2].value()), 5)
+    assert_equal(Int(moved[0]), 3)
+    assert_equal(Int(moved[1]), 7)
+    assert_equal(Int(moved[2]), 5)
 
     # Only the replaced element gains runtime storage; `make_dynamic` would
     # have made all three dynamic.
@@ -599,27 +656,27 @@ def test_replace_static_element_stays_comptime() raises:
     # The untouched leading dims are still compile-time values.
     comptime assert type_of(idx).element_types[0] == ComptimeInt[8]
     comptime assert type_of(idx).element_types[1] == ComptimeInt[16]
-    assert_equal(Int(idx[2].value()), 64)
+    assert_equal(Int(idx[2]), 64)
 
 
 def test_replace_first_and_last() raises:
     var c = Coord(ComptimeInt[2](), ComptimeInt[3](), ComptimeInt[4]())
 
     var first = c.replace[0](Int32(9))
-    assert_equal(Int(first[0].value()), 9)
-    assert_equal(Int(first[2].value()), 4)
+    assert_equal(Int(first[0]), 9)
+    assert_equal(Int(first[2]), 4)
 
     var last = c.replace[2](Int32(9))
-    assert_equal(Int(last[0].value()), 2)
-    assert_equal(Int(last[2].value()), 9)
+    assert_equal(Int(last[0]), 2)
+    assert_equal(Int(last[2]), 9)
 
 
-def test_replace_dynamic_element() raises:
+def test_replace_on_dynamic_element() raises:
     var c = Coord(Int64(1), Int64(2))
     var r = c.replace[0](Int64(9))
 
-    assert_equal(Int(r[0].value()), 9)
-    assert_equal(Int(r[1].value()), 2)
+    assert_equal(Int(r[0]), 9)
+    assert_equal(Int(r[1]), 2)
 
 
 def test_replace_static_with_static() raises:
@@ -628,13 +685,13 @@ def test_replace_static_with_static() raises:
 
     # Replacing a static with a static keeps the coord zero-sized.
     comptime assert size_of[type_of(r)]() == 0
-    assert_equal(Int(r[1].value()), 9)
+    assert_equal(Int(r[1]), 9)
 
 
 def test_replace_rank_one() raises:
     var c = Coord(ComptimeInt[5]())
     var r = c.replace[0](Int64(11))
-    assert_equal(Int(r[0].value()), 11)
+    assert_equal(Int(r[0]), 11)
 
 
 def test_replace_chains_for_multiple_dims() raises:
@@ -643,13 +700,171 @@ def test_replace_chains_for_multiple_dims() raises:
     )
     var r = c.replace[0](Int64(9)).replace[2](Int64(8))
 
-    assert_equal(Int(r[0].value()), 9)
-    assert_equal(Int(r[1].value()), 3)
-    assert_equal(Int(r[2].value()), 8)
-    assert_equal(Int(r[3].value()), 5)
+    assert_equal(Int(r[0]), 9)
+    assert_equal(Int(r[1]), 3)
+    assert_equal(Int(r[2]), 8)
+    assert_equal(Int(r[3]), 5)
 
     # Chaining costs only the dims actually replaced.
     comptime assert size_of[type_of(r)]() == 2 * size_of[Int64]()
+
+
+def test_product_default_dtype() raises:
+    """The unparameterized `product()` keeps returning `Scalar[Coord.DTYPE]`.
+
+    This overload is what `CoordLike` requires, so it must stay callable with
+    no explicit dtype and keep its historical return type.
+    """
+    var c = Coord(Idx[2], Int(3), Int32(5))
+    var p = c.product()
+    assert_true(type_of(p) == Scalar[type_of(c).DTYPE])
+    assert_equal(Int(p), 30)
+
+
+def test_product_empty() raises:
+    var t = Coord[]()
+    assert_equal(Int(t.product()), 1)
+    assert_equal(Int(t.product[.uint32]()), 1)
+
+
+def test_product_explicit_dtype() raises:
+    """`product[T]()` accumulates and returns at `T`, not at `Coord.DTYPE`."""
+    var c = Coord(Idx[4], Int(8), Int32(3))
+
+    var p32 = c.product[.uint32]()
+    assert_true(type_of(p32) == UInt32)
+    assert_equal(Int(p32), 96)
+
+    var p16 = c.product[.int16]()
+    assert_true(type_of(p16) == Int16)
+    assert_equal(Int(p16), 96)
+
+
+def test_product_narrow_dtype_wraps() raises:
+    var c = Coord(Idx[16], Int(17), Int(2))
+
+    comptime expected: Int = 16 * 17 * 2
+    assert_equal(Int(c.product()), expected)
+    assert_equal(Int(c.product[.uint8]()), expected % 256)
+
+
+def test_product_nested_explicit_dtype() raises:
+    """`product[T]()` recurses through nested `Coord`s."""
+    var c = Coord(Coord(Idx[2], Int(3)), Int32(5), Coord(Idx[7]))
+
+    comptime expected: Int = 2 * 3 * 5 * 7
+    assert_equal(Int(c.product()), expected)
+    assert_equal(Int(c.product[.uint32]()), expected)
+    assert_true(type_of(c.product[.uint32]()) == UInt32)
+
+
+def test_product_nested_overflow() raises:
+    var c = Coord(Coord(Idx[255], Int(2)), Int32(5))
+
+    comptime expected_u8: UInt8 = 255 * 2 * 5
+    assert_equal(c.product[.uint8](), expected_u8)
+    assert_true(type_of(c.product[.uint8]()) == UInt8)
+
+
+def test_product_float_dtype() raises:
+    """`T` is not restricted to integer dtypes."""
+    var c = Coord(Idx[3], Int(5), Int32(2))
+    var p = c.product[.float32]()
+    assert_true(type_of(p) == Float32)
+    assert_equal(p, Float32(30))
+
+
+def test_replace_dynamic_preserves_the_coord_type() raises:
+    var c = Coord(ComptimeInt[3](), Int64(0))
+    comptime Before = type_of(c)
+
+    c.replace_dynamic[1](Int64(7))
+
+    # Unlike `replace`, which yields a `Coord` of a different type, this
+    # mutates in place and leaves the type -- and so the static dim -- alone.
+    comptime assert type_of(c) == Before
+    comptime assert type_of(c).element_types[0] == ComptimeInt[3]
+    comptime assert size_of[type_of(c)]() == size_of[Int64]()
+    assert_equal(Int(c[0]), 3)
+    assert_equal(Int(c[1]), 7)
+
+
+def test_replace_dynamic_takes_the_element_dtype() raises:
+    # Each value is spelled in its element's own dtype; nothing converts.
+    var c = Coord(Int32(0), Int64(0))
+
+    c.replace_dynamic[0](Int32(5))
+    c.replace_dynamic[1](Int64(6))
+
+    comptime assert type_of(c).element_types[0] == Int32
+    comptime assert type_of(c).element_types[1] == Int64
+    assert_equal(Int(c[0]), 5)
+    assert_equal(Int(c[1]), 6)
+
+
+def test_replace_dynamic_int_element_takes_an_int() raises:
+    # The kernel case: an `Int` element is `Scalar[DType.int]`, so a runtime
+    # `Int` needs no conversion.
+    var c = Coord(Int(0), ComptimeInt[2]())
+    var i = 5
+
+    c.replace_dynamic[0](i)
+
+    assert_equal(Int(c[0]), 5)
+
+
+def test_replace_dynamic_repeated_assignment() raises:
+    # The loop shape this exists for: one dim rewritten on every step.
+    var c = Coord(ComptimeInt[4](), Int64(0))
+
+    for i in range(5):
+        c.replace_dynamic[1](Int64(i))
+
+    assert_equal(Int(c[0]), 4)
+    assert_equal(Int(c[1]), 4)
+
+
+def test_replace_dynamic_first_and_last() raises:
+    var c = Coord(Int64(1), ComptimeInt[3](), Int64(2))
+
+    c.replace_dynamic[0](Int64(9))
+    c.replace_dynamic[2](Int64(8))
+
+    assert_equal(Int(c[0]), 9)
+    assert_equal(Int(c[1]), 3)
+    assert_equal(Int(c[2]), 8)
+
+
+def test_replace_dynamic_across_integral_dtypes() raises:
+    # `CoordLike` is integral-only -- a float element does not compile -- so
+    # the dtypes that matter here are the narrow and unsigned ones. `UInt` is
+    # `Scalar[DType.uint]`, a different dtype from `UInt64` even where the two
+    # are the same width.
+    var c = Coord(Int16(0), UInt32(0), UInt(0), UInt64(0), Int64(0))
+
+    c.replace_dynamic[0](Int16(5))
+    c.replace_dynamic[1](UInt32(6))
+    c.replace_dynamic[2](UInt(7))
+    c.replace_dynamic[3](UInt64(8))
+    c.replace_dynamic[4](Int64(9))
+
+    comptime assert type_of(c).element_types[0] == Int16
+    comptime assert type_of(c).element_types[1] == UInt32
+    comptime assert type_of(c).element_types[2] == UInt
+    comptime assert type_of(c).element_types[3] == UInt64
+    comptime assert type_of(c).element_types[4] == Int64
+    assert_equal(Int(c[0]), 5)
+    assert_equal(Int(c[1]), 6)
+    assert_equal(Int(c[2]), 7)
+    assert_equal(Int(c[3]), 8)
+    assert_equal(Int(c[4]), 9)
+
+
+def test_replace_dynamic_rank_one() raises:
+    var c = Coord(Int64(0))
+    c.replace_dynamic[0](Int64(11))
+
+    assert_equal(Int(c[0]), 11)
 
 
 def main() raises:

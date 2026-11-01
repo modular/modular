@@ -30,12 +30,11 @@ from std.benchmark import (
     BenchConfig,
     Bencher,
     BenchId,
-    Unit,
     black_box,
     keep,
 )
 from std.math import ceildiv
-from std.memory import Allocation, alloc, dealloc
+from std.memory import alloc
 from std.atomic import Atomic
 from std.sys.info import num_physical_cores
 
@@ -46,7 +45,7 @@ comptime ALLOCS_PER_ITER = 2048
 
 
 def bench_heap_alloc_parallel(mut b: Bencher) raises:
-    @always_inline
+    @inline(.always)
     def call_fn():
         var num_tasks = num_physical_cores()
         if num_tasks < 1:
@@ -55,7 +54,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
         var per_task = ceildiv(ALLOCS_PER_ITER, num_tasks)
         var checksum = Atomic[Int64](0)
 
-        @always_inline
+        @inline(.always)
         def task_body(
             task_id: Int,
         ) {mut checksum, imm per_task,}:
@@ -66,7 +65,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
                 if n_elems < 1:
                     n_elems = 1
 
-                var allocation = alloc[Int]({count = n_elems}).into_managed()
+                var allocation = alloc[Int]({length = n_elems}).into_managed()
                 var p = allocation.unsafe_ptr()
                 var seed = Int(black_box(task_id + j))
 

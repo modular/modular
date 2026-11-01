@@ -121,7 +121,7 @@ def graph_outputs(
         for i, (_, indices) in enumerate(PARAMS):
             x: TensorValue = graph.inputs[i].tensor
             outputs.append(x[indices])
-        graph.output(*outputs)
+        graph.output(outputs)
 
     # Execute the graph.
     model = session.load(graph)

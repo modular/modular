@@ -1,0 +1,22 @@
+# gazelle:default_visibility //rust_kv:consumers
+
+package(default_visibility = ["//rust_kv:consumers"])
+
+package_group(
+    name = "consumers",
+    packages = [
+        # max._kv_core is built there (see kv-core-pyo3/BUILD.bazel).
+        "//max/python/max",
+        "//max/tests/integration/accuracy/smoke_tests/...",
+        "//max/tests/integration/kv_cache/...",
+        "//max/tests/tests/serve/scheduler/internal/...",
+        "//max_private/...",
+        "//rust_kv/...",
+    ],
+)
+
+exports_files([
+    "Cargo.lock",
+    "Cargo.toml",
+    "rust-toolchain.toml",
+])

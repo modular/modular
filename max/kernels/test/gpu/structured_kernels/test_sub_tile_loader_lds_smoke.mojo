@@ -33,7 +33,6 @@ bit-exact against the expected slice.
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import AddressSpace
 from std.testing import assert_equal
 from layout import (
     ComptimeInt,
@@ -71,9 +70,12 @@ def _pattern(i: Int, j: Int) -> BFloat16:
 # --------------------------------------------------------------------------- #
 
 
-def kernel_case_a(
-    src_ptr: MutPointer[BFloat16, MutAnyOrigin],
-    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
+def kernel_case_a[
+    src_origin: MutOrigin,
+    out_origin: MutOrigin,
+](
+    src_ptr: MutPointer[BFloat16, src_origin],
+    out_ptr: MutPointer[BFloat16, out_origin],
 ):
     # SMEM destination: (BN, DEPTH) row-major.
     comptime dst_layout = row_major[BN, DEPTH]()
@@ -87,7 +89,7 @@ def kernel_case_a(
         Coord[ComptimeInt[BN], ComptimeInt[DEPTH]].element_types,
         Coord[ComptimeInt[DEPTH], ComptimeInt[1]].element_types,
     ]
-    var src = TileTensor[.bfloat16, src_layout_a, MutAnyOrigin](
+    var src = TileTensor[.bfloat16, src_layout_a, src_origin](
         src_ptr, src_layout_a()
     )
 
@@ -97,7 +99,7 @@ def kernel_case_a(
 
     # Copy SMEM back out so the host can check it.
     # Thread-parallel: one warp writes all BN*DEPTH elements.
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var total = BN * DEPTH
     var i = tid
     while i < total:
@@ -105,9 +107,12 @@ def kernel_case_a(
         i += 64
 
 
-def kernel_case_b(
-    src_ptr: MutPointer[BFloat16, MutAnyOrigin],
-    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
+def kernel_case_b[
+    src_origin: MutOrigin,
+    out_origin: MutOrigin,
+](
+    src_ptr: MutPointer[BFloat16, src_origin],
+    out_ptr: MutPointer[BFloat16, out_origin],
 ):
     # SMEM destination: (BN, DEPTH) row-major, same as Case A.
     comptime dst_layout = row_major[BN, DEPTH]()
@@ -121,7 +126,7 @@ def kernel_case_b(
         Coord[ComptimeInt[BN], ComptimeInt[DEPTH]].element_types,
         Coord[ComptimeInt[CACHE_DEPTH_B], ComptimeInt[1]].element_types,
     ]
-    var src = TileTensor[.bfloat16, src_layout_b, MutAnyOrigin](
+    var src = TileTensor[.bfloat16, src_layout_b, src_origin](
         src_ptr, src_layout_b()
     )
 
@@ -129,7 +134,7 @@ def kernel_case_b(
     loader.load(dst_smem, src)
     barrier()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var total = BN * DEPTH
     var i = tid
     while i < total:
@@ -159,7 +164,7 @@ def test_case_a(ctx: DeviceContext) raises:
     var dev_out = ctx.enqueue_create_buffer[.bfloat16](size)
     ctx.enqueue_copy(dev_in, host_in)
 
-    ctx.enqueue_function[kernel_case_a](
+    ctx.enqueue_function[kernel_case_a[origin_of(dev_in), origin_of(dev_out)]](
         dev_in, dev_out, grid_dim=1, block_dim=64
     )
 
@@ -199,13 +204,11 @@ def test_case_b(ctx: DeviceContext) raises:
 
     # Pass a pointer already offset by head_dim_offset — mirrors what
     # KVCacheIterator.next_tile does for the MLA rope slice.
-    var dev_in_offset = MutPointer[BFloat16, MutAnyOrigin](
-        unsafe_from_address=Int(dev_in.unsafe_ptr()) + head_dim_offset * 2
-    )
+    var dev_in_offset = dev_in.unsafe_ptr().unsafe_offset(head_dim_offset)
 
-    ctx.enqueue_function[kernel_case_b](
-        dev_in_offset, dev_out, grid_dim=1, block_dim=64
-    )
+    ctx.enqueue_function[
+        kernel_case_b[origin_of(dev_in_offset), origin_of(dev_out)]
+    ](dev_in_offset, dev_out, grid_dim=1, block_dim=64)
 
     ctx.enqueue_copy(host_out, dev_out)
     ctx.synchronize()

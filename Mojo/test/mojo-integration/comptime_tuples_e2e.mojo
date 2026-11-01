@@ -41,7 +41,7 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
     @always_inline
     def __init__(out self, var value: Self.Element):
         self._cap = 4
-        self._data = alloc[Self.Element]({count = self._cap}).unsafe_leak()
+        self._data = alloc[Self.Element]({length = self._cap}).unsafe_leak()
         self._data.unsafe_write(value^)
         self._len = 1
 
@@ -49,7 +49,7 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
         self._len = copy._len
         self._cap = copy._len
         if copy._len > 0:
-            self._data = alloc[Self.Element]({count = copy._len}).unsafe_leak()
+            self._data = alloc[Self.Element]({length = copy._len}).unsafe_leak()
             for i in range(copy._len):
                 self._data.unsafe_offset(i).unsafe_write(
                     copy._data[unsafe_offset=i]
@@ -65,14 +65,14 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
         if self._cap > 0:
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
-                    {count = self._cap}
+                    {length = self._cap}
                 )
             )
 
     def _grow_if_needed(mut self):
         if self._len >= self._cap:
             var new_cap = self._cap * 2 if self._cap > 0 else 4
-            var new_data = alloc[Self.Element]({count = new_cap}).unsafe_leak()
+            var new_data = alloc[Self.Element]({length = new_cap}).unsafe_leak()
             for i in range(self._len):
                 new_data.unsafe_offset(i).unsafe_write(
                     self._data.unsafe_offset(i).unsafe_take_pointee()
@@ -81,7 +81,7 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
                 dealloc(
                     ThinAllocation(
                         unsafe_owned_ptr=self._data
-                    ).unsafe_with_layout({count = self._cap})
+                    ).unsafe_with_layout({length = self._cap})
                 )
             self._data = new_data
             self._cap = new_cap

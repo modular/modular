@@ -187,7 +187,6 @@ def get_cu_window_seqlens_numpy(
     Returns:
         np.ndarray: Unique consecutive cumulative window sequence lengths.
     """
-
     # NumPy equivalent of torch.unique_consecutive
     # Find positions where consecutive elements are different
     if len(cu_window_seqlens) <= 1:
@@ -215,7 +214,6 @@ def get_cu_seqlens_numpy(
     Returns:
         np.ndarray: Cumulative sequence lengths with a leading zero, of shape [total_sequences + 1].
     """
-
     cu_seqlens = np.repeat(
         grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
     ).cumsum(

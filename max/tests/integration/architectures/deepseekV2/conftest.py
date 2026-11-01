@@ -20,14 +20,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Buffer, accelerator_architecture_name
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.kv_cache import MLAKVCacheParams
-from max.nn.rotary_embedding import (
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
+)
+from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -167,7 +170,7 @@ def _generate_latent_attention_max_outputs(
             input_row_offsets = graph.inputs[1].tensor
             kv_collection = kv_params.unflatten_kv_inputs(
                 iter(graph.inputs[2:])
-            ).inputs[0]
+            )[0]
 
             result = latent_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
@@ -214,7 +217,7 @@ def _generate_latent_attention_max_outputs(
             max_output = compiled.execute(
                 input_tensor_device,
                 input_row_offsets.to(device0),
-                *kv_inputs.flatten(),
+                *tree.leaves(kv_inputs),
             )
 
             for ctx in batch:
@@ -235,7 +238,9 @@ def _generate_latent_attention_max_outputs(
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
+        input_tensor_device,
+        input_row_offsets.to(device0),
+        *tree.leaves(kv_inputs),
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

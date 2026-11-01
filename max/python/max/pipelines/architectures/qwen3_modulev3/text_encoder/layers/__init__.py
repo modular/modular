@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3 ModuleV3 text encoder layers."""
 
 from .attention import EncoderAttention
 from .rotary_embedding import RotaryEmbedding

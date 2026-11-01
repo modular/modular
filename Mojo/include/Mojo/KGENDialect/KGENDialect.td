@@ -21,6 +21,9 @@
 include "mlir/IR/OpBase.td"
 
 def KGENDialect : Dialect {
+  // TODO(MOCO-5011): Migrate assembly formats to strict properties before
+  // upstream removes this opt-out.
+  let useStrictPropertiesInAssemblyFormat = 0;
   let name = "kgen";
 
   let summary = "The 'kgen' dialect";
@@ -68,8 +71,25 @@ def KGENDialect : Dialect {
     template <typename TypeT>
     void registerMnemonicType();
 
+    /// Like `registerMnemonicType`, for a type with parameters that does not
+    /// implement ParamPrintableTypeInterface.
+    template <typename TypeT>
+    void registerMnemonicTypeWithoutParamPrinter();
+
     /// Get the "name" of the type, if it has registered one.
     std::optional<StringRef> getTypeName(mlir::TypeID id);
+
+    /// Register attribute classes whose values are compound parameter
+    /// expressions.
+    template <typename... AttrTs>
+    void registerNonTrivialParamAttrs() {
+      (nonTrivialParamAttrs.insert(mlir::TypeID::get<AttrTs>()), ...);
+    }
+
+    /// Returns true if `attr` belongs to a registered non-trivial class.
+    bool isNonTrivialParamAttr(Attribute attr) const {
+      return nonTrivialParamAttrs.contains(attr.getTypeID());
+    }
 
     /// Set the special parser for symbol references.
     void setSymbolTypeParser(
@@ -84,6 +104,7 @@ def KGENDialect : Dialect {
     DenseMap<mlir::TypeID, TypePrintFn> typePrintFns;
     /// A map containing the "names" of types.
     DenseMap<mlir::TypeID, StringRef> typeNames;
+    DenseSet<mlir::TypeID> nonTrivialParamAttrs;
 
     /// Function that parses symbol references as types.
     std::function<FailureOr<Type>(AsmParser &, SymbolRefAttr)> symbolTypeParser;
@@ -91,7 +112,7 @@ def KGENDialect : Dialect {
     /// Allow the type pretty printer and parser utilities to access the
     /// pretty functions.
     friend OptionalParseResult parseOptionalKGENType(AsmParser &, Type &);
-    friend void printKGENType(AsmPrinter &, Type);
+    friend class KGENParamPrinter;
     friend void printParamName(AsmPrinter &p, StringAttr, bool);
   }];
 }

@@ -24,14 +24,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.kv_cache import MLAKVCacheParams
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
+)
+from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
@@ -92,7 +95,7 @@ import math
 
 from max.dtype import DType
 from max.graph import TensorValue, Weight, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 
 
 class NaiveGlmMlaAttention(Module):
@@ -424,11 +427,9 @@ def _generate_mla_max_outputs(
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = (
-                kv_params.get_symbolic_inputs()
-                .unflatten(iter(graph.inputs[2:]))
-                .inputs[0]
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(
+                iter(graph.inputs[2:])
+            )[0]
             result = mla(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 hidden_states,
@@ -472,7 +473,7 @@ def _generate_mla_max_outputs(
             max_output = compiled.execute(
                 input_tensor_device,
                 input_row_offsets.to(device0),
-                *kv_inputs.flatten(),
+                *tree.leaves(kv_inputs),
             )
             for ctx in batch:
                 ctx.update(42)
@@ -491,7 +492,9 @@ def _generate_mla_max_outputs(
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
+        input_tensor_device,
+        input_row_offsets.to(device0),
+        *tree.leaves(kv_inputs),
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

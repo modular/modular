@@ -337,13 +337,12 @@ cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
 }
 
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
-/// ModuleOp). If the target operation and pass pipeline result in a cache hit,
-/// that cache hit will simply replace the operation's region hash attribute
-/// with the updated region hash attribute. The granularity of the result is a
-/// region on the operation `target`. This function manifests its result as an
-/// update to the RegionHashArrayAttr on `target` - it will update the region
-/// hashes from the old versions (pre-transform) to the new versions (transform
-/// applied).
+/// ModuleOp) as a cached transform. The cache key is the target operation and
+/// the textual form of the pass pipeline. On a miss, the passes run and the
+/// resulting operation is stored as bytecode together with any diagnostics
+/// emitted while running them. On a hit, the cached bytecode replaces the
+/// regions and attributes of `target` and the cached diagnostics are
+/// re-emitted.
 /// moreOnMiss and moreOnHit are two callbacks for extra functionality to
 /// perform for cache miss and hit accordingly if needed.
 AsyncRT::AnyAsyncValueRef cachedTransform(

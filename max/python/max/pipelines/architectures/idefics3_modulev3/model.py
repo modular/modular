@@ -20,19 +20,19 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import functional as F
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -43,8 +43,10 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights.weight_loading import (
     auto_cast_weights_from_env,
 )
+from max.tensor import default_dtype
 
 from .batch_processor import Idefics3ModuleV3BatchProcessor
+from .inputs import Idefics3Inputs
 from .model_config import Idefics3Config
 from .text_model.idefics3_text import Idefics3Language
 from .vision_model.idefics3_vision import Idefics3VisionModel
@@ -73,23 +75,6 @@ def _assert_image_embeddings_invariant(
         f"Vision embedding shape mismatch: {embed_count} embeddings "
         f"but {indices_count} indices."
     )
-
-
-@dataclass
-class Idefics3Inputs(ModelInputs):
-    """Inputs for the Idefics3 model."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    return_n_logits: Buffer
-
-    # Vision inputs
-    pixel_values: Buffer | None = None
-    image_token_indices: Buffer | None = None
-
-    @property
-    def has_vision_inputs(self) -> bool:
-        return self.pixel_values is not None
 
 
 class Idefics3Model(
@@ -133,7 +118,7 @@ class Idefics3Model(
             memory_plan=memory_plan,
         )
 
-        self.vision_model, self.language_model = self.load_model()
+        self.vision_model, self.language_model = self._load_towers(session)
         self.image_token_id = self.huggingface_config.image_token_id
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -166,12 +151,12 @@ class Idefics3Model(
         )
         return idefics3_config
 
-    def _compile_vision_model(
+    def _vision_spec(
         self,
         config: Idefics3Config,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
-        """Build and compile the vision model using F.lazy()."""
+    ) -> GraphSpec:
+        """Build the vision model using F.lazy()."""
         image_size = config.vision_config.image_size
 
         pixel_values_type = TensorType(
@@ -184,20 +169,20 @@ class Idefics3Model(
             nn_vision = Idefics3VisionModel(config.vision_config)
             nn_vision.to(self.devices[0])
 
-        compiled = nn_vision.compile(
-            pixel_values_type,
+        return GraphSpec(
+            nn_vision,
+            type(nn_vision).__qualname__,
+            [pixel_values_type],
             weights=state_dict,
             auto_cast=auto_cast_weights_from_env(),
         )
 
-        return compiled
-
-    def _compile_language_model(
+    def _language_spec(
         self,
         config: Idefics3Config,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
-        """Build and compile the language model using F.lazy()."""
+    ) -> GraphSpec:
+        """Build the language model using F.lazy()."""
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
 
@@ -219,12 +204,12 @@ class Idefics3Model(
             )
             nn_language.to(self.devices[0])
 
-        compiled = nn_language.compile(
-            *language_input_types,
+        return GraphSpec(
+            nn_language,
+            type(nn_language).__qualname__,
+            language_input_types,
             weights=state_dict,
         )
-
-        return compiled
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the Idefics3 model."""
@@ -266,7 +251,7 @@ class Idefics3Model(
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         # Unpack outputs (V3 returns Tensor objects with .driver_tensor).

@@ -30,6 +30,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 //===----------------------------------------------------------------------===//
 // DeadArgumentEliminationPass
@@ -281,7 +283,7 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
 
     if (auto call = dyn_cast<KGENCallOpInterface>(use.getOwner())) {
       // Only support caller is CallOp for now, so that things like
-      // AsyncCallOp, kgen.create_closure which are KGENCallOpInterface but
+      // AsyncCallOp, kgen.create_func_ptr which are KGENCallOpInterface but
       // should be marked as always Live.
       // TODO: refine this logic we want to support rewriting other types of
       // KGENCallOpInterface.
@@ -317,9 +319,7 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
     }
   }
 
-  // Should not be reachable here because all uses should eventually reach a
-  // return in a function if not before.
-  llvm::llvm_unreachable_internal("DeadArgumentElimination surveyUse failed.");
+  return MaybeLive;
 }
 
 DeadArgumentElimination::Liveness
@@ -372,7 +372,7 @@ void DeadArgumentElimination::surveyFunction(FuncOp func) {
     for (auto [call, node] : caller->getCallSites(node)) {
       if (!isa<CallOp>(call)) {
         // Only support caller is CallOp for now, so that things like
-        // AsyncCallOp, kgen.create_closure which are KGENCallOpInterface but
+        // AsyncCallOp, kgen.create_func_ptr which are KGENCallOpInterface but
         // should be marked as always Live.
         // TODO: refine this logic we want to support rewriting other types of
         // KGENCallOpInterface.
@@ -536,12 +536,18 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
       FuncType::get(newFuncType, argConventions, currSig.getFnEffects(),
                     currSig.getMetadata(), currSig.getArgListAttrs());
 
+  // Read before the erase below, while the original positions still hold.
+  ArrayAttr oldFnArgAttrs = func.getFnArgAttrs();
+  SmallVector<Attribute> newFnArgAttrs;
+
   Block *block = func.getBody(0);
   unsigned numArgs = block->getNumArguments();
 
   // Create and rewire live arguments.
   for (BlockArgument arg : liveArguments) {
     node->liveArguments.emplace_back(arg.getArgNumber());
+    if (arg.getArgNumber() < oldFnArgAttrs.size())
+      newFnArgAttrs.push_back(oldFnArgAttrs[arg.getArgNumber()]);
     arg.replaceAllUsesWith(block->addArgument(arg.getType(), arg.getLoc()));
   }
 
@@ -559,6 +565,9 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
 
   // Set the FuncTypeGenerator.
   func.setFuncTypeGenerator(GeneratorType::get(/*inputParamTypes=*/{}, newSig));
+  if (!oldFnArgAttrs.empty()) {
+    func.setFnArgAttrsAttr(ArrayAttr::get(func.getContext(), newFnArgAttrs));
+  }
 
   // Update node state to prepare for callee rewrites.
   node->updated = true;
@@ -580,7 +589,7 @@ void DeadArgumentElimination::rewriteCalleesFromFunction(CallGraphNode *node) {
 
     if (auto kgenCall = dyn_cast<CallOp>(call.getOperation())) {
       auto newOp = CallOp::create(b, call.getLoc(),
-                                  SymbolConstantAttr::get(calleeNode->func),
+                                  FuncSymbolGenerator::get(calleeNode->func),
                                   newOperands);
 
       kgenCall->replaceAllUsesWith(newOp.getResults());
@@ -608,10 +617,9 @@ void DeadArgumentElimination::rewriteCalleesFromFunction(CallGraphNode *node) {
 }
 
 void DeadArgumentElimination::markLiveMaybeIndirectCalled() {
-  mlir::AttrTypeWalker walker;
-  walker.addWalk([&](SymbolConstantAttr attr) {
+  auto markLiveSymbol = [&](SymbolRefAttr symbol) {
     Operation *op =
-        symbolTable.lookup(cast<FlatSymbolRefAttr>(attr.getSymbol()).getAttr());
+        symbolTable.lookup(cast<FlatSymbolRefAttr>(symbol).getAttr());
 
     FuncOp func = dyn_cast_if_present<FuncOp>(op);
     if (!func)
@@ -622,11 +630,14 @@ void DeadArgumentElimination::markLiveMaybeIndirectCalled() {
         llvm::dbgs()
         << "Function " << func.getName()
         << " maybe live due references other than a CallOp. Mark live.\n");
-  });
+  };
+  mlir::AttrTypeWalker walker;
+  walker.addWalk(
+      [&](FuncSymbolAttr attr) { markLiveSymbol(attr.getSymbol()); });
 
   module.walk([&](Operation *op) {
     // Only support caller is CallOp for now, so that things like
-    // AsyncCallOp, kgen.create_closure which are KGENCallOpInterface but
+    // AsyncCallOp, kgen.create_func_ptr which are KGENCallOpInterface but
     // should be marked as always Live.
     if (isa<KGEN::CallOp>(op))
       return WalkResult::advance();

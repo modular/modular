@@ -22,7 +22,6 @@ from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
-from std.sys import has_apple_gpu_accelerator
 from std.testing import assert_equal
 
 comptime TILE_SIZE = 32
@@ -161,7 +160,7 @@ def main() raises:
             # 0.5 + 1.5
             assert_equal(fill_host[2], 2.0)
 
-        comptime if not has_apple_gpu_accelerator():
+        comptime if not ctx.target.is_apple_gpu():
             var local_device = ctx.enqueue_create_buffer[.float32](2)
             var local_compiled = ctx.compile_function[_local_fill_kernel]()
             ctx.enqueue_function(

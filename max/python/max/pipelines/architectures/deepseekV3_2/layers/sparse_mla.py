@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Sparse latent attention for DeepSeek-V3.2."""
+
 from __future__ import annotations
 
 import logging
@@ -24,24 +26,24 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.attention.multi_latent_attention import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
     MLAPrefillMetadata,
 )
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.comm import Allreduce
-from max.nn.kernels import (
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.kernels import (
     mla_decode_graph,
     mla_prefill_decode_graph,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import quantized_matmul
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.quant_ops import quantized_matmul
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 from .indexer import Indexer
 
@@ -99,6 +101,7 @@ def _sparse_prefill_head_count_supported(
     return n_heads in _SPARSE_PREFILL_TP_SHARDED_HEADS and cache_dtype in (
         DType.bfloat16,
         DType.float8_e4m3fn,
+        DType.uint8,
     )
 
 
@@ -106,8 +109,83 @@ def _sparse_prefill_head_count_supported(
 _WARNED_FALLBACK_HEADS: set[int] = set()
 
 
+def sparse_selection_width(kv_params: KVCacheParams, index_topk: int) -> int:
+    """Returns the width of one token's selected cache rows.
+
+    An NVFP4 cache pages its scales apart from its values, so the indexer
+    follows each token's value rows with the matching scale-pool rows.
+    """
+    return 2 * index_topk if kv_params.is_nvfp4_kv_cache else index_topk
+
+
+def _carried_rows(
+    prev_topk_indices: Sequence[TensorValue] | None, n: int
+) -> list[TensorValue | None]:
+    """Returns the carried selection's physical rows on each of ``n`` devices.
+
+    The carry is empty before the first full layer.
+    """
+    if not prev_topk_indices:
+        return [None] * n
+    if len(prev_topk_indices) != n:
+        raise ValueError(
+            f"expected 0 or {n} carried top-k tensors,"
+            f" got {len(prev_topk_indices)}"
+        )
+    return list(prev_topk_indices)
+
+
+def _select_rows(
+    indexer: Indexer | None,
+    reuse_prev_topk: bool,
+    prev_topk_indices: TensorValue | None,
+    selection_lag: int,
+    x: TensorValue,
+    q_a_normed: TensorValue,
+    freqs_cis: TensorValue,
+    input_row_offsets: TensorValue,
+    indexer_kv_collection: PagedCacheValues,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+) -> TensorValue:
+    """Returns the physical MLA cache rows this layer attends to.
+
+    A ``full`` layer runs its ``indexer`` to select new rows. A ``shared``
+    layer or a later MTP draft step reuses ``prev_topk_indices``: physical
+    rows name a page and offset, not a layer, so they are valid for this
+    layer's own MLA cache too.
+    """
+    if selection_lag != 0 and not reuse_prev_topk:
+        raise ValueError(
+            f"selection_lag={selection_lag} describes a reused selection,"
+            " but reuse_prev_topk is False."
+        )
+    if indexer is None or reuse_prev_topk:
+        if prev_topk_indices is None:
+            raise ValueError(
+                "Shared (skip_topk) sparse attention layers require top-k "
+                "indices from a previous full indexer layer."
+            )
+        return prev_topk_indices
+    # The MLA ops read only the selection's physical rows, so the top-k
+    # writes nothing else.
+    _, rows = indexer(
+        x,
+        q_a_normed,
+        freqs_cis,
+        input_row_offsets,
+        indexer_kv_collection,
+        layer_idx,
+        mask_variant=MHAMaskVariant.CAUSAL_MASK,
+        mla_collection=kv_collection,
+        write_logical=False,
+    )
+    assert rows is not None
+    return rows
+
+
 class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
-    """FP8 latent attention with optional sparse decode (logical KV positions; MOGG remaps)."""
+    """FP8 latent attention with optional sparse decode over physical MLA cache rows."""
 
     def __init__(
         self,
@@ -134,6 +212,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         index_topk: int = 2048,
         skip_topk: bool = False,
         indexer_rope_interleave: bool = False,
+        kv_b_proj_dtype: DType | None = None,
     ):
         super().__init__(
             rope=rope,
@@ -153,6 +232,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             buffer_size=buffer_size,
             graph_mode=graph_mode,
             norm_dtype=norm_dtype,
+            kv_b_proj_dtype=kv_b_proj_dtype,
         )
 
         self.index_n_heads = index_n_heads
@@ -211,11 +291,9 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         kv_a_proj_layernorm: TensorValue,
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
         *,
-        sparse_indices: TensorValue | None = None,
-        sparse_topk_lengths: TensorValue | None = None,
-        sparse_attn_sink: TensorValue | None = None,
         sparse_indices_stride: int | None = None,
-        index_share: bool = False,
+        physical_rows: TensorValue | None = None,
+        selection_lag: int = 0,
     ) -> TensorValue:
         attn_kwargs: dict[str, Any] = {
             "q": xq,
@@ -300,15 +378,16 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             )
 
         sparse_kw: dict[str, Any] = {}
-        if sparse_indices is not None:
+        if physical_rows is not None:
+            # The read-once shared-index fold (`index_share`) masks by logical
+            # key position, which these layers no longer have the indexer
+            # write; at the one query token MTP draft steps decode, the fold
+            # never launched anyway.
             sparse_kw = {
-                "sparse_indices": sparse_indices,
-                "sparse_topk_lengths": sparse_topk_lengths,
-                "sparse_attn_sink": sparse_attn_sink,
+                "sparse_indices": physical_rows,
+                "physical_indices": True,
                 "sparse_indices_stride": sparse_indices_stride,
-                # Read-once shared-KV fold (KERN-3141); only True when the
-                # caller has a shared top-k across folded MTP positions.
-                "index_share": index_share,
+                "selection_lag": selection_lag,
             }
 
         if effective_graph_mode == "decode":
@@ -331,7 +410,10 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
         prev_topk_indices: TensorValue | None = None,
         reuse_prev_topk: bool = False,
+        selection_lag: int = 0,
+        indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs sparse MLA attention with FP8 weights."""
         wqkv, wqkv_scale = self.wqkv
         qkv = quantized_matmul(
             x=x,
@@ -359,51 +441,20 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
 
         freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
-        if self.indexer is not None and not reuse_prev_topk:
-            # ``full`` layer: run the lightning indexer and select top-k keys.
-            topk_indices = self.indexer(
-                x,
-                q_a_normed,
-                freqs_cis,
-                input_row_offsets,
-                indexer_kv_collection,
-                layer_idx,
-                mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            )
-        else:
-            # ``shared`` layer: reuse the previous full layer's top-k selection
-            # (cross-layer index sharing). The indices are sequence positions,
-            # so they are valid for this layer's own MLA cache.
-            if prev_topk_indices is None:
-                raise ValueError(
-                    "Shared (skip_topk) sparse attention layers require top-k "
-                    "indices from a previous full indexer layer."
-                )
-            topk_indices = prev_topk_indices
-
-        sparse_topk_lengths = ops.broadcast_to(
-            ops.constant(
-                self.index_topk,
-                dtype=DType.int32,
-                device=xq.device,
-            ),
-            (xq.shape[0],),
-        )
-        sparse_attn_sink = ops.broadcast_to(
-            ops.constant(-1.0e38, dtype=DType.float32, device=xq.device),
-            (self.n_heads,),
+        rows = _select_rows(
+            self.indexer,
+            reuse_prev_topk,
+            prev_topk_indices,
+            selection_lag,
+            x,
+            q_a_normed,
+            freqs_cis,
+            input_row_offsets,
+            indexer_kv_collection,
+            kv_collection,
+            layer_idx if indexer_layer_idx is None else indexer_layer_idx,
         )
 
-        # Read-once shared-index MTP fold (KERN-3141). Enable the fold only for
-        # a *full* indexer layer (``skip_topk`` is False) that reuses a prior
-        # selection: there the reused list is the single shared MTP top-k
-        # (``index_share_for_mtp_iteration``), so every folded q position
-        # attends one gathered pass. ``skip_topk`` (cross-layer) reuse keeps a
-        # per-position list, so it must stay on the unfolded path. The decode
-        # dispatch additionally self-gates on the fold shape (q_len in [2, 8]);
-        # default-off remains the production behavior (see Phase 8: index_share
-        # is only True at q_len=1 today, where the fold does not fire).
-        index_share = reuse_prev_topk and not self.skip_topk
         attn_out = self._mla_impl(
             xq,
             kv,
@@ -413,14 +464,14 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             freqs_cis,
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
-            sparse_indices=topk_indices,
-            sparse_topk_lengths=sparse_topk_lengths,
-            sparse_attn_sink=sparse_attn_sink,
-            sparse_indices_stride=self.index_topk,
-            index_share=index_share,
+            sparse_indices_stride=sparse_selection_width(
+                self.kv_params, self.index_topk
+            ),
+            physical_rows=rows,
+            selection_lag=selection_lag,
         )
 
-        return self.o_proj(attn_out), topk_indices
+        return self.o_proj(attn_out), rows
 
     def shard(  # type: ignore[override]
         self, devices: Iterable[DeviceRef]
@@ -462,7 +513,13 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             devices
         )
         kv_b_proj_shards = self.kv_b_proj.shard(devices)
-        kv_b_proj_scale_shards = self.kv_b_proj_scale.shard(devices)
+        # `None` when the checkpoint leaves `kv_b_proj` unquantized; the absorb
+        # then needs no scale to shard alongside it.
+        kv_b_proj_scale_shards = (
+            self.kv_b_proj_scale.shard(devices)
+            if self.kv_b_proj_scale is not None
+            else None
+        )
         o_proj_shards = self.o_proj.shard(devices)
 
         if self.indexer is not None:
@@ -493,6 +550,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 v_head_dim=self.v_head_dim,
                 buffer_size=self.BUFFER_TOK_SIZE,
                 norm_dtype=self.norm_dtype,
+                kv_b_proj_dtype=self.kv_b_proj.dtype,
                 index_n_heads=self.index_n_heads,
                 index_head_dim=self.index_head_dim,
                 index_topk=self.index_topk,
@@ -514,7 +572,8 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 shard_idx
             ]
             replica.kv_b_proj = kv_b_proj_shards[shard_idx]
-            replica.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
+            if kv_b_proj_scale_shards is not None:
+                replica.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
             replica.o_proj = o_proj_shards[shard_idx]
 
             if self.indexer is not None:
@@ -576,7 +635,10 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
         prev_topk_indices: Sequence[TensorValue] | None = None,
         reuse_prev_topk: bool = False,
+        selection_lag: int = 0,
+        indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the data-parallel devices."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 
@@ -597,21 +659,23 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
 
         outs: list[TensorValue] = []
         topk_indices: list[TensorValue] = []
+        prev_rows = _carried_rows(prev_topk_indices, n)
         for i in range(n):
-            # An empty list means no previous full layer has produced a
-            # selection yet (the first layer); treat it as ``None``.
-            prev_topk_i = prev_topk_indices[i] if prev_topk_indices else None
+            prev_topk_i = prev_rows[i]
             if xs[i].shape[0] == 0:
                 outs.append(xs[i])
                 # No tokens on this device: carry the (empty) top-k forward.
-                topk_indices.append(
-                    prev_topk_i
-                    if prev_topk_i is not None
-                    else ops.broadcast_to(
+                if prev_topk_i is None:
+                    prev_topk_i = ops.broadcast_to(
                         ops.constant(0, dtype=DType.int32, device=xs[i].device),
-                        (xs[i].shape[0], self.index_topk),
+                        (
+                            xs[i].shape[0],
+                            sparse_selection_width(
+                                self.kv_params, self.index_topk
+                            ),
+                        ),
                     )
-                )
+                topk_indices.append(prev_topk_i)
                 continue
 
             mla_prefill_metadata_i: MLAPrefillMetadata | None
@@ -637,6 +701,8 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
                 mla_prefill_metadata=mla_prefill_metadata_i,
                 prev_topk_indices=prev_topk_i,
                 reuse_prev_topk=reuse_prev_topk,
+                selection_lag=selection_lag,
+                indexer_layer_idx=indexer_layer_idx,
             )
             outs.append(out_i)
             topk_indices.append(topk_i)
@@ -690,7 +756,10 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
         prev_topk_indices: Sequence[TensorValue] | None = None,
         reuse_prev_topk: bool = False,
+        selection_lag: int = 0,
+        indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the tensor-parallel devices."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 
@@ -711,6 +780,7 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
 
         outs: list[TensorValue] = []
         topk_indices: list[TensorValue] = []
+        prev_rows = _carried_rows(prev_topk_indices, n)
         for i in range(n):
             mla_prefill_metadata_i: MLAPrefillMetadata | None
             if (
@@ -729,12 +799,10 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
                 freqs_cis=freqs_cis[i],
                 input_row_offsets=input_row_offsets[i],
                 mla_prefill_metadata=mla_prefill_metadata_i,
-                # An empty list means no previous full layer has produced a
-                # selection yet (the first layer); treat it as ``None``.
-                prev_topk_indices=(
-                    prev_topk_indices[i] if prev_topk_indices else None
-                ),
+                prev_topk_indices=prev_rows[i],
                 reuse_prev_topk=reuse_prev_topk,
+                selection_lag=selection_lag,
+                indexer_layer_idx=indexer_layer_idx,
             )
             outs.append(out_i)
             topk_indices.append(topk_i)
@@ -749,7 +817,7 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
 
 
 class SparseLatentAttentionWithRope(LatentAttentionWithRope):
-    """BF16 latent attention with optional sparse decode (logical KV positions; MOGG remaps)."""
+    """BF16 latent attention with optional sparse decode over physical MLA cache rows."""
 
     def __init__(
         self,
@@ -875,10 +943,9 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
         epsilon: float = 1e-6,
         *,
-        sparse_indices: TensorValue | None = None,
-        sparse_topk_lengths: TensorValue | None = None,
-        sparse_attn_sink: TensorValue | None = None,
         sparse_indices_stride: int | None = None,
+        physical_rows: TensorValue | None = None,
+        selection_lag: int = 0,
     ) -> TensorValue:
         attn_kwargs: dict[str, Any] = {
             "q": xq,
@@ -953,12 +1020,12 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             )
 
         sparse_kw: dict[str, Any] = {}
-        if sparse_indices is not None:
+        if physical_rows is not None:
             sparse_kw = {
-                "sparse_indices": sparse_indices,
-                "sparse_topk_lengths": sparse_topk_lengths,
-                "sparse_attn_sink": sparse_attn_sink,
+                "sparse_indices": physical_rows,
+                "physical_indices": True,
                 "sparse_indices_stride": sparse_indices_stride,
+                "selection_lag": selection_lag,
             }
 
         if effective_graph_mode == "decode":
@@ -981,7 +1048,10 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
         prev_topk_indices: TensorValue | None = None,
         reuse_prev_topk: bool = False,
+        selection_lag: int = 0,
+        indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs sparse MLA attention over the hidden states."""
         q_lora_rank = self.q_lora_rank
         if q_lora_rank is None:
             raise ValueError(
@@ -997,35 +1067,18 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
 
         freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
-        if self.indexer is not None and not reuse_prev_topk:
-            topk_indices = self.indexer(
-                x,
-                q_a_normed,
-                freqs_cis,
-                input_row_offsets,
-                indexer_kv_collection,
-                layer_idx,
-                mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            )
-        else:
-            if prev_topk_indices is None:
-                raise ValueError(
-                    "Shared (skip_topk) sparse attention layers require top-k "
-                    "indices from a previous full indexer layer."
-                )
-            topk_indices = prev_topk_indices
-
-        sparse_topk_lengths = ops.broadcast_to(
-            ops.constant(
-                self.index_topk,
-                dtype=DType.int32,
-                device=xq.device,
-            ),
-            (xq.shape[0],),
-        )
-        sparse_attn_sink = ops.broadcast_to(
-            ops.constant(-1.0e38, dtype=DType.float32, device=xq.device),
-            (self.n_heads,),
+        rows = _select_rows(
+            self.indexer,
+            reuse_prev_topk,
+            prev_topk_indices,
+            selection_lag,
+            x,
+            q_a_normed,
+            freqs_cis,
+            input_row_offsets,
+            indexer_kv_collection,
+            kv_collection,
+            layer_idx if indexer_layer_idx is None else indexer_layer_idx,
         )
 
         attn_out = self._mla_impl_sparse(
@@ -1037,13 +1090,14 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             freqs_cis,
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
-            sparse_indices=topk_indices,
-            sparse_topk_lengths=sparse_topk_lengths,
-            sparse_attn_sink=sparse_attn_sink,
-            sparse_indices_stride=self.index_topk,
+            sparse_indices_stride=sparse_selection_width(
+                self.kv_params, self.index_topk
+            ),
+            physical_rows=rows,
+            selection_lag=selection_lag,
         )
 
-        return self.o_proj(attn_out), topk_indices
+        return self.o_proj(attn_out), rows
 
     def shard(  # type: ignore[override]
         self, devices: Iterable[DeviceRef]
@@ -1169,6 +1223,7 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Splits the prefill metadata across the data-parallel devices."""
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
@@ -1194,7 +1249,10 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
         prev_topk_indices: list[TensorValue] | None = None,
         reuse_prev_topk: bool = False,
+        selection_lag: int = 0,
+        indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the data-parallel devices."""
         del signal_buffers
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -1216,18 +1274,22 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
 
         outs: list[TensorValue] = []
         topk_outs: list[TensorValue] = []
+        prev_rows = _carried_rows(prev_topk_indices, n)
         for i in range(n):
-            prev_topk_i = prev_topk_indices[i] if prev_topk_indices else None
+            prev_topk_i = prev_rows[i]
             if xs[i].shape[0] == 0:
                 outs.append(xs[i])
-                topk_outs.append(
-                    prev_topk_i
-                    if prev_topk_i is not None
-                    else ops.broadcast_to(
+                if prev_topk_i is None:
+                    prev_topk_i = ops.broadcast_to(
                         ops.constant(0, dtype=DType.int32, device=xs[i].device),
-                        (xs[i].shape[0], self.index_topk),
+                        (
+                            xs[i].shape[0],
+                            sparse_selection_width(
+                                self.kv_params, self.index_topk
+                            ),
+                        ),
                     )
-                )
+                topk_outs.append(prev_topk_i)
                 continue
 
             mla_prefill_metadata_i: MLAPrefillMetadata | None
@@ -1253,6 +1315,8 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
                 mla_prefill_metadata=mla_prefill_metadata_i,
                 prev_topk_indices=prev_topk_i,
                 reuse_prev_topk=reuse_prev_topk,
+                selection_lag=selection_lag,
+                indexer_layer_idx=indexer_layer_idx,
             )
             outs.append(attn_out)
             topk_outs.append(topk_indices)
@@ -1280,6 +1344,7 @@ class TensorParallelSparseLatentAttentionWithRope(
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Splits the prefill metadata across the tensor-parallel devices."""
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
@@ -1305,7 +1370,10 @@ class TensorParallelSparseLatentAttentionWithRope(
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
         prev_topk_indices: list[TensorValue] | None = None,
         reuse_prev_topk: bool = False,
+        selection_lag: int = 0,
+        indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the tensor-parallel devices."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 
@@ -1326,6 +1394,7 @@ class TensorParallelSparseLatentAttentionWithRope(
 
         outs: list[TensorValue] = []
         topk_outs: list[TensorValue] = []
+        prev_rows = _carried_rows(prev_topk_indices, n)
         for i in range(n):
             mla_prefill_metadata_i: MLAPrefillMetadata | None
             if (
@@ -1336,7 +1405,7 @@ class TensorParallelSparseLatentAttentionWithRope(
             else:
                 mla_prefill_metadata_i = None
 
-            prev_topk_i = prev_topk_indices[i] if prev_topk_indices else None
+            prev_topk_i = prev_rows[i]
             attn_out, topk_indices = self.list_of_attentions[i](
                 layer_idx=layer_idx,
                 x=xs[i],
@@ -1347,6 +1416,8 @@ class TensorParallelSparseLatentAttentionWithRope(
                 mla_prefill_metadata=mla_prefill_metadata_i,
                 prev_topk_indices=prev_topk_i,
                 reuse_prev_topk=reuse_prev_topk,
+                selection_lag=selection_lag,
+                indexer_layer_idx=indexer_layer_idx,
             )
             outs.append(attn_out)
             topk_outs.append(topk_indices)

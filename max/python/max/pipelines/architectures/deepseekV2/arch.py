@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for DeepSeek-V2."""
 
 from max.experimental.cascade.pipelines.common_textgen import (
     CommonTextGenPipeline,

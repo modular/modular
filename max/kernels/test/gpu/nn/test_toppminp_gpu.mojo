@@ -19,15 +19,15 @@ from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from layout import (
-    Idx,
     Coord,
+    Idx,
     DefaultEngine,
     TileTensor,
     row_major,
 )
 from nn.softmax import softmax_inline
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
-from std.testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from std.utils import IndexList
 
@@ -65,9 +65,9 @@ def time_kernel[](
     kernel_name: String,
     func: Some[def(DeviceContext) raises -> None],
 ) raises:
-    @always_inline
+    @inline(.always)
     def bench_func(mut m: Bencher) {imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
@@ -86,9 +86,10 @@ def fill_random[
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.num_elements()
+    var flat = buffer.reshape(row_major(total_elements))
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.raw_store(i, random_value.cast[dtype]())
+        flat[i] = random_value.cast[dtype]()
 
 
 def fill_iota[
@@ -114,6 +115,7 @@ def merge[
     """Merge two sorted subarrays into one sorted array."""
     var left_size = mid - start
     var right_size = end - mid
+    var flat = buf.reshape(row_major(buf.num_elements()))
 
     # Create temporary arrays
     var left_ptr = List[Scalar[dtype]](unsafe_uninit_length=left_size)
@@ -121,9 +123,9 @@ def merge[
 
     # Copy data to temporary arrays
     for i in range(left_size):
-        left_ptr[i] = buf.raw_load(start + i)
+        left_ptr[i] = flat[start + i]
     for i in range(right_size):
-        right_ptr[i] = buf.raw_load(mid + i)
+        right_ptr[i] = flat[mid + i]
 
     # Merge back into original array
     var i = 0  # Index for left subarray
@@ -132,21 +134,21 @@ def merge[
 
     while i < left_size and j < right_size:
         if left_ptr[i] >= right_ptr[j]:  # Use >= for descending order
-            buf.raw_store(k, left_ptr[i])
+            flat[k] = left_ptr[i]
             i += 1
         else:
-            buf.raw_store(k, right_ptr[j])
+            flat[k] = right_ptr[j]
             j += 1
         k += 1
 
     # Copy remaining elements if any
     while i < left_size:
-        buf.raw_store(k, left_ptr[i])
+        flat[k] = left_ptr[i]
         i += 1
         k += 1
 
     while j < right_size:
-        buf.raw_store(k, right_ptr[j])
+        flat[k] = right_ptr[j]
         j += 1
         k += 1
 
@@ -199,22 +201,17 @@ def test_is_sorted_descending[
     var batch_size = buf.num_elements() // vocab_size
     var _sorted_flag = List(length=batch_size, fill=True)
     var sorted_flag = Span(_sorted_flag)
+    var flat = buf.reshape(row_major(buf.num_elements()))
 
     def process_rows(start_batch: Int, end_batch: Int) {var}:
         # Process a chunk of batches
         for batch_id in range(start_batch, end_batch):
             var offset = batch_id * vocab_size
             for i in range(vocab_size - 1):
-                if buf.raw_load(offset + i) < buf.raw_load(offset + i + 1):
+                if flat[offset + i] < flat[offset + i + 1]:
                     print(
-                        "[",
-                        batch_id,
-                        "][",
-                        i,
-                        "]: ",
-                        buf.raw_load(offset + i),
-                        " < ",
-                        buf.raw_load(offset + i + 1),
+                        t"[ {batch_id} ][ {i} ]:  {flat[offset + i]}  < "
+                        t" {flat[offset + i + 1]}"
                     )
                     sorted_flag[batch_id] = False
                     break
@@ -236,20 +233,12 @@ def test_is_sorted_descending[
 
 def print_test_case(test_case: TestCase):
     print(
-        "==== Running",
-        "Top-P" if test_case.is_top_p else "Min-P",
-        ", dtype=",
-        test_case.dtype,
-        ", out_idx_type=",
-        test_case.out_idx_type,
-        "sampling with batch_size=",
-        test_case.batch_size,
-        ", vocab_size=",
-        test_case.vocab_size,
-        ", temperature=",
-        test_case.temperature,
-        ", p_threshold=",
-        test_case.p_threshold,
+        t"""==== Running {"Top-P" if test_case.is_top_p else "Min-P"} ,"""
+        t" dtype= {test_case.dtype} , out_idx_type="
+        t" {test_case.out_idx_type} sampling with batch_size="
+        t" {test_case.batch_size} , vocab_size= {test_case.vocab_size} ,"
+        t" temperature= {test_case.temperature} , p_threshold="
+        t" {test_case.p_threshold}"
     )
 
 
@@ -285,24 +274,18 @@ def test_case_sampling(
     var in_logits_ptr = ctx.enqueue_create_host_buffer[dtype](
         batch_size * vocab_size
     )
-    var in_logits = TileTensor(
-        in_logits_ptr, row_major(Coord(batch_size, vocab_size))
-    )
+    var in_logits = TileTensor(in_logits_ptr, row_major(batch_size, vocab_size))
     var token_ids_ptr = ctx.enqueue_create_host_buffer[out_idx_type](
         batch_size * 1
     )
-    var token_ids = TileTensor(
-        token_ids_ptr, row_major(Coord(batch_size, Int(1)))
-    )
+    var token_ids = TileTensor(token_ids_ptr, row_major(batch_size, Int(1)))
     var p_thresholds_ptr = ctx.enqueue_create_host_buffer[dtype](batch_size)
-    var p_thresholds = TileTensor(
-        p_thresholds_ptr, row_major(Coord(batch_size))
-    )
+    var p_thresholds = TileTensor(p_thresholds_ptr, row_major(batch_size))
 
     # Fill tensors
     fill_fn(in_logits)
     for i in range(batch_size):
-        p_thresholds.raw_store(i, p_threshold)
+        p_thresholds[i] = p_threshold
 
     # Create device buffers
     var device_in_buf = ctx.enqueue_create_buffer[dtype](
@@ -332,11 +315,22 @@ def test_case_sampling(
         probs_cpu_test_ptr,
         row_major(batch_size, vocab_size),
     )
+    var in_logits_flat = in_logits.reshape(row_major(in_logits.num_elements()))
+    var in_logits_cpu_test_flat = in_logits_cpu_test.reshape(
+        row_major(in_logits_cpu_test.num_elements())
+    )
     for i in range(in_logits.num_elements()):
-        in_logits_cpu_test.raw_store(i, in_logits.raw_load(i) / temperature)
+        in_logits_cpu_test_flat[i] = in_logits_flat[i] / temperature
 
-    softmax_inline[simd_width=1, rank=rank](
-        in_logits_cpu_test,
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var in_logits_cpu_test} -> SIMD[dtype, width]:
+        return in_logits_cpu_test.load[width=width, alignment=1](coords)
+
+    softmax_inline[dtype, simd_width=1, rank=rank](
+        input_fn,
+        in_logits_cpu_test.layout.shape_coord(),
         probs_cpu_test,
         axis=1,
     )
@@ -359,7 +353,7 @@ def test_case_sampling(
 
     comptime if DEBUG_BENCH:
 
-        @always_inline
+        @inline(.always)
         def run_func(ctx: DeviceContext) raises {var}:
             if is_top_p:
                 top_p_sampling_gpu(
@@ -413,19 +407,18 @@ def test_case_sampling(
     # to the softmax & sort kernels so this is a good check.
     assert_equal(test_is_sorted_descending(in_logits, vocab_size), True)
     # (More rigorous) Check if the sorted probs are the same as the cpu test
+    var probs_cpu_test_flat = probs_cpu_test.reshape(
+        row_major(probs_cpu_test.num_elements())
+    )
     for i in range(in_logits.num_elements()):
         try:
             assert_almost_equal(
-                in_logits.raw_load(i), probs_cpu_test.raw_load(i), atol=5e-3
+                in_logits_flat[i], probs_cpu_test_flat[i], atol=5e-3
             )
         except e:
             print(
-                "i: ",
-                i,
-                "in_logits: ",
-                in_logits.raw_load(i),
-                "probs_cpu_test: ",
-                probs_cpu_test.raw_load(i),
+                t"i:  {i} in_logits:  {in_logits_flat[i]} probs_cpu_test: "
+                t" {probs_cpu_test_flat[i]}"
             )
             raise e^
 
@@ -469,6 +462,141 @@ def test_toppminp_gpu[
     test_case_sampling(ctx, test_case3, fill_fn)
 
 
+def test_minp_max_threshold[
+    dtype: DType,
+    out_idx_type: DType,
+](
+    ctx: DeviceContext,
+    fill_fn: Some[
+        def[
+            dtype: DType
+        ](
+            mut TileTensor[
+                mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
+            ]
+        ) -> None
+    ],
+) raises:
+    """Min-P's sort-free path, `min_p_sampling_gpu[use_max_threshold=True]`.
+
+    Both paths draw from `{i : p_i >= min_p * max_probability}`, so every
+    drawn token's probability, read off the CPU softmax of the same logits,
+    must be at least that threshold. At min_p 1.0 the set is only the tokens
+    tied at the row maximum, so the token's probability must be the row's
+    maximum as well; a smaller min_p keeps a wider set, and the sorted and
+    sort-free paths may then draw different tokens from it, since they walk
+    the set in different orders.
+    """
+    comptime batch_size = 4
+    comptime vocab_size = 32003  # not a multiple of the sampling block size
+    comptime n_cases = 2
+
+    var logits_h = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * vocab_size
+    )
+    var logits = TileTensor(logits_h, row_major(batch_size, vocab_size))
+    fill_fn(logits)
+    var probs_h = ctx.enqueue_create_host_buffer[dtype](batch_size * vocab_size)
+    var probs = TileTensor(probs_h, row_major(batch_size, vocab_size))
+
+    @inline(.always)
+    def input_fn[width: Int](coords: Coord) {var logits} -> SIMD[dtype, width]:
+        return logits.load[width=width, alignment=1](coords)
+
+    softmax_inline[dtype, simd_width=1, rank=2](
+        input_fn, logits.layout.shape_coord(), probs, axis=1
+    )
+    var probs_flat = probs.reshape(row_major(batch_size * vocab_size))
+
+    var thresholds_h = ctx.enqueue_create_host_buffer[dtype](batch_size)
+    var thresholds = TileTensor(thresholds_h, row_major(batch_size))
+    var logits_d = ctx.enqueue_create_buffer[dtype](batch_size * vocab_size)
+    var thresholds_d = ctx.enqueue_create_buffer[dtype](batch_size)
+    var tokens_d = ctx.enqueue_create_buffer[out_idx_type](batch_size)
+    var tokens_h = ctx.enqueue_create_host_buffer[out_idx_type](batch_size)
+    var logits_dt = TileTensor(logits_d, row_major(batch_size, vocab_size))
+    var thresholds_dt = TileTensor(thresholds_d, row_major(batch_size))
+    var tokens_dt = TileTensor[mut=True](tokens_d, row_major(batch_size, 1))
+    var tokens = TileTensor(tokens_h, row_major(batch_size))
+    var tokens_flat = tokens.reshape(row_major(batch_size))
+
+    comptime cases = (1.0, 0.1)
+    var temperature = Scalar[dtype](1.0)
+    comptime for c in range(n_cases):
+        var mp = Scalar[dtype](cases[c])
+        for b in range(batch_size):
+            thresholds[b] = mp
+        ctx.enqueue_copy(dst_buf=logits_d, src_buf=logits_h)
+        ctx.enqueue_copy(dst_buf=thresholds_d, src_buf=thresholds_h)
+        # Both paths, one after the other, on the same logits. The sorted
+        # path multiplies `thresholds` in place, so it goes second and gets a
+        # fresh copy of the coefficients just before its call.
+        min_p_sampling_gpu[use_max_threshold=True](
+            ctx, thresholds_dt, logits_dt, tokens_dt, temperature=temperature
+        )
+        ctx.enqueue_copy(dst_buf=tokens_h, src_buf=tokens_d)
+        ctx.synchronize()
+        for b in range(batch_size):
+            var row = b * vocab_size
+            var mx = Float64(0)
+            for i in range(vocab_size):
+                mx = max(mx, Float64(probs_flat[row + i]))
+            var token = Int(tokens_flat[b])
+            assert_true(
+                token >= 0 and token < vocab_size,
+                String(
+                    "min_p ",
+                    cases[c],
+                    " batch ",
+                    b,
+                    ": token ",
+                    token,
+                    " out of range",
+                ),
+            )
+            var p = Float64(probs_flat[row + token])
+            # A 1% slack: the CPU softmax and the kernel's own softmax round
+            # differently, and a token drawn at the set's edge could fall just
+            # under the threshold this side of the comparison.
+            assert_true(
+                p >= cases[c] * mx * 0.99,
+                String(
+                    "min_p ",
+                    cases[c],
+                    " batch ",
+                    b,
+                    ": token ",
+                    token,
+                    " has probability ",
+                    p,
+                    ", below threshold ",
+                    cases[c] * mx,
+                ),
+            )
+        ctx.enqueue_copy(dst_buf=thresholds_d, src_buf=thresholds_h)
+        min_p_sampling_gpu(
+            ctx, thresholds_dt, logits_dt, tokens_dt, temperature=temperature
+        )
+        ctx.enqueue_copy(dst_buf=tokens_h, src_buf=tokens_d)
+        ctx.synchronize()
+        for b in range(batch_size):
+            var token_sorted = Int(tokens_flat[b])
+            var row = b * vocab_size
+            var mx = Float64(0)
+            for i in range(vocab_size):
+                mx = max(mx, Float64(probs_flat[row + i]))
+            assert_true(
+                Float64(probs_flat[row + token_sorted]) >= cases[c] * mx * 0.99,
+                String(
+                    "min_p ",
+                    cases[c],
+                    ": the sorted path drew token ",
+                    token_sorted,
+                    " outside the min-p set",
+                ),
+            )
+
+
 def test_all_out_idx_types[
     dtype: DType,
 ](
@@ -486,6 +614,9 @@ def test_all_out_idx_types[
     test_toppminp_gpu[dtype, DType.int32](ctx, fill_fn)
     test_toppminp_gpu[dtype, DType.int64](ctx, fill_fn)
     test_toppminp_gpu[dtype, DType.uint64](ctx, fill_fn)
+    test_minp_max_threshold[dtype, DType.int32](ctx, fill_fn)
+    test_minp_max_threshold[dtype, DType.int64](ctx, fill_fn)
+    test_minp_max_threshold[dtype, DType.uint64](ctx, fill_fn)
 
 
 def test_all_types(

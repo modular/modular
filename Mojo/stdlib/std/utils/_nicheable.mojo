@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin.rebind import downcast
 from std.memory import MaybeUninit
+from std.sys import size_of
 
 
 struct NicheIndex(Equatable, TrivialRegisterPassable):
@@ -28,7 +30,7 @@ struct NicheIndex(Equatable, TrivialRegisterPassable):
 
     var _index: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, index: Int):
         """Construct a `NicheIndex` with the given index value. Must be in the
         range (`0` <= index <= `Int.MAX`).
@@ -38,7 +40,7 @@ struct NicheIndex(Equatable, TrivialRegisterPassable):
         """
         self._index = index
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         """Returns whether two `NicheIndex` values are equal.
 
@@ -277,7 +279,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
         ...
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     @doc_hidden
     def niche_count() -> Int:
         """Returns `1`, since this type has exactly one niche.
@@ -288,7 +290,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
         return 1
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     @doc_hidden
     def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
         """Implements `UnsafeNicheable.write_niche` by delegating to the
@@ -304,7 +306,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
         Self.write_niche(memory)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     @doc_hidden
     def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
         """Implements `UnsafeNicheable.classify_niche` by delegating to
@@ -319,3 +321,98 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
             `NicheIndex.NotANiche` otherwise.
         """
         return NicheIndex(0) if Self.isa_niche(memory) else NicheIndex.NotANiche
+
+
+trait _FieldNicheable(UnsafeNicheable):
+    """Implements `UnsafeNicheable` for a type that has a field that already
+    implements the trait.
+    """
+
+    comptime _KgenNichedFieldName: __mlir_type.`!kgen.string`
+    comptime _NichedField: UnsafeNicheable = downcast[
+        reflect[Self].field[StringLiteral[Self._KgenNichedFieldName]()].T,
+        UnsafeNicheable,
+    ]
+
+    @staticmethod
+    @inline(.always)
+    def _niched_field[
+        memory_origin: Origin, //
+    ](memory: Pointer[MaybeUninit[Self], memory_origin]) -> Pointer[
+        MaybeUninit[Self._NichedField], memory_origin
+    ]:
+        comptime offset = reflect[Self].field_offset[
+            name=StringLiteral[Self._KgenNichedFieldName]()
+        ]()
+        return (
+            memory.unsafe_bitcast[Byte]()
+            .unsafe_offset(offset)
+            .unsafe_bitcast[MaybeUninit[Self._NichedField]]()
+        )
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def niche_count() -> Int:
+        return Self._NichedField.niche_count()
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
+        Self._NichedField.write_niche[index](Self._niched_field(memory))
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
+        return Self._NichedField.classify_niche(Self._niched_field(memory))
+
+
+struct _NonNegativeScalarNiche[
+    T: AnyType, name: StringLiteral, dtype: DType = .int
+] where (dtype.is_integral() and dtype.is_signed()):
+    """Implements the niches of `T` as the negative values of its scalar field
+    named `name`, for a type whose live values never hold a negative value
+    there, such as a length.
+
+    Niche `i` is stored as `~i` (`-1 - i`). That reaches every negative value
+    but `scalar.MIN`, which would need a niche count of `scalar.MAX + 1`. A
+    scalar wider than `Int` is capped at `Int.MAX` niches.
+    """
+
+    @staticmethod
+    @inline(.always)
+    def _field[
+        origin: Origin, //
+    ](memory: Pointer[MaybeUninit[Self.T], origin]) -> Pointer[
+        Scalar[Self.dtype], origin
+    ]:
+        comptime assert reflect[Self.T].field[Self.name].T == Scalar[Self.dtype]
+        comptime offset = reflect[Self.T].field_offset[name=Self.name]()
+        return (
+            memory.unsafe_bitcast[Byte]()
+            .unsafe_offset(offset)
+            .unsafe_bitcast[Scalar[Self.dtype]]()
+        )
+
+    @staticmethod
+    @inline(.always)
+    def niche_count() -> Int:
+        comptime if size_of[Self.dtype]() > size_of[DType.int]():
+            return Int.MAX
+        else:
+            return Int(Scalar[Self.dtype].MAX)
+
+    @staticmethod
+    @inline(.always)
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self.T], _]):
+        Self._field(memory).unsafe_write(Scalar[Self.dtype](~index))
+
+    @staticmethod
+    @inline(.always)
+    def classify_niche(
+        memory: ImmPointer[MaybeUninit[Self.T], _]
+    ) -> NicheIndex:
+        var value = Self._field(memory)[]
+        return NicheIndex(Int(~value)) if value < 0 else NicheIndex.NotANiche

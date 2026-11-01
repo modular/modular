@@ -17,7 +17,7 @@ from std.traits import (
     IsTriviallyDeinitable,
     IsTriviallyMovable,
 )
-from std.testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, TestSuite
 
 # ===-----------------------------------------------------------------------===#
 # Triviality Struct

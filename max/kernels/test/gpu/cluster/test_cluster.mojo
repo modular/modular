@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import size_of
+from std.math import ceildiv
 from std.math.uutils import ufloordiv
 
 from max.gpu import block_dim, block_idx, thread_idx
@@ -31,7 +32,9 @@ from max.gpu import block_id_in_cluster, lane_id
 from max.gpu.intrinsics import Scope
 from max.gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
+from layout import Coord
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
 from std.utils.static_tuple import StaticTuple
@@ -40,9 +43,9 @@ from layout import TileTensor, row_major
 
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
-def cluster_launch_control(
-    data: MutPointer[Float32, MutAnyOrigin], n_dev: Int32
-):
+def cluster_launch_control[
+    data_origin: MutOrigin
+](data: MutPointer[Float32, data_origin], n_dev: Int32):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)
     var result = unsafe_stack_allocation[
@@ -83,7 +86,9 @@ def cluster_launch_control(
 
             # Matches `cg::invoke_one`. Selects the first thread in the block.
             if elect_one_sync_with_mask(mask=1):
-                clusterlaunchcontrol_try_cancel(result, mbar.bitcast[Int64]())
+                clusterlaunchcontrol_try_cancel(
+                    result, mbar.unsafe_bitcast[Int64]()
+                )
 
             # Matches `ptx::mbarrier_arrive_expect_tx`.
             _ = mbar[0].expect_bytes_relaxed(Int32(2 * size_of[UInt64]()))
@@ -99,16 +104,22 @@ def cluster_launch_control(
         if not clusterlaunchcontrol_query_cancel_is_canceled(result):
             break
 
-        bx = clusterlaunchcontrol_query_cancel_get_first_ctaid["x"](result)
+        _ = clusterlaunchcontrol_query_cancel_get_first_ctaid["x"](result)
 
         # Releases read result to the async proxy.
         # Matches `ptx::fence_proxy_async_generic_sync_restrict`.
         cluster_sync_release()
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 def pipeline_test_kernel[
-    num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
+    num_stages: Int, cluster_shape: Coord[Int, Int, Int]
 ]():
     var clc_response = unsafe_stack_allocation[
         num_stages,
@@ -151,7 +162,7 @@ def pipeline_test_kernel[
     if elect_one_sync():
         comptime for i in range(num_stages):
             full_mbar[i].init(producer_arv_count)
-            empty_mbar[i].init(consumer_arv_count)
+            empty_mbar[i].init(Int32(consumer_arv_count))
 
     fence_mbarrier_init()
     cluster_sync()
@@ -171,8 +182,8 @@ def pipeline_test_kernel[
             # The warp sync ensures expect_tx is completed.
             if elect_one_sync():
                 clusterlaunchcontrol_try_cancel[multicast=True](
-                    clc_response + write_idx,
-                    (full_mbar + write_idx).bitcast[Int64](),
+                    clc_response.unsafe_offset(write_idx),
+                    full_mbar.unsafe_offset(write_idx).unsafe_bitcast[Int64](),
                 )
 
             pipeline_state_write.step()
@@ -182,7 +193,7 @@ def pipeline_test_kernel[
             full_mbar[full_idx].wait(pipeline_state.phase())
             is_valid = Bool(
                 clusterlaunchcontrol_query_cancel_is_canceled(
-                    clc_response + full_idx
+                    clc_response.unsafe_offset(full_idx)
                 )
             )
             empty_mbar[full_idx].arrive_cluster(0)
@@ -202,15 +213,15 @@ def test_cluster_launch_control(ctx: DeviceContext) raises:
 
     var data = ctx.enqueue_create_buffer[.float32](n)
 
-    comptime kernel = cluster_launch_control
+    comptime kernel = cluster_launch_control[origin_of(data)]
     ctx.enqueue_function[kernel](
         data,
         Int32(n),
-        grid_dim=((n + 1023) // 1024),
+        grid_dim=ceildiv(n, 1024),
         block_dim=(1024),
     )
 
-    var data_host_ptr = alloc[Float32](n)
+    var data_host_ptr = unsafe_alloc[Float32](n)
     var data_host = TileTensor(data_host_ptr, row_major[n]())
 
     ctx.enqueue_copy(data_host_ptr, data)
@@ -221,7 +232,7 @@ def test_cluster_launch_control(ctx: DeviceContext) raises:
 
 
 def test_cluster_pipeline(ctx: DeviceContext) raises:
-    comptime kernel = pipeline_test_kernel[1, StaticTuple[Int32, 3](2, 2, 1)]
+    comptime kernel = pipeline_test_kernel[1, Coord[Int, Int, Int](2, 2, 1)]
     ctx.enqueue_function[kernel](
         # Use more blocks than SMs to ensure cancel happens.
         grid_dim=(4, 4),

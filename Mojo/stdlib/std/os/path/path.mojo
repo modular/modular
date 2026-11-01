@@ -23,7 +23,7 @@ from std.os.path import isdir
 from std.collections.string.string_span import _unsafe_strlen
 from std.pwd import getpwuid, getpwnam
 from std.stat import S_ISDIR, S_ISLNK, S_ISREG
-from std.ffi import MAX_PATH, c_char, external_call, get_errno
+from std.ffi import MAX_PATH, c_char, get_errno
 from std.sys import CompilationTarget
 from std.sys._libc import realpath as libc_realpath
 
@@ -44,7 +44,7 @@ from ..os import sep
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _get_stat_st_mode(var path: String) raises -> Int:
     comptime if CompilationTarget.is_macos():
         return Int(_stat_macos(path^).st_mode)
@@ -54,7 +54,7 @@ def _get_stat_st_mode(var path: String) raises -> Int:
         return Int(_stat_linux_x86(path^).st_mode)
 
 
-@always_inline
+@inline(.always)
 def _get_lstat_st_mode(var path: String) raises -> Int:
     comptime if CompilationTarget.is_macos():
         return Int(_lstat_macos(path^).st_mode)
@@ -305,7 +305,7 @@ def realpath[
     # through the libc_realpath call (avoids use-after-free).
     var fspath = path.__fspath__()
     var returned_path_ptr = libc_realpath(
-        fspath.as_c_string_slice(),
+        fspath.as_c_string_span(),
         string.unsafe_as_bytes_mut().unsafe_ptr().unsafe_bitcast[c_char](),
     )
     if not returned_path_ptr:
@@ -668,6 +668,73 @@ def splitroot[
     # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
     else:
         return empty, String(p[byte=:2]), String(p[byte=2:])
+
+
+# ===----------------------------------------------------------------------=== #
+# normpath
+# ===----------------------------------------------------------------------=== #
+
+
+def normpath[PathLike: stdPathLike, //](path: PathLike) -> String:
+    """Normalizes a pathname by collapsing redundant separators and up-level
+    references, so that `A//B`, `A/B/`, `A/./B` and `A/foo/../B` all become
+    `A/B`. On POSIX, two leading slashes are preserved as a special case.
+
+    This string manipulation may change the meaning of a path that contains
+    symbolic links, and it does not resolve them. It also does not sandbox the
+    result: leading `..` components in a relative path are preserved, so
+    callers must validate a normalized path before using it to access the file
+    system.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to normalize.
+
+    Returns:
+        The normalized path.
+
+    Examples:
+
+    ```mojo
+    from std.os.path import normpath
+
+    print(normpath("foo//bar"))      # "foo/bar"
+    print(normpath("foo/./bar"))     # "foo/bar"
+    print(normpath("foo/../bar"))    # "bar"
+    print(normpath("//foo//bar"))    # "//foo/bar"
+    print(normpath("/.."))           # "/"
+    print(normpath(""))              # "."
+    ```
+    """
+    comptime dot = "."
+    comptime dotdot = ".."
+
+    var path_str = path.__fspath__()
+    if not path_str:
+        return dot
+
+    var _, root, tail = splitroot(path_str)
+
+    var comps = tail.split(sep)
+    var new_comps = type_of(comps)()
+    for comp in comps:
+        if not comp or comp == dot:
+            continue
+        if (
+            comp != dotdot
+            or (not root and not new_comps)
+            or (new_comps and new_comps[len(new_comps) - 1] == dotdot)
+        ):
+            new_comps.append(comp)
+        elif new_comps:
+            _ = new_comps.pop()
+
+    var new_path_str = root + sep.join(new_comps)
+    if not new_path_str:
+        return dot
+    return new_path_str
 
 
 # ===----------------------------------------------------------------------=== #

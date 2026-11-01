@@ -16,10 +16,11 @@ from std.collections.string.string import (
     _calc_initial_buffer_size_int64,
 )
 from std.collections.string.string_span import _to_string_list
+from std.compile import compile_info
 from std.math import isinf, isnan
 
 from std.memory import unsafe_memcpy
-from std.python import Python, PythonObject
+from std.python import Python
 from std.testing import (
     assert_equal,
     assert_false,
@@ -28,6 +29,12 @@ from std.testing import (
     assert_true,
 )
 from std.testing import TestSuite
+from std.sys import size_of
+from test_utils import (
+    check_convertible_to_python,
+    check_niches,
+    check_python_object,
+)
 
 
 def test_constructors() raises:
@@ -225,13 +232,15 @@ def test_ord() raises:
     comptime single_byte2 = ord("!")
     assert_equal(single_byte2, 33)
 
-    # TODO: change these to parameter domain when it work.
-    var multi_byte = ord("α")
+    comptime multi_byte = ord("α")
     assert_equal(multi_byte, 945)
-    var multi_byte2 = ord("➿")
+    comptime multi_byte2 = ord("➿")
     assert_equal(multi_byte2, 10175)
-    var multi_byte3 = ord("🔥")
+    comptime multi_byte3 = ord("🔥")
     assert_equal(multi_byte3, 128293)
+
+    comptime literal = "α"
+    assert_equal(ord(literal), 945)
 
     # Test StringSlice overload
     assert_equal(ord(StringSlice("A")), 65)
@@ -250,6 +259,33 @@ def test_ord() raises:
     assert_equal(ord("\xff"), 0xFF)
     assert_equal(ord("\205"), 0x85)  # octal form of U+0085 NEL
     assert_equal(ord("\377"), 0xFF)  # octal form of U+00FF
+
+
+def test_ord_string_literal_folds() raises:
+    # Unoptimized IR, so the constant must come from comptime evaluation of
+    # the `StringLiteral` overload rather than from LLVM folding the decoder.
+    def ord_ascii() -> Int:
+        return ord("A")
+
+    def ord_multi_byte() -> Int:
+        return ord("🔥")
+
+    def ord_slice() -> Int:
+        return ord(StringSlice("🔥"))
+
+    var ascii_ir = compile_info[ord_ascii, emission_kind="llvm"]()
+    assert_true("ret i64 65" in ascii_ir)
+    assert_false("call " in ascii_ir)
+
+    var multi_byte_ir = compile_info[ord_multi_byte, emission_kind="llvm"]()
+    assert_true("ret i64 128293" in multi_byte_ir)
+    assert_false("call " in multi_byte_ir)
+
+    # Guards against the check above passing vacuously: the `StringSlice`
+    # overload decodes at runtime.
+    var slice_ir = compile_info[ord_slice, emission_kind="llvm"]()
+    assert_false("ret i64 128293" in slice_ir)
+    assert_true("call " in slice_ir)
 
 
 def test_chr() raises:
@@ -816,6 +852,11 @@ def test_splitlines() raises:
 
     # Test with an empty string
     assert_equal(S("").splitlines(), L())
+    # \t is not a line break
+    assert_equal(
+        S("name\tage\nbob\t42\n").splitlines(),
+        [StaticString("name\tage"), "bob\t42"],
+    )
     # test \v \f \x1c \x1d
     var s2 = S("hello\vworld\fmojo\x1clanguage\x1d")
     assert_equal(s2.splitlines(), hello_mojo)
@@ -851,7 +892,7 @@ def test_splitlines() raises:
 
 
 def test_isspace() raises:
-    assert_false(String().isspace())
+    assert_false(String().is_ascii_whitespace())
 
     # test all utf8 and unicode separators
     var next_line: List[UInt8] = [0xC2, 0x85]
@@ -875,17 +916,17 @@ def test_isspace() raises:
     ]
 
     for i in univ_sep_var:
-        assert_true(i.isspace())
+        assert_true(i.is_ascii_whitespace())
 
     for i in [String("not"), "space", "", "s", "a", "c"]:
-        assert_false(i.isspace())
+        assert_false(i.is_ascii_whitespace())
 
     for sep1 in univ_sep_var:
         var sep = String()
         for sep2 in univ_sep_var:
             sep += sep1
             sep += sep2
-        assert_true(sep.isspace())
+        assert_true(sep.is_ascii_whitespace())
         _ = sep
 
 
@@ -1293,8 +1334,9 @@ def test_format_args() raises:
     var s = " {} , {} {} !".format("Hello", "Beautiful", "World")
     assert_equal(s, " Hello , Beautiful World !")
 
-    def curly(c: StaticString) -> String:
-        return "there is a single curly " + c + " left unclosed or unescaped"
+    var curly = lambda (c: StaticString) -> String: (
+        "there is a single curly " + c + " left unclosed or unescaped"
+    )
 
     with assert_raises(contains=curly("{")):
         _ = String("{ {}").format(1)
@@ -1508,9 +1550,9 @@ def test_uninit_ctor() raises:
     assert_equal(s3._is_inline(), False)
 
 
-def test_as_c_string_slice_empty() raises:
+def test_as_c_string_span_empty() raises:
     var string = String()
-    var cslice = string.as_c_string_slice()
+    var cslice = string.as_c_string_span()
     assert_equal(string.byte_length(), 0)
     assert_true(string.capacity_bytes() > 0)
     # Safe to index `string.byte_length()` as this has a nul terminator
@@ -1520,9 +1562,9 @@ def test_as_c_string_slice_empty() raises:
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
-def test_as_c_string_slice_inlined() raises:
+def test_as_c_string_span_inlined() raises:
     var string = String("a")
-    var cslice = string.as_c_string_slice()
+    var cslice = string.as_c_string_span()
     # Safe to index `string.byte_length()` as this has a nul terminator
     assert_equal(
         string.as_bytes().unsafe_ptr()[unsafe_offset=string.byte_length()], 0
@@ -1530,9 +1572,9 @@ def test_as_c_string_slice_inlined() raises:
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
-def test_as_c_string_slice_heap() raises:
+def test_as_c_string_span_heap() raises:
     var string = String("abcdefghijlmnopqrstuvwxyz")
-    var cslice = string.as_c_string_slice()
+    var cslice = string.as_c_string_span()
     # Safe to index `string.byte_length()` as this has a nul terminator
     assert_equal(
         string.as_bytes().unsafe_ptr()[unsafe_offset=string.byte_length()], 0
@@ -1629,7 +1671,7 @@ def test_copyinit() raises:
     var test_current_size = 1
 
     comptime for sizes_index in range(len(sizes)):
-        comptime current_size = rebind[Int](sizes[sizes_index])
+        comptime current_size = sizes[sizes_index]
         var x = ""
         for i in range(current_size):
             x += String(i)[byte=0]
@@ -1843,6 +1885,68 @@ def test_string_zero_init() raises:
     assert_equal(Int(s._ptr_or_data), 0)
     assert_equal(s._len_or_data, 0)
     assert_equal(s._capacity_or_data, String.FLAG_IS_INLINE)
+
+
+def test_convertible_to_Python() raises:
+    check_convertible_to_python(StringSlice("Foo"), "Foo")
+    check_convertible_to_python(String("Bar"), "Bar")
+    check_convertible_to_python("Baz", "Baz")
+
+    # test implicit conversions
+    check_python_object(StringSlice("Foo"), "Foo")
+    check_python_object(String("Bar"), "Bar")
+    check_python_object("Baz", "Baz")
+
+
+def test_string_niche() raises:
+    assert_equal(String.niche_count(), String.FLAG_IS_REF_COUNTED)
+    assert_equal(size_of[Optional[String]](), size_of[String]())
+    check_niches[String]()
+
+    def assert_optional_keeps(s: String) raises:
+        var some = Optional(s)
+        assert_true(some)
+        assert_equal(some.value(), s)
+
+    # Every representation must read back as a live value.
+    var empty = String()
+    assert_equal(empty.capacity_bytes(), String.INLINE_CAPACITY)
+    assert_optional_keeps(empty)
+
+    var literal = String("static literal")
+    assert_equal(literal.capacity_bytes(), literal.byte_length())
+    assert_optional_keeps(literal)
+    var literal_copy = literal
+    assert_optional_keeps(literal)
+    assert_optional_keeps(literal_copy)
+
+    var span = String(StaticString("static span"))
+    assert_equal(span.capacity_bytes(), span.byte_length())
+    assert_optional_keeps(span)
+    var span_copy = span
+    assert_optional_keeps(span)
+    assert_optional_keeps(span_copy)
+
+    var inline = String("short")
+    inline += "!"
+    assert_equal(inline.capacity_bytes(), String.INLINE_CAPACITY)
+    assert_optional_keeps(inline)
+    _ = inline.as_c_string_span()
+    assert_optional_keeps(inline)
+    var inline_copy = inline
+    assert_optional_keeps(inline)
+    assert_optional_keeps(inline_copy)
+
+    var heap = String("x") * 64
+    assert_true(heap.capacity_bytes() >= 64)
+    assert_optional_keeps(heap)
+    _ = heap.as_c_string_span()
+    assert_optional_keeps(heap)
+    var heap_copy = heap
+    assert_optional_keeps(heap)
+    assert_optional_keeps(heap_copy)
+    assert_false(Optional[String](None))
+    assert_false(Optional[String](None))
 
 
 def main() raises:

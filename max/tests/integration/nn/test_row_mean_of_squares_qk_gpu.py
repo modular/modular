@@ -29,7 +29,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import row_mean_of_squares_qk
+from max.nn.legacy.kernels import row_mean_of_squares_qk
 
 # (rows, q_cols, k_cols): decode (small M), prefill (large M), odd-N tail,
 # wide-N grid-stride, equal widths.

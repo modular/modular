@@ -152,7 +152,7 @@ def test_dominance_lifetime2(cond: Bool):
     # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
     elt_ref += 4
 
-# This verifies we're handling hlcf.elif dominance correctly.
+# This verifies we're handling hlcf.if dominance correctly.
 def test_rederive_in_controlled_block(list: MyList[Int]) -> Int:
     if list[] > 0:
         return list[]
@@ -238,31 +238,15 @@ def test_nested_fn1():
     var base = MyList[Int]()
     var p = Pointer(to=base[])
 
-    @__copy_capture(p)
-    @__parameter
-    def inner():
+    def inner() {var p, imm}:
         _ = p == p  # Should be fine.
-    inner()
-
-def test_nested_fn2():
-    var base = MyList[Int]()
-    var p = Pointer(to=base[])
-
-    @__copy_capture(p)
-    @__parameter
-    def inner():
-        _ = p == p  # Should be fine.
-        # expected-error @+1 {{incorrect invalidation of interior origin in closure 'base["element"]'}}
-        base.mutate()
     inner()
 
 def test_nested_fn3():
     var base = MyList[Int]()
     var p = Pointer(to=base[])
 
-    @__copy_capture(p)
-    @__parameter
-    def inner():
+    def inner() {var p, imm}:
         _ = p == p  # Should be fine.
 
     base.mutate() # expected-note {{origin was invalidated here}}
@@ -272,16 +256,12 @@ def test_nested_fn4():
     var base = MyList[Int]()
     var p = Pointer(to=base[])
 
-    @__copy_capture(p)
-    @__parameter
-    def inner():
+    def inner() {var p, imm}:
         _ = p == p  # Should be fine.
 
     base.mutate()
-    _ = base[] # attempt to refresh.
-    # FIXME: This should be an error; we should make sure we have the same
-    # version of the reference as when the closure was created.
-    inner()
+    _ = base[] # expected-note {{origin was defined here, after the reference was formed}}
+    inner() # expected-error {{use of invalidated interior reference 'base["element"]'}}
 
 def test_loop_iteration(var list: List[Int]):
     # The mutate method should invalidate the active iterator.

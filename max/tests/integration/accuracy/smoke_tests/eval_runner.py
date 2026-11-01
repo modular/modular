@@ -62,13 +62,22 @@ EvalSamples = list[dict[str, Any]]
 
 # Prometheus field where each framework exposes its generated-token count.
 _COMPLETION_TOKEN_METRICS = (
-    "maxserve_num_output_tokens_total",  # max / max-ci
+    "max_num_output_tokens_total",  # max / max-ci
+    "max_request_output_tokens_total",  # mach-ci
+    # TODO(MAX-1007): Remove after rollout and the rollback window close.
+    "maxserve_num_output_tokens_total",  # historical max / max-ci
     "vllm:generation_tokens_total",  # vllm
     "sglang:generation_tokens_total",  # sglang
+    # TODO(MAX-1007): Remove after rollout and the rollback window close.
+    "mach_request_output_tokens_total",  # historical mach-ci
 )
 
-_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC = (
-    "maxserve_spec_decode_avg_acceptance_length"
+_SPEC_DECODE_ACCEPTANCE_LENGTH_METRICS = (
+    "max_spec_decode_avg_acceptance_length",
+    # TODO(MAX-1007): Remove both legacy aliases after rollout and the
+    # rollback window close.
+    "maxserve_spec_decode_avg_acceptance_length",
+    "mach_spec_decode_avg_acceptance_length",
 )
 
 
@@ -76,29 +85,27 @@ def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
 
-def validate_hf_token() -> None:
-    if os.getenv("HF_TOKEN") is None:
-        raise ValueError(
-            "Environment variable `HF_TOKEN` must be set. "
-            "See https://www.notion.so/modularai/HuggingFace-Access-Token-29d1044d37bb809fbe70e37428faf9da"
-        )
-
-
 def resolve_canonical_repo_id(repo_id: str) -> str:
     """HF disk cache is case-sensitive, so do what we can to avoid issues"""
     if os.environ.get("HF_HUB_OFFLINE") == "1":
         return repo_id
-    try:
-        r = requests.get(
-            f"https://huggingface.co/api/models/{repo_id}",
-            headers={"Authorization": f"Bearer {os.environ['HF_TOKEN']}"},
-            timeout=(5, 10),
-        )
-        r.raise_for_status()
-        return r.json()["id"]
-    except Exception as e:
-        logger.warning("Failed repo id lookup for %s: %s", repo_id, e)
-        return repo_id
+    url = f"https://huggingface.co/api/models/{repo_id}"
+    # Private repos need a token; public ones resolve without one, so only
+    # fall back to authenticating when the anonymous lookup fails.
+    token = os.environ.get("HF_TOKEN")
+    attempts: list[dict[str, str]] = [{}]
+    if token:
+        attempts.append({"Authorization": f"Bearer {token}"})
+    error: Exception | None = None
+    for headers in attempts:
+        try:
+            r = requests.get(url, headers=headers, timeout=(5, 10))
+            r.raise_for_status()
+            return r.json()["id"]
+        except Exception as e:
+            error = e
+    logger.warning("Failed repo id lookup for %s: %s", repo_id, error)
+    return repo_id
 
 
 @cache
@@ -140,7 +147,11 @@ def write_github_output(key: str, value: str) -> None:
 
 
 def test_single_request(
-    url: str, model: str, task: str, disable_timeouts: bool
+    url: str,
+    model: str,
+    task: str,
+    disable_timeouts: bool,
+    api_key: str | None = None,
 ) -> None:
     is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
@@ -149,10 +160,12 @@ def test_single_request(
     connect_timeout, read_timeout = (
         (None, None) if disable_timeouts else (30, 180)
     )
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
     r = requests.post(
         url,
         json={"model": model, "messages": m, "max_tokens": 8},
         timeout=(connect_timeout, read_timeout),
+        headers=headers,
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
@@ -168,35 +181,10 @@ def call_eval(
     num_questions: int,
     disable_timeouts: bool,
     metrics_url: str | None = None,
-    model_alias: str | None = None,
+    metrics_delay_s: float = 0,
     lm_eval_metadata: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
-    extra_gen_kwargs = ""
-    # model_alias carries the original recipe key (e.g. "nvidia/Kimi-K2.5-NVFP4__internal")
-    # when model is a local path that doesn't contain the model name keywords.
-    check_name = (model_alias or model).casefold()
-    is_reasoning_model = any(
-        kw in check_name
-        for kw in (
-            "academic-ds",
-            "deepseek-r1",
-            "deepseek-v3",
-            "gemma-4",
-            "gpt-oss",
-            "inkling",
-            "internvl3_5",
-            "qwen3",
-            "kimi-k2",
-            "minimax-m2",
-            "minimax-m3",
-            "nemotron",
-            "step-3.5",
-            "glm-5",
-        )
-    )
-    # Reasoning models needs extra tokens for .. reasoning
-    if is_reasoning_model:
-        extra_gen_kwargs = ",max_gen_toks=4096"
+    extra_gen_kwargs = ",max_gen_toks=4096"
 
     # GPT-OSS sometimes gets stuck in a reasoning loop. To ensure consistency
     # in CI, we add a repetition penalty which helps prevent the loop
@@ -230,6 +218,14 @@ def call_eval(
             "--fewshot_as_multiturn",
         ]
 
+        # Hy4 thinks by default and its reasoning parser moves the think span
+        # out of `content`, so a span longer than max_gen_toks leaves no answer
+        # to score. lm-eval merges repeated --gen_kwargs.
+        if "hy4" in model.casefold():
+            eval_cmd.append(
+                '--gen_kwargs={"chat_template_kwargs": {"reasoning_effort": "no_think"}}'
+            )
+
         # Passed verbatim to lm-eval; merged into each task's config metadata to
         # parameterize it at runtime (e.g. babilong context length).
         if lm_eval_metadata is not None:
@@ -237,7 +233,12 @@ def call_eval(
 
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
-        eval_timeout = None if disable_timeouts else 600
+        eval_timeout = (
+            None
+            if disable_timeouts
+            else (1800 if model.casefold() == "moonshotai/kimi-k3" else 600)
+        )
+        time.sleep(metrics_delay_s)
         tokens_before = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
@@ -253,6 +254,7 @@ def call_eval(
                 f"Evals did not finish within the expected timeout={eval_timeout}s. "
                 "You can pass --disable-timeouts to opt-out of this."
             ) from None
+        time.sleep(metrics_delay_s)
         tokens_after = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
@@ -306,29 +308,33 @@ def get_spec_decode_acceptance_totals(
     metrics_url: str,
 ) -> tuple[float, float] | None:
     """Reads the cumulative (sum, count) of the spec-decode acceptance-length
-    histogram from Prometheus."""
+    histogram from Prometheus. The histogram observes accepted drafts per
+    verification; callers add the bonus token."""
     try:
         r = requests.get(metrics_url, timeout=(5, 30))
         r.raise_for_status()
     except requests.RequestException:
         return None
 
-    total_sum = 0.0
-    total_count = 0.0
-    for line in r.text.splitlines():
-        if not line or line.startswith("#"):
-            continue
-        # A sample line is ``name{labels} value`` or ``name value``.
-        name = line.split("{", 1)[0].split(" ", 1)[0]
-        if not name.startswith(_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC):
-            continue
-        # Skips the ``_bucket`` rows of the same family.
-        if name.endswith("_sum"):
-            total_sum += float(line.rsplit(" ", 1)[1])
-        elif name.endswith("_count"):
-            total_count += float(line.rsplit(" ", 1)[1])
-
-    return total_sum, total_count
+    for metric in _SPEC_DECODE_ACCEPTANCE_LENGTH_METRICS:
+        total_sum = 0.0
+        total_count = 0.0
+        found = False
+        for line in r.text.splitlines():
+            if not line or line.startswith("#"):
+                continue
+            name = line.split("{", 1)[0].split(" ", 1)[0]
+            if not name.startswith(metric):
+                continue
+            if name.endswith("_sum"):
+                total_sum += float(line.rsplit(" ", 1)[1])
+                found = True
+            elif name.endswith("_count"):
+                total_count += float(line.rsplit(" ", 1)[1])
+                found = True
+        if found:
+            return total_sum, total_count
+    return 0.0, 0.0
 
 
 def _spec_decode_acceptance_length_delta(
@@ -337,7 +343,11 @@ def _spec_decode_acceptance_length_delta(
 ) -> float | None:
     """Computes the windowed acceptance length from two cumulative
     (sum, count) snapshots, or None if either snapshot is missing or the
-    count didn't advance (guards the division)."""
+    count didn't advance (guards the division).
+
+    The histogram observes accepted drafts per verification, so the result
+    adds the bonus token and counts tokens committed per verify step, as the
+    benchmark reports for every backend."""
     if before is None or after is None:
         return None
     sum_before, count_before = before
@@ -345,7 +355,7 @@ def _spec_decode_acceptance_length_delta(
     count_delta = count_after - count_before
     if count_delta <= 0:
         return None
-    return (sum_after - sum_before) / count_delta
+    return 1 + (sum_after - sum_before) / count_delta
 
 
 def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:

@@ -21,6 +21,8 @@ from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import (
     _validate_indexer_types,
 )
 from max.pipelines.architectures.deepseekV3_2.model_config import (
+    indexer_cache_layer_map,
+    num_indexer_cache_layers,
     resolve_indexer_types,
 )
 
@@ -84,3 +86,43 @@ def test_validate_indexer_types_accepts_leading_full_and_empty() -> None:
         SimpleNamespace(indexer_types=["full", "shared", "shared"])  # type: ignore[arg-type]
     )
     _validate_indexer_types(SimpleNamespace(indexer_types=[]))  # type: ignore[arg-type]
+
+
+def _glm_5_3_schedule() -> list[str]:
+    cfg = SimpleNamespace(
+        indexer_types=None,
+        index_topk_pattern=None,
+        index_topk_freq=4,
+        index_skip_topk_offset=3,
+    )
+    return resolve_indexer_types(cfg, 78)
+
+
+def test_indexer_cache_holds_only_full_layers() -> None:
+    """GLM-5.3 runs the indexer in 21 of its 78 layers, so the indexer K
+    cache needs 21 layers, not 78."""
+    schedule = _glm_5_3_schedule()
+    assert num_indexer_cache_layers(schedule, 78) == 21
+
+
+def test_indexer_cache_slots_are_dense_and_ordered() -> None:
+    """Each full layer gets the next slot; slots cover the cache exactly."""
+    schedule = _glm_5_3_schedule()
+    slots = indexer_cache_layer_map(schedule, 78)
+    full_slots = [slots[i] for i, t in enumerate(schedule) if t == "full"]
+    assert full_slots == list(range(21))
+    assert all(slots[i] == 0 for i, t in enumerate(schedule) if t == "shared")
+
+
+def test_empty_schedule_keeps_one_slot_per_layer() -> None:
+    """An empty schedule (the MTP draft) means every layer is full."""
+    assert num_indexer_cache_layers([], 3) == 3
+    assert indexer_cache_layer_map([], 3) == [0, 1, 2]
+
+
+def test_schedule_longer_than_layers_is_truncated() -> None:
+    """A draft that shares the target's schedule only counts its own
+    layers."""
+    schedule = ["full", "shared", "full"]
+    assert num_indexer_cache_layers(schedule, 1) == 1
+    assert indexer_cache_layer_map(schedule, 1) == [0]

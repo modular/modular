@@ -1,0 +1,38 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+# gazelle:default_visibility //visibility:private
+
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+genrule(
+    name = "buffer_lifetime_mef",
+    srcs = ["buffer_lifetime.mlir"],
+    outs = ["buffer_lifetime.mef"],
+    cmd = "MODULAR_HOME=. $(location //MLRT/tools/GraphRT/mef-translate) " +
+          "-export-mef -allow-unregistered-dialect $< -o $@",
+    tools = ["//MLRT/tools/GraphRT/mef-translate"],
+)
+
+modular_cc_test(
+    name = "MEFFileTest",
+    size = "small",
+    srcs = ["MEFFileTest.cpp"],
+    data = [":buffer_lifetime.mef"],
+    deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:GraphRT/MEFExecutor",
+        "//Support:Base",
+        "//Support:Buffer",
+        "//Support:Globals",
+        "//Support:ML",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@llvm-project//llvm:Support",
+    ],
+)

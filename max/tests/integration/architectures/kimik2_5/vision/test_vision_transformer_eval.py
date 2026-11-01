@@ -40,7 +40,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.comm import Signals
+from max.nn.legacy.comm import Signals
 from max.pipelines.architectures.kimik2_5.layers.vision.data_processing import (
     compute_position_ids,
 )

@@ -19,7 +19,7 @@ from std.testing import TestSuite
 from std.utils import IndexList
 
 
-@always_inline
+@inline(.always)
 def _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
     return Error(loc.prefix(String("AssertionError: ", msg)))
 
@@ -43,7 +43,7 @@ struct PrintChecker(Movable):
     var cursor: Int
     var call_location: SourceLocation
 
-    @always_inline
+    @inline(.always)
     def __init__(out self) raises:
         self.tmp = NamedTemporaryFile("rw")
         self.call_location = call_location()
@@ -52,8 +52,8 @@ struct PrintChecker(Movable):
     def __enter__(var self) -> Self:
         return self^
 
-    def stream(self) -> FileDescriptor:
-        return FileDescriptor(self.tmp._file_handle._get_raw_fd())
+    def stream(self) -> RawFileDescriptor:
+        return RawFileDescriptor(self.tmp._file_handle)
 
     def check_line(mut self, expected: String, msg: String = "") raises:
         print(end="", file=self.stream(), flush=True)

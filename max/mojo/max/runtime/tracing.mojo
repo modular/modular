@@ -22,14 +22,16 @@ from std.sys.defines import get_defined_int, is_defined
 
 import std.logger.logger as logger
 
-import max.gpu.host._tracing as gpu_tracing
 from max.gpu.host import DeviceContext
-from max.gpu.host._tracing import Color
-from max.gpu.host._tracing import _end_range as _end_gpu_range
-from max.gpu.host._tracing import _is_enabled as _gpu_is_enabled
-from max.gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
-from max.gpu.host._tracing import _mark as _mark_gpu
-from max.gpu.host._tracing import _start_range as _start_gpu_range
+from max.gpu.host import Color
+from max.gpu.host import _end_range as _end_gpu_range
+from max.gpu.host import _is_enabled as _gpu_is_enabled
+from max.gpu.host import (
+    _is_enabled_details as _gpu_is_enabled_details,
+)
+from max.gpu.host import RangeID as _GPURangeID
+from max.gpu.host import _mark as _mark_gpu
+from max.gpu.host import _start_range as _start_gpu_range
 
 from std.utils import IndexList, Variant
 from std.os import abort
@@ -38,19 +40,16 @@ comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
 """Logger instance for operation tracing with INFO level and [OP] prefix."""
 
 
-def get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
-    """Safely extract task_id from DeviceContext, returning None if null/invalid.
+def get_safe_task_id(ctx: DeviceContext.Generic) -> OptionalReg[Int]:
+    """Returns the task ID for the device behind a `DeviceContext`.
 
     Args:
         ctx: The device context to extract the task ID from.
 
     Returns:
-        An OptionalReg containing the task ID if valid, None otherwise.
+        An OptionalReg containing the device's ID.
     """
-    try:
-        return OptionalReg(Int(ctx.id()))
-    except:
-        return None
+    return OptionalReg(Int(ctx.device().id))
 
 
 def get_safe_task_id(ctx: Optional[DeviceContext]) -> OptionalReg[Int]:
@@ -81,7 +80,7 @@ def _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 
 
 @fieldwise_init
-struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
+struct TraceCategory(EnumLike, Equatable, Intable, TrivialRegisterPassable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     comptime OTHER = Self(0)
@@ -99,7 +98,31 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
     """The integer value representing the trace category. Used for bitwise operations
     when determining if profiling is enabled for a specific category."""
 
-    @always_inline("nodebug")
+    comptime _enum_case_names = ParameterList.of[
+        "OTHER".value,
+        "ASYNCRT".value,
+        "MEM".value,
+        "Kernel".value,
+        "MAX".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self.value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TraceCategory has no payload"
+
+    @inline(.nodebug)
     def __eq__(self, rhs: Self) -> Bool:
         """Compares for equality.
 
@@ -111,7 +134,7 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
         """
         return self.value == rhs.value
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __ne__(self, rhs: Self) -> Bool:
         """Compares for inequality.
 
@@ -123,7 +146,7 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
         """
         return self.value != rhs.value
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __int__(self) -> Int:
         """Converts the trace category to an integer.
 
@@ -138,7 +161,7 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct TraceLevel(Comparable, TrivialRegisterPassable):
+struct TraceLevel(Comparable, EnumLike, TrivialRegisterPassable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
@@ -157,7 +180,29 @@ struct TraceLevel(Comparable, TrivialRegisterPassable):
     - 2 (THREAD): Thread-level tracing
     """
 
-    @always_inline
+    comptime _enum_case_names = ParameterList.of[
+        "ALWAYS".value,
+        "OP".value,
+        "THREAD".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self.value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TraceLevel has no payload"
+
+    @inline(.always)
     def __init__(out self, value: Int):
         """Initializes a TraceLevel with the given integer value.
 
@@ -166,7 +211,7 @@ struct TraceLevel(Comparable, TrivialRegisterPassable):
         """
         self.value = value
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __eq__(self, rhs: Self) -> Bool:
         """Compares for equality.
 
@@ -178,7 +223,7 @@ struct TraceLevel(Comparable, TrivialRegisterPassable):
         """
         return self.value == rhs.value
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __lt__(self, rhs: Self) -> Bool:
         """Performs less than comparison.
 
@@ -190,7 +235,7 @@ struct TraceLevel(Comparable, TrivialRegisterPassable):
         """
         return self.value < rhs.value
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __int__(self) -> Int:
         """Converts the trace level to an integer.
 
@@ -205,7 +250,7 @@ struct TraceLevel(Comparable, TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def is_profiling_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """Returns True if the profiling is enabled for that specific type and
     level and False otherwise.
@@ -232,7 +277,7 @@ def is_profiling_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     )
 
 
-@always_inline
+@inline(.always)
 def is_profiling_disabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """Returns False if the profiling is enabled for that specific type and
     level and True otherwise.
@@ -247,7 +292,7 @@ def is_profiling_disabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     return not is_profiling_enabled[type, level]()
 
 
-@always_inline
+@inline(.always)
 def _is_gpu_profiler_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """Returns True if the e2e kernel profiling is enabled. Note that we always
     prefer to use llcl profiling if they are enabled."""
@@ -258,7 +303,7 @@ def _is_gpu_profiler_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     )
 
 
-@always_inline
+@inline(.always)
 def _is_gpu_profiler_detailed_enabled[
     type: TraceCategory, level: TraceLevel
 ]() -> Bool:
@@ -271,7 +316,7 @@ def _is_gpu_profiler_detailed_enabled[
     )
 
 
-@always_inline
+@inline(.always)
 def _is_op_logging_enabled[level: TraceLevel]() -> Bool:
     comptime if logger.DEFAULT_LEVEL == logger.Level.NOTSET:
         return False
@@ -279,13 +324,13 @@ def _is_op_logging_enabled[level: TraceLevel]() -> Bool:
     return level <= TraceLevel.OP
 
 
-@always_inline
+@inline(.always)
 def _is_tracy_enabled() -> Bool:
     """Returns whether the Tracy bridge is enabled in CompilerRT."""
     return external_call["KGEN_CompilerRT_TracyIsEnabled", Int]() != 0
 
 
-@always_inline
+@inline(.always)
 def _is_range_recording() -> Bool:
     """Returns whether the MAX profiler is actively recording ranges.
 
@@ -297,19 +342,19 @@ def _is_range_recording() -> Bool:
     return external_call["KGEN_CompilerRT_RangeIsRecording", Int]() != 0
 
 
-@always_inline
+@inline(.always)
 def _is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is enabled for the specified level."""
     return is_profiling_enabled[TraceCategory.MAX, level]()
 
 
-@always_inline
+@inline(.always)
 def _is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is disabled for the specified level."""
     return is_profiling_disabled[TraceCategory.MAX, level]()
 
 
-@always_inline
+@inline(.always)
 def _get_enabled_tracing_systems[level: TraceLevel]() -> List[String]:
     """Returns a list of enabled tracing system names.
 
@@ -346,7 +391,7 @@ def _get_enabled_tracing_systems[level: TraceLevel]() -> List[String]:
     return enabled_systems^
 
 
-@always_inline
+@inline(.always)
 def trace_arg(name: String, shape: IndexList) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
 
@@ -365,7 +410,7 @@ def trace_arg(name: String, shape: IndexList) -> String:
     return s
 
 
-@always_inline
+@inline(.always)
 def trace_arg(name: String, shape: Coord) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
 
@@ -384,7 +429,7 @@ def trace_arg(name: String, shape: Coord) -> String:
     return s
 
 
-@always_inline
+@inline(.always)
 def trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
 
@@ -399,7 +444,7 @@ def trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
     return String(t"{trace_arg(name, shape)}x{dtype}")
 
 
-@always_inline
+@inline(.always)
 def trace_arg(name: String, shape: Coord, dtype: DType) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
 
@@ -417,6 +462,116 @@ def trace_arg(name: String, shape: Coord, dtype: DType) -> String:
 # ===-----------------------------------------------------------------------===#
 # Trace
 # ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _BridgeState(TrivialRegisterPassable):
+    """Which runtime-gated tracing bridges `_enter_bridges` engaged."""
+
+    var range_opened: Bool
+    var label_pushed: Bool
+    var tool_pushed: Bool
+    var tracy_enabled: Bool
+    var tracy_ctx: UInt64
+
+
+def _check_single_tracing_system[level: TraceLevel]():
+    var enabled_systems = _get_enabled_tracing_systems[level]()
+    debug_assert(
+        len(enabled_systems) <= 1,
+        "only one tracing system should be enabled at a time, got: ",
+        StaticString(", ").join(enabled_systems),
+    )
+
+
+def _enter_bridges(
+    name: StringSlice, color: UInt32, *, record_range: Bool, push_tool: Bool
+) -> _BridgeState:
+    """Engages the runtime-gated tracing bridges for a span named `name`.
+
+    `Trace.__enter__` is inlined into every `with Trace[...]` site, so the
+    backend calls that do not depend on the trace parameters live here and
+    are emitted once. The order matters and matches the profiler contracts
+    documented on `Trace.__enter__`: the MAX profiler range, the
+    device-graph capture label and the external profiler annotation are
+    additive, while an enabled Tracy zone is exclusive and the caller stops
+    after it.
+
+    Args:
+        name: The span name; the bridges copy what they need during the call.
+        color: The span color, or 0 when unspecified.
+        record_range: Whether the MAX profiler range and the device-graph
+            capture label apply at this trace level.
+        push_tool: Whether the external profiler annotation bridge applies at
+            this trace level in this build.
+
+    Returns:
+        Which bridges engaged, for `_exit_bridges` to pair.
+    """
+    var state = _BridgeState(
+        range_opened=False,
+        label_pushed=False,
+        tool_pushed=False,
+        tracy_enabled=False,
+        tracy_ctx=0,
+    )
+    if record_range and _is_range_recording():
+        external_call["KGEN_CompilerRT_RangeBegin", NoneType](
+            name.unsafe_ptr(), name.byte_length(), color
+        )
+        state.range_opened = True
+    # Name the kernels this op launches into a device graph being captured,
+    # so a profiler can attribute them when the graph is replayed without
+    # running this span again.
+    if record_range:
+        state.label_pushed = (
+            external_call["KGEN_CompilerRT_CaptureLabelPush", Int](
+                name.unsafe_ptr(), name.byte_length()
+            )
+            != 0
+        )
+    if push_tool:
+        state.tool_pushed = (
+            external_call[
+                "KGEN_CompilerRT_ExternalProfilerAnnotationPush", Int
+            ](name.unsafe_ptr(), name.byte_length(), color)
+            != 0
+        )
+    if _is_tracy_enabled():
+        state.tracy_enabled = True
+        state.tracy_ctx = external_call[
+            "KGEN_CompilerRT_TracyZoneBegin", UInt64
+        ](name.unsafe_ptr(), name.byte_length(), color)
+    return state
+
+
+def _exit_bridges(
+    *,
+    range_opened: Bool,
+    label_pushed: Bool,
+    tool_pushed: Bool,
+    tracy_ctx: UInt64,
+) -> Bool:
+    """Pairs the bridges `_enter_bridges` engaged.
+
+    Returns:
+        True when a Tracy zone was closed, which ends the span for the caller
+        the same way an enabled Tracy zone ended `Trace.__enter__`.
+    """
+    if range_opened:
+        external_call["KGEN_CompilerRT_RangeEnd", NoneType]()
+    if label_pushed:
+        external_call["KGEN_CompilerRT_CaptureLabelPop", NoneType]()
+    # Pop-iff-pushed: popping without a matching push would close an
+    # unrelated outer range on this thread's vendor annotation stack.
+    if tool_pushed:
+        external_call[
+            "KGEN_CompilerRT_ExternalProfilerAnnotationPop", NoneType
+        ]()
+    if tracy_ctx != 0:
+        external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](tracy_ctx)
+        return True
+    return False
 
 
 @fieldwise_init
@@ -469,6 +624,11 @@ struct Trace[
     open range. Keep profiler-visible scopes on one thread and uncopied.
     """
 
+    var _label_pushed: Bool
+    """True iff `__enter__` pushed a device-graph capture label; `__exit__`
+    pops it. Same single-thread and no-copy caveats as `_range_opened`.
+    """
+
     var _tool_pushed: Bool
     """True iff `__enter__` pushed an external profiler annotation range;
     `__exit__` pops it.
@@ -482,7 +642,7 @@ struct Trace[
     # This constructor is intentionally hidden because Variant is too flexible
     # about what it allows and we want to ensure that only StaticString or
     # String are used.
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         *,
@@ -514,18 +674,14 @@ struct Trace[
             or _name_value.isa[StaticString]()
         ), "the AsyncRT profiler only supports `StaticString` names"
 
-        # Validate that only one tracing system is enabled
-        var enabled_systems = _get_enabled_tracing_systems[Self.level]()
-        debug_assert(
-            len(enabled_systems) <= 1,
-            "only one tracing system should be enabled at a time, got: ",
-            StaticString(", ").join(enabled_systems),
-        )
+        _check_single_tracing_system[Self.level]()
 
         # Always initialize the tracy context to zero: it's set in __enter__.
         self._tracy_ctx = 0
         # Set in __enter__ iff a MAX profiler range was opened.
         self._range_opened = False
+        # Set in __enter__ iff a device-graph capture label was pushed.
+        self._label_pushed = False
         # Set in __enter__ iff an external profiler annotation range was
         # pushed.
         self._tool_pushed = False
@@ -545,17 +701,17 @@ struct Trace[
             self._name_value = _name_value^
             self.detail = detail
 
-            comptime if Self.target:
+            comptime if case .Some(target_name) = Self.target:
                 if self.detail:
                     self.detail += ";"
-                self.detail += String("target=", Self.target.value())
+                self.detail += String("target=", target_name)
             self.int_payload = task_id
         else:
             self._name_value = _name_value^
             self.detail = ""
             self.int_payload = None
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         var name: String,
@@ -583,7 +739,7 @@ struct Trace[
             color=color,
         )
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         name: StaticString,
@@ -611,7 +767,7 @@ struct Trace[
             color=color,
         )
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         name: StringLiteral,
@@ -639,7 +795,7 @@ struct Trace[
             color=color,
         )
 
-    @always_inline
+    @inline(.always)
     def __enter__(mut self) raises:
         """Enters the trace context.
 
@@ -656,81 +812,46 @@ struct Trace[
             self._emit_op_log("LAUNCH")
             return
 
-        # Record a MAX profiler range while a profiler trace is live. Unlike
-        # the branches below this one does not return: the profiler's trace
-        # has a different audience (Perfetto/HTA/on-demand capture) than the
-        # backends below (Tracy, NVTX/nsys, the AsyncRT time-trace), so
-        # whichever of those is enabled must still record its own span.
-        # THREAD-level spans are excluded — their per-task volume would swamp
-        # the profiler's span budget.
-        comptime if Self.level <= TraceLevel.OP:
-            if _is_range_recording():
-                var color_val = UInt32(
-                    Int(self.color.value())
-                ) if self.color else 0
-                if self._name_value.isa[StaticString]():
-                    external_call["KGEN_CompilerRT_RangeBegin", NoneType](
-                        self._name_value[StaticString].as_bytes().unsafe_ptr(),
-                        self._name_value[StaticString].byte_length(),
-                        color_val,
-                    )
-                else:
-                    external_call["KGEN_CompilerRT_RangeBegin", NoneType](
-                        self._name_value[String].as_bytes().unsafe_ptr(),
-                        self._name_value[String].byte_length(),
-                        color_val,
-                    )
-                self._range_opened = True
-
-        # Annotate an external profiler's trace through the
-        # external profiler annotation bridge. Like the MAX profiler branch
-        # above this is runtime-gated (the push reports whether anything was
-        # emitted) and additive: the backends below still record their own
-        # span. Compiled out when this build already emits vendor
-        # annotations directly through the GPU profiler branch below, so
-        # those builds never double-annotate.
-        # Annotations carry the span name only; detail strings are not
-        # forwarded.
-        comptime if Self.level <= TraceLevel.OP and not _is_gpu_profiler_enabled[
-            Self.category, Self.level
-        ]():
-            var tool_color = UInt32(
-                Int(self.color.value())
-            ) if self.color else 0
-            if self._name_value.isa[StaticString]():
-                self._tool_pushed = (
-                    external_call[
-                        "KGEN_CompilerRT_ExternalProfilerAnnotationPush", Int
-                    ](
-                        self._name_value[StaticString].as_bytes().unsafe_ptr(),
-                        self._name_value[StaticString].byte_length(),
-                        tool_color,
-                    )
-                    != 0
-                )
-            else:
-                self._tool_pushed = (
-                    external_call[
-                        "KGEN_CompilerRT_ExternalProfilerAnnotationPush", Int
-                    ](
-                        self._name_value[String].as_bytes().unsafe_ptr(),
-                        self._name_value[String].byte_length(),
-                        tool_color,
-                    )
-                    != 0
-                )
-
-        # Start a Tracy zone if the bridge is available.
-        if _is_tracy_enabled():
-            var name_str = self.name()
-            var color_val = UInt32(Int(self.color.value())) if self.color else 0
-            self._tracy_ctx = external_call[
-                "KGEN_CompilerRT_TracyZoneBegin", UInt64
-            ](
-                name_str.as_bytes().unsafe_ptr(),
-                name_str.byte_length(),
+        # Record a MAX profiler range while a profiler trace is live, and
+        # annotate an external profiler's trace through the annotation
+        # bridge. Neither returns: the profiler's trace has a different
+        # audience (Perfetto/HTA/on-demand capture) than the backends below
+        # (Tracy, NVTX/nsys, the AsyncRT time-trace), so whichever of those
+        # is enabled must still record its own span. THREAD-level spans are
+        # excluded from both since their per-task volume would swamp the
+        # span budget. The annotation bridge is also compiled out when this
+        # build emits vendor annotations directly through the GPU profiler
+        # branch below, so those builds never double-annotate. Annotations
+        # carry the span name only; detail strings are not forwarded.
+        #
+        # A Tracy zone, when the bridge is available, is exclusive and ends
+        # `__enter__` here.
+        comptime record_range = Self.level <= TraceLevel.OP
+        comptime push_tool = (
+            Self.level <= TraceLevel.OP
+            and not _is_gpu_profiler_enabled[Self.category, Self.level]()
+        )
+        var color_val = UInt32(Int(self.color.value())) if self.color else 0
+        var bridges: _BridgeState
+        if self._name_value.isa[StaticString]():
+            bridges = _enter_bridges(
+                self._name_value[StaticString],
                 color_val,
+                record_range=record_range,
+                push_tool=push_tool,
             )
+        else:
+            bridges = _enter_bridges(
+                StringSlice(self._name_value[String]),
+                color_val,
+                record_range=record_range,
+                push_tool=push_tool,
+            )
+        self._range_opened = bridges.range_opened
+        self._label_pushed = bridges.label_pushed
+        self._tool_pushed = bridges.tool_pushed
+        self._tracy_ctx = bridges.tracy_ctx
+        if bridges.tracy_enabled:
             return
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
@@ -788,7 +909,7 @@ struct Trace[
                 self.detail.byte_length(),
                 self.parent_id,
             )
-        elif self.int_payload:
+        elif case .Some(int_payload) = self.int_payload:
             # 2. If there is a task id, use the profiler API to create task:id
             #    labels without copying.
             self.event_id = external_call[
@@ -797,7 +918,7 @@ struct Trace[
                 name_str_ptr,
                 name_str_len,
                 self.parent_id,
-                self.int_payload.value(),
+                int_payload,
             )
         else:
             # 3. In the common case without a task id or detail string, create
@@ -814,7 +935,7 @@ struct Trace[
             "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
         ](self.event_id)
 
-    @always_inline
+    @inline(.always)
     def __exit__(self):
         """Exits the trace context.
 
@@ -825,28 +946,20 @@ struct Trace[
             self._emit_op_log("COMPLETE")
             return
 
-        # Close the MAX profiler range opened in __enter__ (see _range_opened).
-        if self._range_opened:
-            external_call["KGEN_CompilerRT_RangeEnd", NoneType]()
-
-        # Pop the external profiler annotation range pushed in __enter__
-        # (pop-iff-pushed: popping without a matching push would close an
-        # unrelated outer range on this thread's vendor annotation stack).
-        if self._tool_pushed:
-            external_call[
-                "KGEN_CompilerRT_ExternalProfilerAnnotationPop", NoneType
-            ]()
-
-        # End Tracy zone early to guarantee pairing even on early returns.
-        if self._tracy_ctx != 0:
-            external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](
-                self._tracy_ctx
-            )
+        # Pair whatever __enter__ engaged (see _range_opened, _label_pushed,
+        # _tool_pushed).
+        # A Tracy zone ends the span here, mirroring __enter__.
+        if _exit_bridges(
+            range_opened=self._range_opened,
+            label_pushed=self._label_pushed,
+            tool_pushed=self._tool_pushed,
+            tracy_ctx=self._tracy_ctx,
+        ):
             return
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
             try:
-                _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+                _end_gpu_range(_GPURangeID(self.event_id))
             except:
                 abort("GPU tracing failure")
             return
@@ -862,7 +975,7 @@ struct Trace[
             "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
         ](0)
 
-    @always_inline
+    @inline(.always)
     def mark(self) raises:
         """Marks the tracer with the info at the specific point of time.
 
@@ -902,7 +1015,7 @@ struct Trace[
                     UInt32(Int(self.color.value())) if self.color else 0,
                 )
 
-    @always_inline
+    @inline(.always)
     def name(self) -> String:
         """Returns the name of the trace.
 
@@ -915,7 +1028,7 @@ struct Trace[
 
     # WAR: passing detail_fn to __init__ causes internal compiler crash
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _get_detail_str(detail_fn: Some[def() -> String]) -> String:
         """Return the detail str when tracing is enabled and an empty string otherwise.
         """
@@ -928,7 +1041,7 @@ struct Trace[
         else:
             return ""
 
-    @always_inline
+    @inline(.always)
     def start(mut self) raises:
         """Start recording trace event.
 
@@ -939,7 +1052,7 @@ struct Trace[
         """
         self.__enter__()
 
-    @always_inline
+    @inline(.always)
     def end(mut self) raises:
         """End recording trace event.
 
@@ -955,8 +1068,8 @@ struct Trace[
         Emit a log message for op tracing to stderr.
         """
         var detail = self.detail
-        if self.int_payload:
-            detail += String(":", self.int_payload.value())
+        if case .Some(int_payload) = self.int_payload:
+            detail += String(":", int_payload)
         log.info(
             op_name,
             " ",

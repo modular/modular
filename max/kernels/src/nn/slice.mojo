@@ -15,17 +15,17 @@
 from std.math import clamp
 
 from max.algorithm import elementwise
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
-from std.sys.info import simd_width_of, _current_target
+from std.sys.info import CompilationTarget, simd_width_of
 
 from std.utils._select import _select_register_value as select
 from std.utils.index import IndexList
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
     # Normalize the start/stop indices
     var normalized_idx = select(start < 0, start + dim_i, start)
@@ -43,7 +43,7 @@ def _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_dim_as_view[
     dtype: DType, dim: Int
 ](
@@ -111,7 +111,7 @@ def slice_dim_as_view[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_as_view[
     dtype: DType,
     start_type: DType,
@@ -194,7 +194,7 @@ def slice_as_view[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def copy_to_slice[
     dtype: DType,
     start_type: DType,
@@ -238,11 +238,9 @@ def copy_to_slice[
 
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
 
-    @always_inline
+    @inline(.always)
     def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        buffer_slice_view.store[width=simd_width](
-            idx, in_slice.load[width=simd_width](idx)
-        )
+        buffer_slice_view.store(idx, in_slice.load[width=simd_width](idx))
 
     elementwise[1, target=target, _trace_description="slice_copy"](
         copy,
@@ -256,7 +254,7 @@ def copy_to_slice[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_as_copy[
     dtype: DType,
     index_type: DType,
@@ -287,9 +285,9 @@ def slice_as_copy[
     var sliced = slice_as_view(tensor, start, end, step)
 
     # Copy lambda sliced view into output buffer.
-    @always_inline
+    @inline(.always)
     def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        output.store[width=simd_width](idx, sliced.load[width=simd_width](idx))
+        output.store(idx, sliced.load[width=simd_width](idx))
 
     # Invoke copy.
     elementwise[1](copy, output.layout.shape_coord(), ctx)
@@ -300,7 +298,7 @@ def slice_as_copy[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_shape[
     input_type: DType,
     start_type: DType,
@@ -406,17 +404,17 @@ def sliced_add[
     def _sliced_add[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var out_val: SIMD[dtype, width]
 
-        if Int(idx[0].value()) >= batch_end_idx:
+        if Int(idx[0]) >= batch_end_idx:
             out_val = a.load[width](idx)
         else:
             var a_val = a.load[width](idx)
             var b_val = b.load[width](idx)
             out_val = a_val + b_val
 
-        c.store[width](idx, out_val)
+        c.store(idx, out_val)
 
     comptime if target == "gpu":
-        comptime compile_target = get_gpu_target()
+        comptime compile_target = ctx.target
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[
@@ -429,7 +427,7 @@ def sliced_add[
             ctx,
         )
     else:
-        comptime compile_target = _current_target()
+        comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[simd_width, target=target](

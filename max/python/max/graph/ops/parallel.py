@@ -64,7 +64,7 @@ def parallel(
     and yields one ``TensorValue`` per output bundle; the runtime
     re-dispatches the body across all launches.
 
-    When ``buffers`` are provided (e.g. signal buffers for bundled
+    When ``buffers`` are provided (such as signal buffers for bundled
     collectives), the body receives an additional ``BufferValue`` argument
     after the input-bundle representatives.  Buffers are flat (one per
     launch) and not bundled.

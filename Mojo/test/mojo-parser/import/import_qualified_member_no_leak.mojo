@@ -19,7 +19,7 @@
 # different module. See inputs/qualified_member_leak/.
 
 # (Note we can't use -verify-diagnostics as the errors appear in other packages)
-# RUN: not %parse-mojo-isolated -split-input-file -I=%S/inputs %s 2>&1 | FileCheck %s
+# RUN: not %parse-mojo-isolated -split-input-file -I%S/inputs %s 2>&1 | FileCheck %s
 
 
 # `other.shared_fn`: `shared_fn` is an __init__ re-export, not a member of

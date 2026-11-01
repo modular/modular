@@ -34,10 +34,8 @@ fragment matches the contiguous formula
 `frag[f] == (lid // 32) * 32 / 8 + f / 8` for `f in [0, 32)`.
 """
 
-from max.gpu import lane_id, thread_idx
-from max.gpu.sync import barrier
+from max.gpu import lane_id
 from max.gpu.host import DeviceContext
-from std.memory import AddressSpace
 from std.testing import assert_equal
 
 from layout import TileTensor
@@ -50,7 +48,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import MhaPrefillV2
 # Per-col group pattern. Returns `c // 8` packed into FP8 e4m3fn.
 # Column groups of 8 keep all distinct values exactly representable in FP8
 # at d=128: {0, 1, ..., 15}.
-@always_inline
+@inline(.always)
 def _pattern_fp8(r: Int, c: Int) -> Float8_e4m3fn:
     return Float8_e4m3fn(Float32(c // 8))
 
@@ -58,9 +56,11 @@ def _pattern_fp8(r: Int, c: Int) -> Float8_e4m3fn:
 def kernel_load_q_fp8[
     cfg: MhaConfigV2,
     depth: Int,
+    q_origin: MutOrigin,
+    dump_origin: MutOrigin,
 ](
-    q_ptr: MutPointer[Scalar[cfg.dtype], MutAnyOrigin],
-    dump_ptr: MutPointer[Scalar[cfg.dtype], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[cfg.dtype], q_origin],
+    dump_ptr: MutPointer[Scalar[cfg.dtype], dump_origin],
 ):
     """Calls `MhaPrefillV2._load_q_and_scale` and dumps each lane's
     per-base-tile fragment to gmem.
@@ -128,7 +128,9 @@ def test_q_loader_contiguous_lane_layout(ctx: DeviceContext) raises:
             for c in range(DEPTH):
                 host_q[r * DEPTH + c] = _pattern_fp8(r, c)
 
-    ctx.enqueue_function[kernel_load_q_fp8[CFG, DEPTH]](
+    ctx.enqueue_function[
+        kernel_load_q_fp8[CFG, DEPTH, origin_of(dev_q), origin_of(dev_dump)]
+    ](
         dev_q.unsafe_ptr(),
         dev_dump.unsafe_ptr(),
         grid_dim=1,

@@ -107,7 +107,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
         var names = List[PythonObject]()
         for name in self_ptr[].name.split(String(py=sep)):
             names.append(PythonObject(name))
-        return Python.list(names^)
+        return Python.list(names)
 
     @staticmethod
     def _with(

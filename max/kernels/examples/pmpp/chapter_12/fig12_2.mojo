@@ -14,6 +14,7 @@
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.atomic import Atomic
+from std.math import ceildiv
 
 
 # ========================== CONFIGURATION ==========================
@@ -21,7 +22,7 @@ comptime BLOCK_DIM = 256
 
 
 # ========================== DEVICE FUNCTIONS ==========================
-@always_inline
+@inline(.always)
 def cond(val: UInt32) -> Bool:
     """Filter: keep only even numbers.
 
@@ -36,9 +37,9 @@ def cond(val: UInt32) -> Bool:
 
 # ========================== KERNEL CODE ==========================
 def filter_kernel(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    output_size: UnsafePointer[UInt32, MutAnyOrigin],
+    input: ImmPointer[UInt32, ImmUntrackedOrigin],
+    output: MutPointer[UInt32, MutUntrackedOrigin],
+    output_size: MutPointer[UInt32, MutUntrackedOrigin],
     N: UInt32,
 ):
     """Figure 12.2: Simple unstable filter kernel.
@@ -78,7 +79,7 @@ def main() raises:
             h_size[0] = UInt32(0)
 
         # Launch kernel
-        var num_blocks = (N + BLOCK_DIM - 1) // BLOCK_DIM
+        var num_blocks = ceildiv(N, BLOCK_DIM)
         print(
             "Launching simple unstable filter kernel (Fig 12.2) with",
             num_blocks,

@@ -19,7 +19,7 @@ from layout import Coord, TileTensor, row_major
 from nn.normalization import apply_qk_rms_norm
 from std.testing import assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def run_apply_qk_rms_norm_gpu[
@@ -34,14 +34,8 @@ def run_apply_qk_rms_norm_gpu[
     atol: Float64 = 1e-2,
 ) raises:
     print(
-        "== run_apply_qk_rms_norm_gpu rows=",
-        rows,
-        " q_cols=",
-        q_cols,
-        " k_cols=",
-        k_cols,
-        " in_dtype=",
-        in_dtype,
+        t"== run_apply_qk_rms_norm_gpu rows= {rows}  q_cols= {q_cols}  k_cols="
+        t" {k_cols}  in_dtype= {in_dtype}"
     )
 
     comptime out_dtype = in_dtype
@@ -71,13 +65,13 @@ def run_apply_qk_rms_norm_gpu[
     var qo_d = ctx.enqueue_create_buffer[out_dtype](rows * q_cols)
     var ko_d = ctx.enqueue_create_buffer[out_dtype](rows * k_cols)
 
-    var q_buf = TileTensor(q_d, row_major(Coord(Index(rows, q_cols))))
-    var k_buf = TileTensor(k_d, row_major(Coord(Index(rows, k_cols))))
-    var gq_buf = TileTensor(gq_d, row_major(Coord(Index(q_cols))))
-    var gk_buf = TileTensor(gk_d, row_major(Coord(Index(k_cols))))
-    var var_buf = TileTensor(var_d, row_major(Coord(Index(rows, 2))))
-    var qo_buf = TileTensor(qo_d, row_major(Coord(Index(rows, q_cols))))
-    var ko_buf = TileTensor(ko_d, row_major(Coord(Index(rows, k_cols))))
+    var q_buf = TileTensor(q_d, row_major((rows, q_cols)))
+    var k_buf = TileTensor(k_d, row_major((rows, k_cols)))
+    var gq_buf = TileTensor(gq_d, row_major((q_cols,)))
+    var gk_buf = TileTensor(gk_d, row_major((k_cols,)))
+    var var_buf = TileTensor(var_d, row_major((rows, 2)))
+    var qo_buf = TileTensor(qo_d, row_major((rows, q_cols)))
+    var ko_buf = TileTensor(ko_d, row_major((rows, k_cols)))
 
     ctx.enqueue_copy(q_d, q_h)
     ctx.enqueue_copy(k_d, k_h)

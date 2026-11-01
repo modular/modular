@@ -335,6 +335,7 @@ EOF
             "validate-lit-features",
             "lint-test",
         ],
+        target_compatible_with = target_compatible_with,
         timeout = "short",
     )
 

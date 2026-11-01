@@ -18,22 +18,27 @@ from __future__ import annotations
 import functools
 from collections.abc import Sequence
 
+from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
+from max.pipelines.lib.registration_graph_api import decoder_outputs
+from max.pipelines.lib.role_contracts import DecoderInputs
+from max.pipelines.lib.role_contracts import DecoderOutputs as RoleOutputs
 
 from .layers.attention import Gemma3Attention
 from .layers.rms_norm import Gemma3RMSNorm
@@ -189,7 +194,8 @@ class Gemma3TextModel(DistributedLogitsPostprocessMixin, Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         **kwargs,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
+        """Run the decoder layers and return their logits."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         kv_collections_by_type = {
@@ -217,26 +223,40 @@ class Gemma3TextModel(DistributedLogitsPostprocessMixin, Module):
 
 
 class Gemma3(Module):
-    """The Gemma model (currently text-only)."""
+    """The Gemma 3 text decoder, registered for the ``DECODER`` role."""
+
+    graph_name = "gemma3_text"
+    """The name the graph compiled under before registration, which keys
+    precompiled MEFs."""
+
+    always_signal_buffers = True
 
     def __init__(self, config: Gemma3Config) -> None:
         super().__init__()
         self.language_model = Gemma3TextModel(config)
 
     def __call__(
-        self,
-        tokens: TensorValue,
-        signal_buffers: Sequence[BufferValue],
-        sliding_kv_collections: Sequence[PagedCacheValues],
-        global_kv_collections: Sequence[PagedCacheValues],
-        return_n_logits: TensorValue,
-        input_row_offsets: Sequence[TensorValue],
-    ) -> tuple[TensorValue, ...]:
-        return self.language_model(
-            tokens,
-            signal_buffers,
-            sliding_kv_collections,
-            global_kv_collections,
-            return_n_logits,
-            input_row_offsets,
+        self, inputs: DecoderInputs[TensorValue]
+    ) -> RoleOutputs[TensorValue]:
+        """Runs the language model on the batch and returns its logits."""
+        sliding_kv, global_kv = (
+            self.language_model.kv_params.unflatten_basic_kv_tree(
+                iter(tree.leaves(inputs.kv))
+            )
         )
+        outputs = self.language_model(
+            inputs.tokens,
+            list(inputs.signals or ()),
+            sliding_kv,
+            global_kv,
+            inputs.return_n_logits,
+            # Each device's layers read the row offsets on their own device.
+            [
+                inputs.input_row_offsets,
+                *(
+                    inputs.input_row_offsets.to(device)
+                    for device in self.language_model.devices[1:]
+                ),
+            ],
+        )
+        return decoder_outputs(outputs)

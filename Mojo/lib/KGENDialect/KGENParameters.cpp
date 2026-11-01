@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/KGENDialect/KGENParameters.h"
+#include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -104,6 +105,26 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
   }
   return nullptr;
 }
+
+template <typename BaseT>
+BaseT IndexDepthAdjuster::replaceCached(BaseT value) {
+  if (!value)
+    return value;
+  CompilerCaches *caches = CompilerCaches::get(value.getContext());
+  if (!caches)
+    return IndexParameterReplacer<IndexDepthAdjuster>::replace(value);
+  std::tuple<const void *, int64_t, unsigned> key(
+      value.getAsOpaquePointer(), adjustDepth, onlyAdjustIndexRef);
+  if (const void *hit = caches->depthAdjust.lookup(key))
+    return BaseT::getFromOpaquePointer(hit);
+  BaseT result = IndexParameterReplacer<IndexDepthAdjuster>::replace(value);
+  if (result)
+    caches->depthAdjust.insert(key, result.getAsOpaquePointer());
+  return result;
+}
+
+template Attribute IndexDepthAdjuster::replaceCached(Attribute);
+template Type IndexDepthAdjuster::replaceCached(Type);
 
 //===----------------------------------------------------------------------===//
 // ParameterCollector
@@ -234,7 +255,7 @@ void ParameterCollector::collectUsesFromAttrImpl(
     return;
   }
 
-  // Check any SymbolConstantAttr's we encounter.
+  // Check any symbol references we encounter.
   if (auto ref = dyn_cast<DeclRefAttrInterface>(attr))
     verifyRefAttr(ref);
 
@@ -245,16 +266,18 @@ void ParameterCollector::collectUsesFromAttrImpl(
   bool hasNestedCtxEvalExpr = false;
   size_t nestedRequiredDepth = 0;
 
-  // Recursively check for any nested types/attributes, e.g. the elements of an
-  // array attribute.
   attr.walkImmediateSubElements(
       [&](Attribute attr) {
+        size_t innerRequiredDepth = 0;
         collectUsesFromAttr(attr, uses, hasNestedCtxEvalExpr,
-                            nestedRequiredDepth);
+                            innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       },
       [&](Type type) {
+        size_t innerRequiredDepth = 0;
         collectUsesFromType(type, uses, hasNestedCtxEvalExpr,
-                            nestedRequiredDepth);
+                            innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       });
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
@@ -315,12 +338,14 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // function type, types like !kgen.scalar<ty> etc.
   type.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr,
-                            nestedRequiredDepth);
+        size_t innerRequiredDepth = 0;
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr, innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       },
       [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr,
-                            nestedRequiredDepth);
+        size_t innerRequiredDepth = 0;
+        collectUsesFromType(type, uses, hasNestedConstExpr, innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       });
 
   // If the type had parameter uses or constant expressions, don't consider it
@@ -467,13 +492,14 @@ static std::optional<size_t> findFirstReferenceImpl(
                             : static_cast<size_t>(hasReference);
 }
 
-std::optional<size_t>
-ParamIndexRefAttrFinder::findOneReference(TypedAttr value) {
-  return findFirstReferenceImpl(value, 0, cached);
+std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(TypedAttr value,
+                                                                size_t depth) {
+  return findFirstReferenceImpl(value, depth, cached);
 }
 
-std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(Type type) {
-  return findFirstReferenceImpl(type, 0, cached);
+std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(Type type,
+                                                                size_t depth) {
+  return findFirstReferenceImpl(type, depth, cached);
 }
 
 //===----------------------------------------------------------------------===//
@@ -769,9 +795,6 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
         return scope->getParentOp()->getName().getStringRef().str();
       });
 
-  // Defer the processing of the use-def node for region declarations until
-  // after nested scopes have been analyzed.
-  SmallVector<std::pair<ParamDeclAttr, SmallVector<Region *, 0>>> regionValues;
   // The parameter collector to use.
   VerifyingParameterCollector c(evaluationContext, cache);
 
@@ -844,10 +867,6 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
           c.collectUsesFromAttr(expr, (*def)->uses, unusedHasConstExpr,
                                 unusedRequiredSignatureDepth);
         }
-        // If the definition of this parameter depends on a region, defer
-        // processing of the nested region uses.
-        if (!value.regions.empty())
-          regionValues.emplace_back(decl, value.regions);
       });
       if (hadError)
         return WalkResult::interrupt();
@@ -943,18 +962,6 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
     }
 
     nestedScopes.try_emplace(nestedScope, std::move(nested));
-  }
-
-  // The parameter uses that a region parameter declaration depend on are
-  // computed after the walk, since the walk is performed pre-order. Now that
-  // we have the uses in the nested scopes, compute their dependent parameters.
-  for (auto &[decl, regions] : regionValues) {
-    ParamDefinition &def = defs.find(decl.getName())->second;
-    for (Region *region : regions) {
-      auto it = nestedScopes.find(region);
-      assert(it != nestedScopes.end() && "didn't visit nested body?");
-      llvm::append_range(def.uses, it->second.usesFromAbove);
-    }
   }
 
   // Check that there is a definite partial ordering between parameters and emit

@@ -21,7 +21,13 @@ from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device, load_devices
+from max.driver import (
+    CPU,
+    Buffer,
+    Device,
+    float32_to_bfloat16_as_uint16,
+    load_devices,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType, ops
@@ -30,7 +36,6 @@ from max.pipelines.diffusion.cache import (
     TaylorSeerCache,
 )
 from max.pipelines.diffusion.config import DenoisingCacheConfig
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,
 )
@@ -49,8 +54,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 def _tokens_are_cfg_batched(tokens_shape: tuple[int, ...]) -> bool:
-    """Whether a tokens tensor holds a pre-concatenated ``[cond; uncond]`` CFG
-    batch.
+    """Whether a tokens tensor holds a pre-concatenated ``[cond; uncond]`` CFG batch.
 
     ``prepare_inputs`` only batches CFG for the T2V path, producing a 2-D
     ``[2, seq_len]`` tensor. The I2V / sequential path leaves tokens 1-D
@@ -268,6 +272,7 @@ class WanExecutor(
 
     @traced(message="WanExecutor.prepare_inputs")
     def prepare_inputs(self, contexts: list[WanContext]) -> WanExecutorInputs:
+        """Builds the executor's inputs from the request contexts."""
         if len(contexts) != 1:
             raise ValueError(
                 "WanExecutor currently supports batch_size=1. "
@@ -411,6 +416,7 @@ class WanExecutor(
 
     @traced(message="WanExecutor.execute")
     def execute(self, inputs: WanExecutorInputs) -> WanExecutorOutputs:
+        """Runs the graphs over the prepared inputs."""
         device = self._model_device
 
         # Bulk device transfer.
@@ -960,7 +966,7 @@ class WanExecutor(
         """Return True when the full transformer pass can be skipped.
 
         Matches the TaylorSeer-Wan2.1 reference schedule: anchor on
-        ``step == 0`` and every ``interval``-th step thereafter (e.g.
+        ``step == 0`` and every ``interval``-th step thereafter (such as
         steps 0, 5, 10, … with ``interval=5``).
 
         Cold-start safety: if the per-stream cache state has no anchor

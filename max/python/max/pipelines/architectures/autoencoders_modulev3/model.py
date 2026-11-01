@@ -10,16 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Base pipeline model for the ModuleV3 autoencoder."""
 
 from collections.abc import Callable
 from typing import Any
 
+from max import functional as F
 from max.driver import Device
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.modeling.base.component_model import ComponentModel
+from max.tensor import Tensor
 
 from .model_config import AutoencoderKLConfigBase
 from .vae import DiagonalGaussianDistribution
@@ -50,8 +51,8 @@ class BaseAutoencoderModel(ComponentModel):
             encoding: Supported encoding for the model.
             devices: List of devices to use.
             weights: Model weights.
-            config_class: Configuration class to use (e.g., AutoencoderKLConfig).
-            autoencoder_class: Autoencoder class to use (e.g., AutoencoderKL).
+            config_class: Configuration class to use (such as AutoencoderKLConfig).
+            autoencoder_class: Autoencoder class to use (such as AutoencoderKL).
             **kwargs: Additional keyword arguments forwarded to ComponentModel.
         """
         super().__init__(config, encoding, devices, weights, **kwargs)

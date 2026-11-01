@@ -50,10 +50,7 @@ def log_pipeline_info(
         ValueError: If no architecture is found for the model. This should not
             happen after config resolution.
     """
-    arch = PIPELINE_REGISTRY.retrieve_architecture(
-        architecture_name=pipeline_config.models.main_architecture_name,
-        prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-    )
+    arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config)
 
     if arch is None:
         raise ValueError(
@@ -65,7 +62,7 @@ def log_pipeline_info(
     arch_entries: list[tuple[str, Any]] = [
         ("architecture", arch.name),
         ("pipeline_class", pipeline_class.__name__),
-        ("pipeline_model", arch.pipeline_model.__name__),
+        ("pipeline_model", getattr(arch.pipeline_model, "__name__", None)),
         ("tokenizer", arch.tokenizer_cls.__name__),
     ]
 
@@ -75,7 +72,9 @@ def log_pipeline_info(
     for line in _format_config_entries(arch_entries):
         _logger.info(line)
 
-    pipeline_config.models.log_model_info()
+    pipeline_config.models.log_model_info(
+        uses_kv_cache=arch.task == PipelineTask.TEXT_GENERATION
+    )
     pipeline_entries: list[tuple[str, Any]] = []
     if "main" in pipeline_config.models:
         pipeline_entries.append(("max_seq_len", memory_plan.planned_max_length))
@@ -89,6 +88,10 @@ def log_pipeline_info(
             (
                 "in_flight_batching",
                 pipeline_config.runtime.enable_in_flight_batching,
+            ),
+            (
+                "spec_decode_mixed_batches",
+                pipeline_config.runtime.enable_spec_decode_mixed_batches,
             ),
         ]
     )
@@ -134,10 +137,7 @@ def log_basic_config(
         ValueError: If no architecture is found for the model. This should not
             happen after config resolution.
     """
-    arch = PIPELINE_REGISTRY.retrieve_architecture(
-        architecture_name=pipeline_config.models.main_architecture_name,
-        prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-    )
+    arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config)
 
     if arch is None:
         model_path = (
@@ -190,16 +190,6 @@ def log_basic_config(
         )
         config_entries.append(
             ("use_greedy_acceptance", spec.use_greedy_acceptance)
-        )
-        # Nothing reads rejection_sampling_strategy. Print the request and
-        # its inertness together, so an A/B over the flag is not credited to
-        # an acceptance-rule change that never happened.
-        config_entries.append(
-            (
-                "rejection_sampling_strategy",
-                f"{spec.rejection_sampling_strategy or 'unset'} (inert:"
-                " the architecture's AcceptanceSampler decides)",
-            )
         )
         if spec.use_relaxed_acceptance_for_thinking:
             config_entries.append(("relaxed_topk", spec.relaxed_topk))

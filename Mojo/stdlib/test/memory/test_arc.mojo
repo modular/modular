@@ -13,7 +13,13 @@
 
 from std.memory import ArcPointer
 from std.memory.arc_pointer import WeakPointer
-from test_utils import ObservableDel, check_write_to
+from std.sys import size_of
+from test_utils import (
+    ExplicitDestroy,
+    ObservableDel,
+    check_niches,
+    check_write_to,
+)
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
@@ -167,6 +173,96 @@ def test_eq() raises:
     var s = ArcPointer(99)
     assert_false(p == s)
     assert_true(p != s)
+
+
+def test_deinitable_conformance() raises:
+    assert_true(conforms_to(ArcPointer[Int], Deinitable))
+    assert_false(conforms_to(ArcPointer[ExplicitDestroy], Deinitable))
+    # A `WeakPointer` never destroys the value, so it is always `Deinitable`.
+    assert_true(conforms_to(WeakPointer[ExplicitDestroy], Deinitable))
+
+
+def test_deinit_with_last_reference() raises:
+    var destroyed = List[Int]()
+
+    def destroy(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    var p = ArcPointer(ExplicitDestroy(7))
+    p^.deinit_with(destroy)
+    assert_equal(destroyed, [7])
+
+
+def test_deinit_with_only_runs_on_last_reference() raises:
+    var destroyed = List[Int]()
+
+    def destroy(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    # A raising assert can't run while a linear `ArcPointer` is live, so
+    # snapshot the state and check it once every pointer is consumed.
+    var p = ArcPointer(ExplicitDestroy(7))
+    var p2 = p.copy()
+    var p3 = p
+    var initial_count = p.count()
+
+    p^.deinit_with(destroy)
+    var destroyed_after_first = len(destroyed)
+    p2^.deinit_with(destroy)
+    var destroyed_after_second = len(destroyed)
+    var final_count = p3.count()
+    var final_value = p3[].value
+    p3^.deinit_with(destroy)
+
+    assert_equal(UInt64(3), initial_count)
+    assert_equal(0, destroyed_after_first)
+    assert_equal(0, destroyed_after_second)
+    assert_equal(UInt64(1), final_count)
+    assert_equal(7, final_value)
+    assert_equal(destroyed, [7])
+
+
+def test_deinit_with_deinitable_type() raises:
+    var taken = 0
+
+    def take(var v: Int) {mut taken}:
+        taken = v
+
+    var p = ArcPointer(42)
+    p^.deinit_with(take)
+    assert_equal(42, taken)
+
+
+def test_deinit_with_weak_outliving_strong() raises:
+    var destroyed = List[Int]()
+
+    def destroy(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    var p = ArcPointer(ExplicitDestroy(3))
+    var w = WeakPointer(downgrade=p)
+
+    var up = w.try_upgrade()
+    var upgraded_count = w.strong_count()
+    up.take().deinit_with(destroy)
+    up^.deinit_assert_empty()
+    var destroyed_while_strong = len(destroyed)
+
+    p^.deinit_with(destroy)
+    var after = w.try_upgrade()
+    var upgraded_after_drop = Bool(after)
+    after^.deinit_assert_empty()
+
+    assert_equal(UInt64(2), upgraded_count)
+    assert_equal(0, destroyed_while_strong)
+    assert_equal(destroyed, [3])
+    assert_false(upgraded_after_drop)
+    assert_equal(UInt64(0), w.strong_count())
+    assert_equal(UInt64(1), w.weak_count())
+    _ = w^
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +469,24 @@ def test_lifetime_probe_arc_drop_with_weak_in_scope() raises:
     # If `_ = p^` is honored as a real drop point: observed is True.
     # If lifetime extension defers p's drop to last-use of w: observed is False.
     assert_true(observed)
+
+
+def test_arc_pointer_niche() raises:
+    comptime ArcType = ArcPointer[String]
+    assert_equal(ArcType.niche_count(), 1)
+    assert_equal(size_of[Optional[ArcType]](), size_of[ArcType]())
+    check_niches[ArcType]()
+
+    var p = ArcPointer(String("hello"))
+    var some = Optional(p)
+    assert_true(some)
+    assert_equal(some.value()[], "hello")
+    assert_equal(p.count(), 2)
+    _ = some^
+    assert_equal(p.count(), 1)
+
+    var none = Optional[ArcType](None)
+    assert_false(none)
 
 
 def main() raises:

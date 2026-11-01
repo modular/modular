@@ -13,7 +13,7 @@ kgen.func @nested_continue(%arg0: !kgen.scalar<bool>) {
     hlcf.if %arg0 {
       // CHECK-NEXT: ^bb2:
       // CHECK-NEXT: llvm.return
-      kgen.return
+      hlcf.return
     } else {
       // CHECK-NEXT: ^bb3:
       // CHECK-NEXT: llvm.br ^bb1
@@ -22,7 +22,7 @@ kgen.func @nested_continue(%arg0: !kgen.scalar<bool>) {
     // CHECK-NOT: ^bb4:
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @nested_break
@@ -48,15 +48,16 @@ kgen.func @nested_break(%arg0: !kgen.scalar<bool>) {
   }
   // CHECK-NEXT: ^bb5:
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @deeply_nested
 kgen.func @deeply_nested(%arg0: !kgen.scalar<bool>, %arg1: !kgen.scalar<bool>, %arg2: !kgen.scalar<bool>) {
-  // CHECK-NEXT: %[[A2SB:.*]] = builtin.unrealized_conversion_cast %arg2 : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT: %[[A1SB:.*]] = builtin.unrealized_conversion_cast %arg1 : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT: %[[A0SB:.*]] = builtin.unrealized_conversion_cast %arg0 : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT: %[[C0:.*]] = builtin.unrealized_conversion_cast %[[A0SB]] : !kgen.scalar<bool> to i1
+  // The argument casts' emission order is not fixed.
+  // CHECK-DAG: %[[A2SB:.*]] = builtin.unrealized_conversion_cast %arg2 : i1 to !kgen.scalar<bool>
+  // CHECK-DAG: %[[A1SB:.*]] = builtin.unrealized_conversion_cast %arg1 : i1 to !kgen.scalar<bool>
+  // CHECK-DAG: %[[A0SB:.*]] = builtin.unrealized_conversion_cast %arg0 : i1 to !kgen.scalar<bool>
+  // CHECK: %[[C0:.*]] = builtin.unrealized_conversion_cast %[[A0SB]] : !kgen.scalar<bool> to i1
   // CHECK-NEXT: llvm.cond_br %[[C0]], ^bb1, ^bb10
   hlcf.if %arg0 {
     // CHECK-NEXT: ^bb1:
@@ -92,14 +93,14 @@ kgen.func @deeply_nested(%arg0: !kgen.scalar<bool>, %arg1: !kgen.scalar<bool>, %
     }
     // CHECK-NEXT: ^bb9:
     // CHECK-NEXT: llvm.return
-    kgen.return
+    hlcf.return
   } else {
     // CHECK-NEXT: ^bb10:
     // CHECK-NEXT: llvm.br ^bb11
     hlcf.yield
   }
   // CHECK-NEXT: ^bb11:
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @operands_and_results
@@ -153,7 +154,7 @@ kgen.func @operands_and_results(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i6
   // CHECK-NEXT: %[[R0:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-NEXT: %[[R1:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: return %{{.*}}
-  kgen.return %0#0, %0#1 : i32, i64
+  hlcf.return %0#0, %0#1 : i32, i64
 }
 
 // CHECK-LABEL: @multiple_return
@@ -164,14 +165,41 @@ kgen.func @multiple_return(%arg0: !kgen.scalar<bool>) -> (i1, i1) {
   hlcf.if %arg0 {
     // CHECK: ^bb1:
     // CHECK-NEXT: %[[S0:.*]] = llvm.mlir.undef
-    // CHECK-NEXT: %[[S1:.*]] = llvm.insertvalue %[[B]], %[[S0]][0]
-    // CHECK-NEXT: %[[S2:.*]] = llvm.insertvalue %[[B]], %[[S1]][1]
+    // CHECK-NEXT: %[[S1:.*]] = llvm.insertvalue %arg0, %[[S0]][0]
+    // CHECK-NEXT: %[[S2:.*]] = llvm.insertvalue %arg0, %[[S1]][1]
     // CHECK-NEXT: llvm.return %[[S2]]
-    kgen.return %b, %b : i1, i1
+    hlcf.return %b, %b : i1, i1
   } else {
     hlcf.yield
   }
-  kgen.return %b, %b : i1, i1
+  hlcf.return %b, %b : i1, i1
+}
+
+// Multi-arm if: entry CondBr to then vs first elif cond; elifcond.yield CondBr
+// to then vs else.
+// CHECK-LABEL: @multiarm_if
+kgen.func @multiarm_if(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %a: i32, %b: i32, %c: i32) -> i32 {
+  // CHECK: llvm.cond_br %{{.*}}, ^bb1, ^bb3
+  %0 = hlcf.if %c0 -> i32 {
+    // CHECK: ^bb1:
+    // CHECK: llvm.br ^bb5(%{{.*}} : i32)
+    hlcf.yield %a : i32
+  // CHECK: ^bb2:
+  // CHECK: llvm.br ^bb5(%{{.*}} : i32)
+  } else {
+    // CHECK: ^bb3:
+    // CHECK: llvm.cond_br %{{.*}}, ^bb4, ^bb2
+    hlcf.if.elifcond.yield %c1
+  } then {
+    // CHECK: ^bb4:
+    // CHECK: llvm.br ^bb5(%{{.*}} : i32)
+    hlcf.yield %b : i32
+  } else {
+    hlcf.yield %c : i32
+  }
+  // CHECK: ^bb5(%{{.*}}: i32):
+  // CHECK: return
+  hlcf.return %0 : i32
 }
 
 // CHECK-LABEL: @switch
@@ -182,18 +210,110 @@ kgen.func @switch(%arg0: index) {
   // CHECK: ^bb1:
   default {
     // CHECK-NEXT: return
-    kgen.return
+    hlcf.return
   }
   // CHECK: ^bb2:
   case 2 {
     // CHECK-NEXT: br
     hlcf.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // COM: Ensure raising inside anything other than the try region of a `lit.try`
 // COM: will not branch back to the except.
+
+// CHECK-LABEL: @match
+kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
+  // Entry branches to the first case (region #1; else is inlined first as ^bb1).
+  // CHECK-NEXT: %[[A0SB:.*]] = builtin.unrealized_conversion_cast %arg0 : i1 to !kgen.scalar<bool>
+  // CHECK-NEXT: llvm.br ^bb2
+  %0 = hlcf.match -> i32 {
+    hlcf.if %arg0 {
+      hlcf.match.complete %arg1 : i32
+    } else {
+      hlcf.match.next
+    }
+    hlcf.unreachable
+  }
+  case {
+    hlcf.if %arg0 {
+      hlcf.match.complete %arg1 : i32
+    } else {
+      hlcf.match.next
+    }
+    hlcf.unreachable
+  }
+  else {
+    // CHECK-NEXT: ^bb1:
+    // CHECK: llvm.br ^bb8(%{{.*}} : i32)
+    hlcf.yield %arg2 : i32
+  }
+  // CHECK: ^bb2:
+  // CHECK: llvm.cond_br %{{.*}}, ^bb3, ^bb4
+  // CHECK: ^bb3:
+  // CHECK: llvm.br ^bb8(%{{.*}} : i32)
+  // CHECK: ^bb4:
+  // CHECK-NEXT: llvm.br ^bb5
+  // CHECK: ^bb5:
+  // CHECK: llvm.cond_br %{{.*}}, ^bb6, ^bb7
+  // CHECK: ^bb6:
+  // CHECK: llvm.br ^bb8(%{{.*}} : i32)
+  // CHECK: ^bb7:
+  // CHECK-NEXT: llvm.br ^bb1
+  // CHECK: ^bb8(%{{.*}}: i32):
+  // CHECK: return
+  hlcf.return %0 : i32
+}
+
+// CHECK-LABEL: @match_next_to_else
+kgen.func @match_next_to_else(%arg0: i32, %arg1: i32) -> i32 {
+  // CHECK-NEXT: llvm.br ^bb2
+  %0 = hlcf.match -> i32 {
+    hlcf.match.next
+  }
+  else {
+    // CHECK-NEXT: ^bb1:
+    // CHECK: llvm.br ^bb3(%{{.*}} : i32)
+    hlcf.yield %arg1 : i32
+  }
+  // CHECK: ^bb2:
+  // CHECK-NEXT: llvm.br ^bb1
+  // CHECK: ^bb3(%{{.*}}: i32):
+  hlcf.return %0 : i32
+}
+
+// Nested match: next in an inner else targets the enclosing match.
+// CHECK-LABEL: @nested_match
+kgen.func @nested_match(%arg0: i32, %arg1: i32) -> i32 {
+  // CHECK-NEXT: llvm.br ^bb1
+  %0 = hlcf.match -> i32 {
+    // CHECK-NEXT: ^bb1:
+    // CHECK-NEXT: llvm.br ^bb3
+    hlcf.match {
+      hlcf.match.next
+    }
+    else {
+      // Targets the outer match's next case.
+      // CHECK-NEXT: ^bb2:
+      // CHECK-NEXT: llvm.br ^bb4
+      hlcf.match.next
+    }
+    hlcf.unreachable
+  }
+  case {
+    // CHECK: ^bb3:
+    // CHECK-NEXT: llvm.br ^bb2
+    // CHECK: ^bb4:
+    // CHECK: llvm.br ^bb5(%{{.*}} : i32)
+    hlcf.match.complete %arg0 : i32
+  }
+  else {
+    hlcf.yield %arg1 : i32
+  }
+  // CHECK: ^bb5(%{{.*}}: i32):
+  hlcf.return %0 : i32
+}
 
 // CHECK-LABEL: @reraise_in_try
 kgen.func @reraise_in_try(%err: i32) {
@@ -210,9 +330,9 @@ kgen.func @reraise_in_try(%err: i32) {
       // CHECK: br ^bb4(%{{.*}} : i32)
       lit.try.raise "try0" %arg0 :i32
     } else {
-      kgen.unreachable
+      hlcf.unreachable
     }
-    kgen.unreachable
+    hlcf.unreachable
   } except (%arg0: i32) {
     // CHECK-NEXT: ^bb4(%{{.*}}: i32):
     // CHECK: outer.except
@@ -220,11 +340,11 @@ kgen.func @reraise_in_try(%err: i32) {
     // CHECK: br ^bb5
     lit.try.yield
   } else {
-    kgen.unreachable
+    hlcf.unreachable
   }
   // CHECK-NEXT: ^bb5:
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 }

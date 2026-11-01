@@ -28,18 +28,6 @@ comptime EnableForcedOrdering = get_defined_bool[
 ]()
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
 
-# Cross-stage P TMEM placement (2Q, non-WS only): each softmax stage's P is
-# written into the OTHER stage's free S columns instead of self-aliasing its
-# own S, enabling early S-release. Default OFF => byte-identical.
-comptime EnableTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", True]()
-
-# Reading the same define with the opposite default recovers whether the user
-# passed it at all: only an explicit `=true` makes a False-defaulted read come
-# back True. The cross-stage-P guards key off this, so the ON-by-default path
-# can never trip a guard -- they fire only when someone explicitly asks for
-# cross-stage P on a config that does not support it.
-comptime ExplicitTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", False]()
-
 # Programmatic Dependent Launch level for the SM100 MHA prefill kernel.  On by
 # default so back-to-back attention grids in a stream overlap launch/prologue
 # latency; disable with `-D MHA_PDL=false`.  When > OFF the kernel emits
@@ -60,6 +48,15 @@ struct FA4Config[
     *,
     rope_dtype_: Optional[DType] = None,
     scale_dtype_: Optional[DType] = None,
+    # Cross-stage P TMEM placement (2Q, non-WS only): each softmax stage's P
+    # is written into the OTHER stage's free S columns instead of
+    # self-aliasing its own S, enabling early S-release. A comptime
+    # parameter, threaded from the dispatch entries, so an A/B can
+    # elaborate both arms of one executable -- one compile, one fixture
+    # fill, paired timing. Defaults ON (the measured choice); where the
+    # support matrix rejects the config, `crossp_on()` folds it to False
+    # and every consumer stays byte-identical to cross-P-off.
+    cross_p: Bool = True,
 ](TrivialRegisterPassable):
     var MMA_M: Int
     var BM: Int
@@ -136,18 +133,25 @@ struct FA4Config[
     # False -- the default and every config today -- means `o_phys_cols()` is
     # literally `padded_ov_depth`, i.e. every existing config is byte-identical.
     var ws_shared_key: Bool
+    # Fuses a GQA group that does not divide MMA_M (9 or 6) into one CTA on the
+    # warp-specialized BM=32 depth-128 route. Fusing shrinks `BM_eff()` from 32
+    # to `32 // group`, so this is an explicit knob rather than derived: the
+    # dispatch instantiates both the fused and the unfused config and picks per
+    # launch by `max_prompt_len`. Reconstructors (`with_splitk`) must forward it,
+    # or the rebuilt config is unfused under a grid sized for the fused one.
+    var fuse_nondividing: Bool
 
     # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. When the
     # optional param is unset, fall back to `qkv_dtype` so the type is always
-    # well-formed; the "is it present?" signal lives in the `_size` aliases
-    # below (0 when the optional is unset).
+    # well-formed. Scale presence is signalled by `scale_dtype_size` (0 when
+    # unset). An unset rope dtype stores any rope region at `qkv_dtype`: MLA
+    # always sets one, and an MHA config has a rope region only for a key
+    # wider than its value (`k_tail()`), whose extra columns are plain keys.
     comptime rope_dtype = Self.rope_dtype_.or_else(Self.qkv_dtype)
     comptime scale_dtype = Self.scale_dtype_.or_else(Self.qkv_dtype)
 
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
-    comptime rope_dtype_size: Int = size_of[
-        Self.rope_dtype_.value()
-    ]() if Self.rope_dtype_ else 0
+    comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
     comptime scale_dtype_size: Int = size_of[
         Self.scale_dtype_.value()
     ]() if Self.scale_dtype_ else 0
@@ -160,7 +164,7 @@ struct FA4Config[
     comptime mbar_size = size_of[DType.int64]()
     comptime num_correction_cols = 1
 
-    @always_inline
+    @inline(.always)
     def BM_eff(self) -> Int:
         """Number of distinct sequence positions per full tile.
         When fuse_gqa, each tile covers BM // group seq positions x group heads.
@@ -169,11 +173,18 @@ struct FA4Config[
             return self.BM // self.group
         return self.BM
 
-    @always_inline
+    @inline(.always)
+    def gqa_pad_rows(self) -> Int:
+        """Tile rows left unused when the GQA group does not divide `BM`."""
+        if self.fuse_gqa:
+            return self.BM % self.group
+        return 0
+
+    @inline(.always)
     def cta_group(self) -> Int:
         return 2 if self.pair_cta else 1
 
-    @always_inline
+    @inline(.always)
     def cluster_size(self) -> Int:
         """CTAs per launch cluster.
 
@@ -187,19 +198,19 @@ struct FA4Config[
         """
         return self.cta_group() * self.splitk_partitions
 
-    @always_inline
+    @inline(.always)
     def PairBM_eff(self) -> Int:
         """Sequence positions covered by both CTAs in a pair."""
         return self.BM_eff() * self.cta_group()
 
-    @always_inline
+    @inline(.always)
     def v_cols_per_cta(self) -> Int:
         """V columns stored in this CTA's SMEM."""
         if self.pair_cta:
             return self.padded_ov_depth // 2
         return self.padded_ov_depth
 
-    @always_inline
+    @inline(.always)
     def v_box_cols(self) -> Int:
         """V TMA box depth (columns) per issued V load.
 
@@ -217,7 +228,7 @@ struct FA4Config[
             return self.v_cols_per_cta() // self.num_qk_stages
         return self.v_cols_per_cta()
 
-    @always_inline
+    @inline(.always)
     def v_e_chunk_rows(self) -> Int:
         """Layout-E (`m_pack == 2`) V reduction-chunk KEY-row count.
 
@@ -241,7 +252,7 @@ struct FA4Config[
         """
         return (self.BN // self.m_pack) // self.num_qk_stages
 
-    @always_inline
+    @inline(.always)
     def v_e_box_cols(self) -> Int:
         """Layout-E (`m_pack == 2`) V TMA box depth (columns) per issued
         sub-tile: the FULL `padded_ov_depth`, since Layout-E splits V by KEY
@@ -253,7 +264,7 @@ struct FA4Config[
         """
         return self.padded_ov_depth
 
-    @always_inline
+    @inline(.always)
     def v_tma_box_rows(self, page_size: Int) -> Int:
         """V TMA box KEY-row count for this config's layout.
 
@@ -294,7 +305,7 @@ struct FA4Config[
         var rows = self.v_e_chunk_rows() if self.m_pack == 2 else self.BN
         return kv_sub_tile_rows(rows, page_size)
 
-    @always_inline
+    @inline(.always)
     def v_tma_box_cols(self) -> Int:
         """V TMA box depth (columns) for this config's layout.
 
@@ -317,7 +328,7 @@ struct FA4Config[
             return self.v_e_box_cols()
         return self.v_box_cols()
 
-    @always_inline
+    @inline(.always)
     def v_tma_tile_rows(self) -> Int:
         """V TMA *tile* row stride at the issue site (`BN // num_v_sub_tiles`),
         NOT the box row count -- feeding the fold's `box_rows == tile_rows`
@@ -333,7 +344,7 @@ struct FA4Config[
             return self.v_e_chunk_rows()
         return self.BN
 
-    @always_inline
+    @inline(.always)
     def nope_cols_per_cta(self) -> Int:
         """K_nope columns stored in this CTA's SMEM (per-CTA padded nope width).
 
@@ -344,7 +355,7 @@ struct FA4Config[
             return self.padded_nope_depth // 2
         return self.padded_nope_depth
 
-    @always_inline
+    @inline(.always)
     def shared_kv_cols(self) -> Int:
         """Un-halved width of one shared K_nope/V SMEM stage.
 
@@ -355,7 +366,7 @@ struct FA4Config[
         """
         return max(self.padded_nope_depth, self.padded_ov_depth)
 
-    @always_inline
+    @inline(.always)
     def pv_partitions(self) -> Int:
         """Independent key partitions the P@V accumulator of one warpgroup holds.
 
@@ -368,7 +379,7 @@ struct FA4Config[
         return 1 if self.ws_shared_key else self.m_pack
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _o_phys_cols(
         padded_ov_depth: Int, m_pack: Int, ws_shared_key: Bool
     ) -> Int:
@@ -391,7 +402,7 @@ struct FA4Config[
             return padded_ov_depth // m_pack
         return padded_ov_depth
 
-    @always_inline
+    @inline(.always)
     def o_phys_cols(self) -> Int:
         """Physical TMEM columns one O accumulator occupies.
 
@@ -402,7 +413,7 @@ struct FA4Config[
             self.padded_ov_depth, self.m_pack, self.ws_shared_key
         )
 
-    @always_inline
+    @inline(.always)
     def ws_epilogue_stage_f32(self) -> Int:
         """Per-warpgroup Level-1 raw-O staging, in f32 slots.
 
@@ -427,7 +438,7 @@ struct FA4Config[
             return 0
         return self.m_pack * self.BM * self.ov_depth
 
-    @always_inline
+    @inline(.always)
     def ws_epilogue_ml_f32(self) -> Int:
         """Per-warpgroup Level-1 `(m, l)` staging, in f32 slots.
 
@@ -440,7 +451,7 @@ struct FA4Config[
             return 0
         return self.m_pack * self.BM * 2
 
-    @always_inline
+    @inline(.always)
     def ws_epilogue_f32_slots(self) -> Int:
         """Total f32 slots the WS epilogue carves from the dead Q+KV span.
 
@@ -467,7 +478,18 @@ struct FA4Config[
             + self.BM * 2
         )
 
-    @always_inline
+    @inline(.always)
+    def ws_epilogue_o_f32_offset(self) -> Int:
+        """F32-slot offset of the WS epilogue's output tile in the carve.
+
+        Past every f32 region, rounded up to 1 KiB: the O-TMA store applies its
+        swizzle by absolute SMEM address while the writers swizzle relative to
+        this base. The key-split epilogue and the empty-partition split-K path
+        must carve the same tile, so both take it from here.
+        """
+        return align_up(self.ws_epilogue_f32_slots(), 1024 // 4)
+
+    @inline(.always)
     def correction_o_cols(self) -> Int:
         """TMEM columns `correction_warp._rescale_o` must walk per accumulator.
 
@@ -492,7 +514,7 @@ struct FA4Config[
             return self.o_phys_cols()
         return self.ov_depth  # mode-off arm stays LITERAL (unpadded)
 
-    @always_inline
+    @inline(.always)
     def pv_mma_n(self) -> Int:
         """`MMA_N` of the P@V MMA.
 
@@ -516,7 +538,7 @@ struct FA4Config[
             return self.m_pack * (256 // self.m_pack)
         return self.padded_ov_depth  # non-WS
 
-    @always_inline
+    @inline(.always)
     def num_o_tiles(self) -> Int:
         """Output depth tiles the P@V walks -- `mma_warp`'s C-stride count.
 
@@ -553,7 +575,7 @@ struct FA4Config[
         """
         return ceildiv(self.o_phys_cols(), self.pv_mma_n() // self.m_pack)
 
-    @always_inline
+    @inline(.always)
     def pv_key_chunk(self) -> Int:
         """Keys contracted by ONE P@V MMA.
 
@@ -575,7 +597,7 @@ struct FA4Config[
             return self.BN // self.m_pack
         return self.BN  # non-WS
 
-    @always_inline
+    @inline(.always)
     def pv_reduction_chunks(self) -> Int:
         """Chunks the shared-key P@V **reduction** axis is cut into.
 
@@ -611,7 +633,7 @@ struct FA4Config[
         """
         return self.BN // self.pv_key_chunk()
 
-    @always_inline
+    @inline(.always)
     def v_ring_positions_per_tile(self) -> Int:
         """KV ring positions ONE V tile occupies under the shared-key walk.
 
@@ -642,7 +664,7 @@ struct FA4Config[
         """
         return self.num_o_tiles() * self.pv_reduction_chunks()
 
-    @always_inline
+    @inline(.always)
     def v_pages_per_chunk(self, page_size: Int) -> Int:
         """Page slots one shared-key V key chunk's TMA box spans.
 
@@ -656,7 +678,7 @@ struct FA4Config[
             self.pv_key_chunk(), page_size
         )
 
-    @always_inline
+    @inline(.always)
     def v_oob_fill_needed(self, page_size: Int) -> Bool:
         """Whether a partial V sub-tile must OOB-zero-fill its dead page slots.
 
@@ -690,7 +712,7 @@ struct FA4Config[
             self.ws_shared_key and self.v_pages_per_chunk(page_size) > 1
         )
 
-    @always_inline
+    @inline(.always)
     def kv_sub_depth(self) -> Int:
         """Depth covered by one KV ring sub-tile.
 
@@ -698,7 +720,7 @@ struct FA4Config[
         """
         return self.shared_kv_cols() // self.num_qk_stages
 
-    @always_inline
+    @inline(.always)
     def v_residency(self) -> Int:
         """`R_V`: the most V ring positions the consumer holds at once.
 
@@ -736,7 +758,7 @@ struct FA4Config[
             return 1
         return self.padded_ov_depth // self.kv_sub_depth()
 
-    @always_inline
+    @inline(.always)
     def ring_slots_needed(self) -> Int:
         """KV ring slots the P@V schedule must have to make progress.
 
@@ -790,7 +812,7 @@ struct FA4Config[
         # Rotated schedule: `R_V` alone (see the decomposition above).
         return self.v_residency()
 
-    @always_inline
+    @inline(.always)
     def ws_arena_slots_needed(self) -> Int:
         """The OTHER floor on `num_kv_stages`: the WS combine epilogue's arena.
 
@@ -851,7 +873,7 @@ struct FA4Config[
         return ceildiv(arena_bytes - q_bytes, subtile_bytes)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _ws_exchange_bytes(ws_shared_key: Bool) -> Int:
         """Bytes of the shared-key cross-warp row-max exchange region.
 
@@ -879,13 +901,13 @@ struct FA4Config[
             return 2 * 2 * WARPGROUP_SIZE * size_of[DType.float32]()
         return 0
 
-    @always_inline
+    @inline(.always)
     def ws_exchange_bytes(self) -> Int:
         """Bytes of the shared-key cross-warp exchange region (0 when off)."""
         return Self._ws_exchange_bytes(self.ws_shared_key)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _p_smem_bytes(BM: Int, BN: Int, ws_shared_key: Bool) -> Int:
         """Bytes of the shared-key P staging region.
 
@@ -904,19 +926,19 @@ struct FA4Config[
             return 2 * BM * BN * Self.qkv_dtype_size
         return 0
 
-    @always_inline
+    @inline(.always)
     def p_smem_bytes(self) -> Int:
         """Bytes of the shared-key P staging region (0 when off)."""
         return Self._p_smem_bytes(self.BM, self.BN, self.ws_shared_key)
 
-    @always_inline
+    @inline(.always)
     def k_rows_per_cta(self) -> Int:
         """K rows stored in this CTA's SMEM."""
         if self.pair_cta:
             return self.BN // 2
         return self.BN
 
-    @always_inline
+    @inline(.always)
     def v_row_major(self) -> Bool:
         """Effective row-major (page-dense, chunk-inner) V layout selector.
 
@@ -979,7 +1001,7 @@ struct FA4Config[
         # This also guarantees the gmem page rows are 8-aligned (see docstring).
         return self.page_size % 8 == 0
 
-    @always_inline
+    @inline(.always)
     def k_row_major(self) -> Bool:
         """Effective row-major (page-dense, chunk-inner) K layout selector.
 
@@ -1035,7 +1057,7 @@ struct FA4Config[
         # the gmem page rows are 8-aligned.
         return self.page_size % 8 == 0
 
-    @always_inline
+    @inline(.always)
     def q_nope_bytes(self) -> Int:
         """Q nope region bytes: BM * padded_nope_depth * dtype_size.
 
@@ -1045,13 +1067,13 @@ struct FA4Config[
         """
         return self.BM * self.padded_nope_depth * Self.qkv_dtype_size
 
-    @always_inline
+    @inline(.always)
     def q_rope_bytes(self) -> Int:
         """Q rope region bytes. Uses rope_dtype_size when set, else dtype_size.
         """
         return self.BM * self.rope_depth() * Self.rope_dtype_size
 
-    @always_inline
+    @inline(.always)
     def rope_depth(self) -> Int:
         """Depth of the rope part. Calculated as:
         padded_qk_depth - padded_nope_depth (0 for MHA where qk_depth ==
@@ -1061,7 +1083,7 @@ struct FA4Config[
         return self.padded_qk_depth - self.padded_nope_depth
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def crossp_supported(
         num_q: Int,
         use_ws: Bool,
@@ -1073,12 +1095,14 @@ struct FA4Config[
     ) -> Bool:
         """The cross-stage-P support matrix, in one place.
 
-        Every `comptime assert` that guards a cross-stage-P code path derives
-        its condition from here, so turning the feature on BY DEFAULT can never
-        trip one of those guards. They stay hard errors, but only an explicit
-        `-D FA4_TMEM_CROSS_P=true` on an unsupported config can reach them.
+        `crossp_on()` folds the knob to False wherever this is False, which
+        is what keeps every consumer outside the supported matrix
+        byte-identical to cross-P-off -- a caller may thread `cross_p=True`
+        through a dispatch that also builds 1Q / WS / MLA vehicles, and
+        those fold it silently rather than failing the build.
 
-        Deriving the default from the guards is the point. An earlier version
+        Deriving the matrix from the consumers' requirements is the point.
+        An earlier version
         of this predicate listed the consumers it knew about instead, and CI
         found a consumer it did not know about within the hour.
 
@@ -1106,7 +1130,7 @@ struct FA4Config[
             and not EnableForcedOrdering
         )
 
-    @always_inline
+    @inline(.always)
     def crossp_on(self) -> Bool:
         """Whether cross-stage P applies to THIS config.
 
@@ -1116,10 +1140,10 @@ struct FA4Config[
         as an `smem_used != smem_size` constraint failure, or worse, an
         ILLEGAL_ADDRESS at runtime.
 
-        `FA4_TMEM_CROSS_P` now defaults ON, so `crossp_supported` is what keeps
+        `cross_p` defaults ON, so `crossp_supported` is what keeps
         every other consumer byte-identical to cross-P-off.
         """
-        return EnableTMEMCrossP and Self.crossp_supported(
+        return Self.cross_p and Self.crossp_supported(
             self.num_q,
             self.use_ws,
             self.pair_cta,
@@ -1129,7 +1153,37 @@ struct FA4Config[
             self.BN,
         )
 
-    @always_inline
+    @inline(.always)
+    def k_tail(self) -> Bool:
+        """Whether an MHA K tile is split between the shared K/V ring slot and
+        a rope buffer.
+
+        A key wider than its value (`qk_depth > ov_depth`, e.g. a 192-wide key
+        with a 128-wide value) keeps `nope_depth == ov_depth`, so its first
+        `nope_depth` columns share the V-sized ring slot and the remaining
+        `rope_depth()` columns -- plain key columns, not rotary ones -- go to
+        the rope buffers, as MLA prefill lays out K_nope and K_rope. Q@K' is
+        then two MMAs accumulating into one S. Only the shared ring has rope
+        buffers; a non-shared K stage holds all `qk_depth` columns
+        contiguously.
+        """
+        return self.use_shared_kv and not self.is_mla and self.rope_depth() > 0
+
+    @inline(.always)
+    def k_tma_box_cols(self) -> Int:
+        """K TMA box depth (columns) per issued K load.
+
+        One swizzle chunk for `k_tail()`, whose chunks land in two SMEM
+        regions, else `BK0`. Every K TMA type-param site (dispatch
+        `create_tma_tile`, the kernel's `KTMAOpType`, the `fa4_load`
+        signature) routes through this method so the box folds identically
+        at each, as `v_box_cols()` does for V.
+        """
+        if self.k_tail():
+            return self.swizzle_mode.bytes() // Self.qkv_dtype_size
+        return self.BK0
+
+    @inline(.always)
     def num_rope_buffers(self) -> Int:
         """Number of separate rope smem buffers (shared mode only).
 
@@ -1142,7 +1196,7 @@ struct FA4Config[
             return ceildiv(self.num_kv_stages, 2)
         return 0
 
-    @always_inline
+    @inline(.always)
     def num_k_scale_bufs(self) -> Int:
         """Number of staged k_scale smem buffers.
 
@@ -1176,6 +1230,7 @@ struct FA4Config[
         single_o: Bool = False,
         bn_cap: Int = 0,
         ws_shared_key: Bool = False,
+        fuse_nondividing: Bool = False,
     ):
         # num_qk_stages == 0 (default) derives the optimal Q@K' staging.
         # A nonzero value pins it (used by the in-kernel 1Q/2Q switch, which
@@ -1216,7 +1271,35 @@ struct FA4Config[
             self.MMA_M = 32
         else:
             self.MMA_M = 128
-        self.fuse_gqa = group > 1 and (self.MMA_M % group == 0) and not is_mla
+        # A group that does not divide MMA_M is packed by the d256 shared-key
+        # decode vehicle, and, when requested via `fuse_nondividing`, by the
+        # BM=32 depth-128 route. Such a tile holds `MMA_M // group` seq
+        # positions x `group` heads and leaves `MMA_M % group` pad rows, which
+        # `load_warp.mojo` zero-fills and excludes from the Q barrier's bytes.
+        # The request is honored only for the validated (group, depth) set, so
+        # callers can pass it unconditionally and read the result back.
+        self.fuse_nondividing = (
+            fuse_nondividing
+            and BM == 32
+            and not pair_cta
+            and qk_depth == 128
+            and not is_mla
+            and (group == 9 or group == 6)
+        )
+        self.fuse_gqa = (
+            group > 1
+            and not is_mla
+            and (
+                self.MMA_M % group == 0
+                or (
+                    ws_shared_key
+                    and self.MMA_M == 32
+                    and qk_depth == 256
+                    and group < self.MMA_M
+                )
+                or self.fuse_nondividing
+            )
+        )
         comptime if Self.qkv_dtype.is_float8():
             self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
         else:
@@ -1331,7 +1414,7 @@ struct FA4Config[
         # +32 only to clear row stats it keeps inplaced in TMEM — MAX keeps
         # stats in SMEM, so the base is free). 2Q + non-WS only: the 1Q
         # odd-T tail aliases s1->s0, which would collide the two P windows.
-        comptime if EnableTMEMCrossP:
+        comptime if Self.cross_p:
             if self.num_q == 2 and not self.use_ws:
                 self.TMEM_P0 = self.TMEM_S1
                 self.TMEM_P1 = Self.TMEM_S0
@@ -1624,7 +1707,7 @@ struct FA4Config[
         # needs `use_shared_kv`, which is only decided above. Same predicate
         # FA4MiscMBars.CrossP_count is threaded from, so the accounting and the
         # layout cannot drift.
-        if EnableTMEMCrossP and Self.crossp_supported(
+        if Self.cross_p and Self.crossp_supported(
             self.num_q,
             self.use_ws,
             self.pair_cta,
@@ -1875,9 +1958,24 @@ struct FA4Config[
         if self.pair_cta:
             # Pair-CTA: depth > 64 (depth=64 needs 32B swizzles) and <= 128.
             return base and self.qk_depth > 64 and self.qk_depth <= 128
+        # The K-tail load and MMA exist only in the 2Q shared-ring warp bodies,
+        # for a tail of one swizzle chunk. K tile n's tail buffer is refilled by
+        # K tile n + num_rope_buffers(), 2 * num_rope_buffers() ring positions
+        # later, which the producer may fill only once the consumer released
+        # the position `num_kv_stages` before it. That position is K tile n's
+        # own or a later one -- so the MMAs reading the old tail have retired --
+        # exactly when the last conjunct holds.
+        if self.k_tail():
+            return (
+                base
+                and self.num_q == 2
+                and self.rope_depth()
+                == self.swizzle_mode.bytes() // Self.qkv_dtype_size
+                and 2 * self.num_rope_buffers() >= self.num_kv_stages
+            )
         return base and self.qk_depth >= 64
 
-    @always_inline
+    @inline(.always)
     def with_num_q(self, num_q: Int, *, num_qk_stages: Int = 0) -> Self:
         """Reconstruct this config with a different `num_q` (single-CTA).
 
@@ -1917,7 +2015,7 @@ struct FA4Config[
             ws_shared_key=self.ws_shared_key,
         )
 
-    @always_inline
+    @inline(.always)
     def with_splitk(self, splitk_partitions: Int) -> Self:
         """Reconstruct this config with a split-K cluster size (num_q==1).
 
@@ -1933,6 +2031,10 @@ struct FA4Config[
         mode) are re-passed so a GLM-style config (`v_head_dim != qk_nope`) or a
         single-O config survives the reconstruction; both are byte-identical for
         the DeepSeek/MHA shapes (nope == ov, single_o == False).
+
+        `fuse_nondividing` is re-passed too: dropping it changes `BM_eff()`, so
+        the rebuilt config would run unfused under a grid sized for the fused
+        one.
         """
         return Self(
             num_q_heads=self.num_q_heads,
@@ -1952,10 +2054,17 @@ struct FA4Config[
             nope_depth=self.nope_depth,
             single_o=self.single_o,
             ws_shared_key=self.ws_shared_key,
+            fuse_nondividing=self.fuse_nondividing,
         )
 
-    @always_inline
-    def with_bm(self, bm: Int, *, ws_shared_key: Bool = False) -> Self:
+    @inline(.always)
+    def with_bm(
+        self,
+        bm: Int,
+        *,
+        ws_shared_key: Bool = False,
+        fuse_nondividing: Bool = False,
+    ) -> Self:
         """Reconstruct this config with an explicit `BM` (single-CTA).
 
         Used by dispatch to force a warp-specialized packed-TMEM datapath
@@ -1974,6 +2083,10 @@ struct FA4Config[
         *selected* here (a `BM=32`/`BM=64` reconstruction is exactly where it
         becomes legal). It defaults to False, so every existing call is
         unchanged.
+
+        `fuse_nondividing` follows the same rule: it is selected here, defaults
+        to False, and is honored only for BM=32 depth-128 groups 9 and 6 (read
+        the result back from the returned config's `fuse_nondividing`).
         """
         return Self(
             num_q_heads=self.num_q_heads,
@@ -1987,9 +2100,10 @@ struct FA4Config[
             BM=bm,
             nope_depth=self.nope_depth,
             ws_shared_key=ws_shared_key,
+            fuse_nondividing=fuse_nondividing,
         )
 
-    @always_inline
+    @inline(.always)
     def ws_shared_key_vehicle(self) -> Self:
         """The shared-key config the deep (d256/d512) decode route instantiates.
 
@@ -2003,7 +2117,7 @@ struct FA4Config[
         """
         return self.with_bm(32, ws_shared_key=True)
 
-    @always_inline
+    @inline(.always)
     def switch_1q_config(self) -> Self:
         """The 1Q variant used by the in-kernel per-sequence 1Q/2Q switch.
 
@@ -2019,7 +2133,7 @@ struct FA4Config[
         """
         return self.with_num_q(1, num_qk_stages=self.num_qk_stages)
 
-    @always_inline
+    @inline(.always)
     def can_switch_to_1q(self) -> Bool:
         """Whether a 2Q-launched kernel may dispatch to the 1Q body at runtime.
 
@@ -2033,10 +2147,16 @@ struct FA4Config[
         """
         if self.num_q != 2 or self.pair_cta:
             return False
+        # The 1Q body has no K-tail path: it reads the whole key from its K
+        # stage through a K TMA op `BK0` columns wide, while the 2Q K-tail
+        # tile loads 64-column boxes and keeps the last one in a rope buffer.
+        # The 2Q-built K TMA op cannot feed the 1Q body.
+        if self.k_tail():
+            return False
         var cfg1 = self.switch_1q_config()
         return cfg1.supported() and cfg1.num_qk_stages == self.num_qk_stages
 
-    @always_inline
+    @inline(.always)
     def launch_smem_used(self) -> Int:
         """Dynamic smem to reserve when launching this config's kernel.
 
@@ -2079,6 +2199,8 @@ struct FA4Config[
             Self.scale_dtype_size,
             "\nuse_shared_kv = ",
             self.use_shared_kv,
+            "\ncross_p = ",
+            Self.cross_p,
         )
 
     def correction_smem_elements(self) -> Int:

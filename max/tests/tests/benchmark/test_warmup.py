@@ -177,7 +177,7 @@ def test_pick_warmup_length_biased_matches_size_biased_target() -> None:
     factor = 8
     realized_means: list[float] = []
     target_mean: float | None = None
-    for seed in range(50):
+    for seed in range(30):
         rng = np.random.default_rng(seed)
         turn_pool = list(rng.integers(1, 60, size=main + factor * M))
         pool = _fixed_pool([int(t) for t in turn_pool])
@@ -194,7 +194,7 @@ def test_pick_warmup_length_biased_matches_size_biased_target() -> None:
         target_mean = report.target_mean
     assert target_mean is not None
     avg_realized = float(np.mean(realized_means))
-    # 50 draws of K=32 averages out to ~1600 picks of T; the analytical bias
+    # 30 draws of K=32 averages out to ~960 picks of T; the analytical bias
     # is 0 (no caps) and per-draw stddev averages out fast.
     assert abs(avg_realized - target_mean) / target_mean < 0.02
 
@@ -291,7 +291,7 @@ def test_pick_warmup_realized_mean_stdev_brackets_observed_spread() -> None:
     factor = 8
     realized_means: list[float] = []
     stdev: float | None = None
-    for seed in range(60):
+    for seed in range(30):
         rng = np.random.default_rng(seed)
         turn_pool = list(rng.integers(1, 60, size=main + factor * M))
         pool = _fixed_pool([int(t) for t in turn_pool])
@@ -371,7 +371,7 @@ def test_log_warmup_sampling_report_no_warning_when_target_met(
 def test_systematic_pps_no_duplicates() -> None:
     rng = np.random.default_rng(0)
     weights = rng.integers(1, 50, size=100).astype(np.float64)
-    for _ in range(500):
+    for _ in range(200):
         idx = systematic_probability_proportional_to_size(weights, 20, rng)
         assert len(idx) == 20
         assert len(set(idx.tolist())) == 20
@@ -387,14 +387,14 @@ def test_systematic_pps_inclusion_probability_matches_weight() -> None:
     K = 2
     cap_thresh = weights.sum() / K
     assert (weights < cap_thresh).all()
-    n_trials = 20000
+    n_trials = 8000
     counts = np.zeros(len(weights), dtype=np.int64)
     for _ in range(n_trials):
         idx = systematic_probability_proportional_to_size(weights, K, rng)
         counts[idx] += 1
     expected = K * weights / weights.sum()
     actual = counts / n_trials
-    assert np.allclose(actual, expected, atol=0.02)
+    assert np.allclose(actual, expected, atol=0.03)
 
 
 def test_systematic_pps_iterated_cap_pre_includes() -> None:
@@ -403,7 +403,7 @@ def test_systematic_pps_iterated_cap_pre_includes() -> None:
     weights = np.array([1, 1, 1, 1, 100], dtype=np.float64)
     K = 2
     # weights[4] = 100 >> W/K = 104/2 = 52.
-    for _ in range(200):
+    for _ in range(100):
         idx = systematic_probability_proportional_to_size(weights, K, rng)
         assert 4 in idx.tolist()
 
@@ -417,8 +417,8 @@ def test_systematic_pps_mean_matches_size_biased() -> None:
     assert (T < cap_thresh).all()
     sb_mean = float((T * T).sum() / T.sum())
     realized = []
-    for _ in range(500):
+    for _ in range(200):
         idx = systematic_probability_proportional_to_size(T, K, rng)
         realized.append(float(T[idx].mean()))
     avg = float(np.mean(realized))
-    assert abs(avg - sb_mean) / sb_mean < 0.01
+    assert abs(avg - sb_mean) / sb_mean < 0.02

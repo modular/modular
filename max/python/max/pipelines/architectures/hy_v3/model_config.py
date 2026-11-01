@@ -20,8 +20,8 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -125,7 +125,7 @@ class HYV3Config(Llama3Config):
         With ``data_parallel_degree=1`` and ``n_devices>1``,
         ``KVCacheParams.__post_init__`` tensor-parallel-shards the paged KV
         cache to ``n_kv_heads_per_device = num_key_value_heads // n_devices``
-        (e.g. 8 // 4 = 2). Hy3 attention is TP-sharded to match: each
+        (such as 8 // 4 = 2). Hy3 attention is TP-sharded to match: each
         device's shard owns ``num_attention_heads // n_devices`` Q heads and
         ``num_key_value_heads // n_devices`` KV heads — exactly the KV heads
         resident in that device's slice of the cache, so
@@ -161,6 +161,7 @@ class HYV3Config(Llama3Config):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         # HF reports 80; the trailing MTP layer at index 80 is dropped
         # in the weight adapter (matches HF reference).
         return int(huggingface_config.num_hidden_layers)

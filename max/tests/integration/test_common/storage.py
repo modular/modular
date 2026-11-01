@@ -12,6 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for loading and caching test data.
 
+Objects are read from one of two buckets. ``modular-bazel-artifacts-public``
+is world-readable, so it is read anonymously when no AWS credentials are
+available. ``modular-ci-prod-artifact-bucket`` is private and always needs
+credentials; use it for artifacts that must not be public (upload with
+``utils/upload-prod-ci-artifact.sh``).
+
 Example command to upload an image:
 
 ```bash
@@ -44,27 +50,33 @@ from botocore.exceptions import (
 from PIL import Image
 
 _DEFAULT_CACHE_DIR = "~/.cache/modular/testdata"
-_S3_BUCKET = "modular-bazel-artifacts-public"
-_S3_PREFIX = f"s3://{_S3_BUCKET}/"
+_PUBLIC_S3_BUCKET = "modular-bazel-artifacts-public"
+_PRIVATE_S3_BUCKET = "modular-ci-prod-artifact-bucket"
+_S3_BUCKETS = frozenset({_PUBLIC_S3_BUCKET, _PRIVATE_S3_BUCKET})
+
+
+def parse_s3_path(s3_path: str) -> tuple[str, str]:
+    """Splits an ``s3://bucket/key`` path into its bucket and key.
+
+    Raises:
+        ValueError: If the path is not an ``s3://`` URI with a non-empty key
+            in one of the supported buckets.
+    """
+    bucket, _, key = s3_path.removeprefix("s3://").partition("/")
+    if not s3_path.startswith("s3://") or bucket not in _S3_BUCKETS or not key:
+        raise ValueError(f"Invalid S3 path: {s3_path}")
+    return bucket, key
 
 
 def load_from_s3(s3_path: str, cache_dir: str | None = None) -> str:
-    # This unnecessarily checks that the bucket == _S3_BUCKET, we can
-    # make this more general when needed.
-    if not s3_path.startswith(_S3_PREFIX):
-        raise ValueError(f"Invalid S3 path: {s3_path}")
-    s3_path = s3_path[len(_S3_PREFIX) :]
+    bucket, key = parse_s3_path(s3_path)
     cache_dir = cache_dir or os.path.expanduser(_DEFAULT_CACHE_DIR)
-    local_path = os.path.join(cache_dir, s3_path)
+    local_path = os.path.join(cache_dir, key)
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
     if not os.path.exists(local_path):
         try:
             s3 = boto3.client("s3")
-            s3.download_file(
-                _S3_BUCKET,
-                s3_path,
-                local_path,
-            )
+            s3.download_file(bucket, key, local_path)
         except UnauthorizedSSOTokenError as e:
             # A rejected token means the caller meant to authenticate, so
             # silently downgrading them to anonymous would hide the problem.
@@ -72,7 +84,13 @@ def load_from_s3(s3_path: str, cache_dir: str | None = None) -> str:
                 "AWS authentication failed. Please run 'aws sso login' to "
                 "refresh your credentials."
             ) from e
-        except (SSOTokenLoadError, NoCredentialsError):
+        except (SSOTokenLoadError, NoCredentialsError) as e:
+            if bucket != _PUBLIC_S3_BUCKET:
+                raise RuntimeError(
+                    f"s3://{bucket} is private and needs AWS credentials "
+                    "with read access to it. Run 'aws sso login', or set "
+                    "AWS credentials in CI."
+                ) from e
             # The bucket is public, so a stale SSO session or a machine with no
             # AWS config at all can still read it unsigned.
             print("No usable AWS credentials, retrying anonymously")
@@ -80,11 +98,7 @@ def load_from_s3(s3_path: str, cache_dir: str | None = None) -> str:
                 "s3", aws_access_key_id="", aws_secret_access_key=""
             )
             s3._request_signer.sign = lambda *args, **kwargs: None
-            s3.download_file(
-                _S3_BUCKET,
-                s3_path,
-                local_path,
-            )
+            s3.download_file(bucket, key, local_path)
     return local_path
 
 

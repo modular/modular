@@ -18,6 +18,6 @@ kgen.func @two_overlapping(%arg0: index, %arg1: index) -> (index, index) {
   %v0 = pop.load %s2 : !kgen.pointer<index>
   pop.store %arg1, %s2 : !kgen.pointer<index>
   %v1 = pop.load %s2 : !kgen.pointer<index>
-  kgen.return %v0, %v1 : index, index
+  hlcf.return %v0, %v1 : index, index
 }
 

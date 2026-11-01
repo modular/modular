@@ -95,13 +95,13 @@ struct Shuffler[E: Int]:
     comptime B_STRIDE_K0: Int = Self.MFMA_K_LANES * Self.B_STRIDE_K_LANE  # 1024
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def num_planes[lane_bytes: Int]() -> Int:
         """Number of power-of-two planes a lane fragment splits into."""
         return ceildiv(lane_bytes, Self.MFMA_LANE_BYTES)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def plane_bytes[lane_bytes: Int, plane: Int]() -> Int:
         """Width in bytes of `plane`, at most `MFMA_LANE_BYTES`."""
         return min(
@@ -109,7 +109,7 @@ struct Shuffler[E: Int]:
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def b_plane_byte_off[
         N: Int, K_BYTES: Int, lane_bytes: Int, plane: Int
     ](e: Int, n: Int, k_byte: Int) -> Int:
@@ -236,7 +236,7 @@ struct Shuffler[E: Int]:
     )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def scale_4d_byte_off[
         K_SCALES: Int, packed_mode: Bool = False
     ](mn: Int, k_scale: Int) -> Int:
@@ -299,7 +299,7 @@ struct Shuffler[E: Int]:
             return packed_byte_off + tile_byte_off + atom_byte_off
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def scale_4d_slot_byte_off[
         K_SCALES: Int, packed_mode: Bool = False
     ](expert_slot: Int, mn: Int, k_scale: Int, max_padded_M: Int) -> Int:
@@ -330,14 +330,6 @@ struct Shuffler[E: Int]:
             K_SCALES=K_SCALES, packed_mode=packed_mode
         ](mn, k_scale)
 
-    # ---- Wrapped TileTensor types — what the preshuffle functions return ----
-    comptime BTileTensor[N: Int, K_BYTES: Int] = TileTensor[
-        mut=True,
-        .uint8,
-        type_of(Self.b_5d_grouped_layout[N=N, K_BYTES=K_BYTES]),
-        MutAnyOrigin,
-    ]
-
     # Scale-buffer callers use a plain `TileTensor[.uint8, ...]` or a
     # raw `HostBuffer[DType.uint8]` — the byte layout is fully expressed by
     # `scale_4d_byte_off`, no type-system marker needed.
@@ -345,7 +337,7 @@ struct Shuffler[E: Int]:
     # ---- Helpers ----
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def scale_padded_mn(MN: Int) -> Int:
         """Padded MN dim used by the 4D scale layout: MN rounded up to 32.
 
@@ -391,10 +383,16 @@ struct Shuffler[E: Int]:
         across the wave) and writes coalesced into `dst`'s column-major
         tile.
         """
-        var tid = Int(thread_idx.x)
-        var e = Int(block_idx.z)
-        var n0 = Int(block_idx.y)
-        var k0 = Int(block_idx.x)
+        # The offset and strides below are byte counts; a vectorized engine
+        # would scale them by its element size.
+        comptime assert (
+            RawEngine.element_size == 1 and DstEngine.element_size == 1
+        ), "preshuffle_b_5d: requires scalar engines"
+
+        var tid = thread_idx.x
+        var e = block_idx.z
+        var n0 = block_idx.y
+        var k0 = block_idx.x
 
         # raw: per-CTA [1, 16, 4] atom tile from the row-major 3D view.
         var raw_tile = raw.tile[1, Self.MFMA_MN_LANES, Self.MFMA_K_BYTES](
@@ -409,16 +407,15 @@ struct Shuffler[E: Int]:
         # 16-byte atom into element_size, giving a clean rank-3 [16, 4,
         # 1] col-major-in-atoms tile that .distribute can consume.
         comptime TILE_BYTES = Self.MFMA_MN_LANES * Self.MFMA_K_BYTES
-        var dst_tile_base = dst.ptr + (
+        var dst_tile_offset = (
             e * N * K_BYTES  # skip to current expert
             + n0
             * K_BYTES
             * Self.MFMA_MN_LANES  # skip past N rows in current expert in units of N_Tile length
             + k0 * TILE_BYTES  # go to the Kth tile of this row
         )
-
-        var dst_tile = TileTensor[mut=True](
-            dst_tile_base,
+        var dst_tile = TileTensor(
+            dst._offset_storage(dst_tile_offset),
             Layout(
                 Coord(
                     Idx[Self.MFMA_MN_LANES],
@@ -478,8 +475,8 @@ struct Shuffler[E: Int]:
         K_BYTES: Int,
         lane_bytes: Int,
     ](
-        raw: UnsafePointer[UInt8, ImmutAnyOrigin],
-        dst: UnsafePointer[UInt8, MutAnyOrigin],
+        raw: ImmPointer[UInt8, ImmutAnyOrigin],
+        dst: MutPointer[UInt8, MutAnyOrigin],
         num_frags: Int32,
     ):
         """Scatters each lane fragment into its planes.
@@ -496,14 +493,12 @@ struct Shuffler[E: Int]:
         comptime num_planes = Self.num_planes[lane_bytes]()
 
         var total = Int(num_frags)
-        for gid in range(
-            Int(global_idx.x), total, Int(grid_dim.x * block_dim.x)
-        ):
+        for gid in range(global_idx.x, total, Int(grid_dim.x * block_dim.x)):
             var e_n, frag = divmod(gid, frags_per_row)
             var e, n = divmod(e_n, N)
             var k_byte = frag * lane_bytes
 
-            var src = raw + (e * N * K_BYTES + n * K_BYTES + k_byte)
+            var src = raw.unsafe_offset(e * N * K_BYTES + n * K_BYTES + k_byte)
 
             comptime for pl in range(num_planes):
                 comptime pb = Self.plane_bytes[lane_bytes, pl]()
@@ -512,9 +507,9 @@ struct Shuffler[E: Int]:
                 ](e, n, k_byte)
                 comptime for chunk in range(pb // 8):
                     var byte_in_frag = pl * Self.MFMA_LANE_BYTES + chunk * 8
-                    dst.store(
+                    dst.unsafe_store(
                         off + chunk * 8,
-                        src.load[width=8](byte_in_frag),
+                        src.unsafe_load[width=8](byte_in_frag),
                     )
 
     @staticmethod
@@ -655,9 +650,7 @@ struct Shuffler[E: Int]:
                     # ElementType is `SIMD[.uint8, SrcEngine.element_size]`,
                     # but only scalar engines are accepted (asserted above),
                     # so a width-1 load yields a `UInt8` scalar.
-                    dst[byte_off] = UInt8(
-                        src.load[width=1](Coord(e, mn, k_scale))
-                    )
+                    dst[byte_off] = UInt8(src.load[width=1]((e, mn, k_scale)))
 
             for mn in range(MN, MN_padded):
                 for k_scale in range(K_SCALES):
@@ -743,10 +736,9 @@ struct Shuffler[E: Int]:
         var current_tile = 0
 
         for expert_slot in range(_num_active_experts):
-            var token_start = Int(a_offsets.load[width=1](Coord(expert_slot)))
+            var token_start = Int(a_offsets.load[width=1]((expert_slot,)))
             var num_tokens = (
-                Int(a_offsets.load[width=1](Coord(expert_slot + 1)))
-                - token_start
+                Int(a_offsets.load[width=1]((expert_slot + 1,))) - token_start
             )
 
             # Empty slot — contributes zero tiles to the global counter,
@@ -794,13 +786,15 @@ struct Shuffler[E: Int]:
                             cell_bytes[
                                 k_pack * Self.S_MN_PACK + mn_pack
                             ] = sfa_raw.load[width=1](
-                                Coord((token_start + src_mn), src_k)
+                                ((token_start + src_mn), src_k)
                             )
 
                 var cell_byte_off = Self.scale_4d_slot_byte_off[
                     K_SCALES=K_SCALES, packed_mode=True
                 ](expert_slot, cell_mn_base, cell_k_base, _max_padded_M)
-                var dst_ptr = (sfa_pre.ptr + cell_byte_off).bitcast[Int32]()
+                var dst_ptr = sfa_pre.ptr.unsafe_offset(
+                    cell_byte_off
+                ).unsafe_bitcast[Int32]()
                 dst_ptr[0] = bitcast[.int32, 1](cell_bytes)[0]
 
                 target_tile += _total_wg

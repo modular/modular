@@ -16,7 +16,6 @@
 #include "Support/Telemetry/Telemetry.h"
 
 #include "Config/Version.h"
-#include "Support/Base64.h"
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
@@ -32,9 +31,13 @@
 #include "opentelemetry/sdk/metrics/view/meter_selector.h"
 #include "opentelemetry/sdk/metrics/view/view.h"
 #include "opentelemetry/sdk/metrics/view/view_registry.h"
-#include "llvm/Support/BLAKE3.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/DebugLog.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/TargetParser/Host.h"
@@ -46,6 +49,8 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -71,8 +76,7 @@
 // server
 #define TEST_UDS 0
 
-#include <algorithm> // For std::sort.
-#include <cstdlib>   // For std::getenv
+#include <cstdlib> // For std::getenv
 
 #define DEBUG_TYPE "telemetry-context"
 
@@ -85,8 +89,9 @@ static bool isModularEmployee() {
   if (home == nullptr)
     return false;
 
-  return std::filesystem::exists(std::filesystem::path(home) /
-                                 ".modular-internal");
+  // Never throws; any error reads as "no file".
+  return llvm::sys::fs::exists(
+      (std::filesystem::path(home) / ".modular-internal").string());
 }
 
 static Level levelFromString(StringRef levelStr) {
@@ -141,39 +146,154 @@ static void configureInternalLogging(StringRef internalLogConfig) {
   }
 }
 
+// An install id is 16 random bytes written as 32 lowercase hex characters.
+static constexpr size_t kInstallIdBytes = 16;
+static constexpr llvm::StringLiteral kLowerHexDigits = "0123456789abcdef";
+// A valid file holds 33 bytes; the cap keeps a large file out of memory.
+static constexpr uint64_t kMaxInstallIdFileSize = 4096;
+
+static bool isValidInstallId(StringRef id) {
+  return id.size() == 2 * kInstallIdBytes &&
+         id.find_first_not_of(kLowerHexDigits) == StringRef::npos;
+}
+
+static ErrorOr<std::string> readInstallId(const std::filesystem::path &path) {
+  // A FIFO or device node at this path would stall every launch.
+  llvm::sys::fs::file_status status;
+  if (std::error_code ec = llvm::sys::fs::status(path.string(), status))
+    return Error("Can't stat " + llvm::Twine(path.string()) + ": " +
+                 ec.message());
+  if (!llvm::sys::fs::is_regular_file(status) ||
+      status.getSize() > kMaxInstallIdFileSize)
+    return Error(llvm::Twine(path.string()) + " is not a small regular file");
+  auto bufOr = llvm::MemoryBuffer::getFile(path.string(), /*IsText=*/true);
+  if (std::error_code ec = bufOr.getError())
+    return Error("Can't read " + llvm::Twine(path.string()) + ": " +
+                 ec.message());
+  StringRef id = (*bufOr)->getBuffer().trim();
+  if (!isValidInstallId(id))
+    return Error(llvm::Twine(path.string()) + " holds no valid install id");
+  return id.str();
+}
+
+static ErrorOr<std::string> createInstallId(const std::filesystem::path &path) {
+  std::string folder = path.parent_path().string();
+  if (std::error_code ec = llvm::sys::fs::create_directories(folder))
+    return Error("Can't create " + llvm::Twine(folder) + ": " + ec.message());
+
+  SecureRandomBytesGenerator rng;
+  std::array<uint8_t, kInstallIdBytes> bytes = {};
+  if (auto err = rng.getRandomBytes(bytes))
+    return err.takeError();
+  std::string id = llvm::toHex(bytes, /*LowerCase=*/true);
+
+  // Renamed into place so no reader sees a partial file.
+  int fd = -1;
+  llvm::SmallString<256> tmpPath;
+  std::error_code ec = llvm::sys::fs::createUniqueFile(
+      path.string() + "-%%%%%%%%", fd, tmpPath, llvm::sys::fs::OF_None,
+      llvm::sys::fs::all_read | llvm::sys::fs::owner_write);
+  if (ec)
+    return Error("Can't create " + llvm::Twine(path.string()) + ": " +
+                 ec.message());
+  llvm::raw_fd_ostream os(fd, /*shouldClose=*/true);
+  os << id << '\n';
+  os.close();
+  ec = os.error();
+  // The destructor treats a pending error as fatal.
+  os.clear_error();
+  if (!ec)
+    ec = llvm::sys::fs::rename(tmpPath, path.string());
+  if (ec) {
+    llvm::sys::fs::remove(tmpPath);
+    return Error("Can't write " + llvm::Twine(path.string()) + ": " +
+                 ec.message());
+  }
+  return id;
+}
+
+M::ErrorOr<std::filesystem::path> M::Telemetry::getInstallIdFolder() {
+  // XDG_STATE_HOME is the per-user state directory of the XDG Base Directory
+  // spec (https://specifications.freedesktop.org/basedir-spec), defaulting to
+  // ~/.local/state. MODULAR_HOME (set per conda environment) and ~/.modular
+  // are ignored so the id never moves when another installer creates them.
+  std::filesystem::path folder;
+  if (auto testTmpdir = llvm::sys::Process::GetEnv("TEST_TMPDIR"))
+    folder = std::filesystem::path(*testTmpdir) / ".modular";
+  else if (auto stateHome = llvm::sys::Process::GetEnv("XDG_STATE_HOME"))
+    folder = std::filesystem::path(*stateHome) / "modular";
+  else if (llvm::SmallString<128> home; llvm::sys::path::home_directory(home))
+    folder = std::filesystem::path(home.str().str()) / ".local" / "state" /
+             "modular";
+  else
+    return Error("No home directory to keep the install id in");
+  return folder;
+}
+
+std::pair<std::string, StringRef>
+M::Telemetry::readOrCreateInstallId(const std::filesystem::path &dataFolder) {
+  // A relative folder (an empty HOME) would land in the working directory.
+  if (!dataFolder.is_absolute()) {
+    LDBG() << "The install id folder is not absolute: " << dataFolder.string();
+    return {kUnknownId.str(), kMachineSourceNone};
+  }
+  std::filesystem::path path = dataFolder / "installId";
+  auto readOr = readInstallId(path);
+  if (!readOr.isError())
+    return {*readOr, kMachineSourceInstallId};
+  if (llvm::sys::fs::exists(path.string())) {
+    LDBG() << readOr.getError();
+    return {kUnknownId.str(), kMachineSourceCorrupted};
+  }
+  auto createOr = createInstallId(path);
+  if (createOr.isError()) {
+    LDBG() << createOr.getError();
+    return {kUnknownId.str(), kMachineSourceNone};
+  }
+  return {*createOr, kMachineSourceInstallId};
+}
+
 /// creates local identifiers; see Telemetry.h.
 const M::Telemetry::LocalIDs &M::Telemetry::createLocalIDs() {
   // Memoized so every caller in the process observes identical values: the
   // crash reporting and usage telemetry lanes must share machineid/sessionid
   // for their events to be joinable.
   static const LocalIDs ids = [] {
-    std::vector<std::string> macs = localMACs();
-    std::sort(std::begin(macs), std::end(macs));
+    std::string machineID = kUnknownId.str();
+    StringRef machineSource = kMachineSourceNone;
+    if (auto folderOr = getInstallIdFolder(); folderOr.isError())
+      LDBG() << folderOr.getError();
+    else
+      std::tie(machineID, machineSource) = readOrCreateInstallId(*folderOr);
 
-    llvm::BLAKE3 hashState{};
-    for (const auto &mac : macs)
-      hashState.update(StringRef(mac));
-
-    auto hash = hashState.result();
-    std::string machineID =
-        encodeURLSafeBase64(StringRef((char *)hash.begin(), hash.size()));
-
-    // Mix in some random bytes in order to construct a local session
-    // identifier. This may suffer from a cardinality explosion (and we may
-    // choose to rely on the machineid in the future instead), but we can make
-    // that decision in the backend separately.
     SecureRandomBytesGenerator rng;
-    std::array<uint8_t, 32> scratchBuf = {};
-    auto err = rng.getRandomBytes(scratchBuf);
-    assert(!err.isError());
-    hashState.update(scratchBuf);
-    hash = hashState.result();
-    std::string sessionID =
-        encodeURLSafeBase64(StringRef((char *)hash.begin(), hash.size()));
+    std::array<uint8_t, 16> bytes = {};
+    std::string sessionID = rng.getRandomBytes(bytes).isError()
+                                ? kUnknownId.str()
+                                : llvm::toHex(bytes, /*LowerCase=*/true);
 
-    return LocalIDs{machineID, sessionID};
+    return LocalIDs{machineID, sessionID, machineSource.str()};
   }();
   return ids;
+}
+
+bool M::Telemetry::isModularEndpoint(StringRef endpoint) {
+  // Find the host the export goes to. opentelemetry-cpp's UrlParser skips
+  // userinfo whose '@' precedes the first '/', and the exporter rebuilds the
+  // URL from the host it finds; curl then ends that authority at "/?#" and
+  // splits off userinfo at its first '@'.
+  StringRef host = endpoint;
+  if (size_t pos = host.find("://"); pos != StringRef::npos)
+    host = host.drop_front(pos + 3);
+  if (size_t at = host.find('@'); at < host.find('/'))
+    host = host.drop_front(at + 1);
+  host = host.take_front(host.find_first_of("/?#"));
+  if (size_t at = host.find('@'); at != StringRef::npos)
+    host = host.drop_front(at + 1);
+  host = host.take_until([](char c) { return c == ':'; });
+  host.consume_back(".");
+  return host.equals_insensitive("modular.com") ||
+         host.ends_with_insensitive(".modular.com");
 }
 
 bool M::Telemetry::isTelemetryEnabled(Config &settings) {
@@ -299,12 +419,14 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
   attrs.SetAttribute("modular.version.revision", version.revision);
   attrs.SetAttribute("modular.version.buildtype", version.buildType);
 
-  // Set the local machineid.
-  const auto &localIDs = createLocalIDs();
-  // WARNING: Metering & billing depends on machineid. Do not remove!
-  attrs.SetAttribute("machineid", localIDs.machine);
-  attrs.SetAttribute("sessionid", localIDs.session);
-  machineId = localIDs.machine;
+  // Set the local machineid; an opted-out machine gets no install id minted.
+  bool enabled = isTelemetryEnabled(settings);
+  if (enabled) {
+    const auto &localIDs = createLocalIDs();
+    attrs.SetAttribute("machineid", localIDs.machine);
+    attrs.SetAttribute("sessionid", localIDs.session);
+    attrs.SetAttribute("machineid.source", localIDs.machineSource);
+  }
 
   auto webId = settings.getValue("web.id");
   if (webId.empty()) {
@@ -312,7 +434,8 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
     if (homeDir) {
       auto webIdFile =
           std::filesystem::path(*homeDir) / ".modular" / "webUserId";
-      if (std::filesystem::exists(webIdFile)) {
+      // Never throws; any error reads as "no file".
+      if (llvm::sys::fs::exists(webIdFile.string())) {
         auto mBufOr = llvm::MemoryBuffer::getFile(webIdFile.string(),
                                                   /*IsText=*/true);
         if (mBufOr) {
@@ -330,8 +453,6 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
   }
 
   attrs.SetAttribute("modular.employee", isModularEmployee());
-
-  bool enabled = isTelemetryEnabled(settings);
 
   // Get telemetry level.
   auto level = settings.getValue("telemetry.level");
@@ -415,6 +536,7 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
 
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
     otlpOptions.timeout = kOtlpRequestTimeout;
+    dropHeadersForModular(otlpOptions, httpEndpoint);
     auto exporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
             otlpOptions);
@@ -466,6 +588,7 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
 
     otlpLogOptions.url = (httpEndpoint + "/v1/logs").str();
     otlpLogOptions.timeout = kOtlpRequestTimeout;
+    dropHeadersForModular(otlpLogOptions, httpEndpoint);
     auto logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
             otlpLogOptions);

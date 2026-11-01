@@ -65,7 +65,6 @@ from max.gpu import *
 from max.gpu.host import DeviceContext
 
 from internal_utils import CacheBustingBuffer, arg_parse
-from internal_utils._utils import InitializationType
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 
@@ -74,8 +73,6 @@ from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from std.random import random_float64, seed
 from std.testing import assert_almost_equal
-
-from std.utils.numerics import min_or_neg_inf
 
 
 def _build_tag_space_qk[
@@ -217,11 +214,11 @@ def run_mha_sparse[
 
     if bench:
 
-        @always_inline
+        @inline(.always)
         def bench_func(
             mut b: Bencher,
         ) raises {var cb_q, var cb_k, var cb_v, var cb_o, imm}:
-            @always_inline
+            @inline(.always)
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 # Construct device buffers with offsets.
                 var q_device = TileTensor(
@@ -483,10 +480,10 @@ def main() raises:
 
     print("Running MHA sparse (BLASST tag-space) benchmark with config:")
     print("  qkv_type:", qkv_type)
-    print("  mask_type:", mask_type, "(NullMask / full visibility)")
+    print(t"  mask_type: {mask_type} (NullMask / full visibility)")
     print("  depth:", depth)
     print("  num_heads:", num_heads)
-    print("  group:", group, "(kv_num_heads =", num_heads // group, ")")
+    print(t"  group: {group} (kv_num_heads = {num_heads // group} )")
     print("  seq_len:", seq_len)
     print("  num_keys:", num_keys)
     print("  batch_size:", batch_size)
@@ -508,13 +505,8 @@ def main() raises:
         if (b % n_buckets) != 0:
             expected_skips += 1
     print(
-        "  EXPECTED skip fraction ~",
-        ideal_pct,
-        "% (ideal 1-1/n) => peel-adjusted",
-        expected_skips,
-        "of",
-        total_blocks - 1,
-        "blocks",
+        t"  EXPECTED skip fraction ~ {ideal_pct} % (ideal 1-1/n) =>"
+        t" peel-adjusted {expected_skips} of {total_blocks - 1} blocks"
     )
 
     var m = Bench()

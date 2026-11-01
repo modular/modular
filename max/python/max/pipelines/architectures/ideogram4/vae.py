@@ -22,12 +22,12 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from max import functional as F
 from max.driver import Buffer, Device
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.profiler import traced
+from max.tensor import Tensor
 
 from ..autoencoders_modulev3.autoencoder_kl_flux2 import AutoencoderKLFlux2
 from ..autoencoders_modulev3.model import BaseAutoencoderModel

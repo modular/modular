@@ -4,31 +4,22 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 package(default_visibility = ["//max:consumers"])
 
 _FILECHECK_TESTS = [
-    "test_element.mojo",
     "test_layout.mojo",
     "test_swizzle.mojo",
-    "test_tensor.mojo",
-    "test_tensor_masked.mojo",
     "test_tensor_math.mojo",
-    "test_tensor_runtime_layout.mojo",
     "test_tiled_matmul.mojo",
     "test_vectorized_matmul.mojo",
 ]
 
 _LIT_TESTS = [
+    "test_gpu_storage_non_compact_layout_fail.mojo",
     "test_tile_tensor_copy_from_mismatched_total_elements_fail.mojo",
     "test_tile_tensor_split_static_non_divisible_fail.mojo",
+    "test_two_level_layout_bad_box_fail.mojo",
 ]
 
 _EXTRA_DEPS = {
     "test_tiled_matmul.mojo": ["//max:max_mojo"],
-}
-
-_EXTRA_CONSTRAINTS = {
-    "test_tensor_masked.mojo": select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
 }
 
 [
@@ -36,7 +27,6 @@ _EXTRA_CONSTRAINTS = {
         name = src + ".test",
         srcs = [src],
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "//max:layout",
             "@mojo//:std",

@@ -32,8 +32,9 @@ class CABIInfo;
 /// return-value coercion (register/sret) in place, then updates the function
 /// type signature. No-ops for external declarations and identity-ABI functions.
 /// Mojo direct callers are already patched by ConvertKGENCall.
+/// `isResultSigned` selects signext over zeroext for a narrow integer result.
 void processCABIFunctionDefinition(mlir::LLVM::LLVMFuncOp func,
-                                   CABIInfo &abiInfo);
+                                   CABIInfo &abiInfo, bool isResultSigned);
 
 } // namespace M::KGEN
 

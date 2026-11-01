@@ -13,7 +13,7 @@ modular_py_library(
     srcs = ["_test_helpers.py"],
     imports = ["."],
     deps = [
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         requirement("numpy"),
     ],
 )
@@ -37,13 +37,13 @@ modular_py_library(
     ],
     imports = ["."],
     deps = [
+        ":test_helpers",
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("pytest"),
     ],
@@ -65,10 +65,6 @@ modular_eager_py_test(
     cpu_only = True,
     # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
     env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
-    ignore_extra_deps = [
-        # lazy import
-        "//max/python/max/_interpreter_ops",
-    ],
     imports = ["."],
     per_test_shard_count = {
         "module/test_compiled_simulated_cpu.py": 9,
@@ -83,13 +79,11 @@ modular_eager_py_test(
         ":test_base",
         ":test_helpers",
         "//max/python/max:tensor",
-        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )
@@ -109,9 +103,9 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
     ],
 )
@@ -126,16 +120,10 @@ modular_eager_py_test(
         "functional/test_*_simulated_gpu.py",
         "module/test_*_simulated_gpu.py",
     ]),
-    # See tests_simulated_cpu (SDLC-4307).
-    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"],
-    ignore_extra_deps = [
-        # lazy import
-        "//max/python/max/_interpreter_ops",
-    ],
     imports = ["."],
     tags = ["gpu"],
     target_compatible_with = select({
@@ -146,9 +134,8 @@ modular_eager_py_test(
     deps = [
         ":test_base",
         ":test_helpers",
-        "//max/python/max/_interpreter_ops",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
-        "//max/python/max/experimental",
     ],
 )
 
@@ -183,8 +170,8 @@ modular_eager_py_test(
         deps = [
             ":test_base",
             ":test_helpers",
+            "//max/python/max:tensor",
             "//max/python/max/driver",
-            "//max/python/max/experimental",
             requirement("numpy"),
         ],
     )
@@ -204,8 +191,8 @@ modular_eager_py_test(
         gpu_constraints = ["//:has_4_gpus"],
         ignore_extra_deps = [
             ":test_helpers",
-            "//max/python/max/experimental",
-            "//max/python/max/experimental/nn",
+            "//max/python/max:tensor",
+            "//max/python/max/nn",
         ],
         imports = ["."],
         tags = ["gpu"],
@@ -217,10 +204,69 @@ modular_eager_py_test(
         deps = [
             ":test_base",
             ":test_helpers",
+            "//max/python/max:tensor",
             "//max/python/max/driver",
-            "//max/python/max/experimental",
-            "//max/python/max/experimental/nn",
+            "//max/python/max/nn",
         ],
     )
     for src in glob(["module/test_*_multi_gpu.py"])
 ]
+
+# The fused collective + RMS norm functionals on their real kernels, which
+# need 2 real, distinct devices.
+modular_eager_py_test(
+    name = "functional/test_collective_rms_norm_2gpu",
+    size = "enormous",
+    srcs = ["functional/test_collective_rms_norm_2gpu.py"],
+    # The eager interpreter has no handler for the fused collectives.
+    env = {"MAX_EAGER_EXECUTOR": "compile"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_multi_gpu"],
+    # Collective signal buffers come from max.nn.legacy, imported lazily.
+    ignore_extra_deps = ["//max/python/max/nn/legacy"],
+    imports = ["."],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/legacy",
+        requirement("numpy"),
+    ],
+)
+
+# Regression test for a `call_on_mesh` result landing under the wrong
+# device (see `_join` in dispatch.py) -- needs only 2 real, distinct
+# devices, unlike the 4-GPU tests above.
+modular_eager_py_test(
+    name = "functional/test_dispatch_device_mismatch_2gpu",
+    size = "enormous",
+    srcs = ["functional/test_dispatch_device_mismatch_2gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_multi_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        requirement("numpy"),
+    ],
+)

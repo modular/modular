@@ -25,7 +25,6 @@ from nn._ragged_utils import get_batch_from_row_offsets
 from extensibility import InputTensor, OutputTensor
 from extensibility import Tensor, TileTensorable
 
-from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
 
@@ -59,7 +58,7 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
         self.k_array = Array[length=Self.num_elements](fill=fill_k)
         self.v_array = Array[length=Self.num_elements](fill=fill_v)
 
-    @always_inline
+    @inline(.always)
     def swap(mut self, a: Int, b: Int) -> None:
         """Swaps the key/value pairs at two heap positions.
 
@@ -263,16 +262,27 @@ struct LogProbabilitiesRagged:
             parallelize(
                 lp_idx_kernel,
                 num_output_tokens,
-                ctx=Optional[DeviceContext](ctx),
+                ctx=Optional(ctx.assert_cpu_target()),
             )
         elif is_gpu[target]():
+            # `Int` is not device-passable; the closure carries a fixed-width
+            # copy of the token count.
+            var num_output_tokens_dev = Int32(num_output_tokens)
 
-            @__parameter
-            @__copy_capture(num_output_tokens)
             @__name(t"log_probabilities_l{levels}")
-            def raw_lp_kernel():
+            def raw_lp_kernel() {
+                var num_output_tokens_dev,
+                var lp_logits,
+                var lp_tokens,
+                var logits,
+                var tokens,
+                var sampled_tokens,
+                var logit_row_offsets,
+                var token_row_offsets,
+                var lp_output_offsets,
+            }:
                 var output_token_index = global_idx.x
-                if output_token_index < num_output_tokens:
+                if output_token_index < Int(num_output_tokens_dev):
                     compute_log_probabilities_1tok[target, levels](
                         output_token_index=output_token_index,
                         lp_logits=lp_logits,
@@ -286,7 +296,8 @@ struct LogProbabilitiesRagged:
                     )
 
             comptime block_size = 64
-            ctx.enqueue_function[raw_lp_kernel](
+            ctx.enqueue_function(
+                raw_lp_kernel,
                 grid_dim=ceildiv(num_output_tokens, block_size),
                 block_dim=block_size,
             )
@@ -365,10 +376,8 @@ def compute_log_probabilities_ragged_shape[
     comptime assert (
         type_of(lp_output_offsets_host).rank == 1
     ), "lp_output_offsets_host must be rank 1"
-    var num_offsets = coord_to_index_list(
-        lp_output_offsets_host.shape().tuple()
-    )[0]
+    var num_offsets = Int(lp_output_offsets_host.shape().product())
     return IndexList[2](
-        Int(lp_output_offsets_host.to_tile_tensor().raw_load(num_offsets - 1)),
+        Int(lp_output_offsets_host.to_tile_tensor()[num_offsets - 1]),
         2**levels,
     )

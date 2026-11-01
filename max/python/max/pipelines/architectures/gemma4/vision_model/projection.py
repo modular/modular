@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Projects Gemma 4's vision output into the text width."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -22,7 +24,7 @@ from max.graph import (
     ops,
 )
 from max.graph.ops import avg_pool2d
-from max.nn.layer import Module, Shardable
+from max.nn.legacy.layer import Module, Shardable
 
 from ..layers.rms_norm import Gemma4RMSNorm
 from ..model_config import Gemma4ForConditionalGenerationConfig
@@ -36,7 +38,7 @@ class Gemma4MultiModalProjector(Module, Shardable):
         config: Gemma4ForConditionalGenerationConfig,
         device: DeviceRef | None = None,
     ):
-        """Prepare the normalisation and projection weights based on config"""
+        """Prepare the normalisation and projection weights based on config."""
         super().__init__()
 
         self.config = config
@@ -66,8 +68,7 @@ class Gemma4MultiModalProjector(Module, Shardable):
         self.kernel_size = config.vision_config.pooling_kernel_size
 
     def __call__(self, vision_outputs: TensorValue) -> TensorValue:
-        """Process vision outputs through pooling, normalisation, and a
-        projection weight"""
+        """Pools the vision output and projects it into the text width."""
         batch_size, _, seq_length = vision_outputs.shape
 
         transposed_vision_outputs = vision_outputs.transpose(1, 2)
@@ -110,6 +111,7 @@ class Gemma4MultiModalProjector(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the projection weight is split across devices."""
         return self.mm_input_projection_weight.sharding_strategy
 
     @sharding_strategy.setter
@@ -120,6 +122,7 @@ class Gemma4MultiModalProjector(Module, Shardable):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma4MultiModalProjector]:
+        """Splits the projection weight across ``devices``."""
         assert self.sharding_strategy
 
         projection_weight_shards = self.mm_input_projection_weight.shard(

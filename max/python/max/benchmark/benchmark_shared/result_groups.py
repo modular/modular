@@ -65,6 +65,25 @@ class SummaryGroup(BaseModel):
     total_generated_outputs: int | None = None
 
 
+class RequestMixGroup(BaseModel):
+    """Realized share of requests carrying each optional payload feature.
+
+    Checks a run's traffic against the production mix it is calibrated to,
+    rather than describing its performance. Each rate is over the measured
+    requests; a response-side rate is over the requests that offered the
+    feature.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    constrained_request_rate: float | None = None
+    constrained_conformance_rate: float | None = None
+    tool_request_rate: float | None = None
+    tool_call_response_rate: float | None = None
+    image_request_rate: float | None = None
+    lora_request_rate: float | None = None
+
+
 class GpuStatsGroup(BaseModel):
     """Per-device GPU utilization / memory sampling over the iteration.
 
@@ -77,6 +96,11 @@ class GpuStatsGroup(BaseModel):
     peak_gpu_memory_mib: list[float] = Field(default_factory=list)
     available_gpu_memory_mib: list[float] = Field(default_factory=list)
     gpu_utilization: list[float] = Field(default_factory=list)
+    # ``gpu_utilization`` split by group, such as a disaggregated engine's
+    # prefill and decode GPUs, whose loads a single mean would hide.
+    gpu_utilization_by_group: dict[str, list[float]] = Field(
+        default_factory=dict
+    )
 
 
 class LatencyStatsGroup(BaseModel):
@@ -89,6 +113,13 @@ class LatencyStatsGroup(BaseModel):
     tpot_ms: PercentileMetrics | None = None
     itl_ms: PercentileMetrics | None = None
     step_tpot_ms: PercentileMetrics | None = None
+    # ``ttft_ms`` / ``tpot_ms`` restricted to the constrained and unconstrained
+    # halves of a mixed structured-output run. Each pair is ``None`` unless
+    # both its halves have samples.
+    ttft_ms_constrained: PercentileMetrics | None = None
+    ttft_ms_unconstrained: PercentileMetrics | None = None
+    tpot_ms_constrained: PercentileMetrics | None = None
+    tpot_ms_unconstrained: PercentileMetrics | None = None
 
 
 class ThroughputStatsGroup(BaseModel):
@@ -129,12 +160,13 @@ class BenchmarkResultGroups(BaseModel):
 
     ``summary`` is always populated; the remaining groups are ``None``
     when the underlying result has nothing to report for that group
-    (e.g. ``cache_stats`` on a pixel-generation iteration).
+    (such as ``cache_stats`` on a pixel-generation iteration).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     summary: SummaryGroup
+    request_mix: RequestMixGroup | None = None
     gpu_stats: GpuStatsGroup | None = None
     latency_stats: LatencyStatsGroup | None = None
     throughput_stats: ThroughputStatsGroup | None = None

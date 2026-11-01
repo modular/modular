@@ -21,6 +21,7 @@ graphs.
 """
 
 from .attention import *
+from .bundled import *
 from .conv import *
 from .distributed import *
 from .elementwise import *

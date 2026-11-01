@@ -13,12 +13,12 @@
 """Implements classes and methods for coroutines.
 
 Async support in Mojo is unfinished and these types are not ready for general
-use. They are the return types the compiler synthesizes for `async def`, so they
-appear in inferred types and diagnostics, but nothing here carries a stability
-guarantee and the design is expected to change substantially. This module is
-private for that reason: `Coroutine` and `RaisingCoroutine` are not exported
-from the prelude, and code outside the standard library should not depend on
-them.
+use. They are the return types the compiler synthesizes for `__async def`, so
+they appear in inferred types and diagnostics, but nothing here carries a
+stability guarantee and the design is expected to change substantially. This
+module is private for that reason: `Coroutine` and `RaisingCoroutine` are not
+exported from the prelude, and code outside the standard library should not
+depend on them.
 """
 
 from std.sys import size_of
@@ -32,7 +32,7 @@ comptime AnyCoroutine = __mlir_type.`!co.routine`
 """The MLIR type representing a coroutine handle."""
 
 
-@always_inline
+@inline(.always)
 def _suspend_async(body: Some[def(AnyCoroutine) -> None]):
     __mlir_region await_body(hdl: __mlir_type.`!co.routine`):
         body(hdl)
@@ -60,19 +60,19 @@ struct _CoroutineContext(TrivialRegisterPassable):
     var _parent_hdl: AnyCoroutine
 
 
-@always_inline
+@inline(.always)
 def _coro_get_resume_fn(handle: AnyCoroutine) -> def(AnyCoroutine) thin -> None:
     """This function is a generic coroutine resume function."""
     return __mlir_op.`co.resume`[_type=def(AnyCoroutine) thin -> None](handle)
 
 
-@always_inline
+@inline(.always)
 def _coro_resume_fn(handle: AnyCoroutine):
     """This function is a generic coroutine resume function."""
     _coro_get_resume_fn(handle)(handle)
 
 
-@always_inline
+@inline(.always)
 def _coro_destroy_fn(handle: AnyCoroutine):
     __mlir_op.`co.destroy`(handle)
 
@@ -88,7 +88,7 @@ def _coro_resume_noop_callback(null: AnyCoroutine):
 
 
 struct Coroutine[type: Deinitable, origins: OriginSet](
-    Deinitable where False,
+    not Deinitable,
     RegisterPassable,
 ):
     """Represents a coroutine.
@@ -105,7 +105,7 @@ struct Coroutine[type: Deinitable, origins: OriginSet](
 
     var _handle: AnyCoroutine
 
-    @always_inline
+    @inline(.always)
     def _get_ctx[
         ctx_type: AnyType
     ](self) -> Pointer[ctx_type, MutUntrackedOrigin]:
@@ -126,13 +126,13 @@ struct Coroutine[type: Deinitable, origins: OriginSet](
             ](self._handle)
         }
 
-    @always_inline
+    @inline(.always)
     def _set_result_slot(self, slot: MutPointer[Self.type, ...]):
         __mlir_op.`co.set_byref_error_result`(
             self._handle, slot._get_kgen_pointer()
         )
 
-    @always_inline
+    @inline(.always)
     def _set_noop_callback(self):
         """Set the resume function of the coroutine context to a no-op so it
         doesn't try to resume anything else after executing. This makes
@@ -143,7 +143,7 @@ struct Coroutine[type: Deinitable, origins: OriginSet](
             _CoroutineContext
         ]()[]._resume_fn = _coro_resume_noop_callback
 
-    @always_inline
+    @inline(.always)
     @implicit
     def __init__(out self, handle: AnyCoroutine):
         """Construct a coroutine object from a handle.
@@ -153,7 +153,7 @@ struct Coroutine[type: Deinitable, origins: OriginSet](
         """
         self._handle = handle
 
-    @always_inline
+    @inline(.always)
     def _unsafe_force_deinit(deinit self):
         """Destroy the coroutine object without running its body to completion.
 
@@ -164,12 +164,12 @@ struct Coroutine[type: Deinitable, origins: OriginSet](
         """
         __mlir_op.`co.destroy`(self._handle)
 
-    @always_inline
+    @inline(.always)
     def _take_handle(deinit self) -> AnyCoroutine:
         """Take ownership of the raw handle."""
         return self._handle
 
-    @always_inline
+    @inline(.always)
     def __await__(deinit self, out result: Self.type):
         """Suspends the current coroutine until the coroutine is complete.
 
@@ -195,7 +195,7 @@ struct Coroutine[type: Deinitable, origins: OriginSet](
 
 
 struct RaisingCoroutine[type: AnyType, origins: OriginSet](
-    Deinitable where False,
+    not Deinitable,
     RegisterPassable,
 ):
     """Represents a coroutine that can raise.
@@ -212,7 +212,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
 
     var _handle: AnyCoroutine
 
-    @always_inline
+    @inline(.always)
     def _get_ctx[
         ctx_type: AnyType
     ](self) -> Pointer[ctx_type, MutUntrackedOrigin]:
@@ -233,7 +233,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
             ](self._handle)
         }
 
-    @always_inline
+    @inline(.always)
     def _set_result_slot(
         self,
         slot: MutPointer[Self.type, ...],
@@ -243,7 +243,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
             self._handle, slot._get_kgen_pointer(), err._get_kgen_pointer()
         )
 
-    @always_inline
+    @inline(.always)
     @implicit
     def __init__(out self, handle: AnyCoroutine):
         """Construct a coroutine object from a handle.
@@ -253,12 +253,12 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
         """
         self._handle = handle
 
-    @always_inline
+    @inline(.always)
     def _take_handle(deinit self) -> AnyCoroutine:
         """Take ownership of the raw handle."""
         return self._handle
 
-    @always_inline
+    @inline(.always)
     def _unsafe_force_deinit(deinit self):
         """Destroy the coroutine object without running its body to completion.
 
@@ -269,7 +269,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
         """
         __mlir_op.`co.destroy`(self._handle)
 
-    @always_inline
+    @inline(.always)
     def __await__(var self, out result: Self.type) raises:
         """Suspends the current coroutine until the coroutine is complete.
 

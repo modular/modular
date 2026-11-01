@@ -1,0 +1,218 @@
+{
+  "gemma4": {
+    "in_layouts": [
+      {"buffer": false, "dtype": "bfloat16", "shape": ["total_patches", 768], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "bfloat16", "shape": ["total_patches", 768], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": ["total_patches", 2], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": ["total_patches", 2], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["num_images_plus_1"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["num_images_plus_1"], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": ["num_pooled_tokens", "max_pool_patches"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": ["num_pooled_tokens", "max_pool_patches"], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]}
+    ],
+    "in_tree": {
+      "kind": "tuple",
+      "children": [
+        {
+          "kind": "tuple",
+          "children": [
+            {
+              "kind": "ordered_dict",
+              "keys": ["patches", "segments", "pooling", "segment_bound"],
+              "children": [
+                {
+                  "kind": "node",
+                  "type": "vision_rows",
+                  "keys": ["patches_flat", "pixel_position_ids"],
+                  "children": [
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]},
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}
+                  ]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_segments",
+                  "keys": ["cu_seqlens"],
+                  "children": [{"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_row_index",
+                  "keys": ["pool_gather_index"],
+                  "children": [{"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_host_max",
+                  "keys": ["max_seq_len"],
+                  "children": [{"kind": "leaf"}]
+                }
+              ]
+            }
+          ]
+        },
+        {"kind": "dict", "keys": [], "children": []}
+      ]
+    }
+  },
+  "qwen3_5": {
+    "in_layouts": [
+      {"buffer": false, "dtype": "float32", "shape": ["vision_seq_len", 1536], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "float32", "shape": ["vision_seq_len", 1536], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "float32", "shape": [4, "vision_pos_len", 1], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "float32", "shape": [4, "vision_pos_len", 1], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": [4, "vision_pos_len"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": [4, "vision_pos_len"], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": ["vision_seq_len", 2], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": ["vision_seq_len", 2], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": [], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": [], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["n_images", 3], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["n_images", 3], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["n_seqlens"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["n_seqlens"], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [1], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [1], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": true, "dtype": "uint8", "shape": [294387728], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": true, "dtype": "uint8", "shape": [294387728], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]}
+    ],
+    "in_tree": {
+      "kind": "tuple",
+      "children": [
+        {
+          "kind": "tuple",
+          "children": [
+            {
+              "kind": "ordered_dict",
+              "keys": ["patches", "grid_bound", "grids", "segments", "segment_bound", "signals"],
+              "children": [
+                {
+                  "kind": "node",
+                  "type": "vision_rows",
+                  "keys": ["pixel_values", "weights", "idxs", "rot_pos_ids"],
+                  "children": [
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]},
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]},
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]},
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}
+                  ]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_host_max",
+                  "keys": ["max_grid_size"],
+                  "children": [{"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_rows",
+                  "keys": ["grid_thw"],
+                  "children": [{"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_segments",
+                  "keys": ["cu_seqlens"],
+                  "children": [{"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_host_max",
+                  "keys": ["max_seqlen"],
+                  "children": [{"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}]
+                },
+                {
+                  "kind": "node",
+                  "type": "tp_signals",
+                  "keys": ["signal"],
+                  "children": [{"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}]
+                }
+              ]
+            }
+          ]
+        },
+        {"kind": "dict", "keys": [], "children": []}
+      ]
+    }
+  },
+  "qwen2_5vl": {
+    "in_layouts": [
+      {"buffer": false, "dtype": "bfloat16", "shape": ["vision_seq_len", 1176], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "bfloat16", "shape": ["vision_seq_len", 1176], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["vision_seq_len", 2], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["vision_seq_len", 2], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["window_seq_len"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["window_seq_len"], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["n_seqlens"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["n_seqlens"], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["n_window_seqlens"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["n_window_seqlens"], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [1], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [1], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [1], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [1], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": [], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": [], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": true, "dtype": "uint8", "shape": [294387728], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": true, "dtype": "uint8", "shape": [294387728], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]}
+    ],
+    "in_tree": {
+      "kind": "tuple",
+      "children": [
+        {
+          "kind": "tuple",
+          "children": [
+            {
+              "kind": "ordered_dict",
+              "keys": ["patches", "windows", "segments", "bounds", "signals"],
+              "children": [
+                {
+                  "kind": "node",
+                  "type": "vision_rows",
+                  "keys": ["pixel_values", "rot_pos_ids"],
+                  "children": [
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]},
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}
+                  ]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_self_index",
+                  "keys": ["window_index"],
+                  "children": [{"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_segments",
+                  "keys": ["cu_seqlens", "cu_window_seqlens"],
+                  "children": [
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]},
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}
+                  ]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_host_max",
+                  "keys": ["max_seqlen", "max_window_seqlen", "max_grid_size"],
+                  "children": [
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]},
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]},
+                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}
+                  ]
+                },
+                {
+                  "kind": "node",
+                  "type": "tp_signals",
+                  "keys": ["signal"],
+                  "children": [{"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}]
+                }
+              ]
+            }
+          ]
+        },
+        {"kind": "dict", "keys": [], "children": []}
+      ]
+    }
+  }
+}

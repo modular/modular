@@ -61,7 +61,7 @@ namespace M::KGEN {
 /// as signed.
 class DTypeValue {
 public:
-  /// Get an integer value.
+  /// Get an integer value. Signedness is taken from `dtype`, not `value`.
   DTypeValue(APSInt value, KGENDType dtype);
 
   /// Get a floating point value.
@@ -76,17 +76,13 @@ public:
   /// Raw data constructor.
   DTypeValue(APInt data, KGENDType dtype);
 
-  /// Compare two dtype values.
-  /// NOTE: We use APInt::isSameValue to compare the data because
-  /// APInt::operator== asserts when comparing APInts with different bit widths.
-  /// This can happen when the same logical value is stored with different bit
-  /// widths (e.g., index types on 32-bit vs 64-bit targets).
+  /// Bit width is ignored: it differs across targets for index-like dtypes.
   bool operator==(const DTypeValue &rhs) const {
-    return dtype == rhs.dtype && APInt::isSameValue(data, rhs.data);
+    return dtype == rhs.dtype && APSInt::isSameValue(data, rhs.data);
   }
 
   /// Get the underlying data.
-  const APInt &getData() const { return data; }
+  const APSInt &getData() const { return data; }
 
   /// Get the dtype.
   KGENDType getDType() const { return dtype; }
@@ -107,8 +103,8 @@ private:
   /// Default constructor accessible only by the attribute storage class.
   DTypeValue() {}
 
-  /// All values are stored as `APInt`s.
-  APInt data;
+  /// All values are stored as `APSInt`s, signed iff the dtype is.
+  APSInt data;
 
   /// The dtype of the value. This indicates how to interpret `data`.
   KGENDType dtype;
@@ -223,6 +219,67 @@ template <typename To, typename From>
 /// Peel off transparent wrappers that do not change type identity: rebind,
 /// upcast, downcast, and extension.
 TypedAttr stripIdentityWrappers(TypedAttr attr);
+
+//===----------------------------------------------------------------------===//
+// FuncSymbolGenerator
+//===----------------------------------------------------------------------===//
+
+/// A view of a `GeneratorAttr` whose body is a `FuncSymbolAttr`.
+class FuncSymbolGenerator {
+public:
+  FuncSymbolGenerator() = default;
+  /// Wraps `attr`, which must be null or a `GeneratorAttr` wrapping a
+  /// `FuncSymbolAttr`.
+  /*implicit*/ FuncSymbolGenerator(TypedAttr attr);
+
+  /// Returns a generator over `inputParamTypes` whose body is `funcSymbol`.
+  static FuncSymbolGenerator get(ArrayRef<Type> inputParamTypes,
+                                 FuncSymbolAttr funcSymbol,
+                                 Attribute metadata = {});
+
+  /// Returns a fully bound generator referencing the non-parametric function
+  /// `symbol` of type `type`.
+  static FuncSymbolGenerator get(SymbolRefAttr symbol, FuncType type,
+                                 Attribute metadata = {});
+
+  /// Returns a fully bound generator referencing `func`.
+  static FuncSymbolGenerator get(FuncOp func);
+
+  /// Returns a generator of type `type` referencing `symbol` with
+  /// `paramValues` bound. An `UnboundAttr` value, or a parameter left off the
+  /// end, binds to the generator's next input parameter.
+  static FuncSymbolGenerator get(SymbolRefAttr symbol,
+                                 FuncTypeGeneratorType type,
+                                 ArrayRef<TypedAttr> paramValues = {});
+  static FuncSymbolGenerator get(StringAttr name, FuncTypeGeneratorType type,
+                                 ArrayRef<TypedAttr> paramValues = {});
+
+  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr`.
+  static FuncSymbolGenerator dynCast(Attribute attr);
+
+  /*implicit*/ operator Attribute() const { return storage; }
+  /*implicit*/ operator TypedAttr() const { return storage; }
+  /*implicit*/ operator GeneratorAttr() const { return storage; }
+  explicit operator bool() const { return static_cast<bool>(storage); }
+
+  FuncTypeGeneratorType getType() const;
+  ArrayRef<Type> getInputParamTypes() const;
+  bool isFullyBound();
+
+  /// Returns the wrapped `FuncSymbolAttr`. Its parameter values are inside the
+  /// generator, one scope deeper than the generator itself.
+  FuncSymbolAttr getFuncSymbol() const;
+  SymbolRefAttr getSymbol() const;
+
+  /// Returns the wrapped `FuncSymbolAttr` as seen from the scope enclosing the
+  /// generator. The generator must be fully bound.
+  FuncType getInstantiatedType();
+  FuncSymbolAttr getInstantiatedFuncSymbol();
+  ArrayRef<TypedAttr> getParamValues();
+
+private:
+  GeneratorAttr storage;
+};
 
 } // namespace M::KGEN
 

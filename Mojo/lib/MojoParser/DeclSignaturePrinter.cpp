@@ -13,9 +13,7 @@
 //
 // Renders Mojo-syntax signatures directly from MLIR ops. This is the canonical
 // implementation used by both the compiler diagnostic path and the mojo-doc
-// tool (which delegates here via `PublicASTDecl`). The data model and rendering
-// primitives live in `SignatureModel.h`; this file just wires the
-// per-op-kind entry points together.
+// tool.
 //
 //===----------------------------------------------------------------------===//
 
@@ -31,7 +29,6 @@
 #include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/MojoDiags.h"
-#include "Mojo/MojoParser/SignatureModel.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
@@ -46,176 +43,20 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
-// Public entry points
-//===----------------------------------------------------------------------===//
-
-void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
-                                     llvm::raw_string_ostream &os,
-                                     const LIT::ASTDecl *contextDecl,
-                                     const SignatureOffsets &offsets) {
-  // The DeclResolver context-changer only records the decl; it does not
-  // mutate it. Const-cast lets us thread it through from `const`-qualified
-  // doc-tooling callers.
-  DeclResolver::DiagnosticDeclContextChanger scope(
-      const_cast<LIT::ASTDecl *>(contextDecl));
-
-  Operation *parentOp = fnOp->getParentOp();
-  bool isStatic = fnOp.getIsStatic();
-  bool isMethod =
-      !isStatic && (isa<StructDeclOp>(parentOp) || isa<TraitDeclOp>(parentOp));
-  bool isInit = fnOp.getSpecialFunctionInfo().isInitializer();
-  FnTypeGeneratorType signature = fnOp.getFuncTypeGenerator();
-
-  // Self-type substitution for `Self` keyword rendering. `Self` can be uttered
-  // by static methods too (e.g. in a return type), so the substitution is
-  // gated on the enclosing decl being a struct or trait - not on `isMethod`.
-  // The motivation for checking for trait methods comes from printing
-  // compiler-synthesized closure `__call__` requirements on closures.`
-  std::optional<ASTType> selfType;
-  if (auto parentStruct = dyn_cast<StructDeclOp>(parentOp))
-    selfType = ASTType(ASTDecl::computeSelfTypeForStruct(parentStruct));
-  else if (auto parentTrait = dyn_cast<TraitDeclOp>(parentOp))
-    selfType = ASTType(ASTDecl::computeSelfTypeForTrait(parentTrait));
-
-  SmallVector<ParameterInfo, 2> params;
-  ParameterEvaluator evaluator =
-      populateParameterInfos(shared, signature.getInputParamTypes(),
-                             signature.getParamListAttrs(), params, selfType);
-
-  // Function-level constraints (the trailing "where ...").
-  std::string fnConstraints;
-  if (auto cs = signature.getParamListAttrs().getBodyConstraints(); !cs.empty())
-    fnConstraints = mergeConformsToConstraints(cs, &evaluator, shared, params);
-
-  SmallVector<ArgumentInfo, 2> args;
-  populateArgumentInfos(
-      shared, signature, fnOp.getArgumentTypes(), selfType, evaluator,
-      [&] { return fnOp.getSpecialFunctionInfo().hasSelfResult(); }, args);
-
-  // Pre-render the return type for the shared printer; suppressed entirely
-  // for `__init__`-style functions whose out-arg gets hoisted to the front.
-  bool hasOutArgument =
-      !args.empty() && args.back().convention == ArgumentConvention::kOut;
-  std::string returnTypeStr;
-  ASTType resultType = signature.getUserResultType();
-  if (!hasOutArgument && resultType && !resultType.isNoneType()) {
-    std::optional<ArgConvention> convention;
-    if (signature.isRefResult()) {
-      convention = ArgConvention::Ref;
-      returnTypeStr =
-          "ref" + getRefPrefixAsString(shared, cast<RefType>(resultType),
-                                       signature, /*isRefResult=*/true);
-    }
-    Type reboundUserResultType =
-        evaluator.getReboundType(fnOp.getUserResultType());
-    returnTypeStr +=
-        generateTypeString(shared, reboundUserResultType, VariadicKind::None,
-                           selfType, convention);
-  }
-
-  // Strip the "(...)" mangle suffix from a function source name, leaving just
-  // the bare identifier.
-  auto stripFunctionMangle = [](StringRef name) {
-    return name.split('(').first;
-  };
-
-  printFunctionSignatureFromInfos(
-      stripFunctionMangle(fnOp.getSourceName().value_or(StringRef())), args,
-      params, returnTypeStr, fnConstraints, isInit, isMethod, shared, os,
-      offsets);
-}
-
-void M::KGEN::printStructSignature(LIT::StructDeclOp structOp,
-                                   LIT::SharedState &shared,
-                                   llvm::raw_string_ostream &os,
-                                   const LIT::ASTDecl *contextDecl,
-                                   const SignatureOffsets &offsets) {
-  DeclResolver::DiagnosticDeclContextChanger scope(
-      const_cast<LIT::ASTDecl *>(contextDecl));
-  TypeSignatureType signature = structOp.getSignature();
-  SmallVector<ParameterInfo, 2> params;
-  ParameterEvaluator evaluator =
-      populateParameterInfos(shared, signature.getInputParamTypes(),
-                             signature.getParamListAttrs(), params);
-
-  // Struct-level constraints (the trailing "where ...").
-  std::string constraints;
-  if (auto cs = signature.getParamListAttrs().getBodyConstraints(); !cs.empty())
-    constraints = mergeConformsToConstraints(cs, &evaluator, shared, params);
-
-  printStructSignatureFromInfos(structOp.getName(), params, constraints, shared,
-                                os, offsets);
-}
-
-void M::KGEN::printAliasSignature(LIT::AliasDeclOp aliasOp,
-                                  LIT::SharedState &shared,
-                                  llvm::raw_string_ostream &os,
-                                  const LIT::ASTDecl *contextDecl,
-                                  const SignatureOffsets &offsets) {
-  DeclResolver::DiagnosticDeclContextChanger scope(
-      const_cast<LIT::ASTDecl *>(contextDecl));
-  auto maybeValue = aliasOp.getValue();
-  if (!maybeValue)
-    return;
-  auto generator = dyn_cast<GeneratorAttr>(*maybeValue);
-  if (!generator)
-    return;
-  auto generatorType = dyn_cast<GeneratorType>(generator.getType());
-  if (!generatorType)
-    return;
-
-  SmallVector<ParameterInfo, 2> params;
-  ParameterEvaluator evaluator =
-      populateParameterInfos(shared, generatorType.getInputParamTypes(),
-                             generatorType.getParamListAttrs(), params);
-
-  // Decl-level constraints (the trailing "where ...").
-  std::string constraints;
-  if (auto cs = generatorType.getParamListAttrs().getBodyConstraints();
-      !cs.empty())
-    constraints = mergeConformsToConstraints(cs, &evaluator, shared, params);
-
-  auto name = demangleParameterName(aliasOp.getName(), /*forUser=*/true);
-  printAliasSignatureFromInfos(name, /*type=*/"", params, constraints, shared,
-                               os, offsets);
-}
-
-void M::KGEN::printTraitSignature(LIT::TraitDeclOp traitOp,
-                                  LIT::SharedState &shared,
-                                  llvm::raw_string_ostream &os,
-                                  const LIT::ASTDecl *contextDecl,
-                                  const SignatureOffsets &offsets) {
-  DeclResolver::DiagnosticDeclContextChanger scope(
-      const_cast<LIT::ASTDecl *>(contextDecl));
-
-  auto name = demangleParameterName(traitOp.getName(), /*forUser=*/true);
-  os << "trait " << name;
-}
-
-//===----------------------------------------------------------------------===//
 // Diagnostic-oriented helpers
 //===----------------------------------------------------------------------===//
 
-std::string M::KGEN::synthesizeDeclSignature(Operation *op, SharedState &shared,
-                                             const ASTDecl *contextDecl) {
-  if (!op)
-    return {};
+std::string M::KGEN::synthesizeDeclSignature(const ASTDecl &decl) {
   std::string out;
   llvm::raw_string_ostream os(out);
-  llvm::TypeSwitch<Operation *>(op)
-      .Case<FnOp>([&](FnOp fnOp) {
-        printFunctionSignature(fnOp, shared, os, contextDecl);
-      })
-      .Case<StructDeclOp>([&](StructDeclOp structOp) {
-        printStructSignature(structOp, shared, os, contextDecl);
-      })
-      .Case<AliasDeclOp>([&](AliasDeclOp aliasOp) {
-        printAliasSignature(aliasOp, shared, os, contextDecl);
-      })
-      .Case<TraitDeclOp>([&](TraitDeclOp traitOp) {
-        printTraitSignature(traitOp, shared, os, contextDecl);
-      })
-      .Default([](Operation *) {});
+  if (auto *fnDecl = dyn_cast<DefASTDecl>(&decl))
+    printFunctionSignature(const_cast<DefASTDecl &>(*fnDecl), os);
+  else if (auto *structDecl = dyn_cast<StructASTDecl>(&decl))
+    printStructSignature(const_cast<StructASTDecl &>(*structDecl), os);
+  else if (auto *aliasDecl = dyn_cast<AliasASTDecl>(&decl))
+    printAliasSignature(const_cast<AliasASTDecl &>(*aliasDecl), os);
+  else if (auto *traitDecl = dyn_cast<TraitASTDecl>(&decl))
+    printTraitSignature(const_cast<TraitASTDecl &>(*traitDecl), os);
   return out;
 }
 
@@ -243,7 +84,7 @@ MojoInflightDiag &MojoInflightDiag::attachNote(const ASTDecl &ctxDecl) & {
   // If we can't, print out the ASTType directly.
   if (auto fnOp = dyn_cast_if_present<FnOp>(op); fnOp && fnOp.isSynthetic()) {
     if (shared) {
-      note.addCustomLineText(synthesizeDeclSignature(fnOp, *shared, &ctxDecl));
+      note.addCustomLineText(synthesizeDeclSignature(ctxDecl));
     } else {
       std::string out;
       llvm::raw_string_ostream os(out);
@@ -259,7 +100,7 @@ MojoInflightDiag &MojoInflightDiag::attachNote(const ASTDecl &ctxDecl) & {
     return note;
 
   // Else synthetize a signature for this op and print that
-  if (auto sig = synthesizeDeclSignature(op, *shared, &ctxDecl); !sig.empty()) {
+  if (auto sig = synthesizeDeclSignature(ctxDecl); !sig.empty()) {
     note.addCustomLineText(sig);
     note.addCustomLineText("    # note - synthetic signature");
   }

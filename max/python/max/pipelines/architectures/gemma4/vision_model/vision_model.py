@@ -10,21 +10,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Gemma 4 vision tower."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections import OrderedDict
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
+    Type,
+    Value,
     Weight,
 )
-from max.nn.layer import Module
+from max.graph import Module as GraphModule
+from max.nn.legacy.graph_groups import (
+    VisionEmbeddings,
+    VisionHostMax,
+    VisionRowIndex,
+    VisionRows,
+    VisionSegments,
+    group_fields,
+    vision_outputs,
+)
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     compute_vision_freqs_cis,
 )
@@ -219,9 +237,16 @@ class Gemma4VisionModel(Module):
         ]
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Build the input type list for the vision model graph.
+        """Returns the vision graph's input types: the leaves of :meth:`input_tree`."""
+        return tuple(tree.leaves(self.input_tree()))
 
-        The vision model receives four device tensors plus one CPU scalar.
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Groups the vision graph's inputs as a serving engine packs them.
+
+        The groups' fields are :meth:`__call__`'s argument names.
+
+        The vision model receives four tensors per device plus one CPU
+        scalar.
 
         * ``patches_flat``        — ``[total_patches, 3 * patch_size²]``, bf16
         * ``pixel_position_ids``  — ``[total_patches, 2]``, int32
@@ -272,10 +297,71 @@ class Gemma4VisionModel(Module):
             device=DeviceRef.CPU(),
         )
 
-        return (
-            *patches_flat_types,
-            *pixel_position_ids_types,
-            *cu_seqlens_types,
-            *pool_gather_index_types,
-            max_seq_len_type,
+        return OrderedDict(
+            patches=VisionRows(
+                patches_flat=tuple(patches_flat_types),
+                pixel_position_ids=tuple(pixel_position_ids_types),
+            ),
+            segments=VisionSegments(cu_seqlens=tuple(cu_seqlens_types)),
+            pooling=VisionRowIndex(
+                pool_gather_index=tuple(pool_gather_index_types)
+            ),
+            segment_bound=VisionHostMax(max_seq_len=max_seq_len_type),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the vision graph, whose inputs are :meth:`input_types`.
+
+        Groups the flat graph inputs into :meth:`__call__`'s per-device
+        arguments by :meth:`input_tree`, and outputs the image embeddings
+        by name.
+
+        Args:
+            *input_types: The graph's input types, :meth:`input_types`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        treedef = tree.flatten(self.input_tree())[1]
+
+        def forward(
+            *inputs: Value[Any],
+        ) -> OrderedDict[str, VisionEmbeddings]:
+            named = tree.unflatten(treedef, iter(inputs))
+            assert isinstance(named, OrderedDict)
+            fields = group_fields(named)
+            embeddings = self(
+                patches_flat=[v.tensor for v in fields["patches_flat"]],
+                pixel_position_ids=[
+                    v.tensor for v in fields["pixel_position_ids"]
+                ],
+                cu_seqlens=[v.tensor for v in fields["cu_seqlens"]],
+                pool_gather_index=[
+                    v.tensor for v in fields["pool_gather_index"]
+                ],
+                max_seq_len=fields["max_seq_len"].tensor,
+            )
+            return vision_outputs(embeddings)
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
         )

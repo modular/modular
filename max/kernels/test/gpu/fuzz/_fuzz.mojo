@@ -302,14 +302,8 @@ def numeric_check[
                 max_rel = rel
     if n_bad > 0:
         print(
-            "FUZZ_NUMERIC_FAIL n_bad=",
-            n_bad,
-            "max_abs=",
-            max_abs,
-            "max_rel=",
-            max_rel,
-            "worst_idx=",
-            worst,
+            t"FUZZ_NUMERIC_FAIL n_bad= {n_bad} max_abs= {max_abs} max_rel="
+            t" {max_rel} worst_idx= {worst}"
         )
         return False
     return True

@@ -79,6 +79,13 @@
 //   G3  variadic_hfa_darwin       Darwin: variadic HFA arg  → integer coercion (GP)
 //   G4  variadic_float_darwin     Darwin: variadic f32 arg  → bitcast to i32 (GP)
 //
+// Group I - Narrow integer extension (MOCO-5051): Darwin vs Linux split
+//   I1  arg_narrow_ints_darwin    Darwin: ui8, si16, bool args -> zeroext, signext, zeroext
+//   I2  arg_narrow_ints_linux     Linux:  ui8, si16 args       -> no extension
+//   I3  arg_single_field_structs_darwin
+//                                 Darwin: {si8}, {ui16}, {bool} args, {si8} result
+//                                         -> i8, i16, i8, i8, all unmarked
+//
 // MODULE HEADER NOTE: Each test uses the standard ARM64 Linux data layout. The data_layout string
 // drives struct size and alignment computation. The triple selects
 // AAPCSABIInfo.
@@ -367,7 +374,7 @@ llvm.func @ret_int_pair() {
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_sret
 llvm.func @ret_sret() {
-  // CHECK: llvm.call @c_d3(%{{.*}}) : (!llvm.ptr) -> ()
+  // CHECK: llvm.call @c_d3(%{{.*}}) : (!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}) -> ()
   // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i64, i64, i64)>
   %r = pop.external_call @c_d3() : () -> !llvm.struct<(i64, i64, i64)>
   llvm.return
@@ -470,4 +477,66 @@ llvm.func @variadic_float_darwin(%fixed: i32, %f: f32) {
   llvm.return
 }
 // CHECK: llvm.func @c_g4(i32, ...)
+}
+
+//===----------------------------------------------------------------------===//
+// Group I: Narrow integer extension (Darwin vs Linux)
+//
+// Apple's arm64 ABI requires the caller to extend a narrow integer; AAPCS64
+// does not, and clang emits no extension on Linux. The sign
+// comes from the POP dtype, so the operands arrive as KGEN scalars, as they do
+// from a real compile. Only the arguments are marked: a mark on the result
+// would let LLVM assume the callee extended it, but a C struct flattened to a
+// bare Mojo integer comes back with unspecified upper bits.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// I1: Darwin - ui8, si16, bool and si32 arguments, si8 result.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_narrow_ints_darwin
+llvm.func @arg_narrow_ints_darwin(%a: i8, %b: i16, %c: i1, %d: i32) {
+  %u8 = builtin.unrealized_conversion_cast %a : i8 to !kgen.scalar<ui8>
+  %s16 = builtin.unrealized_conversion_cast %b : i16 to !kgen.scalar<si16>
+  %bool = builtin.unrealized_conversion_cast %c : i1 to !kgen.scalar<bool>
+  %s32 = builtin.unrealized_conversion_cast %d : i32 to !kgen.scalar<si32>
+  // CHECK: llvm.call @c_i1(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i8 {llvm.zeroext}, i16 {llvm.signext}, i1 {llvm.zeroext}, i32) -> i8
+  %r = pop.external_call @c_i1(%u8, %s16, %bool, %s32) : (!kgen.scalar<ui8>, !kgen.scalar<si16>, !kgen.scalar<bool>, !kgen.scalar<si32>) -> !kgen.scalar<si8>
+  llvm.return
+}
+// CHECK: llvm.func @c_i1(i8 {llvm.zeroext}, i16 {llvm.signext}, i1 {llvm.zeroext}, i32) -> i8
+}
+
+// -----
+
+// I2: Linux - the same signature gets no extension.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_narrow_ints_linux
+llvm.func @arg_narrow_ints_linux(%a: i8, %b: i16) {
+  %u8 = builtin.unrealized_conversion_cast %a : i8 to !kgen.scalar<ui8>
+  %s16 = builtin.unrealized_conversion_cast %b : i16 to !kgen.scalar<si16>
+  // CHECK: llvm.call @c_i2(%{{.*}}, %{{.*}}) : (i8, i16) -> i8
+  %r = pop.external_call @c_i2(%u8, %s16) : (!kgen.scalar<ui8>, !kgen.scalar<si16>) -> !kgen.scalar<si8>
+  llvm.return
+}
+// CHECK: llvm.func @c_i2(i8, i16) -> i8
+}
+
+// -----
+
+// I3: Darwin - {si8}, {ui16} and {bool} arguments, {si8} result. clang
+// coerces a struct of one narrow integer to an integer of its size and does
+// not extend it, so the coerced integers get no mark, whatever the sign of the
+// field.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_single_field_structs_darwin
+llvm.func @arg_single_field_structs_darwin(%a: !llvm.struct<(i8)>, %b: !llvm.struct<(i16)>, %c: !llvm.struct<(i1)>) {
+  %s8 = builtin.unrealized_conversion_cast %a : !llvm.struct<(i8)> to !kgen.struct<(scalar<si8>)>
+  %u16 = builtin.unrealized_conversion_cast %b : !llvm.struct<(i16)> to !kgen.struct<(scalar<ui16>)>
+  %bool = builtin.unrealized_conversion_cast %c : !llvm.struct<(i1)> to !kgen.struct<(scalar<bool>)>
+  // CHECK: llvm.call @c_i3(%{{.*}}, %{{.*}}, %{{.*}}) : (i8, i16, i8) -> i8
+  %r = pop.external_call @c_i3(%s8, %u16, %bool) : (!kgen.struct<(scalar<si8>)>, !kgen.struct<(scalar<ui16>)>, !kgen.struct<(scalar<bool>)>) -> !kgen.struct<(scalar<si8>)>
+  llvm.return
+}
+// CHECK: llvm.func @c_i3(i8, i16, i8) -> i8
 }

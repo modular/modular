@@ -35,15 +35,15 @@ trait Iterable:
         ...
 
 
+# The closure's storage parameters must be its actual captures, not an
+# abstract reference lifted out of `IteratorType`.
+# CHECK: lit.struct.decl @"closure$outer{{.*}}::capture_it::__storage"<T: !Iterable_AnyType, ["x_is_mut`"]*"x_is_mut`": scalar<bool>, ["x_is_origin`1"]*"x_is_origin`1": origin<*"x_is_mut`">, ["it`{{[0-9]+}}"]*"it`{{[0-9]+}}": origin<false>, +>
+
 # CHECK-LABEL: lit.fn @"outer{{.*}}"
 def outer[T: Iterable](ref x: T):
     var it = x.__iter__()
 
-    # The closure's capture set must be its actual captures, not an abstract
-    # reference lifted out of `IteratorType`.
-    # CHECK: lit.fn *"capture_it{{.*}}":{(*"x_is_mut`") *"x_is_origin`1", mut *"it`{{[0-9]+}}"}:
-    @__parameter
-    def capture_it():
+    def capture_it() {imm}:
         _ = it
 
     capture_it()

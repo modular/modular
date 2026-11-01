@@ -30,11 +30,11 @@ from _cufft.types import Type
 from _cufft.utils import check_error
 from std.complex import ComplexFloat32
 from max.gpu.host import DeviceContext
-from max.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host import CUDA
 from layout import TileTensor, coord_to_index_list
 
 
-@always_inline
+@inline(.always)
 def global_cache_insert(key: String, value: OpaquePointer):
     """Inserts a key-value pair into the global compiler runtime cache.
 
@@ -53,13 +53,13 @@ def _get_fft_workarea(
 ) raises -> OpaquePointer[MutUntrackedOrigin]:
     # Include device ID in cache key to ensure per-device workspace buffers.
     var fft_buffer_key = String(
-        "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
+        "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.device().id
     )
 
     var lookup = _get_global_or_null(fft_buffer_key)
-    if lookup:
+    if case .Some(lookup) = lookup:
         # we found the allocated device buffer
-        return lookup.unsafe_value()
+        return lookup
 
     # manually allocate the memory on the device, and cache the pointer
     var work_space = ctx.enqueue_create_buffer[.uint8](buffer_size)
@@ -71,9 +71,7 @@ def _get_fft_workarea(
         device_ptr.unsafe_bitcast[NoneType](),
     )
 
-    return device_ptr.unsafe_bitcast[NoneType]().unsafe_origin_cast[
-        MutUntrackedOrigin
-    ]()
+    return device_ptr.unsafe_bitcast[NoneType]()
 
 
 def _get_fft_plan[
@@ -86,13 +84,13 @@ def _get_fft_plan[
 ) raises -> cufftHandle:
     # Include device ID in cache key to ensure per-device cuFFT plans.
     var cached_plan_key = String(
-        "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.id()
+        "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.device().id
     )
 
     var lookup = _get_global_or_null(cached_plan_key)
-    if lookup:
+    if case .Some(lookup) = lookup:
         # We found the plan in the cache, so just return it
-        return cufftHandle(Int(lookup.unsafe_value()))
+        return cufftHandle(Int(lookup))
 
     comptime if not create_if_not_found:
         # a valid cufft handle is always non-zero
@@ -118,9 +116,10 @@ def _get_fft_plan[
 
     if work_size > workspace_size:
         raise Error(
-            "Need "
-            + String(work_size // 1024 // 1024)
-            + " MB of buffer allocated for cuFFT."
+            String(
+                t"Need {work_size // 1024 // 1024} MB of buffer allocated for"
+                t" cuFFT."
+            )
         )
 
     check_error(cufftSetWorkArea(plan, work_space_ptr))
@@ -175,10 +174,10 @@ def _irfft[
     var output_shape = coord_to_index_list(output.layout.shape_coord())
     if output_shape[axis] != output_size:
         raise Error(
-            "Output shape mismatch: got "
-            + String(output_shape[axis])
-            + " expected "
-            + String(output_size)
+            String(
+                t"Output shape mismatch: got {output_shape[axis]} expected"
+                t" {output_size}"
+            )
         )
 
     # Calculate batch size.

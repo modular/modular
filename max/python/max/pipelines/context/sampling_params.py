@@ -182,10 +182,7 @@ class SamplingParamsGenerationConfigDefaults:
     def values_to_update(self) -> dict[str, float | int | list[int]]:
         """Non-``None`` field values as a dictionary.
 
-        Returns:
-            A dictionary mapping field names to their values, excluding any fields
-            that are ``None``. This dictionary can be used to update
-            :class:`SamplingParams` default values.
+        For example, inspect the values a defaults object carries:
 
         .. code-block:: python
 
@@ -199,6 +196,11 @@ class SamplingParamsGenerationConfigDefaults:
             )
             defaults.values_to_update
             # {'temperature': 0.7, 'top_k': 50}
+
+        Returns:
+            A dictionary mapping field names to their values, excluding any fields
+            that are ``None``. This dictionary can be used to update
+            :class:`SamplingParams` default values.
         """
         # Return a copy of the values, because the caller mutates the returned dict.
         return self._values_to_update.copy()
@@ -285,15 +287,8 @@ class SamplingParams:
         2. Model's GenerationConfig values (only if explicitly set in the model's config)
         3. :class:`SamplingParams` class defaults
 
-        Args:
-            input_params: Dataclass containing user-specified parameter values.
-                Values of ``None`` will be replaced with model defaults or class defaults.
-            sampling_params_defaults: :class:`SamplingParamsGenerationConfigDefaults`
-                containing default sampling parameters extracted from the model's
-                GenerationConfig.
-
-        Returns:
-            A new :class:`SamplingParams` instance with model-aware defaults.
+        For example, apply a model's ``top_k`` default and override the
+        temperature:
 
         .. code-block:: python
 
@@ -310,6 +305,16 @@ class SamplingParams:
                 SamplingParamsInput(temperature=0.7),
                 sampling_params_defaults=sampling_params_defaults,
             )
+
+        Args:
+            input_params: Dataclass containing user-specified parameter values.
+                Values of ``None`` will be replaced with model defaults or class defaults.
+            sampling_params_defaults: :class:`SamplingParamsGenerationConfigDefaults`
+                containing default sampling parameters extracted from the model's
+                GenerationConfig.
+
+        Returns:
+            A new :class:`SamplingParams` instance with model-aware defaults.
         """
         # Start with model's generation config values (only if explicitly set)
         defaults: dict[str, Any] = sampling_params_defaults.values_to_update

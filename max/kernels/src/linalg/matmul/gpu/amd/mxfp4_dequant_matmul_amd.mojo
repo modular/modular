@@ -19,9 +19,8 @@ MI355X (CDNA4) uses float8_e4m3fn; MI300X (CDNA3) uses float8_e4m3fnuz.
 The FP8 type is selected at compile time based on the target architecture.
 """
 
-from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from linalg.mxfp4_dequant import dequant_mxfp4, _cast_bf16_to_fp8
 from linalg.matmul.gpu import _matmul_gpu

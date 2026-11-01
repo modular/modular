@@ -13,26 +13,22 @@
 
 from layout import (
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
-from std.math import exp, exp2, log
+from std.math import ceildiv, exp, exp2, log
 from state_space.selective_scan import (
     ssd_combined_cpu,
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index
-
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
 
 
-@always_inline
+@inline(.always)
 def softplus_ref(val: Float32) -> Float32:
     """Reference softplus: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
@@ -40,7 +36,7 @@ def softplus_ref(val: Float32) -> Float32:
     return log(Float32(1.0) + exp(val))
 
 
-@always_inline
+@inline(.always)
 def silu_ref(val: Float32) -> Float32:
     """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
     if val < -20.0:
@@ -68,7 +64,7 @@ def run_ssd_combined[
 
     var group_size = dim // n_groups
     var chunk_size = 2048
-    var n_chunks = (seqlen + chunk_size - 1) // chunk_size
+    var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
@@ -187,6 +183,7 @@ def run_ssd_combined[
         z_h.LayoutType,
         delta_bias_h.LayoutType,
         gamma_h.LayoutType,
+        output_h.Engine,
     ](
         batch,
         dim,
@@ -307,7 +304,7 @@ def run_ssd_combined[
 def test_ssd_combined_basic() raises:
     """Test basic ssd_combined."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=True,
@@ -316,10 +313,22 @@ def test_ssd_combined_basic() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
+def test_ssd_combined_odd_seqlen_multi_channel() raises:
+    """Odd seqlen makes rows start at unaligned element offsets."""
+    run_ssd_combined[
+        .float32,
+        4,  # DSTATE
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=9, n_groups=1)
+
+
 def test_ssd_combined_without_D() raises:
     """Test ssd_combined without D."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=False,
         has_z=True,
@@ -331,7 +340,7 @@ def test_ssd_combined_without_D() raises:
 def test_ssd_combined_without_z() raises:
     """Test ssd_combined without z."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=False,
@@ -343,7 +352,7 @@ def test_ssd_combined_without_z() raises:
 def test_ssd_combined_without_delta_bias() raises:
     """Test ssd_combined without delta_bias."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=True,
@@ -355,7 +364,7 @@ def test_ssd_combined_without_delta_bias() raises:
 def test_ssd_combined_with_delta_softplus() raises:
     """Test ssd_combined with delta_softplus."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=True,
@@ -367,7 +376,7 @@ def test_ssd_combined_with_delta_softplus() raises:
 def test_ssd_combined_larger_shapes() raises:
     """Test ssd_combined with larger shapes."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         8,  # DSTATE
         has_D=True,
         has_z=True,

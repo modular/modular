@@ -27,7 +27,11 @@ from std.benchmark import (
 )
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, row_major, coord_to_index_list
-from nn.concat import _concat_gpu_elementwise, _concat_inner_most_single_dim
+from nn.concat import (
+    _concat_gpu_elementwise,
+    _concat_inner_most_single_dim,
+    _no_epilogue,
+)
 
 from std.utils import IndexList, StaticTuple
 
@@ -104,8 +108,8 @@ def bench_concat[
         ],
         num_inputs,
     ](
-        input0_device.as_unsafe_any_origin().as_immut(),
-        input1_device.as_unsafe_any_origin().as_immut(),
+        input0_device.as_unsafe_any_origin().as_imm(),
+        input1_device.as_unsafe_any_origin().as_imm(),
     )
 
     # Create host TileTensors for verification
@@ -130,14 +134,18 @@ def bench_concat[
         input1_host.as_unsafe_any_origin(),
     )
 
-    @always_inline
+    @inline(.always)
     def bench_func(
         mut b: Bencher, shape: IndexList[rank]
     ) raises {mut output_device, imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {mut output_device, imm}:
-            _concat_gpu_elementwise[epilogue_fn=None](
-                output_device.as_unsafe_any_origin(), axis, inputs, ctx
+            _concat_gpu_elementwise[has_epilogue=False](
+                output_device.as_unsafe_any_origin(),
+                axis,
+                inputs,
+                _no_epilogue,
+                ctx,
             )
 
         bencher_iter_custom(b, kernel_launch, ctx)
@@ -167,12 +175,10 @@ def bench_concat[
             var out_coords = coord_to_index_list(coords)
             out_coords[axis] += offset
             var out_coord = Coord(out_coords)
-            if output_host.load[width=1](out_coord) != input.load[width=1](
-                coords
-            ):
+            if output_host[out_coord] != input[coords]:
                 abort(String("mismatch at coords ", out_coords))
 
-        elementwise[1](check, Coord(input_shape), ctx)
+        elementwise[1](check, Coord(input_shape), DeviceContext(api="cpu"))
         offset += input_shape[axis]
 
     _ = input0_device_buffer
@@ -180,7 +186,7 @@ def bench_concat[
     _ = output_device_buffer
 
 
-# A/B arm for the FusedConcatSlice static-divisor fold. Benches
+# A/B arm for the fused concat static-divisor fold. Benches
 # `_concat_inner_most_single_dim` (the inner-most-single-dim concat kernel that
 # carries the per-thread row -> n-D `divmod`) twice on identical work: with a
 # fully static output layout (`row_major[...]()`, all `ComptimeInt` dims, so the
@@ -211,9 +217,9 @@ def bench_concat_inner_most_single_dim[
     var out_dev = ctx.enqueue_create_buffer[dtype](n_out)
     ctx.synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_fn(mut b: Bencher) raises {mut out_dev, imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {mut out_dev, imm}:
             comptime if static_shape:
                 # Fully static layouts -> the row -> n-D divisors fold.
@@ -227,7 +233,7 @@ def bench_concat_inner_most_single_dim[
                 comptime InTile = type_of(
                     TileTensor(in_dev[0], input_layout)
                     .as_unsafe_any_origin()
-                    .as_immut()
+                    .as_imm()
                 )
                 var inputs = StaticTuple[InTile, num_inputs]()
 
@@ -235,7 +241,7 @@ def bench_concat_inner_most_single_dim[
                     inputs[n] = (
                         TileTensor(in_dev[n], input_layout)
                         .as_unsafe_any_origin()
-                        .as_immut()
+                        .as_imm()
                     )
 
                 comptime kernel = _concat_inner_most_single_dim[
@@ -248,11 +254,13 @@ def bench_concat_inner_most_single_dim[
                     dtype=dtype,
                     num_inputs=num_inputs,
                     block_size=B_SIZE,
-                    epilogue_fn=None,
+                    has_epilogue=False,
+                    EpilogueFnType=type_of(_no_epilogue),
                 ]
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
+                    host_args=(_no_epilogue,),
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )
@@ -267,7 +275,7 @@ def bench_concat_inner_most_single_dim[
                 comptime InTile = type_of(
                     TileTensor(in_dev[0], row_major(Coord(in_shape)))
                     .as_unsafe_any_origin()
-                    .as_immut()
+                    .as_imm()
                 )
                 var inputs = StaticTuple[InTile, num_inputs]()
 
@@ -275,7 +283,7 @@ def bench_concat_inner_most_single_dim[
                     inputs[n] = (
                         TileTensor(in_dev[n], row_major(Coord(in_shape)))
                         .as_unsafe_any_origin()
-                        .as_immut()
+                        .as_imm()
                     )
 
                 comptime kernel = _concat_inner_most_single_dim[
@@ -288,11 +296,13 @@ def bench_concat_inner_most_single_dim[
                     dtype=dtype,
                     num_inputs=num_inputs,
                     block_size=B_SIZE,
-                    epilogue_fn=None,
+                    has_epilogue=False,
+                    EpilogueFnType=type_of(_no_epilogue),
                 ]
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
+                    host_args=(_no_epilogue,),
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )
@@ -336,7 +346,7 @@ def main() raises:
             axis=axis,
         )
 
-        # FusedConcatSlice static-divisor fold A/B: rank-5 dims with non-trivial
+        # Fused concat static-divisor fold A/B: rank-5 dims with non-trivial
         # outer dims (rank-2 would hit the no-divide fast path) so dims 1..rank-2
         # actually decompose. Shape is sized to the instruction-bound regime
         # (~65K rows): small enough that the per-thread divide is on the critical

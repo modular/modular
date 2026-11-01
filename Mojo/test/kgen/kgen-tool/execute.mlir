@@ -2,11 +2,11 @@
 
 kgen.func export @exec_exp() -> f32 {
   %0 = kgen.param.constant: f32 = <2.71>
-  kgen.return %0 : f32
+  hlcf.return %0 : f32
 }
 
 kgen.func export @void() {
-  kgen.return
+  hlcf.return
 }
 
 // COM: exec_exp computes exp(1.0)

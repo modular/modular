@@ -34,14 +34,19 @@ owns the numerics, this one owns the wiring.
 """
 
 from std.memory import bitcast
-from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
+from std.sys import simd_width_of, size_of
 from std.testing import assert_equal, assert_true
 from std.utils.index import Index
 
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    get_gpu_target,
+    default_accelerator,
+)
 from layout import Coord, TileTensor, row_major
 
-from comm import MAX_GPUS, Signal, group_end, group_start
+from comm import Signal, group_end, group_start
 from comm.allgather_rmsnorm import (
     _dispatch_ag_norm_quant,
     allgather_rmsnorm,
@@ -102,9 +107,6 @@ def _run_case[
     var scales_ref = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var scales_fused = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -164,12 +166,12 @@ def _run_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -293,22 +295,23 @@ def _run_case[
         )
         var ctx_i = list_of_ctx[i]
 
-        # `@__copy_capture` is mandatory: without it these locals reach the
-        # device as host-stack pointers and the stores land out of bounds.
-        @__copy_capture(quant_view, scale_view)
-        @__parameter
-        @always_inline
+        # The `{var}` copies are mandatory: captured by reference, these
+        # locals reach the device as host-stack pointers and the stores land
+        # out of bounds.
+        @inline(.always)
         def mx_epilogue[
             width: Int
-        ](row: Int, col: Int, val: SIMD[in_dtype, width]):
+        ](row: Int, col: Int, val: SIMD[in_dtype, width]) {
+            var quant_view, var scale_view
+        }:
             comptime if route_two_launch:
                 # Poison: `threshold = 0` forces the two-launch branch, so the
                 # fused kernel must never reach this epilogue. Storing a byte
                 # the quantizer cannot emit is what makes the route visible to
                 # a compare that is otherwise blind to it.
                 if col < num_cols:
-                    quant_view.store[width=width](
-                        Coord(row, col),
+                    quant_view.store(
+                        (row, col),
                         bitcast[.float8_e4m3fn](SIMD[.uint8, width](0x7F)),
                     )
             else:
@@ -322,17 +325,16 @@ def _run_case[
                     SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
                 ](val)
                 if col < num_cols:
-                    quant_view.store[width=width](Coord(row, col), quantized)
+                    quant_view.store((row, col), quantized)
                     if col % MXFP8_SF_VECTOR_SIZE == 0:
                         scale_view.store(
-                            Coord(row, col // MXFP8_SF_VECTOR_SIZE), e8m0
+                            (row, col // MXFP8_SF_VECTOR_SIZE), e8m0
                         )
 
         # This branch owes the SAME outputs as the fused one; dropping the
         # `quantize_mx_amd` leaves them stale and arm A catches it (verified).
-        @__parameter
-        @always_inline
-        def two_launch_with_quant() raises:
+        @inline(.always)
+        def two_launch_with_quant() raises {imm}:
             comptime if not route_two_launch:
                 # Poison: `threshold = full_bytes` forces the fused branch, so
                 # being called at all means the routing inverted -- which the
@@ -354,10 +356,7 @@ def _run_case[
                 )
                 quantize_mx_amd(ctx_i, quant_view, scale_view, normed_view)
 
-        _dispatch_ag_norm_quant[
-            two_launch_with_quant=two_launch_with_quant,
-            quant_epilogue=mx_epilogue,
-        ](
+        _dispatch_ag_norm_quant(
             in_shards,
             normed_view,
             sum_view,
@@ -366,6 +365,8 @@ def _run_case[
             weight_offset,
             rank_sigs,
             ctx_i,
+            mx_epilogue,
+            two_launch_with_quant,
             threshold=threshold,
         )
     group_end()
@@ -420,18 +421,10 @@ def _run_case[
                 distinct_scales.append(b)
 
     print(
-        "  M=",
-        num_rows,
-        " quant_mismatch=",
-        total_quant_mismatch,
-        " scale_mismatch=",
-        total_scale_mismatch,
-        " normed_mismatch=",
-        total_normed_mismatch,
-        " nonzero=",
-        nonzero_quant,
-        " distinct_scales=",
-        len(distinct_scales),
+        t"  M= {num_rows}  quant_mismatch= {total_quant_mismatch} "
+        t" scale_mismatch= {total_scale_mismatch}  normed_mismatch="
+        t" {total_normed_mismatch}  nonzero= {nonzero_quant}  distinct_scales="
+        t" {len(distinct_scales)}"
     )
 
     assert_equal(
@@ -467,7 +460,7 @@ def main() raises:
     if num_devices < 2:
         print("SKIPPED: needs at least 2 GPUs, found", num_devices)
         return
-    if not has_amd_gpu_accelerator():
+    if not default_accelerator().is_amd_gpu():
         print("SKIPPED: the MXFP8 quantize path is CDNA4-only")
         return
 

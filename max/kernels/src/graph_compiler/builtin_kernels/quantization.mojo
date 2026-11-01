@@ -18,8 +18,10 @@
 
 """Registers quantization and dequantization graph ops backed by the `quantization` and `linalg` kernels."""
 
+from std.sys import align_of
 from std.sys.info import size_of
 import extensibility
+from max.algorithm import elementwise
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -29,18 +31,16 @@ from max.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
 from max.gpu.host.info import is_cpu, is_gpu
 from internal_utils.fp8_utils import fp8_quantize
-from builtin_primitives.primitives import foreach
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    Coord,
+    TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
 )
-from nn.normalization import (
-    rms_norm_fused_quantize_dynamic_scaled_fp8,
-)
+from nn.activations import relu
+from nn.normalization import rms_norm_quantize_dynamic_scaled_fp8
+from .rowwise_normalization import rms_norm_fused_quantize_dynamic_scaled_fp8
 from std.utils.coord import ComptimeInt
 from std.utils.index import IndexList
 from linalg.fp8_quantization import (
@@ -50,14 +50,21 @@ from linalg.fp8_quantization import (
 from linalg.block_scaled_quantization import (
     quantize_dynamic_block_scaled,
     grouped_quantize_dynamic_scaled_fp4_async,
+    grouped_quantize_nvfp4_row_amax,
     block_scales_interleave,
     quantize_dynamic_block_scaled_mxfp4,
+    rms_norm_quantize_mxfp8_q_kv,
+    rope_quantize_dynamic_block_scaled,
+    swiglu_quantize_dynamic_block_scaled,
 )
+from linalg.swiglu_activation import get_swiglu_activation
 from linalg.matmul.gpu.amd import (
     Shuffler,
     block_scaled_grouped_matmul_amd,
 )
+from linalg.mx_dequant import dequant_mx
 from linalg.mxfp4_dequant import dequant_mxfp4
+from linalg.nvfp4_dequant import dequant_nvfp4
 from linalg.fp6_utils import FP6Format
 from linalg.fp6_quantization import quantize_mxfp6_amd
 from linalg.mxfp6_dequant import dequant_mxfp6
@@ -67,7 +74,9 @@ from nn.kv_cache_ragged import unfused_qkv_matmul_ragged_paged_gguf_quantized
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
+    resize_cubic,
     resize_linear,
+    resize_linear_gpu,
     resize_nearest_neighbor,
 )
 from quantization import (
@@ -81,7 +90,6 @@ from quantization import (
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_gpu import (
     gpu_qint4_repack_GPTQ,
-    gpu_qint4_repack_Q4_0,
     matmul_gpu_qint4,
 )
 from quantization.qmatmul_k import (
@@ -90,8 +98,20 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from extensibility import InputTensor, OutputTensor, Tensor
-from extensibility import TileTensorable
+from extensibility import (
+    Fused,
+    Input,
+    InputTensor,
+    LoadAccess,
+    Loadable,
+    Output,
+    OutputTensor,
+    Tensor,
+    TileTensorable,
+    UnsafeFusedView,
+    get_kernel_simd_width,
+    unsafe_fused_view,
+)
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -103,7 +123,6 @@ from std.logger import Logger
 comptime logger = Logger()
 
 from std.utils import IndexList
-from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
@@ -123,16 +142,16 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         scale_dtype: DType,
         rank: Int,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
     ](
         output: OutputTensor[dtype=output_dtype, rank=rank, ...],
         scales: OutputTensor[dtype=scale_dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
         gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-        epsilon: Float32,
-        weight_offset: Scalar[dtype=input_dtype],
         scale_ub: Float32,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
@@ -140,14 +159,11 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 
         # The scale output holds one value per input row, laid out
         # [1, rows]. View it as rank-1 and index it by row number.
-        var in_shape = input.shape()
-        var rows = in_shape.flattened_length() // in_shape[rank - 1]
-        var scale_t = TileTensor(
-            scales.to_tile_tensor[.int64]()._storage,
-            row_major(Coord(rows)),
-        )
+        var in_shape = input.shape_coord()
+        var rows = Int(in_shape.product()) // Int(in_shape[rank - 1])
+        var scale_t = scales.to_tile_tensor[.int64]().reshape(row_major(rows))
 
-        @always_inline
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
         ](coords: Coord) {var input} -> SIMD[input_dtype, width]:
@@ -155,20 +171,20 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 coords
             )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
         ](coords: Coord, val: SIMD[output_dtype, width]) {var out_t}:
-            out_t.store[width=width, alignment=alignment](coords, val)
+            out_t.store[alignment=alignment](coords, val)
 
-        @always_inline
+        @inline(.always)
         def scale_fn(
             coords: Coord, val: Scalar[scale_dtype]
         ) {var scale_t, var in_shape}:
             var row = 0
             comptime for i in range(rank - 1):
-                row = row * in_shape[i] + Int(coords[i].value())
-            scale_t.store_linear[width=1, alignment=1](IndexList[1](row), val)
+                row = row * Int(in_shape[i]) + Int(coords[i])
+            scale_t.store[width=1, alignment=1](Coord(row), val)
 
         # Static row width (when known) enables the register-cached row path.
         comptime cols = Int(input.static_spec.shape_tuple[rank - 1])
@@ -184,7 +200,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 ComptimeInt[cols](),
                 gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
-                weight_offset,
+                weight_offset.cast[input_dtype](),
                 scale_ub,
                 ctx,
             )
@@ -196,10 +212,10 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 output_fn,
                 scale_fn,
                 input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
+                Int(input.shape_coord()[rank - 1]),
                 gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
-                weight_offset,
+                weight_offset.cast[input_dtype](),
                 scale_ub,
                 ctx,
             )
@@ -208,13 +224,9 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 @extensibility.register_shape_function(
     "mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8"
 )
-def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
-    input_dtype: DType,
-](
+def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape(
     input: Some[Tensor],
     gamma: Some[Tensor],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype=input_dtype],
     scale_ub: Float32,
 ) -> IndexList[type_of(input).rank]:
     """Computes the output shapes for the fused RMS norm and dynamic scaled FP8 quantization op.
@@ -223,12 +235,83 @@ def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
         type_of(gamma).dtype == type_of(input).dtype
     ), "gamma dtype must match input dtype"
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
-    comptime assert (
-        input_dtype == type_of(input).dtype
-    ), "weight_offset dtype must match input dtype"
     return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
+        coord_to_index_list(input.shape())
     )
+
+
+@extensibility.register("mo.rms_norm_quantize_dynamic_scaled_float8")
+struct RMSNormQuantizeDynamicScaledFloat8:
+    """Registers the `mo.rms_norm_quantize_dynamic_scaled_float8` graph op:
+    `mo.reduce.rms_norm` fused with a group-scaled (blockwise-FP8)
+    `mo.quantize_dynamic_scaled_float8`. Same outputs and scale layout as the
+    unfused pair; `group_size_or_per_token` must be a proper divisor of the
+    row (per-token scales stay on the rms_norm + quantize composite).
+    """
+
+    @staticmethod
+    def execute[
+        input_type: DType,
+        //,
+        group_size_or_per_token: Int,
+        multiply_before_cast: Bool,
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
+        epsilon: Float32,
+        weight_offset: Scalar[dtype=input_type],
+        scale_ub: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime assert type_of(input).dtype == input_type
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(gamma).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
+        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime num_cols = type_of(input)._shape_types[1].static_value
+        comptime assert (
+            num_cols != UNKNOWN_VALUE
+        ), "rms_norm_quantize_dynamic_scaled_float8 needs a static row width"
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
+            )
+
+        rms_norm_quantize_dynamic_scaled_fp8[
+            group_size=group_size_or_per_token,
+            num_cols=num_cols,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input_fn,
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            gamma.to_tile_tensor[input_type](),
+            epsilon.cast[input_type](),
+            weight_offset,
+            scale_ub,
+            ctx,
+            Int(input.shape()[0].value()),
+        )
 
 
 @extensibility.register("mo.resize.nearest")
@@ -239,20 +322,25 @@ struct ResizeNearest:
     def execute[
         coordinate_transform_mode: Int,
         round_mode: Int,
-        rank: Int,
-        dtype: DType,
+        target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        size: InputTensor[rank=1, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        size: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+        comptime assert type_of(size).rank == 1
         resize_nearest_neighbor[
             CoordinateTransformationMode(coordinate_transform_mode),
             RoundMode(round_mode),
+            target=target,
         ](
-            input.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[dtype](),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -279,19 +367,35 @@ struct ResizeLinear:
     def execute[
         coordinate_transform_mode: Int,
         antialias: Bool,
-        rank: Int,
-        dtype: DType,
+        target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        size: InputTensor[rank=1, ...],
-    ):
-        resize_linear[
-            CoordinateTransformationMode(coordinate_transform_mode), antialias
-        ](
-            input.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
-        )
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        size: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+        comptime assert type_of(size).rank == 1
+        comptime if is_cpu[target]():
+            resize_linear[
+                CoordinateTransformationMode(coordinate_transform_mode),
+                antialias,
+            ](
+                input.to_tile_tensor[dtype](),
+                output.to_tile_tensor(),
+            )
+        else:
+            resize_linear_gpu[
+                CoordinateTransformationMode(coordinate_transform_mode),
+                antialias,
+            ](
+                input.to_tile_tensor[dtype](),
+                output.to_tile_tensor(),
+                ctx,
+            )
 
 
 @extensibility.register_shape_function("mo.resize.linear")
@@ -314,21 +418,84 @@ struct ResizeBicubic:
 
     @staticmethod
     def execute[
-        rank: Int,
-        dtype: DType,
+        antialias: Bool,
         target: StaticString,
-        //,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        size: InputTensor[rank=1, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        size: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        resize_bicubic[dtype=dtype, target=target](
-            output.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            ctx,
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+        comptime assert type_of(size).rank == 1
+        # Every path resizes the input's N * C planes into the output's, and
+        # a runtime size can name other counts than the input's.
+        var in_shape = coord_to_index_list(
+            input.to_tile_tensor[dtype]().layout.shape_coord()
         )
+        var out_shape = coord_to_index_list(
+            output.to_tile_tensor[dtype]().layout.shape_coord()
+        )
+        if in_shape[0] != out_shape[0] or in_shape[1] != out_shape[1]:
+            raise Error(
+                "mo.resize.bicubic resizes height and width only; its size"
+                " must keep the input's batch and channel counts"
+            )
+        # Every output pixel reads input pixels, so a non-empty output of an
+        # empty input would be read out of bounds or left unwritten.
+        if (
+            in_shape.flattened_length() == 0
+            and out_shape.flattened_length() != 0
+        ):
+            raise Error(
+                "mo.resize.bicubic cannot resize an empty input to a"
+                " non-empty output"
+            )
+        comptime if not antialias:
+            resize_bicubic[dtype=dtype, target=target](
+                output.to_tile_tensor(),
+                input.to_tile_tensor[dtype](),
+                ctx,
+            )
+        elif not is_cpu[target]():
+            raise Error("an antialiased mo.resize.bicubic runs on the CPU")
+        elif dtype != DType.float32 and dtype != DType.uint8:
+            raise Error(
+                "an antialiased mo.resize.bicubic takes float32 or uint8, not ",
+                dtype,
+            )
+        else:
+            comptime assert (
+                type_of(input).rank == 4
+            ), "an antialiased bicubic resize takes an NCHW tensor"
+            # NCHW resizes as [N * C, H, W] planes, which resize_cubic takes
+            # as [N * C, H, W, 1], and gives the same bits as an NHWC layout
+            # of the same pixels.
+            var in_tt = input.to_tile_tensor[dtype]()
+            var out_tt = output.to_tile_tensor[dtype]()
+            var in_planes = _as_planes(in_tt)
+            var out_planes = _as_planes(out_tt)
+            resize_cubic(
+                in_tt.reshape(
+                    row_major((in_planes[0], in_planes[1], in_planes[2], 1))
+                ),
+                out_tt.reshape(
+                    row_major((out_planes[0], out_planes[1], out_planes[2], 1))
+                ),
+            )
+
+
+def _as_planes[
+    dtype: DType, //
+](tensor: TileTensor[dtype, ...]) -> IndexList[3]:
+    """Returns the shape of an NCHW tensor viewed as [N * C, H, W]."""
+    var shape = rebind[IndexList[4]](
+        coord_to_index_list(tensor.layout.shape_coord())
+    )
+    return IndexList[3](shape[0] * shape[1], shape[2], shape[3])
 
 
 @extensibility.register_shape_function("mo.resize.bicubic")
@@ -350,19 +517,21 @@ struct GGMLQ40Dequantize:
     """Registers the `ggml_q4_0_dequantize` graph op with the graph compiler."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        output: OutputTensor[dtype=.float32, rank=2, ...],
-        input: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
-        var input_tt = input.to_tile_tensor[.int64]()
-        var output_tt = output.to_tile_tensor[.int64]()
+    ](output: Some[Output & Tensor], input: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        var input_tt = input.to_tile_tensor[.uint8]()
+        var output_tt = output.to_tile_tensor[.float32]()
+        # A trait argument's shape() is already a Coord.
         Q4sym[group_size=32].dequantize_and_write_to_tensor(
             input_tt,
             output_tt,
-            output.shape(),
+            output_tt.layout.shape_coord(),
         )
 
 
@@ -384,22 +553,28 @@ struct VroomQ40Matmul:
     """Registers the `vroom_q4_0_matmul` graph op with the graph compiler."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         _trace_name: StaticString,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=.float32, rank=2, ...],
-        a: InputTensor[dtype=.float32, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_qint4[32](
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            c.to_tile_tensor[.int64](),
-            Optional[DeviceContext](ctx),
+            a.to_tile_tensor[.float32](),
+            b.to_tile_tensor[.uint8](),
+            c.to_tile_tensor[.float32](),
+            Optional(ctx.assert_cpu_target()),
         )
 
 
@@ -411,8 +586,8 @@ def vroom_q4_0_matmul_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return IndexList[2](
-        Int(coord_to_index_list(a.shape().tuple())[0]),
-        Int(coord_to_index_list(b.shape().tuple())[0]),
+        Int(coord_to_index_list(a.shape())[0]),
+        Int(coord_to_index_list(b.shape())[0]),
     )
 
 
@@ -422,16 +597,17 @@ struct VroomQ40RepackWeights:
     """
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
+    ](b_packed: Some[Output & Tensor], b: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_qint4_pack_b[32](
-            b.to_tile_tensor[.int64](),
-            b_packed.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
         )
 
 
@@ -443,9 +619,7 @@ def vroom_q4_0_repack_weights_shape(
     """
     comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return rebind[IndexList[type_of(b).rank]](
-        coord_to_index_list(b.shape().tuple())
-    )
+    return rebind[IndexList[type_of(b).rank]](coord_to_index_list(b.shape()))
 
 
 @extensibility.register("ggml_q4_k_dequantize")
@@ -453,16 +627,17 @@ struct GGMLQ4KDequantize:
     """Registers the `ggml_q4_k_dequantize` graph op with the graph compiler."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        output: OutputTensor[dtype=.float32, rank=2, ...],
-        input: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
+    ](output: Some[Output & Tensor], input: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
         q4_k_dequantize_impl(
-            input.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.uint8](),
+            output.to_tile_tensor[.float32](),
         )
 
 
@@ -489,22 +664,28 @@ struct VroomQ4KMatmul:
     """Registers the `vroom_q4_k_matmul` graph op with the graph compiler."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         _trace_name: StaticString,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=.float32, rank=2, ...],
-        a: InputTensor[dtype=.float32, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_Q4_K(
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            c.to_tile_tensor[.int64](),
-            Optional[DeviceContext](ctx),
+            a.to_tile_tensor[.float32](),
+            b.to_tile_tensor[.uint8](),
+            c.to_tile_tensor[.float32](),
+            Optional(ctx.assert_cpu_target()),
         )
 
 
@@ -516,8 +697,8 @@ def vroom_q4_k_matmul_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return IndexList[2](
-        Int(coord_to_index_list(a.shape().tuple())[0]),
-        Int(coord_to_index_list(b.shape().tuple())[0]),
+        Int(coord_to_index_list(a.shape())[0]),
+        Int(coord_to_index_list(b.shape())[0]),
     )
 
 
@@ -527,16 +708,17 @@ struct VroomQ4KRepackWeights:
     """
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
+    ](b_packed: Some[Output & Tensor], b: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_Q4_K_pack_b(
-            b.to_tile_tensor[.int64](),
-            b_packed.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
         )
 
 
@@ -548,9 +730,7 @@ def vroom_q4_k_repack_weights_shape(
     """
     comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return rebind[IndexList[type_of(b).rank]](
-        coord_to_index_list(b.shape().tuple())
-    )
+    return rebind[IndexList[type_of(b).rank]](coord_to_index_list(b.shape()))
 
 
 @extensibility.register("ggml_q6_k_dequantize")
@@ -558,19 +738,21 @@ struct GGMLQ6KDequantize:
     """Registers the `ggml_q6_k_dequantize` graph op with the graph compiler."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        output: OutputTensor[dtype=.float32, rank=2, ...],
-        input: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
-        var input_tt = input.to_tile_tensor[.int64]()
-        var output_tt = output.to_tile_tensor[.int64]()
+    ](output: Some[Output & Tensor], input: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        var input_tt = input.to_tile_tensor[.uint8]()
+        var output_tt = output.to_tile_tensor[.float32]()
+        # A trait argument's shape() is already a Coord.
         q6_k_dequantize_impl(
             input_tt,
             output_tt,
-            output.shape(),
+            output_tt.layout.shape_coord(),
         )
 
 
@@ -597,22 +779,28 @@ struct VroomQ6KMatmul:
     """Registers the `vroom_q6_k_matmul` graph op with the graph compiler."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         _trace_name: StaticString,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=.float32, rank=2, ...],
-        a: InputTensor[dtype=.float32, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_Q6_K(
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            c.to_tile_tensor[.int64](),
-            Optional[DeviceContext](ctx),
+            a.to_tile_tensor[.float32](),
+            b.to_tile_tensor[.uint8](),
+            c.to_tile_tensor[.float32](),
+            Optional(ctx.assert_cpu_target()),
         )
 
 
@@ -624,8 +812,8 @@ def vroom_q6_k_matmul_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return IndexList[2](
-        Int(coord_to_index_list(a.shape().tuple())[0]),
-        Int(coord_to_index_list(b.shape().tuple())[0]),
+        Int(coord_to_index_list(a.shape())[0]),
+        Int(coord_to_index_list(b.shape())[0]),
     )
 
 
@@ -635,16 +823,17 @@ struct VroomQ6KRepackWeights:
     """
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
+    ](b_packed: Some[Output & Tensor], b: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_Q6_K_pack_b(
-            b.to_tile_tensor[.int64](),
-            b_packed.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
         )
 
 
@@ -656,45 +845,7 @@ def vroom_q6_k_repack_weights_shape(
     """
     comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return rebind[IndexList[type_of(b).rank]](
-        coord_to_index_list(b.shape().tuple())
-    )
-
-
-@extensibility.register("qmatmul_b4_g32")
-struct QMatmulGPU_b4_g32:
-    """Registers the `qmatmul_b4_g32` graph op with the graph compiler."""
-
-    @staticmethod
-    @always_inline
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        c: OutputTensor[dtype=.bfloat16, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
-        matmul_gpu_qint4[32, target](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            ctx,
-        )
-
-
-@extensibility.register_shape_function("qmatmul_b4_g32")
-def qmatmul_b4_g32_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
-    """Computes the output shape for the `qmatmul_b4_g32` graph op."""
-    comptime assert type_of(a).rank == 2, "a must be rank 2"
-    comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return IndexList[2](
-        Int(coord_to_index_list(a.shape().tuple())[0]),
-        Int(coord_to_index_list(b.shape().tuple())[0]),
-    )
+    return rebind[IndexList[type_of(b).rank]](coord_to_index_list(b.shape()))
 
 
 @extensibility.register("qmatmul_b4_g128")
@@ -702,22 +853,28 @@ struct QMatmulGPU_b4_g128:
     """Registers the `qmatmul_b4_g128` graph op with the graph compiler."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype=.bfloat16, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
 
         matmul_gpu_qint4[128, target](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
+            c.to_tile_tensor[.bfloat16](),
+            a.to_tile_tensor[.bfloat16](),
+            b.to_tile_tensor[.uint8](),
             ctx,
         )
 
@@ -728,41 +885,8 @@ def qmatmul_b4_g128_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     comptime assert type_of(a).rank == 2, "a must be rank 2"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return IndexList[2](
-        Int(coord_to_index_list(a.shape().tuple())[0]),
-        Int(coord_to_index_list(b.shape().tuple())[0]),
-    )
-
-
-@extensibility.register("GGUF_gpu_repack_q4_0")
-struct QMatmulGPURepackGGUF:
-    """Registers the `GGUF_gpu_repack_q4_0` graph op with the graph compiler."""
-
-    @staticmethod
-    @always_inline
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
-        gpu_qint4_repack_Q4_0[target](
-            b.to_tile_tensor(), b_packed.to_tile_tensor(), ctx
-        )
-
-
-@extensibility.register_shape_function("GGUF_gpu_repack_q4_0")
-def GGUF_gpu_repack_q4_0_shape(
-    b: Some[Tensor],
-) -> IndexList[type_of(b).rank]:
-    """Computes the output shape for the `GGUF_gpu_repack_q4_0` graph op."""
-    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
-    comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return rebind[IndexList[type_of(b).rank]](
-        coord_to_index_list(b.shape().tuple())
+        Int(coord_to_index_list(a.shape())[0]),
+        Int(coord_to_index_list(b.shape())[0]),
     )
 
 
@@ -772,19 +896,25 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     """
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        b_packed: Some[Output & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
 
         gpu_qint4_repack_GPTQ[128, target](
-            b.to_tile_tensor(), b_packed.to_tile_tensor(), ctx=ctx
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
+            ctx=ctx,
         )
 
 
@@ -804,28 +934,34 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     """
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-        perm_idx: InputTensor[dtype=.int32, rank=1, ...],
+        b_packed: Some[Output & Tensor],
+        b: Some[Input & Tensor],
+        perm_idx: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(perm_idx), TileTensorable)
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime assert type_of(perm_idx).rank == 1
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        var perm_idx_lt = perm_idx.to_layout_tensor()
+        var permutation = perm_idx.to_tile_tensor[.int32, mut=False]()
+        # The helper takes the permutation as a pointer-backed tile, so rebuild
+        # one over the argument's data; a non-pointer storage policy aborts
+        # here at run time.
         gpu_qint4_repack_GPTQ[128, target](
-            b.to_tile_tensor(),
-            b_packed.to_tile_tensor(),
-            LayoutTensor[.int32, Layout.row_major(UNKNOWN_VALUE)](
-                perm_idx_lt.ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    perm_idx_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ).as_imm(),
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
+            rebind[
+                TileTensor[.int32, type_of(row_major(Int(0))), ImmutAnyOrigin]
+            ](permutation.reshape(row_major(Int(permutation.dim[0]())))),
             ctx=ctx,
         )
 
@@ -850,23 +986,23 @@ struct Struct_quantize_dynamic_block_scaled:
     """Registers the `mo.quantize.dynamic.block.scaled` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        scales_type: DType,
-        in_dtype: DType,
-        //,
-        scales_rank: Int,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         tensor_sf: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[target](), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
@@ -876,10 +1012,205 @@ struct Struct_quantize_dynamic_block_scaled:
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
         ](
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
             tensor_sf,
+            context,
+        )
+
+
+@extensibility.register("mo.swiglu.quantize.dynamic.block.scaled")
+struct Struct_swiglu_quantize_dynamic_block_scaled:
+    """Registers the `mo.swiglu.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        SF_VECTOR_SIZE: Int,
+        activation: StaticString,
+        swiglu_alpha: Float32,
+        swiglu_limit: Float32,
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        gate_up: Some[Input & Tensor],
+        tensor_sf: Float32,
+        context: DeviceContext,
+    ) raises:
+        """Quantizes `activation(gate, up)` of a `[gate | up]` input to a block-scaled format.
+
+        Parameters:
+            SF_VECTOR_SIZE: Elements per block scale.
+            activation: Activation name, bound from the op's same-named
+                attribute; the activation is built at compile time.
+            swiglu_alpha: The activation's alpha constant.
+            swiglu_limit: The activation's clamp limit.
+            target: The target GPU device.
+
+        Args:
+            output: The quantized activation of shape `[M, N]` (or `N // 2`
+                packed FP4).
+            scales: The block scales in the 5D TCGEN interleaved layout on
+                SM100/SM120, or rank-2 row-major on AMD CDNA4.
+            gate_up: The input of shape `[M, 2 * N]`, `gate` then `up`.
+            tensor_sf: The tensor-wise scale factor.
+            context: The device context.
+        """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(gate_up), TileTensorable)
+        comptime out_dtype = type_of(output).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime in_dtype = type_of(gate_up).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert (
+            type_of(scales).rank == 2 or type_of(scales).rank == 5
+        ), "scales must be rank 2 (AMD) or rank 5 (SM100/SM120)"
+        comptime assert type_of(gate_up).rank == 2
+        comptime assert is_gpu[target](), (
+            "gated block-scaled quantization only supports GPUs with native"
+            " block scaled support"
+        )
+        comptime act = get_swiglu_activation[
+            activation, swiglu_alpha, swiglu_limit
+        ]
+        swiglu_quantize_dynamic_block_scaled[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE, activation=act
+        ](
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            gate_up.to_tile_tensor(),
+            tensor_sf,
+            context,
+        )
+
+
+@extensibility.register("mo.rope.quantize.dynamic.block.scaled")
+struct Struct_rope_quantize_dynamic_block_scaled:
+    """Registers the `mo.rope.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        SF_VECTOR_SIZE: Int,
+        head_dim: Int,
+        inverse: Bool,
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        freqs: Some[Input & Tensor],
+        tensor_sf: Float32,
+        context: DeviceContext,
+    ) raises:
+        """Rotates each head's trailing columns by RoPE, then quantizes to a block-scaled format.
+
+        Parameters:
+            SF_VECTOR_SIZE: Elements per block scale.
+            head_dim: Columns per head.
+            inverse: Whether to rotate by the conjugate of each frequency.
+            target: The target GPU device.
+
+        Args:
+            output: The quantized input of shape `[M, N]` (or `N // 2`
+                packed FP4).
+            scales: The block scales in the 5D TCGEN interleaved layout.
+            input: The input of shape `[M, N]`, a whole number of heads a
+                row.
+            freqs: `[M, rope_dim]` interleaved `(cos, sin)` pairs.
+            tensor_sf: The tensor-wise scale factor.
+            context: The device context.
+        """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(freqs), TileTensorable)
+        comptime out_dtype = type_of(output).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime in_dtype = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 5
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(freqs).rank == 2
+        comptime assert is_gpu[target](), (
+            "RoPE block-scaled quantization only supports GPUs with native"
+            " block scaled support"
+        )
+        rope_quantize_dynamic_block_scaled[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE, head_dim=head_dim, inverse=inverse
+        ](
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
+            freqs.to_tile_tensor[DType.float32](),
+            tensor_sf,
+            context,
+        )
+
+
+@extensibility.register("mo.rms_norm.quantize.mxfp8.q_kv")
+struct Struct_rms_norm_quantize_mxfp8_q_kv:
+    """Registers the `mo.rms_norm.quantize.mxfp8.q_kv` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        kv_output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        q_gamma: Some[Input & Tensor],
+        kv_gamma: Some[Input & Tensor],
+        epsilon: Float32,
+        context: DeviceContext,
+    ) raises:
+        """RMS-normalizes the q and kv parts of each row, quantizing q to MXFP8.
+
+        Parameters:
+            target: The target GPU device.
+
+        Args:
+            output: The quantized q of shape `[M, q_cols]`.
+            scales: The block scales of q in the 5D TCGEN interleaved layout.
+            kv_output: The normalized kv of shape `[M, kv_cols]`.
+            input: The input of shape `[M, q_cols + kv_cols]`, q then kv.
+            q_gamma: The q weight.
+            kv_gamma: The kv weight.
+            epsilon: The RMS norm epsilon.
+            context: The device context.
+        """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(kv_output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(q_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(kv_gamma), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 5
+        comptime assert type_of(kv_output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(q_gamma).rank == 1
+        comptime assert type_of(kv_gamma).rank == 1
+        comptime assert is_gpu[target](), (
+            "RMS norm MXFP8 quantization only supports GPUs with native"
+            " block scaled support"
+        )
+        rms_norm_quantize_mxfp8_q_kv(
+            output.to_tile_tensor[DType.float8_e4m3fn](),
+            scales.to_tile_tensor[DType.float8_e8m0fnu](),
+            kv_output.to_tile_tensor[DType.bfloat16](),
+            input.to_tile_tensor[DType.bfloat16](),
+            q_gamma.to_tile_tensor[DType.bfloat16](),
+            kv_gamma.to_tile_tensor[DType.bfloat16](),
+            epsilon,
             context,
         )
 
@@ -889,14 +1220,76 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
     """Registers the `mo.grouped.quantize.dynamic.block.scaled` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        row_offsets: Some[Input & Tensor],
+        scales_offsets: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        sf_tensor: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(sf_tensor), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+        comptime assert type_of(scales_offsets).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(sf_tensor).rank == 1
+        comptime assert is_gpu[
+            target
+        ](), "grouped quantize dynamic block scaled only supports GPUs"
+
+        grouped_quantize_dynamic_scaled_fp4_async(
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
+            row_offsets.to_tile_tensor[.uint32](),
+            scales_offsets.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            sf_tensor.to_tile_tensor[.float32](),
+            context,
+        )
+
+
+@extensibility.register(
+    "mo.grouped.quantize.dynamic.block.scaled.with_row_indices"
+)
+struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
+    """Registers the `mo.grouped.quantize.dynamic.block.scaled.with_row_indices` graph op with the graph compiler.
+
+    Row-gather variant of `mo.grouped.quantize.dynamic.block.scaled`: output
+    row `i` quantizes input row `row_indices[i] // row_index_divisor`, which
+    fuses the MoE expert permutation gather into the quantize loads. MoE
+    passes the routing slot order straight from `mo.moe.create.indices` with
+    the top-k as the divisor, so no kernel runs between the two to map slots
+    to tokens. A separate op carries the extra operand because graph ops have
+    no optional inputs, and the fusion lives in the kernel because prologue
+    fusion absorbs only elementwise and view producers, not gathers. Fold it
+    back into the base op once the graph compiler fuses gathers generically.
+    """
+
+    @inline(.always)
     @staticmethod
     def execute[
         out_dtype: DType,
         scales_type: DType,
         in_dtype: DType,
+        row_indices_dtype: DType,
         //,
         scales_rank: Int,
+        row_index_divisor: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=out_dtype, rank=2, ...],
@@ -906,13 +1299,17 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
         scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         expert_ids: InputTensor[dtype=.int32, rank=1, ...],
         sf_tensor: InputTensor[dtype=.float32, rank=1, ...],
+        row_indices: InputTensor[dtype=row_indices_dtype, rank=1, ...],
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[
             target
         ](), "grouped quantize dynamic block scaled only supports GPUs"
 
-        grouped_quantize_dynamic_scaled_fp4_async(
+        grouped_quantize_dynamic_scaled_fp4_async[
+            row_indices_dtype=row_indices_dtype,
+            row_index_divisor=row_index_divisor,
+        ](
             output.to_tile_tensor[.int64](),
             scales.to_tile_tensor[.int64](),
             input.to_tile_tensor[.int64](),
@@ -921,6 +1318,142 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
             expert_ids.to_tile_tensor[.int64](),
             sf_tensor.to_tile_tensor[.int64](),
             context,
+            row_indices.to_tile_tensor[.int64]()
+            .as_unsafe_any_origin()
+            .as_imm(),
+        )
+
+
+@extensibility.register("mo.grouped.quantize.nvfp4.row_scaled")
+struct Struct_grouped_quantize_nvfp4_row_scaled:
+    """Registers the `mo.grouped.quantize.nvfp4.row_scaled` graph op with the graph compiler.
+
+    Quantizes grouped BF16 rows to NVFP4 with a global scale per row, taken
+    from the row's amax inside the kernel, and returns the scales for the
+    grouped matmul's `a_row_scales`. The result is bit-identical to the
+    chain of a row amax, two BF16 roundings and
+    `mo.grouped.quantize.dynamic.block.scaled` with a tensor-wise scale of 1.
+    `apply_relu2` quantizes `relu(x) * relu(x)` in place of `x`, with
+    `relu` from `nn.activations`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        apply_relu2: Int,
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        row_scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        row_offsets: Some[Input & Tensor],
+        scales_offsets: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(row_scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offsets), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(row_scales).rank == 1
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+        comptime assert type_of(scales_offsets).rank == 1
+        comptime assert is_gpu[
+            target
+        ](), "grouped quantize nvfp4 row scaled only supports GPUs"
+
+        @inline(.always)
+        def input_fn[
+            dtype: DType, width: SIMDLength
+        ](v: SIMD[dtype, width]) -> SIMD[dtype, width]:
+            comptime if apply_relu2 != 0:
+                var r = relu(v)
+                return r * r
+            else:
+                return v
+
+        grouped_quantize_nvfp4_row_amax[input_fn=input_fn](
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            row_scales.to_tile_tensor[.bfloat16](),
+            input.to_tile_tensor(),
+            row_offsets.to_tile_tensor[.uint32](),
+            scales_offsets.to_tile_tensor[.uint32](),
+            context,
+        )
+
+
+@extensibility.register("mo.grouped.quantize.nvfp4.row_scaled.with_row_indices")
+struct Struct_grouped_quantize_nvfp4_row_scaled_with_row_indices:
+    """Registers the `mo.grouped.quantize.nvfp4.row_scaled.with_row_indices` graph op with the graph compiler.
+
+    The row-gather variant of `mo.grouped.quantize.nvfp4.row_scaled`: output
+    row `i` quantizes input row `row_indices[i] // row_index_divisor`, with
+    that row's own scale. A separate op carries the extra operand because
+    graph ops have no optional inputs.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        apply_relu2: Int,
+        row_index_divisor: Int,
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        row_scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        row_offsets: Some[Input & Tensor],
+        scales_offsets: Some[Input & Tensor],
+        row_indices: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(row_scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(row_indices), TileTensorable)
+        comptime row_indices_dtype = type_of(row_indices).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(row_scales).rank == 1
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+        comptime assert type_of(scales_offsets).rank == 1
+        comptime assert type_of(row_indices).rank == 1
+        comptime assert is_gpu[
+            target
+        ](), "grouped quantize nvfp4 row scaled only supports GPUs"
+
+        @inline(.always)
+        def input_fn[
+            dtype: DType, width: SIMDLength
+        ](v: SIMD[dtype, width]) -> SIMD[dtype, width]:
+            comptime if apply_relu2 != 0:
+                var r = relu(v)
+                return r * r
+            else:
+                return v
+
+        grouped_quantize_nvfp4_row_amax[
+            input_fn=input_fn,
+            row_indices_dtype=row_indices_dtype,
+            row_index_divisor=row_index_divisor,
+        ](
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            row_scales.to_tile_tensor[.bfloat16](),
+            input.to_tile_tensor(),
+            row_offsets.to_tile_tensor[.uint32](),
+            scales_offsets.to_tile_tensor[.uint32](),
+            context,
+            row_indices.to_tile_tensor().as_unsafe_any_origin().as_imm(),
         )
 
 
@@ -929,74 +1462,231 @@ struct Struct_quantize_dynamic_block_scaled_mxfp4:
     """Registers the `mo.quantize.dynamic.block.scaled.mxfp4` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
-        in_dtype: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.uint8, rank=2, ...],
-        scales: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[target](), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
         )
 
         quantize_dynamic_block_scaled_mxfp4(
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.uint8](),
+            scales.to_tile_tensor[.float8_e8m0fnu](),
+            input.to_tile_tensor(),
             context,
         )
 
 
 @extensibility.register("mo.dequant.mxfp4")
 struct Struct_dequant_mxfp4:
-    """Registers the `mo.dequant.mxfp4` graph op with the graph compiler."""
+    """Registers the `mo.dequant.mxfp4` graph op with the graph compiler.
 
-    @always_inline
+    Rank-2 scales with bfloat16 or float8_e4m3fn output on a GPU take the
+    original H100-oriented kernel. Float32 output and the rank-5 SM100
+    interleaved scale layout (`[ceildiv(N, 128), ceildiv(K, 128), 32, 4, 4]`)
+    use the shared `dequant_mx` kernel, which only produces bfloat16 or
+    float32. GPU only.
+    """
+
+    @inline(.always)
     @staticmethod
     def execute[
-        out_type: DType,
-        in_type: DType,
-        scales_type: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_type, rank=2, ...],
-        input: InputTensor[dtype=in_type, rank=2, ...],
-        scales: InputTensor[dtype=scales_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        scales: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime out_type = type_of(output).dtype
+        comptime in_type = type_of(input).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime scales_rank = type_of(scales).rank
         comptime assert is_gpu[target](), "MXFP4 dequant only supports GPUs"
-        comptime assert out_type in (
-            DType.bfloat16,
-            DType.float8_e4m3fn,
-        ), "MXFP4 dequant output must be bfloat16 or float8_e4m3fn"
         comptime assert (
             in_type == .uint8
         ), "MXFP4 dequant input must be uint8 (packed FP4)"
         comptime assert (
             scales_type == .float8_e8m0fnu
         ), "MXFP4 dequant scales must be float8_e8m0fnu"
+        comptime assert scales_rank in (
+            2,
+            5,
+        ), "MXFP4 dequant scales must be rank 2 or rank 5 (SM100 interleaved)"
 
-        var in_tt = input.to_tile_tensor[.int64]()
-        var scales_tt = scales.to_tile_tensor[.int64]()
-        var out_tt = output.to_tile_tensor[.int64]()
+        var in_tt = input.to_tile_tensor()
+        var scales_tt = scales.to_tile_tensor()
+        var out_tt = output.to_tile_tensor()
 
         var num_rows = Int(in_tt.dim[0]())
         # num_cols is the unpacked column count (2x packed)
         var num_cols = Int(in_tt.dim[1]()) * 2
 
-        dequant_mxfp4(
+        comptime if scales_rank == 2 and out_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ):
+            dequant_mxfp4(
+                context,
+                out_tt,
+                in_tt,
+                scales_tt,
+                num_rows=num_rows,
+                num_cols=num_cols,
+            )
+        else:
+            comptime assert out_type in (
+                DType.bfloat16,
+                DType.float32,
+            ), (
+                "MXFP4 dequant output must be bfloat16 or float32 with rank-5"
+                " scales; float8_e4m3fn needs rank-2 scales"
+            )
+            dequant_mx[target](
+                context,
+                out_tt,
+                in_tt,
+                scales_tt,
+                num_rows=num_rows,
+                num_cols=num_cols,
+            )
+
+
+@extensibility.register("mo.dequant.mxfp8")
+struct Struct_dequant_mxfp8:
+    """Registers the `mo.dequant.mxfp8` graph op with the graph compiler.
+
+    Dequantizes MXFP8 weights (`float8_e4m3fn`, `[N, K]`) with
+    `float8_e8m0fnu` block-32 scales to bfloat16 or float32. `scales` is either
+    the rank-2 `[N, K // 32]` checkpoint layout or the rank-5 SM100
+    interleaved layout `[ceildiv(N, 128), ceildiv(K, 128), 32, 4, 4]`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        scales: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime out_type = type_of(output).dtype
+        comptime in_type = type_of(input).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime scales_rank = type_of(scales).rank
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert out_type in (
+            DType.bfloat16,
+            DType.float32,
+        ), "MXFP8 dequant output must be bfloat16 or float32"
+        comptime assert (
+            in_type == .float8_e4m3fn
+        ), "MXFP8 dequant input must be float8_e4m3fn"
+        comptime assert (
+            scales_type == .float8_e8m0fnu
+        ), "MXFP8 dequant scales must be float8_e8m0fnu"
+        comptime assert scales_rank in (
+            2,
+            5,
+        ), "MXFP8 dequant scales must be rank 2 or rank 5 (SM100 interleaved)"
+
+        var in_tt = input.to_tile_tensor()
+        var scales_tt = scales.to_tile_tensor()
+        var out_tt = output.to_tile_tensor()
+
+        dequant_mx[target](
             context,
             out_tt,
             in_tt,
             scales_tt,
+            num_rows=Int(in_tt.dim[0]()),
+            num_cols=Int(in_tt.dim[1]()),
+        )
+
+
+@extensibility.register("mo.dequant.nvfp4")
+struct Struct_dequant_nvfp4:
+    """Registers the `mo.dequant.nvfp4` graph op with the graph compiler.
+
+    Dequantizes packed NVFP4 weights to bfloat16 or float32. `scales` is either
+    the rank-2 `[N, K // 16]` checkpoint layout or the rank-5 SM100 interleaved
+    layout, and `tensor_sf` is the tensor-wide decode scale (`weight_scale_2`).
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        scales: Some[Input & Tensor],
+        tensor_sf: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime out_type = type_of(output).dtype
+        comptime in_type = type_of(input).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime scales_rank = type_of(scales).rank
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert out_type in (
+            DType.bfloat16,
+            DType.float32,
+        ), "NVFP4 dequant output must be bfloat16 or float32"
+        comptime assert (
+            in_type == .uint8
+        ), "NVFP4 dequant input must be uint8 (packed FP4)"
+        comptime assert (
+            scales_type == .float8_e4m3fn
+        ), "NVFP4 dequant scales must be float8_e4m3fn"
+        comptime assert scales_rank in (
+            2,
+            5,
+        ), "NVFP4 dequant scales must be rank 2 or rank 5 (SM100 interleaved)"
+
+        var in_tt = input.to_tile_tensor()
+        var scales_tt = scales.to_tile_tensor()
+        var out_tt = output.to_tile_tensor()
+
+        var num_rows = Int(in_tt.dim[0]())
+        # num_cols is the unpacked column count (2x packed)
+        var num_cols = Int(in_tt.dim[1]()) * 2
+
+        dequant_nvfp4[target](
+            context,
+            out_tt,
+            in_tt,
+            scales_tt,
+            tensor_sf,
             num_rows=num_rows,
             num_cols=num_cols,
         )
@@ -1006,19 +1696,23 @@ struct Struct_dequant_mxfp4:
 struct Struct_quantize_dynamic_block_scaled_mxfp6:
     """Registers the `mo.quantize.dynamic.block.scaled.mxfp6` graph op."""
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
-        in_dtype: DType,
-        //,
         FP6_FORMAT: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.uint8, rank=2, ...],
-        scales: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[
             target
         ](), (
@@ -1031,9 +1725,9 @@ struct Struct_quantize_dynamic_block_scaled_mxfp6:
 
         quantize_mxfp6_amd[FP6Format(FP6_FORMAT)](
             context,
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.uint8](),
+            scales.to_tile_tensor[.float8_e8m0fnu](),
+            input.to_tile_tensor(),
         )
 
 
@@ -1041,21 +1735,26 @@ struct Struct_quantize_dynamic_block_scaled_mxfp6:
 struct Struct_dequant_mxfp6:
     """Registers the `mo.dequant.mxfp6` graph op with the graph compiler."""
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
-        out_type: DType,
-        in_type: DType,
-        scales_type: DType,
-        //,
         FP6_FORMAT: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_type, rank=2, ...],
-        input: InputTensor[dtype=in_type, rank=2, ...],
-        scales: InputTensor[dtype=scales_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        scales: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime out_type = type_of(output).dtype
+        comptime in_type = type_of(input).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(scales).rank == 2
         comptime assert is_gpu[target](), "MXFP6 dequant only supports GPUs"
         comptime assert out_type in (
             DType.bfloat16,
@@ -1072,9 +1771,9 @@ struct Struct_dequant_mxfp6:
             1,
         ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
 
-        var in_tt = input.to_tile_tensor[.int64]()
-        var scales_tt = scales.to_tile_tensor[.int64]()
-        var out_tt = output.to_tile_tensor[.int64]()
+        var in_tt = input.to_tile_tensor()
+        var scales_tt = scales.to_tile_tensor()
+        var out_tt = output.to_tile_tensor()
 
         var num_rows = Int(in_tt.dim[0]())
         var num_cols = (Int(in_tt.dim[1]()) * 8) // 6
@@ -1094,26 +1793,29 @@ struct Struct_interleave_block_scales:
     """Registers the `mo.interleave.block.scales` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
-        scales_type: DType,
-        //,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        output_scales: OutputTensor[dtype=scales_type, rank=5, ...],
-        input_scales: InputTensor[dtype=scales_type, rank=2, ...],
+        output_scales: Some[Output & Tensor],
+        input_scales: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output_scales), TileTensorable)
+        comptime assert conforms_to(type_of(input_scales), TileTensorable)
+        comptime scales_type = type_of(output_scales).dtype
+        comptime assert type_of(output_scales).rank == 5
+        comptime assert type_of(input_scales).rank == 2
         comptime assert is_gpu[target](), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
         )
 
         block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
-            output_scales.to_tile_tensor[.int64](),
-            input_scales.to_tile_tensor[.int64](),
+            output_scales.to_tile_tensor(),
+            input_scales.to_tile_tensor[scales_type](),
             context,
         )
 
@@ -1127,21 +1829,25 @@ struct Struct_block_scaled_preshuffle_b_5d:
     paying the >1 h CPU-side numpy shuffle on every model load.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.uint8, rank=3, ...],
-        input: InputTensor[dtype=.uint8, rank=3, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert is_gpu[
             target
         ](), "mo.block.scaled.preshuffle.b.5d is GPU-only (AMD CDNA4 consumer)"
 
-        var raw_tt = input.to_tile_tensor[.int64]()
-        var dst_tt = output.to_tile_tensor[.int64]()
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(input).rank == 3
+        var raw_tt = input.to_tile_tensor[.uint8]()
+        var dst_tt = output.to_tile_tensor[.uint8]()
         comptime E = type_of(raw_tt).static_shape[0]
         comptime N = type_of(raw_tt).static_shape[1]
         comptime K_BYTES = type_of(raw_tt).static_shape[2]
@@ -1163,34 +1869,38 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
     out-of-range reads.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        input: InputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(expert_start_indices).rank == 1
         comptime assert is_gpu[
             target
         ](), "mo.block.scaled.preshuffle.scale.4d_per_expert is GPU-only"
 
         # E8M0 bytes feed the launcher as raw uint8 (the cell-packing is
-        # byte-level). Bitcast the input/output tile pointers so dtype
-        # metadata matches the launcher's `DType.uint8` TileTensor sig.
-        var raw_e8 = input.to_tile_tensor[.int64]()
-        var dst_e8 = output.to_tile_tensor[.int64]()
-        var raw_tt = TileTensor[mut=False](
-            raw_e8._storage.bitcast[UInt8](), raw_e8.layout
+        # byte-level). Bitcast the tiles so dtype metadata matches the
+        # launcher's `DType.uint8` TileTensor sig.
+        var raw_tt = (
+            input.to_tile_tensor[.float8_e8m0fnu]().as_imm().bitcast[.uint8]()
         )
-        var dst_tt = TileTensor[mut=True](
-            dst_e8._storage.bitcast[UInt8](), dst_e8.layout
-        )
-        var a_off_tt = expert_start_indices.to_tile_tensor[.int64]()
+        var dst_tt = output.to_tile_tensor[.float8_e8m0fnu]().bitcast[.uint8]()
+        var a_off_tt = expert_start_indices.to_tile_tensor[.uint32]()
         comptime K_SCALES = type_of(raw_tt).static_shape[1]
         # Persistent grid: one CTA per WG slot, grid-strides real tiles.
         # `cu_count * 2` matches the matmul's persistent dispatch (see
@@ -1212,47 +1922,74 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
     """Registers the `mo.unfused_qkv_matmul.ragged.paged.gguf_quantized` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         quantization_encoding_q: StaticString,
         quantization_encoding_k: StaticString,
         quantization_encoding_v: StaticString,
     ](
-        output: OutputTensor[dtype=.float32, rank=2, ...],
-        hidden_state: InputTensor[dtype=.float32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        q_weight: InputTensor[dtype=.uint8, rank=2, ...],
-        k_weight: InputTensor[dtype=.uint8, rank=2, ...],
-        v_weight: InputTensor[dtype=.uint8, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=.float32, rank=6, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        hidden_state: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        q_weight: Some[Input & Tensor],
+        k_weight: Some[Input & Tensor],
+        v_weight: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(hidden_state), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(q_weight), TileTensorable)
+        comptime assert conforms_to(type_of(k_weight), TileTensorable)
+        comptime assert conforms_to(type_of(v_weight), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(hidden_state).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(q_weight).rank == 2
+        comptime assert type_of(k_weight).rank == 2
+        comptime assert type_of(v_weight).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(kv_blocks).dtype == DType.float32
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         unfused_qkv_matmul_ragged_paged_gguf_quantized[
             quantization_encoding_q,
             quantization_encoding_k,
             quantization_encoding_v,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            q_weight.to_layout_tensor(),
-            k_weight.to_layout_tensor(),
-            v_weight.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.float32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            q_weight.to_tile_tensor[.uint8](),
+            k_weight.to_tile_tensor[.uint8](),
+            v_weight.to_tile_tensor[.uint8](),
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.float32](),
             ctx,
         )
 
@@ -1262,19 +1999,22 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
     """Registers the `mo.quantize_static_scaled_float8` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
-        input_type: DType,
-        output_type: DType,
         scale_type: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=2, ...],
-        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         scale: Scalar[scale_type],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime output_type = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[target](), "only valid on GPUs"
         comptime assert output_type in (
             DType.float8_e4m3fn,
@@ -1290,21 +2030,35 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         # `scale_is_inverted` param and always used `1.0/scale`; preserved here.
         var inversed_scale = 1.0 / scale.cast[.float32]()
 
-        @always_inline
-        def quant_fn[
-            width: Int, element_alignment: Int
-        ](idx: IndexList[2]) {var input, var inversed_scale} -> SIMD[
-            output_type, width
-        ]:
-            var v = input._fused_load[
-                width, element_alignment=element_alignment
-            ](idx).cast[.float32]()
-            return fp8_quantize[output_type, use_clamp=True](v, inversed_scale)
+        # Project the host proxy to its access-enabled view so the body can
+        # load on the GPU lane; the dense output is stored through its tile.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        var output_tile = output.to_tile_tensor()
 
-        foreach[
+        @inline(.always)
+        def quant_fn[
+            width: Int, element_alignment: Int = 1
+        ](idx: Coord) {var input_view, var inversed_scale, var output_tile}:
+            var v = rebind[SIMD[input_type, width]](
+                input_view.load[
+                    width=width, element_alignment=element_alignment
+                ](idx)
+            ).cast[.float32]()
+            output_tile.store[
+                width=width,
+                alignment=min(
+                    type_of(output).alignment,
+                    element_alignment * align_of[output_type](),
+                ),
+            ](idx, fp8_quantize[output_type, use_clamp=True](v, inversed_scale))
+
+        elementwise[
+            simd_width=get_kernel_simd_width[output_type, target](),
             target=target,
-            _trace_name="scaled_fp8_quant",
-        ](quant_fn, output, ctx)
+            _trace_description="scaled_fp8_quant",
+        ](quant_fn, output.shape().flatten(), ctx)
 
 
 @extensibility.register("mo.quantize_tensor_dynamic_scaled_float8")
@@ -1312,43 +2066,54 @@ struct QuantizeTensorDynamicScaledFloat8:
     """Registers the `mo.quantize_tensor_dynamic_scaled_float8` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
-        input_type: DType,
-        scales_type: DType,
-        output_type: DType,
-        //,
         group_size_or_per_token: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=2, ...],
-        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        @always_inline
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
             )
 
         quantize_tensor_dynamic_scaled_fp8[
             in_dtype=input_type,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols=Int(input.static_spec.shape_tuple[1]),
+            num_cols=type_of(input)._shape_types[1].static_value,
         ](
             input_fn,
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
             scale_ub,
             ctx,
-            num_rows=input.dim_size(0),
+            num_rows=Int(input.shape()[0].value()),
         )
 
 
@@ -1357,42 +2122,134 @@ struct QuantizeDynamicScaledFloat8:
     """Registers the `mo.quantize_dynamic_scaled_float8` graph op with the graph compiler.
     """
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
-        input_type: DType,
-        scales_type: DType,
-        output_type: DType,
-        //,
         group_size_or_per_token: Int,
         target: StaticString,
+        amax_floor: Float32 = 0,
     ](
-        output: OutputTensor[dtype=output_type, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=2, ...],
-        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        @always_inline
+        # The `0` default leaves the dynamic-scale floor unset.
+
+        @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
             )
 
         quantize_dynamic_scaled_fp8[
             in_dtype=input_type,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols=Int(input.static_spec.shape_tuple[1]),
+            num_cols=type_of(input)._shape_types[1].static_value,
         ](
             input_fn,
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
             scale_ub,
             ctx,
-            num_rows=input.dim_size(0),
+            num_rows=Int(input.shape()[0].value()),
+            amax_floor=amax_floor,
+        )
+
+
+@extensibility.register("mo.quantize_dynamic_scaled_float8.row_bounded")
+struct QuantizeDynamicScaledFloat8RowBounded:
+    """Registers the `mo.quantize_dynamic_scaled_float8.row_bounded` graph op.
+
+    Same numerics as `mo.quantize_dynamic_scaled_float8`, but the rows it
+    touches stop at a count the GPU publishes rather than at the height of the
+    input tensor. The EP MoE down projection needs this: its activation buffer
+    is sized for the worst-case dispatch, the dispatch kernel writes the live
+    row count into `row_offsets`, and the host never learns that count.
+
+    A separate symbol rather than an operand on the shared op, because the
+    graph compiler's RMS-norm and all-reduce fusion patterns match the shared
+    op by its two-operand signature.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        group_size_or_per_token: Int,
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        scale_ub: Float32,
+        row_offsets: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
+            )
+
+        # `row_offsets` is the grouped-matmul prefix sum, so its last entry is
+        # the total row count across all groups.
+        var offsets = row_offsets.to_tile_tensor[.uint32]().as_imm()
+        var row_limit = offsets.ptr.unsafe_offset(
+            Int(row_offsets.shape()[0].value()) - 1
+        )
+
+        quantize_dynamic_scaled_fp8[
+            in_dtype=input_type,
+            group_size_or_per_token=group_size_or_per_token,
+            num_cols=type_of(input)._shape_types[1].static_value,
+            row_bounded=True,
+        ](
+            input_fn,
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            scale_ub,
+            ctx,
+            num_rows=Int(input.shape()[0].value()),
+            row_limit=Optional[Pointer[UInt32, ImmUntrackedOrigin]](row_limit),
         )

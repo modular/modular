@@ -20,19 +20,20 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy import AttentionWithRope, Linear, RotaryEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
@@ -260,7 +261,7 @@ def generate_max_outputs_fp4(
         inputs, input_row_offsets, *kv_cache = graph.inputs
         kv_collection: PagedCacheValues = kv_params.unflatten_kv_inputs(
             iter(kv_cache)
-        ).inputs[0]
+        )[0]
 
         # Create layer_idx constant
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
@@ -284,7 +285,7 @@ def generate_max_outputs_fp4(
     kv_manager.alloc(batch[0])
     kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf(
         cast(list[list[TextContext]], [batch])
-    ).inputs[0]
+    )[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     # Prepare inputs - flatten batch and sequence dimensions
@@ -294,12 +295,7 @@ def generate_max_outputs_fp4(
     out = compiled.execute(
         Buffer.from_dlpack(input_tensor_flat).to(device),
         Buffer.from_numpy(input_row_offsets_input).to(device),
-        kv_runtime_inputs.kv_blocks.to(device),
-        kv_runtime_inputs.cache_lengths.to(device),
-        kv_runtime_inputs.lookup_table.to(device),
-        kv_runtime_inputs.max_prompt_length,
-        kv_runtime_inputs.max_cache_length,
-        kv_runtime_inputs.attention_dispatch_metadata,
+        *tree.leaves(kv_runtime_inputs),
     )[0]
     return from_dlpack(out).to(torch.bfloat16)
 

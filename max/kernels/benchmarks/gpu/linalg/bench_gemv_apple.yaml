@@ -1,0 +1,40 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Small-M bf16 decode matmuls on Apple GPUs: the attention, MLP, MoE and
+# vocabulary projections of a transformer with hidden size 7168, plus K = 512
+# and K = 1024 points on either side of the Apple GEMV's K floor.
+name: bench_gemv_apple
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+
+params:
+
+- $M: [2, 4, 8]
+  N: [576, 1536, 3584]
+  K: 7168
+
+- $M: [2, 4, 8]
+  N: [7168, 32768]
+  K: 512
+
+- $M: [2, 4, 8]
+  N: 7168
+  K: [1024, 33792]
+
+- $M: [2, 4, 8]
+  N: 18432
+  K: 1536
+
+- $M: [2, 4, 8]
+  N: 163840
+  K: 7168

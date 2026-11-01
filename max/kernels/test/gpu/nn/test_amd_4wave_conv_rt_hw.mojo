@@ -29,10 +29,7 @@ from std.utils import IndexList
 from layout import Coord, TileTensor, row_major
 
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
-
-
-def _round_up(x: Int, mod: Int) -> Int:
-    return ((x + mod - 1) // mod) * mod
+from std.math import align_up
 
 
 def _run[
@@ -55,32 +52,12 @@ def _run[
     comptime W_out = (W + 2 * pad_w - S) // stride_w + 1
     comptime M_total = N * H_out * W_out
     comptime K_real = R * S * C_in
-    comptime K_padded = _round_up(K_real, 256)
+    comptime K_padded = align_up(K_real, 256)
 
     print(
-        "== rt-hw conv:",
-        "dtype=",
-        String(a_type),
-        " H=",
-        H,
-        " W=",
-        W,
-        " C_in=",
-        C_in,
-        " C_out=",
-        C_out,
-        " RxS=",
-        R,
-        "x",
-        S,
-        " stride=",
-        stride_h,
-        "x",
-        stride_w,
-        " pad=",
-        pad_h,
-        "x",
-        pad_w,
+        t"== rt-hw conv: dtype= {String(a_type)}  H= {H}  W= {W}  C_in= {C_in} "
+        t" C_out= {C_out}  RxS= {R} x {S}  stride= {stride_h} x {stride_w} "
+        t" pad= {pad_h} x {pad_w}"
     )
 
     var input_dev = ctx.enqueue_create_buffer[a_type](N * H * W * C_in)
@@ -150,7 +127,7 @@ def _run[
         if static_host[i] != rt_host[i]:
             mismatches += 1
     if mismatches > 0:
-        print("  FAIL:", mismatches, "/", M_total * C_out, "differ")
+        print(t"  FAIL: {mismatches} / {M_total * C_out} differ")
         raise Error("runtime-HW conv != static-HW conv")
     print("  PASS:", M_total * C_out, "elements byte-identical")
 

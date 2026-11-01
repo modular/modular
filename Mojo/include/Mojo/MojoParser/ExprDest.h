@@ -38,6 +38,7 @@ class VarDeclOp;
 enum ExprContext {
   EC_InvalidContext,       // Not a valid context, will abort.
   EC_VarInit,              // var thing = x
+  EC_VarInitMatchBinding,  // case var thing:
   EC_Assignment,           // y = x
   EC_Type,                 // var v : x         (and many other places)
   EC_AttributeRefBase,     // x.field

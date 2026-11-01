@@ -37,7 +37,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -45,7 +45,7 @@ from test_common.context_utils import create_text_context
 
 def _make_kv_manager(
     *,
-    kv_hash_algo: Literal["ahash64", "sha256", "sha256_64"] = "ahash64",
+    kv_hash_algo: Literal["ahash64", "sha256"] = "ahash64",
     kv_hash_seed: bytes | None = None,
     page_size: int = 8,
     total_num_pages: int = 16,

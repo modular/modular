@@ -19,13 +19,14 @@ from std.math import ceildiv
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
 
 def color_to_grayscale_kernel(
-    p_out: UnsafePointer[UInt8, MutUntrackedOrigin],
-    p_in: UnsafePointer[UInt8, MutUntrackedOrigin],
+    p_out: MutPointer[UInt8, MutUntrackedOrigin],
+    p_in: MutPointer[UInt8, MutUntrackedOrigin],
     width_dev: Int32,
     height_dev: Int32,
 ):
@@ -63,8 +64,8 @@ def color_to_grayscale_kernel(
 
 
 def color_to_grayscale(
-    h_input: UnsafePointer[UInt8, MutUntrackedOrigin],
-    h_output: UnsafePointer[UInt8, MutUntrackedOrigin],
+    h_input: MutPointer[UInt8, MutUntrackedOrigin],
+    h_output: MutPointer[UInt8, MutUntrackedOrigin],
     width: Int,
     height: Int,
     ctx: DeviceContext,
@@ -115,8 +116,8 @@ def color_to_grayscale(
 
 
 def color_to_grayscale_cpu(
-    input: UnsafePointer[UInt8, MutUntrackedOrigin],
-    output: UnsafePointer[UInt8, MutUntrackedOrigin],
+    input: ImmPointer[UInt8, _],
+    output: MutPointer[UInt8, MutUntrackedOrigin],
     width: Int,
     height: Int,
 ):
@@ -140,7 +141,7 @@ def color_to_grayscale_cpu(
 
 
 def initialize_image(
-    image: UnsafePointer[UInt8, MutUntrackedOrigin], width: Int, height: Int
+    image: MutPointer[UInt8, MutUntrackedOrigin], width: Int, height: Int
 ):
     """Initialize a test image with gradient pattern.
 
@@ -160,8 +161,8 @@ def initialize_image(
 
 
 def verify_results(
-    cpu_output: UnsafePointer[UInt8, MutUntrackedOrigin],
-    gpu_output: UnsafePointer[UInt8, MutUntrackedOrigin],
+    cpu_output: ImmPointer[UInt8, _],
+    gpu_output: ImmPointer[UInt8, _],
     width: Int,
     height: Int,
 ) -> Bool:
@@ -216,9 +217,9 @@ def main() raises:
     print("Grayscale output size:", gray_size, "bytes")
 
     # Allocate host memory
-    var h_rgb_input = alloc[UInt8](rgb_size)
-    var h_gray_output_gpu = alloc[UInt8](gray_size)
-    var h_gray_output_cpu = alloc[UInt8](gray_size)
+    var h_rgb_input = unsafe_alloc[UInt8](rgb_size)
+    var h_gray_output_gpu = unsafe_alloc[UInt8](gray_size)
+    var h_gray_output_cpu = unsafe_alloc[UInt8](gray_size)
 
     # Initialize test image
     initialize_image(h_rgb_input, width, height)
@@ -242,9 +243,9 @@ def main() raises:
         print("✗ FAILED: GPU results do not match CPU results!")
 
     # Cleanup
-    h_rgb_input.free()
-    h_gray_output_gpu.free()
-    h_gray_output_cpu.free()
+    h_rgb_input.unsafe_free()
+    h_gray_output_gpu.unsafe_free()
+    h_gray_output_cpu.unsafe_free()
 
     print("\n===========================================")
     if success:

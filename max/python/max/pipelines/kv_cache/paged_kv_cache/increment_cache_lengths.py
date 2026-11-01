@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from max.graph import BufferValue, TensorValue, ops
-from max.nn.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
 
 
 def increment_cache_lengths_from_counts(

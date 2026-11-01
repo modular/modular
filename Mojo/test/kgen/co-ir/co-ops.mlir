@@ -6,7 +6,7 @@ kgen.func @slow_function(%arg0: i32) -> !co.routine {
   %hdl = co.handle : i32
   // CHECK-NEXT: co.set_results %[[HDL]](%arg0) : i32
   co.set_results %hdl(%arg0) : i32
-  kgen.return %hdl : !co.routine
+  hlcf.return %hdl : !co.routine
 }
 
 // CHECK-LABEL: kgen.func @async_coroutine
@@ -25,7 +25,7 @@ kgen.func @async_coroutine(%arg0: i32) -> !co.routine {
   }
   // CHECK-NEXT: co.destroy %[[CALLEE_HDL]]
   co.destroy %calleeHdl
-  kgen.return %curHdl : !co.routine
+  hlcf.return %curHdl : !co.routine
 }
 
 // CHECK-LABEL: kgen.func @await
@@ -35,7 +35,7 @@ kgen.func @await(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index>, %arg2
   // CHECK-NEXT: co.await %arg2, %arg0 : (!co.routine, !kgen.pointer<index>) -> ()
   co.await %arg2, %arg0 : (!co.routine, !kgen.pointer<index>) -> ()
   // CHECK-NEXT: return %0#0
-  kgen.return %0#0 : i1
+  hlcf.return %0#0 : i1
 }
 
 // CHECK-LABEL: kgen.func @async_execute
@@ -46,39 +46,39 @@ kgen.func @async_execute() -> !co.routine {
   %coroHdl = co.execute : i32, i64 {
     // CHECK: [[R1:%.*]] = kgen.param.constant: i64
     %1 = kgen.param.constant: i64 = <5>
-    // CHECK: kgen.return [[R0]], [[R1]] : i32, i64
-    kgen.return %0, %1 : i32, i64
+    // CHECK: hlcf.return [[R0]], [[R1]] : i32, i64
+    hlcf.return %0, %1 : i32, i64
   }
   // CHECK: co.execute : i32 {
   co.execute : i32 {
-    // CHECK-NEXT: kgen.unreachable
-    kgen.unreachable
+    // CHECK-NEXT: hlcf.unreachable
+    hlcf.unreachable
   }
   // CHECK: co.execute : i32 (%arg0: !kgen.pointer<index> byref_result) {
   co.execute : i32 (%arg0: !kgen.pointer<index> byref_result) {
-    kgen.unreachable
+    hlcf.unreachable
   }
   // CHECK: co.execute : i32, i64 (%arg0: !kgen.pointer<index> byref_error, %arg1: !kgen.pointer<index> byref_result) {
   co.execute : i32, i64 (%arg0: !kgen.pointer<index> byref_error, %arg1: !kgen.pointer<index> byref_result) {
-    kgen.unreachable
+    hlcf.unreachable
   }
-  // CHECK: kgen.return %[[HDL]]
-  kgen.return %coroHdl : !co.routine
+  // CHECK: hlcf.return %[[HDL]]
+  hlcf.return %coroHdl : !co.routine
 }
 
 kgen.func @async_fn(%arg0: index) async {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @call_async_fn
 kgen.func @call_async_fn(%arg0: index) -> !co.routine {
   // CHECK-NEXT: co.invoke[(index) async -> (): @async_fn](%arg0)
   %0 = co.invoke[(index) async -> (): @async_fn](%arg0)
-  kgen.return %0 : !co.routine
+  hlcf.return %0 : !co.routine
 }
 
 kgen.func @async_hot_fn(%arg0: index, %__error__: !kgen.pointer<index> byref_error, %__result__: !kgen.pointer<index> byref_result) throws|async {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @hot_call_async_fn
@@ -93,12 +93,12 @@ kgen.func @hot_call_async_fn(%arg0: index, %__error__: !kgen.pointer<index> byre
     co.suspend.end
   }
 
-  kgen.return %arg0 : index
+  hlcf.return %arg0 : index
 }
 
 kgen.func @throwing_coroutine(%arg0: index, %__error__: !kgen.pointer<index> byref_error, %__result__: !kgen.pointer<index> byref_result) throws|async -> i1 {
   %true = index.bool.constant true
-  kgen.return %true : i1
+  hlcf.return %true : i1
 }
 
 // CHECK-LABEL: kgen.func @call_throwing_coro
@@ -113,5 +113,5 @@ kgen.func @call_throwing_coro(%arg0: index) {
   co.set_byref_error_result %0(%1, %2) : !co.routine, !kgen.pointer<index>, !kgen.pointer<index>
   // CHECK: co.set_byref_error_result %0(%1) : !co.routine, !kgen.pointer<index>
   co.set_byref_error_result %0(%1) : !co.routine, !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }

@@ -51,7 +51,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import partial
 
-from max import _core, engine
+from max import _core, _eager_policy, engine
 from max._core.dialects import kgen, mo, rmo
 from max._interpreter_ops import gc_compile
 from max.driver import Device
@@ -78,6 +78,10 @@ class RearrangeSpec:
     devices: DeviceClass
     rank_keyed: bool
     max_rank: int | None = None  # Cap for rank sweep; None uses MAX_RANK.
+    # The kernel handles any rank; the sweep above precompiles only
+    # 1..max_rank, and `model()` lazily compiles higher ranks (unless this
+    # process disallows lazy compile). The cap then only bounds the sweep.
+    arbitrary_rank: bool = False
 
 
 _REARRANGE_OPS: dict[type[_core.Operation], RearrangeSpec] = {}
@@ -152,8 +156,10 @@ class _ShapeRearrangeFamily(gc_compile.GCFamilySpec):
     name = "shape_rearrange"
 
     def build_module(self) -> Module:
-        """Batched module: every supported (op, device, dtype, rank), all
-        devices."""
+        """Batched module: every supported (op, device, dtype, rank).
+
+        Covers all devices.
+        """
         module = Module()
         for device in self.sweep_devices():
             self.build_module_for_device(device, module)
@@ -162,9 +168,11 @@ class _ShapeRearrangeFamily(gc_compile.GCFamilySpec):
     def build_module_for_device(
         self, device: Device, module: Module | None = None
     ) -> Module:
-        """Per-slot counterpart of :meth:`build_module`: one *device* only.
-        A ``CPU_ONLY`` op (e.g. ``Tile``) is skipped below via
-        :func:`_devices_for`."""
+        """Builds the module for one device slot.
+
+        Per-slot counterpart of :meth:`build_module`. A ``CPU_ONLY`` op is
+        skipped below via :func:`_devices_for`.
+        """
         if module is None:
             module = Module()
         for op_type, spec in _REARRANGE_OPS.items():
@@ -205,18 +213,26 @@ def model(
             )
         spec = _spec_for(op_type)
         # Same unsupported-target signal as the dtype check above: a clean
-        # error rather than the GC kernel's comptime rank assert firing deep
-        # in compilation (e.g. tile is capped at rank 4).
-        if (
-            spec is not None
-            and spec.rank_keyed
-            and rank not in _ranks_for(spec)
-        ):
-            return (
-                f"Unsupported shape-rearrange rank {rank} for"
-                f" {op_type.__name__} (max {_ranks_for(spec)[-1]});"
-                f" key {key!r}."
+        # error rather than an assert firing deep in compilation. An
+        # arbitrary_rank spec (e.g. tile) still precompiles only the sweep;
+        # higher ranks compile on demand, except when this process disallows
+        # lazy compile.
+        if spec is not None and spec.rank_keyed:
+            sweep_ranks = _ranks_for(spec)
+            if rank in sweep_ranks:
+                return None
+            over_cap = (
+                rank is None
+                or rank < 1
+                or not spec.arbitrary_rank
+                or not _eager_policy.allow_lazy_compile()
             )
+            if over_cap:
+                return (
+                    f"Unsupported shape-rearrange rank {rank} for"
+                    f" {op_type.__name__} (max {sweep_ranks[-1]});"
+                    f" key {key!r}."
+                )
         return None
 
     def build(module: Module) -> None:
@@ -335,9 +351,11 @@ _register_spec(
     mo.TileOp,
     RearrangeSpec(
         build_graph=_build_tile_graph,
-        devices=DeviceClass.CPU_ONLY,
+        devices=DeviceClass.ALL,
         rank_keyed=True,
-        max_rank=4,  # GC tile kernel supports up to rank 4.
+        # The kernel handles any rank. The sweep precompiles 1..MAX_RANK;
+        # higher ranks lazy-compile on dispatch (see `model`).
+        arbitrary_rank=True,
     ),
 )
 
@@ -409,11 +427,11 @@ _register_spec(
 )
 _register_spec(
     mo.PadReflectOp,
-    _pad_spec(mo.PadReflectOp, rmo.MoPadReflectOp, False, DeviceClass.CPU_ONLY),
+    _pad_spec(mo.PadReflectOp, rmo.MoPadReflectOp, False, DeviceClass.ALL),
 )
 _register_spec(
     mo.PadRepeatOp,
-    _pad_spec(mo.PadRepeatOp, rmo.MoPadRepeatOp, False, DeviceClass.CPU_ONLY),
+    _pad_spec(mo.PadRepeatOp, rmo.MoPadRepeatOp, False, DeviceClass.ALL),
 )
 
 

@@ -34,6 +34,8 @@ from .tokenizer import Ideogram4Tokenizer
 
 @dataclass(kw_only=True)
 class Ideogram4ArchConfig(ArchConfig):
+    """Ideogram 4's architecture registration."""
+
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
@@ -41,6 +43,7 @@ class Ideogram4ArchConfig(ArchConfig):
     quantization_encoding: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
+        """Zero: an image pipeline serves no token sequence."""
         return 0
 
     @classmethod
@@ -49,6 +52,7 @@ class Ideogram4ArchConfig(ArchConfig):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """Zero: a checkpoint sets no token sequence length."""
         del huggingface_config, model_config
         return 0
 
@@ -60,6 +64,7 @@ class Ideogram4ArchConfig(ArchConfig):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         # Diffusion pipelines have no single "main" model; component configs
         # live in ``pipeline_config.models``. Use any component to read the
         # device specs (all components share the same device set here).

@@ -19,7 +19,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     spec_decode_cache_slack,
 )
@@ -49,7 +49,7 @@ def _extract_eagle_aux_layer_ids(
     """Extract ``eagle_aux_hidden_state_layer_ids`` from a HuggingFace config.
 
     The IDs live inside an ``eagle_config`` sub-dict/object that is present on
-    the *draft* checkpoint's config (e.g. ``nvidia/Kimi-K2.5-Thinking-Eagle3``)
+    the *draft* checkpoint's config (such as ``nvidia/Kimi-K2.5-Thinking-Eagle3``)
     but may also be propagated onto the target config at runtime.
 
     Returns:
@@ -147,6 +147,8 @@ class _KimiK2_5VisionCacheConfig:
 class KimiK2_5TextConfig(
     _KimiK2_5VisionCacheConfig, DeepseekV3Config, ArchConfigWithVisionCache
 ):
+    """Kimi K2.5's text configuration."""
+
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
         "bfloat16",
@@ -167,11 +169,14 @@ class KimiK2_5TextConfig(
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config and so on)
         should be set via the `finalize()` method.
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration to read the HuggingFace
+                config from. Defaults to ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized DeepseekV3Config instance.
@@ -262,6 +267,7 @@ class KimiK2_5TextConfig(
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The checkpoint's ``max_position_embeddings``."""
         # DeepseekV3Config does not inherit ArchConfigWithStoredKVParams, so the
         # VLM mixin cannot delegate max_seq_len to this class directly.
         #
@@ -357,7 +363,7 @@ class VisionConfig:
             huggingface_config: Full HuggingFace model config, used to derive
                 ``text_hidden_size`` from ``text_config.hidden_size`` when
                 ``hf_vision_config`` does not carry the attribute directly
-                (e.g. moonshotai/Kimi-VL-A3B-Instruct vs nvidia/Kimi-K2.5-NVFP4).
+                (such as moonshotai/Kimi-VL-A3B-Instruct vs nvidia/Kimi-K2.5-NVFP4).
 
         Note: dtype fields will be set to defaults and should be updated
         via finalize() once state_dict is available.
@@ -481,6 +487,7 @@ class KimiK2_5Config(
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The language model's hidden layer count."""
         # Delegate to KimiK2_5TextConfig for language model parameters.
         llm_config = getattr(
             huggingface_config, "text_config", huggingface_config
@@ -500,6 +507,9 @@ class KimiK2_5Config(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration to read the HuggingFace
+                config from. Defaults to ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Qwen3VLConfig instance with fields initialized from config.
@@ -536,6 +546,7 @@ class KimiK2_5Config(
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace model configuration.
             llm_config: Pre-initialized DeepseekV3 configuration.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A KimiK2_5Config instance ready for finalization.

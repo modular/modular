@@ -18,7 +18,7 @@
 # branch is taken. Imports in dead comptime branches are still resolved
 # eagerly, so a nonexistent module is an error even under `comptime if False`.
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%S/inputs %s
 
 # The import is usable within the comptime block.
 

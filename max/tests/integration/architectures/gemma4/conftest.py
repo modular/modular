@@ -442,6 +442,10 @@ class TorchGemma4TextDecoderLayer(nn.Module):
     When ``enable_moe_block=True``, the feedforward section splits into a
     shared MLP branch and a routed MoE branch (each with its own pre/post
     norms), matching the HuggingFace ``Gemma4TextDecoderLayer``.
+
+    When ``hidden_size_per_layer_input`` is nonzero, the layer also mixes the
+    per-layer embedding (PLE) into its residual stream, matching the
+    HuggingFace per-layer input branch.
     """
 
     def __init__(
@@ -454,6 +458,8 @@ class TorchGemma4TextDecoderLayer(nn.Module):
         enable_moe_block: bool = False,
         router: nn.Module | None = None,
         moe: nn.Module | None = None,
+        hidden_size_per_layer_input: int = 0,
+        hidden_activation: str = "gelu_tanh",
     ) -> None:
         super().__init__()
         self.self_attn = self_attn
@@ -487,9 +493,23 @@ class TorchGemma4TextDecoderLayer(nn.Module):
                 hidden_size, eps=rms_norm_eps
             )
 
+        self.hidden_size_per_layer_input = hidden_size_per_layer_input
+        if hidden_size_per_layer_input:
+            self.act_fn = ACT2FN[hidden_activation]
+            self.per_layer_input_gate = nn.Linear(
+                hidden_size, hidden_size_per_layer_input, bias=False
+            )
+            self.per_layer_projection = nn.Linear(
+                hidden_size_per_layer_input, hidden_size, bias=False
+            )
+            self.post_per_layer_input_norm = TorchGemma4RMSNorm(
+                hidden_size, eps=rms_norm_eps
+            )
+
     def forward(
         self,
         hidden_states: torch.Tensor,
+        per_layer_input: torch.Tensor | None = None,
         **kwargs: object,
     ) -> tuple[torch.Tensor, ...]:
         residual = hidden_states
@@ -526,6 +546,16 @@ class TorchGemma4TextDecoderLayer(nn.Module):
 
         hidden_states = self.post_feedforward_layernorm(hidden_states)
         hidden_states = residual + hidden_states
+
+        if self.hidden_size_per_layer_input:
+            assert per_layer_input is not None
+            residual = hidden_states
+            hidden_states = self.per_layer_input_gate(hidden_states)
+            hidden_states = self.act_fn(hidden_states)
+            hidden_states = hidden_states * per_layer_input
+            hidden_states = self.per_layer_projection(hidden_states)
+            hidden_states = self.post_per_layer_input_norm(hidden_states)
+            hidden_states = residual + hidden_states
 
         if self.with_layer_scalar:
             hidden_states *= self.layer_scalar
@@ -621,8 +651,13 @@ class TorchGemma4TextScaledWordEmbedding(nn.Embedding):
 class TorchGemma4TextModel(nn.Module):
     """Copy-pasted HF Gemma4TextModel for test reference comparison.
 
-    Simplified: no gradient checkpointing, no per-layer inputs, attention is
-    injected via ``attn_factory`` so tests can stub it.
+    Simplified: no gradient checkpointing, attention is injected via
+    ``attn_factory`` so tests can stub it.
+
+    When ``hidden_size_per_layer_input`` is nonzero, the model owns the
+    packed per-layer embedding table (PLE) and computes the per-layer input
+    every decoder layer mixes in, matching the HuggingFace
+    ``get_per_layer_inputs``/``project_per_layer_inputs`` pair.
     """
 
     def __init__(
@@ -636,11 +671,14 @@ class TorchGemma4TextModel(nn.Module):
         rms_norm_eps: float,
         layer_types: list[str],
         attn_factory: Callable[..., nn.Module],
+        hidden_size_per_layer_input: int = 0,
+        vocab_size_per_layer_input: int | None = None,
     ) -> None:
         super().__init__()
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.layer_types = layer_types
+        self.num_hidden_layers = num_hidden_layers
 
         self.embed_tokens = TorchGemma4TextScaledWordEmbedding(
             vocab_size,
@@ -660,21 +698,87 @@ class TorchGemma4TextModel(nn.Module):
                     hidden_size=hidden_size,
                     rms_norm_eps=rms_norm_eps,
                     with_layer_scalar=True,
+                    hidden_size_per_layer_input=hidden_size_per_layer_input,
+                    hidden_activation=hidden_activation,
                 )
                 for i in range(num_hidden_layers)
             ]
         )
         self.norm = TorchGemma4RMSNorm(hidden_size, eps=rms_norm_eps)
 
+        self.hidden_size_per_layer_input = hidden_size_per_layer_input
+        if hidden_size_per_layer_input:
+            self.embed_tokens_per_layer = TorchGemma4TextScaledWordEmbedding(
+                (
+                    vocab_size
+                    if vocab_size_per_layer_input is None
+                    else vocab_size_per_layer_input
+                ),
+                num_hidden_layers * hidden_size_per_layer_input,
+                padding_idx=0,
+                embed_scale=hidden_size_per_layer_input**0.5,
+            )
+            self.per_layer_model_projection = nn.Linear(
+                hidden_size,
+                num_hidden_layers * hidden_size_per_layer_input,
+                bias=False,
+            )
+            self.per_layer_projection_norm = TorchGemma4RMSNorm(
+                hidden_size_per_layer_input, eps=rms_norm_eps
+            )
+
     def forward(
         self,
         input_ids: torch.Tensor,
+        image_token_id: int | None = None,
+        image_features: torch.Tensor | None = None,
+        pad_token_id: int = 0,
     ) -> torch.Tensor:
-        """Simplified forward: embed → layers → norm. No KV cache."""
-        hidden_states = self.embed_tokens(input_ids)
+        """Simplified forward: embed → layers → norm. No KV cache.
 
-        for layer in self.layers:
-            hidden_states = layer(hidden_states)[0]
+        When ``image_token_id`` is given, its positions take
+        ``image_features`` and look up ``pad_token_id`` in the embedding
+        tables, matching HuggingFace ``Gemma4Model.forward``.
+        """
+        if image_token_id is not None:
+            image_mask = input_ids == image_token_id
+            input_ids = torch.where(image_mask, pad_token_id, input_ids)
+        hidden_states = self.embed_tokens(input_ids)
+        if image_token_id is not None:
+            assert image_features is not None
+            hidden_states = hidden_states.masked_scatter(
+                image_mask[..., None],
+                image_features.to(hidden_states.dtype),
+            )
+
+        per_layer_inputs = None
+        if self.hidden_size_per_layer_input:
+            per_layer_dim = self.hidden_size_per_layer_input
+            identity = self.embed_tokens_per_layer(input_ids).reshape(
+                *input_ids.shape,
+                self.num_hidden_layers,
+                per_layer_dim,
+            )
+            context = self.per_layer_model_projection(hidden_states) * (
+                self.hidden_size**-0.5
+            )
+            context = context.reshape(
+                *hidden_states.shape[:-1],
+                self.num_hidden_layers,
+                per_layer_dim,
+            )
+            context = self.per_layer_projection_norm(context)
+            per_layer_inputs = (context + identity) * (2.0**-0.5)
+
+        for i, layer in enumerate(self.layers):
+            per_layer_input = (
+                per_layer_inputs[:, i, :]
+                if per_layer_inputs is not None
+                else None
+            )
+            hidden_states = layer(
+                hidden_states, per_layer_input=per_layer_input
+            )[0]
 
         hidden_states = self.norm(hidden_states)
         return hidden_states

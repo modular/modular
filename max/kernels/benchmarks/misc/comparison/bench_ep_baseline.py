@@ -43,15 +43,15 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn import Allreduce, Signals
-from max.nn.comm.ep.ep_config import EPConfig
-from max.nn.comm.ep.ep_manager import EPBatchManager, EPCommInitializer
-from max.nn.kernels import (
+from max.nn.legacy import Allreduce, Signals
+from max.nn.legacy.comm.ep.ep_config import EPConfig
+from max.nn.legacy.comm.ep.ep_manager import EPBatchManager, EPCommInitializer
+from max.nn.legacy.kernels import (
     grouped_dynamic_scaled_fp8_matmul,
     grouped_matmul_block_scaled,
     grouped_matmul_ragged,
 )
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

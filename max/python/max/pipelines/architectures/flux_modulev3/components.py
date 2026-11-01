@@ -22,11 +22,11 @@ single-Module-with-two-forward-methods-and-shared-weights pattern is
 self-contained.
 """
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Conv2d, GroupNorm, Module, ModuleList
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Conv2d, GroupNorm, Module, ModuleList
+from max.tensor import Tensor
 
 from .layers import Downsample2D, ResnetBlock2D, Upsample2D, VAEAttention
 
@@ -313,7 +313,7 @@ class Encoder(Module[[Tensor], Tensor]):
         block_out_channels: The number of output channels for each block.
         layers_per_block: The number of layers per block.
         norm_num_groups: The number of groups for normalization.
-        act_fn: The activation function to use (e.g., "silu").
+        act_fn: The activation function to use (such as "silu").
         double_z: Whether to double the number of output channels for the last block.
         mid_block_add_attention: Whether to add attention in the middle block.
         device: Device reference for module placement.
@@ -344,7 +344,7 @@ class Encoder(Module[[Tensor], Tensor]):
             block_out_channels: Tuple of block output channels.
             layers_per_block: Number of layers per block.
             norm_num_groups: Number of groups for normalization.
-            act_fn: Activation function name (e.g., "silu").
+            act_fn: Activation function name (such as "silu").
             double_z: Whether to double output channels for the last block.
             mid_block_add_attention: Whether to add attention in the middle block.
             use_quant_conv: Whether to add 1x1 conv after conv_out (encoder output -> latent moments).
@@ -528,7 +528,7 @@ class Decoder(Module[[Tensor], Tensor]):
             block_out_channels: Tuple of channel counts for each decoder block.
             layers_per_block: Number of ResNet layers per decoder block.
             norm_num_groups: Number of groups for GroupNorm layers.
-            act_fn: Activation function name (e.g., "silu").
+            act_fn: Activation function name (such as "silu").
             mid_block_add_attention: Whether to add attention in the middle block.
             use_post_quant_conv: Whether to use post-quantization convolution.
             device: Device reference for module placement.

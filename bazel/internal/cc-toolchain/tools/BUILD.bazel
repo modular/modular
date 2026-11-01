@@ -35,10 +35,12 @@ cc_tool(
         "@clang-linux-aarch64//:bin/clang++",  # symlink to clang
         "@clang-linux-aarch64//:bin/dsymutil",
         "@clang-linux-aarch64//:ld",
+        "@clang-linux-aarch64//:runtime_libs",  # ICU that lld links; see clang.BUILD
         "@clang-linux-x86_64//:bin/clang",
         "@clang-linux-x86_64//:bin/clang++",  # symlink to clang
         "@clang-linux-x86_64//:bin/dsymutil",
         "@clang-linux-x86_64//:ld",
+        "@clang-linux-x86_64//:runtime_libs",  # ICU that lld links; see clang.BUILD
         "@clang-macos//:bin/clang",
         "@clang-macos//:bin/clang++",  # symlink to clang
         "@clang-macos//:bin/dsymutil",

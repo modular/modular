@@ -14,14 +14,13 @@
 
 from .arch import llama_arch
 from .batch_processor import Llama3BatchProcessor
-from .model import Llama3Inputs, Llama3Model, LlamaModelBase
+from .model import Llama3Inputs, LlamaModelBase
 from .model_config import Llama3Config
 
 __all__ = [
     "Llama3BatchProcessor",
     "Llama3Config",
     "Llama3Inputs",
-    "Llama3Model",
     "LlamaModelBase",
     "llama_arch",
 ]

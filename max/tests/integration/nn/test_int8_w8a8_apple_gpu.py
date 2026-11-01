@@ -43,8 +43,8 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import _apple_int8_w8a8_matmul
-from max.nn.quant_config import (
+from max.nn.legacy.kernels import _apple_int8_w8a8_matmul
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -52,7 +52,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.quant_ops import quantized_matmul
+from max.nn.legacy.quant_ops import quantized_matmul
 
 
 def _int8_w8a8_quant_config() -> QuantConfig:
@@ -78,14 +78,14 @@ def _skip_if_not_apple() -> None:
         pytest.skip("No GPU available for the Apple int8 W8A8 test")
     if accelerator_api() != "metal":
         pytest.skip("Apple int8 W8A8 path requires a Metal GPU")
-    # `enqueue_apple_int8_matmul` requires Apple M5 (compute_capability == 5).
+    # `enqueue_apple_int8_matmul` requires Apple M5 or newer (compute_capability >= 5).
     # Metal reports the compute capability as the leading integer of the
     # architecture name (e.g. "2" on M2, "5-metal4" on M5).
     generation = int(accelerator_architecture_name().split("-", 1)[0])
-    if generation != 5:
+    if generation < 5:
         pytest.skip(
-            "Apple int8 W8A8 path requires Apple M5 "
-            f"(compute_capability == 5); got compute_capability={generation}"
+            "Apple int8 W8A8 path requires Apple M5 or newer "
+            f"(compute_capability >= 5); got compute_capability={generation}"
         )
 
 

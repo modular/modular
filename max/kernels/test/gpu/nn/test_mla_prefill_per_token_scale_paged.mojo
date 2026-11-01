@@ -30,7 +30,7 @@ Why this test exists
 ====================
 
 The existing ``test_mla_prefill_per_token_scale_fp8.mojo`` covers only
-the contiguous K_rope path (``LayoutTensorMHAOperand``) and so does
+the contiguous K_rope path (``TileTensorMHAOperand``) and so does
 not exercise the kernel's paged sub-tile TMA loops at lines
 684/817/968/1117 (K_rope) and 709/838/994/1136 (k_scale). The
 kernel-side ``debug_assert`` placed in those loops fires whenever a
@@ -61,29 +61,20 @@ from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index, IndexList
 
 from _paged_prefill_test_utils import (
     CACHE_DEPTH,
     KV_NUM_HEADS,
     NUM_LAYERS,
-    ROPE_DEPTH,
     fill_uniform_lookup_table,
     lut_max_pages_per_batch,
     num_keys_to_test,
@@ -119,21 +110,10 @@ def run_test_paged_prefill_per_token_scale[
     batch_size: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     print(
-        "test_mla_prefill_per_token_scale_paged",
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_keys:",
-        num_keys,
-        " page_size:",
-        page_size,
-        " qkv_type:",
-        qkv_type,
-        " rope_type:",
-        rope_type,
-        " scale_type:",
-        scale_type,
+        t"test_mla_prefill_per_token_scale_paged  batch_size: {batch_size} "
+        t" seq_len: {seq_len}  num_keys: {num_keys}  page_size: {page_size} "
+        t" qkv_type: {qkv_type}  rope_type: {rope_type}  scale_type:"
+        t" {scale_type}"
     )
 
     var scale = Float32(0.5)
@@ -183,13 +163,13 @@ def run_test_paged_prefill_per_token_scale[
     var cache_size_per_batch = num_keys * KV_NUM_HEADS * CACHE_DEPTH
     var cache_size = batch_size * cache_size_per_batch
 
-    var q_nope_ptr = alloc[Scalar[qkv_type]](q_nope_size)
-    var q_rope_ptr = alloc[Scalar[rope_type]](q_rope_size)
-    var q_scale_ptr = alloc[Scalar[scale_type]](q_scale_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var k_scale_ptr = alloc[Scalar[scale_type]](k_scale_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_nope_ptr = unsafe_alloc[Scalar[qkv_type]](q_nope_size)
+    var q_rope_ptr = unsafe_alloc[Scalar[rope_type]](q_rope_size)
+    var q_scale_ptr = unsafe_alloc[Scalar[scale_type]](q_scale_size)
+    var k_ptr = unsafe_alloc[Scalar[qkv_type]](k_size)
+    var k_scale_ptr = unsafe_alloc[Scalar[scale_type]](k_scale_size)
+    var v_ptr = unsafe_alloc[Scalar[qkv_type]](v_size)
+    var output_ptr = unsafe_alloc[Scalar[output_type]](o_size)
 
     # Zero-init the padded buffers so trailing rows past the logical
     # `seq_len` / `num_keys` per batch contribute nothing to attention.
@@ -214,10 +194,10 @@ def run_test_paged_prefill_per_token_scale[
     var q_bf16_size = batch_size * seq_len * num_heads * depth
     var k_bf16_size = batch_size * num_keys * num_heads * kv_depth
     var v_bf16_size = k_bf16_size
-    var q_bf16_ptr = alloc[BFloat16](q_bf16_size)
-    var k_bf16_ptr = alloc[BFloat16](k_bf16_size)
-    var v_bf16_ptr = alloc[BFloat16](v_bf16_size)
-    var cache_bf16_ptr = alloc[BFloat16](cache_size)
+    var q_bf16_ptr = unsafe_alloc[BFloat16](q_bf16_size)
+    var k_bf16_ptr = unsafe_alloc[BFloat16](k_bf16_size)
+    var v_bf16_ptr = unsafe_alloc[BFloat16](v_bf16_size)
+    var cache_bf16_ptr = unsafe_alloc[BFloat16](cache_size)
 
     randn[.bfloat16](q_bf16_ptr, q_bf16_size)
     randn[.bfloat16](k_bf16_ptr, k_bf16_size)
@@ -323,8 +303,8 @@ def run_test_paged_prefill_per_token_scale[
     # values so per-batch col_offsets are 4-aligned for the q_scale and
     # k_scale FP32 TMA loads.
     # ------------------------------------------------------------------
-    var input_row_offsets_host = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets_host = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
+    var cache_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
     for i in range(batch_size):
         input_row_offsets_host[i] = UInt32(i * seq_len_padded)
         cache_row_offsets_host[i] = UInt32(i * num_keys_padded)
@@ -355,9 +335,9 @@ def run_test_paged_prefill_per_token_scale[
     var lut_size = batch_size * max_pages_per_batch
     var block_elems = paged_block_elems(total_pages, page_size, CACHE_DEPTH)
 
-    var blocks_host = alloc[Scalar[rope_type]](block_elems)
-    var cache_lengths_host = alloc[UInt32](batch_size)
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var blocks_host = unsafe_alloc[Scalar[rope_type]](block_elems)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
 
     # Zero-init paged blocks. Tail slots past num_keys per batch stay
     # zero — the kernel may issue OOB sub-tile TMAs on partial-page
@@ -386,8 +366,7 @@ def run_test_paged_prefill_per_token_scale[
     for b in range(batch_size):
         for j in range(num_keys):
             var ks = k_scale_ptr[b * num_keys + j].cast[.bfloat16]()
-            var page_in_batch = j // page_size
-            var slot_in_page = j % page_size
+            var page_in_batch, slot_in_page = divmod(j, page_size)
             # Uniform LUT: each batch's pages are contiguous in the
             # global block array.
             var global_page = b * num_pages_per_batch + page_in_batch
@@ -509,56 +488,41 @@ def run_test_paged_prefill_per_token_scale[
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
-        total_pages,
-        1,  # kv_dim2 = 1 for is_mla
-        NUM_LAYERS,
+
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        ),
+    )
+
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
+        rope_type,
+        kv_params,
         page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
-
-    var blocks_lt = LayoutTensor[rope_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[rope_type, kv_params, page_size](
-        LayoutTensor[rope_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len_padded),  # max_seq_length
         UInt32(num_keys_padded),  # max_cache_length
     )
@@ -606,7 +570,7 @@ def run_test_paged_prefill_per_token_scale[
     # ------------------------------------------------------------------
     # Reference tensor sizes use PADDED extents to match the kernel's
     # `pos.num_keys = num_keys_padded` view. Padded rows are zero-
-    # filled (already from alloc[BFloat16] then explicit zero below);
+    # filled (already from unsafe_alloc[BFloat16] then explicit zero below);
     # they contribute nothing to attention and produce zero output —
     # same as the kernel side.
     var q_ref_size = batch_size * seq_len_padded * num_heads * depth
@@ -614,10 +578,10 @@ def run_test_paged_prefill_per_token_scale[
     var v_ref_size = k_ref_size
     var output_ref_size = batch_size * seq_len_padded * num_heads * depth
 
-    var q_ref_host = alloc[BFloat16](q_ref_size)
-    var k_ref_host = alloc[BFloat16](k_ref_size)
-    var v_ref_host = alloc[BFloat16](v_ref_size)
-    var output_ref_host = alloc[Scalar[output_type]](output_ref_size)
+    var q_ref_host = unsafe_alloc[BFloat16](q_ref_size)
+    var k_ref_host = unsafe_alloc[BFloat16](k_ref_size)
+    var v_ref_host = unsafe_alloc[BFloat16](v_ref_size)
+    var output_ref_host = unsafe_alloc[Scalar[output_type]](output_ref_size)
 
     # Zero-init padded reference tensors so the un-filled rows past
     # the logical extents don't contain uninitialised data.
@@ -752,26 +716,24 @@ def run_test_paged_prefill_per_token_scale[
         ),
     )
 
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_device.as_immut().as_unsafe_any_origin()
+    var k_ref_operand = TileTensorMHAOperand(
+        k_ref_device.as_imm().as_unsafe_any_origin()
     )
-    var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_device.as_immut().as_unsafe_any_origin()
+    var v_ref_operand = TileTensorMHAOperand(
+        v_ref_device.as_imm().as_unsafe_any_origin()
     )
 
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_ref_4d_device.to_layout_tensor(),
+        q_ref_4d_device,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
+        output_ref_device,
         null_valid_length,
         scale,
         batch_size,
@@ -807,12 +769,12 @@ def run_test_paged_prefill_per_token_scale[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var actual = output_ptr.load(
+                    var actual = output_ptr.unsafe_load(
                         (b * seq_len_padded + s) * num_heads * kv_depth
                         + h * kv_depth
                         + d
                     ).cast[.float64]()
-                    var expect = output_ref_host.load(
+                    var expect = output_ref_host.unsafe_load(
                         ((b * seq_len_padded + s) * num_heads + h) * depth + d
                     ).cast[.float64]()
                     var abs_err = abs(actual - expect)
@@ -820,18 +782,8 @@ def run_test_paged_prefill_per_token_scale[
                         max_abs_err = abs_err
                     if abs_err > atol:
                         print(
-                            "mismatch at b=",
-                            b,
-                            " s=",
-                            s,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " actual=",
-                            actual,
-                            " expect=",
-                            expect,
+                            t"mismatch at b= {b}  s= {s}  h= {h}  d= {d} "
+                            t" actual= {actual}  expect= {expect}"
                         )
                     assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 
@@ -840,26 +792,26 @@ def run_test_paged_prefill_per_token_scale[
     # ------------------------------------------------------------------
     # Cleanup
     # ------------------------------------------------------------------
-    q_nope_ptr.free()
-    q_rope_ptr.free()
-    q_scale_ptr.free()
-    k_ptr.free()
-    k_scale_ptr.free()
-    v_ptr.free()
-    output_ptr.free()
-    q_bf16_ptr.free()
-    k_bf16_ptr.free()
-    v_bf16_ptr.free()
-    cache_bf16_ptr.free()
-    blocks_host.free()
-    cache_lengths_host.free()
-    lookup_table_host.free()
-    input_row_offsets_host.free()
-    cache_row_offsets_host.free()
-    q_ref_host.free()
-    k_ref_host.free()
-    v_ref_host.free()
-    output_ref_host.free()
+    q_nope_ptr.unsafe_free()
+    q_rope_ptr.unsafe_free()
+    q_scale_ptr.unsafe_free()
+    k_ptr.unsafe_free()
+    k_scale_ptr.unsafe_free()
+    v_ptr.unsafe_free()
+    output_ptr.unsafe_free()
+    q_bf16_ptr.unsafe_free()
+    k_bf16_ptr.unsafe_free()
+    v_bf16_ptr.unsafe_free()
+    cache_bf16_ptr.unsafe_free()
+    blocks_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    input_row_offsets_host.unsafe_free()
+    cache_row_offsets_host.unsafe_free()
+    q_ref_host.unsafe_free()
+    k_ref_host.unsafe_free()
+    v_ref_host.unsafe_free()
+    output_ref_host.unsafe_free()
 
     _ = q_nope_device_buf
     _ = q_rope_device_buf

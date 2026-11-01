@@ -19,11 +19,10 @@ It does two things:
     2. Runs a tiny evaluation task using against the chat/completions API
 
 Currently there is a hard dependency that two virtualenvs are already created:
-    - .venv-serve (not needed for max-ci, which uses bazel)
-    - .venv-eval
+    - .venv-serve, with MAX installed (not needed for max-ci, which uses
+      bazel, nor for vllm/sglang, which serve from their released images)
+    - .venv-eval, with lm-eval installed
 
-Where the serve environment should already have either MAX/VLLM/SGLang installed.
-The eval environment should already have lm-eval installed.
 These dependencies are to be removed once this script
 has been integrated into bazel.
 
@@ -36,6 +35,8 @@ import logging
 import os
 import shlex
 import sys
+from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from functools import cache
 from pathlib import Path
 from pprint import pformat
@@ -53,27 +54,36 @@ from eval_runner import (
     resolve_canonical_repo_id,
     safe_model_name,
     test_single_request,
-    validate_hf_token,
     write_github_output,
     write_results,
 )
-from inference_server_harness import start_server
+from inference_server_harness import RunningServer, start_server
 from pydantic import BaseModel, ConfigDict, Field
 from requests.structures import CaseInsensitiveDict
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
+
+GPU_ARGS = {
+    "nvidia": ["--device", "nvidia.com/gpu=all"],
+    "amd": [
+        "--device", "/dev/kfd",
+        "--device", "/dev/dri",
+        "--group-add", "video",
+        "--security-opt", "seccomp=unconfined",
+    ],
+}  # fmt: skip
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def _metrics_url(framework: str) -> str:
-    """Prometheus ``/metrics`` URL for the given framework (MAX uses port 8001, others 8000)."""
-    port = 8001 if framework in ("max", "max-ci", "max-nightly") else 8000
+    """Prometheus ``/metrics`` URL for the given framework (vLLM and SGLang use port 8000, others 8001)."""
+    port = 8000 if framework in ("vllm", "sglang") else 8001
     return f"http://127.0.0.1:{port}/metrics"
 
 
-# Maps alias model names to reusable MAX recipe configs. Aliases let the same
+# Maps model variants to reusable MAX recipe configs. Variants let the same
 # weights be tested under different configurations while keeping results
 # separate in dashboards. Paths use the portable ``max/pipelines/architectures/``
 # prefix (same convention as the MAX CLI config loader). The smoke driver
@@ -86,9 +96,15 @@ def _metrics_url(framework: str) -> str:
 MODEL_RECIPES = CaseInsensitiveDict({
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": "max/pipelines/architectures/deepseekV4/recipes/flash_0731_fp8_tp2_b200.yaml",
+    "deepseek-ai/DeepSeek-V4.1-Flash-1017": "max/pipelines/architectures/deepseekV41/recipes/flash_1017_mxfp4_dp4_ep4_dspark_4x_b200.yaml",
+    "nvidia/DeepSeek-V4.1-Flash-NVFP4": "max/pipelines/architectures/deepseekV41/recipes/flash_nvfp4_dp4_ep4_dspark_4x_b200.yaml",
     "google/gemma-4-12B-it__device_graph_synthesis": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_device_graph_synthesis.yaml",
     "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
+    "google/gemma-4-31B-it__cascade": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_cascade.yaml",
+    "google/gemma-4-31B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_31b.yaml",
+    "google/gemma-4-31B-it__rust_tiered_kvconnector": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_rust_tiered_kvconnector.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
@@ -102,16 +118,34 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_8x_b200.yaml",
+    "poolside/Laguna-S-2.1-NVFP4": "max/pipelines/architectures/laguna/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
+    "poolside/Laguna-S-2.1-NVFP4__modulev3": "max/pipelines/architectures/laguna_modulev3/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
+    "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
+    "zai-org/GLM-5.3-Flash__tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
+    "zai-org/GLM-5.3-Flash__mtp_tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_mtp_tp_ep_2x_mi355.yaml",
+    "zai-org/GLM-5.3-Flash__tpep_mi355_modulev3": "max/pipelines/architectures/glm5_next_modulev3/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
+    "zai-org/GLM-5.3__fp8_tpep_mi355": "max/pipelines/architectures/glm5_1_modulev3/recipes/glm_5_3_fp8_tp_ep_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": "max/pipelines/architectures/kimik2_5_modulev3/recipes/nvfp4_kimi_k2_7_code_b200.yaml",
+    "moonshotai/Kimi-K3": "max/pipelines/architectures/kimi_k3_modulev3/recipes/tp8_mxfp4_fp8kv_8x_mi355.yaml",
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16.yaml",
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4_dspark.yaml",
+    "XiaomiMiMo/MiMo-V2.6-Flash-RL__modulev3": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_modulev3_b200.yaml",
+    "XiaomiMiMo/MiMo-V2.6-Flash-RL__modulev3_dflash": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_modulev3_dflash_b200.yaml",
+    "tencent/Hy4-preview-FP8__mtp": "max/pipelines/architectures/hy_v4/recipes/hy4_preview_fp8_tp_ep_8x_b200.yaml",
+    "thinkingmachines/Inkling-Small-NVFP4__modulev3": "max/pipelines/architectures/inkling_modulev3/recipes/inkling_small_nvfp4.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
+    "Qwen/Qwen3.8-27B__rust_tiered_kvconnector": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_rust_tiered_kvconnector.yaml",
 })
 # fmt: on
 
@@ -154,6 +188,7 @@ class RecipeConfig(BaseModel):
 
         num_speculative_tokens: int | None = None
 
+    cascade: bool = False
     model: Model = Field(default_factory=Model)
     draft_model: Model | None = None
     runtime: Runtime = Field(default_factory=Runtime)
@@ -165,12 +200,34 @@ class ServerCommand(NamedTuple):
     env: dict[str, str]
 
 
+# Repos a variant without a recipe needs beside its base repo, such as the
+# draft a Mach speculative variant exports with.
+VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
+    "google/gemma-4-31B-it__pp_mtp": ("google/gemma-4-31B-it-assistant",),
+}
+
+
+# Servers for frameworks whose serving code is internal. Their internal
+# entrypoint registers them here before running the smoke test. Each takes the
+# model key (an HF repo, or `<repo>__<variant>`), the startup timeout in
+# seconds, and whether the model is a vision model, so a framework that builds
+# its vision graph separately builds it. They get no MAX recipe: a server maps
+# a variant to its own config and refuses one it has none for.
+SERVERS: dict[
+    str,
+    Callable[[str, int, bool], AbstractContextManager[RunningServer]],
+] = {}
+
+
 # TODO Refactor this to a model list/matrix specifying type of model
 def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
-    # gemma-4-12B is served text-only in MAX (gemma4_unified arch).
-    if any(kw in model for kw in ("gemma-3-1b", "gemma-4-12b")):
+    # gemma-4-12B is served text-only in MAX (gemma4_unified arch), and Mach
+    # serves its pipeline-parallel variants (`__pp`, `__pp_mtp`) text-only.
+    if any(
+        kw in model for kw in ("gemma-3-1b", "gemma-4-12b")
+    ) or model.endswith(("__pp", "__pp_mtp")):
         return False
     return any(
         kw in model
@@ -183,6 +240,7 @@ def is_vision_model(model: str) -> bool:
             "kimi-k2",
             "kimi-vl",
             "minimax-m3",
+            "muse-glimmer",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
@@ -249,7 +307,7 @@ def _load_recipe(recipe_path: str) -> RecipeConfig:
 def resolve_model_path(
     model: str, recipe_path: str | None = None
 ) -> tuple[str, str | None]:
-    """Resolve a model alias to a canonical HF repo id and its recipe path."""
+    """Resolve a model variant to a canonical HF repo id and its recipe path."""
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
     if recipe_path:
@@ -265,8 +323,8 @@ def resolve_model_path(
 def hf_repos_for_model(model: str) -> list[str]:
     """Return the repos to pre-cache for the given model.
 
-    Always includes the base repo (alias prefix before __), plus the
-    draft_model.model_path when the alias maps to a recipe with one.
+    Always includes the base repo (variant prefix before __), plus the
+    draft_model.model_path when the variant maps to a recipe with one.
     """
     repos: list[str] = []
     seen: set[str] = set()
@@ -288,14 +346,16 @@ def hf_repos_for_model(model: str) -> list[str]:
         if recipe.draft_model and recipe.draft_model.model_path:
             add(recipe.draft_model.model_path)
 
-    # Recipe-derived paths win the casefold dedup, so a lowercased alias
+    # Recipe-derived paths win the casefold dedup, so a lowercased variant
     # input still resolves to the canonical casing the cache expects.
     recipe_path = MODEL_RECIPES.get(model)
     if recipe_path is not None:
         add_recipe_repos(recipe_path)
     add(model.split("__", 1)[0])
-    # A private recipe can serve a different repo than the alias; adding its
-    # repos after the alias keeps the alias as the base repo callers get back.
+    for repo in VARIANT_REPOS.get(model, ()):
+        add(repo)
+    # A private recipe can serve a different repo than the variant; adding its
+    # repos after the variant keeps it as the base repo callers get back.
     if recipe_path is None:
         for private_path in _private_recipe_paths_for_model(model):
             add_recipe_repos(private_path)
@@ -372,16 +432,45 @@ def merge_serve_extra_args(args: list[str], extra: str) -> list[str]:
     return merged + ["--serve-extra-args", extra]
 
 
+def accelerator(image: str) -> str:
+    return "amd" if "rocm" in image.lower() else "nvidia"
+
+
+def container_argv(image: str, env: Mapping[str, str]) -> list[str]:
+    """Build the ``docker run`` prefix that serves ``image`` on the local GPUs."""
+    offline = {
+        key: os.environ[key] for key in ("HF_HUB_OFFLINE",) if key in os.environ
+    }
+    hf_hub_cache = Path("~/.cache/huggingface/hub").expanduser()
+    return [
+        "docker", "run", "--rm", "--name", "smoke-server",
+        *GPU_ARGS[accelerator(image)],
+        "--ipc=host",
+        "-p", "127.0.0.1:8000:8000",
+        "-v", f"{hf_hub_cache}:/root/.cache/huggingface/hub:ro",
+        *[f for k, v in {**offline, **env}.items() for f in ("-e", f"{k}={v}")],
+        "--entrypoint", "python3",
+        image,
+        "-m",
+    ]  # fmt: skip
+
+
 def get_server_cmd(
     framework: str,
     model: str,
     *,
+    serve_image: str = "",
     serve_extra_args: str = "",
     recipe_path: str | None = None,
     autoscale_devices: bool = True,
     gpu_spec: tuple[str, int],
 ) -> ServerCommand:
-    gpu_model, gpu_count = gpu_spec
+    if framework == "mach-ci":
+        raise click.UsageError(
+            "mach-ci runs only through its internal entrypoint"
+        )
+
+    gpu_name, gpu_count = gpu_spec
     env: dict[str, str] = {}
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
@@ -394,16 +483,17 @@ def get_server_cmd(
     ):
         recipe_config = (recipe_path, recipe)
 
-    sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = [
         "sglang.launch_server",
-        "--attention-backend",
-        sglang_backend,
         "--enable-metrics",
+        "--host",
+        "0.0.0.0",
     ]
     # limit-mm-per-prompt.video is for InternVL3 on B200
     VLLM = [
         "vllm.entrypoints.openai.api_server",
+        "--host",
+        "0.0.0.0",
         "--max-model-len",
         "auto",
         "--limit-mm-per-prompt.video",
@@ -414,7 +504,16 @@ def get_server_cmd(
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]
+    # vLLM 0.30's sparse-MLA index group waits on a side stream during
+    # CUDA graph capture and fails Hy4's engine start.
+    if "hy4" in model.casefold():
+        VLLM += ["--enforce-eager"]
     MAX = ["serve", "--pretty-print-config"]
+    # A smoke test is where an eager or host-transfer footgun should surface,
+    # so validate each request too and not just initialization. max-ci only:
+    # the flag is newer than the wheels the ``max`` framework installs.
+    if framework == "max-ci":
+        MAX += ["--eager-usage-validator", "enabled"]
 
     if gpu_count > 1:
         if recipe is not None:
@@ -461,6 +560,15 @@ def get_server_cmd(
             SGLANG += [f"--tp-size={gpu_count}"]
             VLLM += [f"--tensor-parallel-size={gpu_count}"]
 
+    if framework == "vllm" and accelerator(serve_image) == "amd":
+        env["VLLM_ROCM_USE_AITER"] = "1"
+        # GLM-5.3-Flash recipes test text only; skip vision encoder warmup.
+        if "glm-5.3-flash" in model.casefold():
+            VLLM += ["--language-model-only"]
+        # AITER's unquantized MoE rejects Nemotron-H's non-gated MLP.
+        if "nemotron" in model.casefold():
+            VLLM += ["--moe-backend", "triton"]
+
     if framework in ("max", "max-ci"):
         # Force MAX to rely solely on the KVConnector for prefix cache hits to test
         # cpu/disk KV offload code paths.
@@ -469,19 +577,27 @@ def get_server_cmd(
             and recipe.model.kv_cache.kv_connector_config.type != "null"
         ):
             env["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
+        # HIP caps VMM-mapped memory at ~1.7 TiB per process, which rules out
+        # VMM on 8 GPUs at the default memory budget.
+        if gpu_name.startswith("AMD") and gpu_count <= 4:
+            env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM"] = "1"
+        # Without this, the registry falls back to an unquantized matmul
+        # that rejects the packed checkpoint's weight shapes.
+        if "kimi-k3" in model.casefold() and gpu_name.startswith("AMD"):
+            env["MAX_KIMI_K3_AMD_W4A8"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
         cmd = [sys.executable, "-m", "max._entrypoints.pipelines", *MAX]
     else:
         assert framework != "max-ci", "max-ci must be run through bazel"
-        interpreter = [".venv-serve/bin/python", "-m"]
-        commands = {
-            "sglang": [*interpreter, *SGLANG],
-            "vllm": [*interpreter, *VLLM],
-            "max": [".venv-serve/bin/max", *MAX],
-        }
-        cmd = commands[framework]
+        if framework == "max":
+            cmd = [".venv-serve/bin/max", *MAX]
+        else:
+            if not serve_image:
+                raise ValueError(f"--serve-image is required for {framework}")
+            server = {"sglang": SGLANG, "vllm": VLLM}[framework]
+            cmd, env = [*container_argv(serve_image, env), *server], {}
 
     cmd = cmd + ["--port", "8000"]
     if recipe_config is not None:
@@ -538,10 +654,16 @@ def valid_tasks() -> set[str]:
 )
 @click.option(
     "--framework",
-    type=click.Choice(["sglang", "vllm", "max", "max-ci"]),
+    type=click.Choice(["sglang", "vllm", "max", "max-ci", "mach-ci"]),
     default="max-ci",
     required=False,
     help="Framework to use for the smoke test. Only max-ci is supported when running in bazel.",
+)
+@click.option(
+    "--serve-image",
+    type=str,
+    default="",
+    help="Container image serving the model. Required for vllm and sglang.",
 )
 @click.option(
     "--output-path",
@@ -625,6 +747,7 @@ def valid_tasks() -> set[str]:
 def smoke_test(
     hf_model_path: str,
     framework: str,
+    serve_image: str,
     output_path: Path | None,
     print_responses: bool,
     print_cot: bool,
@@ -649,8 +772,6 @@ def smoke_test(
     A 1.0 value means 100% accuracy.
 
     """
-    validate_hf_token()
-
     if print_cot and not print_responses:
         raise ValueError("--print-cot must be used with --print-responses")
 
@@ -664,38 +785,54 @@ def smoke_test(
         result_dir = output_path / safe_model_name(model)
         result_dir.mkdir(parents=True, exist_ok=True)
 
+    if recipe_path and framework in SERVERS:
+        raise ValueError(f"{framework} serves its own config, not a recipe")
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
+    cascade = recipe_path is not None and _load_recipe(recipe_path).cascade
+    if cascade and framework not in ("max", "max-ci"):
+        raise ValueError(f"Cascade is only supported for MAX, not {framework}")
     # A recipe can serve its weights under another name; requests must use it.
     served = hf_model_path
     if recipe_path:
         served = _load_recipe(recipe_path).model.served_model_name or served
-    cmd, server_env = get_server_cmd(
-        framework,
-        hf_model_path,
-        serve_extra_args=serve_extra_args,
-        recipe_path=recipe_path,
-        autoscale_devices=autoscale_devices,
-        gpu_spec=get_gpu_name_and_count(),
-    )
-
-    if override_tasks:
-        tasks = list(override_tasks)
-    elif is_vision_model(model):
-        tasks = [VISION_TASK, TEXT_TASK]
-    else:
-        tasks = [TEXT_TASK]
-
-    logger.info(f"Starting server with command:\n {' '.join(cmd)}")
-    results = []
-    all_samples = []
     if disable_timeouts:
         timeout = sys.maxsize
     else:
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
+    if framework in SERVERS:
+        # A variant selects how the server serves its base repo, which
+        # requests name.
+        served = model.split("__", 1)[0]
+        serving = SERVERS[framework](model, timeout, is_vision_model(model))
+    else:
+        cmd, server_env = get_server_cmd(
+            framework,
+            hf_model_path,
+            serve_image=serve_image,
+            serve_extra_args=serve_extra_args,
+            recipe_path=recipe_path,
+            autoscale_devices=autoscale_devices,
+            gpu_spec=get_gpu_name_and_count(),
+        )
+        logger.info(f"Starting server with command:\n {shlex.join(cmd)}")
+        serving = start_server(cmd, timeout, env_overrides=server_env)
 
+    if override_tasks:
+        tasks = list(override_tasks)
+    # TODO(SERVSYS-1330): Run the vision task with Cascade once it accepts images.
+    elif is_vision_model(model) and not cascade:
+        tasks = [VISION_TASK, TEXT_TASK]
+    else:
+        tasks = [TEXT_TASK]
+
+    results = []
+    all_samples = []
+
+    # TODO(SERVSYS-1318): Cascade serves no /metrics, so Cascade runs report
+    # no generated-token count.
     metrics_url = _metrics_url(framework)
-    with start_server(cmd, timeout, env_overrides=server_env) as server:
+    with serving as server:
         logger.info(f"Server started in {server.startup_time:.2f} seconds")
         write_github_output("startup_time", f"{server.startup_time:.2f}")
 
@@ -711,7 +848,8 @@ def smoke_test(
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
-                model_alias=model if served != model else None,
+                # Mach refreshes /metrics every 2s; wait so reads aren't stale.
+                metrics_delay_s=2 if framework == "mach-ci" else 0,
                 lm_eval_metadata=lm_eval_metadata,
             )
 

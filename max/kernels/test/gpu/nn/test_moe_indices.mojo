@@ -14,10 +14,11 @@
 
 from max.gpu.host import DeviceContext, HostBuffer
 from std.collections import Set
-from std.math import align_up
+from std.math import align_up, ceildiv
 from layout import Idx, TileTensor, row_major
 from layout._fillers import random
-from nn.moe import moe_create_indices
+from nn.moe import moe_create_indices, moe_create_indices_with_slots
+from std.random import random_float64, random_ui64, seed
 from std.testing import assert_equal, assert_true
 
 
@@ -386,7 +387,160 @@ def test_moe_create_indices[
     )
 
 
+def test_moe_create_indices_with_slots[
+    num_groups: Int,
+    local_experts: Int,
+    slot_stride: Int = 6,
+    skew: Int = 0,
+](
+    num_slots: Int, global_experts: Int, expert_offset: Int, ctx: DeviceContext
+) raises:
+    """Checks every output of the slot-layout variant against a host model.
+
+    Ids are drawn from `[0, global_experts)` and mapped as the kernel does
+    (`id - expert_offset` if local, else group `local_experts`). The CSR,
+    usage and scale offsets are fully determined, as are the scale-row and
+    per-slot maps given the kernel's order; the order inside a group follows
+    the atomic cursor and is only checked for consistency. `skew` > 0 routes
+    every slot to global expert `skew - 1`.
+    """
+    comptime assert (
+        num_groups == local_experts or num_groups == local_experts + 1
+    )
+    comptime align = 128
+    # The bound `DeepseekV4RoutedExperts` allocates: only non-empty groups
+    # take a tile, and there are at most min(groups, slots) of them.
+    var scale_rows = align * (
+        ceildiv(num_slots, align) + min(num_groups, num_slots)
+    )
+
+    var ids_h = ctx.enqueue_create_host_buffer[.int32](num_slots)
+    var w_h = ctx.enqueue_create_host_buffer[.float32](num_slots)
+    var order_h = ctx.enqueue_create_host_buffer[.uint32](num_slots)
+    var start_h = ctx.enqueue_create_host_buffer[.uint32](num_groups + 1)
+    var restore_h = ctx.enqueue_create_host_buffer[.int32](num_slots)
+    var eids_h = ctx.enqueue_create_host_buffer[.int32](num_groups)
+    var usage_h = ctx.enqueue_create_host_buffer[.uint32](2)
+    var so_h = ctx.enqueue_create_host_buffer[.uint32](num_groups)
+    var st_h = ctx.enqueue_create_host_buffer[.int32](num_slots)
+    var sw_h = ctx.enqueue_create_host_buffer[.float32](num_slots)
+    var ss_h = ctx.enqueue_create_host_buffer[.int32](scale_rows)
+
+    var ids_d = ctx.enqueue_create_buffer[.int32](num_slots)
+    var w_d = ctx.enqueue_create_buffer[.float32](num_slots)
+    var order_d = ctx.enqueue_create_buffer[.uint32](num_slots)
+    var start_d = ctx.enqueue_create_buffer[.uint32](num_groups + 1)
+    var restore_d = ctx.enqueue_create_buffer[.int32](num_slots)
+    var eids_d = ctx.enqueue_create_buffer[.int32](num_groups)
+    var usage_d = ctx.enqueue_create_buffer[.uint32](2)
+    var so_d = ctx.enqueue_create_buffer[.uint32](num_groups)
+    var st_d = ctx.enqueue_create_buffer[.int32](num_slots)
+    var sw_d = ctx.enqueue_create_buffer[.float32](num_slots)
+    var ss_d = ctx.enqueue_create_buffer[.int32](scale_rows)
+    ctx.synchronize()
+
+    for i in range(num_slots):
+        if skew > 0:
+            ids_h[i] = Int32(skew - 1)
+        else:
+            ids_h[i] = Int32(random_ui64(0, UInt64(global_experts - 1)))
+        w_h[i] = Float32(random_float64())
+    # The scale-row pass must overwrite every row, so start from garbage.
+    for r in range(scale_rows):
+        ss_h[r] = -7
+    ctx.enqueue_copy(ids_d, ids_h)
+    ctx.enqueue_copy(w_d, w_h)
+    ctx.enqueue_copy(ss_d, ss_h)
+
+    moe_create_indices_with_slots[slot_stride, "gpu"](
+        TileTensor(order_d, row_major(num_slots)),
+        TileTensor(start_d, row_major(num_groups + 1)),
+        TileTensor(restore_d, row_major(num_slots)),
+        TileTensor(eids_d, row_major(num_groups)),
+        TileTensor(usage_d, row_major(Idx[2])),
+        so_d.unsafe_ptr().as_unsafe_any_origin(),
+        st_d.unsafe_ptr().as_unsafe_any_origin(),
+        sw_d.unsafe_ptr().as_unsafe_any_origin(),
+        ss_d.unsafe_ptr().as_unsafe_any_origin(),
+        scale_rows,
+        TileTensor(ids_d, row_major(num_slots)).as_imm(),
+        w_d.unsafe_ptr().as_unsafe_any_origin(),
+        expert_offset,
+        local_experts,
+        ctx,
+    )
+
+    ctx.enqueue_copy(order_h, order_d)
+    ctx.enqueue_copy(start_h, start_d)
+    ctx.enqueue_copy(restore_h, restore_d)
+    ctx.enqueue_copy(eids_h, eids_d)
+    ctx.enqueue_copy(usage_h, usage_d)
+    ctx.enqueue_copy(so_h, so_d)
+    ctx.enqueue_copy(st_h, st_d)
+    ctx.enqueue_copy(sw_h, sw_d)
+    ctx.enqueue_copy(ss_h, ss_d)
+    ctx.synchronize()
+
+    # Host model of the group each slot lands in, and the CSR it implies.
+    var group = List[Int](capacity=num_slots)
+    var counts = List[Int](length=num_groups, fill=0)
+    for i in range(num_slots):
+        var g = Int(ids_h[i]) - expert_offset
+        if g < 0 or g >= local_experts:
+            g = local_experts
+        assert_true(g < num_groups, "slot mapped past the last group")
+        group.append(g)
+        counts[g] += 1
+    var start = List[Int](length=num_groups + 1, fill=0)
+    var aligned = List[Int](length=num_groups + 1, fill=0)
+    var max_count = 0
+    for g in range(num_groups):
+        start[g + 1] = start[g] + counts[g]
+        aligned[g + 1] = aligned[g] + align_up(counts[g], align)
+        max_count = max(max_count, counts[g])
+
+    for g in range(num_groups + 1):
+        assert_equal(Int(start_h[g]), start[g], "expert_start_indices")
+    for g in range(num_groups):
+        assert_equal(Int(eids_h[g]), g, "expert_ids")
+        assert_equal(
+            Int(so_h[g]),
+            aligned[g] // align - start[g] // align,
+            "scales_offset",
+        )
+    assert_equal(Int(usage_h[0]), max_count, "usage max count")
+    assert_equal(Int(usage_h[1]), num_groups, "usage expert count")
+
+    # Order: a permutation of the slots, each in its own group's range, with
+    # restore its inverse; the per-slot maps follow it exactly.
+    for p in range(num_slots):
+        var i = Int(order_h[p])
+        assert_true(i < num_slots, "order out of range")
+        assert_true(
+            start[group[i]] <= p and p < start[group[i] + 1],
+            "slot sorted outside its group",
+        )
+        assert_equal(Int(restore_h[i]), p, "restore is not order's inverse")
+        assert_equal(Int(st_h[p]), i // slot_stride, "slot_token")
+        assert_equal(
+            sw_h[p].to_bits(), w_h[i].to_bits(), "slot_weight not bitwise"
+        )
+
+    # Scale rows, as the graph formula: the group whose aligned range holds
+    # the row (clamped to the last), slot start + offset while in the count.
+    for r in range(scale_rows):
+        var g = 0
+        for e in range(num_groups):
+            if aligned[e + 1] <= r:
+                g += 1
+        g = min(g, num_groups - 1)
+        var in_group = r - aligned[g]
+        var want = start[g] + in_group if in_group < counts[g] else 0
+        assert_equal(Int(ss_h[r]), want, "scale_slot at row " + String(r))
+
+
 def main() raises:
+    seed(0)
     with DeviceContext() as ctx:
         test_moe_create_indices(197, ctx)
         test_moe_create_indices(2500, ctx)
@@ -402,17 +556,44 @@ def main() raises:
         test_moe_create_indices[test_scales_offset=True](20660, ctx)
         test_moe_create_indices[test_scales_offset=True](100_000, ctx)
 
-        # The kernel walks the experts in chunks of one block width (512),
-        # carrying the running offsets across chunks: one exact chunk, a
-        # partial second chunk, and a third chunk holding a single expert.
+        # The kernel walks the experts in chunks of one block width (512,
+        # 1024 on Apple), carrying the running offsets across chunks. These
+        # cover exact and partial chunks at both widths; 1025 ends in a
+        # single-expert chunk, and 2049 gives Apple a third chunk.
         test_moe_create_indices[num_experts=512](100, ctx)
         test_moe_create_indices[num_experts=513](2500, ctx)
-        test_moe_create_indices[num_experts=1025](2500, ctx)
+        test_moe_create_indices[num_experts=896](2500, ctx)
+        test_moe_create_indices[num_experts=896, test_scales_offset=True](
+            2500, ctx
+        )
+        test_moe_create_indices[num_experts=896, skewed=True](16, ctx)
+        test_moe_create_indices[num_experts=1024](100_000, ctx)
         test_moe_create_indices[num_experts=513, test_scales_offset=True](
             2500, ctx
         )
+        test_moe_create_indices[num_experts=1025](2500, ctx)
+        test_moe_create_indices[num_experts=2049](20660, ctx)
 
         # Skewed distribution: every token on expert 0, so one group holds
         # them all and the rest are empty.
         test_moe_create_indices[skewed=True](1024, ctx)
         test_moe_create_indices[num_experts=513, skewed=True](100_000, ctx)
+
+        # Slot layout. DeepSeek-V4 decode/prefill shapes, expert parallel on
+        # two devices (128 local + 1 remote group) and on one (256 groups).
+        test_moe_create_indices_with_slots[129, 128](6, 256, 0, ctx)
+        test_moe_create_indices_with_slots[129, 128](6, 256, 128, ctx)
+        test_moe_create_indices_with_slots[129, 128](6 * 197, 256, 128, ctx)
+        test_moe_create_indices_with_slots[129, 128](6 * 4096, 256, 0, ctx)
+        test_moe_create_indices_with_slots[256, 256](6, 256, 0, ctx)
+        test_moe_create_indices_with_slots[256, 256](6 * 2500, 256, 0, ctx)
+        # Power-of-two stride; three expert chunks with the remote group
+        # alone in the last one.
+        test_moe_create_indices_with_slots[1025, 1024, slot_stride=8](
+            8 * 300, 2048, 1024, ctx
+        )
+        # Every slot remote, and every slot on one local expert.
+        test_moe_create_indices_with_slots[129, 128, skew=1](600, 256, 128, ctx)
+        test_moe_create_indices_with_slots[129, 128, skew=200](
+            6 * 1000, 256, 128, ctx
+        )

@@ -18,23 +18,23 @@ import logging
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.context import TextContext
+from max.nn.legacy.comm.ep import EPCommInitializer
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from typing_extensions import override
 
@@ -59,6 +59,8 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
+    """The DeepSeek-V3 speculative model and its draft head."""
+
     model_config_cls: ClassVar[type[Any]] = DeepseekV3NextNConfig
     batch_processor_cls: ClassVar[type[DeepseekV3NextNBatchProcessor]] = (
         DeepseekV3NextNBatchProcessor
@@ -203,6 +205,12 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
 
     @override
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the decoder graph through :meth:`load_model`."""
+        # TODO(kathywu): Build this graph through `graph_specs`.
+        return {GraphRole.DECODER: self.load_model(session)}
+
+    @override
     def _build_graph_for_compile(
         self,
         session: InferenceSession,
@@ -235,8 +243,9 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             ]
 
             kv_inputs = self.kv_params.unflatten_kv_inputs(graph_inputs_iter)
-            assert isinstance(kv_inputs, KVCacheInputs)
-            kv_caches_per_dev = list(kv_inputs.inputs)
+            kv_caches_per_dev = tree.leaves(
+                kv_inputs, leaf=KVCacheInputsPerDevice
+            )
 
             batch_context_lengths = [
                 next(graph_inputs_iter).tensor for _ in range(num_devices)
@@ -265,13 +274,14 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 ep_model_inputs,
             )
 
-            graph.output(*outputs)
+            graph.output(outputs)
             return graph, weights_registry
 
     def execute(
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, DeepseekV3NextNInputs)
 
         if model_inputs.hidden_states is None:
@@ -296,7 +306,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             model_inputs.return_n_logits,
             model_inputs.data_parallel_splits,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
             *model_inputs.batch_context_lengths,
             *ep_inputs,
         )
@@ -314,39 +324,3 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
             )
-
-
-def maybe_build_deepseekv3_nextn_kwargs(
-    target_model: PipelineModel[TextContext],
-    draft_model_cls: type[PipelineModel[TextContext]],
-) -> dict[str, Any]:
-    """Builds kwargs needed to pass to DeepseekV3NextNModel constructor."""
-    if not issubclass(draft_model_cls, DeepseekV3NextNModel):
-        return {}
-    if not isinstance(target_model, DeepseekV3Model):
-        raise ValueError(
-            "DeepseekV3NextNModel can only be used with DeepseekV3 target models"
-        )
-
-    required_prefixes = ("embed_tokens.", "lm_head.")
-    shared_weights: dict[str, DLPackArray] = {}
-    for name, value in target_model.state_dict.items():
-        for prefix in required_prefixes:
-            if name.startswith(prefix):
-                shared_weights[name] = value
-
-    if len(shared_weights) != len(required_prefixes):
-        raise ValueError(
-            f"Missing weight prefixes {required_prefixes} in target DeepseekV3 "
-            f"state_dict. Cannot share weights with NextN draft model."
-        )
-
-    logger.info(
-        "Sharing DeepseekV3 embedding and head weights with NextN draft model."
-    )
-
-    return {
-        "shared_weights": shared_weights,
-        # Share EP buffers between target and draft to avoid duplicating
-        "shared_ep_comm_initializer": target_model.ep_comm_initializer,
-    }

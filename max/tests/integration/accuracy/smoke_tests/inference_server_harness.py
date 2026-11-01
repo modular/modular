@@ -42,7 +42,12 @@ def _default_server_is_ready() -> bool:
 
 def _gracefully_stop(process: Popen[bytes]) -> None:
     start_time = time.time()
-    process.send_signal(signal.SIGINT)
+    try:
+        # Signal the whole group, as ctrl-c in a terminal does. A launcher
+        # such as ./bazelw run may not pass a SIGINT on to the server.
+        os.killpg(os.getpgid(process.pid), signal.SIGINT)
+    except ProcessLookupError:
+        return
     try:
         process.wait(25)
         shutdown_seconds = int(time.time() - start_time)
@@ -95,7 +100,8 @@ def start_server(
         env.update(env_overrides)
 
     if not _inside_bazel():
-        # SGLang depends on ninja which is in the serve environment
+        # For the `max` framework, which serves from .venv-serve. vllm and
+        # sglang serve from a container and inherit neither.
         env["PYTHONSAFEPATH"] = "1"  # Avoids root dir `max` shadowing
         venv_bin = os.path.abspath(".venv-serve/bin")
         prev_path = env.get("PATH")

@@ -1,0 +1,42 @@
+load("@mojo//:mojo.bzl", "INTERNAL_KERNEL_MOJOPKGS")
+load("//bazel:api.bzl", "lit_tests")
+
+package(default_visibility = ["//visibility:private"])
+
+lit_tests(
+    name = "test",
+    size = "large",
+    srcs = glob(
+        ["**/*.mlir"],
+    ),
+    custom_substitutions = {
+        "%declarative_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/declarative_invalid_stubs:DeclarativeInvalidStubs)",
+        "%device_graph_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/device_graph_invalid_stubs:DeviceGraphInvalidStubs)",
+        "%kernel_api_test_lib": "$(rlocationpath //GraphCompiler/test/kernels:testing_kernels)",
+        "%kernel_api_test_pkg": "$(rlocationpath //GraphCompiler/test/kernels:testing_kernels)",
+        "%reduction_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/reduction_invalid_stubs:ReductionInvalidStubs)",
+        "%tensor_arg_trait_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/tensor_arg_trait_invalid_stubs:TensorArgTraitInvalidStubs)",
+        "%tensor_arg_trait_pkg": "$(rlocationpath //GraphCompiler/test/kernels/tensor_arg_trait_stubs:TensorArgTraitStubs)",
+        "%unfused_execute_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/unfused_execute_invalid_stubs:UnfusedExecuteInvalidStubs)",
+    },
+    data = [
+        "//GraphCompiler/test/kernels:testing_kernels",
+        "//GraphCompiler/test/kernels/declarative_invalid_stubs:DeclarativeInvalidStubs",
+        "//GraphCompiler/test/kernels/device_graph_invalid_stubs:DeviceGraphInvalidStubs",
+        "//GraphCompiler/test/kernels/reduction_invalid_stubs:ReductionInvalidStubs",
+        "//GraphCompiler/test/kernels/tensor_arg_trait_invalid_stubs:TensorArgTraitInvalidStubs",
+        "//GraphCompiler/test/kernels/tensor_arg_trait_stubs:TensorArgTraitStubs",
+        "//GraphCompiler/test/kernels/unfused_execute_invalid_stubs:UnfusedExecuteInvalidStubs",
+    ],
+    mojo_deps = [
+        "//max:builtin_kernels",
+        "//max:builtin_primitives",
+    ] + INTERNAL_KERNEL_MOJOPKGS,
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = [
+        "//GraphCompiler/tools/mo-opt",
+    ],
+)

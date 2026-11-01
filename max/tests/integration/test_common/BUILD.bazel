@@ -47,6 +47,16 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "hyper_connection_reference",
+    testonly = True,
+    srcs = ["hyper_connection_reference.py"],
+    imports = [".."],
+    deps = [
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
     name = "distance_metrics",
     testonly = True,
     srcs = ["distance_metrics.py"],
@@ -76,6 +86,7 @@ modular_py_library(
     deps = [
         ":model_output",
         ":numerics",
+        ":storage",
         ":test_data",
         requirement("numpy"),
         requirement("pillow"),
@@ -88,7 +99,6 @@ modular_py_library(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
-        "//max/python/max/support",
     ],
 )
 
@@ -150,7 +160,25 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/graph",
-        requirement("nvitop"),
+    ],
+)
+
+modular_py_library(
+    name = "vision_preprocess_parity",
+    testonly = True,
+    srcs = ["vision_preprocess_parity.py"],
+    imports = [".."],
+    # Also the MiniMax-M3 parity test, which lives with its model.
+    visibility = [
+        "//max/tests:__subpackages__",
+        "//max_private/minimax_m3:__pkg__",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        requirement("numpy"),
+        requirement("pillow"),
     ],
 )
 
@@ -159,15 +187,19 @@ modular_py_library(
     testonly = True,
     srcs = ["mef_precompile.py"],
     imports = [".."],
-    # Package default plus two consumers that live outside //max/tests but use
-    # the same CPU/GPU compile split: //max/python/layer_benchmarks' harness
-    # tests, and the GPT-2 device-conformance suites, which sit under
-    # //max/internal because they reach into the closed-source driver plugins.
+    # Package default plus four consumers that live outside //max/tests but
+    # use the same CPU/GPU compile split: //max/python/layer_benchmarks'
+    # harness tests, the GPT-2 device-conformance suites, which sit under
+    # //max/internal because they reach into the closed-source driver plugins,
+    # and the Qwen4-Exp and Kimi K3 arch packages, whose QSA indexer and EP
+    # local-compute tests precompile their graphs.
     visibility = [
         "//:__pkg__",
         "//max/internal/driver/test:__pkg__",
         "//max/python/layer_benchmarks:__pkg__",
         "//max/tests:__subpackages__",
+        "//max_private/kimi_k3:__pkg__",
+        "//max_private/qwen4_exp:__pkg__",
         "//oss/modular/max/tests:__subpackages__",
     ],
     deps = [
@@ -184,6 +216,14 @@ modular_py_library(
     testonly = True,
     srcs = ["context_utils.py"],
     imports = [".."],
+    # Extends the package default with the Qwen4-Exp arch package, whose QSA
+    # tests build their contexts through this helper.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//max_private/qwen4_exp:__pkg__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         requirement("numpy"),
         "//max/python/max/pipelines/context",
@@ -199,7 +239,7 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         "//max/python/max/driver",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/support",
     ],
 )
@@ -227,6 +267,24 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "pipeline_model_dummy_graph_specs",
+    testonly = True,
+    srcs = ["pipeline_model_dummy_graph_specs.py"],
+    imports = [".."],
+    deps = [
+        ":pipeline_model_dummy",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_library(
     name = "pipeline_model_dummy",
     testonly = True,
     srcs = ["pipeline_model_dummy.py"],
@@ -245,7 +303,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -265,6 +323,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         ":numerics",
+        ":storage",
         ":test_data",
         requirement("accelerate"),  # Required to run torch models on GPU.
         requirement("diffusers"),
@@ -273,7 +332,6 @@ modular_py_library(
         requirement("requests"),
         requirement("torch"),
         requirement("transformers"),
-        "//max/python/max/support",
     ],
 )
 
@@ -291,6 +349,12 @@ modular_py_library(
         "test_common.vllm_hook_core",
     ],
     imports = [".."],
+    visibility = [
+        "//:__pkg__",
+        "//Kernels/benchmarks/csa:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         # the normal one pulled from rules_pycross transitively.
         ":storage",
@@ -337,7 +401,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",
@@ -346,6 +410,7 @@ modular_py_library(
         requirement("numpy"),
         requirement("typing-extensions"),
         requirement("transformers"),
+        "//max/python/max:tree",
     ],
 )
 
@@ -397,7 +462,7 @@ modular_py_library(
     srcs = ["torch_print_hook.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/nn/hooks:base_print_hook",
+        "//max/python/max/nn/legacy/hooks:base_print_hook",
         requirement("torch"),
     ],
 )

@@ -35,40 +35,50 @@ Tile constraints:
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory.unsafe import bitcast
-from std.sys import simd_width_of
+from std.sys import align_of, simd_width_of
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.primitives import warp
 from max.gpu.host.info import MI355X
 from max.gpu.memory import CacheOperation
 from max.gpu.sync import s_waitcnt
 from std.sys.intrinsics import llvm_intrinsic
 
+from std.utils.coord import Coord
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
 from std.bit import log2_floor
 
-from std.utils import StaticTuple, IndexList, StaticTuple
+from std.utils import StaticTuple
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
 )
 from structured_kernels.amd_tile_io import (
+    RegTileEpilogue,
     RegTileLoader,
     RegTileWriter,
     TileLoaderLDS,
 )
 
-from .block_scaled_matmul_amd import MX_BLOCK_SIZE
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
+from linalg.swiglu_activation import swiglu, swiglu_activation_type
+
+from .block_scaled_matmul_amd import _smem_row_bytes
+from ....block_scaled_utils import compute_mxfp8_block_scale
 from .block_scaled_preshuffle_layouts import Shuffler
 from .block_scaled_preshuffle_loaders import (
     PreshuffledBLoader,
@@ -76,7 +86,7 @@ from .block_scaled_preshuffle_loaders import (
 )
 
 
-@always_inline
+@inline(.always)
 def _lds_load_width[BK_BYTES: Int, BM: Int, max_width: Int]() -> Int:
     """Widest packed DMA width whose warp-tiling divides `BM`.
 
@@ -119,7 +129,7 @@ def _lds_load_width[BK_BYTES: Int, BM: Int, max_width: Int]() -> Int:
     return 1
 
 
-@always_inline
+@inline(.always)
 def _largest_divisor_at_most[n: Int](cap: Int) -> Int:
     """Returns the largest divisor of `n` that is at most `cap`.
 
@@ -146,7 +156,7 @@ def _largest_divisor_at_most[n: Int](cap: Int) -> Int:
 # `log2(BK_BYTES//16)` row bits sitting at flat-bit `log2(BK_BYTES)` and XOR
 # them down into col's 16B-granule bits (base=4). yyy at base+shift => shift =
 # log2(BK_BYTES)-4 = log2(BK_BYTES//16) = bits. BK_BYTES is pow-2 (64/128/256).
-@always_inline
+@inline(.always)
 def a_lds_swizzle[BK_BYTES: Int]() -> Swizzle:
     """Builds the XOR-16 LDS swizzle for a row-major [BM, BK_BYTES] uint8 A tile.
 
@@ -190,13 +200,16 @@ def a_lds_swizzle[BK_BYTES: Int]() -> Swizzle:
 
 
 struct BlockScaledMmaOp_PreB[
-    mma_shape: IndexList[3],  # (16, 16, 128) for MXFP4 and MXFP8 alike
-    warp_tile: IndexList[3],  # (WM, WN, BK_ELEMS) in MFMA-native element units
+    mma_shape: Coord[Int, Int, Int],  # (16, 16, 128) for MXFP4 and MXFP8 alike
+    warp_tile: Coord[
+        Int, Int, Int
+    ],  # (WM, WN, BK_ELEMS) in MFMA-native element units
     num_b_slots: Int = 1,
     num_scale_slots: Int = 1,
     scale_group: Int = 1,
     b_addr_split: Bool = False,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+    pad_a_row: Bool = True,
 ]:
     """Per-warp register state + MFMA dispatch for the preb (preshuffled-B,
     preshuffled-scale) kernel.
@@ -229,12 +242,15 @@ struct BlockScaledMmaOp_PreB[
             double-buffers alongside the B fragments.
         scale_group: Outer-K tiles whose scale atoms are fetched by one
             wide VMEM op (1 = off, per-tile `buffer_load_dword`).
-        b_addr_split: Whether to split the non-FP6 B-fragment address into
+        b_addr_split: Whether to split the B-fragment address into
             a loop-invariant per-lane part and a wave-uniform whole-tile
             part (defaults to False, one address per fragment).
         matrix_format: `f8f6f4` operand encoding for A and B. A lane covers
             32 K-elements in every format; the bytes that occupies -- 16
             (FP4), 24 (FP6), 32 (FP8) -- is derived from it.
+        pad_a_row: Whether to round A's LDS row stride up to a power of two
+            (defaults to True). A no-op at MXFP4/MXFP8; the caller sets it
+            False when a loader writes the tile at the payload stride.
     """
 
     comptime MMA_M = Self.mma_shape[0]
@@ -278,8 +294,10 @@ struct BlockScaledMmaOp_PreB[
     comptime A_K_HALF_STRIDE = Self.A_MMA_K_BYTES // Self.a_num_frag_halves
     comptime B_K_HALF_STRIDE = Self.B_MMA_K_BYTES // Self.b_num_frag_halves
     comptime K_HALF_STRIDE = Self.A_K_HALF_STRIDE
-    # Per-slot A LDS tile is [BM, BK_BYTES].
     comptime BK_BYTES = (Self.warp_tile[2] * Self.a_bits) // 8
+    comptime A_SMEM_ROW_BYTES = _smem_row_bytes[
+        Self.BK_BYTES
+    ]() if Self.pad_a_row else Self.BK_BYTES
 
     comptime mx_format = Self.matrix_format
 
@@ -376,7 +394,7 @@ struct BlockScaledMmaOp_PreB[
     var _a_scale_shift: UInt32
     var _b_scale_shift: UInt32
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, warp_m_off: Int, warp_n_off: Int):
         comptime assert (
             Self.warp_tile[0] % Self.MMA_M == 0
@@ -421,11 +439,11 @@ struct BlockScaledMmaOp_PreB[
         self._a_scale_shift = UInt32(((warp_m_off >> 4) & 1) << 3)  # 0 or 8
         self._b_scale_shift = UInt32(((warp_n_off >> 4) & 1) << 3)
 
-    @always_inline
+    @inline(.always)
     def accum_tile(self) -> ref[self._c_reg] type_of(self._c_reg):
         return self._c_reg
 
-    @always_inline
+    @inline(.always)
     def load_a_frag_from_smem[
         mma_k_idx: Int
     ](self, a_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],):
@@ -433,9 +451,9 @@ struct BlockScaledMmaOp_PreB[
 
         XOR-16 swizzled read (matches the write in `copy_a_tile_to_smem`): each
         lane reads the 16B vec at slot-tile (row, col_byte), then swizzles the
-        flat in-tile byte offset before the `raw_load`. WM==BM so `a_smem_warp`
-        IS the contiguous [BM, BK_BYTES] slot tile and `raw_load` indexes it
-        directly.
+        flat in-tile byte offset before the load. WM==BM so `a_smem_warp`
+        IS the contiguous [BM, A_SMEM_ROW_BYTES] slot tile and a flat view of
+        it indexes the swizzled offset directly.
 
         Parameters:
             mma_k_idx: Index of the MFMA step along K within the warp
@@ -443,16 +461,21 @@ struct BlockScaledMmaOp_PreB[
 
         Args:
             a_smem_warp: The shared-memory A tile for this warp, a
-                contiguous `[BM, BK_BYTES]` slot tile indexed directly
-                by `raw_load`.
+                contiguous `[BM, A_SMEM_ROW_BYTES]` slot tile indexed
+                through a flat view.
         """
         # col_major 16x4 lane layout: decode lane -> (m, k_vec).
         comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
         var crd = lane_layout.idx2crd(Int(lane_id()))
         var m = crd[0]
         var k_vec = crd[1]
-        comptime swizzle = a_lds_swizzle[Self.BK_BYTES]()
-        comptime tile_layout = row_major[Self.warp_tile[0], Self.BK_BYTES]()
+        comptime swizzle = a_lds_swizzle[Self.A_SMEM_ROW_BYTES]()
+        comptime tile_layout = row_major[
+            Self.warp_tile[0], Self.A_SMEM_ROW_BYTES
+        ]()
+        var a_smem_flat = a_smem_warp.reshape(
+            row_major[Self.warp_tile[0] * Self.A_SMEM_ROW_BYTES]()
+        )
         comptime if Self.bits_per_element == 6:
             comptime assert (
                 Self.mma_frag_width_bytes % 8 == 0
@@ -464,12 +487,16 @@ struct BlockScaledMmaOp_PreB[
                     mma_k_idx * Self.MMA_K_BYTES
                     + Int(k_vec) * Self.mma_frag_width_bytes
                 )
-                var off = swizzle(Int(tile_layout(Coord(row, col_byte))))
                 var frag = SIMD[.uint8, Self.reg_frag_bytes](0)
                 comptime for chunk in range(Self.mma_frag_width_bytes // 8):
+                    var off = swizzle(
+                        Int(tile_layout(Coord(row, col_byte + chunk * 8)))
+                    )
                     frag = frag.insert[offset=chunk * 8](
                         rebind[SIMD[.uint8, 8]](
-                            a_smem_warp.raw_load[width=8](off + chunk * 8)
+                            a_smem_flat.load[
+                                width=8, alignment=align_of[DType.uint8]()
+                            ]((off,))
                         )
                     )
                 a_reg_fp6[mma_k_idx, i, 0] = frag
@@ -484,11 +511,12 @@ struct BlockScaledMmaOp_PreB[
                         + Int(k_vec) * Self.FRAG_HALF_BYTES
                     )
                     var off = swizzle(Int(tile_layout(Coord(row, col_byte))))
-                    a_reg_v[mma_k_idx, i, h] = a_smem_warp.raw_load[
-                        width=Self.FRAG_HALF_BYTES
-                    ](off)
+                    a_reg_v[mma_k_idx, i, h] = a_smem_flat.load[
+                        width=Self.FRAG_HALF_BYTES,
+                        alignment=align_of[DType.uint8](),
+                    ]((off,))
 
-    @always_inline
+    @inline(.always)
     def load_b_frag_preshuffled[
         B_N: Int,
         B_K_BYTES: Int,
@@ -535,7 +563,25 @@ struct BlockScaledMmaOp_PreB[
             # processing in that block. Finally we add the lane's klane offset within that K tile,
             # This is usually a multiple of 16
 
-            comptime if Self.b_bits == 6:
+            comptime if Self.b_bits == 6 and Self.b_addr_split:
+                var frag6 = SIMD[.uint8, Self.b_reg_frag_bytes](0)
+                comptime for pl in range(b_loader.num_planes):
+                    comptime pb6 = Shuffler[1].plane_bytes[
+                        Self.b_frag_width_bytes, pl
+                    ]()
+                    var lane_off6 = b_loader.lane_plane_off[pl](
+                        n_log, lane_klane * Self.b_frag_width_bytes
+                    )
+                    var k_uniform6 = (
+                        k_byte_base + mma_k_idx * Self.B_MMA_K_BYTES
+                    )
+                    frag6 = frag6.insert[offset=pl * 16](
+                        b_loader.load_at[pl](lane_off6, k_uniform6)
+                    )
+                self._b_reg.vectorize[1, 1, 1, Self.b_reg_frag_bytes]()[
+                    slot, mma_k_idx, i, 0
+                ] = rebind[SIMD[.uint8, Self.b_reg_frag_bytes]](frag6)
+            elif Self.b_bits == 6:
                 var k_byte_log = (
                     k_byte_base
                     + mma_k_idx * Self.B_MMA_K_BYTES
@@ -578,7 +624,7 @@ struct BlockScaledMmaOp_PreB[
                         SIMD[.uint8, Self.FRAG_HALF_BYTES]
                     ](b_loader.load_fragment(n_log, k_byte_log))
 
-    @always_inline
+    @inline(.always)
     def load_a_scales_preshuffled[
         k_pair: Int, slot: Int = 0
     ](
@@ -619,7 +665,7 @@ struct BlockScaledMmaOp_PreB[
                 slot, m_pack_idx, k_pair
             ] = a_scale_loader.load_packed(mn_log, k_scale_idx)
 
-    @always_inline
+    @inline(.always)
     def load_b_scales_preshuffled[
         k_pair: Int, slot: Int = 0
     ](
@@ -656,7 +702,7 @@ struct BlockScaledMmaOp_PreB[
                 slot, n_pack_idx, k_pair
             ] = b_scale_loader.load_packed(mn_log, k_scale_idx)
 
-    @always_inline
+    @inline(.always)
     def stage_scale_group(
         mut self,
         a_scale_loader: PreshuffledScaleLoader[_, _],
@@ -693,7 +739,7 @@ struct BlockScaledMmaOp_PreB[
                 b_scale_loader.load_group[G](warp_n_off + q * 32, k_pair_base)
             )
 
-    @always_inline
+    @inline(.always)
     def publish_scale_group(
         self,
         scale_smem: TileTensor[
@@ -719,13 +765,16 @@ struct BlockScaledMmaOp_PreB[
             G * 4
         )
 
+        var scale_flat = scale_smem.reshape(
+            row_major[type_of(scale_smem).LayoutType.static_product]()
+        )
         comptime for p in range(Self.scale_packs):
-            scale_smem.raw_store[width=G * 4](
-                base + p * PACK_STRIDE,
+            scale_flat.store[alignment=align_of[DType.uint8]()](
+                (base + p * PACK_STRIDE,),
                 rebind[SIMD[.uint8, G * 4]](group_v[p, 0]),
             )
 
-    @always_inline
+    @inline(.always)
     def read_scale_group[
         phase: Int, slot: Int = 0
     ](
@@ -758,18 +807,23 @@ struct BlockScaledMmaOp_PreB[
             + Int(lane_id()) * 4
         )
 
+        var scale_flat = scale_smem.reshape(
+            row_major[type_of(scale_smem).LayoutType.static_product]()
+        )
         comptime for p in range(Self.a_scale_packs):
             self._a_scale_packed[slot, p, 0] = bitcast[.int32, 1](
-                scale_smem.raw_load[width=4](p * PACK_STRIDE + off)
+                scale_flat.load[width=4, alignment=align_of[DType.uint8]()](
+                    (p * PACK_STRIDE + off,)
+                )
             )[0]
         comptime for q in range(Self.b_scale_packs):
             self._b_scale_packed[slot, q, 0] = bitcast[.int32, 1](
-                scale_smem.raw_load[width=4](
-                    (Self.a_scale_packs + q) * PACK_STRIDE + off
+                scale_flat.load[width=4, alignment=align_of[DType.uint8]()](
+                    ((Self.a_scale_packs + q) * PACK_STRIDE + off,)
                 )
             )[0]
 
-    @always_inline
+    @inline(.always)
     def mma[mma_k_idx: Int, slot: Int = 0, scale_slot: Int = 0](self):
         """Block-scaled MFMA at MFMA-K position `mma_k_idx` using B from `slot`.
 
@@ -810,9 +864,9 @@ struct BlockScaledMmaOp_PreB[
             var b_frag = b_reg_v[slot, mma_k_idx, n, 0]
 
             comptime b_byte = (mma_k_idx % 2) * 2 + (n % 2)
-            var b_scale = rebind[Int32](
-                self._b_scale_packed[scale_slot, n // 2, mma_k_idx // 2]
-            )
+            var b_scale = self._b_scale_packed[
+                scale_slot, n // 2, mma_k_idx // 2
+            ]
             comptime if Self.warp_tile[1] == 16:
                 b_scale = Int32(UInt32(b_scale) >> self._b_scale_shift)
 
@@ -822,9 +876,9 @@ struct BlockScaledMmaOp_PreB[
                 var c_frag = c_reg_v[m, n]
 
                 comptime a_byte = (mma_k_idx % 2) * 2 + (m % 2)
-                var a_scale = rebind[Int32](
-                    self._a_scale_packed[scale_slot, m // 2, mma_k_idx // 2]
-                )
+                var a_scale = self._a_scale_packed[
+                    scale_slot, m // 2, mma_k_idx // 2
+                ]
                 comptime if Self.warp_tile[0] == 16:
                     a_scale = Int32(UInt32(a_scale) >> self._a_scale_shift)
 
@@ -858,6 +912,8 @@ struct BlockScaledMatmulAMD_PreB[
     scale_group: Int = 1,
     b_addr_split: Bool = False,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+    fuse_swiglu_mxfp8: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
 ]:
     """Preshuffled-B variant of `BlockScaledMatmulAMD`.
 
@@ -880,7 +936,7 @@ struct BlockScaledMatmulAMD_PreB[
     to stage a staircase against -- and keeps the per-cluster `s_setprio`
     bracketing.) Default off: callers bit-identical unless opted in.
 
-    `b_addr_split` splits the non-FP6 B-fragment address into a loop-invariant
+    `b_addr_split` splits the B-fragment address into a loop-invariant
     per-lane part (voffset) and a wave-uniform whole-tile part (soffset),
     hoisting the per-tile `v_add` chain out of the unrolled K loop. Worth
     3-4% on the wide MXFP8 gate+up tiles (BM 32..128) and *costs* 3-4% on the
@@ -939,6 +995,13 @@ struct BlockScaledMatmulAMD_PreB[
         matrix_format: `f8f6f4` operand encoding for A and B. A lane covers
             32 K-elements in every format; the bytes that occupies -- 16
             (FP4), 24 (FP6), 32 (FP8) -- is derived from it.
+        fuse_swiglu_mxfp8: Folds the gated activation AND the MXFP8
+            requantize into the epilogue, so `c` carries HALF the matmul's N as
+            packed E4M3 and `sfc_ptr` receives its E8M0 block scales. Requires
+            the gate_up weight sigma-permuted on N (gate and up in adjacent
+            columns); split halves cannot be paired in-register.
+        activation: The gated activation the fused epilogue applies to each
+            `(gate, up)` pair, selected at compile time (defaults to `swiglu`).
     """
 
     # WM is locked to BM — single warp along M for the preb (no-LDS-B) path.
@@ -960,13 +1023,14 @@ struct BlockScaledMatmulAMD_PreB[
     comptime num_a_load_slots = Self.pipeline_depth if Self.pipeline_depth > 2 else 1
 
     comptime MmaOpType = BlockScaledMmaOp_PreB[
-        mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
-        warp_tile=IndexList[3](Self.WM, Self.WN, Self.BK_ELEMS),
+        mma_shape=(Self.MMA_M, Self.MMA_N, Self.MMA_K),
+        warp_tile=(Self.WM, Self.WN, Self.BK_ELEMS),
         num_b_slots=Self.num_b_slots,
         num_scale_slots=Self.num_scale_slots,
         scale_group=Self.scale_group,
         b_addr_split=Self.b_addr_split,
         matrix_format=Self.matrix_format,
+        pad_a_row=not Self.dram_to_lds,
     ]
 
     comptime num_m_mmas = Self.MmaOpType.num_m_mmas
@@ -977,6 +1041,7 @@ struct BlockScaledMatmulAMD_PreB[
 
     comptime BK_BYTES = (Self.BK_ELEMS * Self.a_bits) // 8
     comptime B_BK_BYTES = (Self.BK_ELEMS * Self.b_bits) // 8
+    comptime A_SMEM_ROW_BYTES = Self.MmaOpType.A_SMEM_ROW_BYTES
 
     comptime num_warps_m = 1
     comptime num_warps_n = Self.BN // Self.WN
@@ -1019,6 +1084,231 @@ struct BlockScaledMatmulAMD_PreB[
         ],
         n_tile_idx: Int,
         m_tile_idx: Int,
+        # `Pointer` is non-nullable, so unfused instantiations pass a dummy
+        # address rather than a null; it is never dereferenced there.
+        sfc_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[UInt8, MutAnyOrigin](
+            unsafe_from_address=16
+        ),
+        sfc_row_base: Int = 0,
+        sfc_expert_slot: Int = 0,
+        # Zero selects plain row-major over the 4D slot layout.
+        sfc_max_padded_m: Int = 0,
+    ):
+        Self._run_impl[
+            N=N, K_BYTES=K_BYTES, has_epilogue_fn=False, has_compute_fn=False
+        ](
+            c,
+            a,
+            b_pre,
+            sfa,
+            sfb,
+            n_tile_idx,
+            m_tile_idx,
+            no_epilogue_fn,
+            no_compute_fn,
+            sfc_ptr,
+            sfc_row_base,
+            sfc_expert_slot,
+            sfc_max_padded_m,
+        )
+
+    @staticmethod
+    def run_with_epilogue_fn[
+        out_dtype: DType,
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_pre_layout: TensorLayout,
+        sfa_layout: TensorLayout,
+        sfb_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_pre_engine: TensorEngine,
+        sfa_engine: TensorEngine,
+        sfb_engine: TensorEngine,
+        N: Int,
+        K_BYTES: Int,
+        EpilogueFnType: ElementwiseEpilogueFn,
+    ](
+        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b_pre: TileTensor[
+            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
+        ],
+        sfa: TileTensor[
+            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
+        ],
+        sfb: TileTensor[
+            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
+        ],
+        n_tile_idx: Int,
+        m_tile_idx: Int,
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Same as `run`, storing the output through `epilogue_fn`.
+
+        Requires `fuse_swiglu_mxfp8=False`.
+
+        Parameters:
+            out_dtype: Element type of `c`.
+            c_layout: Layout of `c`.
+            a_layout: Layout of `a`.
+            b_pre_layout: Layout of `b_pre`.
+            sfa_layout: Layout of `sfa`.
+            sfb_layout: Layout of `sfb`.
+            c_engine: Engine of `c`.
+            a_engine: Engine of `a`.
+            b_pre_engine: Engine of `b_pre`.
+            sfa_engine: Engine of `sfa`.
+            sfb_engine: Engine of `sfb`.
+            N: Output columns.
+            K_BYTES: Packed K extent of `a` and `b_pre`.
+            EpilogueFnType: Type of `epilogue_fn`.
+
+        Args:
+            c: Output `[M, N]`. Only its shape is read.
+            a: Row-major A operand.
+            b_pre: Preshuffled B operand.
+            sfa: Preshuffled A scales.
+            sfb: Preshuffled B scales.
+            n_tile_idx: This CTA's tile index along N.
+            m_tile_idx: This CTA's tile index along M.
+            epilogue_fn: Stores each output fragment at its global `(m, n)`.
+        """
+        Self._run_impl[
+            N=N, K_BYTES=K_BYTES, has_epilogue_fn=True, has_compute_fn=False
+        ](
+            c,
+            a,
+            b_pre,
+            sfa,
+            sfb,
+            n_tile_idx,
+            m_tile_idx,
+            epilogue_fn,
+            no_compute_fn,
+        )
+
+    @staticmethod
+    def run_with_compute_fn[
+        out_dtype: DType,
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_pre_layout: TensorLayout,
+        sfa_layout: TensorLayout,
+        sfb_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_pre_engine: TensorEngine,
+        sfa_engine: TensorEngine,
+        sfb_engine: TensorEngine,
+        N: Int,
+        K_BYTES: Int,
+        ComputeFnType: ElementwiseComputeFn,
+    ](
+        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b_pre: TileTensor[
+            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
+        ],
+        sfa: TileTensor[
+            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
+        ],
+        sfb: TileTensor[
+            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
+        ],
+        n_tile_idx: Int,
+        m_tile_idx: Int,
+        compute_fn: ComputeFnType,
+    ):
+        """Same as `run`, storing `compute_fn(idx, value)` into `c`.
+
+        Requires `fuse_swiglu_mxfp8=False`.
+
+        Parameters:
+            out_dtype: Element type of `c`.
+            c_layout: Layout of `c`.
+            a_layout: Layout of `a`.
+            b_pre_layout: Layout of `b_pre`.
+            sfa_layout: Layout of `sfa`.
+            sfb_layout: Layout of `sfb`.
+            c_engine: Engine of `c`.
+            a_engine: Engine of `a`.
+            b_pre_engine: Engine of `b_pre`.
+            sfa_engine: Engine of `sfa`.
+            sfb_engine: Engine of `sfb`.
+            N: Output columns.
+            K_BYTES: Packed K extent of `a` and `b_pre`.
+            ComputeFnType: Type of `compute_fn`.
+
+        Args:
+            c: Output `[M, N]`.
+            a: Row-major A operand.
+            b_pre: Preshuffled B operand.
+            sfa: Preshuffled A scales.
+            sfb: Preshuffled B scales.
+            n_tile_idx: This CTA's tile index along N.
+            m_tile_idx: This CTA's tile index along M.
+            compute_fn: Maps each output index and fragment to the value
+                to store.
+        """
+        Self._run_impl[
+            N=N, K_BYTES=K_BYTES, has_epilogue_fn=False, has_compute_fn=True
+        ](
+            c,
+            a,
+            b_pre,
+            sfa,
+            sfb,
+            n_tile_idx,
+            m_tile_idx,
+            no_epilogue_fn,
+            compute_fn,
+        )
+
+    @staticmethod
+    @inline(.always)
+    def _run_impl[
+        out_dtype: DType,
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_pre_layout: TensorLayout,
+        sfa_layout: TensorLayout,
+        sfb_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_pre_engine: TensorEngine,
+        sfa_engine: TensorEngine,
+        sfb_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        *,
+        N: Int,
+        K_BYTES: Int,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
+    ](
+        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b_pre: TileTensor[
+            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
+        ],
+        sfa: TileTensor[
+            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
+        ],
+        sfb: TileTensor[
+            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
+        ],
+        n_tile_idx: Int,
+        m_tile_idx: Int,
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
+        sfc_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[UInt8, MutAnyOrigin](
+            unsafe_from_address=16
+        ),
+        sfc_row_base: Int = 0,
+        sfc_expert_slot: Int = 0,
+        sfc_max_padded_m: Int = 0,
     ):
         comptime A_K_BYTES = a_layout.static_shape[1]
         comptime assert (
@@ -1070,9 +1360,8 @@ struct BlockScaledMatmulAMD_PreB[
 
         # SMEM for A (B comes direct from preshuffled DRAM; so do the
         # scales unless `scale_group > 1` bounces them through LDS).
-        # `num_a_slots` buffers laid out slot-major ([slot, BM, BK_BYTES]).
         var a_smem = stack_allocation[DType.uint8, address_space=.SHARED](
-            row_major[Self.num_a_slots * Self.BM, Self.BK_BYTES]()
+            row_major[Self.num_a_slots * Self.BM, Self.A_SMEM_ROW_BYTES]()
         )
 
         # Per-warp transpose strip for the grouped scale fetch. One atom row
@@ -1085,7 +1374,7 @@ struct BlockScaledMatmulAMD_PreB[
             Self.num_warps * Self.MmaOpType.scale_packs * Self.scale_group
         ) if Self.scale_group > 1 else 0
         comptime assert (
-            Self.num_a_slots * Self.BM * Self.BK_BYTES
+            Self.num_a_slots * Self.BM * Self.A_SMEM_ROW_BYTES
             + scale_stage_rows * Self.MmaOpType.SCALE_ATOM_BYTES
             <= MI355X.shared_memory_per_multiprocessor
         ), (
@@ -1104,8 +1393,8 @@ struct BlockScaledMatmulAMD_PreB[
         ](b_pre)
         # Bitcast scales' float8_e8m0fnu to uint8 — same byte representation,
         # the PreshuffledScaleLoader expects uint8 buffers.
-        var sfa_u8 = TileTensor(sfa.ptr.bitcast[UInt8](), sfa.layout)
-        var sfb_u8 = TileTensor(sfb.ptr.bitcast[UInt8](), sfb.layout)
+        var sfa_u8 = sfa.bitcast[.uint8]()
+        var sfb_u8 = sfb.bitcast[.uint8]()
         var a_scale_loader = PreshuffledScaleLoader[
             MN_padded=MN_PADDED_PLACEHOLDER, K_SCALES=K_SCALES
         ](sfa_u8)
@@ -1163,9 +1452,8 @@ struct BlockScaledMatmulAMD_PreB[
 
         var k_counter = 0
 
-        @always_inline
-        @__parameter
-        def load_a_tile_from_dram[reg_slot: Int = 0]():
+        @inline(.always)
+        def load_a_tile_from_dram[reg_slot: Int = 0]() {mut k_counter, imm}:
             # Register-bounce load into landing-ring slot `reg_slot` (no-op in dram_to_lds mode).
             comptime if not Self.dram_to_lds:
                 var a_block = a_blockrow.tile[Self.BM, Self.BK_BYTES](
@@ -1181,16 +1469,20 @@ struct BlockScaledMatmulAMD_PreB[
                     )
                 k_counter += 1
 
-        @always_inline
-        @__parameter
+        comptime a_smem_slot_return_type = type_of(
+            a_smem.tile[Self.BM, Self.A_SMEM_ROW_BYTES](0, 0)
+        )
+
+        @inline(.always)
         def a_smem_slot(
             slot: Int,
-        ) -> type_of(a_smem.tile[Self.BM, Self.BK_BYTES](0, 0)):
-            return a_smem.tile[Self.BM, Self.BK_BYTES](slot, 0)
+        ) {imm} -> a_smem_slot_return_type:
+            return a_smem.tile[Self.BM, Self.A_SMEM_ROW_BYTES](slot, 0)
 
-        @always_inline
-        @__parameter
-        def copy_a_tile_to_smem[reg_slot: Int = 0](slot: Int):
+        @inline(.always)
+        def copy_a_tile_to_smem[
+            reg_slot: Int = 0
+        ](slot: Int) {mut k_counter, imm}:
             comptime if Self.dram_to_lds:
                 # DRAM->LDS via the shared swizzled loader (TileLoaderLDS does
                 # the readfirstlane->m0 base + source-side byte swizzle +
@@ -1208,10 +1500,12 @@ struct BlockScaledMatmulAMD_PreB[
                 # load_layout row_major[rows, cols] maps thread t -> tile
                 # (row = t // cols, col_byte = (t % cols) * simd_width); the v
                 # loop strides BM by load_thread_rows. Swizzle the flat in-tile
-                # byte offset before the raw_store.
+                # byte offset before the store.
                 if thread_idx.x < load_active_threads:
-                    comptime swizzle = a_lds_swizzle[Self.BK_BYTES]()
-                    var a_smem_dst = a_smem_slot(slot)
+                    comptime swizzle = a_lds_swizzle[Self.A_SMEM_ROW_BYTES]()
+                    var a_smem_dst = a_smem_slot(slot).reshape(
+                        row_major[Self.BM * Self.A_SMEM_ROW_BYTES]()
+                    )
                     var t = thread_idx.x
                     var base_row = t // load_thread_cols
                     var col_byte = (t % load_thread_cols) * Self.simd_width
@@ -1225,29 +1519,35 @@ struct BlockScaledMatmulAMD_PreB[
                     )
                     comptime for v in range(a_loads_per_tile):
                         comptime row_off = (
-                            v * load_thread_rows * Self.BK_BYTES
+                            v * load_thread_rows * Self.A_SMEM_ROW_BYTES
                         )
                         var off: Int
                         comptime if row_stride_pow2:
                             comptime d_v = swizzle(row_off) ^ row_off
                             off = (
-                                swizzle(base_row * Self.BK_BYTES + col_byte)
+                                swizzle(
+                                    base_row * Self.A_SMEM_ROW_BYTES + col_byte
+                                )
                                 ^ d_v
                             ) + row_off
                         else:
                             off = swizzle(
-                                base_row * Self.BK_BYTES + col_byte + row_off
+                                base_row * Self.A_SMEM_ROW_BYTES
+                                + col_byte
+                                + row_off
                             )
-                        a_smem_dst.raw_store[width=Self.simd_width](
-                            off,
-                            a_load_reg.raw_load[width=Self.simd_width](
-                                reg_slot * a_reg_elems + v * Self.simd_width
-                            ),
+                        a_smem_dst.store[alignment=align_of[DType.uint8]()](
+                            (off,),
+                            a_load_reg.load[
+                                width=Self.simd_width,
+                                alignment=align_of[DType.uint8](),
+                            ]((reg_slot, v * Self.simd_width)),
                         )
 
-        @always_inline
-        @__parameter
-        def load_scales_for_iter[slot: Int = 0](k_pair_base: Int):
+        @inline(.always)
+        def load_scales_for_iter[
+            slot: Int = 0
+        ](k_pair_base: Int) {mut mma_op, imm}:
             """Issues all A+B preshuffled scale-dword loads for one outer-K iter.
 
             `k_pair_base = k_iter * mma_k_pair_per_tile` is the absolute
@@ -1266,22 +1566,19 @@ struct BlockScaledMatmulAMD_PreB[
                     k_pair_base + k_pair,
                 )
 
-        @always_inline
-        @__parameter
+        @inline(.always)
         def s_setprio[priority: Int16]():
             # Raise wave priority during MFMA clusters so the matrix unit
             # isn't preempted by memory-issuing waves; lower it for loads.
             llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
 
-        @always_inline
-        @__parameter
+        @inline(.always)
         def _sched_barrier_zero():
             # Hard reorder fence: pins surrounding instrs to source order so the
             # scheduler can't hoist the interleaved B loads back into one block.
             llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(0))
 
-        @always_inline
-        @__parameter
+        @inline(.always)
         def _s_barrier_raw():
             # Bare s_barrier (no vmcnt/lgkmcnt release) so in-flight B DMAs
             # cross it; stdlib barrier() forces vmcnt(0) and kills the prefetch.
@@ -1291,34 +1588,32 @@ struct BlockScaledMatmulAMD_PreB[
         # the epilogue can bracket each with s_setprio[1]/[0].
         comptime n_clusters = ceildiv(Self.num_k_mmas, Self.mfma_cluster)
 
-        @always_inline
-        @__parameter
+        @inline(.always)
         def mma_chain_plain[
             b_slot: Int, a_slot: Int = b_slot, scale_slot: Int = 0
-        ]():
+        ]() {imm}:
             # a_slot/scale_slot default to b_slot/0 (unchanged callers); the
             # co-deepened path passes distinct ring indices.
-            var a_warp = a_smem_slot(a_slot).tile[Self.WM, Self.BK_BYTES](
-                warp_m, 0
-            )
+            var a_warp = a_smem_slot(a_slot).tile[
+                Self.WM, Self.A_SMEM_ROW_BYTES
+            ](warp_m, 0)
             s_setprio[1]()
             comptime for k in range(Self.num_k_mmas):
                 mma_op.load_a_frag_from_smem[k](a_warp)
                 mma_op.mma[k, slot=b_slot, scale_slot=scale_slot]()
             s_setprio[0]()
 
-        @always_inline
-        @__parameter
-        def mma_chain_epilogue[slot: Int]():
+        @inline(.always)
+        def mma_chain_epilogue[slot: Int]() {imm}:
             # Last resident tile, no B prefetch left to overlap.
             comptime if Self.cluster_drain_sched:
                 # Fully drain the slot's B + scales first (a partial drain
                 # needs newer ops behind the consumed slot; the epilogue has
                 # none), then keep per-cluster setprio bracketing.
                 s_waitcnt[vmcnt=0]()
-                var a_warp = a_smem_slot(slot).tile[Self.WM, Self.BK_BYTES](
-                    warp_m, 0
-                )
+                var a_warp = a_smem_slot(slot).tile[
+                    Self.WM, Self.A_SMEM_ROW_BYTES
+                ](warp_m, 0)
                 comptime for c in range(n_clusters):
                     comptime k_lo = c * Self.mfma_cluster
                     comptime k_hi = min(
@@ -1441,7 +1736,7 @@ struct BlockScaledMatmulAMD_PreB[
                     # sched_barrier(0) so the scheduler can't re-block the loads
                     # into one burst (the front-load we want to break apart).
                     var a_warp = a_smem_slot(cur_slot).tile[
-                        Self.WM, Self.BK_BYTES
+                        Self.WM, Self.A_SMEM_ROW_BYTES
                     ](warp_m, 0)
                     comptime for k in range(Self.num_k_mmas):
                         mma_op.load_b_frag_preshuffled[k, slot=nxt_slot](
@@ -1498,9 +1793,9 @@ struct BlockScaledMatmulAMD_PreB[
                 load_scales_for_iter(k_iter * mma_k_pair_per_tile)
                 barrier()
 
-                var a_warp = a_smem_slot(a_slot).tile[Self.WM, Self.BK_BYTES](
-                    warp_m, 0
-                )
+                var a_warp = a_smem_slot(a_slot).tile[
+                    Self.WM, Self.A_SMEM_ROW_BYTES
+                ](warp_m, 0)
                 var k_byte_base = k_iter * Self.B_BK_BYTES
 
                 comptime for k in range(Self.num_k_mmas):
@@ -1512,14 +1807,177 @@ struct BlockScaledMatmulAMD_PreB[
                 barrier()
 
         var c_reg = mma_op.accum_tile()
-        var c_block = c.tile[Self.BM, Self.BN](m_tile_idx, n_tile_idx)
-        var c_warp = c_block.tile[Self.WM, Self.WN](warp_m, warp_n)
 
-        comptime for m_mma in range(Self.num_m_mmas):
-            comptime for n_mma in range(Self.num_n_mmas):
-                c_writer.store(
-                    c_warp.tile[Self.MMA_M, Self.MMA_N](m_mma, n_mma).vectorize[
-                        1, Self.c_frag_size
-                    ](),
-                    c_reg.tile[1, Self.c_frag_size](m_mma, n_mma),
+        comptime if Self.fuse_swiglu_mxfp8:
+            comptime assert not (has_epilogue_fn or has_compute_fn), (
+                "fuse_swiglu_mxfp8 owns the store epilogue; it cannot also"
+                " take an epilogue or compute closure"
+            )
+            # One E8M0 block spans 32 OUTPUT columns. A lane holds
+            # `c_frag_size` consecutive matmul-N columns, which the sigma
+            # permute pairs into `c_frag_size // 2` output columns, and the
+            # four lane groups tile MMA_N -- hence the butterfly over lanes
+            # t, t+16, t+32, t+48 below.
+            comptime assert (
+                Self.c_frag_size % 2 == 0
+            ), "fused SwiGLU pairs adjacent N columns within a fragment"
+            # One 32-wide block spans WARPS_PER_BLOCK warps: 1 at WN=64,
+            # 2 at WN=32, 4 at WN=16 -- always within this workgroup's N
+            # warps, so the fold can go through LDS.
+            comptime WARPS_PER_BLOCK = 32 // (
+                Self.num_n_mmas * (Self.MMA_N // 2)
+            )
+            comptime assert (
+                Self.num_n_mmas * (Self.MMA_N // 2) * WARPS_PER_BLOCK == 32
+            ), "warp output N must divide a 32-wide E8M0 block"
+            comptime assert (
+                Self.num_warps_n >= WARPS_PER_BLOCK
+            ), "an E8M0 block must not span more warps than BN/WN provides"
+            comptime OUT_PER_FRAG = Self.c_frag_size // 2
+            comptime OUT_PER_ROW = Self.num_n_mmas * OUT_PER_FRAG
+            var lane_group, thread_m = divmod(Int(lane_id()), Self.MMA_M)
+            var m_warp_base = m_tile_idx * Self.BM
+            var n_warp_base = (
+                n_tile_idx * Self.BN + Int(warp_n) * Self.WN
+            ) // 2
+            var bmax_smem = stack_allocation[
+                DType.float32, address_space=.SHARED
+            ](row_major[Self.num_warps_n, Self.BM]())
+
+            comptime for m_mma in range(Self.num_m_mmas):
+                var m_global = m_warp_base + m_mma * Self.MMA_M + Int(thread_m)
+                var acts = SIMD[DType.float32, OUT_PER_ROW](0)
+                var lane_max = Float32(0)
+
+                comptime for n_mma in range(Self.num_n_mmas):
+                    var v = c_reg.tile[1, Self.c_frag_size](m_mma, n_mma).load[
+                        width=Self.c_frag_size,
+                        alignment=align_of[DType.float32](),
+                    ]((0, 0))
+                    # Do not remove: the 3-kernel path rounds gemm1's output
+                    # to bf16 before the activation, so skipping this makes
+                    # the fusion numerically live -- 0.2% divergence at
+                    # M=5205 (identical only at M=96). The FFN feeds the
+                    # next router, so divergence reroutes the MoE, and the
+                    # expert-load skew costs more than the fusion saves.
+                    v = v.cast[DType.bfloat16]().cast[DType.float32]()
+                    comptime for j in range(OUT_PER_FRAG):
+                        var o = Self.activation(v[2 * j], v[2 * j + 1])
+                        acts[n_mma * OUT_PER_FRAG + j] = o
+                        lane_max = max(lane_max, max(o, -o))
+
+                var block_max = lane_max
+                block_max = max(block_max, warp.shuffle_xor(block_max, 16))
+                block_max = max(block_max, warp.shuffle_xor(block_max, 32))
+                comptime if WARPS_PER_BLOCK > 1:
+                    # Every lane group now holds this warp's partial for its
+                    # row; publish one per warp and fold the block's warps
+                    # together. The trailing barrier keeps the next m_mma
+                    # iteration from overwriting slots still being read.
+                    var row = m_mma * Self.MMA_M + Int(thread_m)
+                    if lane_group == 0:
+                        bmax_smem[Int(warp_n), row] = block_max
+                    barrier()
+                    var w0 = (Int(warp_n) // WARPS_PER_BLOCK) * WARPS_PER_BLOCK
+                    comptime for w in range(WARPS_PER_BLOCK):
+                        block_max = max(
+                            block_max,
+                            bmax_smem[w0 + w, row],
+                        )
+                    barrier()
+                # Returns (e8m0, multiplier, dead). The multiplier is already
+                # 0.0 for a dead or all-zero block, so the data path needs no
+                # branch to avoid inf * 0 = NaN.
+                var scale = compute_mxfp8_block_scale[.float8_e8m0fnu](
+                    block_max
                 )
+                var mult = scale[1]
+
+                if m_global < M:
+                    comptime for n_mma in range(Self.num_n_mmas):
+                        var n_out = (
+                            n_warp_base
+                            + (
+                                n_mma * Self.MMA_N
+                                + Int(lane_group) * Self.c_frag_size
+                            )
+                            // 2
+                        )
+                        var q = SIMD[out_dtype, OUT_PER_FRAG]()
+                        comptime for j in range(OUT_PER_FRAG):
+                            q[j] = (acts[n_mma * OUT_PER_FRAG + j] * mult).cast[
+                                out_dtype
+                            ]()
+                        c.store((m_global, n_out), q)
+
+                    # The warp's output columns are exactly one block when
+                    # WARPS_PER_BLOCK == 1; otherwise the block's first warp
+                    # owns the publish. One byte per 32 output columns.
+                    comptime SCALES_PER_ROW = (N // 2) // 32
+                    if lane_group == 0 and (Int(warp_n) % WARPS_PER_BLOCK == 0):
+                        var k_blk = n_warp_base // 32
+                        var off: Int
+                        if sfc_max_padded_m > 0:
+                            off = Shuffler[1].scale_4d_slot_byte_off[
+                                SCALES_PER_ROW
+                            ](
+                                sfc_expert_slot,
+                                m_global,
+                                k_blk,
+                                sfc_max_padded_m,
+                            )
+                        else:
+                            off = (
+                                sfc_row_base + m_global
+                            ) * SCALES_PER_ROW + k_blk
+                        sfc_ptr[unsafe_offset=off] = bitcast[DType.uint8](
+                            scale[0]
+                        )
+        elif has_epilogue_fn or has_compute_fn:
+            var c_epilogue = RegTileEpilogue[
+                out_dtype,
+                Self.c_frag_size,
+            ](c)
+            var lane_group, thread_m = divmod(Int(lane_id()), Self.MMA_M)
+            var m_warp_base = m_tile_idx * Self.BM
+            var n_warp_base = n_tile_idx * Self.BN + Int(warp_n) * Self.WN
+
+            comptime for m_mma in range(Self.num_m_mmas):
+                var m_global = m_warp_base + m_mma * Self.MMA_M + Int(thread_m)
+                if m_global < M:
+                    comptime for n_mma in range(Self.num_n_mmas):
+                        var v = (
+                            c_reg.tile[1, Self.c_frag_size](m_mma, n_mma)
+                            .load[
+                                width=Self.c_frag_size,
+                                alignment=align_of[DType.float32](),
+                            ]((0, 0))
+                            .cast[out_dtype]()
+                        )
+                        var n_global = (
+                            n_warp_base
+                            + n_mma * Self.MMA_N
+                            + Int(lane_group) * Self.c_frag_size
+                        )
+                        comptime if has_epilogue_fn:
+                            c_epilogue.store_with_epilogue_fn(
+                                epilogue_fn, v, m=m_global, n=n_global
+                            )
+                        elif has_compute_fn:
+                            c_epilogue.store_with_compute_fn(
+                                compute_fn, v, m=m_global, n=n_global
+                            )
+                        else:
+                            c_epilogue.store(v, m=m_global, n=n_global)
+        else:
+            var c_block = c.tile[Self.BM, Self.BN](m_tile_idx, n_tile_idx)
+            var c_warp = c_block.tile[Self.WM, Self.WN](warp_m, warp_n)
+
+            comptime for m_mma in range(Self.num_m_mmas):
+                comptime for n_mma in range(Self.num_n_mmas):
+                    c_writer.store(
+                        c_warp.tile[Self.MMA_M, Self.MMA_N](
+                            m_mma, n_mma
+                        ).vectorize[1, Self.c_frag_size](),
+                        c_reg.tile[1, Self.c_frag_size](m_mma, n_mma),
+                    )

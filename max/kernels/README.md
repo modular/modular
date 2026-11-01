@@ -20,12 +20,14 @@ To benchmark, autotune, and analyze Mojo kernel performance, use the
 [`kbench` tool](benchmarks/autotune#readme).
 
 If you're looking for the high-level Python APIs based on these kernels and used
-to build MAX graphs, see the [`python/max/nn/`](/max/python/max/nn) directory.
+to build MAX graphs, see the [`python/max/nn/`](/max/python/max/nn/legacy)
+directory.
 
 ## Contributing
 
-We're accepting kernel contributions. See the [kernels contributing
-guide](./CONTRIBUTING.md) for details.
+We accept bug fixes to the library. See the [kernels contributing
+guide](./CONTRIBUTING.md) and the [MAX contributor
+handbook](/max/docs/contributing/README.md) for details.
 
 ## License
 

@@ -15,9 +15,9 @@
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 
 class LayerNormNoAffine(Module):
@@ -28,6 +28,7 @@ class LayerNormNoAffine(Module):
         self.eps = eps
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Normalizes ``x`` without a learned scale or shift."""
         dim = x.shape[-1]
         gamma = ops.broadcast_to(
             ops.constant(1.0, x.dtype, device=x.device),
@@ -46,6 +47,8 @@ class LayerNormNoAffine(Module):
 
 
 class AdaLayerNormContinuous(Module):
+    """Layer norm whose scale and shift come from the conditioning vector."""
+
     def __init__(
         self,
         embedding_dim: int,
@@ -77,6 +80,7 @@ class AdaLayerNormContinuous(Module):
         x: TensorValue,
         conditioning_embedding: TensorValue,
     ) -> TensorValue:
+        """Normalizes ``x``, scaling and shifting it by the conditioning."""
         emb = self.linear(ops.cast(ops.silu(conditioning_embedding), x.dtype))
         width = x.shape[-1]
         scale, shift = ops.split(emb, [width, width], axis=1)

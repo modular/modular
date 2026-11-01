@@ -19,13 +19,13 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.attention import num_heads_for_device
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_ragged_gpu
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.attention import num_heads_for_device
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_ragged_gpu
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.stacked_linear import StackedLinear
 
 
 class DistributedVisionWindowAttention(Module, Shardable):
@@ -107,6 +107,8 @@ class DistributedVisionWindowAttention(Module, Shardable):
     def apply_rotary_pos_emb_vision(
         q: TensorValue, k: TensorValue, cos: TensorValue, sin: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
+        """Applies rotary embeddings to the query and key."""
+
         def _rotate_half(x: TensorValue) -> TensorValue:
             """Rotates half the hidden dims of the input."""
             head_dim = x.shape[-1]
@@ -135,11 +137,11 @@ class DistributedVisionWindowAttention(Module, Shardable):
         input_row_offsets: TensorValue,
         max_seqlen: TensorValue,
     ) -> TensorValue:
-        """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL. It does the following steps:
-            1. Linear Projections Q, K, V
-            2. Apply Rotary position embeddings on the Linear Projections Q, and K
-            3. Scaled dot product attention
-            4. Final Linear projection layer
+        """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL.
+
+        It does the following steps: 1. Linear Projections Q, K, V 2. Apply
+        Rotary position embeddings on the Linear Projections Q, and K 3. Scaled
+        dot product attention 4. Final Linear projection layer
 
         Args:
             x: Input tensor of shape (seq_len, hidden_size)

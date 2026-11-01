@@ -43,6 +43,12 @@ def main(out_path: str, target: str, cpu_target: str, flag_set: str) -> None:
     # than this build worker's own CPU. ``warm-cache --target`` sets the
     # remaining virtual-device knobs itself.
     set_virtual_cpu_target(cpu_target)
+    # The consuming tests run ``max generate``, so compile under its defaults
+    # (``_with_debug_defaults`` in ``max/_entrypoints/cli/generate.py``)
+    # rather than warm-cache's serve defaults.
+    generate_defaults = ["--no-device-graph-capture", "--max-batch-size", "1"]
+    if target.partition(":")[0] == "hip":
+        generate_defaults.append("--disable-vendor-blas-fallback")
     pipelines.main(
         [
             "warm-cache",
@@ -50,6 +56,7 @@ def main(out_path: str, target: str, cpu_target: str, flag_set: str) -> None:
             target,
             "--export-mefs",
             out_path,
+            *generate_defaults,
             *pipeline_flags(flag_set),
         ]
     )

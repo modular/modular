@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen-Image configuration."""
 
 from typing import Any
 
@@ -22,6 +23,8 @@ from pydantic import Field
 
 
 class QwenImageConfigBase(MAXModelConfigBase):
+    """The transformer's shapes, shared by every Qwen-Image checkpoint."""
+
     patch_size: int = 2
     in_channels: int = 64
     out_channels: int | None = None
@@ -39,12 +42,15 @@ class QwenImageConfigBase(MAXModelConfigBase):
 
 
 class QwenImageConfig(QwenImageConfigBase):
+    """Qwen-Image configuration, read from the checkpoint."""
+
     @staticmethod
     def generate(
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> QwenImageConfigBase:
+        """Builds the config from the checkpoint's transformer section."""
         init_dict = {
             key: value
             for key, value in config_dict.items()

@@ -22,7 +22,10 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassOptions.h"
+#include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/SmallSet.h"
+
+#include <optional>
 
 //===----------------------------------------------------------------------===//
 // Forward Declarations
@@ -60,7 +63,7 @@ class KGENCallOpInterface;
 class KGENDialect;
 class FuncOp;
 class GeneratorOp;
-class SymbolConstantAttr;
+class FuncSymbolAttr;
 struct ExportedSymbol;
 
 namespace POP {
@@ -101,29 +104,63 @@ enum class InlinerDebugInfoUpdateTime {
 void registerDefaultKGENPasses(const std::string &cacheBaseExtra);
 
 //===----------------------------------------------------------------------===//
+// Lowering to Arith
+//
+// Scalar values and arithmetic. Independent of the control-flow lowering
+// below, which only borrows the type converter.
+//===----------------------------------------------------------------------===//
+
+/// `KGENDType` → builtin MLIR element type. `nullopt` if unsupported.
+std::optional<mlir::Type> dtypeToBuiltin(mlir::MLIRContext *ctx,
+                                         KGENDType dtype);
+
+/// Maps `!pop.scalar<T>` to its builtin type and bridges values whose
+/// producer and consumer are lowered by different passes with
+/// `unrealized_conversion_cast`s, which fold once both sides are converted.
+/// A target extends it with its own conversions for the SIMD forms. Both
+/// lowerings here use it.
+class POPScalarTypeConverter : public mlir::TypeConverter {
+public:
+  explicit POPScalarTypeConverter(mlir::MLIRContext *ctx);
+};
+
+/// Patterns lowering scalar `kgen.param.constant` and the scalar POP arith,
+/// compare, select, and builtin-cast ops to `arith`/`index`.
+void populateKGENToArithConversionPatterns(const mlir::TypeConverter &converter,
+                                           mlir::RewritePatternSet &patterns);
+
+//===----------------------------------------------------------------------===//
+// Lowering to SCF
+//
+// Structured control flow. Values crossing a region boundary are bridged with
+// the type converter above.
+//===----------------------------------------------------------------------===//
+
+/// Patterns lowering `hlcf.for` and its yield to `scf.for`.
+void populateHLCFForToSCFConversionPatterns(
+    const mlir::TypeConverter &converter, mlir::RewritePatternSet &patterns);
+
+/// Patterns lowering all HLCF structured control flow (`for`, `if`, `switch`,
+/// `loop`, and their terminators) to SCF. `hlcf.return` is left for the
+/// function conversion.
+void populateHLCFToSCFConversionPatterns(const mlir::TypeConverter &converter,
+                                         mlir::RewritePatternSet &patterns);
+
+//===----------------------------------------------------------------------===//
 // Elaborator
 //===----------------------------------------------------------------------===//
 
-/// This struct represents the result of a cross-device compilation, which is a
-/// function or closure reference.
+/// This struct represents the result of a cross-device compilation.
 struct CrossDeviceFunction {
   /// The compiled cross-device function contents, which can be assembly, object
   /// code, or something else.
   StringAttr contents;
-  /// The number of captures that need to be propagated to the cross-device
-  /// closure.
-  unsigned numCaptures;
-  /// A function for populating the captured values opaquely.
-  /// FIXME(#22670): The expected API is tightly bound with the GPU module in
-  /// the standard library.
-  OwningOpRef<Operation *> populateCapturesFn;
 };
 
 struct OffloadInfo {
   struct KernelInfo {
     StringAttr name;
     uint64_t kernelId;
-    FuncTypeGeneratorType populateFnType;
     llvm::SmallSet<EmitAs, 4> emissionKinds;
     /// The source-level name of the kernel function (e.g. "add_one_kernel"),
     /// used to name the GPU ASM output file when --emit=asm is requested.
@@ -132,7 +169,7 @@ struct OffloadInfo {
   };
 
   struct Group {
-    using SymbolInfo = llvm::MapVector<SymbolConstantAttr, KernelInfo>;
+    using SymbolInfo = llvm::MapVector<FuncSymbolAttr, KernelInfo>;
 
     uint64_t numKernels = 0;
     ExportMap exportedSymbols;
@@ -145,20 +182,25 @@ struct OffloadInfo {
     /// during kernel compilation. Corresponds to `emission_link_option` on the
     /// `kgen.compile_offload` op.
     std::string emissionLinkOptions;
+    /// The `target_attrs` dictionary every offload in this group carries; null
+    /// when they carry none. Group-scoped rather than per-kernel because the
+    /// group key includes it, so a group cannot mix dictionaries. Stamped onto
+    /// each sliced clone in `compileOffloads`.
+    mlir::DictionaryAttr targetAttrs;
+    /// The target with `opaque_plugin` references rewritten to generator
+    /// references, so they resolve against the sliced module. Null when the
+    /// target carries no payload.
+    TargetInfoAttr slicedTarget;
   };
 
-  /// Groups are keyed by the concatenation of `emission_option` and
-  /// `emission_link_option` so that kernels with different link options are
-  /// compiled separately.
+  /// Groups are keyed by `makeOffloadGroupKey`, so kernels differing in any
+  /// input the sliced module bakes in -- emission options, or the
+  /// `target_attrs` launch metadata -- are compiled separately.
   using EmissionOptionsGroup = llvm::MapVector<std::string, Group>;
   EmissionOptionsGroup groups;
 };
 
 struct OffloadCompilationResult {
-  OwningOpRef<Operation *> func;
-  IntegerAttr numCaptures;
-  mlir::DenseI64ArrayAttr captureSizes;
-  SymbolConstantAttr populate;
   DenseMap<EmitAs, StringAttr> contents;
 
   /// Hashed module name based on contents.
@@ -170,7 +212,7 @@ using EmissionOptions = ArrayRef<StringRef>;
 /// input parameters and target. The expected mangled name of the generate is
 /// passed to be used as the entry point.
 using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
-    GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
+    GeneratorOp, FuncSymbolAttr, StringAttr, const SymbolTable &,
     TargetInfoAttr, EmitAs, EmissionOptions, CompilationOptions,
     ElaborateGeneratorsOptions);
 
@@ -207,6 +249,67 @@ createElaborateGenerators(TargetInfoAttr target,
 std::unique_ptr<mlir::Pass> createAutomaticInline(
     const AutomaticInlineOptions &options = {},
     std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
+
+//===----------------------------------------------------------------------===//
+// DecomposeFunctionArguments
+//===----------------------------------------------------------------------===//
+
+/// One flattened leaf surviving a decomposed argument.
+struct DecomposedArgLeaf {
+  mlir::Type type;
+  /// `struct.extract` index path from the original argument to this leaf.
+  llvm::SmallVector<unsigned> path;
+  /// The leaf's `fnArgAttrs` entry; may be null.
+  mlir::DictionaryAttr argAttrs;
+  /// The leaf's calling convention; unset inherits the original argument's.
+  std::optional<ArgConvention> convention;
+};
+
+/// Decides which arguments `DecomposeFunctionArguments` flattens and what
+/// each surviving leaf's attributes and convention are. All decomposition
+/// policy lives behind this interface; the pass only knows how to rewrite a
+/// function's signature, entry block and body once told which leaves
+/// survive a given argument.
+class FunctionArgumentDecompositionPolicy {
+public:
+  virtual ~FunctionArgumentDecompositionPolicy() = default;
+
+  /// Plans argument `argIdx` (of type `argType`) of `func`. Returns
+  /// - `std::nullopt` to leave the argument untouched, or the leaves it
+  ///   flattens to (an empty list drops the whole argument).
+  /// - `failure()` for a policy violation the implementation has already
+  ///   diagnosed on `func`.
+  /// - vector of decomposed leaves otherwise
+  virtual mlir::FailureOr<std::optional<llvm::SmallVector<DecomposedArgLeaf>>>
+  planArgument(FuncOp func, unsigned argIdx, mlir::Type argType) = 0;
+};
+
+/// Default policy: flattens every `kgen.struct` argument unconditionally,
+/// with no per-leaf attributes and inherited conventions. A pointer-typed
+/// field becomes a leaf as-is rather than being dereferenced.
+std::unique_ptr<FunctionArgumentDecompositionPolicy>
+createAlwaysDecomposeStructPolicy();
+
+/// Flattens `kgen.struct` arguments of every `kgen.func` into the leaves a
+/// `FunctionArgumentDecompositionPolicy` names. A leaf may stay a pointer,
+/// so a body use may narrow past a leaf or stop short of one; the former is
+/// re-rooted on the leaf, the latter rebuilt via `struct.create`. A gap in
+/// the policy's leaf coverage or a `pop.store` through a decomposed pointer
+/// is an error. Surviving `kgen.call`s to a decomposed callee are rewritten.
+///
+/// A changed function gets `kgen.decomposed_arg_map`: one `DenseI32ArrayAttr`
+/// `[newStart, newLength, wasDecomposed]` per original argument, so a target
+/// pass can remap old-arg-indexed metadata.
+///
+/// The generated `createDecomposeFunctionArguments()` uses the default
+/// policy; a target plugs its own scheme into its pipeline through this one.
+std::unique_ptr<mlir::Pass> createDecomposeFunctionArguments(
+    std::unique_ptr<FunctionArgumentDecompositionPolicy> policy);
+
+/// Function attribute `DecomposeFunctionArguments` sets on a changed
+/// function; see `createDecomposeFunctionArguments` for the format.
+inline constexpr llvm::StringLiteral kDecomposedArgMapAttrName =
+    "kgen.decomposed_arg_map";
 
 //===----------------------------------------------------------------------===//
 // ReorderParamOps

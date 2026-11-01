@@ -28,21 +28,14 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import moe_sink_gate_router
-from max.pipelines.architectures.inkling.layers.moe import InklingGate
-from torch.utils.dlpack import from_dlpack
+from max.nn.legacy.kernels import moe_sink_gate_router
+from max.pipelines.architectures.inkling.layers.moe import (
+    InklingGate,
+    padded_router_rows,
+)
 
 _HIDDEN_DIM = 64
 _ROUTE_SCALE = 8.0
-
-
-def _assert_close(actual: np.ndarray, expected: np.ndarray) -> None:
-    torch.testing.assert_close(
-        torch.from_numpy(actual),
-        torch.from_numpy(expected),
-        rtol=1e-5,
-        atol=1e-6,
-    )
 
 
 def _unfused_route(
@@ -63,7 +56,9 @@ def _unfused_route(
     selected = ops.gather_nd(
         routed, ops.unsqueeze(expert_ids, axis=-1), batch_dims=1
     )
-    sinks = logits[:, gate.n_routed_experts :]
+    sinks = logits[
+        :, gate.n_routed_experts : gate.n_routed_experts + gate.n_shared_experts
+    ]
 
     combined = ops.concat([selected, sinks], axis=-1)
     zero = ops.constant(0.0, combined.dtype, device=device)
@@ -80,17 +75,36 @@ def _unfused_route(
     return expert_ids, weights[:, :k], weights[:, k:]
 
 
-def test_inkling_gate_route_matches_graph_ops() -> None:
-    """`InklingGate.route`'s fused kernel must match the graph-op chain."""
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    [
+        # The kernel and the ops chain agree to ~1e-6 in f32. In bf16 they
+        # are one rounding step apart, so allow about two ulp.
+        (DType.float32, 1e-5, 1e-6),
+        (DType.bfloat16, 1e-2, 1e-4),
+    ],
+)
+def test_inkling_gate_route_matches_graph_ops(
+    dtype: DType, rtol: float, atol: float
+) -> None:
+    """`InklingGate.route`'s fused kernel must match the graph-op chain.
+
+    The bf16 case pins the binding's dtype plumbing: logits and weights stay
+    in bf16 while the kernel scores in f32.
+    """
     num_tokens, n_routed_experts, n_experts_per_tok, n_shared = 17, 256, 6, 2
     device = Accelerator(0)
     rng = np.random.default_rng(1)
     hidden_states_np = rng.normal(size=(num_tokens, _HIDDEN_DIM)).astype(
         np.float32
     )
-    n_total = n_routed_experts + n_shared
+    # The tail rows the gate pads its weight with must not reach the router:
+    # random values there would win the top-k if any did.
+    n_total = padded_router_rows(n_routed_experts + n_shared)
+    gate_weight = rng.normal(size=(n_total, _HIDDEN_DIM)).astype(np.float32)
+    gate_weight[n_routed_experts + n_shared :] = 0.0
     weights = {
-        "weight": rng.normal(size=(n_total, _HIDDEN_DIM)).astype(np.float32),
+        "weight": gate_weight,
         "bias": rng.normal(size=(n_routed_experts,)).astype(np.float32) * 0.1,
         "global_scale": np.array([1.3], dtype=np.float32),
     }
@@ -114,29 +128,30 @@ def test_inkling_gate_route_matches_graph_ops() -> None:
             ),
         ),
     ) as g:
-        hidden_states = g.inputs[0].tensor
+        hidden_states = ops.cast(g.inputs[0].tensor, dtype)
         routing = gate.route(hidden_states)
-        # The same logits `route` builds, so only the routing math differs.
-        weight = ops.cast(gate.weight, hidden_states.dtype).to(
-            hidden_states.device
-        )
+        # The same logits `route` builds, scored in f32 by the ops chain, so
+        # a bf16 run differs only by the fused kernel's store rounding.
+        weight = ops.cast(gate.weight, dtype).to(hidden_states.device)
         logits = ops.cast(hidden_states @ weight.T, DType.float32)
+        ref_ids, ref_weights, ref_sinks = _unfused_route(gate, logits)
         g.output(
-            routing.expert_ids,
-            routing.expert_weights,
-            routing.sink_weights,
-            *_unfused_route(gate, logits),
+            *routing,
+            # top_k indexes in int64; the kernel emits int32.
+            ops.cast(ref_ids, DType.int32),
+            ops.cast(ref_weights, dtype),
+            ops.cast(ref_sinks, dtype),
         )
 
     session = InferenceSession(devices=[device])
     model = session.load(g, weights_registry=gate.state_dict())
     results = model.execute(Buffer.from_numpy(hidden_states_np).to(device))
-    fused = [from_dlpack(r).cpu().numpy() for r in results[:3]]
-    unfused = [from_dlpack(r).cpu().numpy() for r in results[3:]]
+    fused = [torch.from_dlpack(r).cpu() for r in results[:3]]
+    unfused = [torch.from_dlpack(r).cpu() for r in results[3:]]
 
-    np.testing.assert_array_equal(fused[0], unfused[0])
-    _assert_close(fused[1], unfused[1])
-    _assert_close(fused[2], unfused[2])
+    # Integer tensors compare exactly: a wrong index is not a rounding error.
+    torch.testing.assert_close(fused[0], unfused[0])
+    torch.testing.assert_close(fused[1:], unfused[1:], rtol=rtol, atol=atol)
 
 
 @pytest.mark.parametrize(

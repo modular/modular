@@ -11,7 +11,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: %2 = llvm.mlir.addressof @world : !llvm.ptr<1>
     %2 = pop.extern_ptr_symbol "world" alignment <2> : !kgen.pointer<scalar<f32>, 1>
 
-    kgen.return
+    hlcf.return
   }
   // CHECK: llvm.mlir.global external @hello() {addr_space = 3 : i32, alignment = 1 : i64, dso_local} : f32
   // CHECK: llvm.mlir.global external @hello_0() {addr_space = 1 : i32, alignment = 2 : i64, dso_local} : f32

@@ -10,21 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 4's vision attention."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
+from functools import partial
 
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_ragged_gpu
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_ragged_gpu
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     apply_multidimensional_rope,
 )
 
 from ..layers.rms_norm import Gemma4RMSNorm
 from ..model_config import Gemma4ForConditionalGenerationConfig
+from .clipping import Gemma4ClippableLinear
 
 
 class Gemma4VisionAttention(Module):
@@ -38,6 +42,8 @@ class Gemma4VisionAttention(Module):
     - Applies a scale-free RMS norm to V (no learnable weight).
     - Applies 2-D multidimensional RoPE to Q and K.
     - Attention scale is fixed to 1.0 (HuggingFace convention for this model).
+    - Projects Q, K and V through one fused matmul, or through one clamped
+      linear per projection when the checkpoint sets ``use_clipped_linears``.
 
     Weight names match the checkpoint under
     ``model.vision_tower.encoder.layers.N.self_attn.*``:
@@ -63,28 +69,39 @@ class Gemma4VisionAttention(Module):
         self.num_key_value_heads = vision_cfg.num_key_value_heads
         self.v_norm_eps = vision_cfg.rms_norm_eps
 
-        self.q_proj = Linear(
+        # Checkpoints with clipped linears carry per-projection calibration
+        # bounds and expect them applied around every projection.
+        self.use_clipping = bool(
+            getattr(vision_cfg, "use_clipped_linears", False)
+        )
+        linear_cls = (
+            partial(Gemma4ClippableLinear, use_clipping=True)
+            if self.use_clipping
+            else Linear
+        )
+
+        self.q_proj = linear_cls(
             vision_cfg.hidden_size,
             self.num_attention_heads * self.head_dim,
             has_bias=vision_cfg.attention_bias,
             dtype=vision_dtype,
             device=self.device,
         )
-        self.k_proj = Linear(
+        self.k_proj = linear_cls(
             vision_cfg.hidden_size,
             self.num_key_value_heads * self.head_dim,
             has_bias=vision_cfg.attention_bias,
             dtype=vision_dtype,
             device=self.device,
         )
-        self.v_proj = Linear(
+        self.v_proj = linear_cls(
             vision_cfg.hidden_size,
             self.num_key_value_heads * self.head_dim,
             has_bias=vision_cfg.attention_bias,
             dtype=vision_dtype,
             device=self.device,
         )
-        self.o_proj = Linear(
+        self.o_proj = linear_cls(
             self.num_attention_heads * self.head_dim,
             vision_cfg.hidden_size,
             has_bias=vision_cfg.attention_bias,
@@ -108,6 +125,7 @@ class Gemma4VisionAttention(Module):
 
     @property
     def wqkv(self) -> TensorValue:
+        """The query, key and value projections, stacked for one matmul."""
         return ops.concat(
             (self.q_proj.weight, self.k_proj.weight, self.v_proj.weight)
         )
@@ -136,16 +154,23 @@ class Gemma4VisionAttention(Module):
         total_patches = hidden_states.shape[0]
 
         # Project to Q, K, V.
-        x = hidden_states @ self.wqkv.T
-        xq, xk, xv = ops.split(
-            x,
-            [
-                self.num_attention_heads * self.head_dim,
-                self.num_key_value_heads * self.head_dim,
-                self.num_key_value_heads * self.head_dim,
-            ],
-            axis=-1,
-        )
+        if self.use_clipping:
+            # The fused matmul applies none of the projections' input clamps,
+            # so clipping calls each projection.
+            xq = self.q_proj(hidden_states)
+            xk = self.k_proj(hidden_states)
+            xv = self.v_proj(hidden_states)
+        else:
+            x = hidden_states @ self.wqkv.T
+            xq, xk, xv = ops.split(
+                x,
+                [
+                    self.num_attention_heads * self.head_dim,
+                    self.num_key_value_heads * self.head_dim,
+                    self.num_key_value_heads * self.head_dim,
+                ],
+                axis=-1,
+            )
 
         # Reshape to [total_patches, num_heads, head_dim].
         xq = ops.reshape(
@@ -189,6 +214,7 @@ class Gemma4VisionAttention(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self.q_proj.sharding_strategy
 
     @sharding_strategy.setter
@@ -207,6 +233,7 @@ class Gemma4VisionAttention(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma4VisionAttention]:
+        """Splits the attention weights across ``devices``."""
         assert self.sharding_strategy
 
         q_proj_shards = self.q_proj.shard(devices)

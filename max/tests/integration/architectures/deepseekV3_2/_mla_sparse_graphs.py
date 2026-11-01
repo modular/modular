@@ -34,15 +34,16 @@ from _mla_sparse_test_utils import (
     paged_kv_from_flat_graph_inputs,
     random_weights,
 )
+from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import WeightData
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -50,7 +51,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.rotary_embedding import (
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -277,9 +278,9 @@ def build_prefill_graph(spec: PrefillSpec) -> Graph:
     multi_kv = MultiKVCacheParams.from_params(
         {"mla": mla_kv_params, "indexer": indexer_kv_params}
     )
-    len_mla_kv = len(mla_kv_params.get_symbolic_inputs().inputs[0].flatten())
+    len_mla_kv = len(tree.leaves(mla_kv_params.get_symbolic_inputs()[0]))
     len_indexer_kv = len(
-        indexer_kv_params.get_symbolic_inputs().inputs[0].flatten()
+        tree.leaves(indexer_kv_params.get_symbolic_inputs()[0])
     )
     kv_sym = list(multi_kv.flattened_kv_inputs())
     hidden_type = TensorType(
@@ -302,7 +303,7 @@ def build_prefill_graph(spec: PrefillSpec) -> Graph:
         )
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         freqs_cis = ops.cast(rope.freqs_cis, hidden.dtype).to(hidden.device)
-        out, _topk = attn(
+        out, _rows = attn(
             layer_idx,
             hidden,
             kv_mla,

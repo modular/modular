@@ -1,0 +1,15 @@
+{
+  "target": "gated_group_rmsnorm",
+  "spec": {
+    "rows": 1,
+    "num_groups": 1,
+    "gate_pad": 0,
+    "gate_off": 0,
+    "data_seed": 3,
+    "dist": 3
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "degenerate minimum: one row, one group, contiguous gate, all-equal input",
+  "findings": []
+}

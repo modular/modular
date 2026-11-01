@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-readonly version="1.27.0"
+readonly version="1.30.0"
 
 arch="$(uname -m)"
 if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
@@ -13,15 +13,15 @@ fi
 
 if [[ $OSTYPE == darwin* ]]; then
   readonly platform=darwin-arm64
-  readonly sha="8bf08c894ccc19ef37f286e58184c3942c58cb08da955e990522703526ddb720"
+  readonly sha="555d2ff912ccd336d0060bdb5251ef2f62629c6f8fbadb59005a45d5625793ec"
   readonly sha_cmd="shasum"
 elif [[ $OSTYPE == linux* ]]; then
   readonly sha_cmd="sha256sum"
   readonly platform=linux-"$bazel_arch"
   if [[ "$bazel_arch" == "amd64" ]]; then
-    readonly sha="e1508323f347ad1465a887bc5d2bfb91cffc232d11e8e997b623227c6b32fb76"
+    readonly sha="a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8"
   else
-    readonly sha="bb608519a440d45d10304eb684a73a2b6bb7699c5b0e5434361661b25f113a5d"
+    readonly sha="b2bcc040c213b44586b121bda6d983c35df121b917c3a7a66fb16f2fa0df1a4f"
   fi
 else
   echo "error: unsupported platform $OSTYPE" >&2

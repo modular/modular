@@ -18,7 +18,7 @@ for shared fixtures.
 """
 
 import copy
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -30,22 +30,24 @@ from _attention_helpers import (
     CompiledAttention,
     _attention_test_tensor,
     build_max_attention_graph,
+    build_max_kv_sharing_attention_graph,
     make_attention_weights_global,
     make_attention_weights_local,
+    make_kv_sharing_attention_weights,
+    make_kv_sharing_text_config,
     make_text_config,
 )
 from conftest import (
     Gemma4RotaryEmbedding,
     Gemma4TextAttention,
 )
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
-from test_common.mef_precompile import init_from_mef, mefs_from_env
 from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
@@ -65,6 +67,10 @@ def text_config() -> Gemma4TextConfig:
     return make_text_config()
 
 
+# Staging this needs a GPU, so every test below requests it after the compiled
+# fixtures it uses: that way the CPU build action that records the compiles
+# reaches them before anything asks for hardware it does not have. See
+# `docs/internal/CompileOnCpuRunOnGpu.md`.
 @pytest.fixture(scope="module")
 def input_tensor(text_config: Gemma4TextConfig) -> torch.Tensor:
     torch.manual_seed(42)
@@ -169,7 +175,6 @@ def generate_torch_outputs(
 
 
 def build_max_attention(
-    mef_path: Path,
     session: InferenceSession,
     text_config: Gemma4TextConfig,
     attention_weights: dict[str, torch.Tensor],
@@ -179,7 +184,7 @@ def build_max_attention(
     *,
     cache_dtype: DType | None = None,
 ) -> CompiledAttention:
-    _, attention, kv_params = build_max_attention_graph(
+    graph, attention, kv_params = build_max_attention_graph(
         text_config,
         attention_weights,
         dtype,
@@ -188,15 +193,11 @@ def build_max_attention(
         cache_dtype=cache_dtype,
     )
 
-    # Set up blank KV cache.
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-    compiled = init_from_mef(session, mef_path, attention.state_dict())
-    return CompiledAttention(compiled=compiled, kv_manager=kv_manager)
+    # Only the compile: the bundle allocates its KV cache on first use, so a
+    # CPU build action recording this test reaches every compile before
+    # anything asks for the device.
+    compiled = session.load(graph, weights_registry=attention.state_dict())
+    return CompiledAttention(compiled, session, kv_params)
 
 
 def execute_max_attention(
@@ -210,7 +211,7 @@ def execute_max_attention(
     accumulate state across test invocations.
     """
     input_seq_len = input_tensor.shape[1]
-    kv_manager = compiled_attention.kv_manager
+    kv_manager = compiled_attention.claim_kv_manager()
     compiled = compiled_attention.compiled
 
     batch = [create_text_context(np.empty(input_seq_len))]
@@ -227,7 +228,7 @@ def execute_max_attention(
             Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
                 device
             ),
-            *kv_runtime_inputs.flatten(),
+            *tree.leaves(kv_runtime_inputs),
         ]
         output = compiled.execute(*execute_args)[0]
     finally:
@@ -289,9 +290,7 @@ def compiled_local_bf16(
     text_config: Gemma4TextConfig,
     attention_weights_local: dict[str, torch.Tensor],
 ) -> CompiledAttention:
-    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_local_bf16.mef"]
     return build_max_attention(
-        mef_path,
         session,
         text_config,
         attention_weights_local,
@@ -307,9 +306,7 @@ def compiled_global_bf16(
     text_config: Gemma4TextConfig,
     attention_weights_global: dict[str, torch.Tensor],
 ) -> CompiledAttention:
-    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_global_bf16.mef"]
     return build_max_attention(
-        mef_path,
         session,
         text_config,
         attention_weights_global,
@@ -332,9 +329,7 @@ def compiled_local_native_fp8(
 ) -> CompiledAttention:
     if not is_b100_b200():
         pytest.skip("Native FP8 MHA requires B200 (SM100)")
-    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_local_native_fp8.mef"]
     return build_max_attention(
-        mef_path,
         session,
         text_config,
         attention_weights_local,
@@ -353,9 +348,7 @@ def compiled_global_native_fp8(
 ) -> CompiledAttention:
     if not is_b100_b200():
         pytest.skip("Native FP8 MHA requires B200 (SM100)")
-    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_global_native_fp8.mef"]
     return build_max_attention(
-        mef_path,
         session,
         text_config,
         attention_weights_global,
@@ -373,9 +366,9 @@ def compiled_global_native_fp8(
 
 def test_attention_local(
     text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
     attention_weights_local: dict[str, torch.Tensor],
     compiled_local_bf16: CompiledAttention,
+    input_tensor: torch.Tensor,
     device: Device,
 ) -> None:
     max_output = execute_max_attention(
@@ -396,9 +389,9 @@ def test_attention_local(
 
 def test_attention_global(
     text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
     attention_weights_global: dict[str, torch.Tensor],
     compiled_global_bf16: CompiledAttention,
+    input_tensor: torch.Tensor,
     device: Device,
 ) -> None:
     max_output = execute_max_attention(
@@ -434,9 +427,9 @@ def test_attention_global(
 
 def test_attention_native_fp8_matches_bf16_local(
     text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
     compiled_local_bf16: CompiledAttention,
     compiled_local_native_fp8: CompiledAttention,
+    input_tensor: torch.Tensor,
     device: Device,
 ) -> None:
     """Native pure-fp8 (no scales) sliding (head_dim=256) layer vs bf16."""
@@ -452,9 +445,9 @@ def test_attention_native_fp8_matches_bf16_local(
 
 def test_attention_native_fp8_matches_bf16_global(
     text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
     compiled_global_bf16: CompiledAttention,
     compiled_global_native_fp8: CompiledAttention,
+    input_tensor: torch.Tensor,
     device: Device,
 ) -> None:
     """Native pure-fp8 (no scales) global (head_dim=512) layer vs bf16."""
@@ -465,4 +458,220 @@ def test_attention_native_fp8_matches_bf16_global(
         device,
         layer_idx=5,
         head_dim_for_log=text_config.global_head_dim,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Gemma 4's shared keys and values
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SharingCase:
+    """The source layer and the sharing layer of one attention type."""
+
+    layer_type: str
+    source_layer_idx: int
+    sharing_layer_idx: int
+
+
+class SharedKVCache:
+    """The cache the reference implementation shares keys and values through.
+
+    The reference's ``Gemma4TextAttention`` keeps the keys and values a
+    sharing layer reuses in ``past_key_values.shared_layers``, keyed by the
+    layer that stored them, and skips the cache update for a sharing layer.
+    This stands in for that cache: the update hands back the states
+    unchanged, so the stored states are the source layer's own.
+    """
+
+    def __init__(self) -> None:
+        self.shared_layers: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
+
+    def update(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        layer_idx: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return key_states, value_states
+
+
+@pytest.fixture(scope="module")
+def sharing_text_config() -> Gemma4TextConfig:
+    return make_kv_sharing_text_config()
+
+
+@pytest.fixture(scope="module", params=["sliding_attention", "full_attention"])
+def sharing_case(
+    request: Any, sharing_text_config: Gemma4TextConfig
+) -> SharingCase:
+    """The source layer and the sharing layer of one attention type."""
+    layer_type = request.param
+    layer_types = sharing_text_config.layer_types
+    first_shared_layer = (
+        sharing_text_config.num_hidden_layers
+        - sharing_text_config.num_kv_shared_layers
+    )
+    source_layer_idx = max(
+        i for i in range(first_shared_layer) if layer_types[i] == layer_type
+    )
+    sharing_layer_idx = next(
+        i
+        for i in range(
+            first_shared_layer, sharing_text_config.num_hidden_layers
+        )
+        if layer_types[i] == layer_type
+    )
+    return SharingCase(
+        layer_type=layer_type,
+        source_layer_idx=source_layer_idx,
+        sharing_layer_idx=sharing_layer_idx,
+    )
+
+
+@pytest.fixture(scope="module")
+def sharing_weights(
+    sharing_text_config: Gemma4TextConfig, sharing_case: SharingCase
+) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+    """The source layer's and the sharing layer's attention weights.
+
+    The two layers get different weights, so an output that uses the sharing
+    layer's own keys and values cannot pass for one that uses the source
+    layer's.
+    """
+    return (
+        make_kv_sharing_attention_weights(
+            sharing_text_config, sharing_case.source_layer_idx, seed=1
+        ),
+        make_kv_sharing_attention_weights(
+            sharing_text_config, sharing_case.sharing_layer_idx, seed=2
+        ),
+    )
+
+
+@pytest.fixture(scope="module")
+def compiled_sharing(
+    session: InferenceSession,
+    sharing_text_config: Gemma4TextConfig,
+    sharing_case: SharingCase,
+    sharing_weights: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+) -> CompiledAttention:
+    source_weights, sharing_layer_weights = sharing_weights
+    graph, attention, kv_params = build_max_kv_sharing_attention_graph(
+        sharing_text_config,
+        source_weights,
+        sharing_layer_weights,
+        MAX_DTYPE,
+        DeviceRef.GPU(),
+        sharing_case.source_layer_idx,
+        sharing_case.sharing_layer_idx,
+    )
+    compiled = session.load(graph, weights_registry=attention.state_dict())
+    return CompiledAttention(compiled, session, kv_params)
+
+
+@torch.no_grad()
+def generate_torch_sharing_outputs(
+    text_config: Gemma4TextConfig,
+    case: SharingCase,
+    input_tensor: torch.Tensor,
+    source_weights: dict[str, torch.Tensor],
+    sharing_weights: dict[str, torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Generates the sharing layer's outputs from the reference implementation.
+
+    The source layer runs first and stores its keys and values in the
+    cache; the sharing layer then attends to those instead of projecting
+    its own. The second output is what the sharing layer computes with no
+    cache to share from, which is what it would produce if it did not
+    share.
+    """
+    source = (
+        Gemma4TextAttention(text_config, layer_idx=case.source_layer_idx)
+        .to(TORCH_DTYPE)
+        .to("cuda")
+    )
+    sharing = (
+        Gemma4TextAttention(text_config, layer_idx=case.sharing_layer_idx)
+        .to(TORCH_DTYPE)
+        .to("cuda")
+    )
+    for name, param in source.named_parameters():
+        param.data = source_weights[name].to(TORCH_DTYPE).to("cuda")
+    for name, param in sharing.named_parameters():
+        param.data = sharing_weights[name].to(TORCH_DTYPE).to("cuda")
+
+    rotary_emb = Gemma4RotaryEmbedding(config=text_config, device="cuda")
+    position_ids = torch.arange(
+        input_tensor.shape[1], dtype=torch.long, device="cuda"
+    ).unsqueeze(0)
+    cos, sin = rotary_emb(
+        input_tensor, position_ids, layer_type=case.layer_type
+    )
+    attention_mask = _causal_attention_mask(input_tensor.shape[1])
+
+    cache = SharedKVCache()
+    hidden_states = source(
+        input_tensor, (cos, sin), attention_mask, past_key_values=cache
+    )[0]
+    shared = sharing(
+        hidden_states, (cos, sin), attention_mask, past_key_values=cache
+    )[0]
+    own = sharing(hidden_states, (cos, sin), attention_mask)[0]
+    return shared, own
+
+
+def test_attention_kv_sharing_matches_torch(
+    sharing_text_config: Gemma4TextConfig,
+    sharing_case: SharingCase,
+    sharing_weights: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    compiled_sharing: CompiledAttention,
+    device: Device,
+) -> None:
+    """A sharing layer attends to the source layer's keys and values.
+
+    The sequence is shorter than the sliding window, so the window does not
+    bound the history the sharing layer sees.
+    """
+    seq_len = 11
+    torch.manual_seed(42)
+    input_tensor = _attention_test_tensor(
+        (1, seq_len, sharing_text_config.hidden_size)
+    ).to("cuda")
+
+    max_output = execute_max_attention(compiled_sharing, input_tensor, device)
+    source_weights, sharing_layer_weights = sharing_weights
+    torch_output, torch_output_without_sharing = generate_torch_sharing_outputs(
+        sharing_text_config,
+        sharing_case,
+        input_tensor,
+        source_weights,
+        sharing_layer_weights,
+    )
+
+    # The two differ, so the comparison below tells the sharing apart.
+    assert not torch.allclose(torch_output, torch_output_without_sharing)
+
+    max_result = from_dlpack(max_output).to(TORCH_DTYPE).squeeze(0)
+    shared_error = (max_result - torch_output.squeeze(0)).abs().max()
+    own_error = (
+        (max_result - torch_output_without_sharing.squeeze(0)).abs().max()
+    )
+    # A layer that projected its own keys and values lands on the second
+    # reference, which puts the two the other way round at any tolerance.
+    assert shared_error < own_error, (
+        f"closer to the unshared reference ({own_error.item()}) than to the "
+        f"shared one ({shared_error.item()})"
+    )
+
+    # The full-attention layer projects twice the channels the sliding one
+    # does (global_head_dim over four heads, a 256-wide o_proj against 128
+    # for the sliding layer), which widens its bf16 accumulation floor: mi355
+    # put one element of 704 at 1.2x the bound the sliding case clears.
+    torch.testing.assert_close(
+        torch_output.squeeze(0).to(TORCH_DTYPE),
+        max_result,
+        rtol=2 * torch.finfo(TORCH_DTYPE).eps,
+        atol=16 * torch.finfo(TORCH_DTYPE).eps,
     )

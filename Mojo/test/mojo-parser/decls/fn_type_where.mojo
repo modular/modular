@@ -59,9 +59,24 @@ def bind_unconstrained():
 # returns, which stays unconstrained.
 # CHECK-LABEL: lit.fn @"parenthesized[
 # CHECK-SAME: (){(
-# CHECK: kgen.create_closure[!lit.generator<() -> !kgen.none>
+# CHECK: kgen.create_func_ptr[!lit.generator<() -> !kgen.none>
 def parenthesized[n: Int]() -> (def() thin -> None) where n > 0:
     def inner():
         pass
 
     return inner
+
+
+# The mangled name is built with a dedup context, so a subexpression used more
+# than once (`w * 2`) is printed in full once and referenced by a backtick
+# label afterwards; expressions used once carry no label. Pin the full name
+# (not a `{{.*}}` fragment) so a regression that re-expands the DAG, or drops
+# the labels, is visible in the diff.
+comptime Wide = def[w: Int]() thin -> None where w * 2 > 0 where (
+    w * 2 < 64, "width must fit a warp"
+)
+
+
+# CHECK-LABEL: lit.fn @"takes_wide[def[::SIMD[DType.int, 1]]() thin -> None where (xor (lt `0 (mul $0._mlir_value, 2), 1), True), (lt `0, 64)]()
+def takes_wide[F: Wide]():
+    F[8]()

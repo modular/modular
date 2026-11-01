@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Image-edit pixel generation dataset."""
+
 from __future__ import annotations
 
 import json
@@ -27,6 +29,8 @@ from .types import PixelGenerationSampledRequest, RequestSamples
 
 
 class LocalImageBenchmarkDataset(PixelBenchmarkDataset):
+    """Image-edit pixel dataset backed by local files."""
+
     @override
     def sample_requests(
         self,

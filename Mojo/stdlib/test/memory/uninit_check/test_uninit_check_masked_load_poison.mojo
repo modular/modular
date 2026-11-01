@@ -18,7 +18,7 @@ from std.sys.intrinsics import masked_load
 
 # CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
-    var allocation = alloc[Float32]({count = 4}).into_managed()
+    var allocation = alloc[Float32]({length = 4}).into_managed()
     var ptr = allocation.unsafe_ptr()
     # Initialize elements.
     ptr.unsafe_store(0, Float32(1.0))

@@ -22,10 +22,10 @@ from std.sys import get_defined_bool, size_of
 
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import B200
-from layout import TileTensor
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from layout import TileTensor, coord
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig, GEMMKind
@@ -50,6 +50,7 @@ def blockwise_fp8_matmul[
     *,
     config: MatmulConfig[_, _, _, transpose_b],
     n_scale_granularity: Int = 128,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor,
     a: TileTensor[mut=False, ...],
@@ -72,6 +73,9 @@ def blockwise_fp8_matmul[
         n_scale_granularity: B-scale block size along the N dimension in
             elements (defaults to 128). Set smaller when the matmul's N-tile
             spans multiple finer-grained scale blocks.
+        pdl_level: Programmatic dependent launch level for the structured
+            kernel (defaults to `PDLLevel()`, which is off). Ignored by the
+            legacy kernel selected with `USE_LEGACY_BLOCKWISE_FP8`.
 
     Args:
         c: Output matrix (M x N).
@@ -133,7 +137,11 @@ def blockwise_fp8_matmul[
         a_type, b_type, c_type, transpose_b
     ](
         cta_group=config.cta_group,
-        mma_shape=config.mma_shape,
+        mma_shape=(
+            config.mma_shape[0],
+            config.mma_shape[1],
+            config.mma_shape[2],
+        ),
         cluster_shape=config.cluster_shape,
         AB_swapped=config.AB_swapped,
         num_accum_pipeline_stages=config.num_accum_pipeline_stages,
@@ -170,44 +178,47 @@ def blockwise_fp8_matmul[
         type_of(b_scales).LayoutType,
         transpose_b=transpose_b,
         config=corrected_config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(corrected_config.cluster_shape[0]),
-            Int32(corrected_config.cluster_shape[1]),
-            Int32(corrected_config.cluster_shape[2]),
-        ),
+        cluster_shape=corrected_config.cluster_shape,
         n_scale_granularity=n_scale_granularity,
         b_scales_engine=type_of(b_scales).Engine,
+        pdl_level=pdl_level,
     ]
 
     # Create TMA descriptors using kernel's layout types
     var a_tma_op = create_tma_tile[
         Kernel.ATileLayout,
         Kernel.ADescLayout,
-        Index(BM // config.cluster_shape[1], BK),
+        coord[BM // config.cluster_shape[1], BK],
         swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
     var b_tma_op = create_tma_tile[
         Kernel.BTileLayout,
         Kernel.BDescLayout,
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
+        coord[
+            BN
+            // (
+                config.cluster_shape[0] // config.cta_group
+            ) if transpose_b else BK,
+            BK if transpose_b else BN
+            // (config.cluster_shape[0] // config.cta_group),
+        ],
         swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
     var a_scales_tma_op = create_tma_tile[
         Kernel.AScalesLayout,
         Kernel.AScalesLayout,
-        Index(1, BM),
+        coord[1, BM],
     ](ctx, a_scales)
 
-    comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
-    comptime c_tma_tile_shape = config.output_tile_shape if (
-        MMA_M == 256 or config.cta_group == 1
-    ) else c_tma_tile_shape_mma128
+    comptime bw_c_m = (
+        config.output_tile_shape[0] if (
+            MMA_M == 256 or config.cta_group == 1
+        ) else 64
+    )
+    comptime bw_c_n = config.output_tile_shape[1]
+    comptime c_tma_tile_shape = coord[bw_c_m, bw_c_n]
 
     var c_tma_op = create_tma_tile[
         Kernel.CTileLayout,
@@ -246,4 +257,5 @@ def blockwise_fp8_matmul[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(b200_smem)
         ),
+        attributes=pdl_launch_attributes(pdl_level),
     )

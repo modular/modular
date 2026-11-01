@@ -17,6 +17,7 @@ modular_cc_test(
     srcs = glob(["*.cpp"]),
     deps = [
         ":test_kernels",
+        "//Mojo:HostBackend",
         "//Mojo:MojoTooling",
     ],
 )

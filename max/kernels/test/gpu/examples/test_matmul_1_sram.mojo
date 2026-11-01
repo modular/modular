@@ -17,8 +17,9 @@ from std.algorithm.functional import tile_and_unswitch
 from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, row_major
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_false
 
 
@@ -27,10 +28,12 @@ from std.testing import assert_false
 comptime tile_size = 32
 
 
-def matmul_sram(
-    a_ptr: MutPointer[Float32, MutAnyOrigin],
-    b_ptr: MutPointer[Float32, MutAnyOrigin],
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
+def matmul_sram[
+    a_origin: MutOrigin, b_origin: MutOrigin, c_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float32, a_origin],
+    b_ptr: MutPointer[Float32, b_origin],
+    c_ptr: MutPointer[Float32, c_origin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -49,9 +52,9 @@ def matmul_sram(
     var M = Int(M_dev)
     var N = Int(N_dev)
     var K = Int(K_dev)
-    var a = TileTensor(a_ptr, row_major(Coord(M, K)))
-    var b = TileTensor(b_ptr, row_major(Coord(K, N)))
-    var c = TileTensor(c_ptr, row_major(Coord(M, N)))
+    var a = TileTensor(a_ptr, row_major(M, K))
+    var b = TileTensor(b_ptr, row_major(K, N))
+    var c = TileTensor(c_ptr, row_major(M, N))
 
     # Allocate A, B tile in shared memory.
     var a_shared = unsafe_stack_allocation[
@@ -82,7 +85,7 @@ def matmul_sram(
     # Can't use 0 as tile size so set to 1 when the remainder is 0.
     var K_remainder = K - K_roundbytile if K - K_roundbytile > 0 else 1
 
-    @always_inline
+    @inline(.always)
     def update_tile[
         full_tile: Bool
     ](offset: Int, end: Int, tile_size: Int) {
@@ -105,36 +108,30 @@ def matmul_sram(
         var a_val: Float32
 
         comptime if not full_tile:
-            a_val = a.load[width=1](Coord(row, offset + localCol)) if (
+            a_val = a[row, offset + localCol] if (
                 row < M and offset + localCol < K
             ) else 0.0
         else:
-            a_val = (
-                a.load[width=1](Coord(row, offset + localCol)) if row
-                < M else 0.0
-            )
+            a_val = a[row, offset + localCol] if row < M else 0.0
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Float32
 
         comptime if not full_tile:
-            b_val = b.load[width=1](Coord(offset + localRow, col)) if (
+            b_val = b[offset + localRow, col] if (
                 col < N and offset + localRow < K
             ) else 0.0
         else:
-            b_val = (
-                b.load[width=1](Coord(offset + localRow, col)) if col
-                < N else 0.0
-            )
+            b_val = b[offset + localRow, col] if col < N else 0.0
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
 
         for k in range(tile_size):
-            result += a_shared.load(localRow * tile_size + k) * b_shared.load(
-                k * tile_size + localCol
-            )
+            result += a_shared.unsafe_load(
+                localRow * tile_size + k
+            ) * b_shared.unsafe_load(k * tile_size + localCol)
 
         barrier()
 
@@ -143,7 +140,7 @@ def matmul_sram(
     )
 
     if row < M and col < N:
-        c.store(Coord(row, col), result)
+        c.store((row, col), result)
 
 
 def run_matmul(ctx: DeviceContext) raises:
@@ -154,11 +151,11 @@ def run_matmul(ctx: DeviceContext) raises:
     comptime N = 502
     comptime K = 511
 
-    var a_host_ptr = alloc[Float32](M * K)
+    var a_host_ptr = unsafe_alloc[Float32](M * K)
     var a_host = TileTensor(a_host_ptr, row_major[M, K]())
-    var b_host_ptr = alloc[Float32](K * N)
+    var b_host_ptr = unsafe_alloc[Float32](K * N)
     var b_host = TileTensor(b_host_ptr, row_major[K, N]())
-    var c_host_ptr = alloc[Float32](M * N)
+    var c_host_ptr = unsafe_alloc[Float32](M * N)
     var c_host = TileTensor(c_host_ptr, row_major[M, N]())
 
     _ = a_host.fill(Float32(1))
@@ -172,7 +169,11 @@ def run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function[matmul_sram](
+    ctx.enqueue_function[
+        matmul_sram[
+            origin_of(a_device), origin_of(b_device), origin_of(c_device)
+        ]
+    ](
         a_device,
         b_device,
         c_device,
@@ -189,17 +190,11 @@ def run_matmul(ctx: DeviceContext) raises:
     var failed = False
     for i in range(M - 10, M):
         for j in range(N - 10, N):
-            var val = c_host.load[width=1](Coord(i, j))
+            var val = c_host[i, j]
             if val != Float32(K):
                 print(
-                    "Fail at index = [",
-                    i,
-                    ",",
-                    j,
-                    "] the value is",
-                    val,
-                    "the golden value is",
-                    K,
+                    t"Fail at index = [ {i} , {j} ] the value is {val} the"
+                    t" golden value is {K}"
                 )
                 failed = True
 

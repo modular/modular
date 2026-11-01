@@ -19,11 +19,11 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.kernels import masked_flash_attention_gpu
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kernels import masked_flash_attention_gpu
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 
 class EncoderAttention(Module):
@@ -84,12 +84,9 @@ class EncoderAttention(Module):
         seq_len = x.shape[0]
         n_kv_heads = x.shape[1]
         head_dim = x.shape[2]
-
         # [S, H_kv, D] -> [S, H_kv, 1, D] -> [S, H_kv, n_rep, D] -> [S, H, D]
-        # Use concat instead of tile: tile has no GPU implementation and forces
-        # a CPU round-trip (DtoH + tile + HtoD) for every layer.
         x = ops.unsqueeze(x, 2)
-        x = ops.concat([x] * n_rep, axis=2)
+        x = ops.tile(x, [1, 1, n_rep, 1])
         return ops.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
 
     def __call__(
@@ -103,6 +100,10 @@ class EncoderAttention(Module):
         Args:
             x: Input tensor with shape [total_seq_len, hidden_dim]
             rope: RotaryEmbedding module
+            attention_bias: The additive mask the encoder applies, ``0``
+                where a position is admitted and a large negative value
+                elsewhere.
+
         Returns:
             Output tensor with shape [total_seq_len, hidden_dim]
         """

@@ -22,8 +22,8 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
-from max.nn.quant_config import (
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -31,6 +31,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -38,6 +39,7 @@ from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -55,7 +57,7 @@ def build_fp8_quant_config(
 
     Nemotron-H FP8 (modelopt ``quant_algo=FP8``) stores, per quantized Linear,
     an ``F8_E4M3`` weight plus a scalar ``weight_scale`` and ``input_scale``
-    (both fp32) — i.e. per-tensor static activation+weight scaling. Returns
+    (both fp32), that is, per-tensor static activation+weight scaling. Returns
     ``None`` if the checkpoint is not FP8 (no ``weight_scale`` tensors).
 
     The generic ``mlp_quantized_layers`` / ``attn_quantized_layers`` machinery
@@ -121,7 +123,7 @@ def parse_hybrid_pattern(pattern: str) -> list[str]:
     """Map a Nemotron-H ``hybrid_override_pattern`` to per-layer kinds.
 
     ``M`` -> ``"mamba"``, ``*`` -> ``"attention"``, ``-`` -> ``"mlp"``,
-    ``E`` -> ``"moe"`` (the Nemotron-3 MoE hybrids, e.g. 30B-A3B).
+    ``E`` -> ``"moe"`` (the Nemotron-3 MoE hybrids, for example, 30B-A3B).
     """
     kinds: list[str] = []
     for ch in pattern:
@@ -220,16 +222,27 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     fp8_mamba_layers: set[int] = field(default_factory=set)
     fp8_mlp_layers: set[int] = field(default_factory=set)
     fp8_moe_layers: set[int] = field(default_factory=set)
+    # ``fp8_attention_layers``: attention layers whose q/k/v/o are FP8 (the 8B
+    # Reasoning checkpoint).
+    fp8_attention_layers: set[int] = field(default_factory=set)
     is_fp8: bool = False
 
     quantization_encoding: SupportedEncoding | None = None
 
+    quant_config: QuantConfig | None = None
+    """The per-tensor static FP8 scheme of the FP8 layers, from the
+    checkpoint (:meth:`finalize`)."""
+
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+
     @property
     def mamba_intermediate_size(self) -> int:
+        """The mixer's width, from the head count and the head width."""
         return self.mamba_num_heads * self.mamba_head_dim
 
     @property
     def conv_dim(self) -> int:
+        """The width the causal convolution runs at."""
         return (
             self.mamba_intermediate_size
             + 2 * self.n_groups * self.ssm_state_size
@@ -237,6 +250,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def mamba_in_proj_out(self) -> int:
+        """The width the mixer's input projection produces."""
         # [gate=intermediate, hidden_states_B_C=conv_dim, dt=nheads]
         return (
             self.mamba_intermediate_size + self.conv_dim + self.mamba_num_heads
@@ -244,22 +258,26 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def attention_q_dim(self) -> int:
+        """The query width across all attention heads."""
         return self.num_attention_heads * self.attention_head_dim
 
     @property
     def attention_kv_dim(self) -> int:
+        """The key and value width across all key/value heads."""
         return self.num_key_value_heads * self.attention_head_dim
 
     @property
     def mamba_layer_indices(self) -> list[int]:
+        """The indices of the layers whose mixer is Mamba-2."""
         return [i for i, k in enumerate(self.layer_kinds) if k == "mamba"]
 
     @property
     def attention_layer_indices(self) -> list[int]:
+        """The indices of the layers whose mixer is attention."""
         return [i for i, k in enumerate(self.layer_kinds) if k == "attention"]
 
     def populate_fp8_layers(self, state_dict: Mapping[str, WeightData]) -> None:
-        """Record which mamba/MLP layers are FP8 from the checkpoint.
+        """Record which mamba/MLP/MoE/attention layers are FP8 from the checkpoint.
 
         A Linear is FP8 iff its ``weight_scale`` is present in the checkpoint
         (the exact inverse of the modelopt ``exclude_modules`` list). Names are
@@ -269,6 +287,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         fp8_mamba: set[int] = set()
         fp8_mlp: set[int] = set()
         fp8_moe: set[int] = set()
+        fp8_attention: set[int] = set()
         for name in state_dict:
             if not name.endswith("weight_scale"):
                 continue
@@ -282,6 +301,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                     fp8_mamba.add(li)
                 elif proj in ("up_proj", "down_proj"):
                     fp8_mlp.add(li)
+                elif proj in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                    fp8_attention.add(li)
                 # MoE routed/shared experts nest one level deeper:
                 # blocks.{i}.mixer.experts.{j}.{up,down}_proj.weight_scale and
                 # blocks.{i}.mixer.shared_experts.{up,down}_proj.weight_scale.
@@ -290,14 +311,34 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         self.fp8_mamba_layers = fp8_mamba
         self.fp8_mlp_layers = fp8_mlp
         self.fp8_moe_layers = fp8_moe
-        self.is_fp8 = bool(fp8_mamba or fp8_mlp or fp8_moe)
+        self.fp8_attention_layers = fp8_attention
+        self.is_fp8 = bool(fp8_mamba or fp8_mlp or fp8_moe or fp8_attention)
         logger.info(
             f"Nemotron-H FP8: {len(fp8_mamba)} mamba layers,"
-            f" {len(fp8_mlp)} MLP layers, {len(fp8_moe)} MoE layers quantized"
+            f" {len(fp8_mlp)} MLP layers, {len(fp8_moe)} MoE layers,"
+            f" {len(fp8_attention)} attention layers quantized"
         )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+    ) -> None:
+        """Completes the config in place from the checkpoint.
+
+        Records which layers are FP8 and their scheme, from the checkpoint's
+        ``weight_scale`` tensors, and the logits the pipeline returns.
+        """
+        self.populate_fp8_layers(state_dict)
+        self.quant_config = build_fp8_quant_config(
+            huggingface_config, state_dict
+        )
+        self.return_logits = outputs.return_logits
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers
 
     @classmethod
@@ -306,6 +347,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The configured maximum length, capped at the model's default."""
         max_seq_len = model_config.max_length
         if max_seq_len:
             return max_seq_len
@@ -411,6 +453,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> NemotronHConfig:
+        """Builds the config from the checkpoint's ``config.json``."""
         # The model (activation / embedding / norm / attention) dtype is always
         # bf16; FP8 is applied PER-MODULE to specific Linears via quant_config,
         # NOT model-wide. So ignore an fp8 resolved encoding for the model dtype

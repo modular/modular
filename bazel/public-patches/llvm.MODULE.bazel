@@ -1,0 +1,45 @@
+"""LLVM setup for the internal build."""
+
+llvm_source = use_extension("//bazel/public-patches:llvm_source.bzl", "llvm_source")
+use_repo(llvm_source, "llvm-raw")
+
+llvm_source.configure(
+    extra_patches = [
+        "//bazel/public-patches:llvm-amd.patch",
+        "//bazel/public-patches:llvm-amd-relax-alloca-verifier.patch",
+        # https://linear.app/modularml/issue/MOCO-2579/disable-ftz-modifier-for-setp-in-nvptx-backend-to-fix-illegal
+        "//bazel/public-patches:llvm-nvptx-fsetp-no-ftz.patch",
+        # Revert ca5bc14 which disabled MFMA rewrite scheduling stage.
+        # Re-enable it to fix VGPR spills in AMD matmul assembly kernels.
+        "//bazel/public-patches:llvm-revert-mfma-rewrite-disable.patch",
+        # Allow RewriteMFMAFormStage to rewrite MFMAs whose AGPR-form result
+        # escapes to non-MAI users (recovers the AGPR-form rewrite for AMD
+        # matmul epilogues that #198555 disabled). #198555 rejected any
+        # candidate with a non-MAI *user*; those users are already bridged by
+        # the #170335 Case 2/3 result-copy machinery, so instead reject only
+        # candidates whose result *register* has a non-MAI def (a VALU op
+        # reusing the vreg post-SSA): that def is the value producer and cannot
+        # be bridged, so wholesale AGPR reclassification would be illegal.
+        # Tracking: MOCO-4155.
+        "//bazel/public-patches:llvm-mfma-allow-non-mai-users.patch",
+        # MLIR timers are keyed by the pass instance pointer, so a pass at a
+        # recycled address inherits the previous pass's timer and reports its
+        # time under that pass's name. Under --mlir-timing, mojo runs several
+        # pass managers into one root scope, and LowerKGENToLLVM intermittently
+        # vanishes from the report. The MLIR counterpart of the --llvm-timing
+        # fix in llvm/llvm-project#218492.
+        "//bazel/public-patches:llvm-mlir-timing-recycled-key.patch",
+    ],
+)
+
+llvm_configure = use_extension("//bazel/public-patches:llvm_project.bzl", "llvm_configure")
+use_repo(llvm_configure, "llvm-project")
+
+llvm_configure.configure(
+    extra_targets = [
+        # buildifier: keep sorted
+        "AMDGPU",
+        "Hexagon",
+        "NVPTX",
+    ],
+)

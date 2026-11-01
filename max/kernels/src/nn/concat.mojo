@@ -25,8 +25,13 @@ from max.algorithm.functional import (
     sync_parallelize,
 )
 from max.gpu import block_idx, thread_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from max.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     TensorLayout,
@@ -38,7 +43,8 @@ from layout import (
 from std.memory import unsafe_memcpy
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
-from std.utils import IndexList, StaticTuple, product
+from std.utils import StaticTuple
+from std.utils.coord import CoordLike, DynamicCoord
 
 from .gather_scatter import normalize_neg_index
 
@@ -50,13 +56,55 @@ from .gather_scatter import normalize_neg_index
 # `IDIV`/`MUFU.RCP`); dynamic dims fall back to the runtime divide.
 from .shapes import _get_start_indices_of_nth_subvolume_static
 
-comptime elementwise_epilogue_type = def[
-    c_type: DType, rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-](IndexList[rank], SIMD[c_type, width]) capturing -> None
+comptime _elementwise_epilogue_fn_signature = def[
+    c_type: DType, width: SIMDLength, *, alignment: Int
+](Coord, SIMD[c_type, width]) -> None
+
+comptime ElementwiseEpilogueFn = (
+    ImplicitlyCopyable & RegisterPassable & _elementwise_epilogue_fn_signature
+)
+"""Fused concat output epilogue: `(coord, value) -> None`.
+
+A unified closure passed as a runtime value carries the origins of its
+captures, so the output it writes stays alive until the kernel that calls it
+has launched. `width` and `alignment` have no defaults.
+"""
 
 
-@always_inline
-@__parameter
+@inline(.always)
+def _no_epilogue_body[
+    c_type: DType, width: SIMDLength, *, alignment: Int
+](coords: Coord, val: SIMD[c_type, width]):
+    pass
+
+
+@inline(.always)
+def _as_epilogue_fn[
+    EpilogueFnType: ElementwiseEpilogueFn
+](epilogue_fn: EpilogueFnType) -> EpilogueFnType:
+    """Binds a parametric function to its `ElementwiseEpilogueFn` closure type.
+
+    A bare parametric function only converts where a function-type bound gives
+    it context, so neither `type_of` nor a `host_args` slot accepts it directly.
+
+    Parameters:
+        EpilogueFnType: Type of the epilogue function (inferred).
+
+    Args:
+        epilogue_fn: The epilogue function to bind.
+
+    Returns:
+        `epilogue_fn` as a value of its closure type.
+    """
+    return epilogue_fn
+
+
+comptime _no_epilogue = _as_epilogue_fn(_no_epilogue_body)
+"""Stands in for an `ElementwiseEpilogueFn` argument when `has_epilogue` is
+`False`, where the concat stores into its output directly."""
+
+
+@inline(.always)
 def preferred_simd_width[dtype: DType]() -> Int:
     """SIMD scalar count for fused GPU concat vectorization.
 
@@ -66,12 +114,88 @@ def preferred_simd_width[dtype: DType]() -> Int:
     Parameters:
         dtype: Element type used to compute the SIMD scalar width.
     """
+    comptime target = default_accelerator()
     return (
         32
-        // size_of[dtype]() if CompilationTarget[get_gpu_target()]._is_arch[
-            "sm_100a"
-        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+        // size_of[dtype]() if target._is_arch["sm_100a"]() else simd_width_of[
+            dtype, target=target
+        ]()
     )
+
+
+@inline(.always)
+def _shape_dim[*types: CoordLike](shape: Coord[*types], axis: Int) -> Int:
+    """Reads the dimension at `axis` from a shape `Coord`.
+
+    `axis` may be a runtime value: the element lookup is compiler-unrolled over
+    the `Coord`'s rank, so a runtime `Coord` index is never needed.
+
+    Parameters:
+        types: Element types of the shape `Coord`.
+
+    Args:
+        shape: The shape `Coord` to read from.
+        axis: The dimension index to read.
+
+    Returns:
+        The dimension at `axis`, or 1 when `axis` is out of range.
+    """
+    comptime for i in range(shape.rank):
+        if i == axis:
+            return Int(shape[i])
+    return 1
+
+
+@inline(.always)
+def _shape_set[
+    *types: CoordLike
+](mut shape: Coord[*types], axis: Int, value: Int):
+    """Writes `value` into the dimension at `axis` of a dynamic shape `Coord`.
+
+    `axis` may be a runtime value: the element lookup is compiler-unrolled over
+    the `Coord`'s rank, so a runtime `Coord` index is never needed.
+
+    Parameters:
+        types: Element types of the shape `Coord`.
+
+    Args:
+        shape: The shape `Coord` to write into.
+        axis: The dimension index to write.
+        value: The new dimension value.
+    """
+    comptime for i in range(shape.rank):
+        if i == axis:
+            comptime ElemT = types[i]
+            comptime assert (
+                not ElemT.is_static_value
+            ), "cannot write a runtime value into a statically known dimension"
+            shape.replace_dynamic[i](Scalar[ElemT.DTYPE](value))
+            return
+
+
+@inline(.always)
+def _shape_product[
+    *types: CoordLike
+](shape: Coord[*types], begin: Int, end: Int) -> Int:
+    """Multiplies the dimensions of `shape` over `[begin, end)`.
+
+    Parameters:
+        types: Element types of the shape `Coord`.
+
+    Args:
+        shape: The shape `Coord` to reduce.
+        begin: Inclusive first dimension.
+        end: Exclusive last dimension.
+
+    Returns:
+        The product of the dimensions in `[begin, end)`; 1 when the range is
+        empty.
+    """
+    var p = 1
+    comptime for i in range(shape.rank):
+        if i >= begin and i < end:
+            p *= Int(shape[i])
+    return p
 
 
 # ===-----------------------------------------------------------------------===#
@@ -79,32 +203,34 @@ def preferred_simd_width[dtype: DType]() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def memcpy_or_fuse[
-    rank: Int,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    element_types: TypeList[Trait=CoordLike, ...],
+    //,
     dtype: DType,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     dest_data: MutPointer[Int8, _],
     out_byte_offset: Int,
     src_data: ImmPointer[Int8, _],
     n: Int,
-    out_shape: IndexList[rank, ...],
+    out_shape: Coord[*element_types],
+    epilogue_fn: EpilogueFnType,
 ) raises:
-    """Copies ``n`` bytes from ``src_data`` into ``dest_data`` at ``out_byte_offset``, applying ``epilogue_fn`` elementwise when present.
+    """Copies ``n`` bytes from ``src_data`` into ``dest_data`` at ``out_byte_offset``, applying ``epilogue_fn`` elementwise when ``has_epilogue`` is set.
 
-    When no epilogue function is supplied, this performs a plain ``memcpy`` of
-    ``n`` bytes. When an epilogue function is supplied, the source bytes are
-    reinterpreted as typed elements and the epilogue is applied scalar-by-scalar
-    so that fused concat can transform values while copying them into the
-    output buffer.
+    When ``has_epilogue`` is ``False``, this performs a plain ``memcpy`` of
+    ``n`` bytes. Otherwise the source bytes are reinterpreted as typed elements
+    and the epilogue is applied scalar-by-scalar so that fused concat can
+    transform values while copying them into the output buffer.
 
     Parameters:
-        rank: Number of dimensions in the output tensor used for epilogue
-            indexing.
+        EpilogueFnType: Type of the epilogue function (inferred).
+        element_types: Element types of ``out_shape`` (inferred).
         dtype: Element type of the tensors being copied.
-        epilogue_fn: Optional elementwise function applied to each copied
-            element; when absent, a plain byte ``memcpy`` is performed.
+        has_epilogue: Whether to apply ``epilogue_fn`` to each copied element;
+            when ``False``, a plain byte ``memcpy`` is performed.
 
     Args:
         dest_data: Destination byte buffer to write into.
@@ -113,13 +239,14 @@ def memcpy_or_fuse[
         n: Number of bytes to copy.
         out_shape: Shape of the output tensor used to compute multi-dimensional
             indices for the epilogue function.
+        epilogue_fn: Elementwise function applied to each copied element;
+            ignored unless ``has_epilogue``.
     """
-    comptime if not epilogue_fn:
+    comptime if not has_epilogue:
         unsafe_memcpy(
             dest=dest_data.unsafe_offset(out_byte_offset), src=src_data, count=n
         )
     else:
-        comptime func = epilogue_fn.value()
         comptime simd_width = simd_width_of[dtype]()
 
         var typed_offset = out_byte_offset // size_of[dtype]()
@@ -137,19 +264,19 @@ def memcpy_or_fuse[
             row_major(Coord(shape_1d)),
         )
 
-        @always_inline
+        @inline(.always)
         def epilogue_wrapper[
             simd_width: Int, alignment: Int = 1
         ](index: Coord) {var}:
             var load = input.load[width=simd_width, alignment=1](index)
 
             var out_index = _get_start_indices_of_nth_subvolume[0](
-                Int(index[0].value()) + typed_offset,
-                out_shape,
+                Int(index[0]) + typed_offset,
+                coord_to_index_list(out_shape),
             )
 
-            func[dtype, rank, simd_width](
-                out_index.cast[.int64](),
+            epilogue_fn[dtype, simd_width, alignment=1](
+                Coord(out_index),
                 load,
             )
             return
@@ -167,11 +294,11 @@ struct _Span(TrivialRegisterPassable):
     var start: Int
     var end: Int
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def empty(self) -> Bool:
         return not (self.start < self.end)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def intersect(self, other: Self) -> Self:
         return Self(max(self.start, other.start), min(self.end, other.end))
 
@@ -192,10 +319,10 @@ def _canonical_reshape[
     buf: TileTensor[dtype, address_space=.GENERIC, ...],
     axis: Int,
 ) -> _CanonicallyReshapedBuffer[buf.origin]:
-    var shape = coord_to_index_list(buf.layout.shape_coord())
-    var h = product(shape, 0, axis)
+    var shape = buf.layout.shape_coord()
+    var h = _shape_product(shape, 0, axis)
     var w = Int(buf.dim(axis))
-    var c = product(shape, axis + 1, buf.rank) * size_of[dtype]()
+    var c = _shape_product(shape, axis + 1, buf.rank) * size_of[dtype]()
     return _CanonicallyReshapedBuffer(buf.ptr.unsafe_bitcast[Int8](), h, w, c)
 
 
@@ -224,14 +351,16 @@ def _canonical_reshape_output[
 def _concat_parallel[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     dtype: DType,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
-    ctx: Optional[DeviceContext] = None,
+    epilogue_fn: EpilogueFnType,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     var output_canon = _canonical_reshape_output(output, axis, inputs)
 
@@ -242,9 +371,7 @@ def _concat_parallel[
     var output_data = output_canon.data
 
     var total_output_bytes = output_h * output_wc
-    var output_shape = rebind[IndexList[output.rank]](
-        coord_to_index_list(output.layout.shape_coord())
-    )
+    var output_shape = output.layout.shape_coord()
 
     comptime KB = 1024
     comptime parallel_chunk_size = 64 * KB  # TODO autotune
@@ -259,6 +386,7 @@ def _concat_parallel[
         var output_data,
         var output_wc,
         var output_shape,
+        var epilogue_fn,
         imm inputs,
         imm axis,
     }:
@@ -305,7 +433,7 @@ def _concat_parallel[
                 if overlap_full_rel_end < overlap_full_rel_start:
                     # If we hit here, this was probably a bad chunking choice,
                     # but var's handle it correctly anyways.
-                    memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+                    memcpy_or_fuse[dtype, has_epilogue](
                         output_data,
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
@@ -313,13 +441,14 @@ def _concat_parallel[
                         input_data.unsafe_offset(overlap_rel_start),
                         overlap_rel_end - overlap_rel_start,
                         output_shape,
+                        epilogue_fn,
                     )
                 else:
                     # OK, we have maybe stragglers on the start and end, and a
                     # nice solid middle section -- var's handle those
                     # separately.
                     # First, leading stragglers:
-                    memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+                    memcpy_or_fuse[dtype, has_epilogue](
                         output_data,
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
@@ -327,6 +456,7 @@ def _concat_parallel[
                         input_data.unsafe_offset(overlap_rel_start),
                         overlap_full_rel_start - overlap_rel_start,
                         output_shape,
+                        epilogue_fn,
                     )
                     # Now, fully-aligned sections:
                     var in_ptr = input_data.unsafe_offset(
@@ -341,22 +471,24 @@ def _concat_parallel[
                     )
 
                     while in_ptr < end_in_ptr:
-                        memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+                        memcpy_or_fuse[dtype, has_epilogue](
                             output_data,
                             out_ptr_offset,
                             in_ptr,
                             input_wc,
                             output_shape,
+                            epilogue_fn,
                         )
                         in_ptr = in_ptr.unsafe_offset(input_wc)
                         out_ptr_offset += output_wc
                     # Lastly, trailing stragglers:
-                    memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+                    memcpy_or_fuse[dtype, has_epilogue](
                         output_data,
                         out_ptr_offset,
                         in_ptr,
                         overlap_rel_end - overlap_full_rel_end,
                         output_shape,
+                        epilogue_fn,
                     )
 
             amount_traversed += input_byte_size
@@ -371,17 +503,19 @@ def _concat_parallel[
     sync_parallelize(do_chunk, num_chunks, ctx)
 
 
-@always_inline
+@inline(.always)
 def _concat[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     dtype: DType,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
+    epilogue_fn: EpilogueFnType,
 ) raises:
     """Concatenate inputs along axis and store in output.
 
@@ -395,13 +529,9 @@ def _concat[
 
     """
 
-    var h = product(
-        coord_to_index_list(inputs[0].layout.shape_coord()), 0, axis
-    )
-    var c = product(
-        coord_to_index_list(inputs[0].layout.shape_coord()),
-        axis + 1,
-        output.rank,
+    var h = _shape_product(inputs[0].layout.shape_coord(), 0, axis)
+    var c = _shape_product(
+        inputs[0].layout.shape_coord(), axis + 1, output.rank
     )
 
     var w_out: Int = 0
@@ -419,47 +549,47 @@ def _concat[
             var input_offset = j * w * c
             var output_offset = j * stride_h_out + w_offset * stride_w_out
             # these slices are contiguous
-            memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+            memcpy_or_fuse[dtype, has_epilogue](
                 output.ptr.unsafe_bitcast[Int8](),
                 output_offset * size_of[dtype](),
                 inputs[i]
                 .ptr.unsafe_offset(input_offset)
                 .unsafe_bitcast[Int8](),
                 w * c * size_of[dtype](),
-                rebind[IndexList[output.rank]](
-                    coord_to_index_list(output.layout.shape_coord())
-                ),
+                output.layout.shape_coord(),
+                epilogue_fn,
             )
         w_offset += w
 
 
-@always_inline
+@inline(.always)
 def _concat_inner[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     dtype: DType,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
+    epilogue_fn: EpilogueFnType,
 ) raises:
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
         var buffer_len = inputs[i].num_elements()
-        memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+        memcpy_or_fuse[dtype, has_epilogue](
             output.ptr.unsafe_bitcast[Int8](),
             num_elems_copied * size_of[dtype](),
             inputs[i].ptr.unsafe_bitcast[Int8](),
             buffer_len * size_of[dtype](),
-            rebind[IndexList[output.rank]](
-                coord_to_index_list(output.layout.shape_coord())
-            ),
+            output.layout.shape_coord(),
+            epilogue_fn,
         )
         num_elems_copied += buffer_len
 
 
-@always_inline
+@inline(.always)
 def _check_input_consistency[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
@@ -477,17 +607,19 @@ def _check_input_consistency[
             )
 
 
-@always_inline
+@inline(.always)
 def _concat_serial[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     dtype: DType,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
+    epilogue_fn: EpilogueFnType,
 ) raises:
     _check_input_consistency[dtype](axis, inputs)
 
@@ -500,30 +632,32 @@ def _concat_serial[
         break
 
     if all_outer_dims_singvaron:
-        _concat_inner[dtype, epilogue_fn](output, inputs)
+        _concat_inner[dtype, has_epilogue](output, inputs, epilogue_fn)
         return
 
-    _concat[dtype, epilogue_fn](output, axis, inputs)
+    _concat[dtype, has_epilogue](output, axis, inputs, epilogue_fn)
 
 
-@always_inline
+@inline(.always)
 def _concat_cpu[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     dtype: DType,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
-    ctx: Optional[DeviceContext] = None,
+    epilogue_fn: EpilogueFnType,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     _check_input_consistency[dtype](axis, inputs)
 
-    @always_inline
+    @inline(.always)
     def dispatch_serial(unused_thread_idx: Int) raises {imm}:
-        _concat_serial[dtype, epilogue_fn](output, axis, inputs)
+        _concat_serial[dtype, has_epilogue](output, axis, inputs, epilogue_fn)
 
     comptime KB = 1024
     comptime min_work_for_parallel = 128 * KB  # TODO: autotune
@@ -535,10 +669,12 @@ def _concat_cpu[
         # Buffer, so this kernel must be run synchronously.
         sync_parallelize(dispatch_serial, 1, ctx)
     else:
-        _concat_parallel[epilogue_fn=epilogue_fn](output, axis, inputs, ctx=ctx)
+        _concat_parallel[has_epilogue=has_epilogue](
+            output, axis, inputs, epilogue_fn, ctx=ctx
+        )
 
 
-@always_inline
+@inline(.always)
 def concat_shape[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
@@ -547,7 +683,7 @@ def concat_shape[
 ](
     input_bufs: List[TileTensor[input_type, InputLayoutType, input_origin]],
     axis: Int,
-) raises -> IndexList[InputLayoutType.rank]:
+) raises -> Coord[*InputLayoutType._shape_types]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
     compatible.
@@ -568,14 +704,13 @@ def concat_shape[
     # extract hyper parameters
     var normalized_axis = normalize_neg_index(axis, InputLayoutType.rank)
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     def shape_equal_ignore_axis(
-        s1: IndexList[InputLayoutType.rank],
-        s2: IndexList[InputLayoutType.rank],
-    ) -> Bool:
-        for i in range(InputLayoutType.rank):
-            if i != axis and s1[i] != s2[i]:
+        s1: Coord[*InputLayoutType._shape_types],
+        s2: Coord[*InputLayoutType._shape_types],
+    ) {imm} -> Bool:
+        comptime for i in range(InputLayoutType.rank):
+            if i != axis and _shape_dim(s1, i) != _shape_dim(s2, i):
                 return False
         return True
 
@@ -583,12 +718,8 @@ def concat_shape[
     for i in range(len(input_bufs)):
         concat_axis_dim_sum += Int(input_bufs[i].dim(normalized_axis))
         if not shape_equal_ignore_axis(
-            rebind[IndexList[InputLayoutType.rank]](
-                coord_to_index_list(input_bufs[0].layout.shape_coord())
-            ),
-            rebind[IndexList[InputLayoutType.rank]](
-                coord_to_index_list(input_bufs[i].layout.shape_coord())
-            ),
+            input_bufs[0].layout.shape_coord(),
+            input_bufs[i].layout.shape_coord(),
         ):
             raise Error(
                 "[concat_from_list] input shapes must match except at concat"
@@ -596,21 +727,18 @@ def concat_shape[
             )
 
     # compute and return the output shape
-    var output_shape = rebind[IndexList[InputLayoutType.rank]](
-        coord_to_index_list(input_bufs[0].layout.shape_coord())
-    )
-    output_shape[normalized_axis] = concat_axis_dim_sum
+    var output_shape = input_bufs[0].layout.shape_coord()
+    _shape_set(output_shape, normalized_axis, concat_axis_dim_sum)
     return output_shape
 
 
-@always_inline
+@inline(.always)
 def concat[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     target: StaticString = "cpu",
-    epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
@@ -622,8 +750,7 @@ def concat[
 ) raises:
     """Concatenates ``inputs`` along ``axis`` into ``output`` for the given ``target``.
 
-    Dispatches to the CPU or GPU concat implementation based on ``target`` and
-    applies ``epilogue_fn`` elementwise to each copied element when supplied.
+    Dispatches to the CPU or GPU concat implementation based on ``target``.
     Returns early when the output tensor is empty.
 
     Parameters:
@@ -631,8 +758,6 @@ def concat[
         InputLayoutType: Layout type of the input tensors (inferred).
         dtype: Element type of the input and output tensors.
         target: Target device to dispatch to (defaults to ``"cpu"``).
-        epilogue_fn: Optional elementwise function applied to each copied
-            element (defaults to ``None``).
 
     Args:
         output: Destination tensor that receives the concatenated result.
@@ -640,6 +765,74 @@ def concat[
         inputs: Static tuple of input tensors to concatenate.
         context: Device context used to schedule the work.
     """
+    _concat_impl[dtype, target=target, has_epilogue=False](
+        output, axis, inputs, _no_epilogue, context
+    )
+
+
+@inline(.always)
+def concat[
+    input_origin: ImmOrigin,
+    InputLayoutType: TensorLayout,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    dtype: DType,
+    target: StaticString = "cpu",
+](
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    axis: Int,
+    inputs: StaticTuple[
+        TileTensor[dtype, InputLayoutType, input_origin],
+        ...,
+    ],
+    epilogue_fn: EpilogueFnType,
+    context: DeviceContext,
+) raises:
+    """Concatenates ``inputs`` along ``axis`` into ``output``, applying ``epilogue_fn`` to each element.
+
+    Dispatches to the CPU or GPU concat implementation based on ``target``.
+    Instead of storing into ``output``, each copied element is handed to
+    ``epilogue_fn`` together with its output coordinates. Returns early when
+    the output tensor is empty.
+
+    Parameters:
+        input_origin: Origin of the input tensors (inferred).
+        InputLayoutType: Layout type of the input tensors (inferred).
+        EpilogueFnType: Type of the epilogue function (inferred).
+        dtype: Element type of the input and output tensors.
+        target: Target device to dispatch to (defaults to ``"cpu"``).
+
+    Args:
+        output: Destination tensor that receives the concatenated result.
+        axis: Axis along which to concatenate the inputs.
+        inputs: Static tuple of input tensors to concatenate.
+        epilogue_fn: Elementwise function applied to each copied element.
+        context: Device context used to schedule the work.
+    """
+    _concat_impl[dtype, target=target, has_epilogue=True](
+        output, axis, inputs, epilogue_fn, context
+    )
+
+
+@inline(.always)
+def _concat_impl[
+    input_origin: ImmOrigin,
+    InputLayoutType: TensorLayout,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    dtype: DType,
+    target: StaticString,
+    has_epilogue: Bool,
+](
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    axis: Int,
+    inputs: StaticTuple[
+        TileTensor[dtype, InputLayoutType, input_origin],
+        ...,
+    ],
+    epilogue_fn: EpilogueFnType,
+    context: DeviceContext,
+) raises:
     comptime assert is_valid_target[target](), "not a valid target"
 
     with Trace[TraceLevel.OP, target=target](
@@ -661,19 +854,21 @@ def concat[
             # TODO: Should we just provide a separate implementation for
             # `concat_from_list`, since dynamic input size does not work with
             # static sized input lambda tuple.
-            _concat_cpu[dtype, epilogue_fn](
+            _concat_cpu[dtype, has_epilogue](
                 output,
                 axis,
                 inputVec,
-                ctx=Optional[DeviceContext](context),
+                epilogue_fn,
+                ctx=Optional(context.assert_cpu_target()),
             )
         else:
-            _concat_gpu[dtype, epilogue_fn](
+            _concat_gpu[dtype, has_epilogue](
                 # This is safe since `output` being an arg will keep the origin alive
                 # for the duration of this call.
                 output,
                 axis,
                 inputs,
+                epilogue_fn,
                 context,
             )
 
@@ -729,21 +924,28 @@ def _concat_gpu_flat_kernel[
     # in_offset is a multiple of vec_width when inner_size % vec_width == 0
     # (enforced by the caller).
     var acc = 0
-    comptime for i in range(num_inputs):
-        var input_concat_dim = Int(inputs[i].dim(axis))
-        if concat_idx < acc + input_concat_dim:
-            var local_concat = concat_idx - acc
-            var in_offset = (
-                outer_idx * input_concat_dim + local_concat
-            ) * _inner_size + inner_idx
-            output.raw_store[alignment=vec_width](
-                vec_idx,
-                inputs[i].raw_load[
-                    width=vec_width, alignment=vec_width, invariant=True
-                ](in_offset),
-            )
-            return
-        acc += input_concat_dim
+    with PDL():
+        comptime for i in range(num_inputs):
+            var input_concat_dim = Int(inputs[i].dim(axis))
+            if concat_idx < acc + input_concat_dim:
+                var local_concat = concat_idx - acc
+                var in_offset = (
+                    outer_idx * input_concat_dim + local_concat
+                ) * _inner_size + inner_idx
+                var output_flat = output.reshape(
+                    row_major(output.num_elements())
+                )
+                var input_flat = inputs[i].reshape(
+                    row_major(inputs[i].num_elements())
+                )
+                output_flat.store[alignment=vec_width](
+                    (vec_idx,),
+                    input_flat.load[width=vec_width, alignment=vec_width](
+                        Coord(in_offset)
+                    ),
+                )
+                return
+            acc += input_concat_dim
 
 
 @__name(t"concat_inner_most_single_dim_{dtype}")
@@ -758,7 +960,8 @@ def _concat_inner_most_single_dim[
     dtype: DType,
     num_inputs: Int,
     block_size: Int,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
+    EpilogueFnType: ElementwiseEpilogueFn,
 ](
     output: TileTensor[
         dtype, OutputLayoutType, output_origin, Engine=OutputEngine
@@ -767,6 +970,7 @@ def _concat_inner_most_single_dim[
         TileTensor[dtype, InputLayoutType, input_origin, Engine=InputEngine],
         num_inputs,
     ],
+    epilogue_fn: EpilogueFnType,
 ):
     var idx = block_idx.x * block_size + thread_idx.x
     # One thread per "row" of the concat inputs (last dim is 1 on each input).
@@ -777,39 +981,40 @@ def _concat_inner_most_single_dim[
     if idx >= row_count:
         return
 
-    # Static-divisor row -> n-D decomposition: the output's outer dims that are
-    # statically known in `OutputLayoutType` fold the per-thread `divmod` to a
-    # magic-multiply + shift (no `IDIV`); dynamic dims fall back to the runtime
-    # divide read from the `Coord`'s leaf values. Behavior is bit-identical to
-    # `_get_start_indices_of_nth_subvolume[1]`.
-    var index = _get_start_indices_of_nth_subvolume_static(
-        idx, output.layout.shape_coord()
-    )
-    var in_coord = Coord(index)
+    with PDL():
+        # Static-divisor row -> n-D decomposition: the output's outer dims that are
+        # statically known in `OutputLayoutType` fold the per-thread `divmod` to a
+        # magic-multiply + shift (no `IDIV`); dynamic dims fall back to the runtime
+        # divide read from the `Coord`'s leaf values. Behavior is bit-identical to
+        # `_get_start_indices_of_nth_subvolume[1]`.
+        var index = _get_start_indices_of_nth_subvolume_static(
+            idx, output.layout.shape_coord()
+        )
+        var in_coord = Coord(index)
 
-    comptime for i in range(num_inputs):
-        var out_index = rebind[IndexList[output.rank]](index.canonicalize())
-        out_index[output.rank - 1] = i
-        var out_coord = Coord(out_index)
+        comptime for i in range(num_inputs):
+            var out_index = index
+            out_index[output.rank - 1] = i
+            var out_coord = Coord(out_index)
 
-        comptime if epilogue_fn:
-            comptime func = epilogue_fn.value()
-            func[dtype, output.rank, 1](
-                out_index, inputs[i].load[width=1](in_coord)
-            )
-        else:
-            output.store(out_coord, inputs[i].load[width=1](in_coord))
+            comptime if has_epilogue:
+                epilogue_fn[dtype, 1, alignment=1](
+                    out_coord, inputs[i].load[width=1](in_coord)
+                )
+            else:
+                output.store(out_coord, inputs[i].load[width=1](in_coord))
 
 
-@always_inline
+@inline(.always)
 def _concat_gpu_elementwise[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     InputEngine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     dtype: DType,
     num_inputs: Int,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, Engine=_, ...],
     axis: Int,
@@ -817,42 +1022,45 @@ def _concat_gpu_elementwise[
         TileTensor[dtype, InputLayoutType, input_origin, Engine=InputEngine],
         num_inputs,
     ],
+    epilogue_fn: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
     # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
     comptime for i in range(output.rank):
         if i == axis:
-            return _concat_gpu_elementwise[axis=i, epilogue_fn=epilogue_fn](
-                output, inputs, ctx
+            return _concat_gpu_elementwise[axis=i, has_epilogue=has_epilogue](
+                output, inputs, epilogue_fn, ctx
             )
 
 
-@always_inline
+@inline(.always)
 def _concat_gpu_elementwise[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     InputEngine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     axis: Int,
     dtype: DType,
     num_inputs: Int,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, Engine=_, ...],
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin, Engine=InputEngine],
         num_inputs,
     ],
+    epilogue_fn: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
     # Fast path: use flat-indexing kernel to avoid multi-dimensional index
     # decomposition overhead. Only when no epilogue function is needed.
-    comptime if not epilogue_fn:
-        var output_shape = coord_to_index_list(output.layout.shape_coord())
+    comptime if not has_epilogue:
+        var output_shape = output.layout.shape_coord()
         var inner_size = 1
         comptime for dim_idx in range(axis + 1, output.rank):
-            inner_size *= Int(output_shape[dim_idx])
-        var total_concat_dim = Int(output_shape[axis])
+            inner_size *= _shape_dim(output_shape, dim_idx)
+        var total_concat_dim = _shape_dim(output_shape, axis)
 
         # Target 128-bit (16 byte) vector loads for optimal memory
         # throughput. This gives vec_width=4 for f32, 8 for f16/bf16,
@@ -860,9 +1068,8 @@ def _concat_gpu_elementwise[
         comptime _vec_width = 16 // size_of[dtype]()
         comptime _block_size = 256
 
-        @__parameter
-        @always_inline
-        def _launch_flat[_vw: Int]() raises:
+        @inline(.always)
+        def _launch_flat[_vw: Int]() raises {var}:
             comptime kernel_fn = _concat_gpu_flat_kernel[
                 OutputLayoutType=output.LayoutType,
                 output_origin=output.origin,
@@ -886,6 +1093,7 @@ def _concat_gpu_elementwise[
                 Int32(total_vec_items),
                 grid_dim=(ceildiv(total_vec_items, _block_size),),
                 block_dim=(_block_size,),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Check if _vec_width-wide loads are safe:
@@ -919,33 +1127,33 @@ def _concat_gpu_elementwise[
     # Metal a by-reference capture leaves the GPU kernel holding host-side
     # pointers, so it reads garbage/zeros. Copy-capture brings the device
     # pointers into the closure.
-    @always_inline
+    @inline(.always)
     def per_output_elem[
         simd_width: Int, alignment: Int = 1
     ](out_index: Coord) {var}:
-        var in_index = coord_to_index_list(out_index)
+        var in_index = out_index.make_dynamic[.int]()
 
         comptime for i in range(num_inputs):
             var input = inputs[i]
-            var input_shape = coord_to_index_list(input.layout.shape_coord())
+            var input_shape = input.layout.shape_coord()
 
-            if Int(in_index[axis].value()) < input_shape[axis]:
-                var in_coord = Coord(in_index)
-
-                comptime if epilogue_fn:
-                    comptime func = epilogue_fn.value()
-                    func[dtype, out_index.rank, simd_width](
-                        coord_to_index_list(out_index),
-                        input.load[width=simd_width](in_coord),
+            if _shape_dim(in_index, axis) < _shape_dim(input_shape, axis):
+                comptime if has_epilogue:
+                    epilogue_fn[dtype, simd_width, alignment=1](
+                        out_index,
+                        input.load[width=simd_width](in_index),
                     )
                 else:
-                    output.store[width=simd_width](
-                        out_index,
-                        input.load[width=simd_width](in_coord),
+                    output.store(
+                        out_index, input.load[width=simd_width](in_index)
                     )
                 return
 
-            in_index[axis] -= input_shape[axis]
+            _shape_set(
+                in_index,
+                axis,
+                _shape_dim(in_index, axis) - _shape_dim(input_shape, axis),
+            )
 
     # When axis != rank-1, the SIMD group spans the innermost (non-concat)
     # dimension, so all elements belong to the same input and we can safely
@@ -960,14 +1168,15 @@ def _concat_gpu_elementwise[
         )
 
 
-@always_inline
+@inline(.always)
 def _concat_gpu[
     input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     InputEngine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     dtype: DType,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    has_epilogue: Bool,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, Engine=_, ...],
     axis: Int,
@@ -975,6 +1184,7 @@ def _concat_gpu[
         TileTensor[dtype, InputLayoutType, input_origin, Engine=InputEngine],
         ...,
     ],
+    epilogue_fn: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = inputs.size
@@ -984,9 +1194,8 @@ def _concat_gpu[
         # Use input[0], all dims should be equal except axis.
         outer_dims *= Int(inputs[0].dim(i))
 
-    @__parameter
-    @always_inline
-    def _concat_buffers_contiguously() raises:
+    @inline(.always)
+    def _concat_buffers_contiguously() raises {imm}:
         var input_size = 0
 
         comptime for i in range(num_inputs):
@@ -1014,7 +1223,7 @@ def _concat_gpu[
 
     # If outer_dims are ones and it is not a fused kernel, use device-to-device
     # copies.
-    comptime if not epilogue_fn:
+    comptime if not has_epilogue:
         if outer_dims == 1:
             return _concat_buffers_contiguously()
 
@@ -1037,32 +1246,40 @@ def _concat_gpu[
                 dtype,
                 num_inputs,
                 block_size,
-                epilogue_fn,
+                has_epilogue,
+                EpilogueFnType,
             ]
 
             return ctx.enqueue_function[kernel](
                 output,
                 inputs,
+                host_args=(epilogue_fn,),
                 grid_dim=(ceildiv(inputs[0].num_elements(), block_size),),
                 block_dim=(block_size),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
-    _concat_gpu_elementwise[epilogue_fn=epilogue_fn](output, axis, inputs, ctx)
+    _concat_gpu_elementwise[has_epilogue=has_epilogue](
+        output, axis, inputs, epilogue_fn, ctx
+    )
 
 
-@always_inline
+@inline(.always)
 def _fused_concat_cpu[
     rank: Int,
     dtype: DType,
-    input_fn: def[input_index: Int, width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
-    output_0_fn: elementwise_epilogue_type,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFnType: ElementwiseEpilogueFn,
     size: Int,
 ](
     axis: Int,
-    input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Engine=_, ...],
+    input_shapes: StaticTuple[DynamicCoord[.int, rank], size],
+    input_fn: InputFnType,
+    output_0_fn: OutputFnType,
     ctx: Optional[DeviceContext],
 ) raises:
     var offset = 0
@@ -1070,19 +1287,19 @@ def _fused_concat_cpu[
     comptime for i in range(input_shapes.size):
         var input_shape = input_shapes[i]
 
-        @always_inline
+        @inline(.always)
         def elementwise_wrapper[
             _width: Int, alignment: Int = 1
         ](indices: Coord) {var}:
-            var c = rebind[IndexList[rank]](coord_to_index_list(indices))
-            c[axis] += offset
+            # `axis` is a runtime value, so shift the concat dim through the
+            # rank-unrolled `_shape_set` helper.
+            var c = indices.make_dynamic[.int]()
+            _shape_set(c, axis, _shape_dim(c, axis) + offset)
 
             # Call the input/output lambda for fused concat kernel.
-            output_0_fn[dtype, rank, width=_width, alignment=1](
+            output_0_fn[dtype, width=_width, alignment=1](
                 c,
-                input_fn[i, _width, rank, alignment](
-                    rebind[IndexList[rank]](coord_to_index_list(indices))
-                ),
+                input_fn[i, _width, alignment](indices),
             )
 
         # TODO: we can use simd_width > 0 if all inputs are aligned.
@@ -1090,154 +1307,160 @@ def _fused_concat_cpu[
         elementwise[
             1,
             _trace_description="concat_fused",
-        ](elementwise_wrapper, Coord(input_shape), device_ctx)
-        offset = offset + input_shape[axis]
+        ](elementwise_wrapper, input_shape, device_ctx)
+        offset = offset + _shape_dim(input_shape, axis)
 
 
-@always_inline
+@inline(.always)
 @__name(t"fused_concat_inner_most_single_dim_{dtype}")
 def _fused_concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
-    output_origin: MutOrigin,
-    OutputEngine: TensorEngine,
     //,
     rank: Int,
     dtype: DType,
     block_size: Int,
-    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
-        IndexList[_rank]
-    ) capturing -> SIMD[dtype, width],
-    output_0_fn: elementwise_epilogue_type,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFnType: ElementwiseEpilogueFn,
     size: Int,
 ](
-    input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[
-        dtype, OutputLayoutType, output_origin, Engine=OutputEngine
-    ],
+    input_shapes: StaticTuple[DynamicCoord[.int, rank], size],
+    output_layout: OutputLayoutType,
+    input_fn: InputFnType,
+    output_0_fn: OutputFnType,
 ):
     comptime num_inputs = input_shapes.size
 
     var idx = block_idx.x * block_size + thread_idx.x
-    if idx >= product(input_shapes[0], rank):
+    if idx >= _shape_product(input_shapes[0], 0, rank):
         return
 
-    # Static-divisor row -> n-D decomposition: the FusedConcatSlice
-    # hot site. The graph compiler threads a `TileTensor` whose layout
-    # `_shape_types` preserve the statically-known MLIR output dims, so the
-    # per-thread `divmod` over the outer dims folds to magic-multiply + shift
-    # (no `IDIV`). Dynamic dims fall back to the runtime divide; behavior is
-    # bit-identical to `_get_start_indices_of_nth_subvolume[1]`.
-    var index = _get_start_indices_of_nth_subvolume_static(
-        idx, output.layout.shape_coord()
-    )
-
-    comptime for i in range(num_inputs):
-        var out_index = index
-        out_index[rank - 1] = i
-
-        output_0_fn[dtype, rank, width=1](
-            rebind[IndexList[rank]](out_index.canonicalize()),
-            input_fn[i, 1, rank](rebind[IndexList[rank]](index.canonicalize())),
+    with PDL():
+        # Static-divisor row -> n-D decomposition: the hot site of a fused
+        # concat, and of a concat whose epilogue also stores a slice. The graph
+        # compiler threads a `TileTensor` whose layout `_shape_types` preserve
+        # the statically-known MLIR output dims, so the per-thread `divmod`
+        # over the outer dims folds to magic-multiply + shift
+        # (no `IDIV`). Dynamic dims fall back to the runtime divide; behavior is
+        # bit-identical to `_get_start_indices_of_nth_subvolume[1]`.
+        var index = _get_start_indices_of_nth_subvolume_static(
+            idx, output_layout.shape_coord()
         )
 
+        comptime for i in range(num_inputs):
+            var out_index = index
+            out_index[rank - 1] = i
 
-@always_inline
+            output_0_fn[dtype, width=1, alignment=1](
+                Coord(out_index),
+                input_fn[i, 1](Coord(index)),
+            )
+
+
+@inline(.always)
 @__name(t"fused_dual_concat_inner_most_single_dim_{dtype}")
 def _fused_dual_concat_inner_most_single_dim[
     OutputLayoutType0: TensorLayout,
-    output_origin_0: MutOrigin,
-    OutputEngine0: TensorEngine,
     OutputLayoutType1: TensorLayout,
-    output_origin_1: MutOrigin,
-    OutputEngine1: TensorEngine,
     //,
     rank: Int,
     dtype: DType,
     block_size: Int,
-    input_fn_0: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
-    output_0_fn: elementwise_epilogue_type,
+    InputFn0Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFn0Type: ElementwiseEpilogueFn,
     size_0: Int,
-    input_fn_1: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
-    output_1_fn: elementwise_epilogue_type,
+    InputFn1Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFn1Type: ElementwiseEpilogueFn,
     size_1: Int,
 ](
-    input_shapes_0: StaticTuple[IndexList[rank], size_0],
-    output_0: TileTensor[
-        dtype, OutputLayoutType0, output_origin_0, Engine=OutputEngine0
-    ],
-    input_shapes_1: StaticTuple[IndexList[rank], size_1],
-    output_1: TileTensor[
-        dtype, OutputLayoutType1, output_origin_1, Engine=OutputEngine1
-    ],
+    input_shapes_0: StaticTuple[DynamicCoord[.int, rank], size_0],
+    output_layout_0: OutputLayoutType0,
+    input_shapes_1: StaticTuple[DynamicCoord[.int, rank], size_1],
+    output_layout_1: OutputLayoutType1,
+    input_fn_0: InputFn0Type,
+    output_0_fn: OutputFn0Type,
+    input_fn_1: InputFn1Type,
+    output_1_fn: OutputFn1Type,
 ):
     """Dual-concat kernel: two independent inner-most single-dim concats
     execute in the same kernel launch. Every thread processes both concats,
     so there is no intra-block branching beyond the standard bounds check.
     """
     var idx = block_idx.x * block_size + thread_idx.x
-
-    if idx < product(input_shapes_0[0], rank):
-        # Static-divisor row -> n-D decomposition; folds the per-
-        # thread `divmod` over `output_0`'s statically-known outer dims.
-        var index = _get_start_indices_of_nth_subvolume_static(
-            idx, output_0.layout.shape_coord()
-        )
-
-        comptime for i in range(size_0):
-            var out_index = index
-            out_index[rank - 1] = i
-
-            output_0_fn[dtype, rank, width=1](
-                rebind[IndexList[rank]](out_index.canonicalize()),
-                input_fn_0[i, 1, rank](
-                    rebind[IndexList[rank]](index.canonicalize())
-                ),
+    with PDL():
+        if idx < _shape_product(input_shapes_0[0], 0, rank):
+            # Static-divisor row -> n-D decomposition; folds the per-
+            # thread `divmod` over `output_0`'s statically-known outer dims.
+            var index = _get_start_indices_of_nth_subvolume_static(
+                idx, output_layout_0.shape_coord()
             )
 
-    if idx < product(input_shapes_1[0], rank):
-        # Static-divisor row -> n-D decomposition; folds the per-
-        # thread `divmod` over `output_1`'s statically-known outer dims.
-        var index = _get_start_indices_of_nth_subvolume_static(
-            idx, output_1.layout.shape_coord()
-        )
+            comptime for i in range(size_0):
+                var out_index = index
+                out_index[rank - 1] = i
 
-        comptime for i in range(size_1):
-            var out_index = index
-            out_index[rank - 1] = i
+                output_0_fn[dtype, width=1, alignment=1](
+                    Coord(out_index),
+                    input_fn_0[i, 1](Coord(index)),
+                )
 
-            output_1_fn[dtype, rank, width=1](
-                rebind[IndexList[rank]](out_index.canonicalize()),
-                input_fn_1[i, 1, rank](
-                    rebind[IndexList[rank]](index.canonicalize())
-                ),
+        if idx < _shape_product(input_shapes_1[0], 0, rank):
+            # Static-divisor row -> n-D decomposition; folds the per-
+            # thread `divmod` over `output_1`'s statically-known outer dims.
+            var index = _get_start_indices_of_nth_subvolume_static(
+                idx, output_layout_1.shape_coord()
             )
 
+            comptime for i in range(size_1):
+                var out_index = index
+                out_index[rank - 1] = i
 
-@always_inline
+                output_1_fn[dtype, width=1, alignment=1](
+                    Coord(out_index),
+                    input_fn_1[i, 1](Coord(index)),
+                )
+
+
+@inline(.always)
 def _fused_dual_concat_gpu[
     rank: Int,
     dtype: DType,
-    input_fn_0: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
-    output_0_fn: elementwise_epilogue_type,
+    InputFn0Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFn0Type: ElementwiseEpilogueFn,
     size_0: Int,
-    input_fn_1: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
-    output_1_fn: elementwise_epilogue_type,
+    InputFn1Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFn1Type: ElementwiseEpilogueFn,
     size_1: Int,
-    output_layout_0: TensorLayout,
-    output_layout_1: TensorLayout,
+    OutputLayout0Type: TensorLayout,
+    OutputLayout1Type: TensorLayout,
 ](
-    input_shapes_0: StaticTuple[IndexList[rank], size_0],
-    output_0: TileTensor[mut=True, dtype, output_layout_0, _, Engine=_],
-    input_shapes_1: StaticTuple[IndexList[rank], size_1],
-    output_1: TileTensor[mut=True, dtype, output_layout_1, _, Engine=_],
+    input_shapes_0: StaticTuple[DynamicCoord[.int, rank], size_0],
+    output_layout_0: OutputLayout0Type,
+    input_shapes_1: StaticTuple[DynamicCoord[.int, rank], size_1],
+    output_layout_1: OutputLayout1Type,
+    input_fn_0: InputFn0Type,
+    output_0_fn: OutputFn0Type,
+    input_fn_1: InputFn1Type,
+    output_1_fn: OutputFn1Type,
     ctx: DeviceContext,
 ) raises:
     """Launch the dual-concat kernel for two inner-most single-dim concats.
@@ -1248,71 +1471,78 @@ def _fused_dual_concat_gpu[
     """
     comptime block_size = 64
     comptime kernel = _fused_dual_concat_inner_most_single_dim[
-        OutputLayoutType0=output_0.LayoutType,
-        output_origin_0=output_0.origin,
-        OutputEngine0=output_0.Engine,
-        OutputLayoutType1=output_1.LayoutType,
-        output_origin_1=output_1.origin,
-        OutputEngine1=output_1.Engine,
+        OutputLayoutType0=OutputLayout0Type,
+        OutputLayoutType1=OutputLayout1Type,
         rank,
         dtype,
         block_size,
-        input_fn_0,
-        output_0_fn,
+        InputFn0Type,
+        OutputFn0Type,
         size_0,
-        input_fn_1,
-        output_1_fn,
+        InputFn1Type,
+        OutputFn1Type,
         size_1,
     ]
 
-    var num_elems_0 = product(input_shapes_0[0], input_shapes_0[0].size)
-    var num_elems_1 = product(input_shapes_1[0], input_shapes_1[0].size)
+    var num_elems_0 = _shape_product(input_shapes_0[0], 0, rank)
+    var num_elems_1 = _shape_product(input_shapes_1[0], 0, rank)
     var max_elems = num_elems_0 if num_elems_0 > num_elems_1 else num_elems_1
 
     ctx.enqueue_function[kernel](
         input_shapes_0,
-        output_0,
+        output_layout_0,
         input_shapes_1,
-        output_1,
+        output_layout_1,
+        host_args=(input_fn_0, output_0_fn, input_fn_1, output_1_fn),
         grid_dim=(ceildiv(max_elems, block_size)),
         block_dim=block_size,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
-@always_inline
+@inline(.always)
 def _fused_concat_gpu_elementwise[
     axis: Int,
     rank: Int,
     dtype: DType,
-    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
-        IndexList[_rank]
-    ) capturing -> SIMD[dtype, width],
-    output_0_fn: elementwise_epilogue_type,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFnType: ElementwiseEpilogueFn,
     size: Int,
 ](
-    input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Engine=_, ...],
+    input_shapes: StaticTuple[DynamicCoord[.int, rank], size],
+    output_layout: Some[TensorLayout],
+    input_fn: InputFnType,
+    output_0_fn: OutputFnType,
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
 
-    @always_inline
+    @inline(.always)
     def per_output_elem[
         simd_width: Int, alignment: Int = 1
     ](out_index: Coord) {var}:
-        var in_index = coord_to_index_list(out_index)
+        comptime assert out_index.rank == rank
+        var in_index = out_index.make_dynamic[.int]()
 
         comptime for i in range(num_inputs):
             var input_shape = input_shapes[i]
 
-            if Int(in_index[axis].value()) < input_shape[axis]:
+            if _shape_dim(in_index, axis) < _shape_dim(input_shape, axis):
                 output_0_fn[dtype, width=simd_width, alignment=alignment](
-                    coord_to_index_list(out_index),
+                    out_index,
                     input_fn[i, simd_width, alignment=alignment](in_index),
                 )
                 return
 
-            in_index[axis] -= input_shape[axis]
+            _shape_set(
+                in_index,
+                axis,
+                _shape_dim(in_index, axis) - _shape_dim(input_shape, axis),
+            )
 
     # When axis != rank-1, the SIMD group spans the innermost (non-concat)
     # dimension, so we can use vectorized 32B loads/stores on sm_100a
@@ -1320,33 +1550,33 @@ def _fused_concat_gpu_elementwise[
         comptime _vec_width = preferred_simd_width[dtype]()
         var inner_size = 1
         comptime for dim_idx in range(axis + 1, rank):
-            inner_size *= Int(input_shapes[0][dim_idx])
+            inner_size *= _shape_dim(input_shapes[0], dim_idx)
 
         if _vec_width > 1 and inner_size % _vec_width == 0:
             elementwise[
                 _vec_width,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](per_output_elem, output.layout.shape_coord(), ctx)
+            ](per_output_elem, output_layout.shape_coord(), ctx)
         elif inner_size % 4 == 0:
             elementwise[
                 4,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](per_output_elem, output.layout.shape_coord(), ctx)
+            ](per_output_elem, output_layout.shape_coord(), ctx)
         else:
             elementwise[
                 1,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](per_output_elem, output.layout.shape_coord(), ctx)
+            ](per_output_elem, output_layout.shape_coord(), ctx)
     else:
         comptime simd_width = preferred_simd_width[dtype]()
 
         # Check if all inputs are aligned to the target SIMD width.
         var use_simd_width = True
         comptime for i in range(num_inputs):
-            if input_shapes[i][axis] % simd_width != 0:
+            if _shape_dim(input_shapes[i], axis) % simd_width != 0:
                 use_simd_width = False
 
         if use_simd_width:
@@ -1354,39 +1584,43 @@ def _fused_concat_gpu_elementwise[
                 simd_width,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](per_output_elem, output.layout.shape_coord(), ctx)
+            ](per_output_elem, output_layout.shape_coord(), ctx)
         else:
             elementwise[
                 1,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](per_output_elem, output.layout.shape_coord(), ctx)
+            ](per_output_elem, output_layout.shape_coord(), ctx)
 
 
-@always_inline
+@inline(.always)
 def _fused_dual_concat_gpu_elementwise[
     axis: Int,
     rank: Int,
     dtype: DType,
-    input_fn_0: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
-    output_0_fn: elementwise_epilogue_type,
+    InputFn0Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFn0Type: ElementwiseEpilogueFn,
     size_0: Int,
-    input_fn_1: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
-    output_1_fn: elementwise_epilogue_type,
+    InputFn1Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFn1Type: ElementwiseEpilogueFn,
     size_1: Int,
 ](
-    input_shapes_0: StaticTuple[IndexList[rank], size_0],
-    output_0: TileTensor[
-        mut=True, dtype, address_space=.GENERIC, Engine=_, ...
-    ],
-    input_shapes_1: StaticTuple[IndexList[rank], size_1],
-    output_1: TileTensor[
-        mut=True, dtype, address_space=.GENERIC, Engine=_, ...
-    ],
+    input_shapes_0: StaticTuple[DynamicCoord[.int, rank], size_0],
+    output_layout_0: Some[TensorLayout],
+    input_shapes_1: StaticTuple[DynamicCoord[.int, rank], size_1],
+    output_layout_1: Some[TensorLayout],
+    input_fn_0: InputFn0Type,
+    output_0_fn: OutputFn0Type,
+    input_fn_1: InputFn1Type,
+    output_1_fn: OutputFn1Type,
     ctx: DeviceContext,
 ) raises:
     """Fuses two independent concat operations into a single GPU kernel launch
@@ -1394,131 +1628,149 @@ def _fused_dual_concat_gpu_elementwise[
     elementwise infrastructure handles iteration, SIMD width, and grid sizing.
     """
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     def per_output_elem_0[
         simd_width: Int, alignment: Int = 1
-    ](out_index: Coord):
-        var in_index = coord_to_index_list(out_index)
-        var out_idx = in_index
+    ](out_index: Coord) {var}:
+        comptime assert out_index.rank == rank
+        var in_index = out_index.make_dynamic[.int]()
         comptime for i in range(size_0):
             var input_shape = input_shapes_0[i]
-            if Int(in_index[axis].value()) < Int(input_shape[axis].value()):
-                output_0_fn[
-                    dtype, out_index.rank, width=simd_width, alignment=alignment
-                ](
-                    out_idx,
-                    input_fn_0[
-                        i, simd_width, out_index.rank, alignment=alignment
-                    ](in_index),
+            if _shape_dim(in_index, axis) < _shape_dim(input_shape, axis):
+                output_0_fn[dtype, width=simd_width, alignment=alignment](
+                    out_index,
+                    input_fn_0[i, simd_width, alignment=alignment](in_index),
                 )
                 return
-            in_index[axis] -= input_shape[axis]
+            _shape_set(
+                in_index,
+                axis,
+                _shape_dim(in_index, axis) - _shape_dim(input_shape, axis),
+            )
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     def per_output_elem_1[
         simd_width: Int, alignment: Int = 1
-    ](out_index: Coord):
-        var in_index = coord_to_index_list(out_index)
-        var out_idx = in_index
+    ](out_index: Coord) {var}:
+        comptime assert out_index.rank == rank
+        var in_index = out_index.make_dynamic[.int]()
         comptime for i in range(size_1):
             var input_shape = input_shapes_1[i]
-            if in_index[axis] < input_shape[axis]:
-                output_1_fn[
-                    dtype, out_index.rank, width=simd_width, alignment=alignment
-                ](
-                    out_idx,
-                    input_fn_1[
-                        i, simd_width, out_index.rank, alignment=alignment
-                    ](in_index),
+            if _shape_dim(in_index, axis) < _shape_dim(input_shape, axis):
+                output_1_fn[dtype, width=simd_width, alignment=alignment](
+                    out_index,
+                    input_fn_1[i, simd_width, alignment=alignment](in_index),
                 )
                 return
-            in_index[axis] -= input_shape[axis]
+            _shape_set(
+                in_index,
+                axis,
+                _shape_dim(in_index, axis) - _shape_dim(input_shape, axis),
+            )
 
-    # Build IndexList[rank] explicitly so both shapes share the same type.
-    var _s0 = coord_to_index_list(output_0.layout.shape_coord())
-    var _s1 = coord_to_index_list(output_1.layout.shape_coord())
-    var output_shape_0 = IndexList[rank]()
-    var output_shape_1 = IndexList[rank]()
-    comptime for d in range(rank):
-        output_shape_0[d] = Int(_s0[d])
-        output_shape_1[d] = Int(_s1[d])
+    # Both output shapes must share a type for `dual_elementwise`; unify them
+    # by materializing dynamic `Coord`s.
+    var output_shape_0 = output_layout_0.shape_coord().make_dynamic[.int]()
+    var output_shape_1 = output_layout_1.shape_coord().make_dynamic[.int]()
 
     comptime if axis != rank - 1:
         comptime _vec_width = preferred_simd_width[dtype]()
         var inner_size = 1
         comptime for dim_idx in range(axis + 1, rank):
-            inner_size *= Int(input_shapes_0[0][dim_idx])
+            inner_size *= _shape_dim(input_shapes_0[0], dim_idx)
 
         if _vec_width > 1 and inner_size % _vec_width == 0:
             dual_elementwise[
-                per_output_elem_0,
-                per_output_elem_1,
                 _vec_width,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
-        elif inner_size % 4 == 0:
-            dual_elementwise[
+            ](
+                output_shape_0,
+                output_shape_1,
+                ctx,
                 per_output_elem_0,
                 per_output_elem_1,
+            )
+        elif inner_size % 4 == 0:
+            dual_elementwise[
                 4,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
-        else:
-            dual_elementwise[
+            ](
+                output_shape_0,
+                output_shape_1,
+                ctx,
                 per_output_elem_0,
                 per_output_elem_1,
+            )
+        else:
+            dual_elementwise[
                 1,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
+            ](
+                output_shape_0,
+                output_shape_1,
+                ctx,
+                per_output_elem_0,
+                per_output_elem_1,
+            )
     else:
         comptime simd_width = preferred_simd_width[dtype]()
 
         # All inputs from both sets must be aligned for vectorized access.
         var use_simd_width = True
         comptime for i in range(size_0):
-            if input_shapes_0[i][axis] % simd_width != 0:
+            if _shape_dim(input_shapes_0[i], axis) % simd_width != 0:
                 use_simd_width = False
         comptime for i in range(size_1):
-            if input_shapes_1[i][axis] % simd_width != 0:
+            if _shape_dim(input_shapes_1[i], axis) % simd_width != 0:
                 use_simd_width = False
 
         if use_simd_width:
             dual_elementwise[
-                per_output_elem_0,
-                per_output_elem_1,
                 simd_width,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
-        else:
-            dual_elementwise[
+            ](
+                output_shape_0,
+                output_shape_1,
+                ctx,
                 per_output_elem_0,
                 per_output_elem_1,
+            )
+        else:
+            dual_elementwise[
                 1,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
+            ](
+                output_shape_0,
+                output_shape_1,
+                ctx,
+                per_output_elem_0,
+                per_output_elem_1,
+            )
 
 
-@always_inline
+@inline(.always)
 def _fused_concat_gpu[
     rank: Int,
     dtype: DType,
-    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
-        IndexList[_rank]
-    ) capturing -> SIMD[dtype, width],
-    output_0_fn: elementwise_epilogue_type,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFnType: ElementwiseEpilogueFn,
     size: Int,
-    output_layout: TensorLayout,
+    OutputLayoutType: TensorLayout,
 ](
     axis: Int,
-    input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[mut=True, dtype, output_layout, _, Engine=_],
+    input_shapes: StaticTuple[DynamicCoord[.int, rank], size],
+    output_layout: OutputLayoutType,
+    input_fn: InputFnType,
+    output_0_fn: OutputFnType,
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1527,7 +1779,7 @@ def _fused_concat_gpu[
         var inner_most_unit_dim = True
         for i in range(num_inputs):
             if (
-                input_shapes[i][axis] != 1
+                _shape_dim(input_shapes[i], axis) != 1
                 or not input_shapes[i] == input_shapes[0]
             ):
                 inner_most_unit_dim = False
@@ -1536,71 +1788,74 @@ def _fused_concat_gpu[
         if inner_most_unit_dim:
             comptime block_size = 32
             comptime kernel = _fused_concat_inner_most_single_dim[
-                OutputLayoutType=output.LayoutType,
-                output_origin=output.origin,
-                OutputEngine=output.Engine,
+                OutputLayoutType=OutputLayoutType,
                 rank,
                 dtype,
                 block_size,
-                input_fn,
-                output_0_fn,
+                InputFnType,
+                OutputFnType,
                 size,
             ]
 
             return ctx.enqueue_function[kernel](
                 input_shapes,
-                output,
+                output_layout,
+                host_args=(input_fn, output_0_fn),
                 grid_dim=(
                     ceildiv(
-                        product(input_shapes[0], input_shapes[0].size),
+                        _shape_product(input_shapes[0], 0, rank),
                         block_size,
                     )
                 ),
                 block_dim=(block_size),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
     # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
     comptime for i in range(rank):
         if i == axis:
-            return _fused_concat_gpu_elementwise[
-                i,
-                rank,
-                dtype,
-                input_fn,
-                output_0_fn,
-                size,
-            ](input_shapes, output, ctx)
+            return _fused_concat_gpu_elementwise[i, rank, dtype](
+                input_shapes, output_layout, input_fn, output_0_fn, ctx
+            )
 
 
-@always_inline
+@inline(.always)
 def _fused_dual_concat_gpu[
     rank: Int,
     dtype: DType,
-    input_fn_0: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
-    output_0_fn: elementwise_epilogue_type,
+    InputFn0Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFn0Type: ElementwiseEpilogueFn,
     size_0: Int,
-    input_fn_1: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
-    output_1_fn: elementwise_epilogue_type,
+    InputFn1Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFn1Type: ElementwiseEpilogueFn,
     size_1: Int,
-    output_layout_0: TensorLayout,
-    output_layout_1: TensorLayout,
+    OutputLayout0Type: TensorLayout,
+    OutputLayout1Type: TensorLayout,
 ](
     axis: Int,
-    input_shapes_0: StaticTuple[IndexList[rank], size_0],
-    output_0: TileTensor[mut=True, dtype, output_layout_0, _, Engine=_],
-    input_shapes_1: StaticTuple[IndexList[rank], size_1],
-    output_1: TileTensor[mut=True, dtype, output_layout_1, _, Engine=_],
+    input_shapes_0: StaticTuple[DynamicCoord[.int, rank], size_0],
+    output_layout_0: OutputLayout0Type,
+    input_shapes_1: StaticTuple[DynamicCoord[.int, rank], size_1],
+    output_layout_1: OutputLayout1Type,
+    input_fn_0: InputFn0Type,
+    output_0_fn: OutputFn0Type,
+    input_fn_1: InputFn1Type,
+    output_1_fn: OutputFn1Type,
     ctx: DeviceContext,
 ) raises:
     if axis == rank - 1:
         var inner_most_unit_dim = True
         for i in range(size_0):
             if (
-                input_shapes_0[i][axis] != 1
+                _shape_dim(input_shapes_0[i], axis) != 1
                 or not input_shapes_0[i] == input_shapes_0[0]
             ):
                 inner_most_unit_dim = False
@@ -1608,71 +1863,62 @@ def _fused_dual_concat_gpu[
         if inner_most_unit_dim:
             for i in range(size_1):
                 if (
-                    input_shapes_1[i][axis] != 1
+                    _shape_dim(input_shapes_1[i], axis) != 1
                     or not input_shapes_1[i] == input_shapes_1[0]
                 ):
                     inner_most_unit_dim = False
                     break
 
         if inner_most_unit_dim:
-            return _fused_dual_concat_gpu[
-                rank,
-                dtype,
+            return _fused_dual_concat_gpu[rank, dtype](
+                input_shapes_0,
+                output_layout_0,
+                input_shapes_1,
+                output_layout_1,
                 input_fn_0,
                 output_0_fn,
-                size_0,
                 input_fn_1,
                 output_1_fn,
-                size_1,
-                output_layout_0,
-                output_layout_1,
-            ](
-                input_shapes_0,
-                output_0,
-                input_shapes_1,
-                output_1,
                 ctx,
             )
 
     comptime for i in range(rank):
         if i == axis:
-            return _fused_dual_concat_gpu_elementwise[
-                i,
-                rank,
-                dtype,
+            return _fused_dual_concat_gpu_elementwise[i, rank, dtype](
+                input_shapes_0,
+                output_layout_0,
+                input_shapes_1,
+                output_layout_1,
                 input_fn_0,
                 output_0_fn,
-                size_0,
                 input_fn_1,
                 output_1_fn,
-                size_1,
-            ](
-                input_shapes_0,
-                output_0,
-                input_shapes_1,
-                output_1,
                 ctx,
             )
 
 
-@always_inline
+@inline(.always)
 def fused_concat[
     dtype: DType,
     rank: Int,
-    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
-        IndexList[_rank]
-    ) capturing -> SIMD[dtype, width],
-    output_0_fn: elementwise_epilogue_type,
-    output_layout: TensorLayout,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[input_index: Int, width: Int, alignment: Int = 1](Coord) -> SIMD[
+        dtype, width
+    ],
+    OutputFnType: ElementwiseEpilogueFn,
+    OutputLayoutType: TensorLayout,
     *,
     axis: Int,
     target: StaticString = "cpu",
 ](
-    input_shapes: StaticTuple[IndexList[rank], _],
-    output: TileTensor[mut=True, dtype, output_layout, _, Engine=_],
+    input_shapes: StaticTuple[DynamicCoord[.int, rank], _],
+    output_layout: OutputLayoutType,
+    input_fn: InputFnType,
+    output_0_fn: OutputFnType,
     ctx: DeviceContext,
 ) raises:
-    """Concatenates inputs produced by ``input_fn`` along ``axis`` into ``output``, applying ``output_0_fn`` to each element.
+    """Concatenates inputs produced by ``input_fn`` along ``axis``, handing each element to ``output_0_fn``.
 
     Instead of reading from concrete input tensors, the fused variant drives the
     concat from a caller-supplied ``input_fn`` that produces values on demand,
@@ -1683,18 +1929,21 @@ def fused_concat[
     Parameters:
         dtype: Element type of the input and output tensors.
         rank: Number of dimensions in the input and output tensors.
-        input_fn: Function that produces input element values on demand,
-            indexed by input position.
-        output_0_fn: Epilogue function applied to each produced element before
-            storing.
-        output_layout: Layout type of the output tensor.
+        InputFnType: Type of the input function (inferred).
+        OutputFnType: Type of the output epilogue function (inferred).
+        OutputLayoutType: Layout type of the concatenated output.
         axis: Axis along which to concatenate the inputs.
         target: Target device to dispatch to (defaults to ``"cpu"``).
 
     Args:
         input_shapes: Static tuple of per-input shapes describing each logical
             input that ``input_fn`` produces.
-        output: Destination tensor that receives the concatenated result.
+        output_layout: Layout of the concatenated output. The concat reads
+            only its shape; every element reaches the output through
+            ``output_0_fn``.
+        input_fn: Function that produces input element values on demand,
+            indexed by input position.
+        output_0_fn: Epilogue function that stores each produced element.
         ctx: Device context used to schedule the work.
     """
     comptime assert is_valid_target[target](), "not a valid target"
@@ -1703,19 +1952,22 @@ def fused_concat[
         "concat", task_id=get_safe_task_id(ctx)
     ):
         # Exit early if the tensors are empty.
-        if output.num_elements() == 0:
+        if output_layout.product() == 0:
             return
         comptime if is_cpu[target]():
-            return _fused_concat_cpu[
-                rank,
-                dtype,
-                input_fn,
-                output_0_fn,
-            ](axis, input_shapes, output, Optional[DeviceContext](ctx))
-        else:
-            return _fused_concat_gpu[rank, dtype, input_fn, output_0_fn](
+            return _fused_concat_cpu[rank, dtype](
                 axis,
                 input_shapes,
-                output.as_unsafe_any_origin(),
+                input_fn,
+                output_0_fn,
+                Optional[DeviceContext](ctx),
+            )
+        else:
+            return _fused_concat_gpu[rank, dtype](
+                axis,
+                input_shapes,
+                output_layout,
+                input_fn,
+                output_0_fn,
                 ctx,
             )

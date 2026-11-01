@@ -346,7 +346,7 @@ def test_thin_decay() raises:
 
     # A variadic lambda decays as well: the pack's implicit origin parameters
     # bind at the reference, as they do for a named variadic `def`.
-    var vd: def(* args: Int) thin -> Int = lambda (*args: Int) -> Int: len(args)
+    var vd: def(*args: Int) thin -> Int = lambda (*args: Int) -> Int: len(args)
     print(vd(1, 2, 3))
     # CHECK: 3
 

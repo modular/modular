@@ -26,14 +26,16 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
+#include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/Lexer.h"
 #include "Mojo/MojoTooling/CodeComplete.h"
+#include "Mojo/MojoTooling/DeclRendering.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/MojoTooling/REPLPythonExprUtils.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/Config.h"
 #include "Support/Context.h"
@@ -86,6 +88,10 @@ static SMRange getRangeForText(SMLoc loc, StringRef text) {
 static constexpr StringRef kMissingDocMessage =
     "Unexpected empty documentation string";
 
+/// The title of the code action that appends a `case` arm per value of a
+/// `match` subject its cases leave uncovered.
+static constexpr StringRef kAddMissingCasesTitle = "Add missing cases";
+
 //===----------------------------------------------------------------------===//
 // Inlay Hints
 //===----------------------------------------------------------------------===//
@@ -110,14 +116,12 @@ namespace {
 struct SymbolRef;
 
 struct Symbol {
-  Symbol(MojoASTDeclRef declRef, StringRef identifier, SMLoc identifierLoc)
-      : identifier(identifier), declRef(declRef),
-        approximateViewKind(declRef.getApproximateDeclKind()) {
+  Symbol(ASTDecl *decl, StringRef identifier, SMLoc identifierLoc)
+      : identifier(identifier), decl(decl) {
     // Modules/Packages (and Import access gates over them) just point to the
     // direct location; their own decl location isn't a source identifier we can
     // size. Their per-segment source range is supplied via `onModuleImport`.
-    if (isa_and_nonnull<FileModuleOp, PackageOp, ImportOp>(
-            declRef.getIfOperation()))
+    if (isa_and_nonnull<FileModuleASTDecl, PackageASTDecl, ImportASTDecl>(decl))
       range = {identifierLoc, identifierLoc};
     else
       range = getRangeForText(identifierLoc, identifier);
@@ -132,12 +136,8 @@ struct Symbol {
   /// Identifier of the symbol as specified in the source code.
   std::string identifier;
 
-  /// API for accessing the internals of this symbol.
-  MojoASTDeclRef declRef;
-
-  /// The approximate view kind for the decl of this symbol. This can provide a
-  /// rough estimate for what kind of decl this is.
-  std::optional<PublicDeclKind> approximateViewKind;
+  /// The declaration represented by this symbol.
+  ASTDecl *decl;
 
   /// The location of the identifier of this symbol.
   SMRange range;
@@ -147,32 +147,26 @@ struct Symbol {
 };
 } // namespace
 
-/// Return if the given view kind should be included in the markdown
-/// declaration.
-static bool shouldIncludeViewKindInMarkdown(PublicDeclKind kind) {
-  return kind != PublicDeclKind::DK_PublicAliasDecl &&
-         kind != PublicDeclKind::DK_PublicStructDecl;
-}
-
 std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
-  auto processView = [&](const PublicDecl &view) -> std::string {
+  auto processDecl = [&](StringRef kind, StringRef snippet, StringRef docString,
+                         bool includeKindInSnippet) -> std::string {
     std::string buff;
     llvm::raw_string_ostream os(buff);
-    if (auto snippet = view.getDeclarationSnippet(ctx); !snippet.empty()) {
+    if (!snippet.empty()) {
       // Add the decl prefix to the snippet, unless it's superfluous.
       std::string declPrefix;
-      if (shouldIncludeViewKindInMarkdown(view.getKind()))
-        declPrefix = llvm::formatv("({0}) ", view.getKindAsString()).str();
+      if (includeKindInSnippet)
+        declPrefix = llvm::formatv("({0}) ", kind).str();
 
       os << llvm::formatv(R"(```mojo
 {0}{1}
 ```)",
                           declPrefix, snippet);
     } else {
-      os << formatv("### {0} `{1}`\n", view.getKindAsString(), identifier);
+      os << formatv("### {0} `{1}`\n", kind, identifier);
     }
 
-    if (auto docString = view.getMarkdownDocString(); !docString.empty()) {
+    if (!docString.empty()) {
       os << llvm::formatv(R"(
 ---
 
@@ -184,11 +178,19 @@ std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
     return buff;
   };
 
-  if (auto view = declRef.getDecl())
-    return processView(*view);
+  if (auto *function = dyn_cast<DefASTDecl>(decl)) {
+    std::string snippet = KGEN::getFunctionDeclarationSnippet(*function);
+    std::string docString = getFunctionMarkdownDocString(*function);
+    return processDecl("function", snippet, docString,
+                       /*includeKindInSnippet=*/true);
+  }
+  if (StringRef kind = decl->getToolingKindName(); !kind.empty())
+    return processDecl(kind, getPublicDeclDeclarationSnippet(*decl),
+                       getPublicDeclMarkdownDocString(*decl),
+                       !isa<AliasASTDecl, StructASTDecl>(decl));
   // If didn't get a view, we fall back to simply printing the name of the
   // entity.
-  if (auto name = declRef.getName())
+  if (auto name = decl->getName())
     return formatv("### `{0}`", *name);
   return {};
 }
@@ -257,13 +259,12 @@ public:
   /// Store a new symbol in this index, unless its name is empty.
   /// If the symbol is effectively stored, a pointer to it is returned,
   /// otherwise nullptr is returned.
-  Symbol *registerSymbol(MojoASTDeclRef declRef,
-                         std::optional<StringRef> identifier,
+  Symbol *registerSymbol(ASTDecl *decl, std::optional<StringRef> identifier,
                          SMLoc identifierLoc);
 
   /// Store a new reference to a given set of symbols. No error is thrown if the
   /// expected symbol doesn't exist in the index.
-  void registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMRange range,
+  void registerRef(ArrayRef<ASTDecl *> decls, SMRange range,
                    StringRef spelling);
 
   /// Look for the symbols whose declaration or references contain the given
@@ -272,7 +273,11 @@ public:
 
   /// Look for the symbol corresponding to the given decl in the symbol table.
   /// Return nullptr if not found.
-  Symbol *findSymbol(MojoASTDeclRef declRef);
+  Symbol *findSymbol(ASTDecl *decl);
+
+  /// Update the indexed declaration for a source binding that was replaced
+  /// during parsing.
+  void replaceSymbolDecl(ASTDecl *oldDecl, ASTDecl *newDecl);
 
   /// Walk all symbols in the index, regardless of range.
   void walkSymbols(function_ref<void(Symbol &)> callback);
@@ -304,10 +309,23 @@ private:
 };
 } // namespace
 
-Symbol *SymbolIndex::findSymbol(MojoASTDeclRef declRef) {
-  if (auto it = symbolTable.find(&*declRef); it != symbolTable.end())
+Symbol *SymbolIndex::findSymbol(ASTDecl *decl) {
+  if (auto it = symbolTable.find(decl); it != symbolTable.end())
     return it->second.get();
   return nullptr;
+}
+
+void SymbolIndex::replaceSymbolDecl(ASTDecl *oldDecl, ASTDecl *newDecl) {
+  auto it = symbolTable.find(oldDecl);
+  if (it == symbolTable.end())
+    return;
+
+  assert(!symbolTable.contains(newDecl) &&
+         "replacement decl is already indexed");
+  std::unique_ptr<Symbol> symbol = std::move(it->second);
+  symbolTable.erase(it);
+  symbol->decl = newDecl;
+  symbolTable.insert({newDecl, std::move(symbol)});
 }
 
 void SymbolIndex::walkSymbols(function_ref<void(Symbol &)> callback) {
@@ -367,7 +385,7 @@ void SymbolIndex::insertRangeInMainDoc(SymbolRef &&symbolRef) {
   }
 }
 
-Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
+Symbol *SymbolIndex::registerSymbol(ASTDecl *decl,
                                     std::optional<StringRef> identifier,
                                     SMLoc identifierLoc) {
   // We don't index symbols without a proper name.
@@ -375,7 +393,7 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
     return nullptr;
 
   auto [it, _] = symbolTable.try_emplace(
-      &*declRef, std::make_unique<Symbol>(declRef, *identifier, identifierLoc));
+      decl, std::make_unique<Symbol>(decl, *identifier, identifierLoc));
   Symbol &symbol = *it->second;
 
   // We only add symbols to the range map if they belong to the main file.
@@ -386,14 +404,13 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
     // would assert in IntervalMap). This also prevents crashes when a REPL
     // docstring imports the module being parsed (a self-import), which causes
     // PackageOp symbols with locations in the main doc to reach this path.
-    if (!isa_and_nonnull<FileModuleOp, PackageOp, ImportOp>(
-            declRef->getIfOperation()))
+    if (!isa<FileModuleASTDecl, PackageASTDecl, ImportASTDecl>(decl))
       insertRangeInMainDoc({symbol, symbol.range});
   }
   return &symbol;
 }
 
-void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMRange range,
+void SymbolIndex::registerRef(ArrayRef<ASTDecl *> decls, SMRange range,
                               StringRef spelling) {
   // We don't index empty spellings nor references in files other than the main
   // doc.
@@ -402,27 +419,27 @@ void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMRange range,
     return;
 
   SmallVector<Symbol *> symbols;
-  for (MojoASTDeclRef ref : declRefs) {
+  for (ASTDecl *decl : decls) {
     // Capture the symbol if it exists, otherwise try to register it, as it
     // might come from a non-main doc.
-    if (Symbol *symbol = findSymbol(ref)) {
+    if (Symbol *symbol = findSymbol(decl)) {
       symbols.push_back(symbol);
       continue;
     }
 
     // Grab the name of the decl.
-    std::optional<StringRef> symName = ref.getName();
+    std::optional<StringRef> symName = decl->getName();
     if (!symName) {
       // If we can't compute one, handle the edge case where we're dealing with
       // a reference to an argument which could manifest while type checking
       // the signature (so the normal way of computing the name isn't ready
       // yet).
-      if (ref.getApproximateDeclKind() == PublicDeclKind::DK_PublicArgumentDecl)
+      if (decl->isArgumentDecl())
         symName = spelling;
     }
 
     if (Symbol *symbol = registerSymbol(
-            ref, symName, mainDoc.translateParserLoc(ref.getLoc())))
+            decl, symName, mainDoc.translateParserLoc(decl->getLoc())))
       symbols.push_back(symbol);
   }
 
@@ -602,8 +619,13 @@ public:
 
   void onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
+  void onDeclReplaced(ASTDecl *oldDecl, ASTDecl *newDecl) override;
+
   void onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
              llvm::SMRange range) override;
+
+  void onMatchMissingCases(llvm::SMRange matchRange, SMLoc insertLoc,
+                           StringRef arms) override;
 
 private:
   /// The main doc for which parsing was initiated.
@@ -614,11 +636,9 @@ private:
 
 void LSPParserListener::addSymbolDecl(ASTDecl *decl, SMLoc loc,
                                       std::optional<StringRef> identifier) {
-  MojoASTDeclRef declRef(decl);
   if (!identifier)
-    identifier = declRef.getName();
-  symbolIndex.registerSymbol(declRef, identifier,
-                             mainDoc.translateParserLoc(loc));
+    identifier = decl->getName();
+  symbolIndex.registerSymbol(decl, identifier, mainDoc.translateParserLoc(loc));
 }
 
 void LSPParserListener::onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) {
@@ -643,8 +663,7 @@ void LSPParserListener::onModuleDecl(ASTDecl *decl, SMLoc identifierLoc) {
 void LSPParserListener::onModuleImport(ASTDecl *decl, StringRef spelling,
                                        SMLoc loc) {
   loc = mainDoc.translateParserLoc(loc);
-  symbolIndex.registerRef(MojoASTDeclRef(decl), getRangeForText(loc, spelling),
-                          spelling);
+  symbolIndex.registerRef(decl, getRangeForText(loc, spelling), spelling);
 }
 
 void LSPParserListener::onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) {
@@ -663,16 +682,23 @@ void LSPParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {
   addSymbolDecl(decl, identifierLoc);
 }
 
+void LSPParserListener::onDeclReplaced(ASTDecl *oldDecl, ASTDecl *newDecl) {
+  symbolIndex.replaceSymbolDecl(oldDecl, newDecl);
+}
+
 void LSPParserListener::onTraitDecl(ASTDecl *decl, SMLoc identifierLoc) {
   addSymbolDecl(decl, identifierLoc);
 }
 
 void LSPParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
                               llvm::SMRange range) {
-  symbolIndex.registerRef(
-      llvm::map_to_vector(decls,
-                          [](ASTDecl *decl) -> MojoASTDeclRef { return decl; }),
-      mainDoc.translateParserLoc(range), spelling);
+  symbolIndex.registerRef(decls, mainDoc.translateParserLoc(range), spelling);
+}
+
+void LSPParserListener::onMatchMissingCases(llvm::SMRange matchRange,
+                                            SMLoc insertLoc, StringRef arms) {
+  mainDoc.addMatchMissingCases(mainDoc.translateParserLoc(matchRange),
+                               mainDoc.translateParserLoc(insertLoc), arms);
 }
 
 //===----------------------------------------------------------------------===//
@@ -738,22 +764,21 @@ private:
 /// It also sets up a SourceMgr with the given MojoDocument as its main file.
 struct MojoDocument::Context {
   Context(MojoDocument &mainDoc)
-      : mlirContext(MLIRContext::Threading::DISABLED),
-        parserConfig(&mlirContext, compilationOptions), symbolIndex(mainDoc),
+      : mlirContext(MLIRContext::Threading::DISABLED), symbolIndex(mainDoc),
         parserListener(mainDoc, symbolIndex) {
-    parserConfig.parserListener = &parserListener;
+    frontendOptions.parserListener = &parserListener;
 
     DialectRegistry registry;
     registerAllKGENDialects(registry);
-    parserConfig.context->appendDialectRegistry(registry);
+    mlirContext.appendDialectRegistry(registry);
 
-    parserContext =
-        std::make_unique<MojoParserContext>(mainDoc.sourceMgr, parserConfig);
+    parserContext = std::make_unique<MojoParserContext>(
+        mainDoc.sourceMgr, &mlirContext, compilationOptions, frontendOptions);
   }
 
   KGEN::CompilationOptions compilationOptions;
   MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
-  ParserConfig parserConfig;
+  KGEN::FrontendOptions frontendOptions;
   SymbolIndex symbolIndex;
   LSPParserListener parserListener;
   std::unique_ptr<MojoParserContext> parserContext;
@@ -934,13 +959,13 @@ MojoDocument::enqueueNewTask() {
   return std::make_pair(std::move(previous), std::move(current));
 }
 
-void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
+void MojoDocument::checkModuleSemantics(ASTDecl *decl) {
   KGEN::CompilerTimeTraceScope("checkModuleSemantics", [&]() {
-    return decl->getUserNameIfOperation().value_or("").str();
+    return decl ? decl->getUserNameIfOperation().value_or("").str() : "";
   });
 
   // Don't check the semantics of the module if there were parser errors.
-  if (hasParserErrors || !decl || !decl.getIfOperation())
+  if (hasParserErrors || !decl || !decl->getIfOperation())
     return;
 
   // Clone the module this decl is in so that we don't mess with the AST, as
@@ -958,7 +983,7 @@ void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
 
   if (failed(kgenCompiler.runCheckLITPipeline(*tempModuleOp))) {
     lsp::Logger::debug("The 'check' pipeline failed to run on the module {0}",
-                       decl.getName().value_or("<unnamed>"));
+                       decl->getName().value_or("<unnamed>"));
   }
 }
 
@@ -1107,6 +1132,22 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
 // MojoDocument: Code Action
 //===----------------------------------------------------------------------===//
 
+/// Returns true if the client accepts code actions of the given kind, i.e. the
+/// kind or one of its parents is requested, or nothing specific is.
+static bool isCodeActionKindAllowed(const lsp::CodeActionContext &context,
+                                    StringRef kind) {
+  if (context.only.empty())
+    return true;
+  return llvm::any_of(context.only, [&](StringRef base) {
+    return kind.consume_front(base) && (kind.empty() || kind.starts_with("."));
+  });
+}
+
+void MojoDocument::addMatchMissingCases(SMRange matchRange, SMLoc insertLoc,
+                                        StringRef arms) {
+  matchesWithMissingCases.push_back({matchRange, insertLoc, arms.str()});
+}
+
 void MojoDocument::getCodeActions(
     const lsp::URIForFile &uri, const lsp::Range &pos,
     const lsp::CodeActionContext &context,
@@ -1123,23 +1164,52 @@ void MojoDocument::getCodeActions(
 std::vector<lsp::CodeAction>
 MojoDocument::getCodeActionsSync(SMRange range,
                                  const lsp::CodeActionContext &context) {
-  // Create actions for any diagnostics in this file.
   std::vector<lsp::CodeAction> actions;
-  for (auto &diag : context.diagnostics) {
-    if (diag.source != "mojo")
-      continue;
 
-    // Find the fixits for this diagnostic.
-    auto fixitIt = fixits.find(diag.message);
-    if (fixitIt == fixits.end())
-      continue;
-    auto it = fixitIt->second.find(diag.range);
-    if (it == fixitIt->second.end())
-      continue;
-    for (auto &action : it->second) {
-      actions.emplace_back(action);
-      actions.back().diagnostics = {diag};
+  // Create actions for any diagnostics in this file.
+  if (isCodeActionKindAllowed(context, lsp::CodeAction::kQuickFix)) {
+    for (auto &diag : context.diagnostics) {
+      if (diag.source != "mojo")
+        continue;
+
+      // Find the fixits for this diagnostic.
+      auto fixitIt = fixits.find(diag.message);
+      if (fixitIt == fixits.end())
+        continue;
+      auto it = fixitIt->second.find(diag.range);
+      if (it == fixitIt->second.end())
+        continue;
+      for (auto &action : it->second) {
+        actions.emplace_back(action);
+        actions.back().diagnostics = {diag};
+      }
     }
+  }
+
+  // Offer to add the missing cases of a `match` whose header contains the
+  // requested position. This needs no diagnostic, so it also covers a match
+  // with no cases yet.
+  if (!isCodeActionKindAllowed(context, lsp::CodeAction::kRefactor))
+    return actions;
+  const char *pos = range.Start.getPointer();
+  for (const MatchMissingCases &match : matchesWithMissingCases) {
+    if (pos < match.matchRange.Start.getPointer() ||
+        pos > match.matchRange.End.getPointer())
+      continue;
+    std::optional<lsp::URIForFile> uri = getURIFromLoc(match.insertLoc);
+    if (!uri)
+      continue;
+    lsp::TextEdit edit{
+        .range =
+            lsp::Range(sourceMgr, SMRange(match.insertLoc, match.insertLoc)),
+        .newText = match.arms,
+    };
+    lsp::CodeAction action;
+    action.title = kAddMissingCasesTitle.str();
+    action.kind = lsp::CodeAction::kRefactor.str();
+    action.edit.emplace();
+    action.edit->changes[uri->uri().str()].push_back(std::move(edit));
+    actions.push_back(std::move(action));
   }
   return actions;
 }
@@ -1289,25 +1359,48 @@ std::vector<lsp::Location> MojoDocument::onDefinitionSync(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::getDocumentSymbols(
-    MojoASTDeclRef decl, std::vector<lsp::DocumentSymbol> &symbols) {
+    ASTDecl *decl, std::vector<lsp::DocumentSymbol> &symbols) {
   const llvm::MemoryBuffer *declBuffer = sourceMgr.getMemoryBuffer(
-      getSourceMgr().FindBufferContainingLoc(decl.getLoc()));
+      getSourceMgr().FindBufferContainingLoc(decl->getLoc()));
   StringRef declBufferRef = declBuffer->getBuffer();
-  getDocumentSymbols(decl, symbols, [declBufferRef](MojoASTDeclRef decl) {
+  getDocumentSymbols(decl, symbols, [declBufferRef](ASTDecl *decl) {
     // We do not want to traverse into module imports at all.
-    if (decl.getApproximateDeclKind() == PublicDeclKind::DK_PublicModuleDecl)
+    if (isa<FileModuleASTDecl, ImportASTDecl>(decl))
       return false;
 
     // Imported decls may be in a different buffer, only consider decls in the
     // same buffer as the main decl.
-    const char *declLoc = decl.getLoc().getPointer();
+    const char *declLoc = decl->getLoc().getPointer();
     return declBufferRef.begin() <= declLoc && declLoc <= declBufferRef.end();
   });
 }
 
+static std::string getVariableTypeForDocumentSymbol(VarASTDecl &decl) {
+  ASTType type = decl.getToolingType().getReferenceElementType();
+  return type.getAsString(ASTTypePrinterContext(&decl.getShared()));
+}
+
+static std::string
+getStructFieldTypeForDocumentSymbol(StructFieldASTDecl &decl) {
+  std::string type;
+  llvm::raw_string_ostream os(type);
+  ASTType(decl.getOp().getType()).print(os, /*ctx=*/{&decl.getShared()});
+  return type;
+}
+
+static bool isGlobalVariableDecl(const VarASTDecl &decl) {
+  return isa_and_nonnull<FileModuleASTDecl, PackageASTDecl, StructASTDecl>(
+      decl.getParentDecl());
+}
+
+static bool isGlobalAliasDecl(const AliasASTDecl &decl) {
+  return isa_and_nonnull<FileModuleASTDecl, PackageASTDecl, StructASTDecl>(
+      decl.getParentDecl());
+}
+
 void MojoDocument::getDocumentSymbols(
-    MojoASTDeclRef decl, std::vector<lsp::DocumentSymbol> &symbols,
-    function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl) {
+    ASTDecl *decl, std::vector<lsp::DocumentSymbol> &symbols,
+    function_ref<bool(ASTDecl *)> shouldIncludeDecl) {
   std::vector<lsp::DocumentSymbol> *nestedSymbols = &symbols;
 
   // Utility functor to add a new document symbol.
@@ -1321,49 +1414,36 @@ void MojoDocument::getDocumentSymbols(
   // Check for symbol information for this decl.
   auto *symbol = context->symbolIndex.findSymbol(decl);
   if (symbol && symbol->range.isValid()) {
-    if (std::unique_ptr<PublicDecl> publicDecl = decl.getDecl()) {
-      lsp::Range range(getSourceMgr(), symbol->range);
-
-      TypeSwitch<PublicDecl *>(publicDecl.get())
-          .Case([&](PublicAliasDecl *alias) {
-            // We only consider global aliases here, we don't want to show every
-            // conceivable decl.
-            if (!alias->isGlobal())
-              return;
-
-            addSymbol(alias->getName(), lsp::SymbolKind::Property, range,
-                      alias->getValue().str());
-          })
-          .Case([&](PublicFunctionDecl *fn) {
-            addSymbol(fn->getName(), lsp::SymbolKind::Function, range,
-                      fn->getSignature(*context->parserContext));
-          })
-          .Case([&](PublicStructDecl *structDecl) {
-            addSymbol(structDecl->getName(), lsp::SymbolKind::Struct, range,
-                      structDecl->getSignature(*context->parserContext));
-          })
-          .Case([&](PublicStructFieldDecl *field) {
-            addSymbol(field->getName(), lsp::SymbolKind::Field, range,
-                      field->getType().str());
-          })
-          .Case([&](PublicTraitDecl *traitDecl) {
-            addSymbol(traitDecl->getName(), lsp::SymbolKind::Interface, range);
-          })
-          .Case([&](PublicVariableDecl *var) {
-            // We only consider global variables here, we don't want to show
-            // every conceivable decl.
-            if (!var->isGlobal())
-              return;
-
-            addSymbol(var->getName(), lsp::SymbolKind::Variable, range,
-                      var->getType().str());
-          });
+    lsp::Range range(getSourceMgr(), symbol->range);
+    if (auto *field = dyn_cast<StructFieldASTDecl>(decl)) {
+      addSymbol(field->getName().value_or(StringRef{}), lsp::SymbolKind::Field,
+                range, getStructFieldTypeForDocumentSymbol(*field));
+    } else if (auto *var = dyn_cast<VarASTDecl>(decl)) {
+      if (isGlobalVariableDecl(*var))
+        addSymbol(var->getName().value_or(StringRef{}),
+                  lsp::SymbolKind::Variable, range,
+                  getVariableTypeForDocumentSymbol(*var));
+    } else if (auto *alias = dyn_cast<AliasASTDecl>(decl)) {
+      if (isGlobalAliasDecl(*alias))
+        addSymbol(alias->getName().value_or(StringRef{}),
+                  lsp::SymbolKind::Property, range, alias->getToolingValue());
+    } else if (auto *trait = dyn_cast<TraitASTDecl>(decl)) {
+      addSymbol(trait->getName().value_or(StringRef{}),
+                lsp::SymbolKind::Interface, range);
+    } else if (auto *structDecl = dyn_cast<StructASTDecl>(decl)) {
+      addSymbol(structDecl->getName().value_or(StringRef{}),
+                lsp::SymbolKind::Struct, range,
+                KGEN::getStructSignature(*structDecl));
+    } else if (auto *function = dyn_cast<DefASTDecl>(decl)) {
+      addSymbol(function->getName().value_or(StringRef{}),
+                lsp::SymbolKind::Function, range,
+                KGEN::getFunctionSignature(*function));
     }
   }
 
   // Traverse the child decls.
-  for (const auto &childIt : decl.getChildren()) {
-    for (MojoASTDeclRef child : childIt.getDecls())
+  for (const auto &entry : decl->getDeclsInScope()) {
+    for (ASTDecl *child : entry.second)
       if (shouldIncludeDecl(child))
         getDocumentSymbols(child, *nestedSymbols);
   }
@@ -1398,37 +1478,35 @@ void MojoDocument::onFoldingRange(
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::processDocStrings(
-    MojoDocStrings &docStrings, MojoASTDeclRef decl, unsigned bufferId,
-    function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl,
-    MojoASTDeclRef curReplDecl) {
+    MojoDocStrings &docStrings, ASTDecl *decl, unsigned bufferId,
+    function_ref<bool(ASTDecl *)> shouldIncludeDecl, ASTDecl *curReplDecl) {
   docStrings.addDocString(*this, decl, curReplDecl, bufferId);
 
   // Traverse the child decls.
-  for (const auto &childIt : decl.getChildren()) {
-    for (MojoASTDeclRef child : childIt.getDecls())
+  for (const auto &entry : decl->getDeclsInScope()) {
+    for (ASTDecl *child : entry.second)
       if (shouldIncludeDecl(child))
         processDocStrings(docStrings, child, bufferId, shouldIncludeDecl,
                           curReplDecl);
   }
 }
 
-void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
-                                     MojoASTDeclRef decl,
-                                     MojoASTDeclRef curReplDecl) {
+void MojoDocument::processDocStrings(MojoDocStrings &docStrings, ASTDecl *decl,
+                                     ASTDecl *curReplDecl) {
   KGEN::CompilerTimeTraceScope("processDocStrings", [&]() {
     return decl->getUserNameIfOperation().value_or("").str();
   });
 
-  unsigned bufferId = sourceMgr.FindBufferContainingLoc(decl.getLoc());
+  unsigned bufferId = sourceMgr.FindBufferContainingLoc(decl->getLoc());
   StringRef declBufferRef = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
-  auto processFn = [declBufferRef](MojoASTDeclRef decl) {
+  auto processFn = [declBufferRef](ASTDecl *decl) {
     // We do not want to traverse into module imports at all.
-    if (decl.getApproximateDeclKind() == PublicDeclKind::DK_PublicModuleDecl)
+    if (isa<FileModuleASTDecl, ImportASTDecl>(decl))
       return false;
 
     // Imported decls may be in a different buffer, only consider decls in the
     // same buffer as the main decl.
-    const char *declLoc = decl.getLoc().getPointer();
+    const char *declLoc = decl->getLoc().getPointer();
     return declBufferRef.begin() <= declLoc && declLoc <= declBufferRef.end();
   };
   processDocStrings(docStrings, decl, bufferId, processFn, curReplDecl);
@@ -1557,10 +1635,11 @@ void MojoDocument::onSemanticTokens(
 
 /// Return if the given decl corresponds to the `self` argument
 /// of a method.
-static bool isSelfArgument(MojoASTDeclRef decl) {
-  if (decl.getName() == "self") {
+static bool isSelfArgument(ASTDecl *decl) {
+  if (decl->getName() == "self") {
     if (ASTDecl *parentDecl = decl->getParentDecl()) {
-      auto parentFunc = dyn_cast<FnOp>(parentDecl->getIfOperation());
+      auto *parentDefDecl = dyn_cast<DefASTDecl>(parentDecl);
+      FnOp parentFunc = parentDefDecl ? parentDefDecl->getOp() : nullptr;
       return parentFunc &&
              isa<StructDeclOp, TraitDeclOp>(parentFunc->getParentOp()) &&
              !parentFunc.getIsStatic();
@@ -1570,16 +1649,12 @@ static bool isSelfArgument(MojoASTDeclRef decl) {
 }
 
 /// Return a semantic token kind for the given ast decl.
-static SemanticTokenKind
-getSemanticTokenKind(MojoASTDeclRef symDecl,
-                     std::optional<PublicDeclKind> declKind) {
-  // If we can't decipher the kind, it's nearly always a variable.
-  if (!declKind)
-    return SemanticTokenKind::kVariable;
+static SemanticTokenKind getSemanticTokenKind(ASTDecl *symDecl) {
+  if (symDecl->isCallableDecl())
+    return SemanticTokenKind::kFunction;
 
-  switch (*declKind) {
-  case PublicDeclKind::DK_PublicAliasDecl: {
-    auto aliasOp = cast<AliasDeclOp>(symDecl->getIfOperation());
+  if (auto *alias = dyn_cast<AliasASTDecl>(symDecl)) {
+    AliasDeclOp aliasOp = alias->getOp();
     if (Attribute aliasValue = aliasOp.getValueAttr()) {
       // Try to decipher a token kind from the alias value.
       if (isa<ModuleAttr>(aliasValue))
@@ -1589,27 +1664,124 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
     }
     return SemanticTokenKind::kVariable;
   }
-  case PublicDeclKind::DK_PublicArgumentDecl:
+  if (symDecl->isArgumentDecl()) {
     if (isSelfArgument(symDecl))
       return SemanticTokenKind::kSpecialVariable;
     return SemanticTokenKind::kVariable;
-  case PublicDeclKind::DK_PublicFunctionDecl:
-    return SemanticTokenKind::kFunction;
-  case PublicDeclKind::DK_PublicModuleDecl:
-  case PublicDeclKind::DK_PublicPackageDecl:
-    return SemanticTokenKind::kModule;
-  case PublicDeclKind::DK_PublicParameterDecl:
-    return SemanticTokenKind::kParameter;
-  case PublicDeclKind::DK_PublicStructDecl:
-    return SemanticTokenKind::kClass;
-  case PublicDeclKind::DK_PublicStructFieldDecl:
-    return SemanticTokenKind::kField;
-  case PublicDeclKind::DK_PublicTraitDecl:
-    return SemanticTokenKind::kTrait;
-  case PublicDeclKind::DK_PublicVariableDecl:
-    return SemanticTokenKind::kVariable;
   }
-  llvm_unreachable("invalid decl kind");
+  if (isa<ModuleASTDecl>(symDecl))
+    return SemanticTokenKind::kModule;
+  if (auto *import = dyn_cast<ImportASTDecl>(symDecl);
+      import && import->isResolved())
+    return SemanticTokenKind::kModule;
+  if (symDecl->isParameterDecl())
+    return SemanticTokenKind::kParameter;
+  if (isa<StructASTDecl>(symDecl))
+    return SemanticTokenKind::kClass;
+  if (isa<StructFieldASTDecl>(symDecl))
+    return SemanticTokenKind::kField;
+  if (isa<TraitASTDecl>(symDecl))
+    return SemanticTokenKind::kTrait;
+  return SemanticTokenKind::kVariable;
+}
+
+/// Fold an address space value down to its integer, if it is concrete. This
+/// accepts both the raw index stored on a `!lit.ref` and the stdlib
+/// `AddressSpace` struct, which wraps that index in single-field structs.
+static std::optional<int64_t> getConstantAddressSpace(TypedAttr value) {
+  while (value) {
+    value = KGEN::ParamOperatorAttr::stripRebind(KGEN::SugarAttr::strip(value));
+    if (auto intAttr = dyn_cast<IntegerAttr>(value))
+      return intAttr.getInt();
+    auto structAttr = dyn_cast<LITStructAttr>(value);
+    if (!structAttr || structAttr.getValues().size() != 1)
+      return std::nullopt;
+    value = std::get<1>(structAttr.getValues().front());
+  }
+  return std::nullopt;
+}
+
+/// Return the address space bound anywhere in the given type: on a `!lit.ref`
+/// or as an `AddressSpace` parameter, whether of the type itself or of a type
+/// nested in its parameters, so that `Array[SharedPtr, 2]` reports the address
+/// space of its element type. Generic references are ignored; nearly every
+/// value lives in one, so reporting them would mark everything. A generic
+/// `AddressSpace` parameter is still reported. With several distinct address
+/// spaces, or one that is not a constant, there is no single one to report.
+static std::optional<int64_t> findAddressSpace(Type type) {
+  // The address space recorded so far, if any.
+  std::optional<int64_t> space;
+  // Record an address space found in the type, interrupting the walk when
+  // there is no single one to report anymore: when `found` is not a constant,
+  // or differs from one recorded before. `recorded` tells the walk how to
+  // proceed otherwise.
+  auto record = [&](std::optional<int64_t> found, WalkResult recorded) {
+    if (!found || (space && *space != *found))
+      return WalkResult::interrupt();
+    space = found;
+    return recorded;
+  };
+  mlir::AttrTypeWalker walker;
+  // An `AddressSpace` value carries its address space; nothing nested in it
+  // can add another.
+  walker.addWalk([&](Attribute attr) -> WalkResult {
+    auto value = dyn_cast<TypedAttr>(attr);
+    if (!value)
+      return WalkResult::advance();
+    auto structType = KGEN::sugarDynCast<StructType>(value.getType());
+    if (!structType ||
+        structType.getSymbol().getLeafReference().strref() != "AddressSpace")
+      return WalkResult::advance();
+    return record(getConstantAddressSpace(value), WalkResult::skip());
+  });
+  walker.addWalk([&](RefType ref) -> WalkResult {
+    std::optional<int64_t> found =
+        getConstantAddressSpace(ref.getAddressSpace());
+    if (found && *found != 0)
+      return record(found, WalkResult::advance());
+    return WalkResult::advance();
+  });
+  // Only the canonical form of sugar carries meaning: the sugared form
+  // records how a value was spelled, and some of its parts are not values
+  // at all, such as the type in `AddressSpace.LOCAL`. Registered last, so
+  // it runs before the callbacks above see the sugar.
+  walker.addWalk([&](KGEN::SugarAttr sugar) -> WalkResult {
+    if (walker.walk<mlir::WalkOrder::PreOrder>(sugar.getCanonical())
+            .wasInterrupted())
+      return WalkResult::interrupt();
+    return WalkResult::skip();
+  });
+  WalkResult result = walker.walk<mlir::WalkOrder::PreOrder>(type);
+  return result.wasInterrupted() ? std::nullopt : space;
+}
+
+/// Return the address space of the given symbol, if it has one. This is the
+/// address space of the reference that holds the value or the address space
+/// parameter of its type (e.g. `UnsafePointer[..., address_space=SHARED]`),
+/// including one nested in a type parameter such as an array's element type.
+static std::optional<int64_t> getAddressSpace(const Symbol &symbol) {
+  if (!symbol.decl->isArgumentDecl() && !symbol.decl->isParameterDecl() &&
+      !isa<StructFieldASTDecl>(symbol.decl) && !symbol.decl->isVariableDecl())
+    return std::nullopt;
+
+  ASTType type;
+  if (Operation *op = symbol.decl->getIfOperation()) {
+    if (auto varDecl = dyn_cast<VarDeclOp>(op))
+      type = varDecl.getType();
+    else if (auto field = dyn_cast<StructFieldOp>(op))
+      type = field.getType();
+  } else {
+    CValue value = symbol.decl->getIfIRValue();
+    // Memory values report their element type, so look at the underlying
+    // reference to see its address space.
+    if (Value mlirValue = value.getMlirValue())
+      type = mlirValue.getType();
+    else
+      type = value.getType();
+  }
+  if (!type)
+    return std::nullopt;
+  return findAddressSpace(type);
 }
 
 std::optional<std::vector<SemanticToken>>
@@ -1619,6 +1791,7 @@ MojoDocument::onSemanticTokensSync(SMRange range) {
 
   // Compute the set of semantic tokens in the document.
   std::vector<SemanticToken> tokens;
+  llvm::DenseMap<const Symbol *, std::optional<int64_t>> addressSpaces;
 
   // Compute tokens for known symbol references.
   context->symbolIndex.walkSymbolRefs(range, [&](SymbolRef &ref) {
@@ -1633,9 +1806,14 @@ MojoDocument::onSemanticTokensSync(SMRange range) {
       return;
 
     const Symbol *symbol = ref.symbols.front();
-    tokens.emplace_back(
-        getSemanticTokenKind(symbol->declRef, symbol->approximateViewKind),
-        range);
+    SemanticToken &token =
+        tokens.emplace_back(getSemanticTokenKind(symbol->decl), range);
+
+    auto [it, inserted] = addressSpaces.try_emplace(symbol);
+    if (inserted)
+      it->second = getAddressSpace(*symbol);
+    if (it->second)
+      token.setAddressSpace(*it->second);
   });
   llvm::sort(tokens);
 
@@ -1731,15 +1909,11 @@ void MojoDocument::onRename(const lsp::URIForFile &uri,
 }
 
 static bool isLocalVariable(const Symbol &symbol) {
-  if (symbol.approximateViewKind != PublicDeclKind::DK_PublicVariableDecl)
+  if (!symbol.decl->isVariableDecl())
     return false;
 
-  std::unique_ptr<PublicDecl> publicDecl = symbol.declRef.getDecl();
-  if (const auto *varPublicDecl =
-          dyn_cast<PublicVariableDecl>(publicDecl.get()))
-    return !varPublicDecl->isGlobal();
-
-  return false;
+  auto *varDecl = dyn_cast<VarASTDecl>(symbol.decl);
+  return varDecl && !isGlobalVariableDecl(*varDecl);
 }
 
 ErrorOr<std::vector<llvm::lsp::TextEdit>>
@@ -1779,9 +1953,8 @@ MojoDocument::onRenameSync(SMLoc loc, const std::string &newName) {
 // MojoDocStrings
 //===----------------------------------------------------------------------===//
 
-void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
-                                  MojoASTDeclRef curReplDecl,
-                                  unsigned bufferId) {
+void MojoDocStrings::addDocString(MojoDocument &mainDoc, ASTDecl *decl,
+                                  ASTDecl *curReplDecl, unsigned bufferId) {
   // Check if the decl has a doc string with a decipherable location.
   std::optional<KGEN::LIT::DocString> docString = decl->getParsedDocString();
   if (!docString)
@@ -1863,7 +2036,7 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
   // Process the code blocks in the doc string.
   SmallVector<std::pair<StringRef, Type>> persistentVariables;
   MojoParserContext &ctx = mainDoc.getParserContext();
-  MojoASTDeclRef prevDecl = curReplDecl;
+  ASTDecl *prevDecl = curReplDecl;
   LSPMojoREPLListener listener(sourceMgr, persistentVariables);
   for (const auto &block : docString->getCodeBlocks()) {
     StringRef blockContents = block.getRawCode();
@@ -2104,7 +2277,7 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
 
   // Parse each of the cells in the notebook.
   MojoParserContext &ctx = getParserContext();
-  MojoASTDeclRef prevDecl;
+  ASTDecl *prevDecl = nullptr;
   for (Cell &cell : getCells()) {
     // If the cell isn't a python expression, parse it as normal.
     StringRef contents(cell.contents);
@@ -2112,7 +2285,8 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
       cell.persistentVariables = persistentVariables;
       MojoParserContext::ParsedREPLExpr result = ctx.parseREPLExpression(
           listener, cell.bufferId, cell.contents, "__mojo_repl_lsp_main",
-          persistentVariables, prevDecl, /*parseForLSP=*/false);
+          persistentVariables, prevDecl,
+          /*parseForLSP=*/false);
       prevDecl = cell.decl = result.moduleDecl;
       if (result.isValid())
         checkModuleSemantics(cell.decl);
@@ -2884,18 +3058,10 @@ void MojoServer::getCodeActions(
     LSPResponder<std::vector<lsp::CodeAction>> responder) {
   lsp::URIForFile uri = params.textDocument.uri;
 
-  // Check whether a particular CodeActionKind is included in the response.
-  auto isKindAllowed = [only(params.context.only)](StringRef kind) {
-    if (only.empty())
-      return true;
-    return llvm::any_of(only, [&](StringRef base) {
-      return kind.consume_front(base) &&
-             (kind.empty() || kind.starts_with("."));
-    });
-  };
-
-  // We provide a code action for fixes on the specified diagnostics.
-  if (!isKindAllowed(lsp::CodeAction::kQuickFix))
+  // We provide fixes for the specified diagnostics and refactorings at the
+  // requested position.
+  if (!isCodeActionKindAllowed(params.context, lsp::CodeAction::kQuickFix) &&
+      !isCodeActionKindAllowed(params.context, lsp::CodeAction::kRefactor))
     return responder.reply(std::vector<lsp::CodeAction>());
 
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))

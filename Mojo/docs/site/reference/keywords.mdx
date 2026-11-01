@@ -1,7 +1,6 @@
 ---
 title: Mojo identifiers, keywords, and conventions reference
 sidebar_label: Identifiers and keywords
-sidebar_position: 1
 description: >
   Complete reference for Mojo identifiers, keywords, and
   conventions. Covers naming rules, reserved words, escaped
@@ -10,7 +9,9 @@ description: >
 ---
 
 {/* VERIFIED: TokenKinds.def, Lexer.cpp, Signatures.h, Signatures.cpp,
-     ExprNode.h, ParserExprs.cpp, ParserStmts.cpp, ParserBase.h */}
+     ExprNode.h, ParserExprs.cpp, ParserStmts.cpp, ParserBase.h
+     Compiler verified: 2026-10-02, Mojo 1.2.0.dev2026100205 (7791487a)
+     Last updated: 2026-10-15 (adds match, case, and reserved but unused keywords) */}
 
 {/* In TokenKinds.def, `_` is declared with TOK_KEYWORD rather than
      TOK_PUNCTUATION. This is an internal classification used by the
@@ -77,7 +78,7 @@ Empty backtick identifiers are not allowed.
 
 ## Keywords
 
-*Keywords* are reserved words with fixed meaning. They cannot be used as
+*Keywords* are reserved words with fixed meaning. They can't be used as
 ordinary identifiers (use an escaped identifier if you need to).
 
 ### Control flow
@@ -95,6 +96,8 @@ These keywords control which code runs and in what order.
 | `continue` | Skips to the next loop iteration        |
 | `pass`     | No-op placeholder statement             |
 | `return`   | Returns from a function                 |
+| `match`    | Pattern matching                        |
+| `case`     | Case clause in a `match` statement      |
 | `with`     | Context manager statement               |
 
 ### Error handling
@@ -137,17 +140,25 @@ Five operators are spelled as words rather than symbols. Symbolic operators
 
 These keywords control module imports.
 
-| Keyword  | Purpose                                  |
-|----------|------------------------------------------|
-| `import` | Imports a module                         |
-| `from`   | Selective import from a module           |
-| `as`     | Aliasing in imports and `except` clauses |
+| Keyword  | Purpose                        |
+|----------|--------------------------------|
+| `import` | Imports a module               |
+| `from`   | Selective import from a module |
+| `as`     | Aliasing in imports            |
 
 ### Compile-time
 
 | Keyword    | Purpose                        |
 |------------|--------------------------------|
 | `comptime` | Forces compile-time evaluation |
+
+These keywords look like function calls and produce compile-time results:
+
+| Keyword       | Purpose                                         |
+|---------------|-------------------------------------------------|
+| `type_of`     | The type of an expression                       |
+| `origin_of`   | The origin of a value                           |
+| `conforms_to` | Whether a type conforms to a trait (a `Bool`)   |
 
 ### Literal keywords
 
@@ -157,6 +168,20 @@ These keywords are also literals. They produce a value directly.
 |---------|---------------------------------|---------|--------------------|
 | `True`  | boolean true                    | `False` | boolean false      |
 | `None`  | Absence of a value (`NoneType`) | `Self`  | The enclosing type |
+
+### Reserved but unused
+
+These words are keywords with no current use. Like other keywords, they
+can't be used as names unless escaped.
+
+| Keyword    | Notes                    |
+|------------|--------------------------|
+| `class`    | Use `struct`             |
+| `del`      |                          |
+| `fn`       | Removed; use `def`       |
+| `global`   |                          |
+| `nonlocal` |                          |
+| `yield`    |                          |
 
 ### Case sensitivity
 
@@ -171,8 +196,9 @@ All keywords are case-sensitive:
 *Conventions* tell the compiler how values are passed and how bindings are
 created.
 
-Convention names aren't reserved, so existing Python code that uses these
-names won't break, but in Mojo signatures they have fixed meaning.
+`mut`, `out`, `deinit`, and `imm` aren't reserved words, so you can use
+them as binding names, but not as argument names. `var` and `ref` are
+keywords.
 
 **Argument conventions** appear before argument names in function signatures.
 They control ownership and mutability:
@@ -204,9 +230,10 @@ struct CountingTool:
     def increment(mut self):      # mut: modifies self in place
         self.value += 1
 
-var count = 0          # var creates a scoped mutable variable
-var data: List[Int] = [1, 2, 3]
-ref view = data        # ref binds a reference, no copying
+def main():
+    var count = 0          # var creates a scoped mutable variable
+    var data: List[Int] = [1, 2, 3]
+    ref view = data        # ref binds a reference, no copying
 ```
 
 A `self` argument without a convention is an immutable reference. Modifying
@@ -227,7 +254,7 @@ struct CountingTool:
 def make_point(out result: Point):        # OK
     result = Point(0, 0)
 
-def make_point(out result: Point) -> Point:  # Error: function cannot have
+def make_point(out result: Point) -> Point:  # Error: function can't have
     result = Point(0, 0)                     # both an 'out' argument and
                                              # an explicit result type
 ```
@@ -243,4 +270,16 @@ def validate(value: Int) raises:
 
 def process[T: Copyable](value: T) where conforms_to(T, Sized):
      # T must implement Sized to be used here
+     print(len(value))
+```
+
+Two further keywords have declaration roles. `else` attaches a message to a
+`where` clause. `not` in a conformance list opts a struct out of a trait:
+
+```mojo
+def resize[n: Int]() where n > 0 else "n must be positive":
+    pass
+
+struct Handle(not Movable):
+    var fd: Int
 ```

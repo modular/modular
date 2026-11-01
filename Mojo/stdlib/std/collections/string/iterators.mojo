@@ -29,16 +29,13 @@ from std.collections.span import _SpanIter
 
 
 struct CodepointSliceIter[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut],
+    origin: ImmOrigin,
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
     Unicode codepoint.
 
     Parameters:
-        mut: Whether the slice is mutable.
         origin: The origin of the underlying string data.
         forward: The iteration direction. `False` is backwards.
 
@@ -82,7 +79,7 @@ struct CodepointSliceIter[
         """
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> StringSlice[Self.origin]:
         """Get the next codepoint in the underlying string slice.
 
@@ -112,7 +109,7 @@ struct CodepointSliceIter[
         else:
             return self.next_back().value()
 
-    @always_inline
+    @inline(.always)
     def __len__(self) -> Int:
         """Returns the remaining length of this iterator in `Codepoint`s.
 
@@ -245,9 +242,8 @@ struct CodepointSliceIter[
         """
         var result: Optional[StringSlice[Self.origin]] = self.peek_next()
 
-        if result:
-            # SAFETY: We just checked that `result` holds a value
-            var slice_len = result.unsafe_value().byte_length()
+        if case .Some(codepoint_slice) = result:
+            var slice_len = codepoint_slice.byte_length()
             # Advance the pointer in _slice.
             self._slice._slice._data = self._slice._slice._data.unsafe_offset(
                 slice_len
@@ -270,23 +266,21 @@ struct CodepointSliceIter[
         """
         var result: Optional[StringSlice[Self.origin]] = self.peek_back()
 
-        if result:
-            # SAFETY: We just checked that `result` holds a value
-            var slice_len = result.unsafe_value().byte_length()
+        if case .Some(codepoint_slice) = result:
+            var slice_len = codepoint_slice.byte_length()
             # Decrement the byte-length of _slice.
             self._slice._slice._len -= slice_len
 
         return result
 
 
-struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
+struct CodepointsIter[origin: ImmOrigin](
     ImplicitlyCopyable, Iterable, Iterator, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
 
     Parameters:
-        mut: Mutability of the underlying string data.
         origin: Origin of the underlying string data.
     """
 
@@ -342,7 +336,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
             raise StopIteration()
         return self.next().value()
 
-    @always_inline
+    @inline(.always)
     def __len__(self) -> Int:
         """Returns the remaining length of this iterator in `Codepoint`s.
 
@@ -414,9 +408,8 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         """
         var result: Optional[Codepoint] = self.peek_next()
 
-        if result:
-            # SAFETY: We just checked that `result` holds a value
-            var char_len = result.unsafe_value().utf8_byte_length()
+        if case .Some(codepoint) = result:
+            var char_len = codepoint.utf8_byte_length()
             # Advance the pointer in _slice.
             self._slice._slice._data = self._slice._slice._data.unsafe_offset(
                 char_len
@@ -428,9 +421,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
 
 
 struct GraphemeSliceIter[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut],
+    origin: ImmOrigin,
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator, Sized):
     """Iterator over grapheme clusters in a string, yielding each cluster as a
@@ -442,7 +433,6 @@ struct GraphemeSliceIter[
     as defined by UAX #29.
 
     Parameters:
-        mut: Whether the slice is mutable.
         origin: The origin of the underlying string data.
         forward: The iteration direction. `False` is backwards.
 
@@ -549,7 +539,7 @@ struct GraphemeSliceIter[
         """
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> StringSlice[Self.origin]:
         """Get the next grapheme cluster.
 
@@ -621,7 +611,7 @@ struct GraphemeSliceIter[
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def remaining_byte_length(self) -> Int:
         """Returns the number of bytes not yet consumed by the iterator.
 
@@ -798,7 +788,7 @@ struct GraphemeSliceIter[
         return last_boundary
 
 
-struct GraphemeIndicesIter[mut: Bool, //, origin: Origin[mut=mut]](
+struct GraphemeIndicesIter[origin: ImmOrigin](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Iterator over grapheme clusters paired with their starting byte offset.
@@ -809,7 +799,6 @@ struct GraphemeIndicesIter[mut: Bool, //, origin: Origin[mut=mut]](
     itself.
 
     Parameters:
-        mut: Whether the slice is mutable.
         origin: The origin of the underlying string data.
 
     Mirrors `str::grapheme_indices` from Rust's `unicode-segmentation` crate.
@@ -864,7 +853,7 @@ struct GraphemeIndicesIter[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(
         mut self,
     ) raises StopIteration -> Tuple[Int, StringSlice[Self.origin]]:
@@ -885,7 +874,7 @@ struct GraphemeIndicesIter[mut: Bool, //, origin: Origin[mut=mut]](
         return (offset, g.unsafe_value())
 
 
-struct BytesIter[mut: Bool, //, origin: Origin[mut=mut]](
+struct BytesIter[origin: ImmOrigin](
     ImplicitlyCopyable, Iterable, Iterator, Sized
 ):
     """Iterator over the raw UTF-8 bytes of a string slice, constructed by
@@ -897,7 +886,6 @@ struct BytesIter[mut: Bool, //, origin: Origin[mut=mut]](
     UTF-8 sequences as codepoints or grapheme clusters.
 
     Parameters:
-        mut: Whether the underlying string data is mutable.
         origin: The origin of the underlying string data.
     """
 
@@ -925,7 +913,7 @@ struct BytesIter[mut: Bool, //, origin: Origin[mut=mut]](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterator over the underlying string's bytes.
 
@@ -934,7 +922,7 @@ struct BytesIter[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> Byte:
         """Get the next byte in the underlying string slice.
 
@@ -946,7 +934,7 @@ struct BytesIter[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return next(self._iter)
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         """Returns bounds `[lower, upper]` for the remaining iterator length.
 
@@ -955,7 +943,7 @@ struct BytesIter[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self._iter.bounds()
 
-    @always_inline
+    @inline(.always)
     def __len__(self) -> Int:
         """Returns the remaining length of this iterator in bytes.
 

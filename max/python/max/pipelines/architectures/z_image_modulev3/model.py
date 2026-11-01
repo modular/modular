@@ -10,19 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Z-Image transformer model."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from max import functional as F
 from max.driver import Device
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.modeling.base.component_model import ComponentModel
 from max.profiler import traced
+from max.tensor import Tensor
 
 if TYPE_CHECKING:
     from max.pipelines.diffusion.config import DenoisingCacheConfig
@@ -62,6 +63,7 @@ class ZImageTransformerModel(ComponentModel):
 
     @traced(message="ZImageTransformerModel.load_model")
     def load_model(self) -> None:
+        """Loads the transformer's weights at the configured dtype."""
         target_dtype = self.config.dtype
         state_dict = {}
         for key, value in self.weights.items():
@@ -99,6 +101,7 @@ class ZImageTransformerModel(ComponentModel):
         siglip_feats: Tensor | None = None,
         image_noise_mask: Tensor | None = None,
     ) -> Any:
+        """Runs the transformer over one denoising step."""
         if controlnet_block_samples is not None:
             raise NotImplementedError(
                 "controlnet_block_samples is not supported in z-image phase 1"

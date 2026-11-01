@@ -1,0 +1,291 @@
+load("//bazel:api.bzl", "modular_cc_binary", "modular_py_test", "mojo_shared_library", "mojo_test", "requirement")
+
+package(
+    default_visibility = ["//MLRT:consumers"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Mock plugin — lightweight C implementation of M_driver_* for testing the
+# Mojo HAL bindings without GPU hardware.
+# ---------------------------------------------------------------------------
+modular_cc_binary(
+    name = "MockPlugin.so",
+    testonly = True,
+    srcs = ["mock_plugin.c"],
+    linkshared = True,
+    linkstatic = False,
+    deps = ["//SDK:HAL"],
+)
+
+# ---------------------------------------------------------------------------
+# Mock-based test — runs without GPU, exercises full HAL lifecycle.
+# ---------------------------------------------------------------------------
+mojo_test(
+    name = "test_hal_mock.mojo.test",
+    srcs = ["test_hal_mock.mojo"],
+    data = [":MockPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath :MockPlugin.so)",
+    },
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# GPU-dependent smoke test (existing).
+# ---------------------------------------------------------------------------
+mojo_test(
+    name = "test_hal_driver.mojo.test",
+    srcs = ["test_hal_driver.mojo"],
+    data = select({
+        "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
+        "//:apple_gpu": ["//Target:MetalPlugin.so"],
+        "//:amd_gpu": ["//Target:HIPPlugin.so"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so)",
+        },
+        "//:apple_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so)",
+        },
+        "//:amd_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Standalone vec_add.so exercising the cross-.so user-kernel
+# pattern against the HAL _mojo_module library.
+# ---------------------------------------------------------------------------
+mojo_shared_library(
+    name = "vec_add",
+    srcs = ["vec_add.mojo"],
+    shared_lib_name = "vec_add.so",
+    # Excluded from the source-only OSS build (SDLC-4549): depends on
+    # //max_private/sys/_hal, an internal, experimental HAL that is deliberately
+    # excluded from the OSS export (see //max_private/BUILD.bazel; made internal
+    # in #96929, "make max.sys internal -- still experimental"). Stays enabled in
+    # the internal monorepo, where //:oss_source_only_build is false.
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }) + select({
+        "//:oss_source_only_build": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    # Incompatibility alone does not stop Bazel from loading //max_private, which
+    # is absent from the OSS tree, so the dep itself is also selected away.
+    deps = ["@mojo//:std"] + select({
+        "//:oss_source_only_build": [],
+        "//conditions:default": ["//max_private/sys/_hal:_mojo_module"],
+    }),
+)
+
+# ---------------------------------------------------------------------------
+# Python HAL test
+# ---------------------------------------------------------------------------
+modular_py_test(
+    name = "test_python_hal",
+    srcs = ["test_python_hal.py"],
+    data = select({
+        "//:nvidia_gpu": [
+            ":vec_add",
+            "//Target:CUDAPlugin.so",
+        ],
+        "//:apple_gpu": [
+            ":vec_add",
+            "//Target:MetalPlugin.so",
+        ],
+        "//:amd_gpu": [
+            ":vec_add",
+            "//Target:HIPPlugin.so",
+        ],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so)",
+        },
+        "//:apple_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so)",
+        },
+        "//:amd_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    ignore_unresolved_imports = [
+        # mojo.importer is provided by @mojo//:python (already pulled in via
+        # //max/python/max/sys/_hal); the pydeps graph doesn't see it.
+        "mojo.importer",
+        # vec_add.so is a Mojo extension loaded at runtime via mojo.importer,
+        # invisible to the Python import-graph analyzer.
+        "vec_add.vec_add",
+    ] + select({
+        # max_private is not exported, so the source-only build drops the dep
+        # below; the test itself is incompatible there, but its pydeps check
+        # still runs.
+        "//:oss_source_only_build": ["max_private"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    # Excluded from the source-only OSS build (SDLC-4549): depends on
+    # //max_private/sys/_hal, an internal, experimental HAL that is deliberately
+    # excluded from the OSS export (see //max_private/BUILD.bazel; made internal
+    # in #96929, "make max.sys internal -- still experimental"). Stays enabled in
+    # the internal monorepo, where //:oss_source_only_build is false.
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }) + select({
+        "//:oss_source_only_build": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [requirement("numpy")] + select({
+        "//:oss_source_only_build": [],
+        "//conditions:default": ["//max_private/sys/_hal"],
+    }),
+)
+
+# ---------------------------------------------------------------------------
+# Loaded-function cache. Needs a real plugin: the mock hands back one function
+# sentinel for every load, so it cannot tell a cache hit from a miss.
+# ---------------------------------------------------------------------------
+mojo_test(
+    name = "test_hal_function_cache.mojo.test",
+    srcs = ["test_hal_function_cache.mojo"],
+    data = select({
+        "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
+        "//:apple_gpu": ["//Target:MetalPlugin.so"],
+        "//:amd_gpu": ["//Target:HIPPlugin.so"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so)",
+        },
+        "//:apple_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so)",
+        },
+        "//:amd_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# Queue/stream submission, event ordering and the validation error paths against
+# the real plugins. Kernel-free, so it needs no vec_add.
+mojo_test(
+    name = "test_hal_ops.mojo.test",
+    size = "medium",
+    srcs = ["test_hal_ops.mojo"],
+    data = select({
+        "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
+        "//:apple_gpu": ["//Target:MetalPlugin.so"],
+        "//:amd_gpu": ["//Target:HIPPlugin.so"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so)",
+        },
+        "//:apple_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so)",
+        },
+        "//:amd_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_e2e_driver.mojo.test",
+    srcs = ["test_e2e_driver.mojo"],
+    data = select({
+        "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
+        "//:apple_gpu": ["//Target:MetalPlugin.so"],
+        "//:amd_gpu": ["//Target:HIPPlugin.so"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so)",
+        },
+        "//:apple_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so)",
+        },
+        "//:amd_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)

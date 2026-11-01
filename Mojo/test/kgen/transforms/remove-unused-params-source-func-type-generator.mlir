@@ -13,10 +13,10 @@
 // CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<(index, !kgen.pointer<index>) -> index> : !kgen.type
 kgen.generator @callee(%arg0: index, %arg1: !kgen.pointer<index>) -> index attributes {sourceFuncTypeGenerator = #kgen.type<(index, !kgen.pointer<index>) -> index> : !kgen.type} {
   %l = pop.load %arg1 : !kgen.pointer<index>
-  kgen.return %l : index
+  hlcf.return %l : index
 }
 
 kgen.generator export @entry(%arg0: index, %arg1: !kgen.pointer<index>) {
   %0 = kgen.call @callee(%arg0, %arg1) : (index, !kgen.pointer<index>) -> index
-  kgen.return
+  hlcf.return
 }

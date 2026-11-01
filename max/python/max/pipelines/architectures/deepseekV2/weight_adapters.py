@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Safetensor weight adapter for DeepSeek-V2 checkpoints."""
 
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ DEEPSEEK_SAFETENSOR_MAP = {
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
+    """Renames the checkpoint's weights for the module tree."""
     new_state_dict: dict[str, WeightData] = {}
 
     # Map the weight names.

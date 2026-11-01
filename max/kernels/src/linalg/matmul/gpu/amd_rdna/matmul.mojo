@@ -37,12 +37,17 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.compute.mma import mma as _mma_intrinsic
-from layout import TensorLayout, TileTensor
+from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from std.memory import unsafe_stack_allocation
-from std.utils import Index, IndexList
+from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
-from ....utils import elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from ....utils_gpu import block_swizzle
 
 # Defaults for the naive kernel path (RDNA 1/2)
@@ -77,8 +82,10 @@ def gemm_kernel_rdna[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
     BLOCK_K: Int = 32,
     BLOCK_M: Int = 128,
@@ -88,9 +95,9 @@ def gemm_kernel_rdna[
     WARP_TILE_M: Int = 1,
     WARP_TILE_N: Int = 4,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -108,10 +115,11 @@ def gemm_kernel_rdna[
         c_layout: Memory layout of the output tile `c`.
         a_layout: Memory layout of the input tile `a`.
         b_layout: Memory layout of the input tile `b`.
+        c_engine: `TensorEngine` of the output tile `c`.
+        a_engine: `TensorEngine` of the input tile `a`.
+        b_engine: `TensorEngine` of the input tile `b`.
         transpose_b: Whether `b` is stored as `(N, K)` instead of `(K, N)`
             (defaults to `True`).
-        elementwise_lambda_fn: Optional per-element epilogue that replaces
-            the direct store to `c` (defaults to `None`).
         s_type: Accumulation type used in the inner K-loop (defaults to
             the natural accumulation type of `c_type`).
         BLOCK_K: K-dimension tile size in elements processed per
@@ -138,6 +146,153 @@ def gemm_kernel_rdna[
         n: Number of columns in the output and in `b`.
         k: Contraction dimension shared by `a` and `b`.
     """
+    _gemm_kernel_rdna_impl[
+        transpose_b=transpose_b,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+        s_type=s_type,
+        BLOCK_K=BLOCK_K,
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+        WARPS_M=WARPS_M,
+        WARPS_N=WARPS_N,
+        WARP_TILE_M=WARP_TILE_M,
+        WARP_TILE_N=WARP_TILE_N,
+    ](c, a, b, m, n, k, no_epilogue_fn, no_compute_fn)
+
+
+@__name(
+    t"gemm_kernel_rdna_epilogue_fn_{c_type}_{a_type}_{b_type}_{transpose_b}"
+)
+def gemm_kernel_rdna_epilogue_fn[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    transpose_b: Bool = True,
+    s_type: DType = get_accum_type[c_type](),
+    BLOCK_K: Int = 32,
+    BLOCK_M: Int = 128,
+    BLOCK_N: Int = 128,
+    WARPS_M: Int = 8,
+    WARPS_N: Int = 2,
+    WARP_TILE_M: Int = 1,
+    WARP_TILE_N: Int = 4,
+](
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+    m: Int32,
+    n: Int32,
+    k: Int32,
+    epilogue_fn: EpilogueFnType,
+):
+    """Runs `gemm_kernel_rdna`, storing each output through `epilogue_fn`
+    instead of into `c`."""
+    _gemm_kernel_rdna_impl[
+        transpose_b=transpose_b,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+        s_type=s_type,
+        BLOCK_K=BLOCK_K,
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+        WARPS_M=WARPS_M,
+        WARPS_N=WARPS_N,
+        WARP_TILE_M=WARP_TILE_M,
+        WARP_TILE_N=WARP_TILE_N,
+    ](c, a, b, m, n, k, epilogue_fn, no_compute_fn)
+
+
+@__name(t"gemm_kernel_rdna_compute_fn_{c_type}_{a_type}_{b_type}_{transpose_b}")
+def gemm_kernel_rdna_compute_fn[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    ComputeFnType: ElementwiseComputeFn,
+    transpose_b: Bool = True,
+    s_type: DType = get_accum_type[c_type](),
+    BLOCK_K: Int = 32,
+    BLOCK_M: Int = 128,
+    BLOCK_N: Int = 128,
+    WARPS_M: Int = 8,
+    WARPS_N: Int = 2,
+    WARP_TILE_M: Int = 1,
+    WARP_TILE_N: Int = 4,
+](
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+    m: Int32,
+    n: Int32,
+    k: Int32,
+    compute_fn: ComputeFnType,
+):
+    """Runs `gemm_kernel_rdna`, storing `compute_fn` of each output into
+    `c`."""
+    _gemm_kernel_rdna_impl[
+        transpose_b=transpose_b,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+        s_type=s_type,
+        BLOCK_K=BLOCK_K,
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+        WARPS_M=WARPS_M,
+        WARPS_N=WARPS_N,
+        WARP_TILE_M=WARP_TILE_M,
+        WARP_TILE_N=WARP_TILE_N,
+    ](c, a, b, m, n, k, no_epilogue_fn, compute_fn)
+
+
+@inline(.always)
+def _gemm_kernel_rdna_impl[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+    s_type: DType,
+    BLOCK_K: Int,
+    BLOCK_M: Int,
+    BLOCK_N: Int,
+    WARPS_M: Int,
+    WARPS_N: Int,
+    WARP_TILE_M: Int,
+    WARP_TILE_N: Int,
+](
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+    m: Int32,
+    n: Int32,
+    k: Int32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+):
     var _m = Int(m)
     var _n = Int(n)
     var _k = Int(k)
@@ -150,35 +305,25 @@ def gemm_kernel_rdna[
         DType.bfloat16,
     ):
         _naive_matmul_kernel[
-            c_type,
-            a_type,
-            b_type,
-            c_layout,
-            a_layout,
-            b_layout,
-            transpose_b,
-            elementwise_lambda_fn,
-            s_type,
-        ](c, a, b, _m, _n, _k)
+            transpose_b=transpose_b,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+            s_type=s_type,
+        ](c, a, b, _m, _n, _k, epilogue_fn, compute_fn)
     else:
         _wmma_matmul_kernel[
-            c_type,
-            a_type,
-            b_type,
-            c_layout,
-            a_layout,
-            b_layout,
-            transpose_b,
-            elementwise_lambda_fn,
-            s_type,
-            BLOCK_K,
-            BLOCK_M,
-            BLOCK_N,
-            WARPS_M,
-            WARPS_N,
-            WARP_TILE_M,
-            WARP_TILE_N,
-        ](c, a, b, _m, _n, _k)
+            transpose_b=transpose_b,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+            s_type=s_type,
+            BLOCK_K=BLOCK_K,
+            BLOCK_M=BLOCK_M,
+            BLOCK_N=BLOCK_N,
+            WARPS_M=WARPS_M,
+            WARPS_N=WARPS_N,
+            WARP_TILE_M=WARP_TILE_M,
+            WARP_TILE_N=WARP_TILE_N,
+        ](c, a, b, _m, _n, _k, epilogue_fn, compute_fn)
 
 
 def _naive_matmul_kernel[
@@ -188,16 +333,26 @@ def _naive_matmul_kernel[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
     transpose_b: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
     s_type: DType,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
     m: Int,
     n: Int,
     k: Int,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     """Per-thread naive matmul for RDNA 1/2 (no WMMA support).
 
@@ -225,29 +380,36 @@ def _naive_matmul_kernel[
 
             comptime if transpose_b:
                 for i in range(k):
-                    accum += rebind[Scalar[s_type]](
-                        a[global_row, i].cast[s_type]()
-                    ) * rebind[Scalar[s_type]](b[global_col, i].cast[s_type]())
+                    accum += (
+                        a.load[width=1]((global_row, i)).cast[s_type]()
+                        * b.load[width=1]((global_col, i)).cast[s_type]()
+                    )
             else:
                 for i in range(k):
-                    accum += rebind[Scalar[s_type]](
-                        a[global_row, i].cast[s_type]()
-                    ) * rebind[Scalar[s_type]](b[i, global_col].cast[s_type]())
+                    accum += (
+                        a.load[width=1]((global_row, i)).cast[s_type]()
+                        * b.load[width=1]((i, global_col)).cast[s_type]()
+                    )
 
-            comptime if elementwise_lambda_fn:
-                comptime elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda[c_type, 1](
-                    Index(global_row, global_col),
+            comptime if has_epilogue_fn:
+                epilogue_fn[c_type, 1, alignment=1](
+                    (global_row, global_col),
                     accum.cast[c_type](),
                 )
             else:
-                c[global_row, global_col] = accum.cast[c_type]()
+                var out = accum.cast[c_type]()
+                comptime if has_compute_fn:
+                    out = compute_fn[c_type, 1, alignment=1](
+                        (global_row, global_col), out
+                    )
+                c[global_row, global_col] = out
 
 
-@always_inline
+@inline(.always)
 def _load_tile_to_smem[
     dtype: DType,
     tile_layout: TensorLayout,
+    tile_engine: TensorEngine,
     transpose_b: Bool,
     is_b_tile: Bool,
     BLOCK_ROWS: Int,
@@ -255,8 +417,8 @@ def _load_tile_to_smem[
     SMEM_STRIDE: Int,
     NUM_THREADS: Int,
 ](
-    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
-    tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin],
+    smem: MutPointer[Scalar[dtype], _, address_space=.SHARED],
+    tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin, Engine=tile_engine],
     block_row_offset: Int,
     k_offset: Int,
     max_rows: Int,
@@ -293,17 +455,16 @@ def _load_tile_to_smem[
             var vec_idx = i * NUM_THREADS + tid
             if vec_idx < total_vectors:
                 var elem_idx = vec_idx * VECTOR_WIDTH
-                var row = elem_idx // BLOCK_K
-                var col = elem_idx % BLOCK_K
+                var row, col = divmod(elem_idx, BLOCK_K)
                 var global_row = block_row_offset + row
 
                 if global_row < max_rows:
-                    var vec = tile.load_linear[width=VECTOR_WIDTH](
-                        IndexList[2](global_row, k_offset + col)
+                    var vec = tile.load[width=VECTOR_WIDTH](
+                        Coord(global_row, k_offset + col)
                     )
-                    smem.store(row * SMEM_STRIDE + col, vec)
+                    smem.unsafe_store(row * SMEM_STRIDE + col, vec)
                 else:
-                    smem.store(
+                    smem.unsafe_store(
                         row * SMEM_STRIDE + col,
                         SIMD[dtype, VECTOR_WIDTH](0),
                     )
@@ -326,22 +487,23 @@ def _load_tile_to_smem[
 
             # B is (K, N): load transposed into shared memory as (N, K)
             if global_col < max_k and global_row < max_rows:
-                val = rebind[Scalar[dtype]](tile[global_col, global_row])
+                val = tile.load[width=1]((global_col, global_row))
 
             smem[row * SMEM_STRIDE + col] = val
 
 
-@always_inline
+@inline(.always)
 def _load_tile_regs[
     dtype: DType,
     tile_layout: TensorLayout,
+    tile_engine: TensorEngine,
     BLOCK_ROWS: Int,
     BLOCK_K: Int,
     NUM_THREADS: Int,
     VECS_PER_THREAD: Int,
     VECTOR_WIDTH: Int,
 ](
-    tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin],
+    tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin, Engine=tile_engine],
     block_row_offset: Int,
     k_offset: Int,
     max_rows: Int,
@@ -361,15 +523,16 @@ def _load_tile_regs[
         var vec_idx = i * NUM_THREADS + tid
         if vec_idx < total_vectors:
             var elem_idx = vec_idx * VECTOR_WIDTH
-            var global_row = block_row_offset + elem_idx // BLOCK_K
+            var row, col = divmod(elem_idx, BLOCK_K)
+            var global_row = block_row_offset + row
             if global_row < max_rows:
-                regs[i] = tile.load_linear[width=VECTOR_WIDTH](
-                    IndexList[2](global_row, k_offset + elem_idx % BLOCK_K)
+                regs[i] = tile.load[width=VECTOR_WIDTH](
+                    Coord(global_row, k_offset + col)
                 )
     return regs^
 
 
-@always_inline
+@inline(.always)
 def _store_tile_regs[
     dtype: DType,
     BLOCK_ROWS: Int,
@@ -379,7 +542,7 @@ def _store_tile_regs[
     VECS_PER_THREAD: Int,
     VECTOR_WIDTH: Int,
 ](
-    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
+    smem: MutPointer[Scalar[dtype], _, address_space=.SHARED],
     regs: Array[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD],
     tid: Int,
 ):
@@ -390,10 +553,10 @@ def _store_tile_regs[
         if vec_idx < total_vectors:
             var elem_idx = vec_idx * VECTOR_WIDTH
             var row = elem_idx // BLOCK_K
-            smem.store(row * SMEM_STRIDE + elem_idx % BLOCK_K, regs[i])
+            smem.unsafe_store(row * SMEM_STRIDE + elem_idx % BLOCK_K, regs[i])
 
 
-@always_inline
+@inline(.always)
 def _compute_ktile[
     a_type: DType,
     b_type: DType,
@@ -403,8 +566,8 @@ def _compute_ktile[
     WARP_TILE_M: Int,
     WARP_TILE_N: Int,
 ](
-    a_smem: UnsafePointer[mut=True, Scalar[a_type], _, address_space=.SHARED],
-    b_smem: UnsafePointer[mut=True, Scalar[b_type], _, address_space=.SHARED],
+    a_smem: MutPointer[Scalar[a_type], _, address_space=.SHARED],
+    b_smem: MutPointer[Scalar[b_type], _, address_space=.SHARED],
     mut c_accum: Array[SIMD[s_type, CD_FRAG_SIZE], WARP_TILE_M * WARP_TILE_N],
     warp_m: Int,
     warp_n: Int,
@@ -424,7 +587,7 @@ def _compute_ktile[
                 warp_m * WARP_TILE_M * MMA_M + wm * MMA_M + effective_lane
             )
             comptime k_base = k_inner * MMA_K
-            a_frag[wm] = a_smem.load[width=AB_FRAG_SIZE](
+            a_frag[wm] = a_smem.unsafe_load[width=AB_FRAG_SIZE](
                 a_row * SMEM_STRIDE + k_base
             )
         var b_frag = Array[SIMD[b_type, AB_FRAG_SIZE], WARP_TILE_N](
@@ -435,7 +598,7 @@ def _compute_ktile[
                 warp_n * WARP_TILE_N * MMA_N + wn * MMA_N + effective_lane
             )
             comptime k_base = k_inner * MMA_K
-            b_frag[wn] = b_smem.load[width=AB_FRAG_SIZE](
+            b_frag[wn] = b_smem.unsafe_load[width=AB_FRAG_SIZE](
                 b_row * SMEM_STRIDE + k_base
             )
         comptime for wm in range(WARP_TILE_M):
@@ -453,8 +616,16 @@ def _wmma_matmul_kernel[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
     transpose_b: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
     s_type: DType,
     BLOCK_K: Int = 32,
     BLOCK_M: Int = 128,
@@ -464,12 +635,14 @@ def _wmma_matmul_kernel[
     WARP_TILE_M: Int = 1,
     WARP_TILE_N: Int = 4,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
     m: Int,
     n: Int,
     k: Int,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     """WMMA-based GEMM kernel for RDNA 3+ GPUs.
 
@@ -513,9 +686,7 @@ def _wmma_matmul_kernel[
 
     # Block coordinates with swizzle for L2 locality
     var grid_dim = IndexList[2](ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M))
-    var swizzled = block_swizzle(
-        IndexList[2](block_idx.x, block_idx.y), grid_dim
-    )
+    var swizzled = block_swizzle((block_idx.x, block_idx.y), grid_dim)
     var block_n = swizzled[0]
     var block_m = swizzled[1]
 
@@ -559,10 +730,24 @@ def _wmma_matmul_kernel[
 
         # Prologue: stage tile 0 into LDS via registers.
         var a_regs = _load_tile_regs[
-            a_type, a_layout, BLOCK_M, BLOCK_K, NUM_THREADS, A_VECS, VW
+            a_type,
+            a_layout,
+            a_engine,
+            BLOCK_M,
+            BLOCK_K,
+            NUM_THREADS,
+            A_VECS,
+            VW,
         ](a, block_m_offset, 0, m, tid)
         var b_regs = _load_tile_regs[
-            b_type, b_layout, BLOCK_N, BLOCK_K, NUM_THREADS, B_VECS, VW
+            b_type,
+            b_layout,
+            b_engine,
+            BLOCK_N,
+            BLOCK_K,
+            NUM_THREADS,
+            B_VECS,
+            VW,
         ](b, block_n_offset, 0, n, tid)
         _store_tile_regs[
             a_type, BLOCK_M, BLOCK_K, SMEM_STRIDE, NUM_THREADS, A_VECS, VW
@@ -577,10 +762,24 @@ def _wmma_matmul_kernel[
             if k_tile + 1 < num_k_tiles:
                 var nk = (k_tile + 1) * BLOCK_K
                 a_regs = _load_tile_regs[
-                    a_type, a_layout, BLOCK_M, BLOCK_K, NUM_THREADS, A_VECS, VW
+                    a_type,
+                    a_layout,
+                    a_engine,
+                    BLOCK_M,
+                    BLOCK_K,
+                    NUM_THREADS,
+                    A_VECS,
+                    VW,
                 ](a, block_m_offset, nk, m, tid)
                 b_regs = _load_tile_regs[
-                    b_type, b_layout, BLOCK_N, BLOCK_K, NUM_THREADS, B_VECS, VW
+                    b_type,
+                    b_layout,
+                    b_engine,
+                    BLOCK_N,
+                    BLOCK_K,
+                    NUM_THREADS,
+                    B_VECS,
+                    VW,
                 ](b, block_n_offset, nk, n, tid)
 
             _compute_ktile[
@@ -638,6 +837,7 @@ def _wmma_matmul_kernel[
         _load_tile_to_smem[
             a_type,
             a_layout,
+            a_engine,
             transpose_b,
             is_b_tile=False,
             BLOCK_ROWS=BLOCK_M,
@@ -648,6 +848,7 @@ def _wmma_matmul_kernel[
         _load_tile_to_smem[
             b_type,
             b_layout,
+            b_engine,
             transpose_b,
             is_b_tile=True,
             BLOCK_ROWS=BLOCK_N,
@@ -679,6 +880,7 @@ def _wmma_matmul_kernel[
                 _load_tile_to_smem[
                     a_type,
                     a_layout,
+                    a_engine,
                     transpose_b,
                     is_b_tile=False,
                     BLOCK_ROWS=BLOCK_M,
@@ -689,6 +891,7 @@ def _wmma_matmul_kernel[
                 _load_tile_to_smem[
                     b_type,
                     b_layout,
+                    b_engine,
                     transpose_b,
                     is_b_tile=True,
                     BLOCK_ROWS=BLOCK_N,
@@ -725,15 +928,15 @@ def _wmma_matmul_kernel[
                 )
 
                 if global_row < m and global_col < n:
-                    comptime if elementwise_lambda_fn:
-                        comptime elementwise_lambda = (
-                            elementwise_lambda_fn.value()
-                        )
-                        elementwise_lambda[c_type, 1](
-                            Index(global_row, global_col),
+                    comptime if has_epilogue_fn:
+                        epilogue_fn[c_type, 1, alignment=1](
+                            (global_row, global_col),
                             c_accum[c_idx][v].cast[c_type](),
                         )
                     else:
-                        c[global_row, global_col] = c_accum[c_idx][v].cast[
-                            c_type
-                        ]()
+                        var out = c_accum[c_idx][v].cast[c_type]()
+                        comptime if has_compute_fn:
+                            out = compute_fn[c_type, 1, alignment=1](
+                                (global_row, global_col), out
+                            )
+                        c[global_row, global_col] = out

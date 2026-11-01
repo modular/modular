@@ -59,20 +59,24 @@
 # dense RMSNorm'd query (`q_output`, self-contained) and the paged K cache read
 # back through its page table (the in-place-normalized K rows).
 
-from std.math import align_up, ceildiv, max, min, rsqrt, sqrt
+from std.math import (
+    align_up,
+    ceildiv,
+    max,
+    min,
+    rsqrt,
+)
 from std.random import randn, random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
+    TileTensor,
 )
 from std.utils.index import IndexList
 from nn.kv_cache import fused_qk_rms_norm_ragged_paged
@@ -310,7 +314,7 @@ def run_one_case(
     )
     comptime KV_DIM = 2  # standard MHA paged cache: dim[1] = {K, V}
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         KV_DIM,
         NUM_LAYERS,
@@ -431,45 +435,44 @@ def run_one_case(
     ctx.synchronize()
 
     # --- PagedKVCacheCollection ----------------------------------------------
-    var blocks_lt = LayoutTensor[dtype, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(block_shape[0])
+    blocks_shape[2] = Int64(block_shape[2])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        block_shape[1]
+        * block_shape[2]
+        * block_shape[3]
+        * block_shape[4]
+        * block_shape[5]
     )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    blocks_strides[1] = Int64(
+        block_shape[2] * block_shape[3] * block_shape[4] * block_shape[5]
     )
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
+    var blocks = TileTensor(
+        blocks_device, BlocksLayout(blocks_shape, blocks_strides)
     )
-
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, PAGE_SIZE](
-        LayoutTensor[dtype, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = Collection(
+        blocks.as_unsafe_any_origin(),
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -490,14 +493,14 @@ def run_one_case(
     fused_qk_rms_norm_ragged_paged[
         target="gpu", multiply_before_cast=multiply_before_cast
     ](
-        q_proj.as_immut(),
+        q_proj.as_imm(),
         kv_collection,
-        q_gamma.as_immut(),
-        k_gamma.as_immut(),
+        q_gamma.as_imm(),
+        k_gamma.as_imm(),
         EPS,
         WEIGHT_OFFSET.cast[dtype](),
         UInt32(0),  # layer_idx
-        row_offsets.as_immut(),
+        row_offsets.as_imm(),
         q_output,
         ctx,
     )
@@ -665,24 +668,13 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "batch_size=",
-                specs[i].batch_size,
-                "max_cache_len=",
-                specs[i].max_cache_len,
-                "min_cache_len=",
-                specs[i].min_cache_len,
-                "seq_len=",
-                specs[i].seq_len,
-                "pattern=",
-                specs[i].pattern,
-                "ragged_q=",
-                specs[i].ragged_q,
-                "seed=",
-                specs[i].seed,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} batch_size="
+                t" {specs[i].batch_size} max_cache_len="
+                t" {specs[i].max_cache_len} min_cache_len="
+                t" {specs[i].min_cache_len} seq_len="
+                t" {specs[i].seq_len} pattern= {specs[i].pattern} ragged_q="
+                t" {specs[i].ragged_q} seed= {specs[i].seed} dist="
+                t" {specs[i].dist}"
             )
         return
 
@@ -705,15 +697,8 @@ def main() raises:
 
     # Default: standalone in-process fuzz.
     print(
-        "=== fuzz_fused_qk_rms_norm num_q_heads=",
-        num_q_heads,
-        "num_kv_heads=",
-        num_kv_heads,
-        "seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_fused_qk_rms_norm num_q_heads= {num_q_heads} num_kv_heads="
+        t" {num_kv_heads} seed= {the_seed} budget= {the_budget} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

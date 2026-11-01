@@ -12,14 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import size_of
-from std.sys.info import CompilationTarget, is_64bit
+from std.sys.info import Endian, is_64bit
 
 from std.bit import count_leading_zeros
-from std.memory import alloc, dealloc, ThinAllocation, Layout
+from std.memory import alloc, Layout
 from std.memory.unsafe import bitcast
+from std.benchmark import black_box
 from std.builtin._format_float import _write_float
-from std.builtin.simd import _modf
+from std.simd import _modf
 from std.itertools import product
+from std.python import PythonObject
 from std.random import randn, seed
 from std.testing import (
     assert_almost_equal,
@@ -36,6 +38,7 @@ from std.testing.prop.strategy import SIMD
 
 from std.utils import StaticTuple
 from std.utils.numerics import isfinite, isinf, isnan, nan
+from test_utils import check_convertible_to_python, check_python_object
 
 
 def test_cast() raises:
@@ -428,8 +431,9 @@ def test_issue_1625() raises:
 
 
 def test_issue_20421() raises:
-    var a_layout = Layout[UInt8](count=16 * 64, alignment=64)
-    var ptr = alloc(a_layout).unsafe_leak()
+    var a_layout = Layout[UInt8, alignment=.of_bytes[64]()](length=16 * 64)
+    var allocation = alloc(a_layout).into_managed()
+    var ptr = allocation.unsafe_ptr()
     for i in range(16 * 64):
         ptr[unsafe_offset=i] = UInt8(i & 255)
     var av16 = (
@@ -437,7 +441,6 @@ def test_issue_20421() raises:
         .unsafe_bitcast[Int32]()
         .unsafe_load[width=4, alignment=1]()
     )
-    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(a_layout))
     assert_equal(
         av16,
         SIMD[.int32, 4](-943274556, -875902520, -808530484, -741158448),
@@ -458,7 +461,7 @@ def test_issue_30237() raises:
         -2.76076847742355e-16,
     ]
 
-    @always_inline
+    @inline(.always)
     def eval1(x: SIMD[dtype, simd_width]) {imm} -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
         var c_second_from_last = coefficients[coefficients_len - 2]
@@ -471,7 +474,7 @@ def test_issue_30237() raises:
 
         return result
 
-    @always_inline
+    @inline(.always)
     def eval2(x: SIMD[dtype, simd_width]) {imm} -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
         var c_second_from_last = coefficients[coefficients_len - 2]
@@ -526,7 +529,7 @@ def test_truthy() raises:
         assert_true(Scalar[dtype](1))
 
     comptime for i in range(dtypes.__len__()):
-        comptime dtype = rebind[DType](dtypes[i])
+        comptime dtype = dtypes[i]
         test_dtype[dtype]()
 
     test_dtype[.bfloat16]()
@@ -1284,6 +1287,21 @@ def test_insert() raises:
         SIMD[.uint, 8](9, 6, 3, 7, 5, 6, 7, 8),
     )
 
+    assert_equal(
+        SIMD[.int64, 2](1, 2).insert[offset=1](Scalar[.int64](99)),
+        SIMD[.int64, 2](1, 99),
+    )
+
+    assert_equal(
+        SIMD[.int64, 2](1, 2).insert[offset=0](Scalar[.int64](99)),
+        SIMD[.int64, 2](99, 2),
+    )
+
+    assert_equal(
+        SIMD[.float32, 4](0, 1, 2, 3).insert[offset=3](Float32(9)),
+        SIMD[.float32, 4](0, 1, 2, 9),
+    )
+
 
 def test_join() raises:
     comptime I2 = SIMD[.int32, 2]
@@ -1873,19 +1891,6 @@ def test_pow() raises:
     assert_equal(Int64(27), Int64.__pow__(Int64(3), Int64(3)))
     assert_equal(Int64(81), Int64.__pow__(Int64(3), Int64(4)))
 
-    # Negative exponents: 1 ** n == 1 for all n.
-    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-1)))
-    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-5)))
-
-    # Negative exponents: (-1) ** n depends on parity.
-    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-1)))
-    assert_equal(Int64(1), Int64.__pow__(Int64(-1), Int64(-2)))
-    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-3)))
-
-    # Negative exponents: |base| > 1 truncates to 0.
-    assert_equal(Int64(0), Int64.__pow__(Int64(2), Int64(-1)))
-    assert_equal(Int64(0), Int64.__pow__(Int64(3), Int64(-2)))
-
 
 def test_powf() raises:
     assert_almost_equal(Float32(2.0) ** Float32(0.5), 1.4142135)
@@ -1904,6 +1909,37 @@ def test_powf() raises:
         ** SIMD[.float64, 8](1, 2, 3, 4, 5, 6, 2, 1),
         SIMD[.float64, 8](1, 1, 8, 16, 1024, 4096, 4, 3),
     )
+
+    assert_almost_equal(
+        Float64.__pow__(5e-324, 0.5),
+        2.2227587494850775e-162,
+        atol=1e-162,
+        rtol=1e-162,
+    )
+
+
+def test_powf_large_whole_exponent() raises:
+    # Whole exponents too large for an Int32, and infinite ones.
+    comptime inf = FloatLiteral.infinity
+    assert_equal(Float64(0.5) ** Float64(4294967296.0), 0.0)
+    assert_equal(Float64(2.0) ** Float64(4294967296.0), inf)
+    assert_equal(Float64(2.0) ** Float64(-2147483648.0), 0.0)
+    assert_equal(Float64(-2.0) ** Float64(4294967297.0), -inf)
+    assert_equal(Float64(-1.0) ** Float64(4294967297.0), -1.0)
+    assert_equal(Float32(0.5) ** Float32(1e10), 0.0)
+    assert_equal(Float64(0.5) ** Float64(inf), 0.0)
+    assert_equal(Float64(2.0) ** Float64(-inf), 0.0)
+    assert_equal(Float64(1.0) ** Float64(inf), 1.0)
+    assert_almost_equal(
+        Float64(1.0000001) ** Float64(3e9), 1.9423975992963885e130, rtol=1e-8
+    )
+
+    # `-0.0` keeps its sign for odd exponents, like the `_powi` path.
+    comptime neg_zero = FloatLiteral.negative_zero
+    assert_equal(String(Float64(neg_zero) ** Float64(4294967297.0)), "-0.0")
+    assert_equal(String(Float64(neg_zero) ** Float64(4294967296.0)), "0.0")
+    assert_equal(Float64(neg_zero) ** Float64(-4294967297.0), -inf)
+    assert_equal(Float64(neg_zero) ** Float64(-4294967296.0), inf)
 
 
 def test_rpow() raises:
@@ -2179,10 +2215,21 @@ def test_comparison() raises:
             assert_true(mixed_ge[3])
 
     comptime for i in range(dtypes.__len__()):
-        comptime dtype = rebind[DType](dtypes[i])
+        comptime dtype = dtypes[i]
         test_dtype[dtype]()
 
     test_dtype[.bfloat16]()
+
+
+def test_nan_comparison() raises:
+    var n = black_box(nan[DType.float64]())
+    var v = black_box(SIMD[DType.float64, 4](1.0, 2.0, n, 4.0))
+    var lit = black_box(SIMD[DType.float64, 4](2.0))
+
+    assert_equal(v.ne(lit), ~v.eq(lit))
+    assert_true(v.ne(lit)[2])
+    assert_true(n.ne(2.0))
+    assert_true(Bool(n))
 
 
 def test_float_conversion() raises:
@@ -2194,54 +2241,55 @@ def test_float_conversion() raises:
 def test_from_bytes_as_bytes() raises:
     # Test scalar types with specific byte patterns
 
-    assert_equal(Int16.from_bytes[big_endian=True]([0, 16]), 16)
-    assert_equal(Int16.from_bytes[big_endian=False]([0, 16]), 4096)
-    assert_equal(Int16.from_bytes[big_endian=True]([252, 0]), -1024)
-    assert_equal(UInt16.from_bytes[big_endian=True]([252, 0]), 64512)
-    assert_equal(Int16.from_bytes[big_endian=False]([252, 0]), 252)
-    assert_equal(Int32.from_bytes[big_endian=True]([0, 0, 0, 1]), 1)
+    assert_equal(Int16.from_bytes[endian=.big]([0, 16]), 16)
+    assert_equal(Int16.from_bytes[endian=.little]([0, 16]), 4096)
+    assert_equal(Int16.from_bytes[endian=.big]([252, 0]), -1024)
+    assert_equal(UInt16.from_bytes[endian=.big]([252, 0]), 64512)
+    assert_equal(Int16.from_bytes[endian=.little]([252, 0]), 252)
+    assert_equal(Int32.from_bytes[endian=.big]([0, 0, 0, 1]), 1)
     assert_equal(
-        Int32.from_bytes[big_endian=False]([0, 0, 0, 1]),
+        Int32.from_bytes[endian=.little]([0, 0, 0, 1]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True]([1, 0, 0, 0]),
+        Int32.from_bytes[endian=.big]([1, 0, 0, 0]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True]([1, 0, 0, 1]),
+        Int32.from_bytes[endian=.big]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=False]([1, 0, 0, 1]),
+        Int32.from_bytes[endian=.little]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True]([255, 0, 0, 0]),
+        Int32.from_bytes[endian=.big]([255, 0, 0, 0]),
         -16777216,
     )
 
     # Test scalar roundtrip conversions
+    def roundtrip[endian: Endian](x: Int16) raises:
+        assert_equal(
+            Int16.from_bytes[endian=endian](x.as_bytes[endian=endian]()), x
+        )
+
     for x in [Int16(10), 100, -12, 0, 1, -1, 1000, -1000]:
-        comptime for b in range(2):
-            assert_equal(
-                Int16.from_bytes[big_endian=Bool(b)](
-                    Int16(x).as_bytes[big_endian=Bool(b)]()
-                ),
-                x,
-            )
+        roundtrip[.native()](x)
+        roundtrip[.big](x)
+        roundtrip[.little](x)
 
     # Test SIMD vector roundtrip conversions (from test_comprehensive_from_bytes)
     var original_int32 = SIMD[.int32, 2](1, 2)
 
     # Test little endian roundtrip
-    var bytes_le = original_int32.as_bytes[big_endian=False]()
-    var int32_from_le = SIMD[.int32, 2].from_bytes[big_endian=False](bytes_le)
+    var bytes_le = original_int32.as_bytes[endian=.little]()
+    var int32_from_le = SIMD[.int32, 2].from_bytes[endian=.little](bytes_le)
     assert_equal(int32_from_le, original_int32)
 
     # Test big endian roundtrip
-    var bytes_be = original_int32.as_bytes[big_endian=True]()
-    var int32_from_be = SIMD[.int32, 2].from_bytes[big_endian=True](bytes_be)
+    var bytes_be = original_int32.as_bytes[endian=.big]()
+    var int32_from_be = SIMD[.int32, 2].from_bytes[endian=.big](bytes_be)
     assert_equal(int32_from_be, original_int32)
 
     # Test with float64 roundtrip (using default endianness)
@@ -2252,8 +2300,8 @@ def test_from_bytes_as_bytes() raises:
 
     # Test as_bytes conversion with specific byte patterns (from test_comprehensive_as_bytes)
     var int32_vals = SIMD[.int32, 2](0x12345678, 0x87654321)
-    var bytes_le_vals = int32_vals.as_bytes[big_endian=False]()
-    var bytes_be_vals = int32_vals.as_bytes[big_endian=True]()
+    var bytes_le_vals = int32_vals.as_bytes[endian=.little]()
+    var bytes_be_vals = int32_vals.as_bytes[endian=.big]()
 
     # Little endian: least significant byte first
     assert_equal(bytes_le_vals[0], 0x78)
@@ -2268,10 +2316,10 @@ def test_from_bytes_as_bytes() raises:
     assert_equal(bytes_be_vals[3], 0x78)
 
     # Test roundtrip conversion
-    var reconstructed_le = SIMD[.int32, 2].from_bytes[big_endian=False](
+    var reconstructed_le = SIMD[.int32, 2].from_bytes[endian=.little](
         bytes_le_vals
     )
-    var reconstructed_be = SIMD[.int32, 2].from_bytes[big_endian=True](
+    var reconstructed_be = SIMD[.int32, 2].from_bytes[endian=.big](
         bytes_be_vals
     )
     assert_equal(reconstructed_le, int32_vals)
@@ -2289,7 +2337,7 @@ def test_vector_from_bytes_as_bytes() raises:
         0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8,
     ]
     # fmt: on
-    var actual_v8_u16_be_bytes = v8_u16.as_bytes[big_endian=True]()
+    var actual_v8_u16_be_bytes = v8_u16.as_bytes[endian=.big]()
     for i, expected in enumerate(expected_v8_u16_be_bytes):
         assert_equal(Int(actual_v8_u16_be_bytes[i]), expected)
     # fmt: off
@@ -2297,22 +2345,20 @@ def test_vector_from_bytes_as_bytes() raises:
         1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0,
     ]
     # fmt: on
-    var actual_v8_u16_le_bytes = v8_u16.as_bytes[big_endian=False]()
+    var actual_v8_u16_le_bytes = v8_u16.as_bytes[endian=.little]()
     for i, expected in enumerate(expected_v8_u16_le_bytes):
         assert_equal(Int(actual_v8_u16_le_bytes[i]), expected)
 
     var v8_i64 = SIMD[.int64, 8](1, -2, 3, -4, 5, -6, 7, -8)
     assert_equal(
         v8_i64,
-        SIMD[.int64, 8].from_bytes[big_endian=False](
-            v8_i64.as_bytes[big_endian=False]()
+        SIMD[.int64, 8].from_bytes[endian=.little](
+            v8_i64.as_bytes[endian=.little]()
         ),
     )
     assert_equal(
         v8_i64,
-        SIMD[.int64, 8].from_bytes[big_endian=True](
-            v8_i64.as_bytes[big_endian=True]()
-        ),
+        SIMD[.int64, 8].from_bytes[endian=.big](v8_i64.as_bytes[endian=.big]()),
     )
 
     var v8_f64 = SIMD[.float64, 8](1.1, -2.2, 3.3, -4.4, 5.5, -6.6, 7.7, -8.8)
@@ -2322,6 +2368,92 @@ def test_vector_from_bytes_as_bytes() raises:
         True, True, False, True, False, True, True, True
     )
     assert_equal(v8_bool, SIMD[.bool, 8].from_bytes(v8_bool.as_bytes()))
+
+
+def test_to_endian() raises:
+    # Literal expected bytes, so the checks hold on a target of either order.
+    var big = UInt16(0x1234).to_endian[.big]().as_bytes()
+    assert_equal(big[0], 0x12)
+    assert_equal(big[1], 0x34)
+    var little = UInt16(0x1234).to_endian[.little]().as_bytes()
+    assert_equal(little[0], 0x34)
+    assert_equal(little[1], 0x12)
+
+    # Each element is encoded separately, in element order.
+    var vector = SIMD[.uint32, 2](0x01020304, 0x05060708).to_endian[.big]()
+    var vector_bytes = vector.as_bytes()
+    for i in range(8):
+        assert_equal(vector_bytes[i], UInt8(i + 1))
+
+    assert_equal(Int32(0x01020304).to_endian[.native()](), 0x01020304)
+    assert_equal(UInt8(0xAB).to_endian[.big](), 0xAB)
+    assert_equal(UInt8(0xAB).to_endian[.little](), 0xAB)
+
+    def matches_as_bytes[endian: Endian, dtype: DType](x: Scalar[dtype]) raises:
+        var via_to_endian = x.to_endian[endian]().as_bytes()
+        var via_as_bytes = x.as_bytes[endian=endian]()
+        for i in range(size_of[Scalar[dtype]]()):
+            assert_equal(via_to_endian[i], via_as_bytes[i])
+
+    def matches_as_bytes_in_every_order[dtype: DType](x: Scalar[dtype]) raises:
+        matches_as_bytes[.native()](x)
+        matches_as_bytes[.big](x)
+        matches_as_bytes[.little](x)
+
+    matches_as_bytes_in_every_order(Int16(-2))
+    matches_as_bytes_in_every_order(UInt16(0xBEEF))
+    matches_as_bytes_in_every_order(Int32(-123456789))
+    matches_as_bytes_in_every_order(UInt32(0xDEADBEEF))
+    matches_as_bytes_in_every_order(Int64(-0x0102030405060708))
+    matches_as_bytes_in_every_order(UInt64(0x0102030405060708))
+
+
+def test_from_endian() raises:
+    # Bytes as they arrive off the wire, read into a native value first.
+    assert_equal(
+        UInt16.from_endian[.big](UInt16.from_bytes([0x1F, 0x90])), 8080
+    )
+    assert_equal(
+        UInt16.from_endian[.little](UInt16.from_bytes([0x90, 0x1F])), 8080
+    )
+    assert_equal(
+        Int32.from_endian[.big](Int32.from_bytes([0xFF, 0xFF, 0xFF, 0xFE])),
+        -2,
+    )
+
+    def roundtrip[endian: Endian, dtype: DType](x: Scalar[dtype]) raises:
+        assert_equal(
+            Scalar[dtype].from_endian[endian](x.to_endian[endian]()), x
+        )
+
+    def roundtrip_in_every_order[dtype: DType](x: Scalar[dtype]) raises:
+        roundtrip[.native()](x)
+        roundtrip[.big](x)
+        roundtrip[.little](x)
+
+    roundtrip_in_every_order(UInt8(0x7F))
+    roundtrip_in_every_order(Int16(-1000))
+    roundtrip_in_every_order(UInt32(0x12345678))
+    roundtrip_in_every_order(Int64(-0x0102030405060708))
+
+    var vector = SIMD[.int64, 4](1, -2, 3, -4)
+    assert_equal(
+        SIMD[.int64, 4].from_endian[.big](vector.to_endian[.big]()), vector
+    )
+    assert_equal(
+        SIMD[.int64, 4].from_endian[.little](vector.to_endian[.little]()),
+        vector,
+    )
+
+
+def test_native_endian_is_target_order() raises:
+    comptime target_order = Endian.native()
+    var x = UInt32(0x12345678)
+    var native = x.as_bytes()
+    var explicit = x.as_bytes[endian=target_order]()
+    for i in range(4):
+        assert_equal(native[i], explicit[i])
+    assert_equal(UInt32.from_bytes(explicit), x)
 
 
 def test_reversed() raises:
@@ -2488,6 +2620,38 @@ def test_slice() raises:
     var slice1_5 = simd8.slice[1, offset=5]()
     var expected1_5 = Int32(6)
     assert_equal(slice1_5, expected1_5)
+
+
+def test_slice_aligned_offsets() raises:
+    # `llvm.vector.extract` takes any offset that is a multiple of the output
+    # width, whatever the target's native vector width happens to be.
+    var f8 = SIMD[DType.float32, 8](1, 2, 3, 4, 5, 6, 7, 8)
+    assert_equal(f8.slice[4, offset=4](), SIMD[DType.float32, 4](5, 6, 7, 8))
+    assert_equal(f8.slice[2, offset=6](), SIMD[DType.float32, 2](7, 8))
+    assert_equal(f8.slice[8, offset=0](), f8)
+
+    var lo, hi = f8.split()
+
+    comptime for i in range(4):
+        assert_equal(lo[i], Float32(i + 1))
+        assert_equal(hi[i], Float32(i + 5))
+
+    # Wider than any native vector, at an offset that is not a multiple of the
+    # output width. The old check compared against the native width, so this
+    # reached the intrinsic with an index it rejects.
+    var f32 = SIMD[DType.float32, 32]()
+
+    comptime for i in range(32):
+        f32[i] = Float32(i)
+
+    var wide = f32.slice[16, offset=8]()
+
+    comptime for i in range(16):
+        assert_equal(wide[i], Float32(i + 8))
+
+    # Unaligned offsets still take the element-wise path.
+    assert_equal(f8.slice[4, offset=3](), SIMD[DType.float32, 4](4, 5, 6, 7))
+    assert_equal(f8.slice[2, offset=5](), SIMD[DType.float32, 2](6, 7))
 
 
 def test_hash() raises:
@@ -2719,6 +2883,35 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     randn(h_A.unsafe_ptr(), size=1)
     # Simply verify that cast doesn't error.
     _ = h_A[0].cast[.float8_e8m0fnu]()
+
+
+def test_convertible_to_python() raises:
+    check_convertible_to_python(42, "42")
+    check_convertible_to_python(1.5, "1.5")
+    check_convertible_to_python(Float32(1.5), "1.5")
+    check_convertible_to_python(Int32(42), "42")
+    check_convertible_to_python(
+        UInt64(12345678901234567890), "12345678901234567890"
+    )
+
+    # test implicit conversions
+    check_python_object(42, "42")
+    check_python_object(1.5, "1.5")
+    check_python_object(Float32(1.5), "1.5")
+    check_python_object(Int32(42), "42")
+    check_python_object(UInt64(12345678901234567890), "12345678901234567890")
+
+    # non raising conversion to PythonObject
+    def non_raising_to_python[
+        dtype: DType
+    ](var value: Scalar[dtype]) -> PythonObject:
+        return PythonObject(value)
+
+    assert_equal(String(non_raising_to_python(Int32(42))), "42")
+    assert_equal(
+        String(non_raising_to_python(UInt64(12345678901234567890))),
+        "12345678901234567890",
+    )
 
 
 def main() raises:

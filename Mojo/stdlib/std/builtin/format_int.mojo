@@ -16,7 +16,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from std.os import abort
 from std.sys import bit_width_of
 
 comptime _DEFAULT_DIGIT_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"

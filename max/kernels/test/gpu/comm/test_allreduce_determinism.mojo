@@ -43,9 +43,10 @@
 # ngpus >= 2 at comptime); the multi-GPU determinism sweep needs a >= 2 GPU
 # runner (`--config=remote-b200` / the nightly multi-GPU lane).
 
+from std.memory.alloc import unsafe_alloc
 from std.sys import size_of
 
-from comm import MAX_GPUS, Signal, group_end, group_start
+from comm import Signal, group_end, group_start
 from comm.allreduce import allreduce, allreduce_tuning_table
 from comm.device_query import dispatch_select_comm_config
 from comm.sync import enable_p2p, init_signal_buffer
@@ -95,14 +96,14 @@ def hash_positive_control() raises -> None:
     runs (and gives evidence) even on a single-GPU box.
     """
     comptime n = 4096
-    var buf = alloc[Float32](n)
+    var buf = unsafe_alloc[Float32](n)
     for j in range(n):
         buf[j] = Float32(j) * 0.5 - 1024.0
 
     var h0 = hash_output(buf, n)
     # Flip the lowest bit of one element through an integer view (a true
     # single-bit change of the stored float bits), re-hash, then restore.
-    var ibuf = buf.bitcast[UInt32]()
+    var ibuf = buf.unsafe_bitcast[UInt32]()
     var saved_bits = ibuf[n // 2]
     ibuf[n // 2] = saved_bits ^ 1
     var h1 = hash_output(buf, n)
@@ -111,7 +112,7 @@ def hash_positive_control() raises -> None:
 
     assert_true(h0 != h1, "positive control FAILED: hash blind to a bit flip")
     assert_equal(h0, h2)  # restoring the bit restores the hash
-    buf.free()
+    buf.unsafe_free()
     print("hash positive control PASS (single-bit flip detected)")
 
 
@@ -140,18 +141,15 @@ def allreduce_determinism_test[
     )
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * length
 
     for i in range(ngpus):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
         out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
 
-        var h_in = alloc[Scalar[dtype]](length)
+        var h_in = unsafe_alloc[Scalar[dtype]](length)
         host_in.append(h_in)
-        host_out.append(alloc[Scalar[dtype]](length))
+        host_out.append(unsafe_alloc[Scalar[dtype]](length))
 
         # Fixed, deterministic per-rank inputs: a closed-form function of
         # (rank, index) mapped to a small bounded float so bf16 sums across up
@@ -165,22 +163,20 @@ def allreduce_determinism_test[
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
         list_of_ctx[i].enqueue_copy(in_dev[i], host_in[i])
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
     var in_tensors = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTensorType: TileTensor(
-            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                in_dev[i].unsafe_ptr()
-            ),
+            in_dev[i].unsafe_ptr(),
             row_major(length),
         )
     )
@@ -211,17 +207,7 @@ def allreduce_determinism_test[
         ngpus, sm_version, allreduce_tuning_table
     ](num_bytes)
     print(
-        "  ngpus=",
-        ngpus,
-        " dtype=",
-        dtype,
-        " length=",
-        length,
-        " bytes=",
-        num_bytes,
-        " algo=",
-        cfg.algorithm,
-        sep="",
+        t"  ngpus={ngpus} dtype={dtype} length={length} bytes={num_bytes} algo={cfg.algorithm}"
     )
 
     var ref_hash = UInt64(0)
@@ -246,14 +232,8 @@ def allreduce_determinism_test[
             var rank_hash = hash_output(host_out[i], length)
             if rank_hash != run_hash:
                 print(
-                    "CROSS-RANK DIVERGENCE at run",
-                    run,
-                    "rank",
-                    i,
-                    "hash",
-                    rank_hash,
-                    "!= rank0 hash",
-                    run_hash,
+                    t"CROSS-RANK DIVERGENCE at run {run} rank {i} hash"
+                    t" {rank_hash} != rank0 hash {run_hash}"
                 )
             assert_equal(rank_hash, run_hash)
 
@@ -262,18 +242,14 @@ def allreduce_determinism_test[
         else:
             if run_hash != ref_hash:
                 print(
-                    "RUN-TO-RUN DIVERGENCE at run",
-                    run,
-                    "hash",
-                    run_hash,
-                    "!= run0 hash",
-                    ref_hash,
+                    t"RUN-TO-RUN DIVERGENCE at run {run} hash {run_hash} !="
+                    t" run0 hash {ref_hash}"
                 )
             assert_equal(run_hash, ref_hash)
 
     for i in range(ngpus):
-        host_in[i].free()
-        host_out[i].free()
+        host_in[i].unsafe_free()
+        host_out[i].unsafe_free()
 
 
 def run_determinism_sweep() raises -> None:
@@ -284,15 +260,15 @@ def run_determinism_sweep() raises -> None:
 
     comptime for d in range(len(dtypes)):
         comptime for g in range(len(gpu_counts)):
-            comptime dtype = rebind[DType](dtypes[d])
-            comptime ngpus = rebind[Int](gpu_counts[g])
+            comptime dtype = dtypes[d]
+            comptime ngpus = gpu_counts[g]
             if DeviceContext.number_of_devices() < ngpus:
                 continue
             var ctx = List[DeviceContext]()
             for i in range(ngpus):
                 ctx.append(DeviceContext(device_id=i))
             comptime for li in range(len(lengths)):
-                comptime length = rebind[Int](lengths[li])
+                comptime length = lengths[li]
                 allreduce_determinism_test[dtype=dtype, ngpus=ngpus](
                     ctx, length
                 )

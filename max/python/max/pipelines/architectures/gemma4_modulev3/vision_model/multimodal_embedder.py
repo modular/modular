@@ -16,9 +16,9 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.linear import Linear
+from max.tensor import Tensor
 
 from ..layers.rms_norm import Gemma4RMSNorm
 
@@ -46,5 +46,6 @@ class Gemma4MultimodalEmbedder(Module[[Tensor], Tensor]):
         )
 
     def forward(self, inputs_embeds: Tensor) -> Tensor:
+        """Normalizes the token embeddings and projects them."""
         normed = self.embedding_pre_projection_norm(inputs_embeds)
         return self.embedding_projection(normed.cast(self.dtype))

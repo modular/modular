@@ -108,8 +108,7 @@ comptime TOTAL_FP32 = NUM_CASES * PER_CASE_FP32
 # --------------------------------------------------------------------------- #
 def _per_lane_row_offset(k_local: Int) -> Int:
     # Pulled from ACC_ROW_OFFSETS_32x32 = [0,1,2,3, 8,9,10,11, 16,17,18,19, 24,25,26,27]
-    var stripe = k_local // 4
-    var idx_in_stripe = k_local % 4
+    var stripe, idx_in_stripe = divmod(k_local, 4)
     return stripe * 8 + idx_in_stripe
 
 
@@ -136,9 +135,9 @@ def _expected_k_pos(k_tile_idx: Int, lane: Int, i: Int, k_local: Int) -> Int:
 # mask configurations, then dumps att_block to `out_ptr` at
 # `case_idx * PER_CASE_FP32 + lane * ATT_PER_LANE + p`.
 # --------------------------------------------------------------------------- #
-def kernel_mask_unit(
-    out_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_mask_unit[
+    out_origin: MutOrigin,
+](out_ptr: MutPointer[Float32, out_origin],):
     var l_id = Int(lane_id())
 
     # Build the same row_major[2, 1, 16] layout that ATT_LAYOUT uses.
@@ -308,7 +307,7 @@ def main() raises:
             for i in range(TOTAL_FP32):
                 host_init[i] = Float32(9.999e9)
 
-        ctx.enqueue_function[kernel_mask_unit](
+        ctx.enqueue_function[kernel_mask_unit[origin_of(dev_out)]](
             dev_out, grid_dim=1, block_dim=WAVE_SIZE
         )
         ctx.synchronize()
@@ -466,9 +465,9 @@ def main() raises:
             u0,
             "  masked=N/A    exp2=N/A",
         )
-        print("Causal  j=0:  unmasked=", u1, " masked=", m1, " exp2->0=", e1)
-        print("Causal  j=2:  unmasked=", u2, " masked=", m2, " exp2->0=", e2)
-        print("Causal  j=8:  unmasked=", u3, " masked=", m3, " exp2->0=", e3)
+        print(t"Causal  j=0:  unmasked= {u1}  masked= {m1}  exp2->0= {e1}")
+        print(t"Causal  j=2:  unmasked= {u2}  masked= {m2}  exp2->0= {e2}")
+        print(t"Causal  j=8:  unmasked= {u3}  masked= {m3}  exp2->0= {e3}")
         print("Chunked j=2:  unmasked=N/A masked=", m4, " exp2->0=", e4)
         print("Sliding j=2:  unmasked=N/A masked=", m5, " exp2->0=", e5)
         print("FullFill   :  unmasked=N/A masked=", m6, " exp2->0=", e6)

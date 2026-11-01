@@ -10,34 +10,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The LFM2 layers and model graph."""
 
 from __future__ import annotations
 
 import functools
+from collections.abc import Sequence
 
+from max import tree
+from max.driver import Device
 from max.dtype import DType
-from max.graph import (
-    BufferType,
-    DeviceRef,
-    TensorType,
-    TensorValue,
-    Weight,
-    ops,
-)
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer.transformer import logits_postprocess
+from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer.transformer import logits_postprocess
+from max.pipelines.lib.registration_graph_api import decoder_outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 
 from ..llama3.model_config import create_rope_embedding
+from .conv_state import ConvStateStore
 from .full_attention import LFM2FullAttention
 from .model_config import LFM2Config
 
 
 class LFM2MLP(Module):
+    """The gated feed-forward block."""
+
     def __init__(
         self, config: LFM2Config, linear_cls: functools.partial[Linear]
     ):
@@ -65,10 +67,13 @@ class LFM2MLP(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the gated feed-forward over ``x``."""
         return self.w2(ops.silu(self.w1(x)) * self.w3(x))
 
 
 class LFM2ShortConv(Module):
+    """The short-convolution mixer."""
+
     def __init__(
         self, config: LFM2Config, linear_cls: functools.partial[Linear]
     ):
@@ -110,6 +115,7 @@ class LFM2ShortConv(Module):
         conv_state: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs the short convolution over ``x``, advancing its state."""
         bcx = self.in_proj(x)
         b, c, xv = ops.split(
             bcx,
@@ -121,7 +127,7 @@ class LFM2ShortConv(Module):
         conv_w = ops.unsqueeze(conv_w, 0)
         conv_b = self.conv_bias
 
-        out_init = bx * ops.constant(0.0, dtype=bx.dtype, device=bx.device)
+        out_init = bx * 0.0
         t_init = ops.constant(0, DType.int32, device=DeviceRef.CPU())
         seq_len = ops.cast(ops.shape_to_tensor(x.shape)[0], DType.int32).to(
             DeviceRef.CPU()
@@ -175,9 +181,6 @@ class LFM2ShortConv(Module):
             if conv_b is not None:
                 conv_out = conv_out + conv_b
 
-            # scatter_nd is GPU-friendly (unlike ops.scatter, which round-trips
-            # through CPU via TODO(GEX-2197)), so use it for the per-request
-            # state stack update inside the loop.
             indices = ops.reshape(r_ix, [1, 1])
             state_stack_next = ops.scatter_nd(
                 state_stack, state_r_next, indices
@@ -185,10 +188,9 @@ class LFM2ShortConv(Module):
 
             eq = ops.equal(pos, t_ix)
             mask = ops.unsqueeze(ops.cast(eq, out.dtype), -1)
-            one = ops.constant(1.0, out.dtype, device=x.device)
-            out_next = out * (one - mask) + conv_out * mask
+            out_next = out * (1.0 - mask) + conv_out * mask
             return [
-                t + ops.constant(1, DType.int32, device=DeviceRef.CPU()),
+                t + 1,
                 state_stack_next,
                 out_next,
                 pos,
@@ -215,6 +217,8 @@ class LFM2ShortConv(Module):
 
 
 class LFM2DecoderLayer(Module):
+    """One decoder layer: a mixer, then the feed-forward."""
+
     def __init__(
         self,
         config: LFM2Config,
@@ -265,6 +269,7 @@ class LFM2DecoderLayer(Module):
         input_row_offsets: TensorValue,
         conv_state: TensorValue | None,
     ) -> tuple[TensorValue, TensorValue | None]:
+        """Runs the layer's attention or short convolution, then its MLP."""
         residual = x
         normed = self.operator_norm(x)
         new_conv_state = conv_state
@@ -295,13 +300,22 @@ class LFM2DecoderLayer(Module):
 
 
 class LFM2(Module):
+    """The LFM2 model, registered for the ``DECODER`` role.
+
+    Its convolution layers carry each request's state from one step to the
+    next (:meth:`state_store`).
+    """
+
+    graph_name = "lfm2"
+    """The name the graph compiled under before registration, which keys
+    precompiled MEFs."""
+
+    override_quantization_encoding = True
+
     def __init__(self, config: LFM2Config):
         super().__init__()
         assert len(config.devices) == 1
         self.config = config
-        self.num_conv_layers = sum(
-            1 for t in config.layer_types if t != "full_attention"
-        )
         rope = create_rope_embedding(
             hidden_size=config.hidden_size,
             num_attention_heads=config.num_attention_heads,
@@ -345,49 +359,45 @@ class LFM2(Module):
         if config.tie_word_embeddings:
             self.lm_head.set_shared_weight("weight", self.embed_tokens.weight)
 
-    def input_types(
-        self, kv_params: KVCacheParamInterface
-    ) -> tuple[TensorType | BufferType, ...]:
-        device_ref = self.config.devices[0]
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        kv_inputs = kv_params.flattened_kv_inputs()
-        conv_state_types = [
-            TensorType(
-                self.config.dtype,
-                [
-                    "conv_batch",
-                    self.config.hidden_size,
-                    self.config.conv_L_cache,
-                ],
-                device=device_ref,
-            )
-            for _ in range(self.num_conv_layers)
-        ]
-        return (
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            *kv_inputs,
-            *conv_state_types,
+    @classmethod
+    def state_store(
+        cls,
+        config: LFM2Config,
+        *,
+        max_batch_size: int,
+        devices: Sequence[Device],
+    ) -> ConvStateStore:
+        """Returns the per-request convolution states, one slot per request."""
+        return ConvStateStore(
+            num_conv_layers=sum(
+                1 for t in config.layer_types if t != "full_attention"
+            ),
+            hidden_size=config.hidden_size,
+            conv_kernel=config.conv_L_cache,
+            dtype=config.dtype,
+            max_slots=max_batch_size,
+            device=devices[0],
         )
 
     def __call__(
-        self,
-        tokens: TensorValue,
-        kv_collection: PagedCacheValues,
-        return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
-        conv_states: list[TensorValue],
-    ) -> tuple[TensorValue, ...]:
-        h = self.embed_tokens(tokens)
+        self, inputs: DecoderInputs[TensorValue]
+    ) -> DecoderOutputs[TensorValue]:
+        """Runs the model over the batch and its convolution states.
+
+        Returns:
+            The logits, with each convolution layer's updated state as the
+            ``state``.
+        """
+        assert inputs.state is not None
+        conv_states = inputs.state
+        (kv_collection,) = tree.leaves(
+            self.config.kv_params.unflatten_kv_inputs(
+                iter(tree.leaves(inputs.kv))
+            ),
+            leaf=KVCacheInputsPerDevice,
+        )
+        input_row_offsets = inputs.input_row_offsets
+        h = self.embed_tokens(inputs.tokens)
         freqs_cis = self.rope.freqs_cis.to(h.device)
         conv_idx = 0
         new_states = []
@@ -409,11 +419,11 @@ class LFM2(Module):
         outputs = logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets,
-            return_n_logits=return_n_logits,
+            return_n_logits=inputs.return_n_logits,
             norm=self.norm,
             lm_head=self.lm_head,
             return_logits=self.config.return_logits,
             return_hidden_states=self.config.return_hidden_states,
             logits_scaling=self.config.logits_scaling,
         )
-        return outputs + tuple(new_states)
+        return decoder_outputs(outputs, state=new_states)

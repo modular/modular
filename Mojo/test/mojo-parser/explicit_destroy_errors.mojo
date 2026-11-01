@@ -17,8 +17,10 @@
 from std.builtin._coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 
 
-@explicit_destroy("Must use consume!")
-struct EmptyExplicit(Deinitable where False, Movable where False):
+struct EmptyExplicit(
+    Deinitable where False else "Must use consume!",
+    Movable where False,
+):
     def __init__(out self):
         pass
 
@@ -31,9 +33,8 @@ def errorExample():
     _ = EmptyExplicit()
 
 
-@explicit_destroy("Must use consume!")
 struct DeinitableContainerOfExplicitWithAutoDel(
-    Deinitable where False, Movable where False
+    Deinitable where False else "Must use consume!", Movable where False
 ):
     var m: EmptyExplicit
 
@@ -97,7 +98,7 @@ def callsWith():
 
 
 # CHECK-LABEL: lit.fn @"testAsyncVoid
-async def testAsyncVoid():
+__async def testAsyncVoid():
     pass
 
 
@@ -105,8 +106,10 @@ async def testAsyncVoid():
 
 
 # MOCO-2787 - Linear types do not error if they contain an explicit deinit
-@explicit_destroy("must use __deinit__() explicitly")
-struct ExplicitWithDeinit(Deinitable where False, Movable where False):
+struct ExplicitWithDeinit(
+    Deinitable where False else "must use __deinit__() explicitly",
+    Movable where False,
+):
     def __init__(out self):
         pass
 
@@ -285,6 +288,44 @@ def testWhereFalseCustomMessage():
     _ = WhereFalseCustom()
 
 
+# The reason on an always-false `Deinitable` conformance is that message,
+# without a decorator. This is the replacement for `@explicit_destroy("...")`.
+struct NotDeinitableReason(not Deinitable else "use consume()"):
+    def __init__(out self):
+        pass
+
+
+def testNotDeinitableReason():
+    # expected-error @below {{abandoned without being explicitly destroyed: use consume()}}
+    _ = NotDeinitableReason()
+
+
+# The older `where False` spelling carries a reason the same way.
+struct WhereFalseReason(Deinitable where False else "use consume()"):
+    def __init__(out self):
+        pass
+
+
+def testWhereFalseReason():
+    # expected-error @below {{abandoned without being explicitly destroyed: use consume()}}
+    _ = WhereFalseReason()
+
+
+# The reason on a conditional `Deinitable` conformance is the message for the
+# parameters that make it linear.
+struct CondReason[cond: Bool](
+    Deinitable where cond else "use consume()", Movable where False
+):
+    def __init__(out self):
+        pass
+
+
+def testCondReason():
+    # expected-error @below {{abandoned without being explicitly destroyed: use consume()}}
+    _ = CondReason[False]()
+    _ = CondReason[True]()
+
+
 # A conditional Deinitable slot that the struct's own where-clause
 # renders unsatisfiable (`where not (n > 0)` under `where n > 0`) is an opt-out
 # indistinguishable from the literal `where False` above: for any instantiable
@@ -313,8 +354,10 @@ def testContradictedLinear():
 # target's type is linear the reference has no user-visible name, so the
 # diagnostic describes the abandoned value generically and relies on the
 # source location to point at the offending expression.
-@explicit_destroy("use consume()")
-struct IndirectAssignLinear(Movable, Deinitable where False):
+struct IndirectAssignLinear(
+    Movable,
+    Deinitable where False else "use consume()",
+):
     def __init__(out self):
         pass
 

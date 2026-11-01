@@ -403,7 +403,8 @@ class AlgebraicDim(Dim):
             Dim(operand).substitute(mapping) for operand in self.attr.operands
         ]
         # __floordiv__'s zero guard does not run here, and the compiler
-        # neither folds nor rejects a literal zero divisor.
+        # neither folds nor rejects a literal zero divisor. A div attribute
+        # always carries two operands - its verifier rejects any other count.
         if self.attr.opcode == kgen.POC.div and operands[1] == 0:
             raise ZeroDivisionError(
                 f"substituting into {self} produced a zero divisor"
@@ -592,3 +593,6 @@ class StaticDim(Dim):
 
 
 DimLike = int | str | Dim | np.integer | builtin.TypedAttr
+"""Anything a dimension accepts: a Python int, a symbolic name, a
+:class:`Dim`, a NumPy integer, or a typed MLIR attribute.
+"""

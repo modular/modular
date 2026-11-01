@@ -13,12 +13,13 @@
 """Mistral transformer architecture for text generation."""
 
 from .arch import mistral_arch
-from .model import MistralInputs, MistralModel
+from .decoder import MistralDecoder
 from .model_config import MistralConfig
+from .tokenizer import MistralTokenizer
 
 __all__ = [
     "MistralConfig",
-    "MistralInputs",
-    "MistralModel",
+    "MistralDecoder",
+    "MistralTokenizer",
     "mistral_arch",
 ]

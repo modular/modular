@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_openai_docs_schema",
+    size = "small",
+    srcs = ["test_openai_docs_schema.py"],
+    data = ["//max/python/max/serve/schemas:openai-docs.yaml"],
+    env = {
+        "OPENAI_DOCS_YAML": "$(rootpath //max/python/max/serve/schemas:openai-docs.yaml)",
+    },
+    deps = [
+        "//max/python/max/pipelines/request",
+        requirement("pyyaml"),
+    ],
+)

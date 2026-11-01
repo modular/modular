@@ -26,7 +26,7 @@ scope and limitations.
 
 from std.collections import List
 
-from .dependency_graph import LoopBody, OpNode
+from .dependency_graph import LoopBody
 from .types import OpRole, ResourceKind
 
 
@@ -389,10 +389,11 @@ def _partial_lower_bound(
     for i in range(len(body.ops)):
         if placed[i]:
             continue
-        if body.ops[i].resource == ResourceKind.MMA_UNIT:
-            remaining_mma += body.ops[i].latency
-        elif body.ops[i].resource == ResourceKind.VALU:
-            remaining_valu += body.ops[i].latency
+        match body.ops[i].resource:
+            case .MMA_UNIT:
+                remaining_mma += body.ops[i].latency
+            case .VALU:
+                remaining_valu += body.ops[i].latency
 
     # Lower bound: each resource must serialize its remaining ops.
     var mma_bound = mma_free + remaining_mma

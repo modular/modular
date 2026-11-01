@@ -204,34 +204,6 @@ def launch_ship(mut ship: Spaceship):
 
 # // -----
 
-# Define a capturing lambda type (like elementwise_epilogue_type)
-comptime capturing_lambda_type = def(Int) capturing -> Int
-
-
-struct StructWithCapturingLambda[T: Int, my_lambda: capturing_lambda_type](Movable where False):
-    var value: Int
-
-    # This part of the test is here to establish the fact that struct
-    # methods get 'capturing' when the struct has a capturing def parameter.
-    # Further below, we'll CHECK that the same thing happens for extensions.
-    # CHECK-LABEL: lit.fn @"helper_with_capturing_lambda
-    # CHECK-SAME: capturing -> !alias_Int1
-    def helper_with_capturing_lambda(self) -> Int:
-        return Self.T
-
-
-__extension StructWithCapturingLambda:
-    # CHECK-LABEL: lit.fn @"user_from_extension
-    # This is the important check, that extension methods also get 'capturing'
-    # if the struct has any capturing def parameters.
-    # CHECK-SAME: ) capturing -> !alias_Int1 attributes
-    def user_from_extension(self) -> Int:
-        return Self.helper_with_capturing_lambda(self)
-
-
-# // -----
-
-
 struct Spaceship:
     var location: Int
 

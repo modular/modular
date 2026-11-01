@@ -23,13 +23,14 @@ modular_py_test(
         ],
     ),
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -38,7 +39,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimik2_5",
         requirement("numpy"),
         requirement("torch"),
@@ -101,7 +102,7 @@ modular_py_test(
         "KIMIK2_5_TRANSFORMER_MEF_RLOCATIONS": "$(rlocationpaths :transformer_mefs)",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -186,7 +187,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimik2_5",
         requirement("datasets"),
         requirement("huggingface-hub"),

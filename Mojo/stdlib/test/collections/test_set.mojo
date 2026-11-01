@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Set
-from std.hashlib import hash
+from std.hash import hash
 
 from test_utils import (
     CopyableExplicitDestroyKey,

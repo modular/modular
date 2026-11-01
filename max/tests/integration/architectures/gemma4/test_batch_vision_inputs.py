@@ -20,12 +20,16 @@ What remains shared here is the device-side packing itself.
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
+import pytest
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     create_empty_embeddings,
     merge_per_device_buffers,
+    pack_uncached_images,
     pack_vision_buffers,
 )
 from max.pipelines.architectures.gemma4.context import Gemma4Context
@@ -154,12 +158,8 @@ def test_pack_vision_buffers_packs_multiple_frames_as_images() -> None:
 _VISION_TOKEN_ID = 98
 
 
-def _two_image_windowed_context() -> Gemma4Context:
-    """Two unencoded images with the active window chunked to cover only img0.
-
-    Nothing is processed yet and the window is chunked to [0, 8), so img1
-    (12..16) is ahead of the window (deferred to a later CE iteration).
-    """
+def _two_image_context() -> Gemma4Context:
+    """Two unencoded images: img0 at 4..8 and img1 at 12..16."""
     tokens = np.array(
         [
             51,
@@ -208,6 +208,16 @@ def _two_image_windowed_context() -> Gemma4Context:
         pixel_position_ids=[pos0, pos1],
     )
     assert ctx.image_idx == 0
+    return ctx
+
+
+def _two_image_windowed_context() -> Gemma4Context:
+    """Two unencoded images with the active window chunked to cover only img0.
+
+    Nothing is processed yet and the window is chunked to [0, 8), so img1
+    (12..16) is ahead of the window (deferred to a later CE iteration).
+    """
+    ctx = _two_image_context()
     ctx.tokens.chunk(8)
     return ctx
 
@@ -273,3 +283,41 @@ def test_prepare_vision_outputs_skips_deferred_image() -> None:
     assert arr.shape == (4, _HIDDEN)
     np.testing.assert_array_equal(arr, 1.0)
     np.testing.assert_array_equal(indices, [4, 5, 6, 7])
+
+
+def _partially_encoded_context() -> Gemma4Context:
+    """The two-image context with img0 already processed, as under chunked
+    prefill: only img1 is still to encode, so ``image_idx`` is 1."""
+    ctx = _two_image_context()
+    ctx.tokens.skip_processing(8)
+    assert ctx.image_idx == 1
+    assert len(ctx.next_images) == 1
+    return ctx
+
+
+def test_pack_uncached_images_aligns_pos_ids_after_partial_encode() -> None:
+    # pixel_position_ids holds every image's grid, so it has to be sliced
+    # from image_idx to line up with next_images: this must pick img1's grid,
+    # not the already-encoded img0's.
+    ctx = _partially_encoded_context()
+    raw = pack_uncached_images(
+        [(ctx, list(ctx.next_images))], [CPU()], 1, DType.float32
+    )
+    assert raw is not None
+    np.testing.assert_array_equal(
+        raw.pixel_position_ids[0].to_numpy(), ctx.pixel_position_ids[1]
+    )
+
+
+def test_pack_uncached_images_raises_on_copied_selection() -> None:
+    # The miss set is matched by identity, so copies of the context's images
+    # must fail here rather than as a count mismatch further on.
+    ctx = _partially_encoded_context()
+    copies = [dataclasses.replace(img) for img in ctx.next_images]
+    with pytest.raises(ValueError, match=r"not present in ctx\.next_images"):
+        pack_uncached_images([(ctx, copies)], [CPU()], 1, DType.float32)
+
+
+def test_pack_uncached_images_returns_none_without_a_miss() -> None:
+    ctx = _partially_encoded_context()
+    assert pack_uncached_images([(ctx, [])], [CPU()], 1, DType.float32) is None

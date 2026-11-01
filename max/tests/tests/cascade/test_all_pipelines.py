@@ -22,12 +22,22 @@ architecture declares the common text pipeline class).
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Iterator, Sequence
 from types import SimpleNamespace
 from typing import ClassVar
 from unittest.mock import patch
 
+import numpy as np
 import pytest
+from max.experimental.cascade import LocalRuntime
+from max.experimental.cascade.core import worker_method
+from max.experimental.cascade.interfaces.gen_ai import (
+    ChatMessage,
+    GenAIRequest,
+    GenAITextChunk,
+    RawTextChunk,
+    TextGenOptions,
+)
 from max.experimental.cascade.pipelines import all_pipelines
 from max.experimental.cascade.pipelines.common_textgen import (
     CommonTextGenPipeline,
@@ -38,7 +48,19 @@ from max.experimental.cascade.pipelines.dummy_textgen import (
     DummyTextGenPipeline,
 )
 from max.experimental.cascade.pipelines.echo_textgen import EchoTextGenPipeline
+from max.experimental.cascade.workers.max_model_worker import (
+    MAXModelWorker,
+    make_model_worker,
+)
 from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
+from max.experimental.cascade.workers.model_worker import (
+    Int32Array,
+    ModelWorker,
+)
+from max.experimental.cascade.workers.tokenizer_worker import (
+    TokenizerWorker,
+    stream_incremental_text,
+)
 from max.pipelines.architectures import register_all_models
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
@@ -74,9 +96,83 @@ class _HalfDeclaredParser(_StubReasoningParser):
     REASONING_END: ClassVar[str | None] = "</think>"
 
 
-def _args(model_path: str, tokenizer_impl: str | None = None) -> PipelineArgs:
+class _StubModelWorker(ModelWorker):
+    """Model worker named by ``model_worker_impl`` in these tests."""
+
+    def __init__(self, config: PipelineConfig) -> None:
+        super().__init__(deploy_hints=["rust"])
+        self.config = config
+
+    @worker_method()
+    async def decode(
+        self, options: TextGenOptions, tokens: Int32Array
+    ) -> AsyncIterator[Int32Array]:
+        yield tokens
+
+
+_STUB_MODEL_WORKER = f"{__name__}:_StubModelWorker"
+
+
+class _CodePointTokenizer(TokenizerWorker):
+    """Offline tokenizer: one token per character, its Unicode code point."""
+
+    def __init__(self, model_path: str) -> None:
+        super().__init__(deploy_hints=["cpu"])
+        self.model_path = model_path
+
+    @worker_method()
+    async def encode(self, messages: list[ChatMessage]) -> Int32Array:
+        text = "".join(
+            part.text
+            for message in messages
+            for part in message.content
+            if isinstance(part, GenAITextChunk)
+        )
+        return np.array([ord(char) for char in text], dtype=np.int32)
+
+    @worker_method()
+    async def decode(
+        self, tokens: Int32Array, skip_special_tokens: bool
+    ) -> str:
+        return "".join(map(chr, tokens.tolist()))
+
+    @worker_method()
+    async def decode_stream(
+        self, token_iter: AsyncIterable[Int32Array], skip_special_tokens: bool
+    ) -> AsyncIterator[RawTextChunk]:
+        async for piece in stream_incremental_text(
+            token_iter, lambda ids: "".join(map(chr, ids))
+        ):
+            yield piece
+
+
+class _FixedReplyModelWorker(ModelWorker):
+    """Generates the code points of a fixed reply, ignoring the prompt."""
+
+    REPLY: ClassVar[str] = "from the custom worker"
+
+    def __init__(self, config: PipelineConfig) -> None:
+        super().__init__(deploy_hints=["gpu"])
+
+    @worker_method()
+    async def decode(
+        self, options: TextGenOptions, tokens: Int32Array
+    ) -> AsyncIterator[Int32Array]:
+        for char in self.REPLY:
+            yield np.array([ord(char)], dtype=np.int32)
+
+
+def _args(
+    model_path: str,
+    tokenizer_impl: str | None = None,
+    model_worker_impl: str | None = None,
+) -> PipelineArgs:
     """Build raw pipeline args for construction-only (no-download) tests."""
-    return PipelineArgs(model_path=model_path, tokenizer_impl=tokenizer_impl)
+    return PipelineArgs(
+        model_path=model_path,
+        tokenizer_impl=tokenizer_impl,
+        model_worker_impl=model_worker_impl,
+    )
 
 
 @pytest.mark.asyncio
@@ -131,6 +227,7 @@ async def test_build_pipeline_uses_arch_factory(
     _stub_llama_arch(monkeypatch)
     pipeline = await all_pipelines.build_pipeline(_args("some-org/some-llm"))
     assert isinstance(pipeline, CommonTextGenPipeline)
+    assert isinstance(pipeline.model, MAXModelWorker)
 
 
 @pytest.mark.asyncio
@@ -148,6 +245,76 @@ async def test_build_pipeline_arch_factory_threads_tokenizer_impl(
     )
     assert isinstance(pipeline, CommonTextGenPipeline)
     assert isinstance(pipeline.tokenizer, MAXTokenizer)
+
+
+@pytest.mark.asyncio
+async def test_build_pipeline_arch_factory_threads_model_worker_impl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_llama_arch(monkeypatch)
+    pipeline = await all_pipelines.build_pipeline(
+        _args("some-org/some-llm", model_worker_impl=_STUB_MODEL_WORKER)
+    )
+    assert isinstance(pipeline, CommonTextGenPipeline)
+    assert isinstance(pipeline.model, _StubModelWorker)
+    assert pipeline.model.config.model.model_path == "some-org/some-llm"
+
+
+@pytest.mark.asyncio
+async def test_build_pipeline_rejects_model_worker_impl_for_other_pipelines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the common text-generation pipeline uses ``model_worker_impl``."""
+    stub_arch = SimpleNamespace(
+        name="SomeForCausalLM", cascade_pipeline_factory=DummyTextGenPipeline
+    )
+    monkeypatch.setattr(
+        all_pipelines, "_resolve_architecture", lambda config: stub_arch
+    )
+    with pytest.raises(ValueError, match="--model-worker-impl"):
+        await all_pipelines.build_pipeline(
+            _args("some-org/some-model", model_worker_impl=_STUB_MODEL_WORKER)
+        )
+
+
+@pytest.mark.asyncio
+async def test_common_textgen_generates_through_custom_model_worker() -> None:
+    """``model_worker_impl`` swaps the model worker the pipeline decodes with."""
+    pipeline = CommonTextGenPipeline(
+        PipelineConfig.from_args(_args("some-org/some-llm")),
+        tokenizer_impl=f"{__name__}:_CodePointTokenizer",
+        model_worker_impl=f"{__name__}:_FixedReplyModelWorker",
+    )
+    request = GenAIRequest(
+        messages=[ChatMessage.text("user", "hello")],
+        text=TextGenOptions(num_tokens=64),
+    )
+    async with LocalRuntime() as runtime:
+        await pipeline.deploy(runtime)
+        chunks = [chunk async for chunk in pipeline.generate(request)]
+
+    assert all(isinstance(chunk, GenAITextChunk) for chunk in chunks)
+    assert (
+        "".join(
+            chunk.text for chunk in chunks if isinstance(chunk, GenAITextChunk)
+        )
+        == _FixedReplyModelWorker.REPLY
+    )
+
+
+def test_make_model_worker_requires_module_and_class() -> None:
+    config = PipelineConfig.from_args(_args("some-org/some-llm"))
+    with pytest.raises(ValueError, match=r"module\.path:ClassName"):
+        make_model_worker(config, "no_class_name")
+
+
+def test_make_model_worker_requires_a_model_worker() -> None:
+    config = PipelineConfig.from_args(_args("some-org/some-llm"))
+    with pytest.raises(TypeError, match="expected a ModelWorker subclass"):
+        make_model_worker(
+            config,
+            "max.experimental.cascade.workers.max_tokenizer:MAXTokenizer",
+        )
 
 
 @pytest.mark.asyncio

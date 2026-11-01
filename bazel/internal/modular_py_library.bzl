@@ -14,6 +14,8 @@ def modular_py_library(
         test_docstring_examples = False,
         docstring_example_deps = [],
         docstring_example_shard_count = None,
+        docstring_example_dirs = None,
+        docstring_example_test_rule = modular_py_test,
         tags = [],
         **kwargs):
     """Creates a py_library target
@@ -31,11 +33,20 @@ def modular_py_library(
         docstring_example_deps: Extra runtime deps the examples import but the
             library itself cannot depend on (e.g. engine, which depends on
             graph). Ignored unless test_docstring_examples is True.
+        docstring_example_dirs: Package-relative directories to collect
+            examples from, for a library whose sources sit in subdirectories
+            of a package that also holds unrelated libraries. Defaults to the
+            whole package directory.
         docstring_example_shard_count: Shards for the docstring-example test.
             Each example compiles its own graph and CI clamps every test to
             800s, so set this for packages with many examples. Sharding is
             per example (a visible code block plus its invisible checks), so
             every example in a sharded package must be self-contained.
+        docstring_example_test_rule: Macro that creates the docstring-example
+            test. Eager-tensor packages pass `modular_eager_py_test` to adopt
+            the build-warmed eager op cache and the interpret-first
+            executor; it can't be loaded here without a load cycle through
+            //bazel:api.bzl.
         tags: Tags to add to the target
         **kwargs: Extra arguments passed through to py_library
     """
@@ -92,7 +103,21 @@ def modular_py_library(
             for dep in docstring_example_deps
             if Label(dep).package.startswith(native.package_name() + "/")
         ]
-        modular_py_test(
+
+        if docstring_example_dirs:
+            collect_dirs = [
+                native.package_name() + "/" + d
+                for d in docstring_example_dirs
+            ]
+        else:
+            collect_dirs = [native.package_name()]
+
+        # Every example is a throwaway graph, so eager packages compile only
+        # what the interpreter refuses instead of background-compiling them all.
+        eager_env = {} if docstring_example_test_rule == modular_py_test else {
+            "MAX_EAGER_EXECUTOR": "fallback-internal",
+        }
+        docstring_example_test_rule(
             name = name + ".docstring_examples",
             timeout = "long",
             srcs = [],
@@ -103,9 +128,8 @@ def modular_py_library(
             env = {
                 "HF_HUB_OFFLINE": "1",
                 "TRANSFORMERS_OFFLINE": "1",
-            },
-            args = [
-                native.package_name(),
+            } | eager_env,
+            args = collect_dirs + [
                 "-p",
                 "sybil_collect",
                 "--import-mode=importlib",
@@ -118,5 +142,5 @@ def modular_py_library(
                 ":" + name,
                 "//max/tests/docstring_examples:sybil_collect",
             ] + docstring_example_deps,
-            tags = ["no-pydeps"],
+            tags = ["no-pydeps", "skip-ci-asan"],
         )

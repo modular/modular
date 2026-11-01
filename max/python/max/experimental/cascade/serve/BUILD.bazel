@@ -17,9 +17,11 @@ modular_py_library(
         requirement("openai"),
         requirement("pydantic"),
         requirement("sse-starlette"),
+        requirement("starlette"),
         requirement("uvicorn"),
         "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/interfaces",
+        "//max/python/max/experimental/cascade/telemetry",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/request",
         "//max/python/max/serve/schemas",
@@ -41,9 +43,11 @@ modular_py_library(
     deps = [
         requirement("cyclopts"),
         requirement("gguf"),  # Needed for loading gguf files
+        "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/deployment:context_config",
         "//max/python/max/experimental/cascade/pipelines:all_pipelines",
         "//max/python/max/experimental/cascade/serve",
+        "//max/python/max/experimental/cascade/telemetry",
         "//max/python/max/pipelines/lib",
     ],
 )

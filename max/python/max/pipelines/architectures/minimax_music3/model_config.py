@@ -32,7 +32,8 @@ def _from_dict(cls: type[_T], raw: Mapping[str, Any]) -> _T:
     """Build a config dataclass from a parsed diffusers-style ``config.json``.
 
     Unknown keys are dropped rather than raising: these files carry bookkeeping
-    such as ``_class_name`` and ``_diffusers_version`` that is not configuration.
+    keys such as ``_class_name`` and ``_diffusers_version`` that are not
+    configuration.
     """
     known = {f.name for f in fields(cls)}  # type: ignore[arg-type]
     return cls(**{k: v for k, v in raw.items() if k in known})
@@ -131,6 +132,7 @@ class TransformerConfig:
 
     @property
     def hidden_size(self) -> int:
+        """The attention heads' combined width."""
         return self.num_attention_heads * self.attention_head_dim
 
     @staticmethod
@@ -191,6 +193,7 @@ class LanguageModelConfig:
 
     @property
     def rope_theta(self) -> float:
+        """The RoPE theta the language model rotates by."""
         return 1_000_000.0
 
     @property

@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//visibility:private"])
+
+# Tests only the KGEN_CompilerRT_Range* FFI symbols directly, so it stays in
+# KGEN with no dependency on the MAX/Kernels trees. The high-level `Range`
+# context manager has moved to //max and is covered by
+# //max/kernels/test/profiling:test_range_struct.mojo.test.
+mojo_test(
+    name = "test_range_bridge.mojo.test",
+    srcs = ["test_range_bridge.mojo"],
+    data = [
+        "//Mojo:CompilerRT",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)

@@ -1,0 +1,40 @@
+diff --git a/mojo/mojo_library.bzl b/mojo/mojo_library.bzl
+--- a/mojo/mojo_library.bzl
++++ b/mojo/mojo_library.bzl
+@@ -50,6 +50,11 @@
+         for copt in ctx.attr.copts
+     ])
+ 
++    # Passed as File args, not expanded into copts, so that bazel path mapping
++    # rewrites the path of a generated bitcode file.
++    for bitcode_lib in ctx.files.bitcode_libs:
++        args.add("--bitcode-libs", bitcode_lib)
++
+     # NOTE: cc deps are not passed to 'mojo precompile', they are only
+     # propagated to the compile and link actions of the depending binary.
+     import_paths, transitive_mojodeps, _ = collect_mojoinfo(ctx.attr.deps + mojo_toolchain.implicit_deps)
+@@ -78,7 +83,7 @@
+     file_args.add_all([ctx.files.srcs[0]], map_each = _format_root)
+     ctx.actions.run(
+         executable = mojo,
+-        inputs = depset(ctx.files.srcs + ctx.files.additional_compiler_inputs, transitive = [transitive_mojodeps]),
++        inputs = depset(ctx.files.srcs + ctx.files.additional_compiler_inputs + ctx.files.bitcode_libs, transitive = [transitive_mojodeps]),
+         tools = mojo_tools,
+         outputs = precompile_outputs,
+         arguments = [args, file_args],
+@@ -133,6 +138,15 @@
+ then be used in copts with the $(location) function.
+ """,
+         ),
++        "bitcode_libs": attr.label_list(
++            allow_files = [".bc"],
++            doc = """\
++LLVM bitcode files to embed in the precompiled package, passed to 'mojo
++precompile' as --bitcode-libs. They are linked into any program that imports
++this package. Prefer this over '--bitcode-libs' in copts, which cannot name a
++generated file under path mapping.
++""",
++        ),
+         "copts": attr.string_list(
+             doc = """\
+ Additional compiler options to pass to the Mojo compiler.

@@ -17,7 +17,7 @@ from std.random import random_float64
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu import block_dim
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
 
@@ -48,15 +48,15 @@ def test_vendor_blas[
 
     var a = TileTensor(
         a_device,
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b = TileTensor(
         b_device,
-        row_major(Coord(N, K)) if transpose_b else row_major(Coord(K, N)),
+        row_major(N, K) if transpose_b else row_major(K, N),
     )
     var c = TileTensor(
         c_device,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
@@ -71,19 +71,19 @@ def test_vendor_blas[
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(N, K)) if transpose_b else row_major(Coord(K, N)),
+        row_major(N, K) if transpose_b else row_major(K, N),
     )
 
     comptime kernel = matmul_kernel_naive[

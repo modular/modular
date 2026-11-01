@@ -71,7 +71,8 @@ class NextWordFrequency:
         for word in words:
             if word not in self.word_frequencies:
                 raise ValueError(
-                    f"Error: cannot predict word after '{word}', not found in input text"
+                    f"Error: cannot predict word after '{word}', not found in"
+                    " input text"
                 )
 
         for word in words:
@@ -107,6 +108,11 @@ def main() -> None:
         action="store_true",
         help="Run on CPU even if there is a GPU available.",
     )
+    parser.add_argument(
+        "--require-gpu",
+        action="store_true",
+        help="Fail instead of falling back to CPU when no GPU is available.",
+    )
     args = parser.parse_args()
 
     # Get the path to our Mojo custom ops
@@ -120,59 +126,95 @@ def main() -> None:
     probabilities = frequencies.next_word_probabilities(word_predictions)
 
     batch_size = len(probabilities)
-    K = frequencies.max_next_words
 
     # Place the graph on a GPU, if available. Fall back to CPU if not.
-    device = CPU() if args.cpu or accelerator_count() == 0 else Accelerator()
+    use_cpu = args.cpu or accelerator_count() == 0
+    if args.require_gpu and use_cpu:
+        parser.error("--require-gpu requires an available GPU and no --cpu")
+    device = CPU() if use_cpu else Accelerator()
     device_ref = DeviceRef.from_device(device)
 
-    # The dtype and shape of the probabilities being passed in
-    vals_type = TensorType(DType.float32, [batch_size, K], device_ref)
-    # The shape of the probabilities, but with int32 for the index dtype
-    idx_type = TensorType(DType.int32, [batch_size, K], device_ref)
+    def run_case(
+        probabilities: NDArray[np.float32],
+    ) -> tuple[NDArray[np.float32], NDArray[np.int32]]:
+        """Executes and validates the full top-K permutation for each row."""
+        batch_size, K = probabilities.shape
+        # The dtype and shape of the probabilities being passed in
+        vals_type = TensorType(DType.float32, [batch_size, K], device_ref)
+        # The shape of the probabilities, but with int32 for the index dtype
+        idx_type = TensorType(DType.int32, [batch_size, K], device_ref)
 
-    # Configure our simple one-operation graph.
-    with Graph(
-        "top_k_sampler",
-        input_types=[vals_type],
-        custom_extensions=[mojo_kernels],
-    ) as graph:
-        # Take the probabilities as a single input to the graph.
-        in_vals = graph.inputs[0]
-        results = ops.custom(
-            # This is the custom op name defined in `kernels/top_k.mojo`.
-            name="top_k_custom",
-            device=device_ref,
-            # Passes `K` as a compile-time Mojo `Int`.
-            parameters={"K": K},
-            # Passes the probabilities as a single input to the graph.
-            values=[in_vals],
-            # The output tensors shape, dtype, and device for the custom op
-            out_types=[vals_type, idx_type],
+        # Configure our simple one-operation graph.
+        with Graph(
+            "top_k_sampler",
+            input_types=[vals_type],
+            custom_extensions=[mojo_kernels],
+        ) as graph:
+            # Take the probabilities as a single input to the graph.
+            in_vals = graph.inputs[0]
+            results = ops.custom(
+                # This is the custom op name defined in `kernels/top_k.mojo`.
+                name="top_k_custom",
+                device=device_ref,
+                # Passes `K` as a compile-time Mojo `Int`.
+                parameters={"K": K},
+                # Passes the probabilities as a single input to the graph.
+                values=[in_vals],
+                # The output tensors shape, dtype, and device for the custom op
+                out_types=[vals_type, idx_type],
+            )
+            graph.output(*results)
+
+        # Set up an inference session for running the graph.
+        session = InferenceSession(devices=[device])
+
+        # Compile the graph.
+        compiled = session.compile(graph)
+        model = session.init(compiled)
+
+        input_tensor = Buffer.from_numpy(probabilities).to(device)
+        print(f"Sampling top k: {K} for batch size: {batch_size}")
+
+        values, indices = model.execute(input_tensor)
+
+        # Copy values and indices back to the CPU to be read.
+        assert isinstance(values, Buffer)
+        values = values.to(CPU())
+        np_values = values.to_numpy()
+
+        assert isinstance(indices, Buffer)
+        indices = indices.to(CPU())
+        np_indices = indices.to_numpy()
+
+        assert np_values.dtype == np.float32
+        assert np_indices.dtype == np.int32
+        np.testing.assert_array_equal(
+            np_values, np.sort(probabilities, axis=1)[:, ::-1]
         )
-        graph.output(*results)
+        assert np_indices.shape == probabilities.shape
+        assert np.all((0 <= np_indices) & (np_indices < K))
+        np.testing.assert_array_equal(
+            np.sort(np_indices, axis=1),
+            np.broadcast_to(np.arange(K), probabilities.shape),
+        )
+        # Tied values may select different indices, but must still match the input.
+        np.testing.assert_array_equal(
+            np_values, np.take_along_axis(probabilities, np_indices, axis=1)
+        )
+        print(f"Top-K validation passed on {'CPU' if use_cpu else 'GPU'}")
+        return np_values, np_indices
 
-    # Set up an inference session for running the graph.
-    session = InferenceSession(devices=[device])
-
-    # Compile the graph.
-    compiled = session.compile(graph)
-    model = session.init(compiled)
-
-    # Create a driver tensor from the next word probabilities
-    input_tensor = Buffer.from_numpy(probabilities).to(device)
-    print(f"Sampling top k: {K} for batch size: {batch_size}")
-
-    values, indices = model.execute(input_tensor)
-
-    # Copy values and indices back to the CPU to be read.
-    assert isinstance(values, Buffer)
-    values = values.to(CPU())
-    np_values = values.to_numpy()
-
-    assert isinstance(indices, Buffer)
-    indices = indices.to(CPU())
-    np_indices = indices.to_numpy()
+    np_values, np_indices = run_case(probabilities)
+    for fixture_k in (1, 3, 7, 32):
+        fixtures = np.stack(
+            (
+                np.zeros(fixture_k, dtype=np.float32),
+                -np.arange(1, fixture_k + 1, dtype=np.float32),
+                np.full(fixture_k, -np.inf, dtype=np.float32),
+                -(np.arange(fixture_k, dtype=np.float32) % 3),
+            )
+        )
+        run_case(fixtures)
 
     for i in range(batch_size):
         print(f"\nPredicted word after `{word_predictions[i]}`")

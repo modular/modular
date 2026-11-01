@@ -42,21 +42,21 @@ struct Data(ImplicitlyCopyable, Writable):
     var _size: Int
 
     def __init__(out self, *, size: Int):
-        self._data = alloc[Int]({count = size}).unsafe_leak()
+        self._data = alloc[Int]({length = size}).unsafe_leak()
         self._size = size
         for i in range(size):
             self._data[unsafe_offset=i] = 0
 
     def __init__(out self, *data: Int):
         var num_elems = len(data)
-        self._data = alloc[Int]({count = num_elems}).unsafe_leak()
+        self._data = alloc[Int]({length = num_elems}).unsafe_leak()
         self._size = num_elems
         for i in range(num_elems):
             self._data[unsafe_offset=i] = data[i]
 
     def __init__(out self, *, copy: Self):
         self._size = copy._size
-        self._data = alloc[Int]({count = self._size}).unsafe_leak()
+        self._data = alloc[Int]({length = self._size}).unsafe_leak()
         for i in range(self._size):
             self._data[unsafe_offset=i] = copy._data[unsafe_offset=i]
 
@@ -74,7 +74,7 @@ struct Data(ImplicitlyCopyable, Writable):
     def __deinit__(deinit self):
         dealloc(
             ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
-                {count = self._size}
+                {length = self._size}
             )
         )
 

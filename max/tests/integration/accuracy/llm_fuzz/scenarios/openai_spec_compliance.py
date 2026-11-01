@@ -939,24 +939,37 @@ class OpenAISpecCompliance(BaseScenario):
         )
 
         # ----- 14. response_format json_object -----
+        # Overrides the shared 200-token cap: a model that pads before closing
+        # the object spends the default and leaves a valid prefix, which parses
+        # exactly like a conformance failure. The finish_reason branch below
+        # still separates the two when even this cap is not enough.
         resp_json = await client.post_json(
             req(
                 "Return JSON with key 'greeting' and value 'hello'",
                 response_format={"type": "json_object"},
+                max_tokens=512,
             )
         )
         if resp_json.status == 200:
             data, _ = parse_json(resp_json.body)
             if data:
                 errs = _validate_chat_completion(data)
-                content = (
-                    _first_choice(data).get("message", {}).get("content", "")
-                )
+                choice = _first_choice(data)
+                content = choice.get("message", {}).get("content", "")
                 if errs:
                     verdict, detail = Verdict.FAIL, "; ".join(errs)
                 elif content:
                     _, json_err = parse_json(content)
-                    if json_err:
+                    if json_err and choice.get("finish_reason") == "length":
+                        # A prefix cut off at the cap, not a conformance
+                        # failure: enforcement is orthogonal to how many
+                        # tokens the model was allowed.
+                        verdict, detail = (
+                            Verdict.INTERESTING,
+                            "json_object content truncated at max_tokens "
+                            f"(finish_reason=length): {json_err}",
+                        )
+                    elif json_err:
                         verdict, detail = (
                             Verdict.FAIL,
                             f"json_object mode returned non-JSON content: {json_err}",

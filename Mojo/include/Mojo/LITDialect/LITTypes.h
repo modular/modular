@@ -85,7 +85,6 @@ public:
 
   bool isThrows() { return getFnEffects().isThrows(); }
   bool isAsync() { return getFnEffects().isAsync(); }
-  bool isCapturing() { return getFnEffects().isCapturing(); }
   bool isRefResult() { return getFnEffects().isRefResult(); }
 
   /// Return the convention for the specified value argument.

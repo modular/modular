@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Idefics3 with the ModuleV3 registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext

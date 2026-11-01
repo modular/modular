@@ -21,7 +21,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
     tcgen05_fence_before,
 )
-from max.gpu.primitives.warp import _vote_nvidia_helper
+from max.gpu.primitives.warp import vote
 from max.gpu.sync import umma_arrive_leader_cta
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
@@ -37,15 +37,19 @@ from nn.attention.mha_mask import MHAMask
 from .smem import SM100AttentionSMem
 
 
-@always_inline
+@inline(.always)
 def fa4_correction[
     qkv_dtype: DType,
     rope_dtype_: Optional[DType],
     scale_dtype_: Optional[DType],
+    cross_p: Bool,
     MaskType: MHAMask,
     //,
     config: FA4Config[
-        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
+        qkv_dtype,
+        rope_dtype_=rope_dtype_,
+        scale_dtype_=scale_dtype_,
+        cross_p=cross_p,
     ],
     page_size: Int,
     # Workspace (traditional/unfused) split-K: window the KV by a RUNTIME
@@ -93,15 +97,14 @@ def fa4_correction[
     # accumulated O tile by `c`). Depends only on `o_tmem`, `c_pair` and
     # comptime `config.correction_o_cols()` — no pipeline / warp-group state —
     # so it is shared verbatim by BOTH the single-O loop below and the two-WG
-    # `_correction_step` closure further down. `@always_inline` => inlining
+    # `_correction_step` closure further down. `@inline(.always)` => inlining
     # it back into either caller reproduces the identical instruction stream
     # (2-O / DeepSeek / MHA codegen is unchanged).
     #
     # Walks `correction_o_cols()` -- the PHYSICAL extent of one O accumulator,
     # not the logical depth. See its docstring: under shared-key the logical
     # depth runs 4x past the accumulator and silently corrupts.
-    @__parameter
-    @always_inline
+    @inline(.always)
     def _rescale_o(o_tmem: TmemAddress, c_pair: SIMD[.float32, 2]):
         comptime o_cols = config.correction_o_cols()
         comptime batch_size = 16 if o_cols % 16 == 0 else 8
@@ -193,8 +196,6 @@ def fa4_correction[
         tcgen05_store_wait()
         tcgen05_fence_before()
 
-    var change: Bool
-
     # ---- single-O correction (1Q wide-V) ----
     # Wide V forces single-O (aliased O0), so only WG0 runs: it folds EVERY
     # K-tile serially into the single O0 (WG1 no-op). The correction thus
@@ -211,9 +212,9 @@ def fa4_correction[
         var o0_tmem_so = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
         var pipeline_c0_so = mbars.consumer_c0()
         var pipeline_o_so = mbars.consumer_o0()
-        var correction_smem_so = correction_smem_arg + UInt32(
-            thread_idx.x
-        ) % UInt32(WARPGROUP_SIZE)
+        var correction_smem_so = correction_smem_arg.unsafe_offset(
+            UInt32(thread_idx.x) % UInt32(WARPGROUP_SIZE)
+        )
 
         var t_left_so: UInt32 = (
             mask.total_iters[BM_mask, BN, page_size](
@@ -225,7 +226,7 @@ def fa4_correction[
             t_left_so -= 1
             pipeline_c0_so.wait()
             var c_scalar = correction_smem_so[0]
-            change = _vote_nvidia_helper(c_scalar < 1.0) != 0
+            var change = vote[.uint32](c_scalar < 1.0) != 0
             pipeline_o_so.wait()
             if change:
                 _rescale_o(o0_tmem_so, SIMD[.float32, 2](c_scalar, c_scalar))
@@ -286,18 +287,21 @@ def fa4_correction[
     var iter_count: UInt32 = c1_iters
     var extra_c0_iters: UInt32 = c0_iters - c1_iters
 
-    var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % UInt32(
-        WARPGROUP_SIZE
+    var correction_smem_0 = correction_smem_arg.unsafe_offset(
+        UInt32(thread_idx.x) % UInt32(WARPGROUP_SIZE)
     )
-    var correction_smem_1 = correction_smem_0 + UInt32(WARPGROUP_SIZE)
+    var correction_smem_1 = correction_smem_0.unsafe_offset(
+        UInt32(WARPGROUP_SIZE)
+    )
 
     # The per-(c0 or c1) correction step. Inlined twice per outer iter
     # of the main loop (i=0 then i=1) for the WG0+WG1-paired tail, and
     # once more after the main loop for any extra c0-only iter (1Q
     # odd-T case where WG0 has one more main-loop commit than WG1).
-    @__parameter
-    @always_inline
-    def _correction_step[i: Int]():
+    @inline(.always)
+    def _correction_step[
+        i: Int
+    ]() {mut pipeline_c0, mut pipeline_c1, mut pipeline_o, imm}:
         # correct
         var c_scalar: Scalar[accum_type]
 
@@ -308,7 +312,7 @@ def fa4_correction[
             pipeline_c1.wait()
             c_scalar = correction_smem_1[0]
 
-        change = _vote_nvidia_helper(c_scalar < 1.0) != 0
+        var change = vote[.uint32](c_scalar < 1.0) != 0
         pipeline_o.wait()
         if change:
             var o_tmem: TmemAddress

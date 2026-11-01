@@ -100,6 +100,8 @@ def _symlink_files(
                         *dependency_base_dir.parts[1:]
                     )
                     _create_symlink(path, destination)
+                elif dependency_base_dir.parts[0] == "include":
+                    _create_symlink(path, venv_path / dependency_base_dir)
                 else:
                     raise FileNotFoundError(
                         f"error: not sure where to link '{actual_file}' please report this"

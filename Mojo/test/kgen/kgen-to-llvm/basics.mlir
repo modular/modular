@@ -9,14 +9,14 @@ module attributes {M.target_info = #M.target<triple="", arch="skylake-avx512", f
 // CHECK-SAME: ["tune-cpu", "skylake-avx512"]
 // CHECK-NEXT: llvm.return %[[ARG0]] : i32
 kgen.func @trivial(%arg0: si32) -> si32 {
-  kgen.return %arg0 : si32
+  hlcf.return %arg0 : si32
 }
 
 // CHECK: llvm.func internal @none_type() -> !llvm.struct<()>
 kgen.func @none_type() -> !kgen.none {
   // CHECK: [[NONE:%.*]] = llvm.mlir.undef : !llvm.struct<()>
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: llvm.func internal @convert_pop_types
@@ -28,19 +28,19 @@ kgen.func @convert_pop_types(
     %arg0: !kgen.simd<1, f32>,
     %arg1: !kgen.pointer<simd<1, f32>>,
     %arg2: !kgen.simd<4, f32>) {
-  kgen.return
+  hlcf.return
 }
 
 kgen.func @trivial_simd(%arg0: !kgen.simd<1, f32>) -> !kgen.simd<1, f32> {
-  kgen.return %arg0 : !kgen.simd<1, f32>
+  hlcf.return %arg0 : !kgen.simd<1, f32>
 }
 
 kgen.func @no_result(%arg0: !kgen.simd<1, f32>) {
-  kgen.return
+  hlcf.return
 }
 
 kgen.func @two_results(%arg0: !kgen.simd<1, f32>) -> (!kgen.simd<1, f32>, !kgen.simd<1, f32>) {
-  kgen.return %arg0, %arg0 : !kgen.simd<1, f32>, !kgen.simd<1, f32>
+  hlcf.return %arg0, %arg0 : !kgen.simd<1, f32>, !kgen.simd<1, f32>
 }
 
 // CHECK-LABEL: llvm.func internal @convert_call
@@ -61,35 +61,35 @@ kgen.func @convert_call(%arg0: !kgen.simd<1, f32>) {
   // CHECK: llvm.call musttail @trivial_simd(%[[ARG0]]) : (f32) -> f32
   kgen.call musttail @trivial_simd(%arg0) : (!kgen.simd<1, f32>) -> !kgen.simd<1, f32>
 
-  kgen.return
+  hlcf.return
 }
 
 //CHECK: "noinline"
 kgen.func @test_no_inline(%a: i64) no_inline {
-  kgen.return
+  hlcf.return
 }
 
 //CHECK: "alwaysinline"
 kgen.func @test_always_inline(%a: i64) always_inline {
-  kgen.return
+  hlcf.return
 }
 
 kgen.func @reference_me(%a: i64) -> i64 {
-  kgen.return %a : i64
+  hlcf.return %a : i64
 }
 
 // CHECK-LABEL: @address_dtype
 // CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr
 // CHECK-SAME: %[[ARG1:.*]]: vector<4x!llvm.ptr>
 kgen.func @address_dtype(%arg0 : !kgen.simd<1, address>, %arg1 : !kgen.simd<4, address>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @uninitmem
 kgen.func @uninitmem() -> index {
   // CHECK-NEXT: llvm.mlir.undef : i64
   %0 = kgen.param.constant = <#interp.uninitmem : index>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.func @constant_str() -> !kgen.string {
@@ -101,13 +101,13 @@ kgen.func @constant_str() -> !kgen.string {
   // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr, i64)>
   %0 = kgen.param.constant: string = <"AB">
   // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr, i64)>
-  kgen.return %0 : !kgen.string
+  hlcf.return %0 : !kgen.string
 }
 
 kgen.func @constant_str_2() -> !kgen.string {
   // CHECK: llvm.mlir.addressof @[[STATIC_STRING]] : !llvm.ptr
   %0 = kgen.param.constant: string = <"AB">
-  kgen.return %0 : !kgen.string
+  hlcf.return %0 : !kgen.string
 }
 
 // CHECK-LABEL: @empty_str
@@ -120,33 +120,33 @@ kgen.func @empty_str() -> !kgen.string {
   // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr, i64)>
   %0 = kgen.param.constant: string = <"">
   // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr, i64)>
-  kgen.return %0 : !kgen.string
+  hlcf.return %0 : !kgen.string
 }
 
 // CHECK-LABEL: @test_unreachable
 kgen.func @test_unreachable() -> !kgen.simd<1, f32> {
   // CHECK-NEXT: llvm.trap
   // CHECK-NEXT: llvm.unreachable
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: @address_of
 kgen.func @address_of() -> !kgen.generator<() -> !kgen.scalar<f32>> {
   // CHECK: llvm.mlir.addressof @test_unreachable : !llvm.ptr
   %0 = kgen.param.constant: () -> !kgen.scalar<f32> = <@test_unreachable>
-  kgen.return %0 : !kgen.generator<() -> !kgen.scalar<f32>>
+  hlcf.return %0 : !kgen.generator<() -> !kgen.scalar<f32>>
 }
 
 // CHECK: llvm.func @used_internally
 kgen.func export @used_internally() cabi -> !kgen.struct<(i32, i32)>{
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK: llvm.func internal @used_func
 kgen.func @used_func() {
   // CHECK-NEXT: call @used_internally
   kgen.call @used_internally() : () -> !kgen.struct<(i32, i32)>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK: llvm.mlir.global internal constant @[[STATIC_STRING]]("AB\00") {addr_space = 0 : i32, alignment = 16 : i64}
@@ -166,7 +166,7 @@ module attributes {M.target_info = #M.target<triple="", arch="skylake-avx512", f
 // CHECK-SAME: ["target-features", "+fma"]
 // CHECK-NOT: "target-abi"
 kgen.func @with_abi(%arg0: si32) -> si32 {
-  kgen.return %arg0 : si32
+  hlcf.return %arg0 : si32
 }
 
 }
@@ -191,7 +191,7 @@ kgen.func @struct_constant() -> !kgen.struct<(array<1, i32>, struct<(i32, i32)>)
   // CHECK: llvm.return %10 : !llvm.struct<(array<1 x i32>, struct<(i32, i32)>)>
   %0 = kgen.param.constant: struct<(array<1, i32>, struct<(i32, i32)>)> =
     <{ [1], { 2, 3 } }>
-  kgen.return %0 : !kgen.struct<(array<1, i32>, struct<(i32, i32)>)>
+  hlcf.return %0 : !kgen.struct<(array<1, i32>, struct<(i32, i32)>)>
 }
 
 // CHECK-LABEL: @pointer_constant
@@ -200,14 +200,14 @@ kgen.func @pointer_constant() -> !kgen.pointer<*?> {
   // CHECK: %1 = llvm.inttoptr %0 : i64 to !llvm.ptr
   // CHECK: llvm.return %1 : !llvm.ptr
   %null = kgen.param.constant: pointer<*?> = <#interp.pointer<0>>
-  kgen.return %null : !kgen.pointer<*?>
+  hlcf.return %null : !kgen.pointer<*?>
 }
 
 // CHECK-LABEL: @empty_struct_with_never
 kgen.func @empty_struct_with_never() throws -> !kgen.struct<(union<struct<()>, !kgen.never>, scalar<ui8>)> {
   %struct = kgen.param.constant: struct<(union<struct<()>, !kgen.never>, scalar<ui8>)> = <{ {:struct<()> #interp.uninitmem}, 0 }>
   // CHECK: llvm.return %{{.*}} : !llvm.struct<(struct<()>, i8)>
-  kgen.return %struct : !kgen.struct<(union<struct<()>, !kgen.never>, scalar<ui8>)>
+  hlcf.return %struct : !kgen.struct<(union<struct<()>, !kgen.never>, scalar<ui8>)>
 }
 
 }
@@ -219,7 +219,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: llvm.func internal @coro
 // CHECK-SAME: coroutineType = !llvm.struct<(i64, ptr, ptr, ptr, ptr, ptr, ptr)>
 kgen.func @coro() attributes {coroutineType = !kgen.struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>} {
-  kgen.return
+  hlcf.return
 }
 
 }

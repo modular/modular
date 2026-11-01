@@ -25,8 +25,8 @@ from max.gpu.sync import (
     mbarrier_try_wait_parity_shared,
 )
 from std.memory import unsafe_stack_allocation
-
-from std.utils.index import Index
+from std.memory.alloc import unsafe_alloc
+from std.utils.coord import coord
 
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
@@ -35,12 +35,12 @@ def kernel_copy_async_tma(descriptor: TMADescriptor):
         16, DType.float32, alignment=16, address_space=.SHARED
     ]()
     var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
-    var descriptor_ptr = Pointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = Pointer(to=descriptor).unsafe_bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     mbarrier_arrive_expect_tx_shared(mbar, 64)
     cp_async_bulk_tensor_shared_cluster_global(
-        shmem, descriptor_ptr, mbar, Index(block_idx.x * 4, block_idx.y * 4)
+        shmem, descriptor_ptr, mbar, (block_idx.x * 4, block_idx.y * 4)
     )
     mbarrier_try_wait_parity_shared(mbar, 0, 10000000)
 
@@ -75,7 +75,7 @@ def kernel_copy_async_tma(descriptor: TMADescriptor):
 # CHECK-DAG: (1, 1) : 36 37 38 39; 44 45 46 47; 52 53 54 55; 60 61 62 63
 def test_tma_tile_copy(ctx: DeviceContext) raises:
     print("== test_tma_tile_copy")
-    var gmem_host = alloc[Float32](8 * 8)
+    var gmem_host = unsafe_alloc[Float32](8 * 8)
     for i in range(64):
         gmem_host[i] = Float32(i)
 
@@ -83,15 +83,15 @@ def test_tma_tile_copy(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(gmem_dev, gmem_host)
 
-    var descriptor = create_tma_descriptor[.float32, 2](
-        gmem_dev, (8, 8), (8, 1), (4, 4)
+    var descriptor = create_tma_descriptor[.float32](
+        gmem_dev, coord[8, 8], coord[8, 1], coord[4, 4]
     )
 
     ctx.enqueue_function[kernel_copy_async_tma](
         descriptor, grid_dim=(2, 2), block_dim=(1)
     )
     ctx.synchronize()
-    gmem_host.free()
+    gmem_host.unsafe_free()
 
 
 def main() raises:

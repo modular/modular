@@ -127,7 +127,7 @@ class ToolParser(Protocol):
               the caller must suppress the raw token from flowing as text
               content.
             - ``None`` when more tokens are needed before anything can be
-              emitted (e.g. buffering a potential section-begin marker).
+              emitted (such as buffering a potential section-begin marker).
 
         Note:
             The empty-list suppression state is currently only implemented by

@@ -1,0 +1,42 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_mhc_pre
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_mhc_pre.mojo
+
+params:
+# Decode through prefill at the default K-split, which goes to 1 (one fused
+# launch) above 3072 tokens; 3072 is the top of the 4-way split band.
+- hidden: 4096
+  fn_dtype: [DType.float32, DType.bfloat16]
+  has_norm: [True, False]
+  $num_rows: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 3072, 4096,
+    8192, 16384]
+  $force_k_splits: 0
+# K-split sweep around the default heuristic at decode, mid and prefill sizes.
+- hidden: 4096
+  fn_dtype: [DType.float32, DType.bfloat16]
+  has_norm: [True, False]
+  $num_rows: [8, 128, 1024]
+  $force_k_splits: [1, 16, 64, 256]
+- hidden: 5120
+  fn_dtype: DType.float32
+  has_norm: [True, False]
+  $num_rows: [8, 1024, 8192]
+  $force_k_splits: 0
+# The 4-way split band (2049-3072 tokens) was calibrated at hidden 4096.
+- hidden: [5120, 8192]
+  fn_dtype: DType.float32
+  has_norm: True
+  $num_rows: [2064, 3072]
+  $force_k_splits: [0, 1]

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 3 configuration."""
 
 from __future__ import annotations
 
@@ -19,9 +20,9 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
@@ -49,9 +50,10 @@ from typing_extensions import Self, override
 
 @dataclass
 class Gemma3VisionConfig:
-    """
-    The vision-specific config for Gemma3
-    More info at: https://huggingface.co/google/gemma-3-4b-it/blob/main/config.json
+    """The vision half of the Gemma 3 config.
+
+    It carries the patch size, image size and hidden width the vision tower is
+    built with.
     """
 
     hidden_act: str
@@ -199,6 +201,7 @@ class Gemma3ForConditionalGenerationConfig(
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The language model's hidden layer count."""
         return huggingface_config.text_config.num_hidden_layers
 
     @classmethod
@@ -212,6 +215,7 @@ class Gemma3ForConditionalGenerationConfig(
         *,
         allow_kv_head_replication: bool = False,
     ) -> MultiKVCacheParams:
+        """The KV cache parameters, taken from the Gemma 3 text config."""
         # ArchVLConfigWithTextSubconfig reads text_config from annotations,
         # which stay strings under from __future__ import annotations, so it
         # would otherwise build a single full-attention leaf.
@@ -237,6 +241,9 @@ class Gemma3ForConditionalGenerationConfig(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration to read the HuggingFace
+                config from. Defaults to ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Gemma3ForConditionalGenerationConfig instance with fields initialized from config.
@@ -271,6 +278,7 @@ class Gemma3ForConditionalGenerationConfig(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace model configuration.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Gemma3ForConditionalGenerationConfig instance ready for finalization.

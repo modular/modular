@@ -17,24 +17,30 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
+from typing import ClassVar
 
+from max import functional as F
+from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.attention import AttentionWithRope
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import LayerNorm, RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
-from max.graph import ops
-from max.nn.kv_cache import (
-    KVCacheInputs,
+from max.graph import DeviceRef, TensorValue, ops
+from max.nn import Module
+from max.nn.common_layers.attention import AttentionWithRope
+from max.nn.common_layers.mlp import MLP
+from max.nn.embedding import Embedding
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.linear import Linear
+from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.sequential import ModuleList
+from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lora import LoRATargetModule
+from max.tensor import Tensor
 
 from .layers.mlp import LlamaStackedMLP
 from .layers.rotary_embedding import (
@@ -42,11 +48,12 @@ from .layers.rotary_embedding import (
     LongRoPERotaryEmbedding,
 )
 from .layers.transformer_block import LlamaTransformerBlock
+from .lora import LLAMA3_LORA_TARGETS
 from .model_config import Llama3Config
 
 
 class Llama3TextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+    Module[[Tensor, PagedCacheValues, Tensor, Tensor], ModuleV3Outputs]
 ):
     """The Llama3 language model.
 
@@ -175,13 +182,12 @@ class Llama3TextModel(
         kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * F.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         # Run through transformer layers.
         for idx, layer in enumerate(self.layers):
@@ -231,20 +237,21 @@ class Llama3TextModel(
             if logits is not None:
                 logits = logits / self.logits_scaling
 
-        ret_val: tuple[Tensor, ...] = (last_logits,)
-        if offsets is not None:
-            assert logits is not None
-            ret_val += (logits, offsets)
-
+        hidden_states = None
         if self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_h,)
+            hidden_states = last_h
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            ret_val += (self.norm(h),)
+            hidden_states = self.norm(h)
 
-        return ret_val
+        return ModuleV3Outputs(
+            next_token_logits=last_logits,
+            logits=logits,
+            logit_offsets=offsets,
+            hidden_states=hidden_states,
+        )
 
 
-class Llama3(Module[..., tuple[Tensor, ...]]):
+class Llama3(Module[..., ModuleV3Outputs]):
     """The Llama3 model.
 
     Top-level wrapper that unflattens the variadic KV cache arguments
@@ -267,11 +274,119 @@ class Llama3(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
+        """Unflattens the KV inputs, then runs the text model."""
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        assert isinstance(symbolic_inputs, KVCacheInputs)
-        kv_collections = symbolic_inputs.inputs
+        kv_collections = tree.leaves(
+            symbolic_inputs, leaf=KVCacheInputsPerDevice
+        )
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )
+
+
+def _replica(module: Llama3TextModel, index: int) -> Llama3TextModel:
+    """Returns ``module`` with each tensor replaced by its shard on one device.
+
+    The module's weights are replicated over the data-parallel mesh, so the
+    shard is a whole copy, and the replica runs on that device alone.
+    """
+    return tree.map(
+        lambda tensor: tensor.local_shards[index],
+        module,
+        leaf=Tensor,
+        shared=True,
+    )
+
+
+def _split_batch(
+    devices: list[DeviceRef], inputs: DecoderInputs
+) -> list[tuple[Tensor, Tensor]]:
+    """Returns each replica's tokens and row offsets, on its device."""
+    assert inputs.host_input_row_offsets is not None
+    assert inputs.data_parallel_splits is not None
+    tokens = TensorValue(inputs.tokens)
+    input_row_offsets = TensorValue(inputs.input_row_offsets)
+    split_tokens, split_offsets = split_batch_replicated(
+        devices,
+        [tokens.to(device) for device in devices],
+        [input_row_offsets.to(device) for device in devices],
+        TensorValue(inputs.host_input_row_offsets).cast(DType.int64),
+        TensorValue(inputs.data_parallel_splits),
+    )
+    return [
+        (
+            Tensor.from_graph_value(replica_tokens),
+            Tensor.from_graph_value(offsets),
+        )
+        for replica_tokens, offsets in zip(
+            split_tokens, split_offsets, strict=True
+        )
+    ]
+
+
+class Llama3Decoder(Module[[DecoderInputs], DecoderOutputs]):
+    """The Llama 3 decoder, registered for the ``DECODER`` role.
+
+    On several devices each device runs a whole replica of
+    :class:`Llama3TextModel` over its own slice of the batch.
+
+    Raises:
+        ValueError: If it runs on several devices without one data-parallel
+            replica per device.
+        NotImplementedError: If it runs data-parallel and must return more
+            than the last token's logits.
+    """
+
+    graph_name: ClassVar[str] = "Llama3"
+    lora_targets: ClassVar[tuple[LoRATargetModule, ...]] = LLAMA3_LORA_TARGETS
+    supports_data_parallel: ClassVar[bool] = True
+
+    def __init__(self, config: Llama3Config) -> None:
+        super().__init__()
+        num_replicas = config.kv_params.data_parallel_degree
+        if num_replicas != len(config.devices):
+            raise ValueError(
+                "Llama 3 on ModuleV3 has no tensor parallelism: run one "
+                f"data-parallel replica per device, not {num_replicas} over "
+                f"{len(config.devices)} devices"
+            )
+        if num_replicas > 1 and (
+            config.return_logits != ReturnLogits.LAST_TOKEN
+            or config.return_hidden_states != ReturnHiddenStates.NONE
+        ):
+            raise NotImplementedError(
+                "data-parallel Llama 3 returns only the last token's logits"
+            )
+        self.language_model = Llama3TextModel(config)
+        self.kv_params = config.kv_params
+        self.devices = config.devices
+
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Runs each replica over its sequences, then joins their logits."""
+        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_collections = tree.leaves(
+            self.kv_params.unflatten_kv_inputs(kv_inputs),
+            leaf=KVCacheInputsPerDevice,
+        )
+        if inputs.data_parallel_splits is None:
+            return self.language_model(
+                inputs.tokens,
+                kv_collections[0],
+                inputs.return_n_logits,
+                inputs.input_row_offsets,
+            )
+        first_device = self.devices[0].to_device()
+        logits = []
+        for index, (tokens, input_row_offsets) in enumerate(
+            _split_batch(self.devices, inputs)
+        ):
+            outputs = _replica(self.language_model, index)(
+                tokens,
+                kv_collections[index],
+                inputs.return_n_logits,
+                input_row_offsets,
+            )
+            logits.append(outputs.next_token_logits.to(first_device))
+        return DecoderOutputs(next_token_logits=F.concat(logits, axis=0))

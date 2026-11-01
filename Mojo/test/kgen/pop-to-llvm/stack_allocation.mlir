@@ -22,7 +22,7 @@ kgen.func @stack_allocation(%cond: !kgen.scalar<bool>) {
   }
   // CHECK: llvm.intr.lifetime.end %[[PTR0]]
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @stack_allocation_with_alignment
@@ -33,7 +33,7 @@ kgen.func @stack_allocation_with_alignment() {
   %0 = pop.stack_allocation 16 x !kgen.simd<1, f32> align 8
   // CHECK-NEXT: llvm.intr.lifetime.end %[[PTR0]]
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @stack_allocation_with_addressspace
@@ -44,7 +44,7 @@ kgen.func @stack_allocation_with_addressspace() {
   %0 = pop.stack_allocation 16 x !kgen.simd<1, si32> address_space 5
   // CHECK-NEXT: llvm.intr.lifetime.end %[[PTR0]]
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @stack_allocation_with_align_and_addressspace
@@ -55,7 +55,7 @@ kgen.func @stack_allocation_with_align_and_addressspace() {
   %0 = pop.stack_allocation 16 x !kgen.simd<1, f32> address_space 3 align 8
   // CHECK-NEXT: llvm.intr.lifetime.end %[[PTR0]]
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @stack_allocation_insertion
@@ -69,7 +69,7 @@ kgen.func @stack_allocation_insertion(%v: !kgen.simd<1, si32>) {
     // CHECK: hlcf.break
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -81,7 +81,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   kgen.func @allocate_64_bit() {
     // CHECK: lifetime.start {{.*}}
     %0 = pop.stack_allocation 1 x index
-    kgen.return
+    hlcf.return
   }
 }
 
@@ -92,7 +92,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   kgen.func @allocate_32_bit() {
     // CHECK: lifetime.start {{.*}}
     %0 = pop.stack_allocation 1 x index
-    kgen.return
+    hlcf.return
   }
 }
 
@@ -108,7 +108,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: lifetime.end %[[ALLOC]]
     %0 = pop.stack_allocation 1 x i64
     pop.store %arg0, %0 : !kgen.pointer<i64>
-    kgen.return
+    hlcf.return
   }
 }
 
@@ -127,10 +127,10 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       // CHECK: llvm.load
       %1 = pop.load %0 : !kgen.pointer<struct<(pointer<none>, index)>>
       %2 = builtin.unrealized_conversion_cast %1 : !kgen.struct<(pointer<none>, index)> to !llvm.struct<(ptr, i64)>
-      kgen.return %arg0 : i32
+      hlcf.return %arg0 : i32
     } else {
       lit.try.yield
     }
-    kgen.return %arg0 : i32
+    hlcf.return %arg0 : i32
   }
 }

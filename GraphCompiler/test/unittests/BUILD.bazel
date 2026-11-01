@@ -1,0 +1,40 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
+# Regular tests without kernel logging
+modular_cc_test(
+    name = "BaseTests",
+    srcs = glob(
+        [
+            "*.cpp",
+        ],
+        exclude = [
+            "KernelLoggerTest.cpp",
+        ],
+    ),
+    deps = [
+        "//GraphCompiler:MGPPrimitives",
+        "//GraphCompiler:SafeTensor",
+        "//GraphCompiler:Support",
+        "//Support:Globals",
+    ],
+)
+
+# Kernel logging tests - can run directly with: ./bazelw test //GraphCompiler/test/unittests:KernelLoggerTests
+modular_cc_test(
+    name = "KernelLoggerTests",
+    srcs = [
+        "KernelLoggerTest.cpp",
+    ],
+    local_defines = ["ENABLE_MGP_KERNEL_LOGGING"],
+    tags = ["kernel_logging"],
+    deps = [
+        "//GraphCompiler:MGPPrimitivesWithLogging",
+        "//GraphCompiler:SafeTensor",
+        "//GraphCompiler:Support",
+        "//Support:Globals",
+    ],
+)

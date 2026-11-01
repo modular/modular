@@ -1,0 +1,159 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# CPU numerical/reference tests for the V4.1 ModuleV3 primitive layers.
+# The fused/graph kernels those layers route to on GPU (the mHC gates, the
+# NVFP4 grouped matmuls, the MXFP8 block-scaled matmul, the Engram hash
+# gather) are GPU-only; these targets pin the layers' own math against
+# independent NumPy oracles.
+modular_eager_py_test(
+    name = "layers_cpu_tests",
+    srcs = [
+        "test_attention_rows.py",
+        "test_compressor.py",
+        "test_engram_hash.py",
+        "test_engram_token_map.py",
+        "test_indexer.py",
+        "test_mhc.py",
+        "test_norm.py",
+        "test_nvfp4_ops.py",
+        "test_rope.py",
+        "test_router.py",
+    ],
+    cpu_only = True,
+    env = {
+        # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
+        "MAX_EAGER_EXECUTOR": "fallback-internal",
+    },
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:asan": ["@platforms//:incompatible"],  # Too slow under ASAN
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/assembly:runtime_config",
+        requirement("numpy"),
+    ],
+)
+
+# Shared reference machinery (NumPy gate oracle, chain builders/simulators)
+# for the mHC GPU tests.
+modular_py_library(
+    name = "mhc_chain_reference",
+    testonly = True,
+    srcs = ["mhc_chain_reference.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Focused production-binding tests: each target executes the layers'
+# own graph-op bindings on a B200 -- the MXFP8 dense/grouped
+# block-scaled matmuls, the NVFP4 grouped routed-expert fallback, the
+# mHC gates (single-device and TP2) and the Engram hash-gather through
+# main's EngramLookup -- rather than only comparing formulas.
+#
+# No precompile_mefs: the eager executor stages device state before the
+# first compile and compiles each op as it executes, so a CPU record
+# captures none of these graphs (docs/internal/CompileOnCpuRunOnGpu.md,
+# "When record cannot help").
+modular_eager_py_test(
+    name = "layers_gpu_tests",
+    size = "large",
+    srcs = [
+        "test_engram_gate_gpu.py",
+        "test_engram_gather_gpu.py",
+        "test_mhc_fused_gpu.py",
+        "test_mhc_gates_gpu.py",
+        "test_mxfp8_dense_gpu.py",
+        "test_nvfp4_routed_gpu.py",
+        "test_router_gpu.py",
+    ],
+    env = {
+        # These tests execute the layers' real fused/graph ops (fp8 casts,
+        # the mHC gates, the Engram hash-gather, the NVFP4 grouped
+        # matmuls), which the interpreter refuses: compile them.
+        "MAX_EAGER_EXECUTOR": "fallback-internal",
+    },
+    # The TP2 mHC chain tests live in their own two-GPU target below.
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mhc_chain_reference",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# The mHC stream chains over a two-way GPU mesh. The target requests two
+# GPUs (test.resources:gpu-memory = 2); every test in it fails, never
+# skips, when fewer than two devices are visible, so a green test.log
+# proves real TP2 execution.
+modular_eager_py_test(
+    name = "mhc_tp2_gpu_tests",
+    size = "large",
+    srcs = ["test_mhc_tp2_gpu.py"],
+    # The repository-standard two-distinct-device request (as the
+    # tensor/distributed 2-GPU targets): gpu-1/gpu-2 force two separate
+    # devices, which gpu-memory alone does not.
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mhc_chain_reference",
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

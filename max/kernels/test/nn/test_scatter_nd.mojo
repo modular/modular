@@ -13,11 +13,12 @@
 
 from layout import TileTensor, row_major
 from max.gpu.host import DeviceContext
-from nn.gather_scatter import scatter_nd_generator
+from nn.gather_scatter import _atomic_reduce, scatter_nd_generator
+from std.sys import simd_width_of
 from std.testing import assert_equal
 
 
-@always_inline
+@inline(.always)
 def use_update[
     dtype: DType, width: SIMDLength, //
 ](input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]) -> SIMD[
@@ -221,7 +222,7 @@ def main() raises:
             8,
         ]
 
-        scatter_nd_generator[reduce_fn=use_update](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[use_update]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -233,6 +234,72 @@ def main() raises:
         _ = data_ptr^
 
     test_scatternd()
+
+    def test_scatternd_copy_non_atomic() raises:
+        print("== test_scatternd_copy_non_atomic")
+        comptime cols = simd_width_of[Float32]() + 1
+
+        var data_ptr = List(length=2 * cols, fill=Float32(0))
+        for i in range(2 * cols):
+            data_ptr[i] = Float32(i + 1)
+        var data = TileTensor(data_ptr, row_major[2, cols]())
+
+        var indices_ptr = List(length=1, fill=Int64(1))
+        var indices = TileTensor(indices_ptr, row_major[1, 1]())
+
+        var updates_ptr = List(length=cols, fill=Float32(0))
+        for i in range(cols):
+            updates_ptr[i] = Float32(100 + i)
+        var updates = TileTensor(updates_ptr, row_major[1, cols]())
+
+        var output_ptr = List(length=2 * cols, fill=Float32(0))
+        var output = TileTensor(output_ptr, row_major[2, cols]())
+
+        scatter_nd_generator(
+            data, indices, updates, output, DeviceContext(api="cpu")
+        )
+
+        for i in range(cols):
+            assert_equal(output_ptr[i], data_ptr[i])
+            assert_equal(output_ptr[cols + i], updates_ptr[i])
+
+        _ = output_ptr^
+        _ = updates_ptr^
+        _ = indices_ptr^
+        _ = data_ptr^
+
+    test_scatternd_copy_non_atomic()
+
+    def test_scatternd_copy_non_atomic_slices() raises:
+        print("== test_scatternd_copy_non_atomic_slices")
+        comptime cols = simd_width_of[Float32]() + 1
+        comptime slice_len = 3 * cols
+
+        var data_ptr = List(length=2 * slice_len, fill=Float32(0))
+        for i in range(2 * slice_len):
+            data_ptr[i] = Float32(i + 1)
+        var data = TileTensor(data_ptr, row_major[2, 3, cols]())
+
+        var indices_ptr = List(length=1, fill=Int64(1))
+        var indices = TileTensor(indices_ptr, row_major[1, 1]())
+
+        var updates_ptr = List(length=slice_len, fill=Float32(0))
+        for i in range(slice_len):
+            updates_ptr[i] = Float32(100 + i)
+        var updates = TileTensor(updates_ptr, row_major[1, 3, cols]())
+
+        var output_ptr = List(length=2 * slice_len, fill=Float32(0))
+        var output = TileTensor(output_ptr, row_major[2, 3, cols]())
+
+        scatter_nd_generator(
+            data, indices, updates, output, DeviceContext(api="cpu")
+        )
+
+        for i in range(slice_len):
+            assert_equal(output_ptr[i], data_ptr[i])
+            assert_equal(output_ptr[slice_len + i], updates_ptr[i])
+
+    test_scatternd_copy_non_atomic_slices()
 
     def test_scatternd_add() raises:
         print("== test_scatternd_add")
@@ -427,13 +494,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _add[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[reduce_fn=_add](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_add]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -639,13 +706,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _max[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_nd_generator[reduce_fn=_max](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_max]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -851,13 +918,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _min[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
-        scatter_nd_generator[reduce_fn=_min](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_min]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -1063,13 +1130,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _mul[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
-        scatter_nd_generator[reduce_fn=_mul](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_mul]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -1109,13 +1176,13 @@ def main() raises:
         var output_ptr = List(length=rows * cols, fill=Float32(0))
         var output = TileTensor(output_ptr, row_major[rows, cols]())
 
-        @always_inline
+        @inline(.always)
         def _add[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[reduce_fn=_add](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_add]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 

@@ -24,9 +24,9 @@ kgen.func @no_hoist() -> !co.routine {
     %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
-    kgen.return loc(#loc5)
+    hlcf.return loc(#loc5)
   } loc(#loc8)
-  kgen.return %0 : !co.routine loc(#loc4)
+  hlcf.return %0 : !co.routine loc(#loc4)
 } loc(#loc4)
 
 // CHECK-LABEL: kgen.func @hoist
@@ -38,21 +38,21 @@ kgen.func @hoist() -> !co.routine {
     %array = kgen.param.constant: array<1, index> = <[0]>
     %1 = pop.stack_allocation 1 x !pop.array<1, index>
     pop.store %array, %1 : !kgen.pointer<array<1, index>>
-    kgen.return
+    hlcf.return
   }
-  kgen.return %0 : !co.routine
+  hlcf.return %0 : !co.routine
 }
 
 // CHECK-LABEL: @no_cse_async_execute
 kgen.func @no_cse_async_execute() -> (!co.routine, !co.routine) {
   // CHECK-COUNT-2: co.execute
   %0 = co.execute {
-    kgen.return
+    hlcf.return
   }
   %1 = co.execute {
-    kgen.return
+    hlcf.return
   }
-  kgen.return %0, %1 : !co.routine, !co.routine
+  hlcf.return %0, %1 : !co.routine, !co.routine
 }
 
 // CHECK-LABEL: kgen.func @await_execute
@@ -67,7 +67,7 @@ kgen.func @no_cse_async_execute() -> (!co.routine, !co.routine) {
 kgen.func @await_execute(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.pointer<index> byref_result) throws|async -> (i1, index, index) {
   %0 = co.execute {
     "op"() : () -> ()
-    kgen.return
+    hlcf.return
   }
   co.await %0 : (!co.routine) -> ()
 
@@ -75,7 +75,7 @@ kgen.func @await_execute(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.poin
     %idx3 = index.constant 3
     pop.store %idx3, %arg3 : !kgen.pointer<index>
     %true = index.bool.constant true
-    kgen.return %true : i1
+    hlcf.return %true : i1
   }
   %2 = co.await %1, %arg1, %arg0 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<i1>) -> i1
 
@@ -85,28 +85,28 @@ kgen.func @await_execute(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.poin
     pop.store %idx0, %arg2 : !kgen.pointer<index>
     %c2 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
     hlcf.if %c2 {
-      kgen.return %idx1, %idx0 : index, index
+      hlcf.return %idx1, %idx0 : index, index
     } else {
       hlcf.yield
     }
-    kgen.return %idx0, %idx1 : index, index
+    hlcf.return %idx0, %idx1 : index, index
   }
   %4:2 = co.await %3, %arg1 : (!co.routine, !kgen.pointer<index>) -> (index, index)
 
-  kgen.return %2, %4#0, %4#1 : i1, index, index
+  hlcf.return %2, %4#0, %4#1 : i1, index, index
 }
 
 kgen.func @foo(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.pointer<index> byref_result) throws|async -> (i1, index, index) {
   %idx3 = index.constant 3
   %true = index.bool.constant true
-  kgen.return %true, %idx3, %idx3 : i1, index, index
+  hlcf.return %true, %idx3, %idx3 : i1, index, index
 }
 
 // CHECK-LABEL: kgen.func @await_invoke
 kgen.func @await_invoke(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.pointer<index> byref_result) throws|async -> (i1, index, index) {
   %0 = co.invoke[(!kgen.pointer<i1> byref_error, !kgen.pointer<index> byref_result) throws|async -> (i1, index, index): @foo]()
   // CHECK: %[[#N:]]:3 = co.hot_invoke[(!kgen.pointer<i1> byref_error, !kgen.pointer<index> byref_result) throws|async -> (i1, index, index): @foo](%arg0, %arg1)
-  // CHECK-NEXT: kgen.return %[[#N]]#0, %[[#N]]#1, %[[#N]]#2 : i1, index, index
+  // CHECK-NEXT: hlcf.return %[[#N]]#0, %[[#N]]#1, %[[#N]]#2 : i1, index, index
   %1:3 = co.await %0, %arg1, %arg0 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<i1>) -> (i1, index, index)
-  kgen.return %1#0, %1#1, %1#2 : i1, index, index
+  hlcf.return %1#0, %1#1, %1#2 : i1, index, index
 }

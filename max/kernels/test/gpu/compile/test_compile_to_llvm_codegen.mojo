@@ -21,28 +21,38 @@ from max.gpu.memory import external_memory
 def test_array_offset():
     print("== test_array_offset")
 
-    def kernel(
-        output: MutPointer[Float32, MutAnyOrigin],
-        p: ImmPointer[Float32, ImmutAnyOrigin, address_space=.SHARED],
+    def kernel[
+        output_origin: MutOrigin, p_origin: ImmOrigin
+    ](
+        output: MutPointer[Float32, output_origin],
+        p: ImmPointer[Float32, p_origin, address_space=.SHARED],
         idx: Int,
     ):
         output[] = p[idx]
 
     # CHECK: getelementptr inbounds float, ptr addrspace(3) %1, i{{[0-9]+}} %{{.*}}
-    print(_compile_code[kernel, emission_kind="llvm"]())
+    print(
+        _compile_code[
+            kernel[MutUntrackedOrigin, ImmUntrackedOrigin], emission_kind="llvm"
+        ]()
+    )
 
 
 # CHECK-LABEL: test_case_thread_id_nvidia
 def test_case_thread_id_nvidia():
     print("== test_case_thread_id_nvidia")
 
-    def kernel(output: MutPointer[Int32, MutAnyOrigin]):
+    def kernel[
+        output_origin: MutOrigin
+    ](output: MutPointer[Int32, output_origin]):
         output[] = Int32(thread_idx.x + thread_idx.x + thread_idx.x)
 
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
     print(
         _compile_code[
-            kernel, emission_kind="llvm", target=get_gpu_target["sm_80"]()
+            kernel[MutUntrackedOrigin],
+            emission_kind="llvm",
+            target=get_gpu_target["sm_80"](),
         ]()
     )
 
@@ -51,13 +61,17 @@ def test_case_thread_id_nvidia():
 def test_case_thread_id_mi355x():
     print("== test_case_thread_id_mi355x")
 
-    def kernel(output: MutPointer[Int32, MutAnyOrigin]):
+    def kernel[
+        output_origin: MutOrigin
+    ](output: MutPointer[Int32, output_origin]):
         output[] = Int32(thread_idx.x + thread_idx.x + thread_idx.x)
 
     # CHECK-COUNT-1: call i32 @llvm.amdgcn.workitem.id.x()
     print(
         _compile_code[
-            kernel, emission_kind="llvm", target=get_gpu_target["mi355x"]()
+            kernel[MutUntrackedOrigin],
+            emission_kind="llvm",
+            target=get_gpu_target["mi355x"](),
         ]()
     )
 
@@ -68,7 +82,9 @@ def test_dynamic_shared_mem():
 
     # CHECK: @extern_ptr_syml = external dso_local addrspace(3) global [0 x float], align 4
     # CHECK: @extern_ptr_syml_0 = external dso_local addrspace(3) global [0 x float], align 4
-    def kernel(output: MutPointer[Float32, MutAnyOrigin]):
+    def kernel[
+        output_origin: MutOrigin
+    ](output: MutPointer[Float32, output_origin]):
         # CHECK: %2 = load float, ptr addrspace(3) @extern_ptr_syml, align 4
         # CHECK: %3 = load float, ptr addrspace(3) getelementptr inbounds nuw (i8, ptr addrspace(3) @extern_ptr_syml_0, i{{[0-9]+}}  4), align 4
         # CHECK: fadd contract float %2, %3
@@ -80,7 +96,7 @@ def test_dynamic_shared_mem():
         ]()
         output[] = dynamic_sram_ptr_1[0] + dynamic_sram_ptr_2[1]
 
-    print(_compile_code[kernel, emission_kind="llvm"]())
+    print(_compile_code[kernel[MutUntrackedOrigin], emission_kind="llvm"]())
 
 
 def main():

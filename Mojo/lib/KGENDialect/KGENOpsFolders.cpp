@@ -11,7 +11,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/Interpreter/InterpreterState.h"
 #include "Mojo/Interpreter/ParametricInterpreterState.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -55,8 +54,10 @@ ErrorTreeOrSuccess
 ParamApplyOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
   auto ops = state.getReboundAttribute(getOperandsAttr());
-  auto callee = state.getReboundAttribute(getCalleeAttr());
-  auto calleeAttr = cast<SymbolConstantAttr>(callee);
+  auto callee =
+      FuncSymbolGenerator::dynCast(state.getReboundAttribute(getCalleeAttr()));
+  if (!callee || !callee.isFullyBound())
+    return ErrorTree(getLoc(), "cannot find callee");
 
   auto operandsAttr = cast<ParameterExprArrayAttr>(ops);
   SmallVector<Attribute> arguments(operandsAttr.size());
@@ -64,7 +65,7 @@ ParamApplyOp::parametric_interpret(ArrayRef<Attribute> operands,
     arguments[idx] = attr;
 
   ErrorTreeOr<TypedAttr> result = state.interpretGenerator(
-      calleeAttr, calleeAttr.getParamValues(), arguments, getLoc());
+      callee, callee.getParamValues(), arguments, getLoc());
 
   if (result.isError())
     return result.takeError();
@@ -305,290 +306,6 @@ ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
 
   return success();
 }
-
-//===----------------------------------------------------------------------===//
-// ParamForOp
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess ParamForOp::interpret(ArrayRef<Attribute> operands,
-                                         InterpreterState &state) {
-  llvm_unreachable("kgen.param.for interpret undefined");
-}
-
-ErrorTreeOrSuccess
-ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                 ParametricInterpreterState &state) {
-  SmallVector<Type> resultTypes;
-  Attribute hasNext = state.getReboundAttribute(getHasNext());
-  Attribute getNext = state.getReboundAttribute(getGetNextIter());
-  for (Type type : getResultTypes()) {
-    resultTypes.push_back(state.getReboundType(type));
-  }
-
-  auto hasNextCall = cast<SymbolConstantAttr>(hasNext);
-  auto iter = state.currOpSideEffectState().find(this->getOperation());
-  bool firstIteration =
-      (iter == state.currOpSideEffectState().end() || !iter->second.iterator);
-
-  // Can probably cache this for each iteration.
-  SmallVector<TypedAttr> paramValues;
-  for (auto pv : hasNextCall.getParamValues()) {
-    paramValues.push_back(state.getReboundAttribute(pv));
-  }
-
-  ErrorOr<Type> hasNextTypeResult =
-      state.lookupFuncTypeGenerator(hasNextCall.getSymbol());
-  if (hasNextTypeResult.isError()) {
-    return ErrorTree(getLoc(), hasNextTypeResult.takeError());
-  }
-
-  FuncType hasNextType =
-      cast<FuncTypeGeneratorType>(*hasNextTypeResult).getBody();
-
-  // Push an empty slot to paramValues count to mark this is the boundary
-  // of a ParamFor so that we know how much to pop once hitting
-  // kgen.param.for.break or kgen.param.for.continue
-  // state.pushParamValues({}, false, this->getOperation());
-  Attribute initial = state.getReboundAttribute(getInitial());
-  TypedAttr iterator =
-      cast<TypedAttr>(firstIteration ? initial : iter->second.iterator);
-
-  TypedAttr hasNextInput = iterator;
-  if (hasAddress(hasNextType.getArgConvention(0)))
-    hasNextInput = StoreToMemAttr::get(iterator, hasNextType.getArguments()[0]);
-
-  ErrorTreeOr<TypedAttr> hasNextResult =
-      state.interpretGenerator(hasNextCall, paramValues, iterator, getLoc());
-  if (hasNextResult.isError()) {
-    return hasNextResult.takeError();
-  }
-
-  if (!cast<BoolAttr>(*hasNextResult).getValue()) {
-    // Go to else region
-    ArrayRef<Attribute> arguments =
-        firstIteration ? operands : iter->second.operands;
-    state.currOpSideEffectState().erase(this->getOperation());
-    (void)state.transferControlFlowTo(this->getOperation(), arguments);
-
-  } else {
-    state.overwriteDeclBinding(getParamDecl(), iterator);
-    iterator =
-        StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
-
-    auto getNextCall = cast<SymbolConstantAttr>(getNext);
-    paramValues.clear();
-    for (auto pv : getNextCall.getParamValues()) {
-      paramValues.push_back(state.getReboundAttribute(pv));
-    }
-
-    ErrorTreeOr<TypedAttr> getNextResult =
-        state.interpretGeneratorWithResultSlot(getNextCall, paramValues,
-                                               iterator, getLoc());
-    if (getNextResult.isError())
-      return getNextResult.takeError();
-
-    if (firstIteration) {
-      state.currOpSideEffectState()[this->getOperation()] = {
-          {}, {}, *getNextResult};
-    } else {
-      // Clear up iterator in case function returns in the body of the ParamFor
-      // so that the iterator value doesn't carry over to another round of
-      // interpreting this ParamFor by mistake.
-      iter->second.iterator = {};
-      // Set nextIterator value so that kgen.param.for.continue can set the
-      // iterator value correctly for the next iteration.
-      iter->second.nextIterator = *getNextResult;
-    }
-
-    ArrayRef<Attribute> arguments =
-        firstIteration ? operands : iter->second.operands;
-
-    state.pushParamValues({iterator}, false, this->getOperation());
-    state.pushEvalFrame(getOperation(), &getBody(), {}, 5);
-    return state.transferControlFlowTo(getBody(), arguments);
-  }
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// ParamForBreakOp
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess ParamForBreakOp::interpret(ArrayRef<Attribute> operands,
-                                              InterpreterState &state) {
-  llvm_unreachable("kgen.param.for.break interpret undefined");
-}
-
-ErrorTreeOrSuccess
-ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      ParametricInterpreterState &state) {
-  auto parent = this->getOperation()->getParentOfType<ParamForOp>();
-  state.popEvalFrame();
-  state.popParamValues(false, this->getOperation(), parent);
-  return state.transferControlFlowTo(parent, operands);
-}
-
-//===----------------------------------------------------------------------===//
-// ParamForContinueOp
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess ParamForContinueOp::interpret(ArrayRef<Attribute> operands,
-                                                 InterpreterState &state) {
-  llvm_unreachable("kgen.param.for.continue interpret undefined");
-}
-
-ErrorTreeOrSuccess
-ParamForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                         ParametricInterpreterState &state) {
-  if (auto parent = this->getOperation()->getParentOfType<KGEN::ParamForOp>()) {
-    state.popEvalFrame();
-    state.popParamValues(false, this->getOperation(), parent);
-    (void)state.transferControlFlowToParent(parent, operands);
-    auto iter = state.currOpSideEffectState().find(parent.getOperation());
-    assert(iter != state.currOpSideEffectState().end() &&
-           "kgen.param.for.continue has broken state");
-    iter->second.operands = SmallVector<Attribute>(operands);
-    iter->second.iterator = iter->second.nextIterator;
-    return success();
-  }
-  return ErrorTree(getLoc(), "INTERNAL ERROR: cannot find parent ParamForOp");
-}
-
-//===----------------------------------------------------------------------===//
-// ParamIfOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
-  Block &ifBranch = op->getRegion(0).front();
-  Block &elseBranch = op->getRegion(1).front();
-  Operation *ifTerm = ifBranch.getTerminator();
-  Operation *elseTerm = elseBranch.getTerminator();
-
-  // Simple patterns to handle the case of branches containing just terminator
-  // ops.
-  if (ifTerm == &ifBranch.front() && elseTerm == &elseBranch.front() &&
-      op->getNumResults() == 0) {
-    // If both sides are yielding, we can delete the op.
-    if (isa<ParamYieldOp>(ifTerm) && isa<ParamYieldOp>(elseTerm)) {
-      b.eraseOp(op);
-      return success();
-    }
-
-    // If one branch yields and another breaks we can delete the op if the op is
-    // immediately preceding another break. The terminators can't have any
-    // returns.
-    if (ifTerm->getNumOperands() == 0 && elseTerm->getNumOperands() == 0 &&
-        isa<ParamYieldOp, HLCF::BreakOp>(ifTerm) &&
-        isa<ParamYieldOp, HLCF::BreakOp>(elseTerm) &&
-        isa<HLCF::BreakOp>(op->getNextNode())) {
-      b.eraseOp(op);
-      return success();
-    }
-  }
-
-  auto condAttr = sugarDynCast<SIMDAttr>(op.getCond());
-  if (!condAttr)
-    return b.notifyMatchFailure(op.getLoc(), "condition is not a constant");
-  bool condValue = condAttr.getAsBool();
-
-  // We can't fold away the op entirely, because it defines a parameter scope
-  // and this could create param decl conflicts. Instead, purge the dead region
-  // and insert a `kgen.unreachable`.
-  Block &deadBlock = op->getRegion(condValue).front();
-
-  // Don't match again if the dead block is already purged.
-  if (isa<UnreachableOp>(deadBlock.front()))
-    return b.notifyMatchFailure(op.getLoc(), "dead block already purged");
-
-  // Hoist all the non parameter defining ops out of the live region.
-  Block &liveBlock = op->getRegion(!condValue).front();
-  while (!liveBlock.front().hasTrait<OpTrait::IsTerminator>()) {
-    // Stop if we hit an operation defining a parameter. We don't hoist these as
-    // the parameter regions could conflict.
-    if (auto paramOp = dyn_cast<ParamOpInterface>(liveBlock.front())) {
-      bool hasParam = false;
-      paramOp.walkDeclarations([&](ParamDeclAttr attr) { hasParam = true; });
-      if (hasParam)
-        break;
-    }
-
-    // Otherwise, hoist the operation above the 'if'.
-    b.moveOpBefore(&liveBlock.front(), op);
-  }
-
-  // If we got down to a terminator that we can handle, eliminate the 'if'.
-  Operation &liveFront = liveBlock.front();
-  // If the live block is now trivial, we can remove the whole
-  // operation. Replace the results with the operands to the yield.
-  if (auto yield = dyn_cast<ParamYieldOp>(liveFront)) {
-    b.replaceOp(op, yield.getOperands());
-    return success();
-  }
-
-  // If we are ending control flow we can hoist it out but we have to delete
-  // all following ops to retain legality.
-  if (isa<KGEN::UnreachableOp, HLCF::BreakOp, HLCF::ContinueOp>(liveFront)) {
-    Block *block = op->getBlock();
-    // Delete things bottom-up so we delete uses before defs.
-    while (&block->back() != op)
-      b.eraseOp(&block->back());
-    // Move the terminator out of the 'if' and remove the 'if'.
-    b.moveOpBefore(&liveFront, op);
-    b.eraseOp(op);
-    return success();
-  }
-
-  // Otherwise, we have a parameter defining op (which we need the scope for)
-  // or control flow we don't know about.
-  for (Operation &subOp : llvm::make_early_inc_range(llvm::reverse(deadBlock)))
-    b.eraseOp(&subOp);
-  b.setInsertionPointToStart(&deadBlock);
-  UnreachableOp::create(b, op.getLoc());
-  return success();
-}
-
-ErrorTreeOrSuccess ParamIfOp::interpret(ArrayRef<Attribute> operands,
-                                        InterpreterState &state) {
-  llvm_unreachable("kgen.param.if interpret undefined");
-}
-
-ErrorTreeOrSuccess
-ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                ParametricInterpreterState &state) {
-  Attribute cond = state.getReboundAttribute(getCond());
-  unsigned regionId = 2;
-  if (auto result = sugarDynCast<SIMDAttr>(cond)) {
-    regionId = result.getAsBool() ? 0 : 1;
-  }
-
-  if (regionId < 2) {
-    Region &target = getRegion(regionId);
-    state.pushParamValues({}, false);
-    state.pushEvalFrame(getOperation(), &target, {}, 6);
-    return state.transferControlFlowTo(target, {});
-  }
-
-  return ErrorTree(getLoc(), "wrong param if condition");
-}
-
-//===----------------------------------------------------------------------===//
-// ParamYieldOp
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess ParamYieldOp::interpret(ArrayRef<Attribute> operands,
-                                           InterpreterState &state) {
-  llvm_unreachable("kgen.param.yield interpret undefined");
-}
-
-ErrorTreeOrSuccess
-ParamYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                   ParametricInterpreterState &state) {
-  state.popEvalFrame();
-  state.popParamValues(false, this->getOperation());
-  return state.transferControlFlowTo((*this)->getParentOp(), operands);
-}
-
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
@@ -609,9 +326,9 @@ ErrorTreeOrSuccess
 CallOp::parametric_interpret(ArrayRef<Attribute> operands,
                              ParametricInterpreterState &state) {
   auto callee =
-      dyn_cast<SymbolConstantAttr>(state.getReboundAttribute(getCallee()));
+      FuncSymbolGenerator::dynCast(state.getReboundAttribute(getCallee()));
 
-  if (!callee)
+  if (!callee || !callee.isFullyBound())
     return ErrorTree(getLoc(), "cannot find callee");
 
   auto bodyOr = state.lookupParametricFunctionBody(callee.getSymbol());
@@ -637,8 +354,8 @@ CallOp::parametric_interpret(ArrayRef<Attribute> operands,
 LogicalResult CallParamOp::canonicalize(CallParamOp op,
                                         PatternRewriter &rewriter) {
   // If the condition is a known symbol, then replace this with a kgen.call.
-  auto callee = dyn_cast<SymbolConstantAttr>(op.getCallee());
-  if (!callee)
+  auto callee = FuncSymbolGenerator::dynCast(op.getCallee());
+  if (!callee || !callee.getType().isFullyBound())
     return failure();
 
   rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
@@ -655,8 +372,8 @@ ErrorTreeOrSuccess
 CallParamOp::parametric_interpret(ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
   auto callee =
-      dyn_cast<SymbolConstantAttr>(state.getReboundAttribute(getCallee()));
-  if (!callee)
+      FuncSymbolGenerator::dynCast(state.getReboundAttribute(getCallee()));
+  if (!callee || !callee.isFullyBound())
     return ErrorTree(getLoc(), "cannot find callee");
 
   auto bodyOr = state.lookupParametricFunctionBody(callee.getSymbol());
@@ -681,22 +398,35 @@ CallParamOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
                                            PatternRewriter &b) {
-  auto create = op.getCallee().getDefiningOp<CreateClosureOp>();
+  auto create = op.getCallee().getDefiningOp<CreateFuncPtrOp>();
   if (!create)
     return b.notifyMatchFailure(op.getLoc(), "callee op is not create closure");
   // Replace this with a direct call.
-  SmallVector<Value> args = llvm::to_vector(create.getCaptures());
-  llvm::append_range(args, op.getArguments());
   b.replaceOpWithNewOp<CallParamOp>(op, op.getResultTypes(), create.getCallee(),
-                                    args);
+                                    op.getArguments());
   return success();
+}
+
+/// Returns the callable reference held by a function pointer value, looking
+/// through a fully bound function symbol generator.
+static CallableSymbolAttrInterface getCallableSymbol(Attribute value) {
+  if (auto callable = dyn_cast_if_present<CallableSymbolAttrInterface>(value))
+    return callable;
+
+  // TODO: we won't be needing this function after fully migration (hopefully),
+  // the call-like ops should all take FuncType-d callee, and we will see a
+  // plain FuncSymbolAttr that implements `CallableSymbolAttrInterface`.
+  auto generator = FuncSymbolGenerator::dynCast(value);
+  if (generator && generator.isFullyBound())
+    return generator.getInstantiatedFuncSymbol();
+  return {};
 }
 
 /// CallIndirectOp cannot conform to CallOpInterface, but is very similar since
 /// we know the callee at elaboration time.
 ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
                                              InterpreterState &state) {
-  auto callable = dyn_cast<CallableSymbolAttrInterface>(operands[0]);
+  auto callable = getCallableSymbol(operands[0]);
   if (!callable)
     return ErrorTree(getLoc(), "couldn't resolve kgen.call_indirect callee");
 
@@ -713,7 +443,7 @@ ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CallIndirectOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
-  auto callable = dyn_cast<CallableSymbolAttrInterface>(operands[0]);
+  auto callable = getCallableSymbol(operands[0]);
   if (!callable)
     return ErrorTree(getLoc(), "couldn't resolve kgen.call_indirect callee");
 
@@ -733,25 +463,17 @@ CallIndirectOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// CreateClosureOp
+// CreateFuncPtrOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess CreateClosureOp::interpret(ArrayRef<Attribute> operands,
+ErrorTreeOrSuccess CreateFuncPtrOp::interpret(ArrayRef<Attribute> operands,
                                               InterpreterState &state) {
-  // We have no representation for closing over runtime values.
-  if (!operands.empty())
-    return ErrorTree(getLoc(), "TODO: cannot form a closure at compile time");
-
   return state.mapResults(getCallee());
 }
 
 ErrorTreeOrSuccess
-CreateClosureOp::parametric_interpret(ArrayRef<Attribute> operands,
+CreateFuncPtrOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
-  // We have no representation for closing over runtime values.
-  if (!operands.empty())
-    return ErrorTree(getLoc(), "TODO: cannot form a closure at compile time");
-
   return state.mapResults(state.getReboundAttribute(getCallee()));
 }
 
@@ -760,12 +482,12 @@ CreateClosureOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 /// Compute cost of the given function.
-static ErrorTreeOrSuccess computeCost(SymbolConstantAttr func, Location loc,
+static ErrorTreeOrSuccess computeCost(SymbolRefAttr func, Location loc,
                                       InterpreterState &state, int64_t &loads,
                                       int64_t &stores,
                                       MutableArrayRef<int64_t> compute,
                                       size_t depth) {
-  ErrorOr<Region *> body = state.lookupFunctionBody(func.getSymbol());
+  ErrorOr<Region *> body = state.lookupFunctionBody(func);
 
   if (body.isError())
     return ErrorTree(loc, body.takeError());
@@ -786,8 +508,8 @@ static ErrorTreeOrSuccess computeCost(SymbolConstantAttr func, Location loc,
     constexpr size_t maxDepth = 2;
     if (auto call = dyn_cast<CallOp>(op)) {
       if (depth < maxDepth) {
-        auto result = computeCost(call.getCallee(), call.getLoc(), state, loads,
-                                  stores, compute, depth + 1);
+        auto result = computeCost(call.getCalleeSymbol(), call.getLoc(), state,
+                                  loads, stores, compute, depth + 1);
         if (result.isError()) {
           walkOutcome = result.takeError();
           return WalkResult::interrupt();
@@ -825,12 +547,12 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
                                        InterpreterState &state) {
   int64_t loads = 0, stores = 0;
   std::array<int64_t, getMaxEnumValForComputeKind() + 1> compute{};
-  auto callee = dyn_cast<SymbolConstantAttr>(getCallee());
+  auto callee = FuncSymbolGenerator::dynCast(getCallee());
   if (!callee)
     return ErrorTree(getLoc(), "callee is not concrete");
 
-  ErrorTreeOrSuccess result =
-      computeCost(callee, getLoc(), state, loads, stores, compute, /*depth=*/0);
+  ErrorTreeOrSuccess result = computeCost(callee.getSymbol(), getLoc(), state,
+                                          loads, stores, compute, /*depth=*/0);
   if (result.isError())
     return result;
 
@@ -855,13 +577,13 @@ CostOfOp::parametric_interpret(ArrayRef<Attribute> operands,
   int64_t loads = 0, stores = 0;
   std::array<int64_t, getMaxEnumValForComputeKind() + 1> compute{};
   auto callee =
-      dyn_cast<SymbolConstantAttr>(state.getReboundAttribute(getCallee()));
+      FuncSymbolGenerator::dynCast(state.getReboundAttribute(getCallee()));
 
   if (!callee)
     return ErrorTree(getLoc(), "callee is not found");
 
-  ErrorTreeOrSuccess result =
-      computeCost(callee, getLoc(), state, loads, stores, compute, /*depth=*/0);
+  ErrorTreeOrSuccess result = computeCost(callee.getSymbol(), getLoc(), state,
+                                          loads, stores, compute, /*depth=*/0);
   if (result.isError())
     return result;
 
@@ -997,21 +719,6 @@ SourceLocOp::parametric_interpret(ArrayRef<Attribute> operands,
   (void)sourceLocOpHelper(inlineCountIntAttr.getInt(), getContext(), getLoc(),
                           &state, results);
   return state.mapResults(results);
-}
-
-//===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
-                                       InterpreterState &state) {
-  return state.returnFromFunction(operands);
-}
-
-ErrorTreeOrSuccess
-ReturnOp::parametric_interpret(ArrayRef<Attribute> operands,
-                               ParametricInterpreterState &state) {
-  return state.returnFromFunction(operands);
 }
 
 //===----------------------------------------------------------------------===//

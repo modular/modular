@@ -30,6 +30,7 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
+from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.pipelines.context import AudioContext, PixelContext, TextContext
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
@@ -61,23 +62,29 @@ from .arch_lookup import (
     SupportedArchitecture,
 )
 
-# PipelineModelType and SupportedArchitecture are re-exported here so existing
-# import paths (`from max.pipelines.lib.registry import SupportedArchitecture`)
-# keep working after their move to the arch_lookup leaf module.
+# The public arch_lookup names reach `max.pipelines.lib` through here rather
+# than directly
 from .arch_lookup import PipelineModelType as PipelineModelType
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
+from .pipeline_variants.spec_decode_pipeline_model import (
+    spec_decode_architecture,
+)
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .reasoning import get_parser_cls
 from .tokenizer import TextTokenizer
+from .weight_transform import WeightTransform
 
 logger = logging.getLogger("max.pipelines")
 
 
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
+"""A :class:`Pipeline` with its input and output types erased, used where
+the registry handles pipelines of any variant.
+"""
 
 
 @dataclass(frozen=True)
@@ -99,6 +106,25 @@ class RetrievedPipeline:
     pipeline was sized against."""
 
 
+def _weight_adapters(
+    arch: SupportedArchitecture, huggingface_config: PretrainedConfig
+) -> dict[WeightsFormat, WeightsAdapter]:
+    """Returns the adapters a pipeline loads ``arch``'s checkpoint through.
+
+    Raises:
+        ValueError: If ``arch`` sets ``use_weight_rules`` without
+            ``weight_rules``.
+    """
+    if not arch.use_weight_rules:
+        return arch.weight_adapters
+    if arch.weight_rules is None:
+        raise ValueError(
+            f"{arch.name} sets use_weight_rules but has no weight_rules"
+        )
+    transform = WeightTransform(arch.weight_rules(huggingface_config))
+    return {arch.default_weights_format: transform}
+
+
 def get_pipeline_for_task(
     task: PipelineTask, pipeline_config: PipelineConfig
 ) -> type[
@@ -111,7 +137,7 @@ def get_pipeline_for_task(
     """Returns the pipeline class for the given task and config.
 
     Args:
-        task: The pipeline task (e.g. text generation, embeddings).
+        task: The pipeline task (such as text generation, embeddings).
         pipeline_config: Pipeline configuration (may select speculative path).
 
     Returns:
@@ -125,7 +151,7 @@ def get_pipeline_for_task(
         if (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()
-            or pipeline_config.speculative.is_dflash()
+            or pipeline_config.speculative.is_block_draft()
         ):
             return OverlapTextGenerationPipeline[TextContext]
         else:
@@ -460,11 +486,11 @@ class PipelineRegistry:
 
         Args:
             architecture_name: The architecture class name to look up
-                (e.g. ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
-            prefer_module_v3: Whether to use the eager API architecture variant.
+                (such as ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
+            prefer_module_v3: Whether to use the ModuleV3 architecture variant.
                 When ``False`` (default), uses the standard graph API architecture name.
                 When ``True``, appends the ``_ModuleV3`` suffix to look up the
-                eager API architecture.
+                ModuleV3 architecture.
             task: Optional task to disambiguate when multiple architectures
                 share the same name.
 
@@ -473,6 +499,36 @@ class PipelineRegistry:
         """
         return self._arch_lookup.find(
             architecture_name, prefer_module_v3=prefer_module_v3, task=task
+        )
+
+    def architecture_for_config(
+        self,
+        pipeline_config: PipelineConfig,
+        task: PipelineTask | None = None,
+    ) -> SupportedArchitecture | None:
+        """Retrieves the architecture a resolved config actually runs."""
+        name = pipeline_config.models.main_architecture_name
+        arch = self.retrieve_architecture(
+            architecture_name=name,
+            prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+            task=task,
+        )
+        if arch is None or not pipeline_config.speculative:
+            return arch
+        draft = pipeline_config.models.get("draft")
+        draft_archs = (
+            draft.huggingface_config.architectures
+            if draft is not None
+            else None
+        )
+        return (
+            spec_decode_architecture(
+                name,
+                pipeline_config.speculative.speculative_method,
+                draft_archs[0] if draft_archs else None,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+            )
+            or arch
         )
 
     def get_active_huggingface_config(
@@ -577,15 +633,16 @@ class PipelineRegistry:
         if override_architecture:
             arch = self._resolve_architecture(override_architecture, task)
         else:
-            arch = self.retrieve_architecture(
-                architecture_name=pipeline_config.models.main_architecture_name,
-                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-                task=task,
-            )
+            arch = self.architecture_for_config(pipeline_config, task=task)
 
         if arch is None:
             raise ValueError(
                 f"No architecture found for {pipeline_config.models.main_architecture_name}"
+            )
+        if arch.pipeline_model is None:
+            raise ValueError(
+                f"{arch.name} is a draft architecture that only runs beside a"
+                " target model."
             )
 
         # Calculate Max Length
@@ -672,16 +729,17 @@ class PipelineRegistry:
         if override_architecture:
             arch = self._resolve_architecture(override_architecture, task)
         else:
-            arch = self.retrieve_architecture(
-                architecture_name=pipeline_config.models.main_architecture_name,
-                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-                task=task,
-            )
+            arch = self.architecture_for_config(pipeline_config, task=task)
 
         # Architecture should not be None here, as the engine is MAX.
         if arch is None:
             raise ValueError(
                 f"No architecture found for {pipeline_config.models.main_architecture_name}"
+            )
+        if arch.pipeline_model is None:
+            raise ValueError(
+                f"{arch.name} is a draft architecture that only runs beside a"
+                " target model."
             )
 
         # For speculative decoding, pre-resolve the draft architecture for
@@ -925,7 +983,7 @@ class PipelineRegistry:
         factory_kwargs: dict[str, Any] = {
             "pipeline_config": pipeline_config,
             "pipeline_model": arch.pipeline_model,
-            "weight_adapters": arch.weight_adapters,
+            "weight_adapters": _weight_adapters(arch, huggingface_config),
             "tokenizer": typed_tokenizer,
             "memory_plan": memory_plan,
         }
@@ -976,11 +1034,7 @@ class PipelineRegistry:
         if override_architecture:
             arch = self._resolve_architecture(override_architecture, task)
         else:
-            arch = self.retrieve_architecture(
-                architecture_name=pipeline_config.models.main_architecture_name,
-                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-                task=task,
-            )
+            arch = self.architecture_for_config(pipeline_config, task=task)
 
         if arch:
             return arch.context_type
@@ -1043,7 +1097,10 @@ class PipelineRegistry:
             )
         if len(matching_tasks) == 1:
             return matching_tasks[0]
-        if arch := self.architectures.get(architecture_name):
+        # The lookup may fall back to another variant, e.g. `<name>_ModuleV3`.
+        if arch := self.retrieve_architecture(architecture_name):
+            if arch.name != architecture_name:
+                return self.retrieve_pipeline_task(arch.name)
             return arch.task
         raise ValueError(
             f"Architecture '{architecture_name}' not found in registry"

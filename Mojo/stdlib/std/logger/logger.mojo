@@ -95,7 +95,7 @@ struct Level(
     comptime CRITICAL = Self(60)
     """A serious error indicating that the program itself may be unable to continue running."""
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         """Returns True if this level equals the other level.
 
@@ -172,20 +172,21 @@ struct Level(
         Args:
             writer: The writer to write to.
         """
-        if self == Self.NOTSET:
-            writer.write("NOTSET")
-        elif self == Self.TRACE:
-            writer.write("TRACE")
-        elif self == Self.DEBUG:
-            writer.write("DEBUG")
-        elif self == Self.INFO:
-            writer.write("INFO")
-        elif self == Self.WARNING:
-            writer.write("WARNING")
-        elif self == Self.ERROR:
-            writer.write("ERROR")
-        elif self == Self.CRITICAL:
-            writer.write("CRITICAL")
+        match self:
+            case .NOTSET:
+                writer.write("NOTSET")
+            case .TRACE:
+                writer.write("TRACE")
+            case .DEBUG:
+                writer.write("DEBUG")
+            case .INFO:
+                writer.write("INFO")
+            case .WARNING:
+                writer.write("WARNING")
+            case .ERROR:
+                writer.write("ERROR")
+            case .CRITICAL:
+                writer.write("CRITICAL")
 
 
 # ===-----------------------------------------------------------------------===#
@@ -200,13 +201,13 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         level: The minimum severity level for messages to be logged.
     """
 
-    var _fd: FileDescriptor
+    var _fd: RawFileDescriptor
     var _prefix: String
     var _source_location: Bool
 
     def __init__(
         out self,
-        fd: FileDescriptor = std.sys.stdout,
+        fd: RawFileDescriptor = std.sys.stdout,
         *,
         prefix: String = "",
         source_location: Bool = False,
@@ -224,7 +225,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         self._prefix = prefix
         self._source_location = source_location
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _is_disabled[target_level: Level]() -> Bool:
         """Returns True if logging at the target level is disabled.
@@ -240,7 +241,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             return True
         return Self.level > target_level
 
-    @always_inline
+    @inline(.always)
     def trace[
         *Ts: Writable
     ](
@@ -272,7 +273,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 location=location.or_else(call_location()),
             )
 
-    @always_inline
+    @inline(.always)
     def debug[
         *Ts: Writable
     ](
@@ -304,7 +305,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 location=location.or_else(call_location()),
             )
 
-    @always_inline
+    @inline(.always)
     def info[
         *Ts: Writable
     ](
@@ -336,7 +337,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 location=location.or_else(call_location()),
             )
 
-    @always_inline
+    @inline(.always)
     def warning[
         *Ts: Writable
     ](
@@ -368,7 +369,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 location=location.or_else(call_location()),
             )
 
-    @always_inline
+    @inline(.always)
     def error[
         *Ts: Writable
     ](
@@ -400,7 +401,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 location=location.or_else(call_location()),
             )
 
-    @always_inline
+    @inline(.always)
     def critical[
         *Ts: Writable
     ](

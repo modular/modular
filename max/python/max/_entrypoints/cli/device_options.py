@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-"""Custom Click Options used in pipelines"""
+"""Click parameter type for ``--devices``."""
 
 from __future__ import annotations
 

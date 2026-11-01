@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.io.io import _printf
+
 from max.gpu.host import DeviceContext
 
 
@@ -105,6 +107,20 @@ def test_metal_print_multiple_strings() raises:
     # CHECK: c = 3
 
 
+# CHECK-LABEL: test_metal_printf
+def test_metal_printf() raises:
+    print("test_metal_printf")
+
+    def do_printf():
+        _printf["printf from Metal GPU\n"]()
+
+    with DeviceContext() as ctx:
+        ctx.enqueue_function[do_printf](grid_dim=1, block_dim=1)
+        ctx.synchronize()
+
+    # CHECK: printf from Metal GPU
+
+
 def main() raises:
     test_metal_print_basic()
     test_metal_print_int()
@@ -112,3 +128,4 @@ def main() raises:
     test_metal_print_empty()
     test_metal_print_string_slice()
     test_metal_print_multiple_strings()
+    test_metal_printf()

@@ -25,6 +25,10 @@
 
 namespace M::KGEN::LIT {
 
+class AliasASTDecl;
+class DefASTDecl;
+class StructASTDecl;
+
 /// This struct bundles up analysis of the value members of a struct.
 class ValueInfo {
 public:
@@ -46,23 +50,24 @@ public:
   /// are added to the body of the function but no ops are added to the body.
   /// `suffix` is appended to the mangled function name. This adds the
   /// declaration to `parent`.
-  std::pair<FnOp, ASTDecl *> synthesizeFunction(
+  std::pair<FnOp, DefASTDecl *> synthesizeFunction(
       ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
       PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
       ImplicitLocOpBuilder &builder, FnEffects fnEffects = FnEffects(),
       StringRef suffix = "", bool synthetic = true,
-      InlineLevel inlineLevel = InlineLevel::Automatic);
+      InlineLevel inlineLevel = InlineLevel::Automatic,
+      bool isNestedOriginsReadOnly = false);
 };
 
 class StructEmitter : public FunctionEmitter {
 public:
   // The struct we're working on.
-  ASTDecl &structDecl;
+  StructASTDecl &structDecl;
   StructDeclOp structDeclOp;
 
-  StructEmitter(ASTDecl &structDecl);
+  StructEmitter(StructASTDecl &structDecl);
 
   /// Generate empty stubs for the destructor, copy constructor, and move
   /// constructor on the declOp if they are eligible and do not already exist.
@@ -83,6 +88,12 @@ public:
   /// where-clause so that overload resolution rejects calls when the
   /// conditional conformance cannot be proven.
   FnOp synthesizeEmptyDtor(ConstraintAttr conformanceConstraint = {});
+  /// The two halves of synthesizeEmptyDtor, for a caller that must create the
+  /// destructor before the struct's field types are resolved.
+  DefASTDecl *
+  synthesizeEmptyDtorStub(ConstraintAttr conformanceConstraint = {});
+  void diagnoseNonDeinitableFields(DefASTDecl &dtorDecl,
+                                   ConstraintAttr conformanceConstraint = {});
   /// Add an empty move/copy ctor stub for this struct, to be filled in later.
   /// When \p conformanceConstraint is non-null, it is attached as a
   /// where-clause so that overload resolution rejects calls when the
@@ -91,12 +102,12 @@ public:
                                      ConstraintAttr conformanceConstraint = {});
   /// Populate the function with a field by field copy. This will fail if the
   /// given function does not have the expected signature.
-  LogicalResult populateMoveCopy(ASTDecl &fnDecl, bool isMove);
+  LogicalResult populateMoveCopy(DefASTDecl &fnDecl, bool isMove);
 
   /// Populate a trait function with its default implementation. Returns
   /// failure() if the meta-type to trait conversion fails; in this case the
   /// provided fnDecl is marked erroneous. Otherwise returns success().
-  LogicalResult populateDefaultedTraitFunction(ASTDecl &fnDecl);
+  LogicalResult populateDefaultedTraitFunction(DefASTDecl &fnDecl);
 
   /// Add a attribute initializer method for this struct with a body.
   FnOp synthesizeFieldwiseInit();
@@ -115,7 +126,7 @@ public:
 
   /// Create a FnOp within the scope of the given Struct. The body is not
   /// populated. `suffix` is appended to the mangled function name.
-  std::pair<FnOp, ASTDecl *> synthesizeMethodInStruct(
+  std::pair<FnOp, DefASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> params,
       PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
@@ -123,7 +134,7 @@ public:
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "",
       bool synthetic = true);
-  std::pair<FnOp, ASTDecl *> synthesizeMethodInStruct(
+  std::pair<FnOp, DefASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
       Type resultType,
@@ -132,7 +143,31 @@ public:
       bool synthetic = true);
 
   /// Synthesize an unresolved alias into the struct with the specified name .
-  ASTDecl *synthesizeUnresolvedAlias(StringRef name);
+  AliasASTDecl *synthesizeUnresolvedAlias(StringRef name);
+
+  /// Synthesize the members of an `__enum` from the `lit.enum.case` ops in its
+  /// body: the `EnumLike` case lists, the storage field, a `comptime` member
+  /// per payloadless case, and a static method for each case with a payload.
+  LogicalResult synthesizeEnumMembers();
+  /// Synthesize the `EnumLike` aliases `_enum_case_names` and
+  /// `_enum_case_types` with the given values, and the enum's only field,
+  /// `__enum_storage`, of type `__EnumStorage[caseTypes]`. All three are
+  /// registered as resolved declarations and hidden from the docs.
+  void synthesizeEnumCaseListsAndStorage(StructDeclOp enumStorageDeclOp,
+                                         ParamListAttr caseNames,
+                                         ParamListAttr caseTypes);
+  /// Synthesize the static method that constructs case `caseName` of an
+  /// `__enum` from its `payload` types, documented by the case's `docString`.
+  LogicalResult synthesizeEnumCaseConstructor(StringRef caseName,
+                                              ArrayRef<Type> payload,
+                                              SMLoc caseLoc,
+                                              DocStringAttr docString);
+  /// Populate the body of a case constructor synthesized by
+  /// `synthesizeEnumCaseConstructor`.
+  LogicalResult populateEnumCaseConstructor(DefASTDecl &fnDecl);
+  /// Compute the value of `aliasDecl`, the `comptime` member that
+  /// `synthesizeEnumMembers` declared for a case without a payload.
+  LogicalResult resolveEnumCaseAlias(AliasASTDecl &aliasDecl);
   TypedAttr populateSpecialFnIsTrivial(SpecialFunctionKind kind);
 
   /// Like synthesizeMethodInStruct but accepts higher-level signature
@@ -143,11 +178,15 @@ public:
   /// resolution rejects calls when the conditional conformance cannot be
   /// proven.
   FnOp synthesizeDefaultTraitMethodWrapper(
-      ASTDecl &existingDecl, StringRef name,
+      DefASTDecl &existingDecl, StringRef name,
       FnTypeGeneratorType wrapperSignature, FnOp traitFn, ASTDecl *traitFnDecl,
       ImplicitLocOpBuilder &builder, StringRef suffix = "",
       ConstraintAttr conformanceConstraint = {});
 };
+
+/// Look up `name` in the standard library module that implements enums,
+/// emitting an error if it is missing.
+ASTDecl *lookupEnumSupportDecl(SharedState &shared, StringRef name, SMLoc loc);
 
 } // namespace M::KGEN::LIT
 

@@ -17,7 +17,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.memory import CacheOperation
 from max.gpu.sync import s_waitcnt
 from max.gpu.intrinsics import AMDBufferResource
-from std.memory import AddressSpace, unsafe_stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from structured_kernels.amd_tile_io import _load_from_lds, _load_to_lds
@@ -26,9 +26,11 @@ from structured_kernels.amd_tile_io import _load_from_lds, _load_to_lds
 def _copy_through_lds[
     dtype: DType,
     width: Int,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], src_origin],
+    dst: MutPointer[Scalar[dtype], dst_origin],
     valid_elements: Int32,
 ):
     var smem = unsafe_stack_allocation[
@@ -46,7 +48,7 @@ def _copy_through_lds[
         smem,
     )
     s_waitcnt[vmcnt=0]()
-    var values = _load_from_lds[width=width](smem + offset)
+    var values = _load_from_lds[width=width](smem.unsafe_offset(offset))
     comptime for i in range(width):
         dst[offset + i] = values[i]
 
@@ -56,7 +58,8 @@ def _value[dtype: DType](index: Int) -> Scalar[dtype]:
 
 
 def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
-    comptime count = WARP_SIZE * width
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime count = warp_size * width
     var host_in = ctx.enqueue_create_host_buffer[dtype](count)
     var host_out = ctx.enqueue_create_host_buffer[dtype](count)
     for i in range(count):
@@ -66,12 +69,14 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
     var dev_out = ctx.enqueue_create_buffer[dtype](count)
     ctx.enqueue_copy(dev_in, host_in)
 
-    ctx.enqueue_function[_copy_through_lds[dtype, width]](
+    ctx.enqueue_function[
+        _copy_through_lds[dtype, width, origin_of(dev_in), origin_of(dev_out)]
+    ](
         dev_in,
         dev_out,
         Int32(count),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.enqueue_copy(host_out, dev_out)
     ctx.synchronize()
@@ -83,12 +88,14 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
 
     comptime valid_elements = count // 2
     dev_out.enqueue_fill(Scalar[dtype](7))
-    ctx.enqueue_function[_copy_through_lds[dtype, width]](
+    ctx.enqueue_function[
+        _copy_through_lds[dtype, width, origin_of(dev_in), origin_of(dev_out)]
+    ](
         dev_in,
         dev_out,
         Int32(valid_elements),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.enqueue_copy(host_out, dev_out)
     ctx.synchronize()

@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Prefill-side request scheduling."""
+
 from __future__ import annotations
 
 import logging
@@ -17,11 +20,11 @@ import os
 import queue
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.kv_cache import (
-    JengaKVCacheManager,
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManagerInterface,
@@ -46,6 +49,7 @@ from max.serve.scheduler.base import (
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
+    check_di_supports,
 )
 from max.serve.scheduler.interface import Scheduler
 from max.serve.telemetry.metrics import METRICS
@@ -56,7 +60,12 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger
+from .utils import (
+    SchedulerLogger,
+    _ScheduledBatch,
+    _trace_batch,
+    held_blocks_per_leaf,
+)
 
 logger = logging.getLogger("max.serve")
 
@@ -67,18 +76,41 @@ logger = logging.getLogger("max.serve")
 # investigation.
 _DI_LATENCY_PING_ENABLED = os.getenv("MAX_SERVE_DI_LATENCY_PING", "0") == "1"
 
-# Bracketing dispatch/completion logging around the model-execute call in
-# schedule() -- on a stall, a dispatch line with no matching completion
-# means prefill is stuck inside that one call, rather than the scheduler
-# loop not running at all. Off by default -- two extra log lines per batch
-# is unwanted steady-state overhead outside an active investigation.
-_TRACE_PREFILL_BATCH = os.getenv("MAX_SERVE_TRACE_PREFILL_BATCH", "0") == "1"
+
+def _pages_to_transfer(
+    src_blocks: Mapping[str, list[int]], dst_blocks: Mapping[str, list[int]]
+) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
+    """Pairs each leaf's pages with decode's, skipping ones decode holds.
+
+    Decode marks the pages its prefix cache already holds with ``-1``.
+    """
+    if src_blocks.keys() != dst_blocks.keys():
+        raise ValueError(
+            f"Prefill leaves {list(src_blocks)} do not match decode leaves "
+            f"{list(dst_blocks)}"
+        )
+    src_idxs: dict[str, list[int]] = {}
+    dst_idxs: dict[str, list[int]] = {}
+    for leaf_id, dst in dst_blocks.items():
+        src = src_blocks[leaf_id]
+        if len(src) != len(dst):
+            raise ValueError(
+                f"Leaf {leaf_id!r} holds {len(src)} pages on prefill but "
+                f"{len(dst)} on decode"
+            )
+        num_cached = dst.count(-1)
+        src_idxs[leaf_id] = src[num_cached:]
+        dst_idxs[leaf_id] = dst[num_cached:]
+        assert -1 not in dst_idxs[leaf_id]
+    return src_idxs, dst_idxs
 
 
 @dataclass
 class TransferDest:
+    """Where one request's KV pages are transferred."""
+
     engine_name: str
-    dst_block_ids: list[int]
+    dst_block_ids: dict[str, list[int]]
     dst_replica_idx: int
 
 
@@ -92,6 +124,8 @@ class ActiveTransfer:
 
 
 class PrefillScheduler(Scheduler):
+    """Schedules the prefill side of text generation."""
+
     def __init__(
         self,
         pipeline: Pipeline[
@@ -101,10 +135,7 @@ class PrefillScheduler(Scheduler):
         kv_cache: PagedKVCacheManagerInterface,
         dispatcher: PrefillDispatcherServer,
     ) -> None:
-        # TODO(SERVOPT-1590): remove once Jenga supports DI.
-        assert not isinstance(kv_cache, JengaKVCacheManager), (
-            "Jenga KV cache is incompatible with Disaggregated Inference"
-        )
+        check_di_supports(kv_cache)
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
         self.kv_cache = kv_cache
@@ -209,8 +240,8 @@ class PrefillScheduler(Scheduler):
         for active in self.active_transfers.values():
             if self.transfer_engine.is_complete(active.transfer):
                 self.transfer_engine.cleanup_transfer(active.transfer)
-                blocks_released = len(
-                    self.kv_cache.get_req_blocks(active.context)
+                blocks_released = held_blocks_per_leaf(
+                    self.kv_cache, active.context
                 )
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
                 self.kv_cache.release(active.context)
@@ -219,8 +250,9 @@ class PrefillScheduler(Scheduler):
                 self.pipeline.release(active.context.request_id)
                 to_be_deleted.append(active.context.request_id)
                 logger.debug(
-                    "KV transfer complete for request %s: releasing %d blocks "
-                    "back to prefill pool. Remaining in-flight transfers: %d.",
+                    "KV transfer complete for request %s: releasing blocks "
+                    "per leaf %s back to prefill pool. Remaining in-flight "
+                    "transfers: %d.",
                     active.context.request_id,
                     blocks_released,
                     len(self.active_transfers) - len(to_be_deleted),
@@ -230,9 +262,11 @@ class PrefillScheduler(Scheduler):
             del self.active_transfers[id]
 
     def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
-        """Count of active_transfers + _pending_first_token entries holding
-        blocks on this replica -- a transfer on a different replica's
-        device pool can't free blocks on this one."""
+        """Count of transfers holding blocks on this replica.
+
+        Sums ``active_transfers`` and ``_pending_first_token`` entries; a transfer on a
+        different replica's device pool can't free blocks on this one.
+        """
         return sum(
             1
             for active in self.active_transfers.values()
@@ -265,12 +299,12 @@ class PrefillScheduler(Scheduler):
         # If cancelled, release the request's blocks instead of transferring them.
         if req_id in self.outstanding_cancelled_requests:
             self.outstanding_cancelled_requests.remove(req_id)
-            blocks_held = len(self.kv_cache.get_req_blocks(context))
+            blocks_held = held_blocks_per_leaf(self.kv_cache, context)
             self.kv_cache.release(context)
             self.pipeline.release(req_id)
             logger.warning(
                 "Dropping cancelled request %s before KV transfer: released "
-                "%d blocks on replica %d.",
+                "blocks per leaf %s on replica %d.",
                 req_id,
                 blocks_held,
                 src_replica_idx,
@@ -282,18 +316,11 @@ class PrefillScheduler(Scheduler):
             transfer_dest.engine_name
         ]
 
-        # Retrieve source block ids.
         req_id = context.request_id
-        src_idxs = self.kv_cache.get_req_blocks(context)
-        dst_idxs = transfer_dest.dst_block_ids
-        assert len(src_idxs) == len(dst_idxs)
-
-        # Transfer only the blocks that are not already on decode node.
-        num_already_cached_blocks = dst_idxs.count(-1)
-        src_idxs = src_idxs[num_already_cached_blocks:]
-        dst_idxs = dst_idxs[num_already_cached_blocks:]
-        assert dst_idxs.count(-1) == 0
-
+        src_idxs, dst_idxs = _pages_to_transfer(
+            self.kv_cache.get_req_blocks_per_leaf(context),
+            transfer_dest.dst_block_ids,
+        )
         transfer_data = self.transfer_engine.initiate_send_transfer(
             remote_metadata,
             src_idxs,
@@ -307,7 +334,7 @@ class PrefillScheduler(Scheduler):
             transfer=transfer_data,
         )
         transfer_pinned = sum(
-            len(self.kv_cache.get_req_blocks(at.context))
+            self.kv_cache.num_req_blocks(at.context)
             for at in self.active_transfers.values()
         )
         block_count = self.kv_cache.block_count(src_replica_idx)
@@ -329,11 +356,11 @@ class PrefillScheduler(Scheduler):
             f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
         )
 
-        # Extract draft tokens from Eagle/MTP speculative decoding state.
-        # These let the decode node seed its first spec-decode iteration
-        # instead of starting with an empty draft cache.  When speculative
-        # decoding is active, the unified Eagle/MTP model always populates
-        # draft_tokens_to_verify during CE; error if it hasn't.
+        # Extract the draft tokens CE proposed. These let the decode node
+        # seed its first spec-decode iteration instead of starting with an
+        # empty draft cache. When speculative decoding is active, the unified
+        # target+draft graph always populates draft_tokens_to_verify during
+        # CE; error if it hasn't.
         draft_tokens: list[int] | None = None
         if (
             self.scheduler_config.num_speculative_tokens > 0
@@ -346,8 +373,8 @@ class PrefillScheduler(Scheduler):
                 raise ValueError(
                     f"Expected draft tokens on context {req_id} after CE "
                     f"with speculative decoding enabled, but none were "
-                    f"populated. Check that the unified Eagle/MTP pipeline "
-                    f"is wired in for prefill_only."
+                    f"populated. Check that the unified speculative "
+                    f"pipeline is wired in for prefill_only."
                 )
             draft_tokens = context.spec_decoding_state.draft_tokens_to_verify
 
@@ -365,7 +392,9 @@ class PrefillScheduler(Scheduler):
         )
 
     @traced
-    def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
+    def schedule(
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> _ScheduledBatch:
         """Executes the current batch of requests and sends completed requests to decode.
 
         Processes the active batch through the pipeline, handles any chunked prefill requests,
@@ -373,21 +402,12 @@ class PrefillScheduler(Scheduler):
         """
         # Execute the Batch
         assert len(inputs.batches) > 0
-        if _TRACE_PREFILL_BATCH:
-            batch_sizes = [len(batch) for batch in inputs.batches]
-            dispatch_t0 = time.monotonic()
-            logger.info(
-                "Dispatching prefill batch: %d replica(s), sizes=%s",
-                len(inputs.batches),
-                batch_sizes,
-            )
-        responses = self.pipeline.execute(inputs)
-        if _TRACE_PREFILL_BATCH:
-            logger.info(
-                "Completed prefill batch: %d replica(s), sizes=%s, took %.1fms",
-                len(inputs.batches),
-                batch_sizes,
-                (time.monotonic() - dispatch_t0) * 1000,
+        with _trace_batch("prefill", inputs):
+            execution_start = time.monotonic()
+            responses = self.pipeline.execute(inputs)
+            execution_time_s = time.monotonic() - execution_start
+            output_tokens = sum(
+                len(output.tokens) for output in responses.values()
             )
 
         self.batch_constructor.advance_requests(inputs)
@@ -430,7 +450,11 @@ class PrefillScheduler(Scheduler):
         # Remove all TG requests from the batch constructor.
         num_terminated_reqs = len(self.batch_constructor.all_tg_reqs)
         self.batch_constructor.clear_tg_reqs()
-        return num_terminated_reqs
+        return _ScheduledBatch(
+            terminated_reqs=num_terminated_reqs,
+            execution_time_s=execution_time_s,
+            output_tokens=output_tokens,
+        )
 
     @traced
     def run_iteration(self) -> SchedulerProgress:
@@ -442,7 +466,6 @@ class PrefillScheduler(Scheduler):
         Returns:
             SchedulerProgress: Indicates whether work was performed in this iteration.
         """
-
         while True:
             try:
                 request, identity = self.dispatcher.recv_request_nowait()
@@ -503,14 +526,14 @@ class PrefillScheduler(Scheduler):
                         (t0 - enqueued_at) * 1000
                     )
         with Tracer(f"_schedule({inputs})"):
-            num_terminated_reqs = self.schedule(inputs)
+            scheduled = self.schedule(inputs)
         t1 = time.monotonic()
-        batch_execution_time_s = t1 - t0
+        METRICS.scheduler_batch_step_time(
+            (t1 - t0) * 1000, batch_type=inputs.batch_type.value
+        )
 
-        # Log batch metrics. When the overlap pipeline is active, the
-        # wall-clock time measured above describes the previously enqueued
-        # batch; the pipeline reports that batch's composition and timing so
-        # telemetry is attributed to the correct batch type.
+        # Overlap reports the completed batch's composition and service time;
+        # synchronous batches use the interval measured around execute().
         is_overlap_active = bool(
             getattr(self.pipeline, "overlap_active", False)
         )
@@ -519,9 +542,14 @@ class PrefillScheduler(Scheduler):
             inputs=inputs,
             kv_cache=self.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
-            batch_execution_time_s=batch_execution_time_s,
+            batch_execution_time_s=0.0
+            if is_overlap_active
+            else scheduled.execution_time_s,
+            num_output_tokens=None
+            if is_overlap_active
+            else scheduled.output_tokens,
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
-            num_terminated_reqs=num_terminated_reqs,
+            num_terminated_reqs=scheduled.terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
             overlap_active=is_overlap_active,
             completed_batch_stats=self.pipeline.take_completed_batch_stats()
@@ -544,16 +572,9 @@ def load_prefill_scheduler(
     settings: Settings,
     memory_plan: MemoryPlan | None,
 ) -> PrefillScheduler:
-    # Validate speculative decoding configuration for prefill-only mode.
+    """Builds a prefill scheduler from the pipeline and memory plan."""
     spec_config = pipeline_config.speculative
     if spec_config is not None:
-        if not (spec_config.is_eagle() or spec_config.is_mtp()):
-            raise ValueError(
-                f"Unsupported speculative method "
-                f"'{spec_config.speculative_method}' with "
-                f"pipeline_role='prefill_only'. Only 'eagle' and 'mtp' "
-                f"are supported."
-            )
         logger.info(
             "Prefill-only mode with speculative decoding "
             f"(method={spec_config.speculative_method})."

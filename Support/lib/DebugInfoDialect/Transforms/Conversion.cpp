@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
+#include "Support/Compiler/DirectConversion.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
@@ -142,15 +143,14 @@ template class DebugInfo::DebugInfoTypeConverterBase<false>;
 //===----------------------------------------------------------------------===//
 
 namespace {
-class ConvertDebugKill : public mlir::OpConversionPattern<KillOp> {
+class ConvertDebugKill : public M::DirectOpConversionPattern<KillOp> {
 public:
   ConvertDebugKill(TypeConverter &tc, DebugInfoTypeConverter &ditc,
                    MLIRContext *ctx)
-      : OpConversionPattern(tc, ctx), ditc(ditc) {}
+      : DirectOpConversionPattern(tc, ctx), ditc(ditc) {}
 
-  LogicalResult
-  matchAndRewrite(KillOp op, KillOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(KillOp op, KillOpAdaptor adaptor,
+                                M::DirectRewriter &rewriter) const override {
     DIType diType = ditc.convertDebugType(op.getValueInfo().getType());
     if (!diType) {
       return rewriter.notifyMatchFailure(op,
@@ -170,15 +170,14 @@ private:
   DebugInfoTypeConverter &ditc;
 };
 
-class ConvertDebugValue : public mlir::OpConversionPattern<ValueOp> {
+class ConvertDebugValue : public M::DirectOpConversionPattern<ValueOp> {
 public:
   ConvertDebugValue(TypeConverter &tc, DebugInfoTypeConverter &ditc,
                     MLIRContext *ctx)
-      : OpConversionPattern(tc, ctx), ditc(ditc) {}
+      : DirectOpConversionPattern(tc, ctx), ditc(ditc) {}
 
-  LogicalResult
-  matchAndRewrite(ValueOp op, ValueOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(ValueOp op, ValueOpAdaptor adaptor,
+                                M::DirectRewriter &rewriter) const override {
     DIType diType = ditc.convertDebugType(op.getValueInfo().getType());
     if (!diType) {
       return rewriter.notifyMatchFailure(op,

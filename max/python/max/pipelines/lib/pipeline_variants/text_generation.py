@@ -18,6 +18,7 @@ import dataclasses
 import json
 import logging
 from abc import abstractmethod
+from collections.abc import Mapping, Sequence
 from os import environ
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
@@ -28,7 +29,6 @@ from max.driver import (
     CPU,
     Buffer,
     Device,
-    DevicePinnedBuffer,
     Usage,
     is_virtual_device_mode,
     load_devices,
@@ -42,7 +42,7 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.nn import ReturnLogits
+from max.nn.legacy import ReturnLogits
 from max.pipelines.context import (
     BatchLogitsProcessor,
     LogProbabilities,
@@ -56,9 +56,12 @@ from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface, load_kv_manager
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsPooledVisionMetrics,
-    SupportsVisionEncoding,
     VisionEncoderCache,
     as_vision_context_batches,
+    vision_encoding,
+)
+from max.pipelines.modeling.eager_validation import (
+    eager_usage_validator,
 )
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -70,7 +73,9 @@ from max.pipelines.modeling.types import (
 )
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
+from max.tensor.compilation import CompiledCallable
 
+from ._label_scoring import BatchLabelScorer
 from .utils import StructuredOutputHelper, update_context_and_prepare_responses
 
 if TYPE_CHECKING:
@@ -78,22 +83,69 @@ if TYPE_CHECKING:
 
 from max.pipelines.sampling import (
     FusedSamplingProcessor,
+    TopKSampler,
     apply_logits_processors,
-    token_sampler,
 )
 
+from ..graph_specs import GraphRole, GraphSpec, compile_and_init_graphs
 from ..interfaces import (
     ModelInputs,
     ModelOutputs,
     PipelineModel,
     PipelineModelWithKVCache,
 )
-from ..interfaces.generate import GenerateMixin
 from ..memory_estimation import MemoryPlan
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
+from ..weight_transform import WeightEntry
 
 logger = logging.getLogger("max.pipelines")
+
+
+def load_sampler_graphs(
+    session: InferenceSession,
+    pipeline_config: PipelineConfig,
+    device: DeviceRef,
+    vocab_size: int | None,
+    custom_extensions: Sequence[Path] = (),
+) -> dict[str, CompiledCallable[..., Any]]:
+    """Compiles the sampler, and the bitmask sampler if constraints may fire.
+
+    The bitmask sampler compiles when ``needs_bitmask_constraints`` is set.
+
+    Args:
+        session: The session that compiles and initializes the samplers.
+        pipeline_config: The pipeline's configuration.
+        device: The device the samplers run on.
+        vocab_size: The tokenizer's token count, which bounds the ids the
+            samplers produce, or ``None`` for no bound.
+        custom_extensions: Paths to custom kernel libraries the samplers use.
+
+    Returns:
+        The compiled, initialized samplers keyed by role: the
+        :attr:`GraphRole.SAMPLER` role, and the
+        :attr:`GraphRole.SAMPLER_BITMASK` role if compiled.
+    """
+    specs: dict[str, GraphSpec] = {}
+    with CompilationTimer("sampler") as sampler_timer:
+        variants = [(GraphRole.SAMPLER, False)]
+        if pipeline_config.needs_bitmask_constraints:
+            variants.insert(0, (GraphRole.SAMPLER_BITMASK, True))
+        for role, needs_bitmask in variants:
+            sampler = TopKSampler(
+                pipeline_config.sampling,
+                device=device,
+                needs_bitmask_input=needs_bitmask,
+                unpadded_vocab_size=vocab_size,
+            )
+            specs[role] = GraphSpec(
+                sampler,
+                TopKSampler.GRAPH_NAME,
+                sampler.input_types,
+                custom_extensions=custom_extensions,
+            )
+        sampler_timer.mark_build_complete()
+        return compile_and_init_graphs(session, specs)
 
 
 @dataclasses.dataclass
@@ -111,7 +163,6 @@ class TextGenerationPipelineInterface(
     Pipeline[
         TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
     ],
-    GenerateMixin[TextGenerationContextType, TextGenerationRequest],
     Generic[TextGenerationContextType],
 ):
     """Interface for text generation pipelines."""
@@ -120,10 +171,37 @@ class TextGenerationPipelineInterface(
     _devices: list[Device]
     _pipeline_model: PipelineModelWithKVCache[TextGenerationContextType]
 
+    compiled_modules: Mapping[str, CompiledCallable[..., Any]]
+    """The graphs this pipeline compiled, by role, for export: the model's,
+    then the sampler's."""
+
+    @property
+    def weight_naming(self) -> Mapping[str, Sequence[WeightEntry]]:
+        """The entries that name each of the model's graphs' weights, by role."""
+        return self._pipeline_model.weight_naming
+
     @property
     @abstractmethod
     def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache managers for this pipeline."""
+        ...
+
+    @property
+    @abstractmethod
+    def pipeline_config(self) -> PipelineConfig:
+        """Returns the pipeline configuration."""
+        ...
+
+    @property
+    @abstractmethod
+    def tokenizer(
+        self,
+    ) -> PipelineTokenizer[
+        TextGenerationContextType,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ]:
+        """Returns the tokenizer for this pipeline."""
         ...
 
 
@@ -206,6 +284,12 @@ class TextGenerationPipeline(
             export_mefs=pipeline_config.runtime.export_mefs,
         )
         self.session = session
+        self._label_scorer = BatchLabelScorer(
+            session,
+            self._devices[0],
+            pipeline_config.sampling.in_dtype,
+            self.vocab_size,
+        )
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
@@ -218,19 +302,25 @@ class TextGenerationPipeline(
             raise ValueError(
                 f"TextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
             )
-        self._pipeline_model = pipeline_model(
-            pipeline_config=self._pipeline_config,
-            session=session,
-            devices=self._devices,
-            kv_cache_config=model_config.kv_cache,
-            weights=load_weights(weight_paths),
-            adapter=weight_adapters.get(weights_format(weight_paths)),
-            return_logits=ReturnLogits.ALL
-            if self._pipeline_config.model.enable_echo
-            else ReturnLogits.LAST_TOKEN,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
+        self._request_validator = eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "execution"
         )
+        with eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "initialization"
+        ):
+            self._pipeline_model = pipeline_model(
+                pipeline_config=self._pipeline_config,
+                session=session,
+                devices=self._devices,
+                kv_cache_config=model_config.kv_cache,
+                weights=load_weights(weight_paths),
+                adapter=weight_adapters.get(weights_format(weight_paths)),
+                return_logits=ReturnLogits.ALL
+                if self._pipeline_config.model.enable_echo
+                else ReturnLogits.LAST_TOKEN,
+                max_batch_size=max_batch_size,
+                memory_plan=memory_plan,
+            )
 
         available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
@@ -242,12 +332,14 @@ class TextGenerationPipeline(
             available_cache_memory=available_cache_memory,
             is_di_enabled=pipeline_config.runtime.is_disaggregated,
             model_name=pipeline_config.model.model_name,
+            max_num_input_tokens=pipeline_config.runtime.max_num_input_tokens,
         )
 
         self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
             None
         )
-        if isinstance(self._pipeline_model, SupportsVisionEncoding):
+        self._vision_encoding = vision_encoding(self._pipeline_model)
+        if self._vision_encoding is not None:
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
                 plan=memory_plan.vision_cache_plan,
                 devices=self._devices,
@@ -261,28 +353,30 @@ class TextGenerationPipeline(
             else self._devices[0]
         )
         sampler_device_ref = DeviceRef.from_device(self._sampler_device)
+        sampler_extensions = (
+            ()
+            if self._sampler_device.is_host
+            else self._pipeline_model.sampler_custom_extensions
+        )
 
-        # Load sampler. The bitmask-aware sampler is loaded when constrained
-        # decoding could fire (see ``needs_bitmask_constraints``).
-        self._sampler_with_bitmask: Model | None = None
-        self._sampler_without_bitmask: Model | None = None
-        with_bitmask_graph = None
-        with CompilationTimer("sampler") as sampler_timer:
-            if pipeline_config.needs_bitmask_constraints:
-                with_bitmask_graph = token_sampler(
-                    pipeline_config.sampling,
-                    device=sampler_device_ref,
-                    needs_bitmask_input=True,
-                )
-            without_bitmask_graph = token_sampler(
-                pipeline_config.sampling,
-                device=sampler_device_ref,
-                needs_bitmask_input=False,
-            )
-            sampler_timer.mark_build_complete()
-            if with_bitmask_graph is not None:
-                self._sampler_with_bitmask = session.load(with_bitmask_graph)
-            self._sampler_without_bitmask = session.load(without_bitmask_graph)
+        samplers = load_sampler_graphs(
+            session,
+            pipeline_config,
+            sampler_device_ref,
+            self.vocab_size,
+            custom_extensions=sampler_extensions,
+        )
+        bitmask_sampler = samplers.get(GraphRole.SAMPLER_BITMASK)
+        self._sampler_with_bitmask: Model | None = (
+            bitmask_sampler.engine_model if bitmask_sampler else None
+        )
+        self._sampler_without_bitmask: Model | None = samplers[
+            GraphRole.SAMPLER
+        ].engine_model
+        self.compiled_modules = {
+            **self._pipeline_model.compiled_modules,
+            **samplers,
+        }
 
         # Pre-allocate pinned buffer for D2H token copies only when the
         # bitmask path is wired in. This buffer is used for async token
@@ -295,10 +389,11 @@ class TextGenerationPipeline(
             and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
-            self._pinned_new_tokens = DevicePinnedBuffer(
+            self._pinned_new_tokens = Buffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
                 device=self._sampler_device,
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
 
         self._identity_logit_offsets = (
@@ -361,9 +456,17 @@ class TextGenerationPipeline(
             batch: The generation contexts for the batch.
 
         Returns:
-            A bitmask array of shape [batch_size, vocab_size] if structured
-            output is enabled; otherwise ``None``.
+            A bitmask array of shape [batch_size, vocab_size] if constrained
+            decoding can fire for this worker; otherwise ``None``.
         """
+        # The helper is enabled whenever the tokenizer can build an FSM, but
+        # the bitmask-aware sampler is only compiled when constrained decoding
+        # can actually fire. Allocating a bitmask without it would bind an
+        # input the graph does not have, and would push a request the worker
+        # cannot honor into ``update_context``.
+        if not self._pipeline_config.needs_bitmask_constraints:
+            return None
+
         if not self._structured_output.enabled:
             return None
 
@@ -429,14 +532,14 @@ class TextGenerationPipeline(
         )
 
         if self._encoder_cache is not None:
-            assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+            assert self._vision_encoding is not None
             vision_result = self._encoder_cache.run_vision_encode(
-                self._pipeline_model,
+                self._vision_encoding,
                 as_vision_context_batches(replica_batches),
                 self._devices,
             )
             self._encoder_cache.finalize_vision_inputs(
-                self._pipeline_model,
+                self._vision_encoding,
                 model_inputs,
                 self._devices,
                 vision_result,
@@ -501,39 +604,21 @@ class TextGenerationPipeline(
         Executes the graph for a single decode step, samples the next token,
         then decodes and returns the generated tokens.
         """
+        with self._request_validator:
+            return self._execute(inputs)
+
+    def _execute(
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
         # Prepare the batch.
         model_inputs, bitmask, flat_batch = self.prepare_batch(inputs.batches)
 
-        batch_processors: list[BatchLogitsProcessor] = []
-        if len(flat_batch) > 0:
-            # If structured output is present in the batch, use the sampler with bitmask.
-            sampler: Model
-            if bitmask is not None:
-                assert self._sampler_with_bitmask is not None, (
-                    "Sampler must be built with bitmask sampling"
-                )
-                sampler = self._sampler_with_bitmask
-            else:
-                assert self._sampler_without_bitmask is not None
-                sampler = self._sampler_without_bitmask
-
-            with Tracer("FusedSamplingProcessor"):
-                sampling_processor = FusedSamplingProcessor(
-                    sampler=sampler,
-                    pipeline_config=self._pipeline_config,
-                    context_batch=flat_batch,
-                    device=self._sampler_device,
-                    pinned_new_tokens=self._pinned_new_tokens,
-                    identity_logit_offsets=self._identity_logit_offsets,
-                    bitmask=bitmask,
-                    vocab_size=self.vocab_size,
-                )
-
-            batch_processors.append(sampling_processor)
-
         curr_step_inputs = model_inputs
         batch_log_probabilities: list[list[LogProbabilities | None]] = []
-        # Launch the forward pass.
+        # Launch the forward pass before building the sampling processor so
+        # its host-side setup overlaps the device forward, and so a model that
+        # returns `next_tokens` skips the sampler entirely.
         model_outputs = self._launch_forward_pass(
             curr_step_inputs, flat_batch, step=0
         )
@@ -548,60 +633,44 @@ class TextGenerationPipeline(
                 "Model must return logit_offsets when enable_variable_logits is True."
             )
 
-        # Execute the single step if the batch is not empty.
-        if len(flat_batch) > 0:
-            # Sample next token.
-            with Tracer("sample_next_token"):
-                sample_logits, sample_offsets = (
-                    sampling_processor.logits_for_sampling(
-                        logits=model_outputs.logits,
-                        next_token_logits=model_outputs.next_token_logits,
-                        logit_offsets=model_outputs.logit_offsets,
-                    )
-                )
-                apply_logits_processors(
-                    context_batch=flat_batch,
-                    batch_logits=sample_logits,
-                    batch_logit_offsets=sample_offsets,
-                    batch_processors=batch_processors,
-                )
-                new_tokens = sampling_processor.new_tokens
-                assert new_tokens is not None
-
-            if inputs.enable_log_probs:
-                with Tracer("compute_log_probabilities"):
-                    try:
-                        batch_log_probabilities.append(
-                            self._pipeline_model.compute_log_probabilities(
-                                self.session,
-                                curr_step_inputs,
-                                model_outputs,
-                                new_tokens,
-                                inputs.batch_top_log_probs,
-                                inputs.batch_echo,
-                            )
-                        )
-                    except NotImplementedError:
-                        logger.warning(
-                            "Unable to compute log probabilities for"
-                            f" {self._pipeline_config.model.model_path}"
-                        )
-                        batch_log_probabilities.append(
-                            [None for _ in flat_batch]
-                        )
-
         # Return early if the batch is empty.
         if len(flat_batch) == 0:
             return {}
 
-        # Do the copy to host for each token generated. The sampler output
-        # lives on the sampler device (the model device, or the host CPU when
-        # ``sample_on_host`` is set), so stage the D2H copy from there.
-        sampler_device = self._sampler_device
+        # Scoring precedes sampling: the sampler's penalty and min-token
+        # processors edit the logits buffer in place.
+        label_log_probabilities = self._label_scorer.score(
+            model_outputs, flat_batch
+        )
+
+        if model_outputs.next_tokens is not None:
+            if bitmask is not None:
+                raise AssertionError(
+                    "Model returned next_tokens for a batch with a "
+                    "structured-output bitmask."
+                )
+            next_tokens = model_outputs.next_tokens
+            # [B] -> [B, 1]
+            generated_tokens_device = next_tokens.view(
+                dtype=next_tokens.dtype, shape=(next_tokens.shape[0], 1)
+            )
+        else:
+            generated_tokens_device = self._sample(
+                inputs,
+                flat_batch,
+                bitmask,
+                curr_step_inputs,
+                model_outputs,
+                batch_log_probabilities,
+            )
+
+        # Do the copy to host for each token generated. The tokens live on
+        # whichever device produced them (the model device, or the host CPU
+        # when ``sample_on_host`` is set), so stage the D2H copy from there.
+        sampler_device = generated_tokens_device.device
         with Tracer("d2h_generated_tokens"):
-            generated_tokens_device = sampling_processor.generated_tokens
             # Staging memory keeps the d2h transfer async on accelerators.
-            # Note that we do not want to use `DevicePinnedBuffer` here.
+            # Left tracked (no UNTRACKED) so to_numpy() waits for the copy.
             generated_tokens_host = Buffer(
                 shape=generated_tokens_device.shape,
                 dtype=generated_tokens_device.dtype,
@@ -609,9 +678,6 @@ class TextGenerationPipeline(
                 usage=Usage.STAGING,
             )
             generated_tokens_host.inplace_copy_from(generated_tokens_device)
-            # Staging buffers do not synchronize on host reads, so the copy
-            # above is still in flight here.
-            sampler_device.synchronize()
             generated_tokens_np = generated_tokens_host.to_numpy()
 
         res = update_context_and_prepare_responses(
@@ -620,13 +686,98 @@ class TextGenerationPipeline(
             batch_log_probabilities=batch_log_probabilities,
             enable_log_probs=inputs.enable_log_probs,
         )
+        # A chunked-prefill step emits no output for its request, so its
+        # scores wait for the step that finishes the prompt.
+        for request_id, scores in label_log_probabilities.items():
+            if request_id in res:
+                res[request_id].label_log_probabilities = scores
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
+        self._pipeline_model.finalize_kv_cache_writes(inputs.flat_batch)
         for ctx in inputs.flat_batch:
             self._kv_manager.step(ctx)
 
         return res
+
+    def _sample(
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+        flat_batch: list[TextGenerationContextType],
+        bitmask: npt.NDArray[np.int32] | None,
+        curr_step_inputs: ModelInputs,
+        model_outputs: ModelOutputs,
+        batch_log_probabilities: list[list[LogProbabilities | None]],
+    ) -> Buffer:
+        """Runs the sampler graph over the step's logits.
+
+        Appends this step's log probabilities to `batch_log_probabilities`
+        when the batch requests them, and returns the ``[B, 1]`` generated
+        tokens on the sampler device.
+        """
+        # If structured output is present in the batch, use the sampler with bitmask.
+        sampler: Model
+        if bitmask is not None:
+            assert self._sampler_with_bitmask is not None, (
+                "Sampler must be built with bitmask sampling"
+            )
+            sampler = self._sampler_with_bitmask
+        else:
+            assert self._sampler_without_bitmask is not None
+            sampler = self._sampler_without_bitmask
+
+        with Tracer("FusedSamplingProcessor"):
+            sampling_processor = FusedSamplingProcessor(
+                sampler=sampler,
+                pipeline_config=self._pipeline_config,
+                context_batch=flat_batch,
+                device=self._sampler_device,
+                pinned_new_tokens=self._pinned_new_tokens,
+                identity_logit_offsets=self._identity_logit_offsets,
+                bitmask=bitmask,
+                vocab_size=self.vocab_size,
+            )
+        batch_processors: list[BatchLogitsProcessor] = [sampling_processor]
+
+        # Sample next token.
+        with Tracer("sample_next_token"):
+            sample_logits, sample_offsets = (
+                sampling_processor.logits_for_sampling(
+                    logits=model_outputs.logits,
+                    next_token_logits=model_outputs.next_token_logits,
+                    logit_offsets=model_outputs.logit_offsets,
+                )
+            )
+            apply_logits_processors(
+                context_batch=flat_batch,
+                batch_logits=sample_logits,
+                batch_logit_offsets=sample_offsets,
+                batch_processors=batch_processors,
+            )
+            new_tokens = sampling_processor.new_tokens
+            assert new_tokens is not None
+
+        if inputs.enable_log_probs:
+            with Tracer("compute_log_probabilities"):
+                try:
+                    batch_log_probabilities.append(
+                        self._pipeline_model.compute_log_probabilities(
+                            self.session,
+                            curr_step_inputs,
+                            model_outputs,
+                            new_tokens,
+                            inputs.batch_top_log_probs,
+                            inputs.batch_echo,
+                        )
+                    )
+                except NotImplementedError:
+                    logger.warning(
+                        "Unable to compute log probabilities for"
+                        f" {self._pipeline_config.model.model_path}"
+                    )
+                    batch_log_probabilities.append([None for _ in flat_batch])
+
+        return sampling_processor.generated_tokens
 
     def _launch_forward_pass(
         self,
@@ -675,7 +826,7 @@ class TextGenerationPipeline(
         """Returns vision encoder metrics for the most recent batch.
 
         Returns ``None`` for text-only models and for batches that did no
-        vision encoding (e.g. decode steps). The metrics come from the
+        vision encoding (such as decode steps). The metrics come from the
         pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one;
         otherwise, for a model that owns its encoder cache internally, from
         :class:`SupportsPooledVisionMetrics`.

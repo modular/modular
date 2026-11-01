@@ -14,17 +14,17 @@
 from dataclasses import dataclass
 
 import numpy as np
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
 from max.graph.buffer_utils import cast_tensor_to
-from max.nn.kernels import fused_qk_ragged_rms_norm, rms_norm_key_cache
-from max.nn.kv_cache import (
+from max.nn.legacy.kernels import fused_qk_ragged_rms_norm, rms_norm_key_cache
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
-    PagedCacheValues,
 )
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -45,13 +45,9 @@ class FusedQKRMSNormModel:
         input_row_offsets: TensorValue,
         *graph_inputs: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
-        kv_collection = PagedCacheValues(
-            kv_blocks=graph_inputs[0].buffer,
-            cache_lengths=graph_inputs[1].tensor,
-            lookup_table=graph_inputs[2].tensor,
-            max_prompt_length=graph_inputs[3].tensor,
-            max_cache_length=graph_inputs[4].tensor,
-        )
+        kv_collection = self.kv_params.unflatten_kv_inputs(iter(graph_inputs))[
+            0
+        ]
         layer_idx = ops.constant(
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
@@ -94,13 +90,7 @@ class UnfusedKeyRMSNormModel:
     ) -> None:
         rms_norm_key_cache(
             self.kv_params,
-            PagedCacheValues(
-                kv_blocks=graph_inputs[0].buffer,
-                cache_lengths=graph_inputs[1].tensor,
-                lookup_table=graph_inputs[2].tensor,
-                max_prompt_length=graph_inputs[3].tensor,
-                max_cache_length=graph_inputs[4].tensor,
-            ),
+            self.kv_params.unflatten_kv_inputs(iter(graph_inputs))[0],
             gamma=k_gamma,
             epsilon=self.epsilon,
             layer_idx=ops.constant(
@@ -189,7 +179,10 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
     unfused_inputs = KVCacheInputsPerDevice(
@@ -200,7 +193,10 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
@@ -216,9 +212,13 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         q_gamma,
         k_gamma,
         input_row_offsets,
-        *fused_inputs.flatten(),
+        *tree.leaves(fused_inputs),
     )
-    unfused_model(k_gamma, input_row_offsets, *unfused_inputs.flatten())
+    unfused_model(
+        k_gamma,
+        input_row_offsets,
+        *tree.leaves(unfused_inputs),
+    )
 
     np.testing.assert_allclose(
         q_fused.to_numpy(), q_ref.to_numpy(), rtol=1e-2, atol=1e-2

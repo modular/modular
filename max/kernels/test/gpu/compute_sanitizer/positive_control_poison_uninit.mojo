@@ -31,13 +31,13 @@
 from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from std.math import isnan
+from std.memory.alloc import unsafe_alloc
 
 
-def copy_uninitialized(
-    src: ImmPointer[Float32, ImmutAnyOrigin],
-    dst: MutPointer[Float32, MutAnyOrigin],
-):
-    var tid = Int(thread_idx.x)
+def copy_uninitialized[
+    src_origin: ImmOrigin, dst_origin: MutOrigin
+](src: ImmPointer[Float32, src_origin], dst: MutPointer[Float32, dst_origin],):
+    var tid = thread_idx.x
     # `src` was never written by the host -> reading it is an uninitialized
     # global read. With poison, this yields NaN.
     dst[tid] = src[tid]
@@ -48,10 +48,10 @@ def main() raises:
         var n = 16
         var src = ctx.enqueue_create_buffer[.float32](n)  # never initialized
         var dst = ctx.enqueue_create_buffer[.float32](n)
-        ctx.enqueue_function[copy_uninitialized](
-            src, dst, grid_dim=(1,), block_dim=(n,)
-        )
-        var dst_host = alloc[Float32](n)
+        ctx.enqueue_function[
+            copy_uninitialized[ImmOrigin(origin_of(src)), origin_of(dst)]
+        ](src, dst, grid_dim=(1,), block_dim=(n,))
+        var dst_host = unsafe_alloc[Float32](n)
         ctx.enqueue_copy(dst_host, dst)
         ctx.synchronize()
         var nan_count = 0
@@ -61,11 +61,9 @@ def main() raises:
         # Under poison, every lane reads poisoned `src` and copies NaN to `dst`.
         if nan_count != n:
             raise Error(
-                "expected all "
-                + String(n)
-                + " elements to be NaN under poison; got "
-                + String(nan_count)
+                t"expected all {n} elements to be NaN under poison; got"
+                t" {nan_count}"
             )
         _ = src
         _ = dst
-        dst_host.free()
+        dst_host.unsafe_free()

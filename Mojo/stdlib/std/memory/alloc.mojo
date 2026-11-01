@@ -15,24 +15,26 @@
 This module provides the `alloc` and `dealloc` functions together with a
 `Layout` descriptor that expresses the size and alignment of an allocation at
 the call site, keeping ownership and layout information explicit and
-co-located.
+co-located. A `Layout` holds the element count at runtime and carries the
+alignment as a compile-time parameter, which every allocation handle carries
+alongside it.
 
 Allocations are represented by two explicitly destroyed
 owning handles, so the compiler forces every allocation to be released on all
 paths — either by passing it to `dealloc` or by taking the raw pointer with
 `unsafe_leak()`:
 
-- `Allocation[T]`: the handle returned by `alloc`. It bundles the owning
-  pointer with the `Layout` it was allocated with, so the element count and
-  alignment needed to free the storage travel with the pointer.
-- `ThinAllocation[T]`: a bare owning handle that carries only the pointer, with
-  no `Layout`. It makes a good storage field for a container that already
-  tracks its own capacity (such as `List`); pair it back with a `Layout` via
-  `unsafe_with_layout` to deallocate.
+- `Allocation[T, alignment=_]`: the handle returned by `alloc`. It bundles the
+  owning pointer with the `Layout` it was allocated with, so the element count
+  needed to free the storage travels with the pointer.
+- `ThinAllocation[T]`: a bare owning handle that carries only the pointer,
+  with neither a count nor an alignment. It makes a good storage field for a
+  container that already tracks its own capacity (such as `List`); pair it back
+  with a `Layout` via `unsafe_with_layout` to deallocate.
 
 For automatic cleanup, an `Allocation` can be converted into a
-`ManagedAllocation[T]` with `into_managed()`. Unlike the two explicitly
-destroyed handles, a `ManagedAllocation` implements `Deinitable`: it
+`ManagedAllocation[T, alignment=_]` with `into_managed()`. Unlike the two
+explicitly destroyed handles, a `ManagedAllocation` implements `Deinitable`: it
 deallocates its storage in its destructor, which Mojo runs automatically after
 the value's last use (ASAP destruction), so no explicit `dealloc` is needed.
 Like `dealloc`, this frees the storage without running the destructors of any
@@ -48,11 +50,11 @@ Allocate, use, and free storage through the `Allocation` returned by `alloc`:
 from std.memory.alloc import alloc, dealloc, Layout
 from std.memory import unsafe_destroy_n
 
-var allocation = alloc(Layout[String](count=4))
+var allocation = alloc(Layout[String](length=4))
 var ptr = allocation.unsafe_ptr()
 
 # initialize the memory
-for i in range(allocation.layout().count()):
+for i in range(len(allocation)):
     ptr.unsafe_offset(i).unsafe_write("🔥")
 
 # print the values
@@ -60,7 +62,7 @@ for string in allocation.unsafe_span():
     print(string) # prints "🔥"
 
 # deinitialize the values
-unsafe_destroy_n(allocation.unsafe_ptr(), allocation.layout().count())
+unsafe_destroy_n(allocation.unsafe_ptr(), len(allocation))
 
 # deallocate the memory
 dealloc(allocation^)
@@ -86,7 +88,7 @@ of leaving them as runtime hazards.
 An accidental leak is rejected: the compiler requires every `Allocation` to be
 destroyed on every path, including error paths. If an intervening operation can
 raise, skipping the `dealloc`, that is an error (whose message includes the
-guidance from `@explicit_destroy(..)`):
+guidance from its `not Deinitable else ...` conformance):
 
 ```mojo
 from std.memory import alloc, dealloc, Layout
@@ -123,28 +125,94 @@ def main():
 ```
 """
 
-from std.format._utils import FormatStruct, Named, TypeNames
+from std.format._utils import FormatStruct, Named
+from std.memory import MaybeUninit
 from std.memory.memory import _free, _malloc
 from std.os import abort
 from std.sys import align_of, size_of
 from std.sys.intrinsics import unlikely
 from std.traits import IsTriviallyDeinitable
-
-
-@explicit_destroy(
-    "An `Allocation` owns heap storage and must be consumed before it goes"
-    " out of scope. Deallocate it with `dealloc(allocation^)`, or call"
-    " `unsafe_leak()` to take ownership of the underlying pointer."
+from std.utils._nicheable import (
+    NicheIndex,
+    UnsafeNicheable,
+    _FieldNicheable,
+    _NonNegativeScalarNiche,
 )
-struct Allocation[T: AnyType](
-    Deinitable where False, RegisterPassable, Writable
+
+
+struct Alignment(TrivialRegisterPassable, Writable):
+    """The byte alignment of a memory allocation."""
+
+    var _value: Int
+
+    @doc_hidden
+    def __init__(out self, *, _unsafe_alignment: Int):
+        self._value = _unsafe_alignment
+
+    @inline(.always)
+    @staticmethod
+    def of[T: AnyType, /]() -> Self:
+        """Returns the natural alignment of `T`.
+
+        Parameters:
+            T: The type whose `align_of` to use.
+
+        Returns:
+            An `Alignment` of `align_of[T]()` bytes.
+        """
+        return {_unsafe_alignment = align_of[T]()}
+
+    @inline(.always)
+    @staticmethod
+    def of_bytes[n: Int, /]() -> Self:
+        """Returns an alignment of exactly `n` bytes.
+
+        Parameters:
+            n: The byte alignment.
+
+        Returns:
+            An `Alignment` of `n` bytes.
+
+        Constraints:
+            `n` must be a power of two.
+        """
+        comptime assert n.is_power_of_two(), "alignment must be a power of two"
+        return {_unsafe_alignment = n}
+
+    @inline(.always)
+    def bytes(self) -> Int:
+        """Returns the byte alignment.
+
+        Returns:
+            The byte alignment.
+        """
+        return self._value
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a human-readable representation of this alignment to `writer`.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(self._value)
+
+
+struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
+    not Deinitable else (
+        "An `Allocation` owns heap storage and must be consumed before it goes"
+        " out of scope. Deallocate it with `dealloc(allocation^)`, or call"
+        " `unsafe_leak()` to take ownership of the underlying pointer."
+    ),
+    RegisterPassable,
+    Sized,
+    Writable,
+    _FieldNicheable,
 ):
     """An owning handle to a heap allocation of `T` together with its `Layout`.
 
     An `Allocation` pairs a `ThinAllocation` (the raw owning pointer) with the
-    `Layout` that produced it, so the element count and alignment needed to
-    deallocate the storage travel with the pointer. It is the value returned by
-    `alloc`.
+    `Layout` that produced it, so the element count needed to deallocate the
+    storage travels with the pointer. It is the value returned by `alloc`.
 
     `Allocation` is an explicitly destroyed type: it is
     never deallocated automatically, and the compiler requires every value to be
@@ -159,13 +227,15 @@ struct Allocation[T: AnyType](
 
     Parameters:
         T: The type of the elements stored in the allocation.
+        alignment: Byte alignment of the storage, matching the `Layout` it
+            was allocated with.
 
     Example:
 
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=4))
+    var allocation = alloc(Layout[Int32](length=4))
     # use the allocation...
     dealloc(allocation^)
     ```
@@ -173,15 +243,15 @@ struct Allocation[T: AnyType](
 
     var _alloc: ThinAllocation[Self.T]
     """The owning pointer to the allocated storage."""
-    var _layout: Layout[Self.T]
-    """The layout (count and alignment) the storage was allocated with."""
+    var _layout: Layout[Self.T, alignment=Self.alignment]
+    """The layout (the element count) the storage was allocated with."""
 
     @doc_hidden
     def __init__(
         out self,
         *,
         var _alloc: ThinAllocation[Self.T],
-        _layout: Layout[Self.T],
+        _layout: Layout[Self.T, alignment=Self.alignment],
     ):
         self._alloc = _alloc^
         self._layout = _layout
@@ -189,7 +259,7 @@ struct Allocation[T: AnyType](
     @implicit
     def __init__(
         out self,
-        var managed: ManagedAllocation[Self.T],
+        var managed: ManagedAllocation[Self.T, alignment=Self.alignment],
     ):
         """Implicitly convert a `ManagedAllocation` into an `Allocation`.
 
@@ -202,7 +272,7 @@ struct Allocation[T: AnyType](
         out self,
         *,
         unsafe_owned_ptr: Pointer[Self.T, MutUntrackedOrigin],
-        layout: Layout[Self.T],
+        layout: Layout[Self.T, alignment=Self.alignment],
     ):
         """Initializes a `Allocation` that takes ownership of a raw pointer.
 
@@ -268,7 +338,7 @@ struct Allocation[T: AnyType](
         """Returns a span over the allocated storage without consuming `self`.
 
         The returned span borrows from `self`, so the `Allocation` retains
-        ownership of the storage. The span covers `layout.count()` elements.
+        ownership of the storage. The span covers `len(self)` elements.
 
         Returns:
             A span over the allocated storage.
@@ -278,20 +348,47 @@ struct Allocation[T: AnyType](
         `alloc` returns uninitialized storage, so the returned span may cover
         uninitialized memory. Initialize the elements before reading them.
         """
-        return {unsafe_ptr = self.unsafe_ptr(), length = self._layout.count()}
+        return {unsafe_ptr = self.unsafe_ptr(), length = len(self._layout)}
 
-    def layout(self) -> Layout[Self.T]:
+    def layout(self) -> Layout[Self.T, alignment=Self.alignment]:
         """Returns the `Layout` the storage was allocated with.
 
-        The returned `Layout` carries the element count and alignment used to
-        allocate the storage — the same information needed to deallocate it.
+        The returned `Layout` carries the element count used to allocate the
+        storage — the same information needed to deallocate it.
 
         Returns:
             The `Layout` this allocation was created with.
         """
         return self._layout
 
-    def into_thin(deinit self) -> ThinAllocation[Self.T]:
+    def __len__(self) -> Int:
+        """Returns the number of elements the storage was allocated for.
+
+        Returns:
+            `len(self.layout())`, the element count this allocation was created
+            with.
+        """
+        return len(self._layout)
+
+    def storage(
+        ref self,
+    ) -> Span[MaybeUninit[Self.T], origin_of(self._alloc)]:
+        """Returns a span over the allocated storage as possibly uninitialized
+        elements.
+
+        Returns:
+            A span of `MaybeUninit[T]` over the allocated storage.
+        """
+        return {
+            unsafe_ptr = self.unsafe_ptr().unsafe_bitcast[
+                MaybeUninit[Self.T]
+            ](),
+            length = len(self),
+        }
+
+    def into_thin(
+        deinit self,
+    ) -> ThinAllocation[Self.T]:
         """Consumes the `Allocation` and returns its associated `ThinAllocation`.
 
         This drops the `Layout` and keeps only the owning handle. The returned
@@ -304,11 +401,12 @@ struct Allocation[T: AnyType](
 
     def into_managed(
         deinit self,
-    ) -> ManagedAllocation[Self.T] where (
-        IsTriviallyDeinitable[Self.T],
+    ) -> ManagedAllocation[Self.T, alignment=Self.alignment] where (
+        IsTriviallyDeinitable[Self.T]
+    ) else (
         "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
         " its storage without ever running T's `__deinit__`, which would"
-        " leak resources owned by any initialized elements",
+        " leak resources owned by any initialized elements"
     ):
         """Consumes the `Allocation` and wraps it in a `ManagedAllocation`.
 
@@ -340,7 +438,7 @@ struct Allocation[T: AnyType](
         ```mojo
         from std.memory.alloc import alloc, Layout
 
-        var managed = alloc(Layout[String](count=4)).into_managed()
+        var managed = alloc(Layout[String](length=4)).into_managed()
         managed.unsafe_ptr().unsafe_write("hello")
 
         # Even though the allocation is automatically cleaned up, destructors
@@ -359,7 +457,7 @@ struct Allocation[T: AnyType](
             writer: The writer to write to.
         """
         FormatStruct(writer, "Allocation").params(
-            reflect[Self.T].name()
+            reflect[Self.T].name(), Named("alignment", Self.alignment)
         ).fields(
             Named("pointer", self._alloc.unsafe_ptr()),
             Named("layout", self._layout),
@@ -373,8 +471,12 @@ struct Allocation[T: AnyType](
         """
         self.write_to(writer)
 
+    comptime _KgenNichedFieldName = "_layout".value
 
-struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
+
+struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
+    RegisterPassable, Sized, Writable, _FieldNicheable
+):
     """An owning handle to a heap allocation of `T` that frees itself.
 
     A `ManagedAllocation` wraps an `Allocation` and deallocates the storage in
@@ -402,13 +504,15 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
 
     Parameters:
         T: The type of the elements stored in the allocation.
+        alignment: Byte alignment of the storage, matching the `Layout` it
+            was allocated with.
 
     Example:
 
     ```mojo
     from std.memory.alloc import alloc, Layout
 
-    var managed = alloc(Layout[Int32](count=4)).into_managed()
+    var managed = alloc(Layout[Int32](length=4)).into_managed()
     var ptr = managed.unsafe_ptr()
     for i in range(4):
         ptr.unsafe_offset(i).write(i)
@@ -416,16 +520,17 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     ```
     """
 
-    var _alloc: Allocation[Self.T]
+    var _alloc: Allocation[Self.T, alignment=Self.alignment]
     """The wrapped `Allocation` that owns the storage."""
 
     def __init__(
-        out self, var allocation: Allocation[Self.T], /
-    ) where (
-        IsTriviallyDeinitable[Self.T],
+        out self,
+        var allocation: Allocation[Self.T, alignment=Self.alignment],
+        /,
+    ) where IsTriviallyDeinitable[Self.T] else (
         "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
         " its storage without ever running T's `__deinit__`, which would"
-        " leak resources owned by any initialized elements",
+        " leak resources owned by any initialized elements"
     ):
         """Initializes a `ManagedAllocation` that owns `allocation`.
 
@@ -456,7 +561,9 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
         """
         dealloc(self._alloc^)
 
-    def _into_allocation(deinit self) -> Allocation[Self.T]:
+    def _into_allocation(
+        deinit self,
+    ) -> Allocation[Self.T, alignment=Self.alignment]:
         """Return the underlying `Allocation`."""
         return self._alloc^
 
@@ -484,8 +591,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
         """Returns a span over the allocated storage without consuming `self`.
 
         The returned span borrows from `self`, so the `ManagedAllocation`
-        retains ownership of the storage. The span covers `layout.count()`
-        elements.
+        retains ownership of the storage. The span covers `len(self)` elements.
 
         Returns:
             A span over the allocated storage.
@@ -497,26 +603,40 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
         """
         return self._alloc.unsafe_span()
 
-    def layout(self) -> Layout[Self.T]:
+    def layout(self) -> Layout[Self.T, alignment=Self.alignment]:
         """Returns the `Layout` the storage was allocated with.
 
-        The returned `Layout` carries the element count and alignment used to
-        allocate the storage — the same information needed to deallocate it.
+        The returned `Layout` carries the element count used to allocate the
+        storage — the same information needed to deallocate it.
 
         Returns:
             The `Layout` this allocation was created with.
         """
         return self._alloc.layout()
 
+    def __len__(self) -> Int:
+        """Returns the number of elements the storage was allocated for.
 
-@explicit_destroy(
-    "A `ThinAllocation` owns heap storage and must be consumed before it goes"
-    " out of scope. It carries no `Layout`, so deallocate it by pairing it"
-    " with its layout: `dealloc(allocation^.unsafe_with_layout(layout))`, or"
-    " call `unsafe_leak()` to take ownership of the underlying pointer."
-)
+        Returns:
+            `len(self.layout())`, the element count this allocation was created
+            with.
+        """
+        return len(self._alloc)
+
+    comptime _KgenNichedFieldName = "_alloc".value
+
+
 struct ThinAllocation[T: AnyType](
-    Deinitable where False, RegisterPassable, Writable
+    not Deinitable else (
+        "A `ThinAllocation` owns heap storage and must be consumed before it"
+        " goes out of scope. It carries no `Layout`, so deallocate it by"
+        " pairing it with its layout:"
+        " `dealloc(allocation^.unsafe_with_layout(layout))`, or call"
+        " `unsafe_leak()` to take ownership of the underlying pointer."
+    ),
+    RegisterPassable,
+    Writable,
+    _FieldNicheable,
 ):
     """An owning handle to a heap allocation of `T`, without its `Layout`.
 
@@ -526,7 +646,7 @@ struct ThinAllocation[T: AnyType](
     the storage. This makes `ThinAllocation` a good storage field for a
     container that already tracks its own capacity, such as `List`.
 
-    `ThinAllocation` is an explicitly destroyed (`@explicit_destroy`) type: it
+    `ThinAllocation` is an explicitly destroyed (`not Deinitable`) type: it
     is never deallocated automatically, and the compiler requires every value to
     be destroyed manually on all paths. Destroy one by either:
 
@@ -562,13 +682,18 @@ struct ThinAllocation[T: AnyType](
         """
         self._ptr = unsafe_owned_ptr
 
-    def unsafe_with_layout(
-        var self, layout: Layout[Self.T]
-    ) -> Allocation[Self.T]:
+    def unsafe_with_layout[
+        alignment: Alignment, //
+    ](var self, layout: Layout[Self.T, alignment=alignment]) -> Allocation[
+        Self.T, alignment=alignment
+    ]:
         """Pairs this `ThinAllocation` with a `Layout` to form an `Allocation`.
 
         Consumes `self` and bundles it with `layout`, producing an `Allocation`
         that can be passed to `dealloc`.
+
+        Parameters:
+            alignment: Byte alignment of the storage, taken from `layout`.
 
         Args:
             layout: The `Layout` the storage was allocated with.
@@ -579,10 +704,11 @@ struct ThinAllocation[T: AnyType](
         Safety:
 
         The `layout` must exactly match the `Layout` that was passed to `alloc`
-        when this storage was originally allocated — both the element count and
-        the alignment. `dealloc` releases the storage according to this
-        `Layout`, so a mismatch frees the wrong number of bytes (or assumes the
-        wrong alignment) and can corrupt the allocator.
+        when this storage was originally allocated — both its element count and
+        its alignment. A `ThinAllocation` records neither, so nothing checks
+        this for you: `dealloc` releases the storage according to the `Layout`
+        you supply here, and a mismatch frees the wrong number of bytes and can
+        corrupt the allocator.
         """
         return {_alloc = self^, _layout = layout}
 
@@ -650,11 +776,13 @@ struct ThinAllocation[T: AnyType](
         """
         self.write_to(writer)
 
+    comptime _KgenNichedFieldName = "_ptr".value
+
 
 def _alloc_bytes(
-    layout: Layout[Byte],
+    layout: Layout[Byte, alignment=_]
 ) -> Pointer[Byte, MutUntrackedOrigin]:
-    var pointer = _malloc[Byte](layout.count(), alignment=layout.alignment())
+    var pointer = _malloc[Byte](len(layout), alignment=layout.alignment.bytes())
     if unlikely(not pointer):
         abort("alloc failed: returned a null pointer")
     return pointer.unsafe_value()
@@ -664,7 +792,7 @@ def _alloc_bytes(
     "`alloc` without a `Layout` is deprecated, use the `Layout`-based `alloc`"
     " instead; as a temporary migration step, use `unsafe_alloc`"
 )
-@always_inline
+@inline(.always)
 def alloc[
     type: AnyType, /
 ](count: Int, *, alignment: Int = align_of[type]()) -> Pointer[
@@ -686,7 +814,7 @@ def alloc[
     return unsafe_alloc[type](count, alignment=alignment)
 
 
-@always_inline
+@inline(.always)
 def unsafe_alloc[
     type: AnyType, /
 ](count: Int, *, alignment: Int = align_of[type]()) -> Pointer[
@@ -741,8 +869,12 @@ def unsafe_alloc[
     return pointer.unsafe_value()
 
 
-def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
-    """Allocates owned storage for `layout.count()` elements of `T`.
+def alloc[
+    T: AnyType, /, *, alignment: Alignment = .of[T]()
+](layout: Layout[T, alignment=alignment], /) -> Allocation[
+    T, alignment=alignment
+]:
+    """Allocates owned storage for `len(layout)` elements of `T`.
 
     Returns an `Allocation`, an explicitly destroyed handle that bundles the
     newly allocated storage with its `Layout`. The compiler then enforces that
@@ -753,24 +885,20 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
 
     Parameters:
         T: The type of the elements to allocate storage for.
+        alignment: Byte alignment of the allocation, taken from `layout`.
 
     Args:
-        layout: Describes the number of elements and alignment of the
-            allocation.
+        layout: Describes the number of elements in the allocation.
 
     Returns:
         An `Allocation` owning the newly allocated, uninitialized storage.
-
-    Constraints:
-        `size_of[T]()` must be greater than zero. `layout.count()` must be
-        `>= 0`.
 
     Example:
 
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=4))
+    var allocation = alloc(Layout[Int32](length=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
         ptr.unsafe_offset(i).write(i)
@@ -779,22 +907,19 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     """
     comptime size_of_t = size_of[T]()
 
-    if unlikely(layout.count() < 0):
-        abort("alloc: `Layout.count()` must be > 0")
-
     comptime if size_of_t == 0:
-        return ThinAllocation(
+        return ThinAllocation[T](
             unsafe_owned_ptr=Pointer[T, MutUntrackedOrigin].unsafe_dangling()
         ).unsafe_with_layout(layout)
     else:
-        return ThinAllocation(
+        return ThinAllocation[T](
             unsafe_owned_ptr=_alloc_bytes(
                 layout.as_byte_layout()
             ).unsafe_bitcast[T]()
         ).unsafe_with_layout(layout)
 
 
-def dealloc[T: AnyType, /](var allocation: Allocation[T], /):
+def dealloc[T: AnyType, /](var allocation: Allocation[T, alignment=_], /):
     """Deallocates the storage owned by an `Allocation`.
 
     Consumes `allocation` and releases its memory. This is the primary way to
@@ -824,102 +949,95 @@ def dealloc[T: AnyType, /](var allocation: Allocation[T], /):
         _free(allocation^.unsafe_leak())
 
 
-struct Layout[T: AnyType](TrivialRegisterPassable, Writable):
+struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
+    Sized, TrivialRegisterPassable, UnsafeNicheable, Writable
+):
     """Describes the shape of a memory allocation for elements of type `T`.
 
-    A `Layout` bundles the *count* of elements and the *alignment* of the
-    allocation into a single value. Passing a `Layout` to `alloc` and `dealloc`
-    keeps the size and alignment requirements explicit and co-located at every
-    call site, preventing mismatches between allocation and deallocation.
+    A `Layout` pairs the *length* (element count), held at runtime, with the
+    *alignment* of the allocation, carried as a compile-time parameter. Passing
+    a `Layout` to `alloc` and `dealloc` keeps the size and alignment
+    requirements explicit and co-located at every call site, preventing
+    mismatches between allocation and deallocation.
 
     Parameters:
         T: The element type the layout describes.
+        alignment: Byte alignment of the allocation.
 
     Example:
 
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    # Allocate room for 8 Int32 values with default alignment.
-    var layout = Layout[Int32](count=8)
+    # Allocate room for 8 Int32 values with `Int32`'s natural alignment.
+    var layout = Layout[Int32](length=8)
     var allocation = alloc(layout)
     # ... use allocation ...
     dealloc(allocation^)
+
+    # Over-align the same storage to a 64-byte boundary.
+    var over_aligned = alloc(
+        Layout[Int32, alignment = .of_bytes[64]()](length=8)
+    )
+    dealloc(over_aligned^)
     ```
     """
 
-    var _count: Int
-    var _alignment: Int
+    var _length: Int
 
-    @always_inline
+    @inline(.always)
+    def __init__(out self, *, length: Int):
+        """Initializes a `Layout` describing `length` elements of type `T`.
+
+        Aborts if `length` is negative.
+
+        Args:
+            length: Number of elements of type `T` to describe.
+
+        Constraints:
+            `alignment` must be no smaller than `align_of[T]()`. `Alignment`
+            itself enforces the power-of-two requirement.
+        """
+        if length < 0:
+            abort("Layout: `length` must be >= 0")
+        self = Self(_unsafe_unchecked_length=length)
+
+    @inline(.always)
     @doc_hidden
-    def __init__(out self, *, count: Int, unsafe_unchecked_alignment: Int):
-        self._count = count
-        self._alignment = unsafe_unchecked_alignment
+    def __init__(out self, *, _unsafe_unchecked_length: Int):
+        """Initializes a `Layout` describing `_unsafe_unchecked_length` elements
+        of type `T`, without checking that the length is non-negative.
 
-    @always_inline
+        Args:
+            _unsafe_unchecked_length: Number of elements of type `T` to
+                describe.
+
+        Safety:
+
+        `unsafe_unchecked_length` must be non-negative.
+        """
+        comptime assert (
+            Self.alignment.bytes() >= align_of[Self.T]()
+        ), "`Layout` alignment must be at least `align_of[T]()`"
+        self._length = _unsafe_unchecked_length
+
+    @deprecated("use `Layout(length=...)` instead")
+    @inline(.always)
     def __init__(out self, *, count: Int):
-        """Initializes a `Layout` with the given element count and a default alignment.
+        """Initializes a `Layout` describing `count` elements of type `T`.
 
         Args:
             count: Number of elements of type `T` to describe.
         """
-        self = Self(count=count, unsafe_unchecked_alignment=align_of[Self.T]())
+        self = Self(length=count)
 
-    @always_inline
-    def __init__(out self, *, count: Int, alignment: Int):
-        """Initializes a `Layout` with the given element count and alignment.
-
-        This method will abort if the alignment is invalid.
-
-        Args:
-            count: Number of elements of type `T` to describe.
-            alignment: Byte alignment of the allocation. Must be a power of two.
-        """
-        if not Self.is_valid_alignment(alignment):
-            abort(
-                "Alignment is invalid. Must be a power of two and >= to the"
-                " types natural alignment."
-            )
-        self = Self(count=count, unsafe_unchecked_alignment=alignment)
-
-    @always_inline
-    @staticmethod
-    def aligned[alignment: Int](*, count: Int) -> Self:
-        """Initializes a `Layout` with the given element count and comptime alignment.
-
-        Unlike `Layout[T](count, alignment)`, this validates alignment at compile time.
-
-        Parameters:
-            alignment: Byte alignment of the allocation. Must be a power of two.
-
-        Args:
-            count: Number of elements of type `T` to describe.
-
-        Returns:
-            A `Layout` with the specified `count` and `alignment`.
-        """
-        comptime assert alignment.is_power_of_two(), String(
-            "alignment '", alignment, "' is not a power of two"
-        )
-        comptime assert alignment >= align_of[Self.T](), String(
-            "alignment '",
-            alignment,
-            "' must be at least align_of[",
-            reflect[Self.T].name(),
-            "]() '",
-            align_of[Self.T](),
-            "'",
-        )
-        return Self(count=count, unsafe_unchecked_alignment=alignment)
-
-    @always_inline
+    @inline(.always)
     @staticmethod
     def single() -> Self:
         """Creates a `Layout` for exactly one element of type `T`.
 
         Returns:
-            A `Layout` with `count` equal to 1 and default alignment.
+            A `Layout` with `length` equal to 1.
 
         Example:
 
@@ -932,41 +1050,39 @@ struct Layout[T: AnyType](TrivialRegisterPassable, Writable):
         dealloc(allocation^)
         ```
         """
-        return Self(count=1)
+        return Self(length=1)
 
-    @always_inline
-    def as_byte_layout(self) -> Layout[Byte]:
+    @inline(.always)
+    def as_byte_layout(self) -> Layout[Byte, alignment=Self.alignment]:
         """Converts this layout to an equivalent byte-level layout.
 
         Multiplies the element count by `size_of[T]()` to express the same
         allocation in terms of raw bytes, preserving the alignment.
 
         Returns:
-            A `Layout[Byte]` whose `count` is `self.count() * size_of[T]()` and
-            whose `alignment` matches `self.alignment()`.
+            A `Layout[Byte, alignment=_]` whose `length` is
+            `len(self) * size_of[T]()`.
         """
-        return Layout[Byte](
-            count=self._count * size_of[Self.T](),
-            unsafe_unchecked_alignment=self._alignment,
-        )
+        return {length = self._length * size_of[Self.T]()}
 
-    @always_inline
-    def alignment(self) -> Int:
-        """Returns the alignment of the allocation described by this layout.
+    @inline(.always)
+    def __len__(self) -> Int:
+        """Returns the number of elements described by this layout.
 
         Returns:
-            The byte alignment.
+            The element count passed at construction time.
         """
-        return self._alignment
+        return self._length
 
-    @always_inline
+    @deprecated("use `len(layout)` instead")
+    @inline(.always)
     def count(self) -> Int:
         """Returns the number of elements described by this layout.
 
         Returns:
             The element count passed at construction time.
         """
-        return self._count
+        return self._length
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes a human-readable representation of this layout to `writer`.
@@ -974,9 +1090,9 @@ struct Layout[T: AnyType](TrivialRegisterPassable, Writable):
         Args:
             writer: The writer to write to.
         """
-        FormatStruct(writer, "Layout").params(reflect[Self.T].name()).fields(
-            Named("count", self._count), Named("alignment", self._alignment)
-        )
+        FormatStruct(writer, "Layout").params(
+            reflect[Self.T].name(), Named("alignment", Self.alignment)
+        ).fields(Named("length", self._length))
 
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes a debug representation of this layout to `writer`.
@@ -986,31 +1102,22 @@ struct Layout[T: AnyType](TrivialRegisterPassable, Writable):
         """
         self.write_to(writer)
 
+    comptime _Niche = _NonNegativeScalarNiche[Self, "_length"]
+
     @staticmethod
-    @always_inline("builtin")
-    def is_valid_alignment(alignment: Int) -> Bool:
-        """Reports whether `alignment` is a valid alignment for `Layout[T]`.
+    @inline(.always)
+    @doc_hidden
+    def niche_count() -> Int:
+        return Self._Niche.niche_count()
 
-        An alignment is valid when it is a power of two and is at least the
-        natural alignment of `T` (`align_of[T]()`). Under-aligning `T` would
-        violate its layout requirements, so requested alignments must meet or
-        exceed the natural alignment.
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
+        Self._Niche.write_niche[index](memory)
 
-        Args:
-            alignment: The candidate byte alignment to check.
-
-        Returns:
-            `True` if `alignment` is a power of two and is no smaller than
-            `align_of[T]()`, otherwise `False`.
-
-        Example:
-
-        ```mojo
-        from std.memory.alloc import Layout
-
-        var ok = Layout[Int32].is_valid_alignment(64)  # True (over-aligned)
-        var not_pow2 = Layout[Int32].is_valid_alignment(33)  # False
-        var too_small = Layout[Int32].is_valid_alignment(4)  # False
-        ```
-        """
-        return alignment.is_power_of_two() and alignment >= align_of[Self.T]()
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
+        return Self._Niche.classify_niche(memory)

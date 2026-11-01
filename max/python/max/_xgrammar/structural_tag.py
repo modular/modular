@@ -53,8 +53,10 @@ class JSONSchemaFormat(BaseModel):
         "qwen_xml",
         "minimax_xml",
         "deepseek_xml",
+        "deepseek_v41_xml",
         "glm_xml",
         "minimax_m3_xml",
+        "hy_v4_xml",
     ] = "json"
     """How to parse the content. Valid values:
 
@@ -66,10 +68,15 @@ class JSONSchemaFormat(BaseModel):
       style name for MiniMax M2 models.
     - ``"deepseek_xml"`` — DeepSeek XML (no MAX architecture selects this style today):
       ``<{dsml_token}parameter name="key" string="true|false">value</{dsml_token}parameter>``.
+    - ``"deepseek_v41_xml"`` — DeepSeek-V4.1 XML:
+      ``<{dsml_token} parameter name="key" string="true|false">value</{dsml_token} parameter>``.
     - ``"glm_xml"`` — GLM 5 / 5.1 / 5.2 XML:
       ``<arg_key>key</arg_key><arg_value>value</arg_value>``.
     - ``"minimax_m3_xml"`` — MiniMax M3 tag-prefixed XML:
       ``prefix<key>value prefix</key>``.
+    - ``"hy_v4_xml"`` — Hy4 XML, GLM's pairs with ``:opensource`` tags and no
+      framing whitespace:
+      ``<arg_key:opensource>key</arg_key:opensource><arg_value:opensource>value</arg_value:opensource>``.
     """
     any_order: bool = False
     """Allow object properties to appear in any order."""
@@ -91,11 +98,13 @@ class JSONSchemaFormat(BaseModel):
     require_object_root: bool = False
     """Require the schema root to produce an object-typed value, coercing an unconstrained root to an empty open object."""
     reject_unsupported: bool = False
-    """Reject unenforceable schema keywords rather than fall back to unconstrained decoding."""
+    """Whether to raise an error during grammar compilation when the schema cannot be enforced."""
     strict_mode: bool = True
     """Disallow properties and items not specified in the schema."""
     xml_tag_prefix: str = ""
     """Prefix emitted before every XML open and close tag."""
+    xml_require_paired_tags: bool = False
+    """Require declared, paired XML member tags instead of variable keys."""
     any_whitespace: bool = True
     """Allow any whitespace between JSON elements."""
     indent: Optional[int] = None

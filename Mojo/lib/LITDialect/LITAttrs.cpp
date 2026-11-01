@@ -872,6 +872,17 @@ bool LIT::StructExtractAttr::isLessThan(Attribute rhs) const {
   return getField().getValue() < rhsExtract.getField().getValue();
 }
 
+LogicalResult
+LIT::StructExtractAttr::printDisplayValue(AsmPrinter &p,
+                                          KGENParamPrinter &printer) const {
+  p << "#lit.struct.extract<";
+  printer.printColonTypeParamValue(p, getStructValue());
+  p << ", ";
+  p.printAttribute(getField());
+  p << '>';
+  return success();
+}
+
 LIT::StructExtractAttr
 LIT::StructExtractAttr::getFromBytecode(TypedAttr structValue, StringAttr field,
                                         Type type) {
@@ -966,7 +977,8 @@ OptionalParseResult RefPackType::parseValue(AsmParser &p,
   return p.parseGreater();
 }
 
-LogicalResult RefPackType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult RefPackType::printValue(AsmPrinter &p, TypedAttr value,
+                                      KGENParamPrinter &printer) const {
   auto packAttr = ::dyn_cast<RefPackAttr>(value);
   if (!packAttr)
     return failure();

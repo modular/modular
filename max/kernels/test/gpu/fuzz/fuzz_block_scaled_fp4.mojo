@@ -43,8 +43,8 @@ comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
 comptime BK = swizzle.bytes() // size_of[a_dtype]()
 comptime MMA_K = 32
 comptime mma_n = get_defined_int["mma_n", 24]()  # small_bn boundary
-comptime block_tile_shape = Index(128, mma_n, BK)
-comptime umma_shape = Index(128, mma_n, MMA_K)
+comptime block_tile_shape = (128, mma_n, BK)
+comptime umma_shape = (128, mma_n, MMA_K)
 comptime N = get_defined_int["N", 1024]()
 comptime K = get_defined_int["K", 1056]()  # 1024 + 32
 
@@ -77,7 +77,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         scales_dtype,
         block_tile_shape,
         umma_shape,
-        cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+        cluster_shape=(1, 1, 1),
         cta_group=1,
         a_swizzle=swizzle,
         b_swizzle=swizzle,
@@ -102,24 +102,15 @@ def main() raises:
 
     if mode == "single":
         var m = flag_int(args, "--m", 100)
-        print("FUZZ_SINGLE m=", m, "N=", N, "K=", K, "mma_n=", mma_n)
+        print(t"FUZZ_SINGLE m= {m} N= {N} K= {K} mma_n= {mma_n}")
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(m))
         print("FUZZ_RESULT verdict=PASS")
         return
 
     print(
-        "=== fuzz_block_scaled_fp4 seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "N=",
-        N,
-        "K=",
-        K,
-        "mma_n=",
-        mma_n,
-        "===",
+        t"=== fuzz_block_scaled_fp4 seed= {the_seed} budget= {the_budget} N="
+        t" {N} K= {K} mma_n= {mma_n} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

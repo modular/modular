@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This is a module doc."""
 
-# RUN: %parse-mojo-isolated %s -mojo-diagnose-missing-doc-strings -verify-diagnostics | FileCheck %s --implicit-check-not warning
+# RUN: %parse-mojo-isolated %s --diagnose-missing-doc-strings -verify-diagnostics | FileCheck %s --implicit-check-not warning
 
 from docs_package import documented_method_defined_in_init
 
@@ -80,6 +80,29 @@ trait Trait:
   def f(self):
     """This is a trait function doc."""
     ...
+
+
+trait TraitWithDefault:
+    """A trait with a default method."""
+
+    def defaulted(self):
+        """Provide the default implementation."""
+        pass
+
+
+struct UsesTraitDefault(TraitWithDefault):
+    """A struct that uses a default trait method."""
+
+    pass
+
+
+struct OverridesTraitDefault(TraitWithDefault):
+    """A struct that overrides a default trait method."""
+
+    def defaulted(self):
+        """Override the default implementation."""
+        pass
+
 
 # MOTO-869: A docstring ending with an example should pass validation.
 @fieldwise_init

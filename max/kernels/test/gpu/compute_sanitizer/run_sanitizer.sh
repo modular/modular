@@ -23,15 +23,19 @@
 #                use `redzone` to catch realistic off-by-one global overflows.
 #   racecheck  - intra-block shared-memory data races (pool-independent).
 #   initcheck  - uninitialized global-memory reads.
-#   synccheck  - divergent / mismatched __syncthreads / named-barrier. NOTE:
-#                this lane reports "Divergent thread(s) in block" for every
+#   synccheck  - divergent / mismatched __syncthreads / named-barrier. This
+#                lane reports "Divergent thread(s) in block" for every
 #                `named_barrier` in the warp-specialized SM100 attention/MLA
 #                family. PTX permits warps to arrive at different `bar.sync`
 #                instructions sharing a barrier name -- exactly what those
 #                partial-CTA rendezvous do -- but synccheck accepts arrivals
 #                from only one instruction address, and NVIDIA supports
 #                `--suppressions` for memcheck/initcheck/racecheck but NOT for
-#                synccheck. Expect ~48 noise findings on SM100. KERN-3536.
+#                synccheck. `classify_synccheck.py` filters that one class out
+#                by resolving each report to its source line, so the lane gates
+#                on the rest. `negative_control_synccheck_named_barrier.mojo`
+#                is the proof the class is tool noise and the calibration for
+#                the rule.
 #   redzone    - MAX's own guard-region allocator (no compute-sanitizer): fast,
 #                catches small global OOB at free time (host alloc/free trace).
 #
@@ -41,7 +45,7 @@
 #
 # compute-sanitizer is compiled with `--mojocopt=--debug-level
 # --mojocopt=line-tables` (line-tables, NOT full: keeps ptxas -O optimizations
-# so racecheck sees the real schedule).
+# so racecheck sees the real schedule), except NO_LINE_TABLES_TARGETS below.
 # ===----------------------------------------------------------------------=== #
 set -uo pipefail
 
@@ -59,6 +63,7 @@ cd "$WORKDIR" || exit 1
 CS="${COMPUTE_SANITIZER:-/usr/local/cuda/bin/compute-sanitizer}"
 RESULTS="${CS_RESULTS_DIR:-$WORKDIR/.derived/cs-findings}/$TOOL"
 mkdir -p "$RESULTS"
+CLASSIFY="$WORKDIR/max/kernels/test/gpu/compute_sanitizer/classify_synccheck.py"
 
 COMMON=(
   # Build the test binaries under the shared CI GPU config (same as the
@@ -69,6 +74,9 @@ COMMON=(
   # runner ("lost communication"). `opt` also matches the "keep ptxas -O
   # optimizations" intent noted above.
   --config=ci-local-gpu
+  # ci-local-gpu sets ROLE=CI, so BuildBuddy counts tests failed by sanitizer
+  # findings as flakes on main. The last --build_metadata for a key wins.
+  --build_metadata=ROLE=COMPUTE_SANITIZER
   --test_output=errors --curses=no --noshow_progress
   --nocache_test_results --keep_going
   "--test_timeout=900,2400,5400,10800"
@@ -109,35 +117,117 @@ case "$TOOL" in
   # initialized) and GRADES the no-initialization contract: a dropped select or
   # a missing `-inf` LSE write now propagates NaN into the output and trips the
   # test's own assert. See KERN-3535.
+  # `VENDOR_BLAS_ZERO_WORKSPACE` hands cuBLAS a zeroed workspace: its split-K
+  # reduction reads workspace bytes it never wrote. Other builds skip the
+  # zeroing, which costs a 32 MiB memset a call.
   initcheck) EXTRA=""; POOL="--//:gpu_disable_memory_manager"
-             MOJOCOPTS=(--mojocopt=-D --mojocopt=FA4_WS_POISON=1) ;;
+             MOJOCOPTS=(--mojocopt=-D --mojocopt=FA4_WS_POISON=1
+                        --mojocopt=-D --mojocopt=VENDOR_BLAS_ZERO_WORKSPACE=true) ;;
   synccheck) EXTRA="" ;;
   redzone)   EXTRA="" ;;
   *) usage ;;
 esac
 
+# The line-tables compile of these targets exceeds the remote executor's
+# memory (test_mha_causal_mask_depth_64 peaks at ~290 GiB RSS), and one
+# OOM-killed remote action (Exit 34) aborts the whole bazel invocation despite
+# --keep_going. They are therefore tested in a separate invocation without line
+# tables: their findings still gate, but reports lack source lines.
+#
+# The two fp8 QKV prefill targets are here for the same reason: the 2026-10-23
+# sweep lost both to the OOM killer ("Exit 34: Unavailable: task process or
+# child process killed by oom killer") on the line-tables build only, which
+# cost the whole invocation its results (KERN-3802's sibling failure mode).
+NO_LINE_TABLES_TARGETS=(
+  //max/kernels/test/gpu/nn:attention/test_mha_sm100_qkv_fp8_d64_prefill.mojo.test
+  //max/kernels/test/gpu/nn:attention/test_mha_sm100_qkv_fp8_d128_prefill.mojo.test
+  //max/kernels/test/gpu/nn:attention/test_mha_sm100_ws_bm32.mojo.test
+  //max/kernels/test/gpu/nn:attention/test_mha_sm100_ws_bm32_splitk.mojo.test
+  //max/kernels/test/gpu/nn:attention/test_mha_sm100_qkv_fp8_d64_prefill.mojo.test
+  //max/kernels/test/gpu/nn:attention/test_mha_sm100_qkv_fp8_d128_prefill.mojo.test
+  //max/kernels/test/gpu/nn:test_flash_attention.mojo.test
+  //max/kernels/test/gpu/nn:test_mha_causal_mask_depth_64.mojo.test
+  //max/kernels/test/gpu/nn:test_mha_causal_mask_depth_128.mojo.test
+)
+
+# Expand the caller's patterns (honoring `-//...` excludes) to concrete test
+# targets, for splitting off NO_LINE_TABLES_TARGETS and for the findings scan.
+POS=""
+NEG=""
+for a in "$@"; do
+  case "$a" in
+    -*) NEG="$NEG - ${a#-}" ;;
+    *) POS="${POS:+$POS + }$a" ;;
+  esac
+done
+EXPANDED=()
+if [ -n "$POS" ]; then
+  while IFS= read -r t; do [ -n "$t" ] && EXPANDED+=("$t"); done \
+    < <(./bazelw query "tests($POS)$NEG" 2>/dev/null)
+fi
+NO_LT_SELECTED=()
+NO_LT_EXCLUDES=()
+for h in "${NO_LINE_TABLES_TARGETS[@]}"; do
+  NO_LT_EXCLUDES+=("-$h")
+  for t in ${EXPANDED[@]+"${EXPANDED[@]}"}; do
+    [ "$t" = "$h" ] && NO_LT_SELECTED+=("$h")
+  done
+done
+if [ "${#EXPANDED[@]}" -eq 0 ]; then
+  # The query failed or matched nothing: one run over the caller's patterns.
+  EXPANDED=("$@")
+  NO_LT_EXCLUDES=()
+fi
+
 LOG="$RESULTS/run.log"
 echo ">>> tool=$TOOL targets=$# results=$RESULTS" | tee "$LOG"
+
+# Every bazel invocation goes through `run_bazel` so its exit status is
+# *captured* rather than discarded by the `tee` pipe: there is no `-e` under
+# `set -uo pipefail`, and the pipeline's own status is `tee`'s.
+#
+# The status is NOT itself a gate -- under `--error-exitcode 1` a lane's benign
+# findings turn PASSING targets into bazel FAILs, which is why the gate below
+# keys off violation markers. It is recorded because "bazel never reached the
+# test phase" and "every target failed to build" must not read as "clean";
+# `report_execution` below turns that into a hard failure (KERN-3802).
+bazel_status=0
+run_bazel() {
+  ./bazelw "$@" 2>&1 | tee -a "$LOG"
+  local status="${PIPESTATUS[0]}"
+  [ "$status" -ne 0 ] && bazel_status="$status"
+  return 0
+}
 
 # Targets go after a `--` separator so negative patterns (e.g. `-//pkg:target`)
 # passed by the caller are parsed as target patterns, not flags.
 if [ "$TOOL" = "redzone" ]; then
   # No compute-sanitizer; the allocator validates guard patterns at free time.
-  ./bazelw test "${COMMON[@]}" \
+  run_bazel test "${COMMON[@]}" \
     --test_env=MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds \
-    -- "$@" 2>&1 | tee -a "$LOG"
+    -- "$@"
 else
-  RUNUNDER="$CS --tool $TOOL --target-processes all --launch-timeout 0 --error-exitcode 1 $EXTRA"
+  # --require-cuda-init no: tests that only print generated assembly never
+  # initialize CUDA, which the tool otherwise reports as an error.
+  RUNUNDER="$CS --tool $TOOL --target-processes all --launch-timeout 0 --error-exitcode 1 --require-cuda-init no $EXTRA"
   # Exclude filecheck tests under the compute-sanitizer lanes: they can't run
   # under `--run_under`, and one (test_gather_nd_oob) is a deliberate
   # expect_crash OOB that would surface a spurious memcheck "out of bounds"
   # finding. Restrict to `gpu`-tagged tests while we're at it.
-  ./bazelw test "${COMMON[@]}" $POOL \
-    --test_tag_filters=gpu,-filecheck \
-    --run_under="$RUNUNDER" \
-    --mojocopt=--debug-level --mojocopt=line-tables \
-    ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
-    -- "$@" 2>&1 | tee -a "$LOG"
+  CS_FLAGS=("${COMMON[@]}" "--test_tag_filters=gpu,-filecheck" --run_under="$RUNUNDER")
+  [ -n "$POOL" ] && CS_FLAGS+=("$POOL")
+  if [ "${#NO_LT_SELECTED[@]}" -lt "${#EXPANDED[@]}" ]; then
+    run_bazel test "${CS_FLAGS[@]}" \
+      --mojocopt=--debug-level --mojocopt=line-tables \
+      ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
+      -- "$@" ${NO_LT_EXCLUDES[@]+"${NO_LT_EXCLUDES[@]}"}
+  fi
+  if [ "${#NO_LT_SELECTED[@]}" -gt 0 ]; then
+    echo ">>> ${#NO_LT_SELECTED[@]} target(s) without line tables" | tee -a "$LOG"
+    run_bazel test "${CS_FLAGS[@]}" \
+      ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
+      -- "${NO_LT_SELECTED[@]}"
+  fi
 fi
 
 # --- Extract findings from each target's test.log -----------------------------
@@ -160,18 +250,24 @@ MARKERS='Invalid __(global|shared|local|device)__|Race reported|Barrier error|Un
 echo "" | tee -a "$LOG"
 echo "==================== FINDINGS SUMMARY ($TOOL) ====================" | tee -a "$LOG"
 found_any=0
-# Expand any `//...` / `:all` wildcards to concrete test targets for scanning.
-EXPANDED=()
-for a in "$@"; do
-  while IFS= read -r t; do [ -n "$t" ] && EXPANDED+=("$t"); done < <(./bazelw query "tests($a)" 2>/dev/null)
-done
-[ "${#EXPANDED[@]}" -eq 0 ] && EXPANDED=("$@")
 for tgt in "${EXPANDED[@]}"; do
   # //pkg:name -> bazel-testlogs/pkg/name/test.log
   rel="${tgt#//}"; rel="${rel/://}"
   tl="bazel-testlogs/$rel/test.log"
   [ -f "$tl" ] || continue
-  hits="$(grep -nE "$MARKERS" "$tl" 2>/dev/null | grep -vE 'ERROR SUMMARY: 0 errors' | head -40)"
+  if [ "$TOOL" = synccheck ]; then
+    # Same marker set, minus the one class we can prove is the tool's own gap:
+    # a divergence attributed to a `named_barrier` call site. PTX permits one
+    # barrier name to be reached from several instruction addresses (that IS a
+    # partial-CTA rendezvous); synccheck models a barrier as one address and
+    # reports every SM100 attention/MLA rendezvous as divergent. NVIDIA has no
+    # `--suppressions` for synccheck, so the filter lives here. It removes
+    # nothing else -- a plain `barrier()` divergence, which is what a real
+    # desynchronized block looks like, still reports.
+    hits="$("$CLASSIFY" --markers "$MARKERS" "$tl" 2>>"$LOG" | head -40)"
+  else
+    hits="$(grep -nE "$MARKERS" "$tl" 2>/dev/null | grep -vE 'ERROR SUMMARY: 0 errors' | head -40)"
+  fi
   if [ -n "$hits" ]; then
     found_any=1
     echo "" | tee -a "$LOG"
@@ -226,8 +322,41 @@ fi
 echo "==================================================================" | tee -a "$LOG"
 echo ">>> full logs under $RESULTS" | tee -a "$LOG"
 
+# --- Report how much the lane actually measured -------------------------------
+# The marker scan above answers "did a test report a violation?". It cannot
+# answer "did any test run?", and the two must not collapse into the same
+# answer: on 2026-10-09 every target failed to build, no test.log held a
+# marker, and the sweep exited 0 -- a green check over an empty measurement
+# that the nightly-SHA train then recorded as a healthy run (KERN-3802).
+#
+# So bazel's own executed-test tally, which is the only trustworthy evidence
+# that tests ran, is the gate here. Zero executed tests is a hard failure
+# whatever the markers say. It is deliberately NOT a floor on the count: the
+# sweep is also dispatchable over a single target, so "at least one" is all
+# that can be asserted from the caller's patterns.
+#
+# Nothing else about bazel's status is gated -- see the `run_bazel` note above
+# and the findings gate below: partial coverage gaps (Internal Sanitizer
+# Errors, the odd FAILED TO BUILD) stay triage-from-logs, not regressions.
+executed_total="$(
+  # bazel says "1 out of 1 test" -- singular -- for a one-test invocation and
+  # "1 out of 2 tests" otherwise, so the noun is optional.
+  grep -oE 'Executed [0-9]+ out of [0-9]+ tests?' "$LOG" \
+    | awk '{ total += $2 } END { print total + 0 }'
+)"
+echo ">>> RESULT tool=$TOOL executed=$executed_total findings=$found_any bazel_status=$bazel_status" \
+  | tee -a "$LOG"
+
+if [ "$executed_total" -eq 0 ]; then
+  echo "::error::compute-sanitizer sweep ($TOOL) executed 0 tests (bazel exit $bazel_status): the lane measured nothing, so its findings are not evidence. Check the build failures above." \
+    | tee -a "$LOG"
+  exit 2
+fi
+
 # Exit non-zero when a real violation marker was found, so this doubles as a CI
 # gate (and gives local callers a meaningful exit status). Internal Sanitizer
 # Errors and other bazel failures are intentionally NOT gated here -- they are
 # coverage gaps (e.g. SM100 cuBLAS) to triage from the logs, not regressions.
+#
+# 0 = ran and clean, 1 = ran and a marker was found, 2 = did not run.
 exit "$found_any"

@@ -22,10 +22,9 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
-from max.nn.kv_cache import KVCacheInputsInterface
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
     BatchProcessorRuntime,
@@ -46,17 +45,20 @@ if TYPE_CHECKING:
 
 
 class Gemma3MultiModalBatchProcessor(
-    BatchProcessor[TextAndVisionContext, "Gemma3MultiModalModelInputs"]
+    BatchProcessor[
+        TextAndVisionContext,
+        "Gemma3MultiModalModelInputs",
+        Gemma3ForConditionalGenerationConfig,
+    ]
 ):
     """Ragged batching with optional vision inputs for Gemma3 multimodal models."""
 
     def __init__(
         self,
-        config: ArchConfig,
+        config: Gemma3ForConditionalGenerationConfig,
         runtime: BatchProcessorRuntime,
     ) -> None:
         super().__init__(config, runtime)
-        assert isinstance(config, Gemma3ForConditionalGenerationConfig)
         self._stacker = VisionStacker()
         self._image_token_index = config.image_token_index
         self._devices = list(runtime.devices)
@@ -88,6 +90,7 @@ class Gemma3MultiModalBatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The graph inputs' shapes, as symbols plus the KV cache params."""
         return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,
@@ -135,9 +138,10 @@ class Gemma3MultiModalBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Gemma3MultiModalModelInputs:
+        """Builds the first step's inputs from the replica batches."""
         from .model import Gemma3MultiModalModelInputs
 
         if len(replica_batches) > 1:
@@ -179,6 +183,7 @@ class Gemma3MultiModalBatchProcessor(
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
     ) -> ModelOutputs:
+        """Unpacks the graph outputs into ragged KV results."""
         return process_ragged_kv_outputs(
             outputs,
             return_logits=self.runtime.return_logits,

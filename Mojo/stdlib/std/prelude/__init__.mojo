@@ -38,8 +38,6 @@ from std.collections.string import (
     Codepoint,
     ImmStringSpan,
     ImmStringSlice,
-    MutStringSpan,
-    MutStringSlice,
     StaticString,
     String,
     StringSpan,
@@ -51,9 +49,9 @@ from std.collections.string import (
     ord,
 )
 from std.format import Writable, Writer, repr
-from std.hashlib.hash import Hashable, hash
+from std.hash.hash import Hashable, hash, hash_bytes
 from std.io.file import FileHandle, open
-from std.io.file_descriptor import FileDescriptor
+from std.io.file_descriptor import RawFileDescriptor
 from std.io.io import input, print
 
 from std.builtin.anytype import (
@@ -66,6 +64,8 @@ from std.builtin.builtin_slice import Slice, slice
 from std.builtin.comparable import Comparable, Equatable
 from std.builtin.debug_assert import debug_assert
 from std.builtin.dtype import DType
+from std.builtin.inline_level import InlineLevel
+from std.builtin.enum_like import EnumLike
 from std.builtin.error import Error
 from std.builtin.float_literal import FloatLiteral
 from std.builtin.floatable import Floatable, FloatableRaising
@@ -81,7 +81,6 @@ from std.builtin.int_literal import IntLiteral
 from std.builtin.len import Sized, SizedRaising, len
 from std.math.math import (
     Absable,
-    Powable,
     Roundable,
     abs,
     divmod,
@@ -95,7 +94,7 @@ from std.builtin.range import range
 from std.builtin.rebind import rebind, rebind_var
 from std.builtin.reversed import ReversibleRange, reversed
 from std.builtin.simd_length import SIMDLength
-from std.builtin.simd import (
+from std.simd import (
     SIMD,
     BFloat16,
     Byte,
@@ -159,6 +158,8 @@ from std.memory import (
     ImmOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalImmPointer,
+    OptionalMutPointer,
     OptionalPointer,
     ImmPointer,
     MutPointer,

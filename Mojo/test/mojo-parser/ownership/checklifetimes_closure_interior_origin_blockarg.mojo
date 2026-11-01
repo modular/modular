@@ -60,15 +60,15 @@ struct DevicePtr[
 
 # `{var}` capture of a DevicePassable wrapper is device-encodable, so the
 # outlined interior appears on both `__device_type` and host storage.
-# CHECK-LABEL: lit.struct.decl @"device_interior()::closure::__storage::__device_type"<
+# CHECK-LABEL: lit.struct.decl @"closure$device_interior()::closure::__storage::__device_type"<
 # CHECK-SAME: *"?__interior_origin_0": origin<true>
 # CHECK: lit.struct.field wrapped : {{.*}}*"?__interior_origin_0"
-# CHECK-LABEL: lit.struct.decl @"device_interior()::closure::__storage"<
+# CHECK-LABEL: lit.struct.decl @"closure$device_interior()::closure::__storage"<
 # CHECK-SAME: *"?__interior_origin_0": origin<true>
 # CHECK: lit.struct.field wrapped : {{.*}}*"?__interior_origin_0"
 
 # Two captures whose types embed distinct interiors outline two parameters.
-# CHECK-LABEL: lit.struct.decl @"two_interiors()::closure::__storage"<
+# CHECK-LABEL: lit.struct.decl @"closure$two_interiors()::closure::__storage"<
 # CHECK-SAME: *"?__interior_origin_0": origin<true>
 # CHECK-SAME: *"?__interior_origin_1": origin<true>
 # CHECK: lit.struct.field p : {{.*}}*"?__interior_origin_0"
@@ -78,7 +78,7 @@ struct DevicePtr[
 # storage parameter; the interior is still outlined separately.
 # `p`'s own reference is captured by `imm` (promoted to origin<false>),
 # but its pointee origin remains mutable (origin<true>).
-# CHECK-LABEL: lit.struct.decl @"keep_base{{.*}}::__storage"<
+# CHECK-LABEL: lit.struct.decl @"closure$keep_base{{.*}}::__storage"<
 # CHECK-SAME: O._mlir_origin
 # CHECK-SAME: origin<false>
 # CHECK-SAME: *"?__interior_origin_0": origin<true>
@@ -87,11 +87,11 @@ struct DevicePtr[
 
 # Capturing the interior-origin *element* by `imm` mutcasts the outlined
 # parameter to origin<false>.
-# CHECK-LABEL: lit.struct.decl @"promote_interior()::closure::__storage"<
+# CHECK-LABEL: lit.struct.decl @"closure$promote_interior()::closure::__storage"<
 # CHECK-SAME: *"?__interior_origin_0": origin<false>
 # CHECK: lit.struct.field r : !lit.ref<!Int, imm *"?__interior_origin_0">
 
-# CHECK-LABEL: lit.struct.decl @"outer()::closure::__storage"<
+# CHECK-LABEL: lit.struct.decl @"closure$outer()::closure::__storage"<
 # CHECK-SAME: *"?__interior_origin_0": origin<true>
 # CHECK: lit.struct.field p : !lit.ref<!lit.struct<#Pointer {{.*}}*"?__interior_origin_0"
 # CHECK-LABEL: lit.fn @"outer()"

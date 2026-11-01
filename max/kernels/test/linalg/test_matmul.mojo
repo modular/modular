@@ -15,9 +15,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from std.memory.alloc import unsafe_alloc
 from std.sys.info import CompilationTarget
 
-from layout import Coord, Idx, TileTensor
+from layout import Coord, TileTensor
 from layout.tile_layout import row_major
 from linalg.matmul import matmul
 from linalg.matmul.cpu import matmul as _matmul_cpu
@@ -47,9 +48,9 @@ def gemm_naive[
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var cur = rebind[Scalar[c_type]](c[i, j])
-                var av = rebind[Scalar[c_type]](a[i, p].cast[c_type]())
-                var bv = rebind[Scalar[c_type]](b[p, j].cast[c_type]())
+                var cur = c.load[width=1]((i, j))
+                var av = a.load[width=1]((i, p)).cast[c_type]()
+                var bv = b.load[width=1]((p, j)).cast[c_type]()
                 c[i, j] = cur + av * bv
 
 
@@ -60,10 +61,11 @@ def test_matmul[
     transpose_b: Bool,
     b_packed: Bool,
     saturated: Bool,
+    with_compute_fn: Bool = False,
 ](m: Int, n: Int, k: Int, kernel_type_m: Int) raises:
-    var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type],](k * n, alignment=alignment)
-    var b = TileTensor(b_ptr.as_unsafe_any_origin(), row_major(Coord(k, n)))
+    var a_ptr = unsafe_alloc[Scalar[a_type],](m * k, alignment=alignment)
+    var b_ptr = unsafe_alloc[Scalar[b_type],](k * n, alignment=alignment)
+    var b = TileTensor(b_ptr.as_unsafe_any_origin(), row_major(k, n))
 
     var padded_n_k = pack_matmul_b_shape_func[
         a_type,
@@ -74,20 +76,18 @@ def test_matmul[
     var padded_n = padded_n_k[1] if b_packed else n
     var padded_k = padded_n_k[0] if b_packed else k
 
-    var bp_ptr = alloc[Scalar[b_type],](
+    var bp_ptr = unsafe_alloc[Scalar[b_type],](
         padded_k * padded_n, alignment=alignment
     )
-    var c0_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
-    var c1_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var c0_ptr = unsafe_alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var c1_ptr = unsafe_alloc[Scalar[c_type],](m * n, alignment=alignment)
 
-    var a = TileTensor(a_ptr.as_unsafe_any_origin(), row_major(Coord(m, k)))
+    var a = TileTensor(a_ptr.as_unsafe_any_origin(), row_major(m, k))
     var bp = TileTensor(
-        bp_ptr.as_unsafe_any_origin(), row_major(Coord(padded_k, padded_n))
+        bp_ptr.as_unsafe_any_origin(), row_major(padded_k, padded_n)
     )
-    var c = TileTensor(c0_ptr.as_unsafe_any_origin(), row_major(Coord(m, n)))
-    var golden = TileTensor(
-        c1_ptr.as_unsafe_any_origin(), row_major(Coord(m, n))
-    )
+    var c = TileTensor(c0_ptr.as_unsafe_any_origin(), row_major(m, n))
+    var golden = TileTensor(c1_ptr.as_unsafe_any_origin(), row_major(m, n))
 
     # saturated VNNI only has a range [0,127] for the input a
     var vnni_range: Int = 128 if saturated else 256
@@ -114,20 +114,38 @@ def test_matmul[
     comptime if b_packed:
         pack_b_ndbuffer[a_type, c_type](b, bp, kernel_type_m)
 
-    if kernel_type_m != 0:
+    @inline(.always)
+    def add_one_compute_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return val + 1
+
+    comptime if with_compute_fn:
         _matmul_cpu[
             transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c, a, bp, kernel_type_m)
+        ](c, a, bp, add_one_compute_fn, kernel_type_m)
     else:
-        matmul[
-            transpose_b=transpose_b,
-            b_packed=b_packed,
-            saturated_vnni=saturated,
-        ](c, a, bp)
+        if kernel_type_m != 0:
+            _matmul_cpu[
+                transpose_b=transpose_b,
+                b_packed=b_packed,
+                saturated_vnni=saturated,
+            ](c, a, bp, kernel_type_m)
+        else:
+            matmul[
+                transpose_b=transpose_b,
+                b_packed=b_packed,
+                saturated_vnni=saturated,
+            ](c, a, bp)
 
     gemm_naive(a, b, golden, m, n, k)
+
+    comptime if with_compute_fn:
+        for i in range(m):
+            for j in range(n):
+                golden[i, j] = golden[i, j] + 1
 
     for i in range(m):
         for j in range(n):
@@ -151,11 +169,11 @@ def test_matmul[
             else:
                 assert_equal(c[i, j], golden[i, j], msg)
 
-    a_ptr.free()
-    b_ptr.free()
-    bp_ptr.free()
-    c0_ptr.free()
-    c1_ptr.free()
+    a_ptr.unsafe_free()
+    b_ptr.unsafe_free()
+    bp_ptr.unsafe_free()
+    c0_ptr.unsafe_free()
+    c1_ptr.unsafe_free()
 
 
 def test_matmul[
@@ -166,6 +184,7 @@ def test_matmul[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
+    with_compute_fn: Bool = False,
 ](m: Int, n: Int, k: Int) raises:
     test_matmul[
         a_type,
@@ -174,6 +193,7 @@ def test_matmul[
         False,  # transpose_b
         b_packed,
         saturated=saturated,
+        with_compute_fn=with_compute_fn,
     ](m, n, k, m if mixed_kernels else 0)
 
 
@@ -184,8 +204,8 @@ def test_shapes[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
+    with_compute_fn: Bool = False,
 ]() raises:
-    @__parameter
     def test_shapes_helper(m: Int, n: Int, k: Int) raises:
         test_matmul[
             a_type=a_type,
@@ -194,6 +214,7 @@ def test_shapes[
             b_packed=b_packed,
             saturated=saturated,
             mixed_kernels=mixed_kernels,
+            with_compute_fn=with_compute_fn,
         ](m, n, k)
 
     test_shapes_helper(256, 1024, 4096)
@@ -250,3 +271,22 @@ def main() raises:
     test_types[b_packed=True, saturated=False, mixed_kernels=True]()
     test_types[b_packed=False, saturated=True, mixed_kernels=True]()
     test_types[b_packed=True, saturated=True, mixed_kernels=True]()
+
+    test_shapes[
+        DType.uint8,
+        DType.int8,
+        DType.int32,
+        b_packed=False,
+        saturated=False,
+        mixed_kernels=True,
+        with_compute_fn=True,
+    ]()
+    test_shapes[
+        DType.float32,
+        DType.float32,
+        DType.float32,
+        b_packed=False,
+        saturated=False,
+        mixed_kernels=True,
+        with_compute_fn=True,
+    ]()

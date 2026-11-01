@@ -48,6 +48,13 @@ def raises_arg(x: String) raises Pointer[String, origin_of(x)]:
     pass
 
 
+struct OriginHolder(Movable):
+    var str: String
+
+    def __init__(out self):
+        self.str = String()
+
+
 # MOCO-3000
 def origin_scope_example():
     try:
@@ -70,3 +77,12 @@ def origin_scope_example():
         raises_arg(String())
     except e3:
         _ = e3[]  # isn't valid.
+
+    # An origin that refines one declared in the try body escapes just as the
+    # one it refines does, so what the error type captures is its base.
+    try:
+        var holder = OriginHolder()  # expected-note {{origin declared here}}
+        # expected-error @+1 {{inferred error type 'Pointer[String, origin_of(holder.str)]' captures origin 'origin_of(holder)' from within try body; it is not in scope in except body}}
+        raise Pointer(to=holder.str)
+    except e4:
+        _ = e4[]  # isn't valid.

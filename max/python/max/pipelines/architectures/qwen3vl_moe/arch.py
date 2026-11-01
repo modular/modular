@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Qwen3-VL-MoE with the pipeline registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
@@ -31,7 +32,11 @@ qwen3vl_moe_arch = SupportedArchitecture(
     ],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    input_modalities={
+        InputModality.TEXT,
+        InputModality.IMAGE,
+        InputModality.VIDEO,
+    },
     default_encoding=Qwen3VLConfig.DEFAULT_ENCODING,
     supported_encodings=Qwen3VLConfig.SUPPORTED_ENCODINGS,
     weight_adapters={
@@ -60,7 +65,11 @@ qwen3vl_arch = SupportedArchitecture(
     example_repo_ids=["Qwen/Qwen3-VL-4B-Instruct", "Qwen/Qwen3-VL-2B-Instruct"],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    input_modalities={
+        InputModality.TEXT,
+        InputModality.IMAGE,
+        InputModality.VIDEO,
+    },
     default_encoding=Qwen3VLConfig.DEFAULT_ENCODING,
     supported_encodings=Qwen3VLConfig.SUPPORTED_ENCODINGS,
     weight_adapters={

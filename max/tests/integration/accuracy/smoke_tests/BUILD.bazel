@@ -60,6 +60,17 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "endpoint_smoke_test",
+    testonly = True,
+    srcs = ["endpoint_smoke_test.py"],
+    imports = [".."],
+    deps = [
+        ":eval_runner",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
     name = "smoke_test_github_matrix",
     srcs = ["smoke_test_github_matrix.py"],
     imports = [".."],
@@ -173,4 +184,10 @@ modular_py_test(
         ":smoke_test_github_matrix",
         requirement("click"),
     ],
+)
+
+modular_py_test(
+    name = "test_eval_metrics",
+    srcs = ["test_eval_metrics.py"],
+    deps = [":eval_runner"],
 )

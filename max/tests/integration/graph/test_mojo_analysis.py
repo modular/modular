@@ -90,6 +90,31 @@ def test_my_add_valid(
     session.load(graph)
 
 
+def test_api_scoped_kernel_valid(
+    session: InferenceSession, kernel_verification_ops_path: Path
+) -> None:
+    # `ops.custom` verifies against a registry built over the kernel library
+    # alone; the device's `api` comes from the graph's device info mapping.
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
+    graph = Graph(
+        "test_api_scoped_kernel_valid",
+        input_types=[tensor_type, tensor_type],
+        output_types=[tensor_type],
+    )
+    with graph:
+        graph._import_kernels([kernel_verification_ops_path])
+        graph.output(
+            ops.custom(
+                "my_add_cpu_api",
+                device=DeviceRef.CPU(),
+                values=[graph.inputs[0], graph.inputs[1]],
+                out_types=[tensor_type],
+            )[0]
+        )
+
+    session.load(graph)
+
+
 def test_my_add_invalid_inputs_count(
     kernel_verification_ops_path: Path,
 ) -> None:
@@ -378,3 +403,88 @@ def test_mutable_input_tensor_valid(
 
     # Compile the model
     session.load(graph)
+
+
+def _reduction_types(dtype: DType, shapes: list[list[int]]) -> list[TensorType]:
+    return [
+        TensorType(dtype, shape, device=DeviceRef.CPU()) for shape in shapes
+    ]
+
+
+def test_reduction_valid() -> None:
+    input_types = _reduction_types(DType.float32, [[8, 128]])
+    with Graph("test_reduction_valid", input_types=input_types) as graph:
+        ops.custom(
+            "mo.reduce.add",
+            device=DeviceRef.CPU(),
+            values=list(graph.inputs),
+            out_types=_reduction_types(DType.float32, [[8, 1]]),
+        )
+
+
+@pytest.mark.parametrize(
+    ("symbol", "inputs", "outputs", "message"),
+    [
+        (
+            "mo.reduce.add",
+            [[8, 128], [8, 128]],
+            [(DType.float32, [8, 1])],
+            "takes one input, got 2",
+        ),
+        (
+            "mo.reduce.arg_max.tmp",
+            [[8, 128]],
+            [(DType.float32, [8, 1])],
+            "has 2 output fields, but the op has 1 results",
+        ),
+        (
+            "mo.reduce.add",
+            [[8, 1]],
+            [(DType.float32, [8, 1])],
+            "must turn exactly one input dimension into 1",
+        ),
+        (
+            "mo.reduce.add",
+            [[8, 128]],
+            [(DType.float32, [1, 1])],
+            "must turn exactly one input dimension into 1",
+        ),
+        (
+            "mo.reduce.add",
+            [[8, 128]],
+            [(DType.float32, [8, 2])],
+            "must turn exactly one input dimension into 1",
+        ),
+        (
+            "mo.reduce.add",
+            [[8, 128]],
+            [(DType.float32, [8])],
+            "results must be tensors of the input's rank",
+        ),
+        (
+            "mo.reduce.arg_max.tmp",
+            [[4, 16]],
+            [(DType.float32, [4, 1]), (DType.int64, [1, 16])],
+            "results reduce different axes",
+        ),
+    ],
+)
+def test_reduction_invalid(
+    symbol: str,
+    inputs: list[list[int]],
+    outputs: list[tuple[DType, list[int]]],
+    message: str,
+) -> None:
+    input_types = _reduction_types(DType.float32, inputs)
+    with Graph("test_reduction_invalid", input_types=input_types) as graph:
+        with pytest.raises(ValueError) as err:
+            ops.custom(
+                symbol,
+                device=DeviceRef.CPU(),
+                values=list(graph.inputs),
+                out_types=[
+                    TensorType(dtype, shape, device=DeviceRef.CPU())
+                    for dtype, shape in outputs
+                ],
+            )
+        assert f"reduction '{symbol}' {message}" in str(err.value)

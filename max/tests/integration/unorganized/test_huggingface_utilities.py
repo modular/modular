@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+import json
+import struct
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
@@ -118,6 +120,83 @@ def test_huggingface_repo__encodings_supported_online_fp8_fallback() -> None:
 
     assert "bfloat16" in supported_encodings
     assert "float8_e4m3fn" in supported_encodings
+
+
+@pytest.mark.parametrize(
+    "quantization_config",
+    [
+        {"quant_method": "mxfp8"},
+        # ModelOpt nests quant_algo under "quantization".
+        {"quant_method": "modelopt", "quantization": {"quant_algo": "MXFP8"}},
+    ],
+)
+def test_huggingface_repo__encodings_supported_mxfp8_scales_not_fp4(
+    tmp_path: Path, quantization_config: dict[str, object]
+) -> None:
+    header = json.dumps(
+        {
+            "w": {"dtype": "F8_E4M3", "shape": [32], "data_offsets": [0, 32]},
+            "w_scale": {"dtype": "U8", "shape": [1], "data_offsets": [32, 33]},
+        }
+    ).encode()
+    (tmp_path / "model.safetensors").write_bytes(
+        struct.pack("<Q", len(header)) + header + bytes(33)
+    )
+    (tmp_path / "config.json").write_text(
+        json.dumps({"quantization_config": quantization_config})
+    )
+
+    supported = HuggingFaceRepo(repo_id=str(tmp_path)).supported_encodings
+
+    assert "float8_e4m3fn" in supported
+    assert "float4_e2m1fnx2" not in supported
+
+
+def test_huggingface_repo__encodings_supported_online_reads_config_json(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "quantization_config": {
+                    "quant_method": "modelopt",
+                    "quantization": {"quant_algo": "MXFP8"},
+                }
+            }
+        )
+    )
+    with (
+        patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+    ):
+        hf_repo = HuggingFaceRepo(repo_id="org/modelopt-mxfp8", revision="abc")
+
+    with (
+        patch.object(
+            HuggingFaceRepo, "weight_files", new_callable=PropertyMock
+        ) as mock_weight_files,
+        patch.object(
+            HuggingFaceRepo, "info", new_callable=PropertyMock
+        ) as mock_info,
+        patch(
+            "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download",
+            return_value=str(config_path),
+        ) as mock_download,
+    ):
+        mock_weight_files.return_value = {
+            WeightsFormat.safetensors: ["model.safetensors"]
+        }
+        # The Hub summary keeps only the top-level quant_method.
+        mock_info.return_value = MagicMock(
+            safetensors=MagicMock(parameters={"F8_E4M3": 32, "U8": 1}),
+            config={"quantization_config": {"quant_method": "modelopt"}},
+        )
+        supported = hf_repo.supported_encodings
+
+    assert "float8_e4m3fn" in supported
+    assert "float4_e2m1fnx2" not in supported
+    assert mock_download.call_args.kwargs["revision"] == "abc"
 
 
 def test_huggingface_repo__get_files_for_encoding(

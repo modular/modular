@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections.string._parsing_numbers.parsing_floats import (
+    scan_short_decimal,
+)
 from std.math import inf, isinf, isnan
 from std.memory import bitcast
 
@@ -34,6 +37,59 @@ def test_scientific_notation() raises:
     assert_equal(atof("1.23E2"), 123.0)
     assert_equal(atof("1.23E+2"), 123.0)
     assert_equal(atof("1.23E-2"), 0.0123)
+
+
+def test_short_decimal_scan_bounds() raises:
+    var empty = ""
+    assert_true(not scan_short_decimal(empty.as_bytes(), 0).ok)
+    var text = "1234567"
+    assert_true(not scan_short_decimal(text.as_bytes(), text.byte_length()).ok)
+
+
+def test_short_mantissa_with_long_exponent() raises:
+    # The long exponent makes these inputs reach the word scanner in atof.
+    assert_equal(atof("1234567e00000001"), 12345670.0)
+    assert_equal(atof("12345.6e00000001"), 123456.0)
+    assert_equal(atof("0.00001e00000001"), 0.0001)
+    assert_equal(atof(".5e0000000000001"), 5.0)
+    assert_equal(atof("5.e0000000000001"), 50.0)
+    assert_equal(atof("1.5e+00000000003"), 1500.0)
+    assert_equal(atof("1.5e-00000000300"), 1.5e-300)
+    with assert_raises(contains="Invalid character(s)"):
+        _ = atof("1.2.3e0000000001")
+    with assert_raises(contains="Invalid character(s)"):
+        _ = atof("1/2e000000000001")
+
+
+def test_short_decimal_scan_paths() raises:
+    """Test the word-scan paths of `scan_short_decimal`.
+
+    `atof` reaches the scanner only for inputs of sixteen bytes or more,
+    and only after its sign was stripped, so the fraction paths and the
+    digit-budget edges are pinned through `atof` and the sign handling
+    through a direct call.
+    """
+    # The digits and point fill the first word, so the general path
+    # reads the fraction from the next one.
+    assert_equal(atof("1234567.8e000001"), 12345678.0)
+    # Two-word fraction: the first fraction word is all digits
+    # (count == 8) and the second holds seven more (more == 7).
+    assert_equal(atof("0.123456789012345e1"), 1.23456789012345)
+    # Exactly nineteen digits, the budget edge: the mantissa
+    # 1234567890123456789 still fits a UInt64.
+    assert_equal(atof("1234567.890123456789"), 1234567.890123456789)
+    # Twenty-two digits: the two-word fraction wraps the UInt64 mantissa,
+    # the budget check discards it, and `DecimalParts` re-reads the digits.
+    assert_equal(atof("1234567.890123456789012"), 1234567.890123456789012)
+
+    var signed = scan_short_decimal("-12345.6".as_bytes(), 0)
+    assert_true(signed.ok and signed.negative)
+    assert_equal(signed.mantissa, UInt64(123456))
+    assert_equal(signed.exponent, -1)
+    assert_equal(signed.end, 8)
+    assert_equal(signed.int_digits, 5)
+    assert_equal(signed.frac_digits, 1)
+    assert_equal(signed.terminator, Byte(0))
 
 
 def test_nan_and_inf() raises:
@@ -66,6 +122,29 @@ def test_large_exponents() raises:
     assert_equal(atof("1e-309"), 1e-309)
 
 
+def test_malformed_numbers_rejected() raises:
+    """Test that malformed numbers raise instead of being partially parsed."""
+    # The old right-to-left parser silently skipped the offending
+    # characters, reading "1-2" as 12.0, "1e--5" as 1e-5, and so on.
+    var malformed: List[String] = [
+        "1-2",
+        "1..2",
+        "1e2e3",
+        "1e5.0",
+        ".e5",
+        "1e--5",
+        "1.2.3",
+        "1e2.3",
+        "1+2",
+        "..5",
+    ]
+    for text in malformed:
+        with assert_raises(
+            contains="Invalid character(s) in the number: '" + text + "'"
+        ):
+            _ = atof(text)
+
+
 def test_error_cases() raises:
     """Test error cases."""
     with assert_raises(
@@ -82,16 +161,161 @@ def test_error_cases() raises:
     with assert_raises(contains="String is not convertible to float"):
         _ = atof(".")
 
-    # TODO:
-    # This should actually work and approximate to the closest float64
-    # but we don't support it yet. See the section
-    # 11, "Processing long numbers quickly" in the paper
-    # Number Parsing at a Gigabyte per Second by Daniel Lemire
-    # https://arxiv.org/abs/2101.11408 to learn how to do it.
-    with assert_raises(
-        contains="The number is too long, it's not supported yet."
-    ):
-        _ = atof("47421763.548648646474532187448684")
+    # More than 19 significant digits are resolved exactly.
+    assert_equal(atof("47421763.548648646474532187448684"), 47421763.54864865)
+
+
+def test_slow_path() raises:
+    """Test exact rounding of long mantissas via the big-integer slow path.
+
+    Numbers with more than 19 significant digits only fall back to the
+    exact `_BigUInt` comparison when the 19-digit truncation `w` and its
+    neighbor `w + 1` round to different doubles, so every case below is
+    built to straddle a rounding boundary.
+    """
+    var as_bits = lambda (f: Float64) -> UInt64: bitcast[.uint64](f)
+
+    # Exact decimal expansions of midpoints between adjacent doubles: each
+    # tie resolves to the neighbor with the even mantissa.
+    assert_equal(
+        atof("1.00000000000000011102230246251565404236316680908203125"), 1.0
+    )
+    assert_equal(
+        atof("1.00000000000000033306690738754696212708950042724609375"),
+        1.0000000000000004,
+    )
+    assert_equal(
+        atof("0.999999999999999944488848768742172978818416595458984375"), 1.0
+    )
+    # One digit past each midpoint tips the tie.
+    assert_equal(
+        atof("1.000000000000000111022302462515654042363166809082031251"),
+        1.0000000000000002,
+    )
+    assert_equal(
+        atof("0.999999999999999944488848768742172978818416595458984374"),
+        0.9999999999999999,
+    )
+
+    # Integer midpoints 2**54 + 2 and 2**55 + 4: the same ties at
+    # magnitudes where the midpoint shifts by a positive power of two.
+    assert_equal(
+        atof("18014398509481986.00000000000000000001"), 18014398509481988.0
+    )
+    assert_equal(
+        atof("36028797018963972.00000000000000000001"), 36028797018963976.0
+    )
+
+    # An explicit exponent keeps the decimal scale positive, so the value
+    # itself carries the power of ten.
+    assert_equal(atof("12089258196146293081e5"), 1.2089258196146292e24)
+
+    # Leading zeros after the dot must not consume the digit budget. This
+    # is the midpoint below 2**-40, scaled down by a power of two.
+    assert_equal(
+        atof(
+            "0.0000000000009094947017729281874279411283552444536493718219016813009147881530225276947021484375"
+        ),
+        9.094947017729282e-13,
+    )
+
+    # Straddling the normal/subnormal boundary: only the exact comparison
+    # can tell which side the truncated mantissa belongs to.
+    var below = atof("2.225073858507201136057409e-308")
+    assert_equal(as_bits(below), UInt64(0x000FFFFFFFFFFFFF))
+    var above = atof("2.225073858507201136057410e-308")
+    assert_equal(as_bits(above), UInt64(0x0010000000000000))
+
+    # 769 significant digits: the tail beyond the 768-digit capacity of
+    # the big integer only contributes a sticky bit, which still tips the
+    # tie below.
+    var sticky = (
+        String("1.00000000000000011102230246251565404236316680908203125")
+        + "0" * 713
+        + "1"
+    )
+    assert_equal(atof(sticky), 1.0000000000000002)
+
+
+def test_digit_runs_at_buffer_end() raises:
+    """Test digit runs that stop exactly at the end of the input.
+
+    `scan_digits` consumes runs eight bytes at a time with a byte loop for
+    the remainder, so runs on every boundary around the chunk size and
+    the 19-digit mantissa budget need to parse exactly without padding.
+    """
+    assert_equal(atof("12345678"), 12345678.0)
+    assert_equal(atof("1234567890123456"), 1234567890123456.0)
+    assert_equal(atof("12345678901234567"), 1.2345678901234568e16)
+    assert_equal(atof("123456789012345678"), 1.2345678901234568e17)
+    assert_equal(atof("1234567890123456789"), 1.2345678901234568e18)
+    assert_equal(atof("12345678901234567890"), 1.2345678901234567e19)
+    # Longer runs load many chunks and end on a byte-count tail.
+    assert_equal(
+        atof("1234567890123456789012345678901234567890"), 1.2345678901234568e39
+    )
+    assert_equal(
+        atof(
+            "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"
+        ),
+        1.2345678901234567e99,
+    )
+    # A run of zeros still has to scan every byte for the terminator.
+    assert_equal(atof("1000000000000000000"), 1e18)
+    # A trailing dot is a valid terminator for a long run.
+    assert_equal(
+        atof("1234567890123456789012345678901234567890."),
+        1.2345678901234568e39,
+    )
+    # Fraction runs ending at the end of the input.
+    assert_equal(atof("0.12345678"), 0.12345678)
+    assert_equal(atof("0.123456789012345678"), 0.12345678901234568)
+    assert_equal(atof("0.1234567890123456789"), 0.12345678901234568)
+    assert_equal(
+        atof("0.1234567890123456789012345678901234567890"),
+        0.12345678901234568,
+    )
+    # Terminators inside a chunk: fewer than eight digits before the dot
+    # or the exponent.
+    assert_equal(atof("1234567e89"), 1.234567e95)
+    assert_equal(atof("0.1234567e2"), 12.34567)
+    assert_equal(atof("12345678.1234567e2"), 1234567812.34567)
+    # Exponent digits must also survive the chunked scan.
+    assert_equal(atof("12345678e5"), 1234567800000.0)
+    assert_equal(atof("12345678e89"), 1.2345678e96)
+    assert_equal(atof("1234567.e5"), 123456700000.0)
+    assert_equal(atof("1.e5"), 100000.0)
+
+
+def test_leading_zeros() raises:
+    """Test long runs of leading zeros.
+
+    Leading zeros must not consume the 19-digit mantissa budget, whether
+    they appear before the dot, after it, or split across eight-byte
+    chunks.
+    """
+    assert_equal(atof("0000000000000000000000000000001"), 1.0)
+    assert_equal(
+        atof("00000000000000000000000000000000000000000000000001"), 1.0
+    )
+    assert_equal(
+        atof("00000000000000000000000000000000000000000000000001e5"), 100000.0
+    )
+    # Zeros after the dot shift the exponent once a nonzero digit appears.
+    assert_equal(atof("0.00000001"), 1e-08)
+    assert_equal(atof("0.0000000123456789"), 1.23456789e-08)
+    assert_equal(atof("0.00000000000000000000000000000000000001"), 1e-38)
+    assert_equal(atof(String("0.") + "0" * 100 + "1"), 1e-101)
+    # All-zero numbers stay zero.
+    assert_equal(atof("0.00000000"), 0.0)
+    assert_equal(atof("000.000"), 0.0)
+    assert_equal(atof("0.0e10"), 0.0)
+    # Zeros after the mantissa becomes nonzero do consume the budget.
+    assert_equal(atof("10000000000000000000000000000000000000000001"), 1e43)
+    assert_equal(
+        atof("000000000000000000000000123456789012345678901234567890"),
+        1.2345678901234568e29,
+    )
 
 
 comptime T = Tuple[Float64, String]
@@ -137,8 +361,9 @@ comptime numbers_to_test = [
     T(4.4501363245856945e-308, "4.4501363245856945e-308"),
     T(2.2250738585072014e-308, "2.2250738585072014e-308"),  # smallest normal
     T(2.2250738585072009e-308, "2.2250738585072009e-308"),  # largest subnormal
-    # TODO: Make atof work when many digits are present, e.g.
-    # "47421763.548648646474532187448684",
+    # More than 19 significant digits, resolved exactly by comparing the
+    # truncated mantissa against its neighbors.
+    T(47421763.54864865, "47421763.548648646474532187448684"),
 ]
 
 
@@ -158,8 +383,7 @@ def test_atof_generate_cases() raises:
 
 
 def test_normal_subnormal_boundary() raises:
-    def as_bits(f: Float64) -> UInt64:
-        return bitcast[.uint64](f)
+    var as_bits = lambda (f: Float64) -> UInt64: bitcast[.uint64](f)
 
     # Smallest normal: biased exponent 1, mantissa 0
     # Bit pattern: 0x0010000000000000
@@ -177,6 +401,20 @@ def test_normal_subnormal_boundary() raises:
     assert_equal(as_bits(reported_bug), as_bits(4.4501363245856945e-308))
     # Verify it's a normal number (biased exponent > 0)
     assert_true(as_bits(reported_bug) >= UInt64(0x0010000000000000))
+
+
+def test_large_mantissa_rounding() raises:
+    """Mantissas above 2^53 take the Eisel-Lemire path and must round to
+    nearest, ties to even."""
+    # Both inputs round to ...680, where adjacent doubles are spaced by 16.
+    assert_equal(atof("123456789012345678"), 1.2345678901234568e17)
+    assert_equal(atof("123456789012345679"), 1.2345678901234568e17)
+    # Exact ties to even.
+    assert_equal(atof("4503599627370497.5"), 4503599627370498.0)
+    assert_equal(atof("45035996273704975e-1"), 4503599627370498.0)
+    assert_equal(atof("9007199254740993"), 9007199254740992.0)
+    assert_equal(atof("18014398509481985"), 18014398509481984.0)
+    assert_equal(atof("1234567890123456789"), 1.2345678901234568e18)
 
 
 def main() raises:

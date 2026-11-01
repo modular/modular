@@ -1,0 +1,179 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026, Modular Inc. All rights reserved.
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions:
+// https://llvm.org/LICENSE.txt
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+//
+// This file parses options that carry `OptParser.td` marshalling information.
+// `llvm-tblgen -gen-opt-parser-defs` emits one
+// `<PREFIX>OPTION_WITH_MARSHALLING` row per such option; expanding the rows
+// with `PARSE_OPTION_WITH_MARSHALLING` stores each option's value in the field
+// its key path names.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef SUPPORT_DRIVER_OPTIONMARSHALLING_H
+#define SUPPORT_DRIVER_OPTIONMARSHALLING_H
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Option/ArgList.h"
+#include "llvm/Option/Option.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <initializer_list>
+#include <optional>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+namespace M {
+
+/// The errors that normalizers report for invalid option values.
+using MarshallingErrors = std::vector<std::string>;
+
+inline std::optional<bool> normalizeSimpleFlag(llvm::opt::OptSpecifier opt, int,
+                                               const llvm::opt::ArgList &args,
+                                               MarshallingErrors &) {
+  if (args.hasArg(opt))
+    return true;
+  return std::nullopt;
+}
+
+inline std::optional<bool>
+normalizeSimpleNegativeFlag(llvm::opt::OptSpecifier opt, int,
+                            const llvm::opt::ArgList &args,
+                            MarshallingErrors &) {
+  if (args.hasArg(opt))
+    return false;
+  return std::nullopt;
+}
+
+/// Returns a normalizer for a flag and its negative form, where the last of
+/// the two on the command line decides the value.
+inline auto makeFlagPairNormalizer(llvm::opt::OptSpecifier negative) {
+  return [negative](llvm::opt::OptSpecifier positive, int,
+                    const llvm::opt::ArgList &args,
+                    MarshallingErrors &) -> std::optional<bool> {
+    if (const llvm::opt::Arg *arg = args.getLastArg(positive, negative))
+      return arg->getOption().matches(positive);
+    return std::nullopt;
+  };
+}
+
+inline std::optional<std::string>
+normalizeString(llvm::opt::OptSpecifier opt, int,
+                const llvm::opt::ArgList &args, MarshallingErrors &) {
+  if (const llvm::opt::Arg *arg = args.getLastArg(opt))
+    return std::string(arg->getValue());
+  return std::nullopt;
+}
+
+/// An empty value leaves the option at its default.
+template <typename IntTy>
+std::optional<IntTy> normalizeStringIntegral(llvm::opt::OptSpecifier opt, int,
+                                             const llvm::opt::ArgList &args,
+                                             MarshallingErrors &errors) {
+  const llvm::opt::Arg *arg = args.getLastArg(opt);
+  if (!arg)
+    return std::nullopt;
+  llvm::StringRef text = arg->getValue();
+  if (text.empty())
+    return std::nullopt;
+  IntTy value;
+  if (!text.getAsInteger(10, value))
+    return value;
+  errors.push_back(llvm::formatv(
+      "invalid value '{0}' for '{1}', expected {2}", text,
+      arg->getOption().getPrefixedName(),
+      std::is_signed_v<IntTy> ? "an integer" : "a non-negative integer"));
+  return std::nullopt;
+}
+
+/// Returns a normalizer for an option whose value must be one of the
+/// spellings in `choices`, each of which sets the enumerator it is paired
+/// with.
+template <typename EnumTy>
+auto makeChoiceNormalizer(
+    std::initializer_list<std::pair<llvm::StringRef, EnumTy>> choices) {
+  return [choices =
+              llvm::SmallVector<std::pair<llvm::StringRef, EnumTy>>(choices)](
+             llvm::opt::OptSpecifier opt, int, const llvm::opt::ArgList &args,
+             MarshallingErrors &errors) -> std::optional<EnumTy> {
+    const llvm::opt::Arg *arg = args.getLastArg(opt);
+    if (!arg)
+      return std::nullopt;
+    llvm::StringRef value = arg->getValue();
+    for (const auto &[spelling, enumerator] : choices)
+      if (spelling == value)
+        return enumerator;
+    std::string expected;
+    llvm::raw_string_ostream os(expected);
+    llvm::interleaveComma(choices, os, [&](const auto &choice) {
+      os << '`' << choice.first << '`';
+    });
+    errors.push_back(
+        llvm::formatv("invalid value '{0}' for '{1}', expected one of: {2}",
+                      value, arg->getOption().getPrefixedName(), expected));
+    return std::nullopt;
+  };
+}
+
+inline std::optional<std::vector<std::string>>
+normalizeStringVector(llvm::opt::OptSpecifier opt, int,
+                      const llvm::opt::ArgList &args, MarshallingErrors &) {
+  if (!args.hasArg(opt))
+    return std::nullopt;
+  return args.getAllArgValues(opt);
+}
+
+/// Joins the values of every occurrence with commas, for a repeatable option
+/// whose values may themselves be comma-separated lists.
+inline std::optional<std::string>
+normalizeCommaJoinedList(llvm::opt::OptSpecifier opt, int,
+                         const llvm::opt::ArgList &args, MarshallingErrors &) {
+  std::vector<std::string> values = args.getAllArgValues(opt);
+  if (values.empty())
+    return std::nullopt;
+  return llvm::join(values, ",");
+}
+
+inline std::optional<llvm::SmallVector<std::string>>
+normalizeStringSmallVector(llvm::opt::OptSpecifier opt, int,
+                           const llvm::opt::ArgList &args,
+                           MarshallingErrors &) {
+  if (!args.hasArg(opt))
+    return std::nullopt;
+  return llvm::to_vector_of<std::string>(args.getAllArgValues(opt));
+}
+
+} // namespace M
+
+/// Parses one marshalled option from ARGS into its key path, adding any error
+/// to ERRORS. Expand this where the subcommand's `options::OPT_*` enum and the
+/// key paths' variables are visible. A field keeps its C++ initializer unless
+/// the option is present, so the structs, not the `.td` records, hold the
+/// defaults. Aliases share the key path of the option they alias, so their
+/// rows are skipped.
+#define PARSE_OPTION_WITH_MARSHALLING(                                         \
+    ARGS, ERRORS, PREFIX_TYPE, SPELLING_OFFSET, ID, KIND, GROUP, ALIAS,        \
+    ALIASARGS, FLAGS, VISIBILITY, PARAM, HELPTEXT, HELPTEXTSFORVARIANTS,       \
+    METAVAR, VALUES, SUBCOMMANDIDS_OFFSET, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH, \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    TABLE_INDEX)                                                               \
+  if (options::OPT_##ALIAS == options::OPT_INVALID && (SHOULD_PARSE))          \
+    if (auto value = NORMALIZER(options::OPT_##ID, TABLE_INDEX, ARGS, ERRORS)) \
+      KEYPATH = static_cast<decltype(KEYPATH)>(*value);
+
+#endif // SUPPORT_DRIVER_OPTIONMARSHALLING_H

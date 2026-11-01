@@ -33,10 +33,9 @@ Key differences from block_scaled_matmul_kernel.mojo:
 5. K-loop uses per-group k_tile_count instead of global K dimension
 """
 
-from std.collections import Optional
-from std.math import ceildiv
-from std.math.uutils import ufloordiv
-from std.memory import UnsafePointer, Pointer
+from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv, umod
+from std.memory import Pointer
 from std.sys import size_of
 
 from max.gpu import WARP_SIZE, block_idx, lane_id
@@ -50,8 +49,8 @@ from layout import (
     ComptimeInt,
     Layout,
     RowMajorLayout,
+    TensorEngine,
     TileTensor,
-    CoordLike,
 )
 from layout.tile_layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
@@ -74,7 +73,7 @@ from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import ElementwiseComputeFn, no_compute_fn
 from ..structured_kernels.config import (
     BlockScaledMatmulConfig,
     OutputPipelineConfig,
@@ -118,14 +117,20 @@ from .grouped_tile_scheduler import (
 comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
     *Coord[ComptimeInt[max_groups], ComptimeInt[1]].element_types
 ]
-comptime _GroupPtrTile[max_groups: Int] = TileTensor[
-    .uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
+comptime _GroupPtrTile[
+    max_groups: Int,
+    Engine: TensorEngine,
+] = TileTensor[
+    .uint64, _GroupPtrLayout[max_groups], MutAnyOrigin, Engine=Engine
 ]
 comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
     *Coord[ComptimeInt[max_groups], ComptimeInt[4]].element_types
 ]
-comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
-    .int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
+comptime _ProblemSizesTile[
+    max_groups: Int,
+    Engine: TensorEngine,
+] = TileTensor[
+    .int32, _ProblemSizesLayout[max_groups], MutAnyOrigin, Engine=Engine
 ]
 
 
@@ -158,48 +163,28 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
     """
 
     @__allow_legacy_any_origin_fields
-    var desc_a: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_a: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var desc_b: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_b: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var desc_sfa: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_sfa: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var desc_sfb: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_sfb: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var desc_c: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_c: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def from_smem(
-        ptr_a: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
-        ptr_b: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
-        ptr_sfa: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
-        ptr_sfb: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
-        ptr_c: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
+        ptr_a: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_b: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_sfa: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_sfb: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_c: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
     ) -> Self:
         """Create tensormap pointers from explicit SMEM pointers.
 
@@ -243,34 +228,26 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     # SMEM descriptors for in-place tensormap updates
     var smem: GroupedTensormapSmem
 
-    @always_inline
+    @inline(.always)
     def init_ab_tensormaps[
         a_dtype: DType,
-        a_rank: Int,
-        a_tile_shape: IndexList[a_rank],
-        a_desc_shape: IndexList[a_rank],
+        a_tile_shape: Coord,
+        a_desc_shape: Coord,
         b_dtype: DType,
-        b_rank: Int,
-        b_tile_shape: IndexList[b_rank],
-        b_desc_shape: IndexList[b_rank],
+        b_tile_shape: Coord,
+        b_desc_shape: Coord,
         sfa_dtype: DType,
-        sfa_rank: Int,
-        sfa_tile_shape: IndexList[sfa_rank],
-        sfa_desc_shape: IndexList[sfa_rank],
+        sfa_tile_shape: Coord,
+        sfa_desc_shape: Coord,
         sfb_dtype: DType,
-        sfb_rank: Int,
-        sfb_tile_shape: IndexList[sfb_rank],
-        sfb_desc_shape: IndexList[sfb_rank],
+        sfb_tile_shape: Coord,
+        sfb_desc_shape: Coord,
     ](
         self,
-        template_a: TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
-        template_b: TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
-        template_sfa: TMATensorTile[
-            sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape
-        ],
-        template_sfb: TMATensorTile[
-            sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape
-        ],
+        template_a: TMATensorTile[a_dtype, a_tile_shape, a_desc_shape],
+        template_b: TMATensorTile[b_dtype, b_tile_shape, b_desc_shape],
+        template_sfa: TMATensorTile[sfa_dtype, sfa_tile_shape, sfa_desc_shape],
+        template_sfb: TMATensorTile[sfb_dtype, sfb_tile_shape, sfb_desc_shape],
     ):
         """Initialize A/B/SFA/SFB tensormaps in SMEM from grid-constant templates.
 
@@ -279,23 +256,19 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Parameters:
             a_dtype: Element type of the A matrix tensor.
-            a_rank: Tensor rank of the A matrix TMA descriptor.
             a_tile_shape: Per-tile shape of the A TMA load in each rank.
             a_desc_shape: Full tensor shape of the A matrix described by
                 the TMA descriptor.
             b_dtype: Element type of the B matrix tensor.
-            b_rank: Tensor rank of the B matrix TMA descriptor.
             b_tile_shape: Per-tile shape of the B TMA load in each rank.
             b_desc_shape: Full tensor shape of the B matrix described by
                 the TMA descriptor.
             sfa_dtype: Element type of the A scale-factor tensor.
-            sfa_rank: Tensor rank of the SFA TMA descriptor.
             sfa_tile_shape: Per-tile shape of the SFA TMA load in each
                 rank.
             sfa_desc_shape: Full tensor shape of the SFA scale-factor
                 tensor described by the TMA descriptor.
             sfb_dtype: Element type of the B scale-factor tensor.
-            sfb_rank: Tensor rank of the SFB TMA descriptor.
             sfb_tile_shape: Per-tile shape of the SFB TMA load in each
                 rank.
             sfb_desc_shape: Full tensor shape of the SFB scale-factor
@@ -317,23 +290,18 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
             template_sfa.smem_tensormap_init(self.smem.desc_sfa)
             template_sfb.smem_tensormap_init(self.smem.desc_sfb)
 
-    @always_inline
+    @inline(.always)
     def init_c_tensormap[
         c_dtype: DType,
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
-    ](
-        self,
-        template_c: TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
-    ):
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
+    ](self, template_c: TMATensorTile[c_dtype, c_tile_shape, c_desc_shape],):
         """Initialize C tensormap in SMEM from grid-constant template.
 
         Called by epilogue warp (lane 0). Copies template descriptor to SMEM.
 
         Parameters:
             c_dtype: Element type of the C output matrix tensor.
-            c_rank: Tensor rank of the C matrix TMA descriptor.
             c_tile_shape: Per-tile shape of the C TMA store in each rank.
             c_desc_shape: Full tensor shape of the C matrix described by
                 the TMA descriptor.
@@ -345,47 +313,44 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         if lane_id() == 0:
             template_c.smem_tensormap_init(self.smem.desc_c)
 
-    @always_inline
+    @inline(.always)
     def update_ab_for_group[
         a_dtype: DType,
-        a_rank: Int,
-        a_tile_shape: IndexList[a_rank],
-        a_desc_shape: IndexList[a_rank],
+        a_tile_shape: Coord,
+        a_desc_shape: Coord,
         b_dtype: DType,
-        b_rank: Int,
-        b_tile_shape: IndexList[b_rank],
-        b_desc_shape: IndexList[b_rank],
+        b_tile_shape: Coord,
+        b_desc_shape: Coord,
         sfa_dtype: DType,
-        sfa_rank: Int,
-        sfa_tile_shape: IndexList[sfa_rank],
-        sfa_desc_shape: IndexList[sfa_rank],
+        sfa_tile_shape: Coord,
+        sfa_desc_shape: Coord,
         sfb_dtype: DType,
-        sfb_rank: Int,
-        sfb_tile_shape: IndexList[sfb_rank],
-        sfb_desc_shape: IndexList[sfb_rank],
+        sfb_tile_shape: Coord,
+        sfb_desc_shape: Coord,
         max_groups: Int,
+        group_ptr_engine: TensorEngine,
     ](
         self,
         group_idx: UInt32,
-        group_a_ptrs: _GroupPtrTile[max_groups],
-        group_b_ptrs: _GroupPtrTile[max_groups],
-        group_sfa_ptrs: _GroupPtrTile[max_groups],
-        group_sfb_ptrs: _GroupPtrTile[max_groups],
-        tma_a: UnsafePointer[
-            TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
-            MutAnyOrigin,
+        group_a_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        group_b_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        group_sfa_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        group_sfb_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        tma_a: MutPointer[
+            TMATensorTile[a_dtype, a_tile_shape, a_desc_shape],
+            _,
         ],
-        tma_b: UnsafePointer[
-            TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
-            MutAnyOrigin,
+        tma_b: MutPointer[
+            TMATensorTile[b_dtype, b_tile_shape, b_desc_shape],
+            _,
         ],
-        tma_sfa: UnsafePointer[
-            TMATensorTile[sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape],
-            MutAnyOrigin,
+        tma_sfa: MutPointer[
+            TMATensorTile[sfa_dtype, sfa_tile_shape, sfa_desc_shape],
+            _,
         ],
-        tma_sfb: UnsafePointer[
-            TMATensorTile[sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape],
-            MutAnyOrigin,
+        tma_sfb: MutPointer[
+            TMATensorTile[sfb_dtype, sfb_tile_shape, sfb_desc_shape],
+            _,
         ],
     ):
         """Update A/B/SFA/SFB tensormaps for the specified group.
@@ -395,29 +360,26 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Parameters:
             a_dtype: Element type of the A matrix tensor.
-            a_rank: Tensor rank of the A matrix TMA descriptor.
             a_tile_shape: Per-tile shape of the A TMA load in each rank.
             a_desc_shape: Full tensor shape of the A matrix described by
                 the TMA descriptor.
             b_dtype: Element type of the B matrix tensor.
-            b_rank: Tensor rank of the B matrix TMA descriptor.
             b_tile_shape: Per-tile shape of the B TMA load in each rank.
             b_desc_shape: Full tensor shape of the B matrix described by
                 the TMA descriptor.
             sfa_dtype: Element type of the A scale-factor tensor.
-            sfa_rank: Tensor rank of the SFA TMA descriptor.
             sfa_tile_shape: Per-tile shape of the SFA TMA load in each
                 rank.
             sfa_desc_shape: Full tensor shape of the SFA scale-factor
                 tensor described by the TMA descriptor.
             sfb_dtype: Element type of the B scale-factor tensor.
-            sfb_rank: Tensor rank of the SFB TMA descriptor.
             sfb_tile_shape: Per-tile shape of the SFB TMA load in each
                 rank.
             sfb_desc_shape: Full tensor shape of the SFB scale-factor
                 tensor described by the TMA descriptor.
             max_groups: Maximum number of GEMM groups in the per-group
                 pointer arrays.
+            group_ptr_engine: Engine of the per-group pointer tiles.
 
         Args:
             group_idx: Index of the GEMM group whose tensor base
@@ -449,18 +411,18 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         if lane_id() == 0:
             var g = Int(group_idx)
 
-            var a_ptr = UnsafePointer[mut=True, Scalar[a_dtype], MutAnyOrigin](
+            var a_ptr = MutPointer[Scalar[a_dtype], MutAnyOrigin](
                 unsafe_from_address=Int(group_a_ptrs[g, 0])
             )
-            var b_ptr = UnsafePointer[mut=True, Scalar[b_dtype], MutAnyOrigin](
+            var b_ptr = MutPointer[Scalar[b_dtype], MutAnyOrigin](
                 unsafe_from_address=Int(group_b_ptrs[g, 0])
             )
-            var sfa_ptr = UnsafePointer[
-                mut=True, Scalar[sfa_dtype], MutAnyOrigin
-            ](unsafe_from_address=Int(group_sfa_ptrs[g, 0]))
-            var sfb_ptr = UnsafePointer[
-                mut=True, Scalar[sfb_dtype], MutAnyOrigin
-            ](unsafe_from_address=Int(group_sfb_ptrs[g, 0]))
+            var sfa_ptr = MutPointer[Scalar[sfa_dtype], MutAnyOrigin](
+                unsafe_from_address=Int(group_sfa_ptrs[g, 0])
+            )
+            var sfb_ptr = MutPointer[Scalar[sfb_dtype], MutAnyOrigin](
+                unsafe_from_address=Int(group_sfb_ptrs[g, 0])
+            )
 
             tma_a[].replace_tensormap_global_address_in_shared_mem(
                 self.smem.desc_a, a_ptr
@@ -486,20 +448,20 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         # Step 4: Sync within warp
         syncwarp()
 
-    @always_inline
+    @inline(.always)
     def update_c_for_group[
         c_dtype: DType,
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         max_groups: Int,
+        group_ptr_engine: TensorEngine,
     ](
         self,
         group_idx: UInt32,
-        group_c_ptrs: _GroupPtrTile[max_groups],
-        tma_c: UnsafePointer[
-            TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
-            MutAnyOrigin,
+        group_c_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        tma_c: MutPointer[
+            TMATensorTile[c_dtype, c_tile_shape, c_desc_shape],
+            _,
         ],
     ):
         """Update C tensormap for the specified group.
@@ -509,12 +471,12 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Parameters:
             c_dtype: Element type of the C output matrix tensor.
-            c_rank: Tensor rank of the C matrix TMA descriptor.
             c_tile_shape: Per-tile shape of the C TMA store in each rank.
             c_desc_shape: Full tensor shape of the C matrix described by
                 the TMA descriptor.
             max_groups: Maximum number of GEMM groups in the per-group
                 pointer arrays.
+            group_ptr_engine: Engine of the per-group pointer tiles.
 
         Args:
             group_idx: Index of the GEMM group whose C tensor base
@@ -529,7 +491,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         # Step 2: Update SMEM descriptor (lane 0 only)
         if lane_id() == 0:
             var g = Int(group_idx)
-            var c_ptr = UnsafePointer[mut=True, Scalar[c_dtype], MutAnyOrigin](
+            var c_ptr = MutPointer[Scalar[c_dtype], MutAnyOrigin](
                 unsafe_from_address=Int(group_c_ptrs[g, 0])
             )
 
@@ -696,11 +658,13 @@ struct GroupedBlockScaledMatmulKernel[
     # Grouped GEMM parameters
     max_groups: Int,
     # Cluster shape (for LLVM metadata)
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     # Epilogue fusion parameters
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    has_compute_fn: Bool = False,
+    *,
+    group_ptr_engine: TensorEngine,
+    problem_sizes_engine: TensorEngine,
 ]:
     """Grouped block-scaled matmul kernel with dynamic tensormap updates.
 
@@ -725,8 +689,13 @@ struct GroupedBlockScaledMatmulKernel[
         max_groups: Maximum number of GEMM groups supported at runtime.
         cluster_shape: CTA cluster dimensions as
             `(cluster_m, cluster_n, cluster_k)` (defaults to `(1, 1, 1)`).
-        elementwise_compute_lambda_fn: Optional epilogue fusion
-            lambda applied to accumulated results (defaults to `None`).
+        ComputeFnType: Type of the `compute_fn` argument of `run` and
+            `run_2sm`.
+        has_compute_fn: Whether `compute_fn` maps the accumulated results
+            before they are stored (defaults to False). Launch with
+            `host_args=(compute_fn,)`.
+        group_ptr_engine: Engine of the per-group pointer tiles.
+        problem_sizes_engine: Engine of the problem-sizes tile.
     """
 
     # ========== Derived Constants (from config) ==========
@@ -779,10 +748,18 @@ struct GroupedBlockScaledMatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
+    # `_copy_sf_to_tmem_tt` writes a whole scale-factor atom whatever MMA_N
+    # is, so SMEM, TMA and TMEM all use the aligned width and `mma` offsets
+    # into the atom. Only `grouped_block_scaled_matmul`'s MMA_N constraint
+    # keeps a sub-atom tile out of this kernel today.
+    comptime SFB_N_ALIGNED = align_up(Self.MMA_N, SF_MN_GROUP_SIZE)
+
     # TMEM configuration — stride matches MMA output width for scaled kernels.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = Self.config.num_sf_k_tiles * (Self.BM // 32)
-    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
+    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (
+        Self.SFB_N_ALIGNED // 32
+    )
     comptime stage_stride_cols = Self.MMA_N
 
     # Output pipeline config (bundles accum stages, stride, and cta_group)
@@ -824,6 +801,7 @@ struct GroupedBlockScaledMatmulKernel[
         tile_n=Self.BN,
         tile_k=Self.BK,
         max_groups=Self.max_groups,
+        problem_sizes_engine=Self.problem_sizes_engine,
     ]
 
     # ========== TMA Descriptor Array Types ==========
@@ -832,35 +810,30 @@ struct GroupedBlockScaledMatmulKernel[
     comptime TMATensorTileArrayA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.a_type,
-        Self.ATmaOp.rank,
         Self.ATmaOp.tile_shape,
         Self.ATmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.b_type,
-        Self.BTmaOp.rank,
         Self.BTmaOp.tile_shape,
         Self.BTmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfa_dtype,
-        Self.SFATmaOp.rank,
         Self.SFATmaOp.tile_shape,
         Self.SFATmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfb_dtype,
-        Self.SFBTmaOp.rank,
         Self.SFBTmaOp.tile_shape,
         Self.SFBTmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayC = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.c_type,
-        Self.CTmaOp.rank,
         Self.CTmaOp.tile_shape,
         Self.CTmaOp.desc_shape,
     ]
@@ -869,7 +842,9 @@ struct GroupedBlockScaledMatmulKernel[
     # Layout for arrays of per-group tensor pointers
 
     comptime GroupPtrLayout = _GroupPtrLayout[Self.max_groups]
-    comptime GroupPtrTile = _GroupPtrTile[Self.max_groups]
+    comptime GroupPtrTile = _GroupPtrTile[
+        Self.max_groups, Self.group_ptr_engine
+    ]
 
     # ========== Shared Memory Layout Types ==========
 
@@ -895,7 +870,7 @@ struct GroupedBlockScaledMatmulKernel[
     ]()
 
     comptime sfb_smem_layout = tile_sf_layout_k_major[
-        Self.MMA_N,
+        Self.SFB_N_ALIGNED,
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
     ]()
@@ -924,7 +899,11 @@ struct GroupedBlockScaledMatmulKernel[
         Self.sfb_dtype,
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -985,6 +964,7 @@ struct GroupedBlockScaledMatmulKernel[
         Self.num_pipeline_stages,
         cta_group=Self.cta_group,
         num_sf_k_tiles=Self.config.num_sf_k_tiles,
+        SFB_N=Self.SFB_N_ALIGNED,
     ]
 
     comptime OutputPipeline = OutputTilePipeline[Self.opc]
@@ -1022,7 +1002,11 @@ struct GroupedBlockScaledMatmulKernel[
         a_type=Self.a_type,
         accum_type=Self.accum_type,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         opc=Self.opc,
         c_swizzle=Self.config.c_swizzle,
         transpose_c=Self.config.AB_swapped,
@@ -1030,7 +1014,6 @@ struct GroupedBlockScaledMatmulKernel[
         c_smem_dim1=Self.SmemType.Core.OutputN,
         num_output_stages=Self.config.num_output_stages,
         num_output_warps=Self.num_output_warps,
-        elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
         register_based_epilogue=Self.register_based_epilogue,
         batched=True,
     ]
@@ -1125,7 +1108,7 @@ struct GroupedBlockScaledMatmulKernel[
     comptime SFBTileLayout = RowMajorLayout[
         *_IntToComptimeInt[
             1,
-            Self.MMA_N // SF_MN_GROUP_SIZE,
+            Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
             SF_ATOM_M[0],
             SF_ATOM_M[1] * SF_ATOM_K,
@@ -1134,7 +1117,7 @@ struct GroupedBlockScaledMatmulKernel[
     comptime SFBDescLayout = tma_desc_layout_5d[
         Self.sfb_dtype,
         1,
-        Self.MMA_N // SF_MN_GROUP_SIZE,
+        Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
         Self.config.num_sf_k_tiles,
         SF_ATOM_M[0],
         TensorMapSwizzle.SWIZZLE_NONE,
@@ -1178,15 +1161,14 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== TMA Update Helper ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _update_tensormap_address[
         dtype: DType,
-        tma_rank: Int,
-        cta_tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        cta_tile_shape: Coord,
+        desc_shape: Coord,
     ](
-        tma_desc_ptr: UnsafePointer[
-            TMATensorTile[dtype, tma_rank, cta_tile_shape, desc_shape],
+        tma_desc_ptr: MutPointer[
+            TMATensorTile[dtype, cta_tile_shape, desc_shape],
             MutAnyOrigin,
         ],
         new_addr: Int,
@@ -1198,7 +1180,7 @@ struct GroupedBlockScaledMatmulKernel[
             new_addr: New global memory address for the tensor.
         """
         # Get pointer to the descriptor bytes
-        var desc_byte_ptr = tma_desc_ptr.bitcast[NoneType]()
+        var desc_byte_ptr = tma_desc_ptr.unsafe_bitcast[NoneType]()
 
         # Use PTX instruction to update the global address
         inlined_assembly[
@@ -1213,12 +1195,14 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Problem Sizes Layout ==========
     # Layout for problem_sizes tensor: (max_groups, 4) with [M, N, K, L] per group
     comptime ProblemSizesLayout = _ProblemSizesLayout[Self.max_groups]
-    comptime ProblemSizesTile = _ProblemSizesTile[Self.max_groups]
+    comptime ProblemSizesTile = _ProblemSizesTile[
+        Self.max_groups, Self.problem_sizes_engine
+    ]
 
     # ========== Static Helper Methods ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def init_barriers(
         ctx: Self.Context,
         a_tma_template: Self.ATmaOp,
@@ -1274,7 +1258,7 @@ struct GroupedBlockScaledMatmulKernel[
         cluster_sync()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def init_barriers_2sm(
         ctx: Self.Context,
         a_tma_template: Self.ATmaOp,
@@ -1358,8 +1342,14 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== 1SM Kernel Entry Point ==========
 
     @staticmethod
-    @always_inline
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @inline(.always)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)
@@ -1367,10 +1357,7 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
     @__name(
         StaticString(Self.config.get_kernel_name())
-        + StaticString(
-            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
-            is not None else ""
-        ),
+        + StaticString("_compute_fn" if Self.has_compute_fn else ""),
     )
     def run(
         # Template tensormaps for SMEM initialization
@@ -1395,6 +1382,7 @@ struct GroupedBlockScaledMatmulKernel[
         problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
         num_groups: Int32,
+        compute_fn: Self.ComputeFnType,
     ):
         """Grouped block-scaled GEMM kernel entry point.
 
@@ -1435,6 +1423,8 @@ struct GroupedBlockScaledMatmulKernel[
             problem_sizes_lt: Per-group problem sizes as a
                 `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
             num_groups: Number of active GEMM groups to process.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
         """
         var _num_groups = Int(num_groups)
         Self.validate_config()
@@ -1452,7 +1442,7 @@ struct GroupedBlockScaledMatmulKernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()
@@ -1504,11 +1494,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for SMEM descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -1572,11 +1562,11 @@ struct GroupedBlockScaledMatmulKernel[
                 producer.drain()
 
         # ===== SCHEDULER WARP =====
-        # For grouped GEMM, no CLC scheduling is needed (num_clc_pipeline_stages=0).
-        # The scheduler warp just returns immediately, matching working kernel pattern.
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            # No CLC for grouped GEMM - just return
-            return
+        # For grouped GEMM, no CLC scheduling is needed (num_clc_pipeline_stages=0),
+        # so the scheduler warp has nothing to do here. KERN-3311: it used to
+        # `return` immediately, which would have skipped the cluster exit
+        # barrier at the end of this function, leaving it divergent
+        # (undefined behavior). Just fall through instead.
 
         # ===== MMA WARP =====
         if WarpRole.is_mma():
@@ -1585,11 +1575,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Initialize SMEM tensormaps from templates (MMA warp, per CuTe DSL)
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
             tensormap_mgr.init_ab_tensormaps(
@@ -1639,6 +1629,7 @@ struct GroupedBlockScaledMatmulKernel[
                                             tmem_region,
                                             UInt32(k_tile),
                                             0,  # k_start = 0 for each group
+                                            Int(current.n),
                                         )
                                     # Peek for next iteration (CuteDSL style):
                                     # Reset to ready, then conditionally peek.
@@ -1653,11 +1644,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -1702,12 +1693,27 @@ struct GroupedBlockScaledMatmulKernel[
                             (current.m, current.n, UInt32(0)),
                             group_m,
                             group_n,
+                            compute_fn,
                         )
+
+        # KERN-3311: hold the cluster together until every CTA is finished.
+        # The epilogue's cluster-mapped `arrive_cluster` (signal_peer() in
+        # structured_kernels/tmem.mojo) needs the peer CTA to still be
+        # resident; if the peer retires first the arrive targets a departed
+        # block (CUDBG_EXCEPTION_CLUSTER_BLOCK_NOT_PRESENT) and TMEM is then
+        # freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` only orders mbarrier initialization. Gated on
+        # cta_group == 2, the only config with that cross-CTA arrive -- this
+        # entry point (run()) is only launched with cta_group == 1, so the
+        # gate never fires here, but it is kept for parity with run_2sm() and
+        # in case this entry is ever reused with cta_group == 2.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
 
     # ========== Load Input Tiles ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
@@ -1793,11 +1799,15 @@ struct GroupedBlockScaledMatmulKernel[
 
                 # Peer CTA slicing using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
                     b_tile.layout,
                 )
 
@@ -1840,7 +1850,7 @@ struct GroupedBlockScaledMatmulKernel[
                         Int(
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
-                        work_tile_coord[1] * (Self.MMA_N // SF_MN_GROUP_SIZE),
+                        (work_tile_coord[1] * Self.MMA_N) // SF_MN_GROUP_SIZE,
                         batch_coord,
                     ),
                 )
@@ -1848,7 +1858,7 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== MMA Operation ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma[
         tiles_origin: MutOrigin,
         //,
@@ -1864,6 +1874,7 @@ struct GroupedBlockScaledMatmulKernel[
         tmem_region: Self.TmemRegion,
         iter_idx: UInt32,
         k_start: UInt32,
+        work_tile_n: Int,
     ):
         """Execute MMA operations using ConsumerTiles.
 
@@ -1884,7 +1895,21 @@ struct GroupedBlockScaledMatmulKernel[
                 loop.
             k_start: K-tile index where accumulation begins for the current
                 group; the first iteration initializes the accumulator.
+            work_tile_n: N-axis tile index, used to pick this tile's part of
+                a shared scale-factor atom.
         """
+        # Same numerator as the SFB source coordinate in `load_input_tiles`.
+        var sfb_tmem_adj: UInt32
+        comptime if Self.MMA_N in (64, 192):
+            sfb_tmem_adj = UInt32(
+                ufloordiv(
+                    umod(work_tile_n * Self.MMA_N, SF_MN_GROUP_SIZE),
+                    SF_ATOM_M[0],
+                )
+            )
+        else:
+            sfb_tmem_adj = UInt32(0)
+
         if elect_one_sync():
             comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
@@ -1916,6 +1941,7 @@ struct GroupedBlockScaledMatmulKernel[
                     sfa_tmem_offset,
                     sfb_tmem_offset,
                     init_c=is_first_k,
+                    sfb_tmem_adj=sfb_tmem_adj,
                 )
 
             mma_op.commit(tiles.mbar())
@@ -1923,7 +1949,7 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Epilogue ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def epilogue(
         c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
@@ -1931,6 +1957,7 @@ struct GroupedBlockScaledMatmulKernel[
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
         M: UInt32,
         N: UInt32,
+        compute_fn: Self.ComputeFnType,
         alpha: Float32 = Float32(1.0),
     ):
         """Execute epilogue to store accumulated results.
@@ -1943,22 +1970,34 @@ struct GroupedBlockScaledMatmulKernel[
                 current group.
             M: Row extent of the current group's output matrix.
             N: Column extent of the current group's output matrix.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
             alpha: Scaling factor applied to accumulators before storing
                 (defaults to 1.0).
         """
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
-        tile_writer.write_batched(
-            c_tiles,
-            stage,
-            work_tile_coord,
-            (M, N),
-            alpha,
-        )
+        comptime if Self.has_compute_fn:
+            tile_writer.write_batched(
+                c_tiles,
+                stage,
+                work_tile_coord,
+                (M, N),
+                compute_fn,
+                alpha,
+            )
+        else:
+            tile_writer.write_batched(
+                c_tiles,
+                stage,
+                work_tile_coord,
+                (M, N),
+                alpha,
+            )
 
     # ========== 2SM Kernel Entry Point ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
     @__llvm_arg_metadata(a_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_template, `nvvm.grid_constant`)
@@ -1966,11 +2005,8 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
     @__name(
-        StaticString(
-            Self.config.get_kernel_name()
-            + "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
-            is not None else ""
-        ),
+        StaticString(Self.config.get_kernel_name())
+        + StaticString("_compute_fn" if Self.has_compute_fn else ""),
     )
     def run_2sm(
         # Template tensormaps for SMEM initialization
@@ -1995,6 +2031,7 @@ struct GroupedBlockScaledMatmulKernel[
         problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
         num_groups: Int32,
+        compute_fn: Self.ComputeFnType,
     ):
         """Grouped block-scaled GEMM kernel with 2SM (cta_group=2) support.
 
@@ -2042,6 +2079,8 @@ struct GroupedBlockScaledMatmulKernel[
             problem_sizes_lt: Per-group problem sizes as a
                 `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
             num_groups: Number of active GEMM groups to process.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
         """
         var _num_groups = Int(num_groups)
         Self.validate_config()
@@ -2059,7 +2098,7 @@ struct GroupedBlockScaledMatmulKernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()
@@ -2123,11 +2162,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for SMEM descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -2139,6 +2178,7 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
                 _num_groups,
@@ -2216,6 +2256,7 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
                 _num_groups,
@@ -2236,11 +2277,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Initialize SMEM tensormaps from templates (MMA warp, per CuTe DSL)
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
             tensormap_mgr.init_ab_tensormaps(
@@ -2272,6 +2313,7 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
                 _num_groups,
@@ -2309,6 +2351,7 @@ struct GroupedBlockScaledMatmulKernel[
                                             tmem_region,
                                             UInt32(k_tile),
                                             0,
+                                            Int(current.n),
                                         )
                                     # Peek for next iteration (CuteDSL style):
                                     # Reset to ready, then conditionally peek.
@@ -2323,11 +2366,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -2354,6 +2397,7 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
                 _num_groups,
@@ -2387,10 +2431,22 @@ struct GroupedBlockScaledMatmulKernel[
                             (current.m, current.n, UInt32(0)),
                             group_m,
                             group_n,
+                            compute_fn,
                         )
 
+        # KERN-3311: hold the cluster together until every CTA is finished.
+        # The epilogue's cluster-mapped `arrive_cluster` (signal_peer() in
+        # structured_kernels/tmem.mojo) needs the peer CTA to still be
+        # resident; if the peer retires first the arrive targets a departed
+        # block (CUDBG_EXCEPTION_CLUSTER_BLOCK_NOT_PRESENT) and TMEM is then
+        # freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` in init_barriers_2sm only orders mbarrier
+        # initialization. run_2sm() is only launched with cta_group == 2, so
+        # unlike run() this barrier is unconditional.
+        cluster_sync()
+
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _compute_initial_work(
         problem_sizes: Self.ProblemSizesTile,
         _num_groups: Int,

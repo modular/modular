@@ -1,0 +1,57 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------===##
+
+# The FP8 indexer over a paged index-K cache: score the window, then
+# top-k, at the DeepSeek V3.2 serving shape. A sweep runs one process per
+# params group; `frozen_cache_len` 0 means the batch's deepest cache
+# length, which is what eager execution sees, and the `scores_dtype` arms
+# (float32 and bfloat16) run in one executable, so `--param
+# scores_dtype:"[bfloat16]"` pins one.
+#
+# Usage:
+#   kbench bench_mla_index_fp8_paged.yaml --timeout-secs 600
+#   kbench bench_mla_index_fp8_paged.yaml --param frozen_cache_len:"[0]"
+#   kbench bench_mla_index_fp8_paged.yaml --param spread:"[512]" \
+#     --param frozen_cache_len:"[163840]"
+
+name: bench_mla_index_fp8_paged
+file: $KERNEL_BENCHMARKS_ROOT/sweep/bench_mla_index_fp8_paged.mojo
+sweep: true
+
+params:
+
+# 32 heads x 128 deep, top_k 2048, over the engine's paged cache (page
+# size 128). spread raggs the cache depths around the mean;
+# frozen_cache_len past 0 measures the frozen-metadata path, which caches
+# the top-k over a fixed length.
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  top_k: 2048
+  $batch_size: [8]
+  $seq_len: [6]
+  $cache_len: [76000]
+  $spread: [0]
+  $frozen_cache_len: [0, 163840, 1048576]

@@ -130,20 +130,13 @@ def register(
 def register_shape_function(name: StaticString):
     """Registers a standalone shape function for a MAX Graph op.
 
-    The decorated function computes the output shapes of the named op from its
-    input shapes at compile time, without executing the op itself.
+    The decorated function computes the output shapes of the named op on the
+    host, without executing the op itself. Tensor arguments must use tensor
+    traits: `Some[Tensor]` for shapes, `Some[TileTensorable]` for element values,
+    or `TensorTuple` for variadic inputs. `ManagedTensorSlice` and
+    `VariadicTensors` aliases are not accepted.
 
     Args:
         name: The name of the op whose output shapes the function computes.
     """
     pass
-
-
-def view_kernel():
-    """Marks a DPS kernel as a view operation that aliases its input memory.
-
-    Decorated kernels return a tensor that shares storage with one of their
-    inputs rather than allocating new memory, so the Graph Compiler can preserve
-    aliasing relationships across the operation.
-    """
-    return

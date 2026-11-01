@@ -23,6 +23,7 @@ from .multi import GPUDiagContext as GPUDiagContext
 from .types import HARDWARE_THROTTLE_REASONS as HARDWARE_THROTTLE_REASONS
 from .types import ClockStats as ClockStats
 from .types import GPUStats as GPUStats
+from .types import GpuStatsRecorder as GpuStatsRecorder
 from .types import MemoryStats as MemoryStats
 from .types import ThrottleReason as ThrottleReason
 from .types import UtilizationStats as UtilizationStats

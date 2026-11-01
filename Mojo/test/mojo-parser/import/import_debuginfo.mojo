@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -debug-level full -verify-diagnostics -mlir-print-debuginfo -I=%S/inputs %s | FileCheck %s
+# RUN: %parse-mojo-isolated -debug-level full -verify-diagnostics -mlir-print-debuginfo -I%S/inputs %s | FileCheck %s
 
 # Test import of a module, and we properly allow import of an imported decl.
 

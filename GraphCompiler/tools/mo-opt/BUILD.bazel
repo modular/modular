@@ -1,0 +1,32 @@
+load("@mojo//:mojo.bzl", "INTERNAL_KERNEL_MOJOPKGS")
+load("//bazel:api.bzl", "modular_cc_binary")
+
+# gazelle:default_visibility //GraphCompiler:__subpackages__,//:__pkg__,//Kernels:__subpackages__,//max/internal:__subpackages__,//plugins:__subpackages__
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//GraphCompiler:__subpackages__",
+    "//Kernels:__subpackages__",
+    # compile_all_graphs drives mo-opt over a dumped graph tree.
+    "//max/internal:__subpackages__",
+    "//plugins:__subpackages__",
+])
+
+modular_cc_binary(
+    name = "mo-opt",
+    srcs = glob(["*.cpp"]),
+    data = [
+        "//max:builtin_kernels",
+    ] + INTERNAL_KERNEL_MOJOPKGS,
+    mojo_deps = [
+        "//max:builtin_kernels",
+        "//max:builtin_primitives",
+    ] + INTERNAL_KERNEL_MOJOPKGS,
+    deps = [
+        "//GraphCompiler",
+        "//Init",
+        "//Support:Context",
+        "//Support:Globals",
+        "@llvm-project//mlir:MlirOptLib",
+    ],
+)

@@ -18,19 +18,11 @@
 # pivot). Memory-safety oracle (memcheck / redzone); values are irrelevant.
 
 from std.math import exp
-from std.random import rand, random_ui64, seed
+from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, TileTensor, row_major
 from nn.softmax import _softmax_gpu
 from std.utils import IndexList
 from std.utils.numerics import isinf, isnan
@@ -152,19 +144,15 @@ def run_one_case(
     var out_dev = ctx.enqueue_create_buffer[sm_type](length)
     ctx.enqueue_copy(in_dev, in_host)
 
-    comptime layout_dyn = Layout.row_major[sm_rank]()
-    var in_tt = LayoutTensor[sm_type, layout_dyn](
-        in_dev.unsafe_ptr(), RuntimeLayout[layout_dyn].row_major(shape)
-    )
+    var in_tt = TileTensor(in_dev.unsafe_ptr(), row_major(Coord(shape)))
 
-    @__parameter
-    @__copy_capture(in_tt)
     def input_fn_device[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[sm_type, _simd_width]:
-        return in_tt.load[width=_simd_width](coord_to_index_list(coords))
+    ](coords: Coord) {var in_tt} -> SIMD[sm_type, _simd_width]:
+        return in_tt.load[width=_simd_width](coords)
 
-    _softmax_gpu[sm_type, 1, sm_rank, input_fn_device](
+    _softmax_gpu[sm_type, 1, sm_rank](
+        input_fn_device,
         Coord(shape),
         TileTensor(out_dev, row_major(Coord(shape))),
         sm_rank - 1,  # axis must be the inner dim
@@ -207,16 +195,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "d0=",
-                specs[i].d0,
-                "d1=",
-                specs[i].d1,
-                "inner=",
-                specs[i].inner,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} d0= {specs[i].d0} d1= {specs[i].d1} inner="
+                t" {specs[i].inner} dist= {specs[i].dist}"
             )
         return
 
@@ -225,13 +205,13 @@ def main() raises:
         var d1 = flag_int(args, "--d1", 8)
         var inner = flag_int(args, "--inner", 128)
         var dist = flag_int(args, "--dist", 0)
-        print("FUZZ_SINGLE d0=", d0, "d1=", d1, "inner=", inner, "dist=", dist)
+        print(t"FUZZ_SINGLE d0= {d0} d1= {d1} inner= {inner} dist= {dist}")
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(d0, d1, inner, dist), check, contract)
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print("=== fuzz_softmax seed=", the_seed, "budget=", the_budget, "===")
+    print(t"=== fuzz_softmax seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

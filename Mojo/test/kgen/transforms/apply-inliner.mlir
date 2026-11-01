@@ -1,37 +1,37 @@
 // RUN: kgen-opt -verify-parameters -apply-inliner -split-input-file %s | FileCheck %s
 
 kgen.generator @trivial<T: type>(%arg0: !kgen.param<T>) -> !kgen.param<T> {
-  kgen.return %arg0 : !kgen.param<T>
+  hlcf.return %arg0 : !kgen.param<T>
 }
 
 // CHECK-LABEL: kgen.generator @trivial_exprs
 kgen.generator @trivial_exprs() {
   // CHECK-NEXT: constant = <2>
   kgen.param.constant = <apply(:(index) -> index @trivial<:type index>, 2)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 kgen.generator @fwd_reg<T: type>(%arg0: !kgen.param<T>) -> !kgen.param<T> {
-  kgen.return %arg0 : !kgen.param<T>
+  hlcf.return %arg0 : !kgen.param<T>
 }
 
 kgen.generator @fwd_reg_byref_result_store_first<T: type>(%arg0: !kgen.param<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
   pop.store %arg0, %arg1 : !kgen.pointer<T>
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 kgen.generator @fwd_reg_byref_result_store_second<T: type>(%arg0: !kgen.param<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   pop.store %arg0, %arg1 : !kgen.pointer<T>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 kgen.generator @reg_constant<T: type, value: !kgen.param<T>>() -> !kgen.param<T> {
   %0 = kgen.param.constant: !kgen.param<T> = <value>
-  kgen.return %0 : !kgen.param<T>
+  hlcf.return %0 : !kgen.param<T>
 }
 
 // CHECK-LABEL: @test_param_inline
@@ -46,7 +46,7 @@ kgen.generator @test_param_inline<param>() {
   kgen.param.constant = <apply(:() -> index @reg_constant<:type index, 5>)>
   // CHECK-NEXT: <param>
   kgen.param.constant = <apply(:() -> index @reg_constant<:type index, param>)>
-  kgen.return
+  hlcf.return
 }
 
 // debug versions
@@ -57,7 +57,7 @@ kgen.generator @test_param_inline<param>() {
 
 kgen.generator @fwd_reg_debug<T: type>(%arg0: !kgen.param<T>) -> !kgen.param<T> {
   debuginfo.value #var_paramref = %arg0 : !kgen.param<T>
-  kgen.return %arg0 : !kgen.param<T>
+  hlcf.return %arg0 : !kgen.param<T>
 }
 
 kgen.generator @fwd_reg_byref_result_store_first_debug<T: type>(%arg0: !kgen.param<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
@@ -66,7 +66,7 @@ kgen.generator @fwd_reg_byref_result_store_first_debug<T: type>(%arg0: !kgen.par
   pop.store %arg0, %arg1 : !kgen.pointer<T>
   %none = kgen.param.constant: none = <#kgen.none>
   debuginfo.value #var_none = %none : !kgen.none
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 kgen.generator @fwd_reg_byref_result_store_second_debug<T: type>(%arg0: !kgen.param<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
@@ -75,13 +75,13 @@ kgen.generator @fwd_reg_byref_result_store_second_debug<T: type>(%arg0: !kgen.pa
   %none = kgen.param.constant: none = <#kgen.none>
   debuginfo.value #var_none = %none : !kgen.none
   pop.store %arg0, %arg1 : !kgen.pointer<T>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 kgen.generator @reg_constant_debug<T: type, value: !kgen.param<T>>() -> !kgen.param<T> {
   %0 = kgen.param.constant: !kgen.param<T> = <value>
   debuginfo.value #var_paramref = %0 : !kgen.param<T>
-  kgen.return %0 : !kgen.param<T>
+  hlcf.return %0 : !kgen.param<T>
 }
 
 // CHECK-LABEL: @test_param_inline_debug
@@ -96,5 +96,172 @@ kgen.generator @test_param_inline_debug<param>() {
   kgen.param.constant = <apply(:() -> index @reg_constant_debug<:type index, 5>)>
   // CHECK-NEXT: <param>
   kgen.param.constant = <apply(:() -> index @reg_constant_debug<:type index, param>)>
-  kgen.return
+  hlcf.return
+}
+
+// -----
+
+// A recursive generator. Ensure we don't inline forever.
+
+// CHECK-LABEL: kgen.generator @self_applying
+kgen.generator @self_applying() -> index {
+  // CHECK: kgen.param.constant = <apply(:() -> index @self_applying)>
+  %0 = kgen.param.constant = <apply(:() -> index @self_applying)>
+  hlcf.return %0 : index
+}
+
+// -----
+
+// Same, with the cycle spanning two mutually-recursive generators. Neither
+// takes a parameter, so nothing can ever fold the cycle away and both are left
+// exactly as they are. Substituting one level, as this used to, only swaps one
+// un-foldable apply for another.
+
+// CHECK-LABEL: kgen.generator @mutual_a
+kgen.generator @mutual_a() -> index {
+  // CHECK: kgen.param.constant = <apply(:() -> index @mutual_b)>
+  %0 = kgen.param.constant = <apply(:() -> index @mutual_b)>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @mutual_b
+kgen.generator @mutual_b() -> index {
+  // CHECK: kgen.param.constant = <apply(:() -> index @mutual_a)>
+  %0 = kgen.param.constant = <apply(:() -> index @mutual_a)>
+  hlcf.return %0 : index
+}
+
+// -----
+
+// Expansion that grows without ever repeating an apply. Ensure we don't inline
+// forever.
+
+// CHECK-LABEL: kgen.generator @grow
+kgen.generator @grow<n>() -> index {
+  // `n` is symbolic here, so the recursion cannot fold and the body is left
+  // alone. Re-running the pass has to reach the same result, or each run would
+  // hand the next a deeper expression to expand.
+  // CHECK: kgen.param.constant = <apply(:() -> index @grow<to_builtin(:scalar<index> add(from_builtin(n), 1))>)>
+  %0 = kgen.param.constant = <apply(:() -> index @grow<add(n, 1)>)>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @grow_user
+kgen.generator @grow_user() {
+  // A concrete parameter folds the guard at every step, so this one does
+  // expand, and only the depth bound stops it.
+  // CHECK: kgen.param.constant = <apply(:() -> index @grow<33>)>
+  kgen.param.constant = <apply(:() -> index @grow<0>)>
+  hlcf.return
+}
+
+// -----
+
+// Recursion that terminates through a ternary base case. The guard only folds
+// once the parameter is concrete, so the generator's own body is left alone
+// while a concrete apply of it collapses all the way. Expanding the symbolic
+// form walks past the base case forever, `n - 1`, `n - 2`, ..., without ever
+// repeating an apply.
+
+// CHECK-LABEL: kgen.generator @countdown
+kgen.generator @countdown<n>() -> index {
+  // CHECK: kgen.param.constant = <cond({{.*}}apply(:() -> index @countdown<to_builtin(:scalar<index> add(from_builtin(n), -1))>))>
+  %0 = kgen.param.constant = <cond(eq(n, 0), 0, apply(:() -> index @countdown<add(n, -1)>))>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @countdown_user
+kgen.generator @countdown_user() {
+  // CHECK: kgen.param.constant = <0>
+  kgen.param.constant = <apply(:() -> index @countdown<4>)>
+  hlcf.return
+}
+
+// -----
+
+// Same, with the recursion spanning two generators.
+
+// CHECK-LABEL: kgen.generator @ping
+kgen.generator @ping<n>() -> index {
+  // CHECK: kgen.param.constant = <cond({{.*}}apply(:() -> index @pong<to_builtin(:scalar<index> add(from_builtin(n), -1))>))>
+  %0 = kgen.param.constant = <cond(eq(n, 0), 0, apply(:() -> index @pong<add(n, -1)>))>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @pong
+kgen.generator @pong<n>() -> index {
+  // CHECK: kgen.param.constant = <cond({{.*}}apply(:() -> index @ping<to_builtin(:scalar<index> add(from_builtin(n), -1))>))>
+  %0 = kgen.param.constant = <cond(eq(n, 0), 1, apply(:() -> index @ping<add(n, -1)>))>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @mutual_user
+kgen.generator @mutual_user() {
+  // CHECK: kgen.param.constant = <1>
+  kgen.param.constant = <apply(:() -> index @ping<5>)>
+  hlcf.return
+}
+
+// -----
+
+// All four of these sit in one cycle, but `@b`'s only route back to `@r` runs
+// through `@a`, which a depth-first walk can already have finished by the time
+// it reaches `@b`. Marking back edges alone leaves `@b` looking non-recursive
+// and expands it forever, so this needs the components proper.
+
+kgen.generator @r<n>() -> index {
+  // CHECK: kgen.param.constant = <cond({{.*}}@a{{.*}}@b{{.*}})>
+  %0 = kgen.param.constant = <cond(eq(n, 0), 0, add(apply(:() -> index @a<add(n, -1)>), apply(:() -> index @b<add(n, -1)>)))>
+  hlcf.return %0 : index
+}
+
+kgen.generator @a<n>() -> index {
+  // CHECK: kgen.param.constant = <cond({{.*}}@r{{.*}})>
+  %0 = kgen.param.constant = <cond(eq(n, 0), 1, apply(:() -> index @r<add(n, -1)>))>
+  hlcf.return %0 : index
+}
+
+kgen.generator @b<n>() -> index {
+  // CHECK: kgen.param.constant = <cond({{.*}}@b2{{.*}})>
+  %0 = kgen.param.constant = <cond(eq(n, 0), 2, apply(:() -> index @b2<add(n, -1)>))>
+  hlcf.return %0 : index
+}
+
+kgen.generator @b2<n>() -> index {
+  // CHECK: kgen.param.constant = <cond({{.*}}@a{{.*}})>
+  %0 = kgen.param.constant = <cond(eq(n, 0), 3, apply(:() -> index @a<add(n, -1)>))>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @scc_user
+kgen.generator @scc_user() {
+  // CHECK: kgen.param.constant = <4>
+  kgen.param.constant = <apply(:() -> index @r<3>)>
+  hlcf.return
+}
+
+// -----
+
+// `@outer` is walked before its caller, so its body is folded before the apply
+// in `@caller` sets its inlined form. That form must still have the nested
+// apply of `@leaf` folded.
+
+// CHECK-LABEL: kgen.generator @leaf
+kgen.generator @leaf() -> index {
+  %0 = kgen.param.constant: index = <7>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @outer() -> index attributes {inlinedForm = 7 : index}
+kgen.generator @outer() -> index {
+  // CHECK-NEXT: kgen.param.constant = <7>
+  %0 = kgen.param.constant: index = <apply(:() -> index @leaf)>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @caller
+kgen.generator @caller() {
+  // CHECK-NEXT: kgen.param.constant = <7>
+  kgen.param.constant = <apply(:() -> index @outer)>
+  hlcf.return
 }

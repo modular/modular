@@ -15,28 +15,46 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
+from collections import OrderedDict
+from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     ops,
 )
-from max.nn.comm.allreduce import Allreduce
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer.distributed_transformer import (
+from max.graph import Module as GraphModule
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import MRoPEPositions, VisionMerge
+from max.nn.legacy.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
 )
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
@@ -47,6 +65,8 @@ from .text_rotary import Qwen3VLTextRotaryEmbedding
 
 
 class Qwen3VLMoeTextDecoderLayer(Module):
+    """One Qwen3-VL-MoE decoder layer."""
+
     def __init__(
         self,
         rope: Qwen3VLTextRotaryEmbedding,
@@ -177,8 +197,10 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         layer_idx: int,
         quant_config: QuantConfig | None,
     ) -> MLP | Qwen3VLMoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP the layer at ``layer_idx`` uses.
+
+        A Mixture of Experts layer replaces the plain MLP wherever ``config``
+        marks that layer as sparse.
 
         Args:
             config: Configuration object containing model parameters
@@ -329,6 +351,137 @@ class Qwen3VLMoEDecoder(DistributedLogitsPostprocessMixin, Module):
         self.kv_params = config.llm_config.kv_params
         self.rope = rope
         self.return_logits = config.llm_config.return_logits
+        self.mrope_section = config.mrope_section
+        self._image_embedding_dtype = config.dtype
+        self._num_deepstack_layers = len(
+            config.vision_config.deepstack_visual_indexes
+        )
+
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the language graph's inputs; its leaves are its inputs.
+
+        Image embeddings are always inputs: a text-only batch feeds zero rows.
+
+        Args:
+            kv_params: The KV cache parameters.
+
+        Returns:
+            The input types under ``batch`` (whose ``row_offsets`` are one
+            per device), ``vision`` (whose ``deepstack_embeddings`` are per
+            device within each deepstack layer), ``mrope``, ``signals`` and
+            ``kv``, in graph order.
+        """
+
+        def per_device(
+            dtype: DType, shape: list[int | str]
+        ) -> tuple[TensorType, ...]:
+            return tuple(
+                TensorType(dtype, shape=shape, device=device)
+                for device in self.devices
+            )
+
+        # Rows are the spatially merged patches:
+        # vision_seq_len // spatial_merge_size**2.
+        embeddings_shape: list[int | str] = ["vision_merged_seq_len", self.dim]
+        return OrderedDict(
+            batch=ragged_batch_inputs(
+                self.devices[0],
+                ("tokens", "return_n_logits", "row_offsets"),
+                row_offsets_devices=self.devices,
+            ),
+            vision=VisionMerge(
+                image_embeddings=per_device(
+                    self._image_embedding_dtype, embeddings_shape
+                ),
+                deepstack_embeddings=tuple(
+                    per_device(self._image_embedding_dtype, embeddings_shape)
+                    for _ in range(self._num_deepstack_layers)
+                ),
+                image_token_indices=per_device(
+                    DType.int32, ["total_image_tokens"]
+                ),
+            ),
+            mrope=MRoPEPositions(
+                position_ids=TensorType(
+                    DType.int64,
+                    shape=[3, "total_seq_len"],
+                    device=DeviceRef.CPU(),
+                )
+            ),
+            signals=signal_inputs(list(self.devices)),
+            kv=kv_params.get_symbolic_inputs(),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s leaves.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        # The KV cache comes last, and unflattens through the KV params.
+        head = OrderedDict(
+            (key, types)
+            for key, types in self.input_tree(self.kv_params).items()
+            if key != "kv"
+        )
+        head_treedef = tree.flatten(head)[1]
+
+        def forward(*inputs: Value[Any]) -> DecoderOutputs:
+            remaining = iter(inputs)
+            named = tree.unflatten(head_treedef, remaining, exact=False)
+            assert isinstance(named, OrderedDict)
+            batch = named["batch"]
+            vision = named["vision"]
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(remaining),
+                leaf=KVCacheInputsPerDevice,
+            )
+            return self(
+                tokens=batch["tokens"].tensor,
+                return_n_logits=batch["return_n_logits"].tensor,
+                image_embeddings=[v.tensor for v in vision["image_embeddings"]],
+                image_token_indices=[
+                    v.tensor for v in vision["image_token_indices"]
+                ],
+                position_ids=named["mrope"]["position_ids"].tensor,
+                mrope_section=self.mrope_section,
+                kv_collections=kv_collections,
+                input_row_offsets=[v.tensor for v in batch["row_offsets"]],
+                signal_buffers=[v.buffer for v in named["signals"]["signal"]],
+                deepstack_visual_embeds=[
+                    [v.tensor for v in layer]
+                    for layer in vision["deepstack_embeddings"]
+                ],
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
 
     def _deepstack_process(
         self,
@@ -383,7 +536,7 @@ class Qwen3VLMoEDecoder(DistributedLogitsPostprocessMixin, Module):
         input_row_offsets: list[TensorValue],
         signal_buffers: list[BufferValue],
         deepstack_visual_embeds: list[list[TensorValue]],
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Forward pass of the Qwen3VL MoE decoder.
 
         Args:

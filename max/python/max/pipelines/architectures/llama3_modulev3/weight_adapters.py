@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps Llama3 checkpoint names onto the ModuleV3 tree."""
 
 from __future__ import annotations
 

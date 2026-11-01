@@ -1,0 +1,20 @@
+# DeepSeek-V4 prompt-encoding test vectors, copied verbatim from
+# encoding/tests/ of deepseek-ai/DeepSeek-V4-Flash-0731 at revision
+# 7872f01b1d1fe23eabc4c98b48bffcef5a386062 (MIT, Copyright (c) 2023 DeepSeek).
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+filegroup(
+    name = "testdata",
+    srcs = glob([
+        "*.json",
+        "*.txt",
+    ]),
+    visibility = [
+        "//max/tests/integration/architectures/deepseekV4:__pkg__",
+    ],
+)

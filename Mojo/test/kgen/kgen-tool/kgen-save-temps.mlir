@@ -4,11 +4,11 @@
 // RUN: find $(dirname %t_temps) -type f -name "*.pre-split.*.ll" -print -quit | xargs cat | FileCheck %s -check-prefix=PRESPLIT
 
 kgen.func export @my_exported_kernel(%arg0: f32) cabi -> f32 {
-  kgen.return %arg0 : f32
+  hlcf.return %arg0 : f32
 }
 
 kgen.func export @noop() {
-  kgen.return
+  hlcf.return
 }
 
 // ASM-DAG: .section

@@ -1,0 +1,85 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the MAX License:
+# https://modular.com/legal/max-license
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Basic smoke test for the Mojo HAL driver.
+
+Requires MODULAR_DRIVER_PLUGINS env var set to a plugin spec, e.g.:
+    CUDA@/path/to/cuda_plugin.so
+"""
+
+from std.os import getenv
+
+from max._driver import Host
+from max._driver import Driver
+from max._driver.max_license.hal.extensions.traits import SupportsPeerAccessV1
+from max._driver.max_license.hal.status import HALError, STATUS_INVALID_ARG
+from std.testing import assert_equal, assert_false, assert_true
+
+
+def test_driver_create() raises HALError:
+    var host = Host()
+    print("Driver count:", host.driver_count())
+    print("Driver0 name:", host.driver(0)[].get_name())
+    print("Accelerator count:", host.accelerator_count())
+    print("----------------------")
+
+
+def test_device_get() raises:
+    var host = Host()
+    var driver = host.driver(0)
+    var device_count = driver[].get_device_count()
+    for i in range(device_count):
+        var device = driver[].get_device_dynamic(Int64(i))
+        var name = device[].get_name()
+        assert_true(name.byte_length() > 0, "device has an empty name")
+        print("Device", i, name)
+    print("----------------------")
+
+    var rejected = False
+    try:
+        _ = driver[].get_device_dynamic(device_count)
+    except e:
+        assert_equal(e.status, STATUS_INVALID_ARG)
+        rejected = True
+    assert_true(rejected, "a device ID past the count was accepted")
+
+
+def test_peer_access() raises:
+    var host = Host()
+    if host.accelerator_count() < 2:
+        print("single device; skipping")
+        return
+    var dev0 = host.accelerator(0)
+    var dev1 = host.accelerator(1)
+    comptime Ext = type_of(dev0[].extensions())
+    comptime if conforms_to(Ext, SupportsPeerAccessV1):
+        assert_false(dev0[].can_access_peer(dev0[]))
+        var forward = dev0[].can_access_peer(dev1[])
+        assert_equal(forward, dev1[].can_access_peer(dev0[]))
+        if not forward:
+            print("pair has no peer access; skipping enable")
+            return
+        var ctx0 = dev0[].get_context()
+        var ctx1 = dev1[].get_context()
+        ctx0[].enable_peer_access(ctx1[])
+        ctx0[].enable_peer_access(ctx1[])
+    else:
+        print("extension set has no peer access; skipping")
+
+
+def main() raises:
+    try:
+        test_driver_create()
+    except e:
+        raise Error(String(e))
+    test_device_get()
+    test_peer_access()

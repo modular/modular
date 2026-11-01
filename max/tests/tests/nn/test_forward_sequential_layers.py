@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for transformer sequential layers helper in max.nn.transformer."""
+"""Tests for transformer sequential layers helper in max.nn.legacy.transformer."""
 
 from __future__ import annotations
 
@@ -27,11 +27,16 @@ from max.graph import (
     TensorType,
     TensorValue,
     Value,
+    Weight,
     ops,
 )
-from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.transformer import forward_sequential_layers
+from max.nn.legacy.kv_cache import (
+    KVCacheInputsPerDevice,
+    PagedCacheValues,
+    packed_page_stride,
+)
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import forward_sequential_layers
 
 TENSOR_T = TensorType(DType.float32, (1, 8), DeviceRef.CPU())
 IDX_T = TensorType(DType.uint32, (), DeviceRef.CPU())
@@ -70,6 +75,19 @@ class _ScalarAndListLayer(Module):
         )
         self.received_idx = layer_idx
         return xs
+
+
+class _WeightedLayer(Module):
+    """Layer that adds one weight to its input."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = Weight(
+            "weight", DType.float32, TENSOR_T.shape, DeviceRef.CPU()
+        )
+
+    def __call__(self, x: list[TensorValue]) -> list[TensorValue]:
+        return [x[0] + self.weight]
 
 
 def _inputs_for_layer(
@@ -283,6 +301,7 @@ def test_structured_kv_collection_input(use_subgraphs: bool) -> None:
         kv_collections = [
             PagedCacheValues(
                 kv_blocks=main_graph.inputs[1].buffer,
+                page_stride=packed_page_stride(main_graph.inputs[1].buffer),
                 cache_lengths=main_graph.inputs[2].tensor,
                 lookup_table=main_graph.inputs[3].tensor,
                 max_prompt_length=main_graph.inputs[4].tensor,
@@ -321,3 +340,58 @@ def test_structured_kv_collection_input(use_subgraphs: bool) -> None:
             assert layers[1].call_count == 1
             # Direct path forwards the exact same collection object.
             assert layers[1].received_kv is kv_collections
+
+
+@pytest.mark.parametrize("use_subgraphs", [False, True])
+def test_layer_ids_reach_every_callback(use_subgraphs: bool) -> None:
+    """Callbacks and subgraph groups see the given layer ids, not positions."""
+    with Graph("test", input_types=[TENSOR_T]) as main_graph:
+        layers = [_IdentityLayer() for _ in range(2)]
+        seen: dict[str, list[int]] = {"inputs": [], "prefix": [], "output": []}
+
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Any]:
+            seen["inputs"].append(idx)
+            return [h]
+
+        def weight_prefix_for_layer(idx: int) -> str:
+            seen["prefix"].append(idx)
+            return f"layers.{idx}."
+
+        forward_sequential_layers(
+            layers,
+            inputs_for_layer=inputs_for_layer,
+            weight_prefix_for_layer=weight_prefix_for_layer,
+            subgraph_layer_groups=[[5, 6]] if use_subgraphs else None,
+            initial_hidden_states=[main_graph.inputs[0].tensor],
+            on_layer_output=lambda idx, h: seen["output"].append(idx),
+            layer_ids=range(5, 7),
+        )
+
+        assert seen["inputs"] == seen["output"] == [5, 6]
+        if use_subgraphs:
+            assert seen["prefix"] and set(seen["prefix"]) == {5, 6}
+            assert str(main_graph).count("callee = @transformer_block_0") == 2
+
+
+def test_subgraph_weights_named_under_a_parent() -> None:
+    """A model built into a larger one, such as a speculative decoding
+    target, keeps its subgraphs when its weights are named under its place
+    there."""
+    with Graph("test", input_types=[TENSOR_T]) as main_graph:
+        layers = [_WeightedLayer() for _ in range(2)]
+        for idx, layer in enumerate(layers):
+            layer.weight.name = f"target.layers.{idx}.weight"
+
+        forward_sequential_layers(
+            layers,
+            inputs_for_layer=_inputs_for_layer,
+            weight_prefix_for_layer=lambda i: f"layers.{i}.",
+            subgraph_layer_groups=[[0, 1]],
+            initial_hidden_states=[main_graph.inputs[0].tensor],
+        )
+
+        graph = str(main_graph)
+        assert graph.count("callee = @transformer_block_0") == 2
+        assert 'prefix = "target.layers.0."' in graph
+        assert 'prefix = "target.layers.1."' in graph
+        assert "target.layers.0.weight" not in graph

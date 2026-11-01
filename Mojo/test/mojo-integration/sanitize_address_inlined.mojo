@@ -34,7 +34,7 @@ from std.sys import argv
 
 
 def step_b(n: Int):
-    var p = alloc[Int]({count = 1}).unsafe_leak()
+    var p = alloc[Int]({length = 1}).unsafe_leak()
     p[unsafe_offset=n] = 42  # OOB write — ASAN reports this.
     print(
         p[unsafe_offset=0]

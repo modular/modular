@@ -106,7 +106,7 @@ struct SoftmaxRDNA[
     var score_frag_rowsum: Self.ScoreFragTensorType
     var correction: Self.ScoreFragTensorType
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         self.rowmax_tensor = tt_stack_allocation[
             dtype=Self.dtype, address_space=.LOCAL
@@ -124,7 +124,7 @@ struct SoftmaxRDNA[
             dtype=Self.dtype, address_space=.LOCAL
         ](Self.score_frag_layout).fill(1)
 
-    @always_inline
+    @inline(.always)
     def _score_row_idx[col_tile: Int, row: Int](self, lane_row: Int) -> UInt32:
         """Map (col_tile, lane_row, row) to a linear score matrix row index."""
         return (
@@ -135,7 +135,7 @@ struct SoftmaxRDNA[
             + UInt32(row)
         )
 
-    @always_inline
+    @inline(.always)
     def _reduce_rows[
         is_max: Bool
     ](
@@ -166,8 +166,8 @@ struct SoftmaxRDNA[
 
         var warp_x = umod(get_warp_id[broadcast=True](), Self.num_rowwise_warps)
         var lane_coord = Self.WarpLayoutT().idx2crd(Int(lane_id()))
-        var lane_row = Int(lane_coord[0].value())
-        var lane_col = Int(lane_coord[1].value())
+        var lane_row = Int(lane_coord[0])
+        var lane_col = Int(lane_coord[1])
         var lane_contains_first_column = lane_col == 0
 
         # Per-thread fragment reduction + warp lane shuffle.
@@ -232,7 +232,7 @@ struct SoftmaxRDNA[
                                         self.score_frag_rowmax[col_tile, row]
                                     ),
                                     rebind[Scalar[Self.dtype]](
-                                        warp_scratch[Int(rw), Int(sri)]
+                                        warp_scratch[rw, Int(sri)]
                                     ),
                                 )
                         else:
@@ -240,11 +240,7 @@ struct SoftmaxRDNA[
                             comptime for rw in range(Self.num_rowwise_warps):
                                 self.score_frag_rowsum[col_tile, row] += rebind[
                                     Scalar[Self.dtype]
-                                ](
-                                    warp_scratch[
-                                        Int(rw) + smem_row_offset, Int(sri)
-                                    ]
-                                )
+                                ](warp_scratch[rw + smem_row_offset, Int(sri)])
 
             # Broadcast reduced value to all lanes in the row.
             comptime for col_tile in range(Self.num_colwise_tiles):
@@ -270,7 +266,7 @@ struct SoftmaxRDNA[
                             self.score_frag_rowsum[col_tile, row]
                         )
 
-    @always_inline
+    @inline(.always)
     def calculate_qk_max(
         self,
         score: TileTensor[Self.dtype, ...],
@@ -278,7 +274,7 @@ struct SoftmaxRDNA[
     ):
         self._reduce_rows[is_max=True](score, warp_scratch)
 
-    @always_inline
+    @inline(.always)
     def calculate_qk_sum(
         self,
         score: TileTensor[Self.dtype, ...],
@@ -286,7 +282,7 @@ struct SoftmaxRDNA[
     ):
         self._reduce_rows[is_max=False](score, warp_scratch)
 
-    @always_inline
+    @inline(.always)
     def exp(self, score: TileTensor[mut=True, Self.dtype, ...]):
         comptime assert score.flat_rank == 2
         comptime assert Self.frag_is_row_vector
@@ -304,7 +300,7 @@ struct SoftmaxRDNA[
                     )
                 )
 
-    @always_inline
+    @inline(.always)
     def calculate_correction(self):
         comptime for col_tile in range(Self.num_colwise_tiles):
             comptime for row in range(Self.frag_num_rows):
@@ -313,7 +309,7 @@ struct SoftmaxRDNA[
                     - self.score_frag_rowmax[col_tile, row]
                 )
 
-    @always_inline
+    @inline(.always)
     def update_output(self, output: TileTensor[mut=True, Self.dtype, ...]):
         comptime assert output.flat_rank == 2
         comptime assert Self.frag_is_row_vector
@@ -330,7 +326,7 @@ struct SoftmaxRDNA[
                 Self.dtype, Self.frag_size
             ](self.correction[col_tile, 0][0])
 
-    @always_inline
+    @inline(.always)
     def update_sum(self):
         comptime for col_tile in range(Self.num_colwise_tiles):
             comptime for row in range(Self.frag_num_rows):
@@ -340,13 +336,13 @@ struct SoftmaxRDNA[
                     + self.score_frag_rowsum[col_tile, row]
                 )
 
-    @always_inline
+    @inline(.always)
     def update_max(self):
         comptime for i in range(Self.num_colwise_tiles):
             comptime for j in range(Self.frag_num_rows):
                 self.rowmax_tensor[i, j] = self.score_frag_rowmax[i, j]
 
-    @always_inline
+    @inline(.always)
     def full(
         self,
         output: TileTensor[mut=True, Self.dtype, ...],

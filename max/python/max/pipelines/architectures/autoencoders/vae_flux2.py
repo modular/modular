@@ -10,11 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Graph API VAE encoder components for Flux2.
 
 Ports the ModuleV2-based encoder from autoencoders_modulev3/ to the Graph API
-(max.nn.layer.Module) so that the ImageEncoder CompiledComponent can be built
+(max.nn.legacy.layer.Module) so that the ImageEncoder CompiledComponent can be built
 without max.experimental dependencies.
 """
 
@@ -23,12 +22,12 @@ import math
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.conv import Conv2d
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm.group_norm import GroupNorm
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.conv import Conv2d
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.group_norm import GroupNorm
 
 
 class ResnetBlock2D(Module):
@@ -137,6 +136,7 @@ class ResnetBlock2D(Module):
     def __call__(
         self, x: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Runs the residual block with its time embedding."""
         shortcut = (
             self.conv_shortcut(x) if self.conv_shortcut is not None else x
         )
@@ -250,6 +250,7 @@ class Downsample2D(Module):
             )
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        """Downsamples the spatial axes of ``x``."""
         if self.use_conv and self.padding == 0:
             paddings = [0, 0, 0, 0, 0, 1, 0, 1]
             hidden_states = ops.pad(
@@ -337,6 +338,7 @@ class VAEAttention(Module):
         self.scale = 1.0 / math.sqrt(dim_head)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies spatial self-attention with a residual."""
         residual = x
 
         x = self.group_norm(x)
@@ -435,6 +437,7 @@ class DownEncoderBlock2D(Module):
             self.downsamplers = LayerList([downsampler])
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        """Runs the block's resnets and downsampler over ``x``."""
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, None)
 
@@ -538,6 +541,7 @@ class MidBlock2D(Module):
     def __call__(
         self, hidden_states: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Runs the mid block's resnets and attention."""
         hidden_states = self.resnets[0](hidden_states, temb)
 
         attention_idx = 0
@@ -682,6 +686,7 @@ class Encoder(Module):
             )
 
     def __call__(self, sample: TensorValue) -> TensorValue:
+        """Runs the image through the encoder stack."""
         sample = self.conv_in(sample)
 
         for down_block in self.down_blocks:
@@ -699,6 +704,7 @@ class Encoder(Module):
         return sample
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The encoder's input types."""
         if self.dtype is None:
             raise ValueError("dtype must be set for input_types")
         if self.device is None:
@@ -727,8 +733,12 @@ def interpolate_2d_nearest(
 ) -> TensorValue:
     """Upsample a 2D tensor using nearest-neighbor interpolation.
 
-    Workaround using reshape + broadcast because ``ops.resize`` does not
-    support NEAREST mode.  Only ``scale_factor=2`` is implemented.
+    Delegates to ``ops.resize_nearest`` with the asymmetric transform and
+    floor rounding, which at an exact 2x scale maps each output coordinate
+    to ``out_coord // 2`` -- the same replication the old hand-rolled
+    reshape + broadcast expansion produced. The resize kernel's
+    integer-scale fast path makes this as cheap as the broadcast trick.
+    Only ``scale_factor=2`` is implemented.
 
     Args:
         x: Input tensor of shape ``[N, C, H, W]`` (NCHW).
@@ -745,22 +755,12 @@ def interpolate_2d_nearest(
         )
 
     n, c, h, w = x.shape
-    target_shape = [n, c, h * scale_factor, w * scale_factor]
-
-    # [N, C, H, W] -> [N, C, H, 1, W, 1]
-    x_reshaped = ops.reshape(x, [n, c, h, 1, w, 1])
-
-    ones_scalar = ops.constant(1.0, dtype=x.dtype, device=x.device)
-    ones = ops.broadcast_to(
-        ones_scalar,
-        [1, 1, 1, scale_factor, 1, scale_factor],
+    return ops.resize_nearest(
+        x,
+        [n, c, h * scale_factor, w * scale_factor],
+        coordinate_transform_mode=ops.CoordinateTransformMode.ASYMMETRIC,
+        round_mode=ops.RoundMode.FLOOR,
     )
-
-    # [N, C, H, 1, W, 1] * [1, 1, 1, 2, 1, 2] -> [N, C, H, 2, W, 2]
-    x_expanded = x_reshaped * ones
-
-    # [N, C, H, 2, W, 2] -> [N, C, H*2, W*2]
-    return ops.reshape(x_expanded, target_shape)
 
 
 class Upsample2D(Module):
@@ -799,6 +799,7 @@ class Upsample2D(Module):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Upsamples the spatial axes of ``x``."""
         if self._interpolate:
             x = interpolate_2d_nearest(x, scale_factor=2)
         if self.use_conv and self.conv is not None:
@@ -864,6 +865,7 @@ class UpDecoderBlock2D(Module):
     def __call__(
         self, hidden_states: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Runs the block's resnets and upsampler over ``x``."""
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, temb)
         if self.upsamplers is not None:
@@ -1005,6 +1007,7 @@ class Decoder(Module):
     def __call__(
         self, z: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Runs the latent through the decoder stack."""
         if self.post_quant_conv is not None:
             z = self.post_quant_conv(z)
         sample = self.conv_in(z)
@@ -1019,6 +1022,7 @@ class Decoder(Module):
         return sample
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The decoder's input types."""
         if self.dtype is None:
             raise ValueError("dtype must be set for input_types")
         if self.device is None:

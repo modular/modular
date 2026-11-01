@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Provides device query utilities for communication primitives."""
 
-from std.sys.info import _accelerator_arch
 from internal_utils import TuningConfig, Table
-from max.gpu.host.info import GPUInfo
+
+from max.gpu.host.info import get_gpu_info
 
 comptime KB = 1 << 10
 comptime MB = 1 << 20
@@ -108,7 +108,7 @@ struct DefaultCommTuningConfig(CommTuningConfig, TrivialRegisterPassable):
         )
 
 
-@always_inline
+@inline(.always)
 def dispatch_select_comm_config[
     TuningTableType: CommTuningConfig,
     //,
@@ -222,10 +222,10 @@ def get_sm_version() -> StaticString:
     Queries the GPU info for the default accelerator architecture and returns
     its version identifier (e.g. `"sm_90a"` for Hopper, `"sm_100a"` for
     Blackwell). The result is a comptime constant derived from
-    `GPUInfo.from_name`.
+    `get_gpu_info`.
 
     Returns:
         The SM version string for the target GPU architecture.
     """
-    comptime default_device_info = GPUInfo.from_name[_accelerator_arch()]()
+    comptime default_device_info = get_gpu_info()
     return default_device_info.version

@@ -47,20 +47,18 @@ Usage:
     )
 """
 
-from std.collections import Optional
 from std.math import align_up
 from std.sys import size_of
 
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import B200
-from layout import TileTensor
+from layout import TileTensor, coord
 
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import ElementwiseComputeFn, no_compute_fn
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -144,9 +142,6 @@ def grouped_block_scaled_matmul[
     max_groups: Int,
     *,
     config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
 ](
     # Per-group tensor pointers (max_groups, 1) TileTensors
     a_ptrs: TileTensor[.uint64, ...],
@@ -180,9 +175,6 @@ def grouped_block_scaled_matmul[
         transpose_b: Whether B is transposed (must be True).
         max_groups: Maximum number of groups (compile-time bound).
         config: Block-scaled matmul configuration.
-        elementwise_compute_lambda_fn: Optional epilogue lambda for element-wise
-            operations on output. Applied after matmul, before writing to global
-            memory.
 
     Args:
         a_ptrs: Per-group A matrix pointers (max_groups, 1).
@@ -203,6 +195,142 @@ def grouped_block_scaled_matmul[
     Raises:
         If configuration constraints are violated.
     """
+    _grouped_block_scaled_matmul_impl[
+        max_groups=max_groups, config=config, has_compute_fn=False
+    ](
+        a_ptrs,
+        b_ptrs,
+        c_ptrs,
+        sfa_ptrs,
+        sfb_ptrs,
+        problem_sizes,
+        num_groups,
+        total_tiles,
+        a_template,
+        b_template,
+        c_template,
+        sfa_template,
+        sfb_template,
+        no_compute_fn,
+        ctx,
+    )
+
+
+def grouped_block_scaled_matmul[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    transpose_b: Bool,
+    max_groups: Int,
+    *,
+    config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
+](
+    # Per-group tensor pointers (max_groups, 1) TileTensors
+    a_ptrs: TileTensor[.uint64, ...],
+    b_ptrs: TileTensor[.uint64, ...],
+    c_ptrs: TileTensor[.uint64, ...],
+    sfa_ptrs: TileTensor[.uint64, ...],
+    sfb_ptrs: TileTensor[.uint64, ...],
+    # Per-group problem sizes: (max_groups, 4) with [M, N, K, L]
+    problem_sizes: TileTensor[.int32, ...],
+    # Number of active groups (runtime)
+    num_groups: Int,
+    # Total tiles across all groups (computed by caller on host)
+    total_tiles: Int,
+    # Template tensors for TMA descriptor creation
+    # A/B/C: 3D (1, M/N, K/N) batched TileTensors
+    a_template: TileTensor[config.a_type, ...],
+    b_template: TileTensor[config.b_type, ...],
+    c_template: TileTensor[config.c_type, ...],
+    # Scale factor templates: 5D (1, M/N_groups, K_groups, SF_ATOM_M[0],
+    # SF_ATOM_M[1] * SF_ATOM_K)
+    sfa_template: TileTensor[config.sfa_dtype, ...],
+    sfb_template: TileTensor[config.sfb_dtype, ...],
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    """Same as the plain overload, storing `compute_fn(idx, value)` into C.
+
+    Parameters:
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_b: Whether B is transposed (must be True).
+        max_groups: Maximum number of groups (compile-time bound).
+        config: Block-scaled matmul configuration.
+
+    Args:
+        a_ptrs: Per-group A matrix pointers (max_groups, 1).
+        b_ptrs: Per-group B matrix pointers (max_groups, 1).
+        c_ptrs: Per-group C matrix pointers (max_groups, 1).
+        sfa_ptrs: Per-group A scaling factor pointers (max_groups, 1).
+        sfb_ptrs: Per-group B scaling factor pointers (max_groups, 1).
+        problem_sizes: Per-group problem sizes (max_groups, 4) as [M, N, K, L].
+        num_groups: Actual number of groups (runtime value <= max_groups).
+        total_tiles: Total tiles across all groups (computed by caller).
+        a_template: Template A tensor (1, M, K) for TMA descriptor creation.
+        b_template: Template B tensor (1, N, K) for TMA descriptor creation.
+        c_template: Template C tensor (1, M, N) for TMA descriptor creation.
+        sfa_template: Template SFA tensor for TMA descriptor creation.
+        sfb_template: Template SFB tensor for TMA descriptor creation.
+        compute_fn: Transforms each output value before it is stored. Its
+            index is the output coordinate within the current group.
+        ctx: Device context for kernel launch.
+
+    Raises:
+        If configuration constraints are violated.
+    """
+    _grouped_block_scaled_matmul_impl[
+        max_groups=max_groups, config=config, has_compute_fn=True
+    ](
+        a_ptrs,
+        b_ptrs,
+        c_ptrs,
+        sfa_ptrs,
+        sfb_ptrs,
+        problem_sizes,
+        num_groups,
+        total_tiles,
+        a_template,
+        b_template,
+        c_template,
+        sfa_template,
+        sfb_template,
+        compute_fn,
+        ctx,
+    )
+
+
+def _grouped_block_scaled_matmul_impl[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    transpose_b: Bool,
+    max_groups: Int,
+    *,
+    config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
+    has_compute_fn: Bool,
+](
+    # Per-group tensor pointers (max_groups, 1) TileTensors
+    a_ptrs: TileTensor[.uint64, ...],
+    b_ptrs: TileTensor[.uint64, ...],
+    c_ptrs: TileTensor[.uint64, ...],
+    sfa_ptrs: TileTensor[.uint64, ...],
+    sfb_ptrs: TileTensor[.uint64, ...],
+    # Per-group problem sizes: (max_groups, 4) with [M, N, K, L]
+    problem_sizes: TileTensor[.int32, ...],
+    # Number of active groups (runtime)
+    num_groups: Int,
+    # Total tiles across all groups (computed by caller on host)
+    total_tiles: Int,
+    # Template tensors for TMA descriptor creation
+    # A/B/C: 3D (1, M/N, K/N) batched TileTensors
+    a_template: TileTensor[config.a_type, ...],
+    b_template: TileTensor[config.b_type, ...],
+    c_template: TileTensor[config.c_type, ...],
+    # Scale factor templates: 5D (1, M/N_groups, K_groups, SF_ATOM_M[0],
+    # SF_ATOM_M[1] * SF_ATOM_K)
+    sfa_template: TileTensor[config.sfa_dtype, ...],
+    sfb_template: TileTensor[config.sfb_dtype, ...],
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
     comptime a_type = config.a_type
     comptime b_type = config.b_type
     comptime c_type = config.c_type
@@ -233,19 +361,18 @@ def grouped_block_scaled_matmul[
         transpose_b,
         config=config,
         max_groups=max_groups,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        group_ptr_engine=type_of(a_ptrs).Engine,
+        problem_sizes_engine=type_of(problem_sizes).Engine,
+        cluster_shape=config.cluster_shape,
+        ComputeFnType=ComputeFnType,
+        has_compute_fn=has_compute_fn,
     ]
     comptime KernelType = type_of(matmul_kernel)
 
     # ===== Create template TMA descriptors using kernel-derived layouts =====
 
     # A matrix TMA
-    comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
+    comptime a_tma_tile_shape = coord[1, BM // cluster_shape[1], BK]
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
@@ -254,9 +381,9 @@ def grouped_block_scaled_matmul[
     ](ctx, a_template)
 
     # B matrix TMA
-    comptime b_tma_tile_shape = Index(
+    comptime b_tma_tile_shape = coord[
         1, BN // (cluster_shape[0] // config.cta_group), BK
-    )
+    ]
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
@@ -265,9 +392,9 @@ def grouped_block_scaled_matmul[
     ](ctx, b_template)
 
     # C matrix TMA
-    comptime c_tma_tile_shape = Index(
+    comptime c_tma_tile_shape = coord[
         1, config.output_tile_shape[0], config.output_tile_shape[1]
-    )
+    ]
     var c_tma_op = create_tma_tile[
         KernelType.CTileLayout,
         KernelType.CDescLayout,
@@ -276,26 +403,26 @@ def grouped_block_scaled_matmul[
     ](ctx, c_template)
 
     # Scaling factors TMA
-    comptime sfa_tma_tile_shape = Index(
+    comptime sfa_tma_tile_shape = coord[
         1,
         BM // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]
     var sfa_tma_op = create_tma_tile[
         KernelType.SFATileLayout,
         KernelType.SFADescLayout,
         sfa_tma_tile_shape,
     ](ctx, sfa_template)
 
-    comptime sfb_tma_tile_shape = Index(
+    comptime sfb_tma_tile_shape = coord[
         1,
-        MMA_N // SF_MN_GROUP_SIZE,
+        align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]
     var sfb_tma_op = create_tma_tile[
         KernelType.SFBTileLayout,
         KernelType.SFBDescLayout,
@@ -437,6 +564,7 @@ def grouped_block_scaled_matmul[
             # Problem sizes and group count
             problem_sizes,
             Int32(num_groups),
+            host_args=(compute_fn,),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
@@ -468,6 +596,7 @@ def grouped_block_scaled_matmul[
             # Problem sizes and group count
             problem_sizes,
             Int32(num_groups),
+            host_args=(compute_fn,),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,

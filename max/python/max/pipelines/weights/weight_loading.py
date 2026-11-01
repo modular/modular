@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Pipeline-side helpers for loading weights into experimental Modules.
 
-The framework (``max.experimental.nn``) exposes auto-casting as an explicit
+The framework (``max.nn``) exposes auto-casting as an explicit
 ``auto_cast`` argument. Pipelines that want to defer the decision to a
 deployment-time env var route through these helpers so the framework stays
 env-agnostic.
@@ -25,6 +25,10 @@ __all__ = ["AUTO_CAST_ENV_VAR", "auto_cast_weights_from_env"]
 import os
 
 AUTO_CAST_ENV_VAR = "MODULAR_AUTO_CAST_WEIGHTS"
+"""Deployment-time switch for ``Module`` auto-casting. Read by
+:func:`auto_cast_weights_from_env`, which accepts boolean values and
+defaults to on when the variable is unset.
+"""
 
 
 def auto_cast_weights_from_env() -> bool:

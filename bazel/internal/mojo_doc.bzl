@@ -74,6 +74,7 @@ def _mojo_doc_implementation(ctx):
 
     return [
         DefaultInfo(files = depset([doc_output])),
+        OutputGroupInfo(mojodoc_json = depset([mojodoc_output])),
     ]
 
 mojo_doc = rule(
@@ -90,7 +91,10 @@ mojo_doc = rule(
         ),
         "validate_missing_docs": attr.bool(
             default = False,
-            doc = "Fail for missing docstrings",
+            doc = (
+                "Fail if public APIs are missing docstrings. " +
+                "Passes `--diagnose-missing-doc-strings` to `mojo doc`."
+            ),
         ),
         "docs_base_path": attr.string(
             default = "",

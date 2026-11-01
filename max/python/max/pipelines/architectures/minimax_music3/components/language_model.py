@@ -35,16 +35,16 @@ conditioning and the first eighth of what the diffusion stage denoises against.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module, ModuleList, RMSNorm
-from max.experimental.nn.common_layers.attention import AttentionWithRope
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn import Linear, Module, ModuleList, RMSNorm
+from max.nn.common_layers.attention import AttentionWithRope
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.tensor import Tensor
 
 from ..model_config import LanguageModelConfig
 
@@ -85,6 +85,7 @@ class TransformerBlock(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         attended = self.self_attn(
             self.input_layernorm(x),
             kv_collection,

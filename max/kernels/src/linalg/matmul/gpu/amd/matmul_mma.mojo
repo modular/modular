@@ -26,18 +26,12 @@ live in structured_kernels.amd_tile_io.
 
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu import lane_id, WARP_SIZE
-from std.utils import IndexList
 from layout import TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
-from layout.tile_layout import Layout, row_major, col_major
+from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
-from structured_kernels.amd_tile_io import (
-    GMemTile,
-    SMemTile,
-    RegTile,
-    load_lds_fragment,
-)
+from structured_kernels.amd_tile_io import SMemTile, load_lds_fragment
 
 
 # ===----------------------------------------------------------------------=== #
@@ -48,7 +42,7 @@ from structured_kernels.amd_tile_io import (
 struct QuadrantMmaOp[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     k_group_size: Int,
     num_k_groups: Int,
     num_m_mmas: Int,
@@ -129,7 +123,7 @@ struct QuadrantMmaOp[
         address_space=.LOCAL,
     ]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         self._a_reg = stack_allocation[Self.in_type, address_space=.LOCAL](
             Self._a_reg_layout
@@ -140,20 +134,18 @@ struct QuadrantMmaOp[
         self._c_reg = stack_allocation[Self.out_type, address_space=.LOCAL](
             Self._c_reg_layout
         )
-        comptime num_c_elems = (
-            Self.num_m_mmas * Self.num_n_mmas * Self.c_frag_size
-        )
-        comptime for i in range(num_c_elems):
-            self._c_reg.raw_store(i, Scalar[Self.out_type](0))
+        comptime for m in range(Self.num_m_mmas):
+            comptime for n in range(Self.num_n_mmas * Self.c_frag_size):
+                self._c_reg[m, n] = 0
 
     # === Quadrant methods for ping-pong schedule ===
     # The schedule calls load_a_quadrant/load_b_quadrant to fill one half
     # of the register tile, then mma_quadrant to compute on it.
 
-    @always_inline
+    @inline(.always)
     def load_a_quadrant[
         which: Int
-    ](self, smem_tile: SMemTile[Self.in_type, _, _],):
+    ](self, smem_tile: SMemTile[Self.in_type, _, _, _],):
         """Load A quadrant `which` from SMEM sub-tile to registers.
 
         Tiles a_reg as [quad_m, reg_cols](which, 0) to get the register
@@ -174,10 +166,10 @@ struct QuadrantMmaOp[
         var reg_quad = self._a_reg.tile[Self.quad_m, reg_cols](which, 0)
         load_lds_fragment[Self.MMA_K, Self.swizzle](smem_tile, reg_quad)
 
-    @always_inline
+    @inline(.always)
     def load_b_quadrant[
         which: Int
-    ](self, smem_tile: SMemTile[Self.in_type, _, _],):
+    ](self, smem_tile: SMemTile[Self.in_type, _, _, _],):
         """Load B quadrant `which` from SMEM sub-tile to registers.
 
         Parameters:
@@ -195,7 +187,7 @@ struct QuadrantMmaOp[
         var reg_quad = self._b_reg.tile[Self.quad_n, reg_cols](which, 0)
         load_lds_fragment[Self.MMA_K, Self.swizzle](smem_tile, reg_quad)
 
-    @always_inline
+    @inline(.always)
     def mma_quadrant[which_a: Int, which_b: Int](self):
         """Execute MMA for quadrant (which_a, which_b) via TiledMma.
 
@@ -220,7 +212,7 @@ struct QuadrantMmaOp[
             a_quad, b_quad, c_quad
         )
 
-    @always_inline
+    @inline(.always)
     def accum_tile(
         self,
     ) -> TileTensor[
@@ -241,7 +233,7 @@ struct QuadrantMmaOp[
 struct TiledMma[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     group_size: Int,
 ]:
     """Stateless MMA computation on TileTensors.
@@ -264,7 +256,7 @@ struct TiledMma[
     comptime c_frag_size = (Self.MMA_M * Self.MMA_N) // WARP_SIZE
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma[
         a_layout: TensorLayout,
         b_layout: TensorLayout,
@@ -326,7 +318,7 @@ struct TiledMma[
 struct MmaOp[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     k_group_size: Int,
     num_k_tiles: Int,
     num_m_mmas: Int,
@@ -398,7 +390,7 @@ struct MmaOp[
         address_space=.LOCAL,
     ]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         self._a_reg = stack_allocation[Self.in_type, address_space=.LOCAL](
             Self._a_reg_layout
@@ -409,23 +401,21 @@ struct MmaOp[
         self._c_reg = stack_allocation[Self.out_type, address_space=.LOCAL](
             Self._c_reg_layout
         )
-        comptime num_c_elems = (
-            Self.num_m_mmas * Self.num_n_mmas * Self.c_frag_size
-        )
-        comptime for i in range(num_c_elems):
-            self._c_reg.raw_store(i, Scalar[Self.out_type](0))
+        comptime for m in range(Self.num_m_mmas):
+            comptime for n in range(Self.num_n_mmas * Self.c_frag_size):
+                self._c_reg[m, n] = 0
 
-    @always_inline
+    @inline(.always)
     def accum_tile(self) -> ref[self._c_reg] type_of(self._c_reg):
         return self._c_reg
 
-    @always_inline
+    @inline(.always)
     def load_frag[
         k_tile_idx: Int
     ](
         self,
-        a_smem_warp: SMemTile[Self.in_type, _, _],
-        b_smem_warp: SMemTile[Self.in_type, _, _],
+        a_smem_warp: SMemTile[Self.in_type, _, _, _],
+        b_smem_warp: SMemTile[Self.in_type, _, _, _],
     ):
         """Load A and B MMA fragments for k-tile k_tile_idx from SMEM.
 
@@ -475,7 +465,7 @@ struct MmaOp[
             )
             self._a_reg.vectorize[1, Self.simd_width]()[a_row, 0] = dist[0, 0]
 
-    @always_inline
+    @inline(.always)
     def mma[k_tile_idx: Int](self):
         """Execute MMA for k-tile k_tile_idx via TiledMma.
 

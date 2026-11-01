@@ -1,0 +1,26 @@
+load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
+
+package(default_visibility = ["//max:consumers"])
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large" if src == "test_stable_addr_tile_kernel.mojo" else None,
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        # The invalid-index test needs the index asserts compiled out to reach
+        # the kernels' bounds guards.
+        enable_assertions = src != "test_squeeze_unsqueeze_shape_invalid_indices.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = [
+            "//max:builtin_kernels",
+            "//max:extensibility",
+            "//max:layout",
+            "//max:max_mojo",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]

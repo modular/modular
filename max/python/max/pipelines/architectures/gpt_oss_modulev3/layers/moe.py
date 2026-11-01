@@ -15,17 +15,18 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Linear
+from max.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
+    moe_finalize,
 )
-from max.experimental.nn.common_layers.moe import MoEGate
-from max.experimental.nn.module import Module
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
+from max.nn.common_layers.moe import MoEGate
+from max.nn.module import Module
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from ..model_config import GptOssConfig
 
@@ -39,7 +40,8 @@ class GptOssMoEGate(MoEGate):
         num_experts: int,
         num_experts_per_token: int,
     ) -> None:
-        """
+        """Initializes the gate.
+
         Args:
             hidden_dim: The dimension of the hidden state.
             num_experts: The number of experts.
@@ -60,7 +62,8 @@ class GptOssMoEGate(MoEGate):
         )
 
     def forward(self, hidden_state: Tensor) -> tuple[Tensor, Tensor]:
-        """
+        """Scores each token's experts and returns the top-k picks.
+
         Args:
             hidden_state: The hidden state of the model.
 
@@ -82,16 +85,12 @@ class GptOssMoE(Module[[Tensor], Tensor]):
     """GptOss-style MoE implementation with custom activation and biases."""
 
     def __init__(self, config: GptOssConfig):
-        """
-        Args:
-            config: The configuration for the GPT OSS Model.
-        """
+        """Args: config: The configuration for the GPT OSS Model."""
         self.config = config
 
         self.hidden_dim = config.hidden_size
         self.num_experts = config.num_local_experts
         self.num_experts_per_token = config.num_experts_per_tok
-        self.apply_router_weight_first = False
         self.gate = GptOssMoEGate(
             hidden_dim=config.hidden_size,
             num_experts=config.num_local_experts,
@@ -132,36 +131,39 @@ class GptOssMoE(Module[[Tensor], Tensor]):
 
     @property
     def gate_up_proj(self) -> Tensor:
+        """The gate and up projections, stacked for the grouped matmul."""
         # Return the combined gate_up projection weights, transposed for grouped_matmul_ragged
         # grouped_matmul_ragged expects shape [num_experts, out_features, in_features]
         return self._experts_gate_up_proj_weight.transpose(1, 2)
 
     @property
     def down_proj(self) -> Tensor:
+        """The down projection, stacked for the grouped matmul."""
         # Return the combined down projection weights, transposed for grouped_matmul_ragged
         # grouped_matmul_ragged expects shape [num_experts, out_features, in_features]
         return self._experts_down_proj_weight.transpose(1, 2)
 
     @property
     def gate_up_proj_bias_stacked(self) -> Tensor:
+        """The gate and up projections' biases, stacked per expert."""
         # Return the combined gate_up projection biases
         return self._experts_gate_up_proj_bias
 
     @property
     def down_proj_bias_stacked(self) -> Tensor:
+        """The down projection's biases, stacked per expert."""
         # Return the combined down projection biases
         return self._experts_down_proj_bias
 
     def forward(self, x: Tensor) -> Tensor:
-        """
+        """Runs the routed experts over ``x``.
+
         Args:
-            x: (seq_len, hidden_dim)
+            x: (seq_len, hidden_dim).
 
         Returns:
             (seq_len, hidden_dim)
         """
-        seq_len = x.shape[0]
-
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
         router_idx = F.reshape(
@@ -185,11 +187,6 @@ class GptOssMoE(Module[[Tensor], Tensor]):
             ),
             axis=0,
         )
-
-        if self.apply_router_weight_first:
-            permutated_states = permutated_states * F.gather(
-                router_weight.reshape([-1, 1]), token_expert_order, axis=0
-            ).cast(x.dtype)
 
         # Apply gate_up projection with bias
         gate_up_output = grouped_matmul_ragged(
@@ -238,21 +235,6 @@ class GptOssMoE(Module[[Tensor], Tensor]):
 
         down_output = down_output + down_bias_per_token
 
-        # Reshape and apply routing weights
-        down_output = F.gather(
-            down_output, restore_token_order, axis=0
-        ).reshape([seq_len, self.num_experts_per_token, -1])
-
-        if not self.apply_router_weight_first:
-            # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
-            routed_expert_out = F.unsqueeze(router_weight, axis=1) @ down_output
-            routed_expert_out = F.squeeze(routed_expert_out, axis=1).cast(
-                x.dtype
-            )
-        else:
-            routed_expert_out = down_output.transpose(1, 2)
-            routed_expert_out = F.squeeze(
-                F.sum(routed_expert_out, axis=2), axis=2
-            ).cast(x.dtype)
-
-        return routed_expert_out
+        return moe_finalize(
+            down_output, restore_token_order, router_weight, x.dtype
+        )

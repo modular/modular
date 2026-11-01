@@ -20,27 +20,35 @@ KDA, mHC, k-pool and vision fields on top.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from dataclasses import dataclass, field, replace
+from typing import Any, ClassVar, NamedTuple
 
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
+    CacheLeafParamInterface,
     KVCacheParamInterface,
-    KVCacheParams,
     KVCacheQuantizationConfig,
+    MLAKVCacheParams,
     MultiKVCacheParams,
+    RecurrentStateParams,
+    recurrent_leaf,
     spec_decode_cache_slack,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
+from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
+    indexer_selection_width,
+)
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
 )
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces import ArchConfigWithVisionCache
+from max.pipelines.lib.memory_estimation import FreeMemory
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -49,7 +57,16 @@ from max.pipelines.weights import resolve_hf_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from ..qwen3_5.state_cache import ring_len_for_window
+from .image_processor import Glm5NextImageProcessor
 from .quantization import Glm5NextQuantScheme, parse_quant_scheme
+from .state_cache import (
+    INDEXER_CACHE_KEY,
+    MLA_CACHE_KEY,
+    STATE_CACHE_KEY,
+    state_regions,
+    with_verify_ring,
+)
 
 __all__ = ["Glm5NextConfig", "Glm5NextVisionConfig"]
 
@@ -72,6 +89,18 @@ MLA_KERNEL_LATENT_WIDTH = 576
 def _resolve_mla_latent_width(text_config: AutoConfig) -> int:
     native = text_config.kv_lora_rank + text_config.qk_rope_head_dim
     return max(native, MLA_KERNEL_LATENT_WIDTH)
+
+
+_POOL_DTYPE_MAP = {"bfloat16": DType.bfloat16, "float32": DType.float32}
+"""Storage dtypes ``--state-pool-dtype`` accepts."""
+
+
+class _KdaDims(NamedTuple):
+    """The KDA dimensions that size both the layers and the state pools."""
+
+    num_heads: int
+    head_dim: int
+    conv_kernel_dim: int
 
 
 def _declared_dtype(text_config: AutoConfig) -> DType | None:
@@ -132,6 +161,7 @@ class Glm5NextVisionConfig:
 
     @property
     def head_dim(self) -> int:
+        """The width of one vision attention head."""
         return self.hidden_size // self.num_heads
 
     @classmethod
@@ -161,14 +191,107 @@ class Glm5NextVisionConfig:
         )
 
 
+def token_shard_degree(num_devices: int, data_parallel_degree: int) -> int:
+    """Devices the token axis is split across, or 1 if it is not split.
+
+    The feed-forward sublayer splits its token axis exactly when attention is
+    sharded by head, which is the condition DeepSeek-V3.2 calls
+    ``tp_attention``. Returning 1 means each rank already owns a distinct
+    batch shard, so there is nothing to split.
+
+    Args:
+        num_devices: Devices the model runs on.
+        data_parallel_degree: Batch shards. Equal to ``num_devices`` under
+            data-parallel attention, 1 under tensor-parallel attention.
+
+    Returns:
+        The number of token shards.
+    """
+    if num_devices > 1 and data_parallel_degree == 1:
+        return num_devices
+    return 1
+
+
+# The sizing below depends only on the checkpoint and the cache tree, not on
+# the module API, so the graph-API and ModuleV3 configs both call it and
+# cannot drift apart.
+
+
+def layer_indices(layer_types: Sequence[str], kind: str) -> tuple[int, ...]:
+    """Returns the indices of the layers of type ``kind``."""
+    return tuple(i for i, t in enumerate(layer_types) if t == kind)
+
+
+def recurrent_state_bytes(
+    kv_params: KVCacheParamInterface, num_devices: int
+) -> int:
+    """Returns the bytes one request's recurrent state occupies.
+
+    The total is summed over ``num_devices``, read off the leaf the cache
+    declares.
+    """
+    state = recurrent_leaf(kv_params)
+    if state is None:
+        return 0
+    return state.bytes_per_state * num_devices
+
+
+def residual_bytes_per_token(
+    hc_mult: int, hidden_size: int, dtype: DType
+) -> int:
+    """Returns the bytes one live ``hc_mult``-stream residual takes per token."""
+    return hc_mult * hidden_size * dtype.size_in_bytes
+
+
+def state_bounded_batch_size(
+    per_request_bytes: int,
+    devices: Sequence[Device],
+    *,
+    weights_size: int,
+    device_memory_utilization: float,
+) -> int:
+    """Returns a memory-safe default ``max_batch_size``.
+
+    The state occupies pages of the KV pool, so it is reserved nowhere here.
+    The states get up to half the post-weights budget and the KV absorbs the
+    rest; the halving bounds concurrency, it allocates nothing.
+    """
+    if per_request_bytes == 0:
+        return 32
+    try:
+        free_bytes = FreeMemory.summed(devices).hi
+    except Exception:
+        # Only the minimized bring-up fixture lands here.
+        return 8
+    budget = int(free_bytes * device_memory_utilization) - weights_size
+    if budget <= 0:
+        return 1
+    return min(512, max(1, (budget // 2) // per_request_bytes))
+
+
 @dataclass(kw_only=True)
-class Glm5NextConfig(DeepseekV3_2Config):
+class Glm5NextConfig(DeepseekV3_2Config, ArchConfigWithVisionCache):
     """Configuration for GLM-5.3-Flash."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
+    # Only the blockwise-FP8 checkpoint. A BF16 one resolves to no quant
+    # scheme, and two subsystems need one.
+    #
+    # `Glm5NextSparseMLASublayer` is the smaller half: it raises without a
+    # scheme because the sparse-MLA block is FP8 except `kv_b_proj` and the
+    # indexer, and that split is read off the checkpoint's weight scales. The
+    # unquantized classes already exist
+    # (`deepseekV3_2.layers.sparse_mla.SparseLatentAttentionWithRope` and its
+    # TP/DP variants), so this is a matter of branching the construction.
+    #
+    # The MoE is the blocker. `Glm5NextMoE` derives from `DeepseekV3_2MoE`,
+    # which derives from `MoEQuantized` with no unquantized alternative, and
+    # the experts are where nearly all of this model's parameters are. BF16
+    # needs a real unquantized path there, which also touches DeepSeek-V3.2's
+    # shared layer. A ~640 GB checkpoint does fit on 8 B200s, so validating
+    # it is possible; it is just its own change.
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
         "float8_e4m3fn",
-        "bfloat16",
     }
 
     # ---------------------------------------------------------------- schedule
@@ -268,6 +391,15 @@ class Glm5NextConfig(DeepseekV3_2Config):
         if super_post_init is not None:
             super_post_init()
 
+        # The caches are built per batch shard but the graph is not: KDA and
+        # sparse MLA shard by head, and `data_parallel_splits` is declared
+        # without being read. The two disagree silently, so refuse the flag
+        # rather than serve garbage.
+        if self.data_parallel_degree != 1:
+            raise ValueError(
+                "GLM-5.3-Flash is tensor-parallel only: data_parallel_degree "
+                f"must be 1, got {self.data_parallel_degree}."
+            )
         if self.qk_rope_head_dim != 0:
             raise ValueError(
                 "GLM-5.3-Flash is NoPE: qk_rope_head_dim must be 0, got "
@@ -309,16 +441,12 @@ class Glm5NextConfig(DeepseekV3_2Config):
     @property
     def kda_layers(self) -> tuple[int, ...]:
         """Indices of the KDA linear-attention layers."""
-        return tuple(
-            i for i, t in enumerate(self.layer_types) if t == LINEAR_ATTENTION
-        )
+        return layer_indices(self.layer_types, LINEAR_ATTENTION)
 
     @property
     def sparse_attention_layers(self) -> tuple[int, ...]:
         """Indices of the sparse-MLA layers, excluding the MTP draft layer."""
-        return tuple(
-            i for i, t in enumerate(self.layer_types) if t == SPARSE_ATTENTION
-        )
+        return layer_indices(self.layer_types, SPARSE_ATTENTION)
 
     @property
     def conv_dim(self) -> int:
@@ -336,6 +464,33 @@ class Glm5NextConfig(DeepseekV3_2Config):
     def _get_text_config(huggingface_config: AutoConfig) -> AutoConfig:
         """Extracts the text sub-config, tolerating a flat text-only config."""
         return getattr(huggingface_config, "text_config", huggingface_config)
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Bytes one largest-budget image occupies in the vision cache."""
+        spec = cls.get_vision_cache_row_spec(huggingface_config)
+        if spec is None:
+            return 0
+        hidden_size, dtype = spec
+        max_tokens = Glm5NextImageProcessor().max_image_tokens
+        return max_tokens * hidden_size * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """One decoder-width bfloat16 row per merged vision token.
+
+        ``None`` for a checkpoint without a vision tower. The config shim
+        always sets a ``vision_config``, so its presence alone does not say.
+        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if not hasattr(vision_config, "patch_size"):
+            return None
+        text_config = cls._get_text_config(huggingface_config)
+        return text_config.hidden_size, DType.bfloat16
 
     @staticmethod
     def resolve_layer_types(text_config: AutoConfig) -> list[str]:
@@ -368,6 +523,44 @@ class Glm5NextConfig(DeepseekV3_2Config):
         ]
 
     @staticmethod
+    def declared_state_dtype(kv_cache_config: KVCacheConfig) -> DType:
+        """Returns :attr:`state_dtype` as far as it is knowable pre-``finalize``.
+
+        The state leaves are declared before a quantization scheme resolves,
+        and ``cache_dtype`` is not a stand-in: ``--kv-cache-format`` may put
+        the MLA latent in fp8 while the KDA pools stay float32.
+
+        Raises:
+            ValueError: If ``--state-pool-dtype`` names a dtype the pools
+                cannot be stored in.
+        """
+        override = kv_cache_config.state_pool_dtype
+        if override is None:
+            return DType.float32
+        if override not in _POOL_DTYPE_MAP:
+            raise ValueError(
+                "state_pool_dtype must be 'bfloat16' or 'float32', got "
+                f"{override!r}"
+            )
+        return _POOL_DTYPE_MAP[override]
+
+    @staticmethod
+    def declared_kda_dims(text_config: AutoConfig) -> _KdaDims:
+        """Returns the KDA dimensions, keyed by the names HF's config uses.
+
+        The state leaves are declared before an instance exists, so the pools
+        cannot read these off :class:`Glm5NextConfig`. Both readers go through
+        here instead: sizing the pools off one set of names and the layers off
+        another is not a shape error, just a mis-sized pool.
+        """
+        read = Glm5NextConfig._linear_attn_field
+        return _KdaDims(
+            num_heads=read(text_config, "num_heads", 64),
+            head_dim=read(text_config, "head_dim", 128),
+            conv_kernel_dim=read(text_config, "short_conv_kernel_size", 4),
+        )
+
+    @staticmethod
     def _linear_attn_field(
         text_config: AutoConfig, name: str, default: Any
     ) -> Any:
@@ -391,6 +584,7 @@ class Glm5NextConfig(DeepseekV3_2Config):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The text config's hidden layer count."""
         text_config = Glm5NextConfig._get_text_config(huggingface_config)
         return text_config.num_hidden_layers
 
@@ -415,7 +609,11 @@ class Glm5NextConfig(DeepseekV3_2Config):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
-        """Builds the MLA and indexer caches over the sparse-attention subset."""
+        """Builds the MLA, indexer and recurrent-state children of the cache.
+
+        The graph's input types are built from these params, so a state
+        derived any later cannot appear among them.
+        """
         text_config = Glm5NextConfig._get_text_config(huggingface_config)
         layer_types = Glm5NextConfig.resolve_layer_types(text_config)
         num_cached_layers = sum(1 for t in layer_types if t == SPARSE_ATTENTION)
@@ -425,10 +623,17 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 f"layer_types resolved to {len(layer_types)} entries with none."
             )
         if pipeline_config.speculative:
-            # The MTP draft layer is itself sparse MLA and owns a latent.
-            num_cached_layers += getattr(
+            num_draft_layers = getattr(
                 text_config, "num_nextn_predict_layers", 1
             )
+            if num_draft_layers == 0:
+                raise ValueError(
+                    "GLM-5.3-Flash speculates with the MTP layer its "
+                    "checkpoint ships, but this checkpoint declares none "
+                    "(num_nextn_predict_layers is 0)."
+                )
+            # The MTP draft layer is itself sparse MLA and owns a latent.
+            num_cached_layers += num_draft_layers
 
         speculative_method = None
         num_draft_tokens = 0
@@ -461,10 +666,19 @@ class Glm5NextConfig(DeepseekV3_2Config):
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
         )
-        assert isinstance(mla_kv_params, KVCacheParams)
+        index_kpool = getattr(text_config, "index_kpool", 4)
+        # Each token attends the indexer's selection, k-pool tail included.
+        assert isinstance(mla_kv_params, MLAKVCacheParams)
+        mla_kv_params = replace(
+            mla_kv_params,
+            sparse_indices_stride=indexer_selection_width(
+                text_config.index_topk,
+                index_kpool,
+                getattr(text_config, "index_kpool_always_select_tail", True),
+            ),
+        )
 
         # The indexer's K cache holds one *pooled* key per `index_kpool` tokens.
-        index_kpool = getattr(text_config, "index_kpool", 4)
         pooled_head_dim, remainder = divmod(
             text_config.index_head_dim, index_kpool
         )
@@ -497,16 +711,64 @@ class Glm5NextConfig(DeepseekV3_2Config):
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
         )
-        assert isinstance(indexer_kv_params, KVCacheParams)
-        return MultiKVCacheParams.from_params(
-            {"mla": mla_kv_params, "indexer": indexer_kv_params}
+        # No kernel reads the indexer leaf's dispatch metadata, but it is part
+        # of the composite capture key, so it must not move with the context.
+        assert isinstance(indexer_kv_params, MLAKVCacheParams)
+        indexer_kv_params = replace(
+            indexer_kv_params,
+            sparse_indices_stride=mla_kv_params.sparse_indices_stride,
         )
+        children: dict[str, CacheLeafParamInterface] = {
+            MLA_CACHE_KEY: mla_kv_params,
+            INDEXER_CACHE_KEY: indexer_kv_params,
+        }
+        num_kda_layers = sum(1 for t in layer_types if t == LINEAR_ATTENTION)
+        if num_kda_layers:
+            kda_dims = Glm5NextConfig.declared_kda_dims(text_config)
+            # A leaf of zero bytes would be a page the pool cannot tile, so a
+            # checkpoint with no KDA layers gets the attention children alone.
+            children[STATE_CACHE_KEY] = RecurrentStateParams(
+                regions=state_regions(
+                    num_kda_layers=num_kda_layers,
+                    num_heads=kda_dims.num_heads,
+                    head_dim=kda_dims.head_dim,
+                    conv_kernel_dim=kda_dims.conv_kernel_dim,
+                    # One ring per indexer, so the ring's layer set is the
+                    # indexer cache's own -- which includes the MTP draft
+                    # layer, itself a sparse-MLA layer with an indexer.
+                    num_sparse_layers=indexer_kv_params.num_layers,
+                    index_kpool=index_kpool,
+                    index_head_dim=text_config.index_head_dim,
+                    dtype=Glm5NextConfig.declared_state_dtype(kv_cache_config),
+                    num_devices=len(devices),
+                ),
+                devices=mla_kv_params.devices,
+                data_parallel_degree=mla_kv_params.data_parallel_degree,
+            )
+            if pipeline_config.speculative:
+                # A speculative verify records its window's KDA updates in
+                # this scratch leaf, which the rollback folds once acceptance
+                # is known.
+                state = children[STATE_CACHE_KEY]
+                assert isinstance(state, RecurrentStateParams)
+                children[STATE_CACHE_KEY] = replace(
+                    state,
+                    regions=with_verify_ring(
+                        state.regions,
+                        ring_len_for_window(
+                            1 + pipeline_config.speculative.draft_width
+                        ),
+                    ),
+                )
+        return MultiKVCacheParams.from_params(children)
 
     # --------------------------------------------------------- state sizing
 
     def per_request_state_bytes(self) -> int:
-        """Approximates bytes a single request's KDA state occupies across all
-        KDA layers.
+        """Returns GPU bytes one request's recurrent state occupies.
+
+        Summed over every device, and read off the leaves the cache declares,
+        so the budget and the pool cannot disagree about a shape.
 
         Per KDA layer, at :attr:`state_dtype`:
 
@@ -515,22 +777,15 @@ class Glm5NextConfig(DeepseekV3_2Config):
 
         At float32 and the real dimensions that is 4 MiB + 288 KiB per layer,
         or **146 MiB per sequence across 34 layers, independent of context
-        length**.
+        length**. The indexer tail rings add ~0.01% on top, once per device
+        rather than split across them.
         """
-        num_linear = len(self.kda_layers)
-        if num_linear == 0:
-            return 0
-        dtype_bytes = self.state_dtype.size_in_bytes
-        recurrent = (
-            self.linear_num_heads * self.linear_head_dim * self.linear_head_dim
-        )
-        conv = self.conv_dim * (self.linear_conv_kernel_dim - 1)
-        return num_linear * (recurrent + conv) * dtype_bytes
+        return recurrent_state_bytes(self.kv_params, len(self.devices))
 
     def activation_bytes_per_token(self) -> int:
         """The number of bytes a single live residual tensor occupies per token."""
-        return (
-            self.hc_mult * self.hidden_size * self.compute_dtype.size_in_bytes
+        return residual_bytes_per_token(
+            self.hc_mult, self.hidden_size, self.compute_dtype
         )
 
     def infer_optimal_batch_size(
@@ -542,28 +797,14 @@ class Glm5NextConfig(DeepseekV3_2Config):
     ) -> int:
         """Returns a memory-safe default ``max_batch_size``.
 
-        The KDA pools are a single ``max_batch x per_request`` allocation that
-        the slot-indexed kernels mutate in place, so peak footprint is that
-        allocation with no working copies. Half the post-weights budget goes to
-        the state pools and the KV cache absorbs the rest.
+        See :func:`state_bounded_batch_size`.
         """
-        per_request = self.per_request_state_bytes()
-        if per_request == 0:
-            return 32
-        try:
-            free_bytes = int(
-                sum(d.stats.get("free_memory", 0) for d in devices)
-            )
-        except Exception:
-            free_bytes = 0
-        if free_bytes <= 0:
-            # GLM-5.3-Flash needs 8 GPUs; this fallback only covers the
-            # minimized bringup fixture on one.
-            return 8
-        budget = int(free_bytes * device_memory_utilization) - weights_size
-        if budget <= 0:
-            return 1
-        return min(512, max(1, (budget // 2) // per_request))
+        return state_bounded_batch_size(
+            self.per_request_state_bytes(),
+            devices,
+            weights_size=weights_size,
+            device_memory_utilization=device_memory_utilization,
+        )
 
     # -------------------------------------------------------- initialization
 
@@ -587,6 +828,18 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 "config.json file."
             )
         text_config = cls._get_text_config(huggingface_config)
+        # Every GLM MTP pairing encodes images, so a checkpoint without a
+        # tower would otherwise fail only after the fused graph compiled and
+        # the cache was allocated.
+        if (
+            pipeline_config.speculative
+            and cls.get_vision_cache_row_spec(huggingface_config) is None
+        ):
+            raise ValueError(
+                "--speculative-method mtp needs GLM-5.3-Flash's vision tower, "
+                "and this checkpoint has none. Serve it without speculative "
+                "decoding."
+            )
 
         kv_cache_config = model_config.kv_cache
         quantization_encoding = _select_quantization_encoding(
@@ -608,20 +861,8 @@ class Glm5NextConfig(DeepseekV3_2Config):
             cache_dtype=cache_dtype,
         )
 
-        # Use float32 for pooling unless the user asks otherwise.
-        state_pool_dtype: DType | None = DType.float32
-        state_pool_dtype_str = kv_cache_config.state_pool_dtype
-        if state_pool_dtype_str is not None:
-            pool_dtypes = {
-                "bfloat16": DType.bfloat16,
-                "float32": DType.float32,
-            }
-            if state_pool_dtype_str not in pool_dtypes:
-                raise ValueError(
-                    "state_pool_dtype must be 'bfloat16' or 'float32', got "
-                    f"{state_pool_dtype_str!r}"
-                )
-            state_pool_dtype = pool_dtypes[state_pool_dtype_str]
+        state_pool_dtype = cls.declared_state_dtype(kv_cache_config)
+        kda_dims = cls.declared_kda_dims(text_config)
 
         declared_dtype = _declared_dtype(text_config)
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
@@ -631,6 +872,23 @@ class Glm5NextConfig(DeepseekV3_2Config):
         ):
             vision_config = Glm5NextVisionConfig.initialize_from_config(
                 hf_vision_config, dtype=declared_dtype or DType.bfloat16
+            )
+        # With the cache off, a step's encoder rows cover only the images in
+        # its window while the scatter indices cover every image, so a prompt
+        # that spans steps gets rows on the wrong placeholders.
+        runtime = pipeline_config.runtime
+        if (
+            vision_config is not None
+            and runtime.vision_cache_utilization == 0
+            and (
+                runtime.enable_chunked_prefill
+                or kv_cache_config.enable_prefix_caching
+            )
+        ):
+            raise ValueError(
+                "GLM-5.3-Flash needs the vision encoder cache with chunked "
+                "prefill or prefix caching on: set --vision-cache-utilization "
+                "above 0."
             )
 
         return cls(
@@ -699,15 +957,9 @@ class Glm5NextConfig(DeepseekV3_2Config):
             # --- hybrid schedule ---
             layer_types=cls.resolve_layer_types(text_config),
             # --- KDA ---
-            linear_num_heads=cls._linear_attn_field(
-                text_config, "num_heads", 64
-            ),
-            linear_head_dim=cls._linear_attn_field(
-                text_config, "head_dim", 128
-            ),
-            linear_conv_kernel_dim=cls._linear_attn_field(
-                text_config, "short_conv_kernel_size", 4
-            ),
+            linear_num_heads=kda_dims.num_heads,
+            linear_head_dim=kda_dims.head_dim,
+            linear_conv_kernel_dim=kda_dims.conv_kernel_dim,
             linear_lower_bound=cls._linear_attn_field(
                 text_config, "gate_lower_bound", -5.0
             ),

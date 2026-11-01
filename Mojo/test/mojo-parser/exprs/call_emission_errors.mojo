@@ -388,17 +388,6 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     mutate_pack(s, s)
 
 
-def capture_exclusivity(var x: MemExample):
-    @__parameter
-    def capture_and_read(y: MemExample):
-        _ = x^
-
-    # FIXME(MOCO-3241): Re-enable this.
-    # xpected-error @below {{argument of call allows reading a memory location previously writable through implicit closure captures}}
-    # xpected-note @below {{'origin_of(x)' value is passed through aliasing 'imm' argument}}
-    capture_and_read(x)
-
-
 # expected-note @below {{function declared here}}
 def param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral[_]):
     pass

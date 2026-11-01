@@ -39,7 +39,8 @@ Key structured patterns:
 """
 
 from std.collections import Optional
-from std.math import ceildiv
+from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv, umod
 from std.memory import Pointer
 from std.sys import size_of
 
@@ -61,7 +62,7 @@ from max.gpu.primitives.grid_controls import (
 )
 from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.tcgen05 import *
-from layout import Layout
+from layout import Layout, Coord
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
@@ -72,7 +73,6 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
-from linalg.utils import elementwise_compute_lambda_type
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -143,11 +143,8 @@ struct BlackwellBlockScaledMatmulKernel[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
     # Cluster shape (for LLVM metadata)
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     # Optional features
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ]:
@@ -168,8 +165,6 @@ struct BlackwellBlockScaledMatmulKernel[
             group configuration for the kernel.
         cluster_shape: CTA cluster dimensions `(M, N, batch)` for LLVM
             cluster metadata (defaults to `(1, 1, 1)`).
-        elementwise_compute_lambda_fn: Optional fused elementwise compute
-            lambda applied during the epilogue (defaults to `None`).
         pdl_level: Programmatic dependency launch level controlling
             inter-grid synchronization (defaults to `PDLLevel.OFF`).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per
@@ -222,7 +217,9 @@ struct BlackwellBlockScaledMatmulKernel[
     # TMEM configuration — stride matches MMA output width for scaled kernels.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = Self.config.num_sf_k_tiles * (Self.BM // 32)
-    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
+    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (
+        align_up(Self.MMA_N, SF_MN_GROUP_SIZE) // 32
+    )
     comptime stage_stride_cols = Self.MMA_N
 
     # Output pipeline config (bundles accum stages, stride, and cta_group)
@@ -277,7 +274,7 @@ struct BlackwellBlockScaledMatmulKernel[
     ]()
 
     comptime sfb_smem_layout = tile_sf_layout_k_major[
-        Self.MMA_N,
+        align_up(Self.MMA_N, SF_MN_GROUP_SIZE),
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
     ]()
@@ -369,7 +366,7 @@ struct BlackwellBlockScaledMatmulKernel[
     comptime SFBTileLayout = RowMajorLayout[
         *_IntToComptimeInt[
             1,
-            Self.MMA_N // SF_MN_GROUP_SIZE,
+            align_up(Self.MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
             SF_ATOM_M[0],
             SF_ATOM_M[1] * SF_ATOM_K,
@@ -378,7 +375,7 @@ struct BlackwellBlockScaledMatmulKernel[
     comptime SFBDescLayout = tma_desc_layout_5d[
         Self.sfb_dtype,
         1,
-        Self.MMA_N // SF_MN_GROUP_SIZE,
+        align_up(Self.MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         Self.config.num_sf_k_tiles,
         SF_ATOM_M[0],
         TensorMapSwizzle.SWIZZLE_NONE,
@@ -423,7 +420,11 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.sfb_dtype,
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -444,11 +445,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = StructuredTileScheduler[
         num_stages=Self.num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
-            Self.config.cluster_shape[0],
-            Self.config.cluster_shape[1],
-            Self.config.cluster_shape[2],
-        ),
+        cluster_shape=Self.config.cluster_shape,
         block_swizzle_size=Self.config.block_swizzle_size,
         rasterize_order=Self.config.raster_order,
     ]
@@ -522,7 +519,11 @@ struct BlackwellBlockScaledMatmulKernel[
         a_type=Self.a_type,
         accum_type=Self.accum_type,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         opc=Self.opc,
         c_swizzle=Self.config.c_swizzle,
         transpose_c=Self.config.AB_swapped,
@@ -536,7 +537,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Load Input Tiles ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
@@ -614,11 +615,15 @@ struct BlackwellBlockScaledMatmulKernel[
 
                 # Peer CTA slice using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
                     b_tile.layout,
                 )
 
@@ -662,7 +667,7 @@ struct BlackwellBlockScaledMatmulKernel[
                         Int(
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
-                        work_tile_coord[1] * (Self.MMA_N // SF_MN_GROUP_SIZE),
+                        (work_tile_coord[1] * Self.MMA_N) // SF_MN_GROUP_SIZE,
                         batch_coord,
                     ),
                 )
@@ -670,7 +675,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== MMA Operation ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma[
         tiles_origin: MutOrigin,
         //,
@@ -687,6 +692,7 @@ struct BlackwellBlockScaledMatmulKernel[
         sfb_tmem: UInt32,
         iter_idx: UInt32,
         k_start: UInt32,
+        work_tile_n: Int,
     ):
         """Execute MMA operations using ConsumerTiles.
 
@@ -704,7 +710,20 @@ struct BlackwellBlockScaledMatmulKernel[
             sfb_tmem: TMEM base address for B scaling factors.
             iter_idx: K iteration index.
             k_start: Starting K iteration (for init_c determination).
+            work_tile_n: N-axis tile index used to select the SFB atom half.
         """
+        # Same numerator as the SFB source coordinate in `load_input_tiles`.
+        var sfb_tmem_adj: UInt32
+        comptime if Self.MMA_N in (64, 192):
+            sfb_tmem_adj = UInt32(
+                ufloordiv(
+                    umod(work_tile_n * Self.MMA_N, SF_MN_GROUP_SIZE),
+                    SF_ATOM_M[0],
+                )
+            )
+        else:
+            sfb_tmem_adj = UInt32(0)
+
         if elect_one_sync():
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
@@ -741,6 +760,7 @@ struct BlackwellBlockScaledMatmulKernel[
                     sfa_tmem_offset,
                     sfb_tmem_offset,
                     init_c=is_first_k,
+                    sfb_tmem_adj=sfb_tmem_adj,
                 )
 
             mma_op.commit(tiles.mbar())
@@ -748,7 +768,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Epilogue Entry Point ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def epilogue(
         c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
@@ -808,7 +828,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Static Helper Methods ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def init_barriers(
         ctx: Self.Context,
         a_tma_op: Self.ATmaOp,
@@ -888,20 +908,20 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Kernel Entry Point ==========
 
     @staticmethod
-    @always_inline
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @inline(.always)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-    @__name(
-        StaticString(Self.config.get_kernel_name())
-        + StaticString(
-            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
-            is not None else ""
-        ),
-    )
+    @__name(StaticString(Self.config.get_kernel_name()))
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -933,7 +953,7 @@ struct BlackwellBlockScaledMatmulKernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()
@@ -1040,10 +1060,16 @@ struct BlackwellBlockScaledMatmulKernel[
                     producer.drain()  # wait for consumer before CTA exits
 
         # ===== SCHEDULER WARP =====
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            comptime if Self.num_clc_pipeline_stages == 0:
-                return
-
+        # KERN-3311: with no CLC pipeline stages there is nothing to schedule.
+        # Fold that into the condition rather than `return`ing -- a return
+        # would skip the cluster exit barrier at the end of run(), leaving it
+        # divergent (undefined behavior).
+        comptime has_clc_scheduling = Self.num_clc_pipeline_stages != 0
+        if (
+            has_clc_scheduling
+            and WarpRole.is_scheduler()
+            and ctx.is_first_cta_in_cluster
+        ):
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
@@ -1075,7 +1101,7 @@ struct BlackwellBlockScaledMatmulKernel[
                 )
 
                 with mma_ctx:  # TMEM lifecycle
-                    for _ in scheduler.work_iterator():
+                    for current in scheduler.work_iterator():
                         if ctx.elect_one_cta:
                             with mma_ctx.output_pipeline.producer() as output_stage:  # waits for epilogue
                                 var tmem_offset = UInt32(
@@ -1099,7 +1125,20 @@ struct BlackwellBlockScaledMatmulKernel[
                                                     Self.config.k_group_size
                                                 ),
                                                 0,
+                                                Int(current.n),
                                             )
+
+                        # KERN-3311: the cta_group=2 peer never issues MMA (the
+                        # leader's multicast commit lands in both CTAs' TMEM),
+                        # so wait on the accumulator barrier the epilogue uses
+                        # before the TMEM dealloc handshake. Gated to no CLC
+                        # stages, where one tile (stage 0) runs per launch.
+                        comptime if (
+                            Self.cta_group == 2
+                            and Self.num_clc_pipeline_stages == 0
+                        ):
+                            if not ctx.elect_one_cta:
+                                mma_ctx.output_pipeline.pipeline.wait_producer()
 
                 comptime if Self.pdl_level > PDLLevel.OFF:
                     launch_dependent_grids()
@@ -1136,3 +1175,13 @@ struct BlackwellBlockScaledMatmulKernel[
                                 N=mnk[1],
                                 alpha=alpha,
                             )
+
+        # KERN-3311: hold the cluster together until every CTA is finished. The
+        # epilogue's `signal_peer()` (structured_kernels/tmem.mojo) is a
+        # cluster-mapped `arrive_cluster` that needs the peer CTA resident; if
+        # the peer retires first the arrive targets a departed block and TMEM
+        # is freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` only orders mbarrier initialization. Gated on
+        # cta_group == 2, the only config with that cross-CTA arrive.
+        comptime if Self.cta_group == 2:
+            cluster_sync()

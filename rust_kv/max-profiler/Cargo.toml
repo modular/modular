@@ -1,0 +1,22 @@
+# Dependency-free and self-contained (no `workspace = true` field inheritance):
+# the rust_kv workspace builds it for the tiered KV connector, and mach's
+# workspace consumes it as a cross-workspace path dependency.
+#
+# It keeps its own lint table instead of `[lints] workspace = true`: this crate
+# is the FFI boundary to the shim, so it needs `unsafe`, which the workspace
+# table denies (`unsafe_code`, `multiple_unsafe_ops_per_block`, and
+# `unreachable_pub` for its re-exported API).
+[package]
+name = "max-profiler"
+version = "0.1.0"
+edition = "2024"
+authors = ["Modular AI"]
+license = "Apache-2.0 WITH LLVM-exception"
+publish = false
+description = "Safe bindings to the MAX tool-annotation shim: NVTX/roctx profiler spans for nsight-systems and rocprof."
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }

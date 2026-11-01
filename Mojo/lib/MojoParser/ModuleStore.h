@@ -37,6 +37,7 @@
 namespace M::KGEN::LIT {
 
 class ASTDecl;
+class ModuleASTDecl;
 struct ModuleState;
 
 //===----------------------------------------------------------------------===//
@@ -100,19 +101,23 @@ struct ModuleOrigin {
 /// One binding of a module: what a single name in a single scope resolved to.
 /// Several of these can share one `ModuleOrigin`.
 struct ModuleState {
-  ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
-  ModuleState(ASTDecl *decl, const ModuleSpec &spec) : decl(decl), spec(spec) {}
+  ModuleState(ModuleASTDecl *decl = nullptr) : decl(decl) {}
+  ModuleState(ModuleASTDecl *decl, const ModuleSpec &spec)
+      : decl(decl), spec(spec) {}
 
   /// Insert a nested module state.
   ModuleState &insertNestedModule(mlir::StringAttr name,
                                   std::unique_ptr<ModuleState> module) {
+    module->qualifiedName = qualifiedName.empty()
+                                ? name.getValue().str()
+                                : qualifiedName + "." + name.getValue().str();
     nestedModuleAllocations.emplace_back(std::move(module));
     nestedModules.insert({name, nestedModuleAllocations.back().get()});
     return *nestedModuleAllocations.back();
   }
 
   /// The decl associated with the module or package.
-  ASTDecl *decl = nullptr;
+  ModuleASTDecl *decl = nullptr;
   /// The module spec this state was created from. Absent for any state that
   /// resolution never produced a candidate for: the top-level state, error
   /// states, and the modules found inside an already-loaded artifact.
@@ -129,6 +134,13 @@ struct ModuleState {
       return spec->path.string();
     return std::nullopt;
   }
+  /// Hash of the module's source (xxh3-64 hex, .mojo files only); nullopt
+  /// until the source buffer materializes.
+  std::optional<std::string> contentHash;
+
+  /// Fully-qualified dotted name, set by insertNestedModule; empty for the
+  /// top-level module state.
+  std::string qualifiedName;
   /// For a package, the location of the import statement that first pulled it
   /// in; used for diagnostics. Imported module states are shared across all
   /// compilation units so we can only meaningfully track one location, even if
@@ -197,6 +209,9 @@ struct ModuleStore {
   /// on an ASTDecl's parent reflecting the IR parent. When that issue gets
   /// fixed, this map should be removed in favor of just `moduleStates`.
   llvm::DenseMap<PackageOp, ModuleState *> packageStates;
+
+  /// Import edges: importer decl -> set of directly-imported module decls.
+  DenseMap<ASTDecl *, llvm::SetVector<ASTDecl *>> depEdges;
 
   /// Every origin, owned here so it outlives the states pointing at it.
   llvm::SmallVector<std::unique_ptr<ModuleOrigin>> originAllocations;

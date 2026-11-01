@@ -27,7 +27,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import row_mean_of_squares
+from max.nn.legacy.kernels import row_mean_of_squares
 
 # (rows, cols): decode (small M), prefill (large M), odd-N tail, large-N.
 _SHAPES = [

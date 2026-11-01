@@ -15,8 +15,6 @@ from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from layout import (
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -27,13 +25,11 @@ from state_space.selective_scan import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index
-
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
 
 
-@always_inline
+@inline(.always)
 def softplus_ref(val: Float32) -> Float32:
     """Reference softplus: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
@@ -41,7 +37,7 @@ def softplus_ref(val: Float32) -> Float32:
     return log(Float32(1.0) + exp(val))
 
 
-@always_inline
+@inline(.always)
 def silu_ref(val: Float32) -> Float32:
     """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
     if val < -20.0:
@@ -227,6 +223,7 @@ def run_mamba_split_conv1d_scan_combined[
         rmsnorm_weight_h.LayoutType,
         outproj_weight_h.LayoutType,
         outproj_bias_h.LayoutType,
+        zxbcdt_h.Engine,
     ](
         batch,
         seqlen,
@@ -419,7 +416,7 @@ def run_mamba_split_conv1d_scan_combined[
 def test_mamba_combined_basic() raises:
     """Test basic mamba_split_conv1d_scan_combined."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -438,10 +435,32 @@ def test_mamba_combined_basic() raises:
     )
 
 
+def test_mamba_combined_headdim1_multi_head_D() raises:
+    """With headdim == 1, D is (nheads, 0); each head needs its own D."""
+    run_mamba_split_conv1d_scan_combined[
+        .float32,
+        4,  # DSTATE
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=4,
+        headdim=1,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+    )
+
+
 def test_mamba_combined_without_D() raises:
     """Test mamba_split_conv1d_scan_combined without D."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=False,
         has_rmsnorm=False,
@@ -463,7 +482,7 @@ def test_mamba_combined_without_D() raises:
 def test_mamba_combined_with_rmsnorm() raises:
     """Test mamba_split_conv1d_scan_combined with RMSNorm."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=True,
@@ -485,7 +504,7 @@ def test_mamba_combined_with_rmsnorm() raises:
 def test_mamba_combined_norm_after_gate() raises:
     """Test mamba_split_conv1d_scan_combined with norm_after_gate."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -507,7 +526,7 @@ def test_mamba_combined_norm_after_gate() raises:
 def test_mamba_combined_without_delta_softplus() raises:
     """Test mamba_split_conv1d_scan_combined without delta_softplus."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -529,7 +548,7 @@ def test_mamba_combined_without_delta_softplus() raises:
 def test_mamba_combined_larger_shapes() raises:
     """Test mamba_split_conv1d_scan_combined with larger shapes."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         8,  # DSTATE
         has_D=True,
         has_rmsnorm=False,

@@ -37,13 +37,11 @@ from std.random.philox import Random
 ```
 """
 
-from std.sys import is_little_endian
+from std.sys import Endian
 
-from std.math import cos, fma, log, pi, sin, sqrt
+from std.math import cos, fma, log, pi, sin, sqrt, mulwide
 
 from std.memory import bitcast
-
-from std._gpu.intrinsics import mulwide
 
 
 def _mulhilow(a: UInt32, b: UInt32) -> SIMD[.uint32, 2]:
@@ -85,7 +83,7 @@ struct Random[rounds: Int = 10](Copyable):
             SIMD[.uint64, 2](offset, subsequence)
         )
 
-    @always_inline
+    @inline(.always)
     def step(mut self) -> SIMD[.uint32, 4]:
         """Generate 4 random 32-bit unsigned integers.
 
@@ -104,7 +102,7 @@ struct Random[rounds: Int = 10](Copyable):
         self._incrn(1)
         return res
 
-    @always_inline
+    @inline(.always)
     def step_uniform(mut self) -> SIMD[.float32, 4]:
         """Generate 4 random floating point numbers uniformly distributed in [0,1).
 
@@ -115,7 +113,7 @@ struct Random[rounds: Int = 10](Copyable):
         comptime SCALE = 4.6566127342e-10
         return (self.step() & 0x7FFFFFFF).cast[.float32]() * SCALE
 
-    @always_inline
+    @inline(.always)
     def step_uniform_unbiased(mut self) -> SIMD[.float32, 4]:
         """Generate 4 uniform float32 values in (0, 1), unbiased.
 
@@ -137,7 +135,7 @@ struct Random[rounds: Int = 10](Copyable):
             SIMD[.float32, 4](SCALE_HALF),
         )
 
-    @always_inline
+    @inline(.always)
     def _incrn(mut self, n: Int64):
         """Increment the internal counter by n.
 
@@ -145,7 +143,7 @@ struct Random[rounds: Int = 10](Copyable):
             n: Amount to increment the counter by.
         """
         var hilo = bitcast[.uint32, 2](n)
-        var hi, lo = (hilo[1], hilo[0]) if is_little_endian() else (
+        var hi, lo = (hilo[1], hilo[0]) if Endian.native() == .little else (
             hilo[0],
             hilo[1],
         )
@@ -165,7 +163,7 @@ struct Random[rounds: Int = 10](Copyable):
             return
         self._counter[3] += 1
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _single_round(
         counter: SIMD[.uint32, 4], key: SIMD[.uint32, 2]
@@ -252,7 +250,7 @@ struct NormalRandom[rounds: Int = 10](Copyable):
         # Combine z0 and z1 into a single SIMD[DType.float32, 8]
         return z0.join(z1)
 
-    @always_inline
+    @inline(.always)
     def step_normal_4(
         mut self, mean: Float32 = 0.0, stddev: Float32 = 1.0
     ) -> SIMD[.float32, 4]:

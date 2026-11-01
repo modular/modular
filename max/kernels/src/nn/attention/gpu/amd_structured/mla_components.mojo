@@ -37,7 +37,7 @@ reused primitive exercises the codegen `MlaPrefillV2` ships.
 from max.gpu import WARP_SIZE, lane_id
 from std.sys.intrinsics import llvm_intrinsic
 
-from layout import TensorLayout, TileTensor, DefaultEngine
+from layout import TensorLayout, TileTensor
 from layout._utils import make_amd_buffer_resource
 from layout.coord import Coord
 from layout.swizzle import Swizzle
@@ -63,7 +63,6 @@ from nn.attention.mha_operand import MHAOperand
 from .buffers import _cast_f32_to_fp8_raw
 from .mha_softmax import OnlineSoftmax
 from .mha_mma_op import MlaConfigV2, MlaMmaOp
-from .iglp import sched_barrier_exp_pairs
 
 
 # ==--------------------------------------------------------------------==
@@ -73,19 +72,19 @@ from .iglp import sched_barrier_exp_pairs
 # ==--------------------------------------------------------------------==
 
 
-@always_inline
+@inline(.always)
 def _s_setprio[priority: Int16]():
     """Sets MFMA wave instruction priority (0 = normal, 1 = high)."""
     llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
 
 
-@always_inline
+@inline(.always)
 def _sched_barrier_zero():
     """`sched_barrier(0)`: hard reordering barrier."""
     llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(0))
 
 
-@always_inline
+@inline(.always)
 def _s_barrier_raw():
     """Bare `s_barrier`, no implicit waitcnts so DMAs can cross."""
     llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
@@ -421,7 +420,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
 
     # ---- Per-tile gmem tile constructors ---------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _make_k_full_tile[
         k_t: MHAOperand,
         //,
@@ -471,7 +470,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _make_v_tile[
         v_t: MHAOperand,
         //,
@@ -538,7 +537,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
 
     # ---- V DMA helper -------------------------------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _dma_v[
         v_t: MHAOperand,
         //,
@@ -594,14 +593,14 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
 
     # ---- Q load + scale (d_qk wide) -----------------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_q[
         layout: TensorLayout
     ](
-        q_warp_2d: TileTensor[
-            Self.config.dtype, layout, Engine=DefaultEngine[], ...
-        ],
-    ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin]:
+        q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
+    ) -> RegTile[
+        Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin
+    ]:
         """Loads the warp's Q sub-tile at d_qk from gmem into the row_l
         register tile. Mirrors `MhaPrefillV2.load_q` but iterates
         `_NUM_Q_K_TILES = D_QK // MMA_K` K-dim base tiles instead of
@@ -672,13 +671,11 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         return q_reg
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _load_q_and_scale_mla[
         layout: TensorLayout
     ](
-        q_warp_2d: TileTensor[
-            Self.config.dtype, layout, Engine=DefaultEngine[], ...
-        ],
+        q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
         scale_log2e: Float32,
     ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin]:
         """Loads Q (d_qk wide) and (when `Self.prescale_q` is True)
@@ -732,7 +729,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     """Number of MMA_K-row PV strips in one V tile."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _att_bf16_full(
         mut dst: RegTile[
             Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
@@ -789,7 +786,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
 
     # ---- Sequential FP32 cadence body ------------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _qk_collapse_inplace(
         mut att_block: RegTile[
             Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
@@ -832,7 +829,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             Self._ATT_BF16_FULL_LAYOUT_T,
             MutUntrackedOrigin,
         ](
-            att_block.ptr.bitcast[Scalar[Self.config.dtype]](),
+            att_block.ptr.unsafe_bitcast[Scalar[Self.config.dtype]](),
             Self._MmaOp.ATT_BF16_FULL_LAYOUT,
         )
         Self._att_bf16_full(p_view, att_block)
@@ -840,7 +837,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
 
     # ---- Output store ------------------------------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _store_o_to_gmem[
         output_dtype: DType,
         epilogue_chunk_width: Int = 1,
@@ -958,7 +955,7 @@ struct _MlaKDmaPair[
     DMAs recompute the scalar_offset per call site, preserving the
     pre-hoist codegen at KV=64."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         k_op: Self.k_t,
@@ -990,7 +987,7 @@ struct _MlaKDmaPair[
             Int(self.k_full_gmem_tile.ptr) - self.k_loader.bc.get_base_ptr()
         )
 
-    @always_inline
+    @inline(.always)
     def dma_nope(
         self,
         k_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
@@ -1060,7 +1057,7 @@ struct _MlaKDmaPair[
                 - self.k_loader.bc.get_base_ptr(),
             )
 
-    @always_inline
+    @inline(.always)
     def dma_rope(
         self,
         k_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
@@ -1141,7 +1138,7 @@ struct _MlaKDmaPair[
                 - self.k_loader.bc.get_base_ptr(),
             )
 
-    @always_inline
+    @inline(.always)
     def dma(
         self,
         k_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],

@@ -36,9 +36,8 @@ the wrong kv value (or 0 from uninitialized output) and the test fails.
 from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
-from layout import LayoutTensor, TileTensor
-from layout.coord import Coord, Idx
-from layout.runtime_layout import RuntimeLayout
+from layout import TileTensor
+from layout.coord import Idx
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
@@ -46,7 +45,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     mha_prefill_v2,
 )
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 
 comptime Q_BLOCK_SIZE = 32
@@ -79,19 +78,8 @@ def test_gqa[
     )
 
     print(
-        "--- MhaPrefillV2 GQA (H=",
-        num_heads,
-        " Hkv=",
-        num_kv_heads,
-        " G=",
-        GROUP,
-        " D=",
-        depth,
-        " seq=",
-        SEQ_LEN,
-        " keys=",
-        NUM_KEYS,
-        ") ---",
+        t"--- MhaPrefillV2 GQA (H= {num_heads}  Hkv= {num_kv_heads}  G="
+        t" {GROUP}  D= {depth}  seq= {SEQ_LEN}  keys= {NUM_KEYS} ) ---"
     )
 
     var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
@@ -121,50 +109,22 @@ def test_gqa[
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[num_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[num_heads], Idx[depth]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[num_kv_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[num_kv_heads], Idx[depth]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[num_kv_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[num_kv_heads], Idx[depth]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[num_heads],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[num_heads], Idx[depth]),
     )
-    var k_op = LayoutTensorMHAOperand(k_tt)
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var k_op = TileTensorMHAOperand(k_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     mha_prefill_v2[CONFIG](
         q_tt,
@@ -200,33 +160,16 @@ def test_gqa[
                             head_mismatch = True
                             if mismatches <= 5:
                                 print(
-                                    "MISMATCH b=",
-                                    b,
-                                    " q=",
-                                    q,
-                                    " h=",
-                                    h,
-                                    " kv=",
-                                    h // GROUP,
-                                    " d=",
-                                    d,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
+                                    t"MISMATCH b= {b}  q= {q}  h= {h}  kv="
+                                    t" {h // GROUP}  d= {d}  got= {got} "
+                                    t" expected= {expected}"
                                 )
             if head_mismatch:
                 heads_with_any_mismatch += 1
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " heads_with_mismatch=",
-        heads_with_any_mismatch,
-        "/",
-        num_heads,
+        t"  mismatches= {mismatches}  max_diff= {max_diff} "
+        t" heads_with_mismatch= {heads_with_any_mismatch} / {num_heads}"
     )
     assert_almost_equal(Float32(mismatches), Float32(0))
     print("  PASSED")

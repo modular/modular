@@ -27,8 +27,8 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn import Allreduce, Signals
-from max.nn.moe import MoE
+from max.nn.legacy import Allreduce, Signals
+from max.nn.legacy.moe import MoE
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )
@@ -158,7 +158,7 @@ def generate_max_outputs(
             for tp_moe_shard, input in zip(tp_moe_shards, inputs, strict=True)
         ]
         outputs = allreduce(outputs, signal_buffers)
-        graph.output(*outputs)
+        graph.output(outputs)
 
         compiled = session.load(graph, weights_registry=tp_moe.state_dict())
         return compiled.execute(input_tensor, *signals.buffers())

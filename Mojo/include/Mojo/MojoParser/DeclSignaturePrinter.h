@@ -14,6 +14,7 @@
 #ifndef KGEN_MOJOPARSER_DECLSIGNATUREPRINTER_H
 #define KGEN_MOJOPARSER_DECLSIGNATUREPRINTER_H
 
+#include "Mojo/MojoParser/ASTDecl.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
@@ -22,18 +23,6 @@
 #include <utility>
 
 namespace M {
-namespace KGEN {
-namespace LIT {
-class MojoInflightDiag;
-class AliasDeclOp;
-class TraitDeclOp;
-class ASTDecl;
-class FnOp;
-class SharedState;
-class StructDeclOp;
-} // namespace LIT
-} // namespace KGEN
-
 namespace KGEN {
 
 /// Optional output ranges to capture during signature emission. Useful for
@@ -55,50 +44,102 @@ struct SignatureOffsets {
 
 /// Print a Mojo-syntax signature for the given function op.
 ///
-/// If `contextDecl` is non-null, it is installed as the current diagnostic decl
-/// context for the duration of the call so dependent parameter references can
-/// be rendered with their source names; otherwise dependent names may fall back
-/// to index references.
-void printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
-                            llvm::raw_string_ostream &os,
-                            const LIT::ASTDecl *contextDecl = nullptr,
+/// The declaration is installed as the current diagnostic context so dependent
+/// parameter references render with their source names.
+void printFunctionSignature(LIT::DefASTDecl &decl, llvm::raw_string_ostream &os,
                             const SignatureOffsets &offsets = {});
 
 /// Print a Mojo-syntax signature for the given struct op.
-void printStructSignature(LIT::StructDeclOp structOp, LIT::SharedState &shared,
+void printStructSignature(LIT::StructASTDecl &decl,
                           llvm::raw_string_ostream &os,
-                          const LIT::ASTDecl *contextDecl = nullptr,
                           const SignatureOffsets &offsets = {});
 
 /// Print a Mojo-syntax signature for the given alias op.
 ///
 /// No leading `comptime` keyword is emitted.
-void printAliasSignature(LIT::AliasDeclOp aliasOp, LIT::SharedState &shared,
-                         llvm::raw_string_ostream &os,
-                         const LIT::ASTDecl *contextDecl = nullptr,
+void printAliasSignature(LIT::AliasASTDecl &decl, llvm::raw_string_ostream &os,
                          const SignatureOffsets &offsets = {});
 
 /// Print a Mojo-syntax signature for the given trait op.
-void printTraitSignature(LIT::TraitDeclOp traitOp, LIT::SharedState &shared,
-                         llvm::raw_string_ostream &os,
-                         const LIT::ASTDecl *contextDecl = nullptr,
+void printTraitSignature(LIT::TraitASTDecl &decl, llvm::raw_string_ostream &os,
                          const SignatureOffsets &offsets = {});
+
+std::string getFunctionSignature(
+    LIT::DefASTDecl &decl,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+        nullptr,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
+        nullptr,
+    unsigned *returnOffset = nullptr);
+std::string getFunctionDeclarationSnippet(
+    LIT::DefASTDecl &decl,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+        nullptr,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
+        nullptr);
+std::string getStructSignature(
+    LIT::StructASTDecl &decl,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+        nullptr);
+
+/// Return the source-facing type for a parameter.
+std::string getParameterTypeString(LIT::ASTDecl &decl);
+
+/// Return the source-facing type and convention keyword for an argument.
+std::string getArgumentTypeString(LIT::ASTDecl &decl);
+llvm::StringRef getArgumentConventionString(LIT::ASTDecl &decl);
+
+/// Return this argument or parameter's default with parameter references
+/// rebound to their source-level names.
+mlir::TypedAttr getReboundPogDefault(LIT::ASTDecl &decl);
+
+/// Print one parameter or argument as it appears in a declaration signature.
+void printParameter(LIT::ASTDecl &decl, llvm::raw_ostream &os);
+void printArgument(LIT::ASTDecl &decl, llvm::raw_ostream &os);
+
+/// Render a constraint proposition as Mojo source-level syntax.
+std::string renderConstraintProposition(mlir::TypedAttr proposition,
+                                        ParameterEvaluator *evaluator,
+                                        LIT::SharedState &shared);
+
+std::string generatePValueString(LIT::SharedState &shared, LIT::PValue value);
+std::string getSignatureOrigin(LIT::SharedState &shared, mlir::TypedAttr origin,
+                               LIT::FnTypeGeneratorType signature,
+                               bool isRefResult);
+std::string getRefPrefixAsString(LIT::SharedState &shared, LIT::RefType refType,
+                                 LIT::FnTypeGeneratorType signature,
+                                 bool isRefResult);
+std::string
+generateTypeString(LIT::SharedState &shared, LIT::ASTType type,
+                   VariadicKind varKind,
+                   std::optional<LIT::ASTType> selfType = std::nullopt,
+                   std::optional<ArgConvention> convention = std::nullopt);
+llvm::Twine prependVariadicIdentifiers(const llvm::Twine &identifier,
+                                       VariadicKind varKind);
+void dumpIdentifierWithType(llvm::raw_ostream &os, llvm::StringRef identifier,
+                            llvm::StringRef type,
+                            VariadicKind varKind = VariadicKind::None,
+                            bool elideType = false);
+std::string getDefaultValueString(mlir::TypedAttr defaultValue,
+                                  LIT::SharedState &shared);
+
+/// Remove implicit `argName.member` parameters from a rendered argument type.
+std::string stripImplicitArgParams(llvm::StringRef typeStr,
+                                   llvm::StringRef argName);
 
 //===----------------------------------------------------------------------===//
 // Diagnostic-oriented helpers
 //===----------------------------------------------------------------------===//
 
-/// Synthesize a Mojo-source-syntax signature for the given decl op. Dispatches
-/// to `printFunctionSignature` / `printStructSignature` / `printAliasSignature`
-/// based on the op kind. Returns an empty string if `op` is null or isn't one
-/// of the supported decl ops.
+/// Synthesize a Mojo-source-syntax signature for the given declaration.
+/// Dispatches to the concrete declaration printer and returns an empty string
+/// for unsupported declaration kinds.
 ///
 /// Intended for diagnostics that need to identify a decl when a source-locator
 /// won't reach the user (see `hasReadableSourceLocation`). Inexpensive enough
 /// to call unconditionally; callers can fall back to other phrasings on an
 /// empty return.
-std::string synthesizeDeclSignature(Operation *op, LIT::SharedState &shared,
-                                    const LIT::ASTDecl *contextDecl = nullptr);
+std::string synthesizeDeclSignature(const LIT::ASTDecl &decl);
 
 /// True when `loc` resolves to a `FileLineColLoc` whose file is readable from
 /// `sourceMgr`. False for `UnknownLoc`, locations with only `NameLoc`

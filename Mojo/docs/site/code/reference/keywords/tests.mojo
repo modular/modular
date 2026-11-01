@@ -15,6 +15,7 @@
 # Skip: CountingTool.get (intentional immutable-self error),
 #        make_point with both `out` and `->` (intentional signature
 #        error), bare identifier name lists (not standalone code).
+#        resize[0]() and moving a Handle to a new binding (compile errors).
 from std.testing import assert_equal
 
 
@@ -136,6 +137,37 @@ def test_validate_raises() raises:
     assert_equal(raised, True)
 
 
+# --- Declaration roles: `else` on a `where` clause, `not` in a conformance list ---
+def resize[n: Int]() -> Int where n > 0 else "n must be positive":
+    return n
+
+
+struct Handle(not Movable):
+    var fd: Int
+
+    def __init__(out self, fd: Int):
+        self.fd = fd
+
+
+def close(var handle: Handle) -> Int:
+    return handle.fd
+
+
+def test_else_on_where() raises:
+    # A satisfied clause compiles and runs; the message appears only when the
+    # condition fails (resize[0]() is a compile error, so it's not called).
+    assert_equal(resize[4](), 4)
+
+
+def test_not_in_conformance_list() raises:
+    comptime assert not conforms_to(
+        Handle, Movable
+    ), "Handle opts out of Movable"
+    var handle = Handle(3)
+    assert_equal(handle.fd, 3)  # still constructible and usable in place
+    assert_equal(close(handle^), 3)  # ^ into a var argument needs no Movable
+
+
 def main() raises:
     test_regular_identifiers()
     test_escaped_identifiers()
@@ -145,3 +177,5 @@ def main() raises:
     test_make_point()
     test_validate_ok()
     test_validate_raises()
+    test_else_on_where()
+    test_not_in_conformance_list()

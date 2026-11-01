@@ -23,13 +23,13 @@ result; with `Tensor.from_dim` the predicate is ergonomic and the model
 compiles and runs.
 """
 
-import max.experimental.functional as F
+import max.functional as F
 import numpy as np
+from max import nn
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import nn
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.tensor import Tensor
 
 GPU = DeviceRef.GPU()
 HEADS, VDIM = 6, 256

@@ -140,6 +140,10 @@ def test_identity(session: InferenceSession) -> None:
     _ = output[0].to(CPU())[0]
 
 
+@pytest.mark.compile_on_gpu(
+    "a Graph loaded from MLIR text cannot report its inputs, which the "
+    "precompile store names an artifact by"
+)
 def test_max_graph_export_import_mlir(session: InferenceSession) -> None:
     """Creates a graph via max-graph API, exports the mlir to a tempfile, and
     loads the mlir. Both the original model from the max-graph and the model

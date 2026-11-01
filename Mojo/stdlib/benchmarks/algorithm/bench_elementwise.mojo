@@ -26,16 +26,16 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 def bench_elementwise[n: Int](mut b: Bencher) raises:
     var vector = Array[Int, n](fill=-1)
+    var span = MutSpan(vector)
 
-    @always_inline
-    def call_fn() raises {mut vector}:
-        @always_inline
-        @__parameter
-        def func[simd_width: Int, alignment: Int = 1](idx: Coord):
-            vector[Int(idx[0].value())] = 42
+    @inline(.always)
+    def call_fn() raises {var}:
+        @inline(.always)
+        def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
+            span[Int(idx[0])] = 42
 
-        elementwise[func=func, simd_width=simd_width_of[DType.int]()](
-            Coord(IndexList[1](n)), DeviceContext(api="cpu")
+        elementwise[simd_width=simd_width_of[DType.int]()](
+            func, Coord(IndexList[1](n)), DeviceContext(api="cpu")
         )
 
     b.iter(call_fn)

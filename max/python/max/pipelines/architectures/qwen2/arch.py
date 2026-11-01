@@ -10,19 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Qwen2 with the pipeline registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
-from ..llama3.batch_processor import Llama3BatchProcessor
-from .model import Qwen2Model
+from ..llama3.decoder import Llama3Decoder
 from .model_config import Qwen2Config
 
 qwen2_arch = SupportedArchitecture(
@@ -32,7 +29,7 @@ qwen2_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Qwen2Config.DEFAULT_ENCODING,
     supported_encodings=Qwen2Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Qwen2Model,
+    modules={GraphRole.DECODER: Llama3Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     multi_gpu_supported=True,
@@ -41,6 +38,5 @@ qwen2_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Qwen2Config,
-    batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
 )

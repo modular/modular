@@ -10,18 +10,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Lists the target collections and the name-keyed MAX plugins of a build.
+
+Overlay builds shadow this file to add their own collection and plugin.
+"""
 
 from std._plugin.selector import PluginSelector
+from std._gpu.host.info import TargetAcceleratorCollection
 
-from ._trait import DefaultMaxPlugin, MaxPluginHooks
-from .cuda import CudaMaxPlugin
-from .hip import HipMaxPlugin
-from .metal import MetalMaxPlugin
+from ._trait import DefaultTargets, MaxPlugin
+from .cuda.targets import CudaTargets
+from .hip.targets import HipTargets
+from .metal.targets import MetalTargets
 
+# Builtin targets carry their MAX plugin in their payload, so this lists none
+# of them. It serves overlay collections defined in stdlib packages, which
+# cannot name MAX types.
+comptime MAX_PLUGINS = PluginSelector[Trait=MaxPlugin]
 
-comptime MAX_PLUGINS = PluginSelector[
-    DefaultMaxPlugin,
-    MetalMaxPlugin,
-    CudaMaxPlugin,
-    HipMaxPlugin,
-]
+# `DefaultTargets` must stay first: it holds the "no accelerator" placeholder
+# that target-list consumers skip by position.
+comptime TARGETS = TypeList.of[
+    Trait=TargetAcceleratorCollection,
+    DefaultTargets,
+    CudaTargets,
+    HipTargets,
+    MetalTargets,
+]()

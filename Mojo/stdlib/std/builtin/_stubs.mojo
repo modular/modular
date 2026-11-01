@@ -28,6 +28,27 @@ struct __MLIRType[T: __mlir_type.`!kgen.non_struct_type`](
 
 
 # ===-----------------------------------------------------------------------===#
+# List pattern implementation details
+# ===-----------------------------------------------------------------------===#
+
+
+def list_length_matches[
+    T: Sized
+](value: T, minimum_length: Int, is_exact: Bool) -> Bool:
+    var actual_length = value.__len__()
+    if is_exact:
+        return actual_length == minimum_length
+    return actual_length >= minimum_length
+
+
+def check_list_length[
+    T: Sized
+](value: T, minimum_length: Int, is_exact: Bool) raises:
+    if not list_length_matches(value, minimum_length, is_exact):
+        raise Error("list pattern does not match value length")
+
+
+# ===-----------------------------------------------------------------------===#
 # comptime for (was @parameter for) implementation details
 # ===-----------------------------------------------------------------------===#
 

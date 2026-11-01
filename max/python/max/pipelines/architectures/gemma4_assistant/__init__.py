@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""The Gemma 4 assistant draft architecture.
+
+A lightweight decoder cross-attends to the Gemma 4 target's KV cache to draft
+speculative tokens.
+"""
+
 from .arch import gemma4_assistant_arch
 from .model_config import Gemma4AssistantConfig
 

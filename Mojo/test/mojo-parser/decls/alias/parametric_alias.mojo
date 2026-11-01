@@ -198,15 +198,18 @@ def test_type_equality():
     var ps_345: PS[3, 4, 5] = PS[idInt[3], myIntAdd[2, 2], myDefaultAdd[4]]()
 
     # CHECK-NEXT: %[[PS_215:.*]] = lit.var.decl "ps_215" {{.*}}<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>(%[[PS_215]])
+    # CHECK-NEXT: %[[PS_215_REF:[0-9]+]] = kgen.rebind %[[PS_215]]
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>(%[[PS_215_REF]])
     var ps_215: PS_21x[5] = PS[2, 1, 5]()
 
     # CHECK-NEXT: %[[PS_216:.*]] = lit.var.decl "ps_216" {{.*}}<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 6}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 6}>(%[[PS_216]])
+    # CHECK-NEXT: %[[PS_216_REF:[0-9]+]] = kgen.rebind %[[PS_216]]
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 6}>(%[[PS_216_REF]])
     var ps_216: PS_21x[6] = PS_21xy[2, 3]()
 
     # CHECK-NEXT: %[[PS_213:.*]] = lit.var.decl "ps_213" {{.*}}<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>(%[[PS_213]])
+    # CHECK-NEXT: %[[PS_213_REF:[0-9]+]] = kgen.rebind %[[PS_213]]
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>(%[[PS_213_REF]])
     var ps_213: PS_21x[myIntFMA[1, 3, 0]] = PS_xy3[2, 1]()
 
 
@@ -353,6 +356,29 @@ def where_param[p: WherePositive]():
 # CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}
 def where_variadic(*p: WherePositive):
     pass
+
+
+# The propagated constraint is also a known assumption in the function body, so
+# it discharges the same constraint on callees, whether they spell it through
+# the alias or with an explicit `where`.
+
+
+def where_callee_explicit[n: Int](p: WhereTag[n]) where n > 0:
+    pass
+
+
+# CHECK-LABEL: lit.fn @"where_arg_body_use
+# CHECK: lit.call tail @parametric_alias::@"where_arg
+# CHECK: lit.call tail @parametric_alias::@"where_callee_explicit
+def where_arg_body_use(p: WherePositive):
+    where_arg(p)
+    where_callee_explicit(p)
+
+
+# CHECK-LABEL: lit.fn @"where_param_body_use
+# CHECK: lit.call tail @parametric_alias::@"where_param
+def where_param_body_use[p: WherePositive]():
+    where_param[p]()
 
 
 ##===----------------------------------------------------------------------===##

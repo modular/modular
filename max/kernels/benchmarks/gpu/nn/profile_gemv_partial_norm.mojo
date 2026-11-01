@@ -41,14 +41,13 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.memory import alloc
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from internal_utils import assert_almost_equal
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from std.math import sqrt
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from internal_utils._cache_busting import CacheBustingBuffer
 from internal_utils._utils import InitializationType
@@ -121,11 +120,11 @@ def main() raises:
             N_NORMED,
         )
 
-    comptime a_shape = row_major(Coord(Idx[1], Idx[7168]))
-    comptime b_shape = row_major(Coord(Idx[2112], Idx[7168]))
-    comptime c_shape = row_major(Coord(Idx[1], Idx[2112]))
-    comptime normed_shape = row_major(Coord(Idx[1], Idx[1536]))
-    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime a_shape = row_major(Idx[1], Idx[7168])
+    comptime b_shape = row_major(Idx[2112], Idx[7168])
+    comptime c_shape = row_major(Idx[1], Idx[2112])
+    comptime normed_shape = row_major(Idx[1], Idx[1536])
+    var unnormed_shape = row_major(Idx[1], N_UNNORMED)
     comptime gamma_shape = row_major(Idx[1536])
 
     comptime variant: String = "fused" if fused else "unfused"
@@ -192,7 +191,7 @@ def main() raises:
         var a_iter0 = TileTensor(cb_a.offset_ptr(0), a_shape)
         var b_iter0 = TileTensor(cb_b.offset_ptr(0), b_shape)
 
-        var eps = Float32(0.001)
+        comptime eps = Float32(0.001)
 
         # Kernel-internal scratch: reused across iters by design.
         var counter_buf = ctx.enqueue_create_buffer[.int32](1)
@@ -202,14 +201,14 @@ def main() raises:
 
         vendor_blas.matmul(
             ctx,
-            y_ref_tensor.to_layout_tensor(),
-            a_iter0.to_layout_tensor(),
-            b_iter0.to_layout_tensor(),
+            y_ref_tensor,
+            a_iter0,
+            b_iter0,
             c_row_major=True,
             transpose_b=True,
         )
 
-        @always_inline
+        @inline(.always)
         def kernel_launch(
             ctx: DeviceContext, iteration: Int
         ) raises {
@@ -246,23 +245,22 @@ def main() raises:
                     b_tensor,
                     gamma_tensor,
                     eps,
-                    counter_buf.unsafe_ptr()
-                    .unsafe_mut_cast[True]()
-                    .as_unsafe_any_origin(),
+                    counter_buf.unsafe_ptr().as_unsafe_any_origin(),
                     ctx,
                 )
             else:
-                gemv_and_partial_norm_unfused_with_scratch[transpose_b=True](
+                gemv_and_partial_norm_unfused_with_scratch[
+                    transpose_b=True, eps=eps
+                ](
                     normed_tensor,
                     a_tensor,
                     b_tensor,
                     gamma_tensor,
-                    eps,
                     cb_y.offset_ptr(iteration).as_unsafe_any_origin(),
                     ctx,
                 )
 
-        @always_inline
+        @inline(.always)
         def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, kernel_launch, ctx)
 

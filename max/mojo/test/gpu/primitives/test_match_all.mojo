@@ -20,7 +20,6 @@ and the Apple Silicon shuffle check.
 """
 
 from max.gpu import lane_id
-from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.warp import match_all
 from std.testing import assert_equal, TestSuite
@@ -29,7 +28,7 @@ from std.testing import assert_equal, TestSuite
 def _match_all_probe[
     dtype: DType,
 ](
-    values: Pointer[Scalar[dtype], MutAnyOrigin],
+    values: Pointer[Scalar[dtype], ImmutAnyOrigin],
     out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
@@ -74,14 +73,14 @@ def _check[
 def test_match_all_all_same() raises:
     # Every lane agrees -> the full warp mask.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         _check(ctx, "all_same", List[Int32](length=w, fill=Int32(7)))
 
 
 def test_match_all_one_different() raises:
     # A single disagreeing lane -> 0 for every lane.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         var vals = List[Int32](length=w, fill=Int32(5))
         vals[w // 2] = Int32(9)
         _check(ctx, "one_different", vals)
@@ -90,7 +89,7 @@ def test_match_all_one_different() raises:
 def test_match_all_all_distinct() raises:
     # No two lanes agree -> 0.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         var vals = List[Int32](length=w, fill=Int32(0))
         for i in range(w):
             vals[i] = Int32(i)
@@ -100,7 +99,7 @@ def test_match_all_all_distinct() raises:
 def test_match_all_64bit_same() raises:
     # 64-bit values exercise the `match.all.sync.b64` / 64-bit fold path.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         _check(
             ctx, "int64_same", List[Int64](length=w, fill=Int64(0x1_0000_0007))
         )
@@ -109,7 +108,7 @@ def test_match_all_64bit_same() raises:
 def test_match_all_64bit_one_different() raises:
     # Differs only in the high 32 bits, so the b64 path must compare them.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         var vals = List[Int64](length=w, fill=Int64(0x1_0000_0007))
         vals[0] = Int64(0x2_0000_0007)
         _check(ctx, "int64_one_different", vals)

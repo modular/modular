@@ -11,4 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .cuda_plugin import CUDAPlugin
+from .cuda_plugin import CUDAPlugin, CUDAPluginHooks

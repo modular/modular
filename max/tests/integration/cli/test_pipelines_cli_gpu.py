@@ -28,15 +28,17 @@ REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
 logger = logging.getLogger("max.pipelines")
 
 
+def _reuse_flags() -> list[str]:
+    # Bazel hands the precompiled artifacts over in the environment; the
+    # pipeline is told about them explicitly.
+    precompiled = os.environ.get("PRECOMPILED_MEFS_DIR")
+    return ["--precompiled-mefs", precompiled] if precompiled else []
+
+
 @pytest.mark.skipif(is_h100_h200(), reason="AITLIB-342: Failing on H100")
 def test_pipelines_cli__smollm_bfloat16(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # Bazel hands the precompiled artifacts over in the environment; the
-    # pipeline is told about them explicitly.
-    precompiled = os.environ.get("PRECOMPILED_MEFS_DIR")
-    reuse_flags = ["--precompiled-mefs", precompiled] if precompiled else []
-
     with pytest.raises(SystemExit):
         pipelines.main(
             [
@@ -44,7 +46,7 @@ def test_pipelines_cli__smollm_bfloat16(
                 "--prompt",
                 "Why is the sky blue",
                 "--top-k=1",
-                *reuse_flags,
+                *_reuse_flags(),
                 *pipeline_flags("smollm"),
             ]
         )
@@ -61,6 +63,40 @@ def test_pipelines_cli__smollm_bfloat16(
         word in captured.out.lower()
         for word in ["light", "scatter", "atmosphere", "wavelength"]
     ), captured.out
+    # The CLI replaces the root log handlers, so its logs reach stderr and
+    # never caplog. Graph capture is off unless asked for.
+    assert "Warming up device graph capture" not in captured.err, captured.err[
+        -4000:
+    ]
+    assert "warmup_graph_capture() has not run" not in captured.err, (
+        captured.err[-4000:]
+    )
+
+
+@pytest.mark.skipif(is_h100_h200(), reason="AITLIB-342: Failing on H100")
+def test_pipelines_cli__graph_capture_is_warmed_up(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        pipelines.main(
+            [
+                "generate",
+                "--prompt",
+                "Why is the sky blue",
+                "--top-k=1",
+                "--device-graph-capture",
+                *_reuse_flags(),
+                *pipeline_flags("smollm"),
+            ]
+        )
+    captured = capsys.readouterr()
+    assert "Output size:" in captured.out
+    assert "Warming up device graph capture" in captured.err, captured.err[
+        -4000:
+    ]
+    assert "warmup_graph_capture() has not run" not in captured.err, (
+        captured.err[-4000:]
+    )
 
 
 @pytest.mark.skip("LoRA doesn't work with generate entrypoint. E2EOPT-457")

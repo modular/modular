@@ -125,7 +125,7 @@ def _test_naive_matmul[size: Int]():
     var a = a_stack.unsafe_ptr()
     fill_a[size](a)
 
-    _test_my_naive_matmul[size, DType.float32](c, a, b)
+    _test_my_naive_matmul[size, .float32](c, a, b)
 
     print_matrix[size](c)
 

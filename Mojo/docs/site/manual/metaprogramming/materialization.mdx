@@ -63,10 +63,8 @@ This looks reasonable, but compiling it produces an error on this line:
 var lookup = list_of_values[idx]
 ```
 
-```output
-cannot materialize comptime value of type 'List[Int]' to runtime
-because it is not 'ImplicitlyCopyable'
-```
+The error is about materializing a `List[Int]` value that isn't
+`ImplicitlyCopyable`.
 
 Just like Mojo forces you to explicitly copy a value that's expensive to
 copy, it forces you to explicitly materialize values that are expensive to
@@ -187,32 +185,41 @@ This works exactly like the previous example, without creating a named temporary
 value. The `comptime` keyword here tells Mojo to evaluate the expression inside
 the parentheses (`calculate_something()`) at compile time.
 
-For example, you can use a `comptime` sub-expression when working with the
-`Layout` type, which determines how you store and retrieve data in a
-`LayoutTensor`. Materializing a `Layout` requires dynamic allocation, which
-isn't supported on GPUs. So calling this code on a GPU produces an error:
+Suppose a run-time calculation needs the length of a compile-time
+[`List`](/docs/std/collections/list/List/):
 
 ```mojo
-comptime layout = Layout.row_major(16, 8)
-var x = layout.size() // WARP_SIZE  # Can't implicitly materialize layout
+def scaled_count(x: Int) -> Int:
+    comptime primes: List[Int] = [2, 3, 5, 7, 11, 13]
+    var total = x * len(primes)
+    return total
 ```
 
-A `comptime` sub-expression fixes this issue:
+Calling [`len()`](/docs/std/builtin/len/len/) at run time needs a run-time copy
+of the whole list, so compiling this code produces an error about materializing
+a `List[Int]` value that isn't `ImplicitlyCopyable`. The compiler also suggests
+the fix: wrap the `len()` call in a `comptime` sub-expression.
+
+With the fix applied, the code compiles:
 
 ```mojo
-comptime layout = Layout.row_major(16, 8)
-var x = comptime (layout.size()) // WARP_SIZE
+def scaled_count(x: Int) -> Int:
+    comptime primes: List[Int] = [2, 3, 5, 7, 11, 13]
+    var total = x * comptime (len(primes))
+    return total
 ```
 
-Now, the expression `layout.size()` gets evaluated at compile time, so there's
-no need to materialize the layout.
+Now Mojo evaluates `len(primes)` at compile time and materializes only the
+resulting `Int`, not the list.
 
-You could also achieve the same effect using a named `comptime` value.
+You could also achieve the same effect using a named `comptime` value:
 
 ```mojo
-comptime layout = Layout.row_major(16, 8)
-comptime layout_size = layout.size()
-var x = layout_size // WARP_SIZE
+def scaled_count(x: Int) -> Int:
+    comptime primes: List[Int] = [2, 3, 5, 7, 11, 13]
+    comptime num_primes = len(primes)
+    var total = x * num_primes
+    return total
 ```
 
 The `comptime` sub-expression is just a more compact way to express the same

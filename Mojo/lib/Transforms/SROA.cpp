@@ -599,6 +599,11 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
   }
 
   bool canRun() {
+    // A zero-element stack decomposes to no scalars, leaving users with
+    // nothing to be rewritten onto.
+    if (cast<IntegerAttr>(alloc.getCount()).getInt() == 0)
+      return false;
+
     for (Operation *user : alloc->getUsers()) {
       // Look through a pointer-bitcast round-trip pun.
       if (auto bitcast = dyn_cast<PointerBitcastOp>(user)) {

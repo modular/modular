@@ -13,9 +13,16 @@
 """Modular engine provides methods to load and execute AI models."""
 
 from max._core import __version__
+from max._core.engine import ModelExecutionError as ModelExecutionError
 
 from . import mlrt as mlrt
+from ._precompiled_mefs import ArtifactBodyMismatch as ArtifactBodyMismatch
+from ._precompiled_mefs import MefStore as MefStore
+from ._precompiled_mefs import MissingArtifactError as MissingArtifactError
+from .api import CompilationStopped as CompilationStopped
 from .api import CompiledModel as CompiledModel
+from .api import CompileOnlyExecutionError as CompileOnlyExecutionError
+from .api import CompileOnlyModel as CompileOnlyModel
 from .api import (
     CustomExtensionsType,
     DebugConfig,
@@ -27,3 +34,6 @@ from .api import (
     TensorSpec,
     read,
 )
+
+# Tracebacks name it where users import it from.
+ModelExecutionError.__module__ = __name__

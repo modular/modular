@@ -21,10 +21,10 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
 )
-from max.nn.comm.allreduce import Allreduce
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Module
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )
@@ -91,6 +91,7 @@ class GptOssTransformerBlock(Module):
         input_row_offsets: list[TensorValue],
         **kwargs,
     ) -> list[TensorValue]:
+        """Runs the block's attention, then its MLP."""
         residual = xs
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_out = [

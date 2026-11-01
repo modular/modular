@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 from abc import ABC, abstractmethod
@@ -108,8 +109,14 @@ class Runtime(AsyncExitStack, ABC):
         with their worker classes (or :py:class:`typing.Protocol` interfaces)
         and get end-to-end type checking; the runtime cast is safe because
         :py:class:`Proxy` exposes a structurally compatible interface.
+
+        Raises:
+            asyncio.TimeoutError: If the worker is not deployed within its
+                ``deploy_timeout`` seconds.
         """
-        worker_id = await self.deploy_worker(worker)
+        worker_id = await asyncio.wait_for(
+            self.deploy_worker(worker), timeout=worker.deploy_timeout
+        )
         return cast(WorkerType, Proxy(self, worker_id, worker))
 
     @abstractmethod
@@ -146,10 +153,32 @@ class Runtime(AsyncExitStack, ABC):
 
         Single-consumer: the first call (across :py:meth:`stream_result` and
         :py:meth:`stream_next`) binds the stream; subsequent attempts on the
-        same ``resid`` raise. Used for lightweight inline streams (e.g. token
+        same ``resid`` raise. Used for lightweight inline streams (such as token
         streams) where backpressure rides on the underlying transport.
         """
         ...
+
+    def make_result(
+        self, result_id: str, type_hint: object | None
+    ) -> Result[T]:
+        """Build the :py:class:`Result` a proxy returns for a call.
+
+        The default resolves through :py:meth:`get_result`. A runtime can
+        return a :py:class:`Result` subclass that waits on its own transport
+        instead; callers use it through the same interface.
+        """
+        return Result(result_id, self, type_hint)
+
+    def make_result_iter(
+        self, result_id: str, type_hint: object | None
+    ) -> ResultIter[T]:
+        """Build the :py:class:`ResultIter` a proxy returns for a stream.
+
+        The default iterates :py:meth:`stream_result`. A runtime can return
+        a :py:class:`ResultIter` subclass that reads its own transport
+        instead; callers use it through the same interface.
+        """
+        return ResultIter(result_id, self, type_hint)
 
     @abstractmethod
     async def get_metrics(self) -> str:
@@ -204,7 +233,7 @@ class Proxy(Generic[T]):
             result_id = await context.enter_async_context(
                 runtime.call_method(worker_id, name, args, kwargs)
             )
-            return Result(result_id, runtime, ret_type)
+            return runtime.make_result(result_id, ret_type)
 
         return call
 
@@ -226,6 +255,6 @@ class Proxy(Generic[T]):
             result_id = await context.enter_async_context(
                 runtime.call_method(worker_id, name, args, kwargs)
             )
-            return ResultIter(result_id, runtime, elem_type)
+            return runtime.make_result_iter(result_id, elem_type)
 
         return call_stream

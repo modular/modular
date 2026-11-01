@@ -21,11 +21,6 @@ with mixed static/dynamic shapes (symbolic ``batch``/``seq_len``, static
 ``window_size``/``num_heads``/``head_size``) in the same graph.
 Compile-only, no correctness/numeric checks and no benchmarking.
 
-Not env-gated: this graph shape aborts the process
-(``MAP::SliceSpecAttr::verifyInvariants``) under
-``MAX_GC_USE_ADV_FUSION=1`` today -- a known new-system gap, not
-addressed here -- so this runs under the legacy pipeline instead.
-
 ``mo.mha.no_cache`` (the attention op `_AttentionBlock` calls through
 ``F.custom``) has only a GPU kernel registration
 (``builtin_kernels/attention.mojo``'s ``FlashAttentionGPU``), so this test
@@ -38,12 +33,12 @@ import math
 from dataclasses import dataclass
 from typing import cast
 
+from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module, ModuleList, RMSNorm
-from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
+from max.nn import Linear, Module, ModuleList, RMSNorm
+from max.tensor.tensor import Tensor, TensorType
 
 
 @dataclass

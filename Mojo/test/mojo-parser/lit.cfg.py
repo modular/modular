@@ -34,6 +34,7 @@ config.test_exec_root = os.path.join("Mojo", "test", "mojo-parser")
 config.excludes = [
     "debuginfo/inputs",
     "lsp/inputs",
+    "precompile/inputs",
     "test_package",
     "test_package.foo",
     "test_package_user",
@@ -51,7 +52,23 @@ config.substitutions.append(
     ("%parse-mojo-isolated", translate_with_prebuilt_packages)
 )
 
+config.substitutions.append(
+    (
+        "%precompile-mojo-isolated",
+        "kgen -precompile -I {0}".format(config.parser_stubs_source),
+    )
+)
+
+config.substitutions.append(
+    (
+        "%mojo-docs-isolated",
+        "kgen-translate -emit-mojo-doc -mojo-search-paths={0}".format(
+            config.parser_stubs_source
+        ),
+    )
+)
+
 
 config.environment["MODULAR_HOME"] = os.path.join(
-    "KGEN", "test", "mojo-parser"
+    "Mojo", "test", "mojo-parser"
 )

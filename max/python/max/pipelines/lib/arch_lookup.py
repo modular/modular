@@ -25,15 +25,18 @@ import importlib
 import logging
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias
 
-from max.experimental.nn import Module
+from max.nn import Module
+from max.nn.legacy.layer import Module as GraphApiModule
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .interfaces.pipeline_model import PipelineModel
 from .pipeline_executor import PipelineExecutor
+from .registration_graph_api import registered_pipeline_model
 from .tokenizer import TextTokenizer
 
 if TYPE_CHECKING:
@@ -53,9 +56,11 @@ if TYPE_CHECKING:
     )
     from max.pipelines.speculative import SpeculativeConfig
     from max.pipelines.weights.hf_utils import HuggingFaceRepo
+    from transformers import PretrainedConfig
 
     from .config import PipelineConfig
     from .interfaces import ArchConfig
+    from .weight_transform import WeightRule
 
 logger = logging.getLogger("max.pipelines")
 
@@ -67,6 +72,10 @@ __all__ = [
 PipelineModelType: TypeAlias = type[
     PipelineModel[Any] | PipelineExecutor[Any, Any, Any] | Module[Any, Any]
 ]
+"""The class of a model implementation that an architecture registers. A
+:class:`PipelineModel`, a :class:`PipelineExecutor`, or a
+:class:`~max.nn.Module`.
+"""
 
 
 @dataclass(frozen=False)
@@ -81,48 +90,49 @@ class SupportedArchitecture:
     New architectures should be registered into the :obj:`PipelineRegistry`
     using the :obj:`~PipelineRegistry.register()` method.
 
-    Example:
-        .. code-block:: python
+    For example, define the components of a custom architecture:
 
-            from max.graph.weights import WeightsFormat
-            from max.pipelines.context import TextContext
-            from max.pipelines.lib.interfaces.pipeline_model import (
-                ModelOutputs,
-                PipelineModel,
-            )
-            from max.pipelines.lib.registry import SupportedArchitecture
-            from max.pipelines.lib.tokenizer import TextTokenizer
-            from max.pipelines.modeling.types import PipelineTask
+    .. code-block:: python
 
-            # A concrete PipelineModel subclass. Registration stores the class
-            # itself, so it is never instantiated here.
-            class MyModel(PipelineModel[TextContext]):
-                def execute(self, model_inputs) -> ModelOutputs:
-                    raise NotImplementedError
+        from max.graph.weights import WeightsFormat
+        from max.pipelines.context import TextContext
+        from max.pipelines.lib.interfaces.pipeline_model import (
+            ModelOutputs,
+            PipelineModel,
+        )
+        from max.pipelines.lib.registry import SupportedArchitecture
+        from max.pipelines.lib.tokenizer import TextTokenizer
+        from max.pipelines.modeling.types import PipelineTask
 
-            class MyModelConfig:
-                pass
+        # A concrete PipelineModel subclass. Registration stores the class
+        # itself, so it is never instantiated here.
+        class MyModel(PipelineModel[TextContext]):
+            def execute(self, model_inputs) -> ModelOutputs:
+                raise NotImplementedError
 
-            my_architecture = SupportedArchitecture(
-                name="MyModelForCausalLM",  # Must match your Hugging Face model class name
-                example_repo_ids=[
-                    "your-org/your-model-name",  # Add example model repository IDs
-                ],
-                default_encoding="q4_k",
-                supported_encodings={
-                    "q4_k",
-                    "bfloat16",
-                    # Add other encodings your model supports
-                },
-                pipeline_model=MyModel,
-                tokenizer=TextTokenizer,
-                context_type=TextContext,
-                config=MyModelConfig,  # Architecture-specific config class
-                default_weights_format=WeightsFormat.safetensors,
-                multi_gpu_supported=True,  # Set based on your implementation capabilities
-                required_arguments={"some_arg": True},
-                task=PipelineTask.TEXT_GENERATION,
-            )
+        class MyModelConfig:
+            pass
+
+        my_architecture = SupportedArchitecture(
+            name="MyModelForCausalLM",  # Must match your Hugging Face model class name
+            example_repo_ids=[
+                "your-org/your-model-name",  # Add example model repository IDs
+            ],
+            default_encoding="q4_k",
+            supported_encodings={
+                "q4_k",
+                "bfloat16",
+                # Add other encodings your model supports
+            },
+            pipeline_model=MyModel,
+            tokenizer=TextTokenizer,
+            context_type=TextContext,
+            config=MyModelConfig,  # Architecture-specific config class
+            default_weights_format=WeightsFormat.safetensors,
+            multi_gpu_supported=True,  # Set based on your implementation capabilities
+            required_arguments={"some_arg": True},
+            task=PipelineTask.TEXT_GENERATION,
+        )
     """
 
     name: str
@@ -138,12 +148,32 @@ class SupportedArchitecture:
     supported_encodings: set[SupportedEncoding]
     """A dictionary of supported quantization encodings."""
 
-    pipeline_model: PipelineModelType
+    pipeline_model: PipelineModelType | None = field(default=None, kw_only=True)
     """The model class that defines the graph structure and execution logic.
 
     Accepts either a :class:`PipelineModel` subclass (for LLM and other
     token-generation architectures) or a :class:`PipelineExecutor` subclass
     (for newer executor-based architectures such as diffusion pipelines).
+    ``None`` for a draft architecture that only runs beside a target, inside
+    a unified spec-decode graph: it registers for config resolution, and
+    builds its module through its config class.
+
+    An architecture that registers :attr:`modules` leaves this unset, and
+    the framework builds it from the registration.
+    """
+
+    modules: Mapping[str, type[Module[..., Any] | GraphApiModule]] = field(
+        default_factory=dict, kw_only=True
+    )
+    """The module class of each role the architecture fills, keyed by
+    :class:`~max.pipelines.lib.graph_specs.GraphRole`.
+
+    The framework constructs each as ``module_cls(config)`` from the
+    finalized :attr:`config`, and its ``forward`` (``__call__`` for a
+    graph-API :class:`~max.nn.legacy.Module`) takes and returns the role's
+    contract from :mod:`max.pipelines.lib.role_contracts`. Only
+    text-generation ``DECODER`` modules are served so far, with a ``VISION``
+    module beside a ModuleV3 one.
     """
 
     task: PipelineTask
@@ -181,6 +211,20 @@ class SupportedArchitecture:
     )
     """A dictionary of weight format adapters for converting checkpoints from different formats to the default format."""
 
+    weight_rules: Callable[[PretrainedConfig], Sequence[WeightRule]] | None = (
+        None
+    )
+    """Returns the rules that map a checkpoint in :attr:`default_weights_format`
+    onto the graph's weights, given the checkpoint's Hugging Face config.
+
+    The pipeline builds one :class:`~max.pipelines.lib.WeightTransform` from the
+    rules, loads the checkpoint through it, and exports it with the pipeline.
+    """
+
+    use_weight_rules: bool = False
+    """Whether the pipeline loads the checkpoint through :attr:`weight_rules`
+    rather than :attr:`weight_adapters`."""
+
     multi_gpu_supported: bool = False
     """Whether the architecture supports multi-GPU execution."""
 
@@ -190,7 +234,7 @@ class SupportedArchitecture:
     """The set of input modalities this architecture accepts.
 
     Defaults to text-only. Multimodal architectures should declare all
-    supported input types explicitly, e.g.
+    supported input types explicitly, such as
     ``{InputModality.TEXT, InputModality.IMAGE}`` for vision-language models.
     """
 
@@ -198,6 +242,12 @@ class SupportedArchitecture:
         default_factory=dict
     )
     """A dictionary specifying required values for PipelineConfig options."""
+
+    checkpoints_recurrent_state: bool = False
+    """Whether this architecture carries recurrent state a prefix hit must resume.
+
+    A prefix hit is safe only where the state that consumed exactly that
+    prefix is restored with it."""
 
     context_validators: list[
         Callable[[TextContext | TextAndVisionContext | PixelContext], None]
@@ -259,6 +309,20 @@ class SupportedArchitecture:
     falls back to its baseline parser.
     """
 
+    format_spec: Path | Callable[[HuggingFaceRepo], Path | None] | None = None
+    """Optional FormatSpec document for this architecture's checkpoints.
+
+    The path of the JSON document describing the tool-call and reasoning
+    format a checkpoint was trained with, or a callable that takes the
+    model's :class:`HuggingFaceRepo` handle and returns that path, or
+    ``None`` when the checkpoint has none. Use the callable form when one
+    architecture serves checkpoints with different formats. ``max export``
+    copies the document into the pipeline artifact.
+
+    If None, the artifact carries no FormatSpec and tool calls are served
+    unconstrained.
+    """
+
     batching: type[Any] | None = None
     """Optional batch processor for input/output handling.
 
@@ -309,7 +373,7 @@ class SupportedArchitecture:
     :func:`max.pipelines.lib.reasoning.register`. When set, the pipeline
     config will fall back to this value for ``runtime.reasoning_parser`` if
     the user did not explicitly configure one. Different model architectures
-    emit reasoning content in different formats (e.g., Kimi K2.5 wraps
+    emit reasoning content in different formats (for example, Kimi K2.5 wraps
     reasoning in ``<think>...</think>``), so the appropriate default is
     architecture-specific.
 
@@ -320,7 +384,7 @@ class SupportedArchitecture:
     default_structured_output_backend: str | None = None
     """Optional default structured output backend for this architecture.
 
-    When set (e.g., ``"llguidance"`` or ``"xgrammar"``), the pipeline config
+    When set to ``"xgrammar"``, the pipeline config
     will use this value for ``sampling.structured_output_backend`` if the
     user did not explicitly configure one. This allows architectures that
     work better with a specific backend to override the global default.
@@ -352,12 +416,42 @@ class SupportedArchitecture:
     Set it when the checkpoint fixes the width rather than the user.
     """
 
+    draft_architectures: Mapping[str, Mapping[str, str]] = field(
+        default_factory=dict
+    )
+    """The draft architecture registered for a draft checkpoint served beside
+    this target, by speculative method and then by the architecture name the
+    checkpoint declares.
+
+    A checkpoint may declare a name several drafts share, so the target picks
+    the draft whose module it can call. A name not listed stands for itself.
+    """
+
+    checkpoint_drafts: Mapping[str, str] = field(default_factory=dict)
+    """The draft architecture this target's own checkpoint ships, by
+    speculative method, as vLLM's ``hf_config_override`` names an MTP draft
+    from its target's model type."""
+
+    spec_decode_graph_names: Mapping[str, str] = field(default_factory=dict)
+    """The names an engine looks the fused graph up by, under the draft's
+    architecture name or the speculative method. A pairing not listed is named
+    ``unified_{method}``."""
+
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.
 
     When ``False``, the overlap scheduler is not auto-enabled for this
-    architecture even when otherwise eligible. Users can still force-enable
-    via ``--enable-overlap-scheduler --force``.
+    architecture even when otherwise eligible. Users can still enable it
+    via ``--enable-overlap-scheduler``.
+    """
+
+    supports_nvfp4_kv_cache: bool = False
+    """Whether this architecture implements ``kv_cache_format="float4_e2m1fn"``.
+
+    An NVFP4 cache stores packed values with scales that only an
+    architecture's own writer and attention ops know how to handle, so the
+    format is rejected at config time for every architecture that does not
+    opt in.
     """
 
     supports_device_graph_capture: bool = True
@@ -366,6 +460,14 @@ class SupportedArchitecture:
     When ``False``, device graph capture is not auto-enabled for this
     architecture even when otherwise eligible. Users can still force-enable
     via ``--device-graph-capture --force``.
+    """
+
+    supports_spec_decode_mixed_batches: bool = False
+    """Whether this architecture's speculative graph is per-row correct on
+    mixed prefill+decode verify batches.
+
+    When ``False``, ``--enable-spec-decode-mixed-batches`` falls back to
+    plain in-flight batching for this architecture.
     """
 
     memory_planner: type[MemoryPlanner] | None = None
@@ -439,6 +541,28 @@ class SupportedArchitecture:
     subclass (or compatible) selected in ``retrieve_factory``.
     """
 
+    def __post_init__(self) -> None:
+        # A derived architecture, such as a speculative pairing, keeps the
+        # pipeline model it sets.
+        if self.modules and self.pipeline_model is None:
+            self.pipeline_model = registered_pipeline_model(
+                self.task,
+                self.config,
+                tuple(self.modules.items()),
+                self.batching,
+            )
+
+    def draft_architecture(self, method: str, checkpoint_name: str) -> str:
+        """Returns the registered draft architecture of a draft checkpoint.
+
+        Args:
+            method: The speculative method.
+            checkpoint_name: The architecture name the checkpoint declares.
+        """
+        return self.draft_architectures.get(method, {}).get(
+            checkpoint_name, checkpoint_name
+        )
+
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
         """Returns the tokenizer class for this architecture."""
@@ -451,11 +575,11 @@ class SupportedArchitecture:
 class ArchLookup:
     """Architecture tables plus registration and selection logic.
 
-    Owns the three tables behind architecture lookup: the primary name table,
-    the ``(name, task)`` disambiguation table, and the lazy-registration
-    table. :class:`~max.pipelines.lib.registry.PipelineRegistry` delegates
-    its architecture concerns here; the global registry shares
-    :obj:`ARCH_LOOKUP` so config-layer lookups hit the same table.
+    Owns the tables behind architecture lookup: the primary name table, the
+    ``(name, task)`` disambiguation table, and the lazy-registration table.
+    :class:`~max.pipelines.lib.registry.PipelineRegistry` delegates its
+    architecture concerns here; the global registry shares :obj:`ARCH_LOOKUP`
+    so config-layer lookups hit the same table.
     """
 
     def __init__(self) -> None:
@@ -476,6 +600,25 @@ class ArchLookup:
         # Already-imported module specs; repeated calls must not re-register.
         self._imported_custom_arch_specs: set[str] = set()
 
+    def _bind_batch_processor(
+        self, architecture: SupportedArchitecture
+    ) -> None:
+        """Binds a declared batch processor onto its pipeline model."""
+        if architecture.batching is None:
+            return
+        from .interfaces.pipeline_model import PipelineModel
+
+        pipeline_model_cls = architecture.pipeline_model
+        if not isinstance(pipeline_model_cls, type) or not issubclass(
+            pipeline_model_cls, PipelineModel
+        ):
+            raise TypeError(
+                f"Architecture '{architecture.name}' sets batching= but "
+                f"pipeline_model {pipeline_model_cls!r} is not a PipelineModel "
+                "subclass."
+            )
+        pipeline_model_cls.batch_processor_cls = architecture.batching
+
     def register(
         self,
         architecture: SupportedArchitecture,
@@ -487,19 +630,7 @@ class ArchLookup:
         If multiple architectures share the same name but have different tasks,
         they are registered in a secondary lookup table keyed by (name, task).
         """
-        if architecture.batching is not None:
-            from .interfaces.pipeline_model import PipelineModel
-
-            pipeline_model_cls = architecture.pipeline_model
-            if not isinstance(pipeline_model_cls, type) or not issubclass(
-                pipeline_model_cls, PipelineModel
-            ):
-                raise TypeError(
-                    f"Architecture '{architecture.name}' sets batching= but "
-                    f"pipeline_model {pipeline_model_cls!r} is not a PipelineModel "
-                    "subclass."
-                )
-            pipeline_model_cls.batch_processor_cls = architecture.batching
+        self._bind_batch_processor(architecture)
 
         task_key = (architecture.name, architecture.task)
 
@@ -547,6 +678,12 @@ class ArchLookup:
 
         The real :class:`SupportedArchitecture` is imported and registered the
         first time ``name`` is looked up; see :meth:`materialize`.
+
+        Args:
+            name: Architecture name to register under.
+            module: Module the symbol lives in.
+            symbol: Attribute on ``module`` holding the declaration.
+            package: Anchor for a ``.``-relative ``module``.
         """
         self._lazy_architectures.setdefault(name, []).append(
             (module, symbol, package)
@@ -564,9 +701,9 @@ class ArchLookup:
             return
         for module, symbol, package in entries:
             imported = importlib.import_module(module, package)
-            architecture = getattr(imported, symbol)
-            existing = self.architectures.get(architecture.name)
-            if existing is not None and existing.task == architecture.task:
+            declaration = getattr(imported, symbol)
+            existing = self.architectures.get(declaration.name)
+            if existing is not None and existing.task == declaration.task:
                 # An architecture registered eagerly under this name (e.g. via
                 # --custom-architectures) takes precedence over the deferred
                 # built-in.
@@ -574,10 +711,10 @@ class ArchLookup:
                     "Skipping lazy registration of built-in architecture "
                     "'%s': an architecture with that name is already "
                     "registered.",
-                    architecture.name,
+                    declaration.name,
                 )
                 continue
-            self.register(architecture)
+            self.register(declaration)
 
     def import_custom_architectures(
         self, custom_architectures: list[str]
@@ -716,11 +853,11 @@ def find_architecture(
 
     Args:
         name: The architecture class name to look up
-            (e.g. ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
-        prefer_module_v3: Whether to use the eager API architecture variant.
+            (such as ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
+        prefer_module_v3: Whether to use the ModuleV3 architecture variant.
             When ``False`` (default), uses the standard graph API architecture name.
             When ``True``, appends the ``_ModuleV3`` suffix to look up the
-            eager API architecture.
+            ModuleV3 architecture.
         task: Optional task to disambiguate when multiple architectures
             share the same name.
 

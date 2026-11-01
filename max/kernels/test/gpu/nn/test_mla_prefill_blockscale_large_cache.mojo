@@ -47,21 +47,13 @@ from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.utils.numerics import isinf, isnan
 from nn.attention.mha_mask import CausalMask
 from nn.attention.gpu.mla import flare_mla_prefill
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index, IndexList
 from std.testing import assert_equal
 
 from _paged_prefill_test_utils import (
@@ -69,7 +61,6 @@ from _paged_prefill_test_utils import (
     HEAD_DIM_GRAN,
     KV_NUM_HEADS,
     NUM_LAYERS,
-    ROPE_DEPTH,
     SCALE_BLOCK_SIZE,
     fill_paged_block_scales,
     fill_paged_blocks_uniform,
@@ -99,14 +90,8 @@ def run_finite_check[
     # physical cache and ragged K/V to that total.
     var num_keys = cache_length + seq_len
     print(
-        "  [large-cache] seq_len:",
-        seq_len,
-        " cache_length:",
-        cache_length,
-        " num_keys(total):",
-        num_keys,
-        " page_size:",
-        page_size,
+        t"  [large-cache] seq_len: {seq_len}  cache_length: {cache_length} "
+        t" num_keys(total): {num_keys}  page_size: {page_size}"
     )
 
     comptime scale = Float32(0.125)
@@ -116,10 +101,10 @@ def run_finite_check[
     var v_size = k_size
     var o_size = batch_size * seq_len * num_heads * kv_depth
 
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_ptr = unsafe_alloc[Scalar[qkv_type]](q_size)
+    var k_ptr = unsafe_alloc[Scalar[qkv_type]](k_size)
+    var v_ptr = unsafe_alloc[Scalar[qkv_type]](v_size)
+    var output_ptr = unsafe_alloc[Scalar[output_type]](o_size)
 
     randn[qkv_type](q_ptr, q_size)
     randn[qkv_type](k_ptr, k_size)
@@ -127,8 +112,8 @@ def run_finite_check[
 
     # Row-offset tables. input_row_offsets indexes the query rows (seq_len);
     # cache_row_offsets indexes the ragged K/V rows (num_keys total).
-    var input_row_offsets_host = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets_host = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
+    var cache_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
     for i in range(batch_size):
         input_row_offsets_host[i] = UInt32(i * seq_len)
         cache_row_offsets_host[i] = UInt32(i * num_keys)
@@ -142,10 +127,10 @@ def run_finite_check[
     var block_elems = paged_block_elems(total_pages, page_size, CACHE_DEPTH)
     var scales_elems = paged_scale_block_elems(total_pages, page_size)
 
-    var blocks_host = alloc[Scalar[k_rope_type]](block_elems)
-    var scales_host = alloc[Float32](scales_elems)
-    var cache_lengths_host = alloc[UInt32](batch_size)
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var blocks_host = unsafe_alloc[Scalar[k_rope_type]](block_elems)
+    var scales_host = unsafe_alloc[Float32](scales_elems)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
 
     fill_paged_blocks_uniform[k_rope_type](
         blocks_host, batch_size, num_keys, page_size
@@ -210,95 +195,67 @@ def run_finite_check[
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
-        total_pages,
-        1,
-        NUM_LAYERS,
-        page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
-    var scales_shape = IndexList[6](
-        total_pages,
-        1,
-        NUM_LAYERS,
-        page_size,
-        kv_params.num_heads,
-        HEAD_DIM_GRAN,
-    )
 
-    var blocks_lt = LayoutTensor[k_rope_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        ),
     )
-    var scales_lt = LayoutTensor[.float32, Layout.row_major[6]()](
-        scales_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(scales_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var scales_tt = TileTensor(
+        scales_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[HEAD_DIM_GRAN],
         ),
     )
 
-    var kv_collection = PagedKVCacheCollection[
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
         k_rope_type,
         kv_params,
         page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=SCALE_BLOCK_SIZE,
-    ](
-        LayoutTensor[k_rope_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),
         UInt32(num_keys),
-        LayoutTensor[.float32, Layout.row_major[6]()](
-            scales_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                scales_lt.runtime_layout.shape.value,
-                scales_lt.runtime_layout.stride.value,
-            ),
-        ),
+        rebind[Collection.scales_tt_type](scales_tt.as_unsafe_any_origin()),
     )
 
     var kv_cache = kv_collection.get_key_cache(0)
-    var k_lt = k_device.to_layout_tensor()
-    var v_lt = v_device.to_layout_tensor()
 
     print("    launching...")
     flare_mla_prefill[rank=3](
         output_device,
         q_device,
-        k_lt,
-        v_lt,
+        k_device,
+        v_device,
         kv_cache,
         CausalMask(),
         input_ro_tt,
@@ -316,20 +273,20 @@ def run_finite_check[
     # Finite-check every kernel-written output element.
     var num_nonfinite = 0
     for i in range(o_size):
-        var val = output_ptr.load(i).cast[.float32]()
+        var val = output_ptr.unsafe_load(i).cast[.float32]()
         if isnan(val) or isinf(val):
             num_nonfinite += 1
 
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    output_ptr.free()
-    blocks_host.free()
-    scales_host.free()
-    cache_lengths_host.free()
-    lookup_table_host.free()
-    input_row_offsets_host.free()
-    cache_row_offsets_host.free()
+    q_ptr.unsafe_free()
+    k_ptr.unsafe_free()
+    v_ptr.unsafe_free()
+    output_ptr.unsafe_free()
+    blocks_host.unsafe_free()
+    scales_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    input_row_offsets_host.unsafe_free()
+    cache_row_offsets_host.unsafe_free()
 
     _ = q_device_buf
     _ = k_device_buf

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     TEXT_GLOBAL_HEAD_DIM,
     TEXT_GLOBAL_PARTIAL_ROTARY_FACTOR,
     TEXT_GLOBAL_ROPE_THETA,

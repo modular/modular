@@ -12,22 +12,22 @@ lit.struct.decl @FooStruct {
 lit.fn @struct_extract_fold_insert(%struct0: !lit.struct<@FooStruct>) -> index {
   // CHECK-NOT: lit.struct.insert
   // CHECK-NOT: lit.struct.extract
-  // CHECK: kgen.return %idx10
+  // CHECK: hlcf.return %idx10
   %x = index.constant 10
   %struct1 = lit.struct.insert %x, %struct0[a] : index into !lit.struct<@FooStruct>
   %field = lit.struct.extract %struct1[a] : index from !lit.struct<@FooStruct>
-  kgen.return %field : index
+  hlcf.return %field : index
 }
 
 // CHECK-LABEL: lit.fn @struct_extract_no_fold_insert
 lit.fn @struct_extract_no_fold_insert(%struct0: !lit.struct<@FooStruct>) -> index {
   // CHECK: lit.struct.insert
   // CHECK-NEXT: lit.struct.extract
-  // CHECK-NEXT: kgen.return
+  // CHECK-NEXT: hlcf.return
   %x = index.constant 10
   %struct1 = lit.struct.insert %x, %struct0[a] : index into !lit.struct<@FooStruct>
   %field = lit.struct.extract %struct1[b] : index from !lit.struct<@FooStruct>
-  kgen.return %field : index
+  hlcf.return %field : index
 }
 
 lit.struct.decl @Pair register_passable_trivial {

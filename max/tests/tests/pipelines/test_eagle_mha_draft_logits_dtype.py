@@ -21,7 +21,7 @@ from dataclasses import replace
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.eagle_common.eagle_mha_draft import (
     Eagle3MHADraftConfig,
     _sampling_logits_output,

@@ -20,7 +20,7 @@ cheaper to diagnose than a full multi-stream graph:
 
 - stream 0 selects a view equivalent to the base,
 - a buffer produced on the base stream and consumed on a side-stream view reads
-  correct data (shared memory pool + cross-stream ownership sync), and
+  correct data (shared memory pool + cross-stream wait), and
 - a view of a view composes (the view keeps the full stream set), and the
   intermediate view can be dropped while the final view stays valid (the base
   context's resources are shared/refcounted).
@@ -33,7 +33,7 @@ from std.testing import TestSuite, assert_equal
 
 
 def add_one(
-    inp: Pointer[Float32, MutAnyOrigin],
+    inp: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
@@ -84,9 +84,8 @@ def _run_select_stream_zero_is_base(ctx: DeviceContext) raises:
 def test_cross_stream_buffer_reuse() raises:
     """A buffer produced on the base stream is consumed on a side-stream view.
 
-    The two views share the device memory pool, and `reassign_ownership_to`
-    inserts the cross-stream dependency needed for the side stream to read the
-    base stream's output correctly. This mirrors the production shared-expert
+    The two views share the device memory pool, and the side stream waits for
+    the base stream before reading. This mirrors the production shared-expert
     pattern (a side stream reads attention output produced on the main stream).
     """
     var ctx = create_test_device_context()
@@ -110,19 +109,21 @@ def _run_cross_stream_buffer_reuse(ctx: DeviceContext) raises:
         base_func, a, b, Int32(length), grid_dim=length, block_dim=1
     )
 
-    # Hand `b` to the side stream and compute `c = b + 1 == 4` there. The
-    # ownership reassignment makes the side stream wait for the base stream's
-    # kernel, so `c` reflects the produced value rather than uninitialized data.
-    b.reassign_ownership_to(side)
+    # The side stream waits for the base kernel, so `c = b + 1 == 4` reads the
+    # produced value rather than uninitialized data.
     var c = ctx.enqueue_create_buffer[T](length)
-    c.reassign_ownership_to(side)
+    side.enqueue_wait_for(ctx)
     side.enqueue_function(
         side_func, b, c, Int32(length), grid_dim=length, block_dim=1
     )
 
     var host = side.enqueue_create_host_buffer[T](length)
-    c.enqueue_copy_to(host)
+    # `c.enqueue_copy_to` would copy on the base stream, the buffer's own queue.
+    side.enqueue_copy(host.unsafe_ptr(), c)
     side.synchronize()
+    # Freed in the base stream's order, so they must outlive the side stream.
+    _ = b^
+    _ = c^
 
     for i in range(length):
         assert_equal(host[i], Float32(4.0), String("host[", i, "]"))
@@ -149,16 +150,18 @@ def _run_select_stream_composes(ctx: DeviceContext) raises:
 
     var inp = ctx.enqueue_create_buffer[T](length)
     inp.enqueue_fill(5.0)
-    inp.reassign_ownership_to(v)
     var out = ctx.enqueue_create_buffer[T](length)
-    out.reassign_ownership_to(v)
+    v.enqueue_wait_for(ctx)
     v.enqueue_function(
         func, inp, out, Int32(length), grid_dim=length, block_dim=1
     )
 
     var host = v.enqueue_create_host_buffer[T](length)
-    out.enqueue_copy_to(host)
+    v.enqueue_copy(host.unsafe_ptr(), out)
     v.synchronize()
+    # Freed in the base stream's order, so they must outlive stream 2.
+    _ = inp^
+    _ = out^
 
     for i in range(length):
         assert_equal(host[i], Float32(6.0), String("host[", i, "]"))

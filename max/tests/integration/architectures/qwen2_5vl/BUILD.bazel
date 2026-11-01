@@ -71,6 +71,7 @@ modular_py_test(
         requirement("torchvision"),  # needed by qwenvl_utils
     ],
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
         "manual",
@@ -81,7 +82,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen2_5vl",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -141,7 +142,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen2_5vl",
         "//max/python/max/pipelines/lib",
         requirement("transformers"),

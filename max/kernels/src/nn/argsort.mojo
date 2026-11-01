@@ -14,7 +14,7 @@
 
 
 from std.math import ceildiv, iota
-from std.sys.info import simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from max.algorithm import elementwise
 from std.bit import next_power_of_two
@@ -25,12 +25,15 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-import max.gpu.primitives.warp as warp
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from std.memory import unsafe_stack_allocation
 from layout import (
-    Idx,
     DefaultEngine,
     TensorLayout,
     TensorEngine,
@@ -40,7 +43,7 @@ from layout import (
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList, StaticTuple
+from std.utils.index import StaticTuple
 
 
 def _argsort_cpu[
@@ -92,16 +95,10 @@ def _argsort_cpu[
         else:
             return input[a] > input[b]
 
-    sort(
-        Span[
-            Scalar[indices.dtype],
-            indices.origin,
-        ](unsafe_ptr=indices.ptr, length=indices.num_elements()),
-        cmp_fn,
-    )
+    sort(indices.as_span(), cmp_fn)
 
 
-@always_inline
+@inline(.always)
 def _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
     """
     Returns a sentinel value based on sort direction.
@@ -149,16 +146,13 @@ def _bitonic_local_sort_kernel[
 ):
     """GPU kernel: local bitonic sort using shared memory.
 
-    Each block independently sorts 256 elements. Fuses all stages from 1 to
-    log2(256)=8 into a single kernel launch.
+    Each block sorts 256 elements, with adjacent blocks finishing in opposite
+    directions. Fuses all stages from 1 to log2(256)=8 into one kernel launch.
     """
     var _n_arg = Int(n_arg)
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
-    var vals = input_arg.ptr
-    var idxs = indices_arg.ptr
-
     var shared_vals = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[input_dtype],
@@ -170,45 +164,49 @@ def _bitonic_local_sort_kernel[
         address_space=.SHARED,
     ]()
 
-    if gid < _n_arg:
-        shared_vals.unsafe_store(tid, vals.unsafe_load(gid))
-        shared_idxs.unsafe_store(tid, idxs.unsafe_load(gid))
-    else:
-        shared_vals.unsafe_store(tid, _sentinel_val[input_dtype, ascending]())
-        shared_idxs.unsafe_store(tid, Scalar[indices_dtype](-1))
+    with PDL():
+        if gid < _n_arg:
+            shared_vals.unsafe_store(tid, input_arg.load[width=1]((gid,)))
+            shared_idxs.unsafe_store(tid, indices_arg.load[width=1]((gid,)))
+        else:
+            shared_vals.unsafe_store(
+                tid, _sentinel_val[input_dtype, ascending]()
+            )
+            shared_idxs.unsafe_store(tid, Scalar[indices_dtype](-1))
 
-    var k = 2
-    while k <= BLOCK_SIZE:
-        var j = k >> 1
-        while j > 0:
-            barrier()
-            var partner = tid ^ j
-            if partner > tid:
-                var vi = shared_vals.unsafe_load(tid)
-                var vp = shared_vals.unsafe_load(partner)
+        var k = 2
+        while k <= BLOCK_SIZE:
+            var j = k >> 1
+            while j > 0:
+                barrier()
+                var partner = tid ^ j
+                if partner > tid:
+                    var vi = shared_vals.unsafe_load(tid)
+                    var vp = shared_vals.unsafe_load(partner)
 
-                var cmp_val: Bool
-                comptime if ascending:
-                    cmp_val = vi > vp
-                else:
-                    cmp_val = vi < vp
+                    var cmp_val: Bool
+                    comptime if ascending:
+                        cmp_val = vi > vp
+                    else:
+                        cmp_val = vi < vp
 
-                var direction = (tid & k) == 0
-                if cmp_val == direction:
-                    shared_vals.unsafe_store(tid, vp)
-                    shared_vals.unsafe_store(partner, vi)
-                    var ii = shared_idxs.unsafe_load(tid)
-                    shared_idxs.unsafe_store(
-                        tid, shared_idxs.unsafe_load(partner)
-                    )
-                    shared_idxs.unsafe_store(partner, ii)
-            j >>= 1
-        k <<= 1
+                    # Global merges require adjacent blocks to form bitonic runs.
+                    var direction = (gid & k) == 0
+                    if cmp_val == direction:
+                        shared_vals.unsafe_store(tid, vp)
+                        shared_vals.unsafe_store(partner, vi)
+                        var ii = shared_idxs.unsafe_load(tid)
+                        shared_idxs.unsafe_store(
+                            tid, shared_idxs.unsafe_load(partner)
+                        )
+                        shared_idxs.unsafe_store(partner, ii)
+                j >>= 1
+            k <<= 1
 
-    barrier()
-    if gid < _n_arg:
-        vals.unsafe_store(gid, shared_vals.unsafe_load(tid))
-        idxs.unsafe_store(gid, shared_idxs.unsafe_load(tid))
+        barrier()
+        if gid < _n_arg:
+            input_arg.store((gid,), shared_vals.unsafe_load(tid))
+            indices_arg.store((gid,), shared_idxs.unsafe_load(tid))
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -251,9 +249,6 @@ def _bitonic_merge_local_kernel[
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
-    var vals = input_arg.ptr
-    var idxs = indices_arg.ptr
-
     var shared_vals = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[input_dtype],
@@ -265,35 +260,38 @@ def _bitonic_merge_local_kernel[
         address_space=.SHARED,
     ]()
 
-    shared_vals.unsafe_store(tid, vals.unsafe_load(gid))
-    shared_idxs.unsafe_store(tid, idxs.unsafe_load(gid))
+    with PDL():
+        shared_vals.unsafe_store(tid, input_arg.load[width=1]((gid,)))
+        shared_idxs.unsafe_store(tid, indices_arg.load[width=1]((gid,)))
 
-    var j = BLOCK_SIZE >> 1
-    while j > 0:
+        var j = BLOCK_SIZE >> 1
+        while j > 0:
+            barrier()
+            var partner = tid ^ j
+            if partner > tid:
+                var vi = shared_vals.unsafe_load(tid)
+                var vp = shared_vals.unsafe_load(partner)
+
+                var cmp_val: Bool
+                comptime if ascending:
+                    cmp_val = vi > vp
+                else:
+                    cmp_val = vi < vp
+
+                var direction = (gid & _stage) == 0
+                if cmp_val == direction:
+                    shared_vals.unsafe_store(tid, vp)
+                    shared_vals.unsafe_store(partner, vi)
+                    var ii = shared_idxs.unsafe_load(tid)
+                    shared_idxs.unsafe_store(
+                        tid, shared_idxs.unsafe_load(partner)
+                    )
+                    shared_idxs.unsafe_store(partner, ii)
+            j >>= 1
+
         barrier()
-        var partner = tid ^ j
-        if partner > tid:
-            var vi = shared_vals.unsafe_load(tid)
-            var vp = shared_vals.unsafe_load(partner)
-
-            var cmp_val: Bool
-            comptime if ascending:
-                cmp_val = vi > vp
-            else:
-                cmp_val = vi < vp
-
-            var direction = (gid & _stage) == 0
-            if cmp_val == direction:
-                shared_vals.unsafe_store(tid, vp)
-                shared_vals.unsafe_store(partner, vi)
-                var ii = shared_idxs.unsafe_load(tid)
-                shared_idxs.unsafe_store(tid, shared_idxs.unsafe_load(partner))
-                shared_idxs.unsafe_store(partner, ii)
-        j >>= 1
-
-    barrier()
-    vals.unsafe_store(gid, shared_vals.unsafe_load(tid))
-    idxs.unsafe_store(gid, shared_idxs.unsafe_load(tid))
+        input_arg.store((gid,), shared_vals.unsafe_load(tid))
+        indices_arg.store((gid,), shared_idxs.unsafe_load(tid))
 
 
 def _argsort_gpu_impl[
@@ -337,7 +335,6 @@ def _argsort_gpu_impl[
     comptime BLOCK_SIZE = 256
 
     # Global merge step kernel (nested: simple enough, no shared memory).
-    @__parameter
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
@@ -367,17 +364,18 @@ def _argsort_gpu_impl[
             return
 
         var partner = i ^ _step
-        if partner > i and partner < _n_arg:
-            var cmp_val: Bool
-            comptime if ascending:
-                cmp_val = input_arg[i] > input_arg[partner]
-            else:
-                cmp_val = input_arg[i] < input_arg[partner]
+        with PDL():
+            if partner > i and partner < _n_arg:
+                var cmp_val: Bool
+                comptime if ascending:
+                    cmp_val = input_arg[i] > input_arg[partner]
+                else:
+                    cmp_val = input_arg[i] < input_arg[partner]
 
-            var bitonic_merge_direction = (i & _stage) == 0
-            if cmp_val == bitonic_merge_direction:
-                swap(input_arg[i], input_arg[partner])
-                swap(indices_arg[i], indices_arg[partner])
+                var bitonic_merge_direction = (i & _stage) == 0
+                if cmp_val == bitonic_merge_direction:
+                    swap(input_arg[i], input_arg[partner])
+                    swap(indices_arg[i], indices_arg[partner])
 
     # ---- Main orchestration ----
 
@@ -398,6 +396,7 @@ def _argsort_gpu_impl[
         Int32(n),
         block_dim=BLOCK_SIZE,
         grid_dim=ceildiv(n, BLOCK_SIZE),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     # Phase 2: Global merge stages (for stages beyond BLOCK_SIZE).
@@ -415,6 +414,7 @@ def _argsort_gpu_impl[
                 Int32(k),
                 block_dim=BLOCK_SIZE,
                 grid_dim=ceildiv(n, BLOCK_SIZE),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
             j //= 2
 
@@ -435,6 +435,7 @@ def _argsort_gpu_impl[
             Int32(k),
             block_dim=BLOCK_SIZE,
             grid_dim=ceildiv(n, BLOCK_SIZE),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         k *= 2
 
@@ -466,6 +467,8 @@ def _argsort_gpu[
     comptime assert input.flat_rank == 1
     # Create a device buffer to store a copy of the input data
     var n = indices.num_elements()
+    var input_flat = input.reshape(row_major(input.num_elements()))
+    var indices_flat = indices.reshape(row_major(n))
 
     if n.is_power_of_two():
         var input_copy_buffer = ctx.enqueue_create_buffer[input.dtype](n)
@@ -477,18 +480,21 @@ def _argsort_gpu[
         ](offset: Coord) {var}:
             var i = offset[0].value()
 
-            indices.raw_store(
-                i,
+            indices_flat.store[alignment=align_of[indices.dtype]()](
+                (i,),
                 iota[indices.dtype, width](Scalar[indices.dtype](i)),
             )
-            input_copy.raw_store[alignment=simd_width_of[input_copy.dtype]()](
-                i, input.ptr.unsafe_load[width=width](i)
+            input_copy.store[alignment=simd_width_of[input_copy.dtype]()](
+                (i,),
+                input_flat.load[width=width, alignment=align_of[input.dtype]()](
+                    (i,)
+                ),
             )
 
         elementwise[
             simd_width=min(
-                simd_width_of[indices.dtype, target=get_gpu_target()](),
-                simd_width_of[input.dtype, target=get_gpu_target()](),
+                simd_width_of[indices.dtype, target=ctx.target](),
+                simd_width_of[input.dtype, target=ctx.target](),
             ),
             target="gpu",
             _trace_description="argsort_fill_indices",
@@ -517,23 +523,27 @@ def _argsort_gpu[
 
     # Initialize indices with sequential values and copy input data to device
     def fill_indices_iota[width: Int, alignment: Int = 1](offset: Coord) {var}:
-        var i = Int(offset[0].value())
+        var i = Int(offset[0])
         if i < n:
-            padded_indices.raw_store(
-                i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
+            padded_indices.store[alignment=align_of[padded_indices.dtype]()](
+                (i,),
+                iota[padded_indices.dtype, width](Scalar[indices.dtype](i)),
             )
-            padded_input.raw_store[
-                alignment=simd_width_of[padded_input.dtype]()
-            ](i, input.raw_load[width=width](i))
+            padded_input.store[alignment=simd_width_of[padded_input.dtype]()](
+                (i,),
+                input_flat.load[width=width, alignment=align_of[input.dtype]()](
+                    (i,)
+                ),
+            )
             return
 
         # otherwise we pad with a sentinel value and the max/min value for the type.
         comptime UNKNOWN_VALUE = -1
-        padded_indices.raw_store(
-            i, SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
+        padded_indices.store[alignment=align_of[padded_indices.dtype]()](
+            (i,), SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
         )
-        padded_input.raw_store(
-            i,
+        padded_input.store[alignment=align_of[padded_input.dtype]()](
+            (i,),
             SIMD[padded_input.dtype, width](
                 _sentinel_val[padded_input.dtype, ascending]()
             ),
@@ -556,7 +566,7 @@ def _argsort_gpu[
 
     # Extract the unpadded indices from the padded indices.
     elementwise[
-        simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
+        simd_width=simd_width_of[indices.dtype, target=ctx.target](),
         target="gpu",
         _trace_description="argsort_extract_indices",
     ](extract_indices, Coord(n), ctx)

@@ -13,9 +13,9 @@
 """Phi-3 transformer architecture for text generation."""
 
 from .arch import phi3_modulev3_arch
-from .model import Phi3Model
+from .tokenizer import Phi3Tokenizer
 
 __all__ = [
-    "Phi3Model",
+    "Phi3Tokenizer",
     "phi3_modulev3_arch",
 ]

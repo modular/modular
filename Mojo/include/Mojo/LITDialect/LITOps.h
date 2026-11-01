@@ -41,7 +41,6 @@
 namespace M::KGEN {
 class NoneType;
 class PointerType;
-class ReturnOp;
 
 namespace LIT {
 enum class SpecialFunctionKind : uint8_t;

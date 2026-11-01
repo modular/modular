@@ -6,26 +6,27 @@
 max.experimental
 ================
 
-.. automodule:: max.experimental
-   :no-members:
+Experimental integrations. Tensors, ops, sharding and modules moved out of
+this package: use :mod:`max.tensor`, :mod:`max.functional`,
+:mod:`max.tensor.sharding` and :mod:`max.nn`.
 
-The ``max.experimental`` package contains eager-execution APIs. These APIs
-provide a PyTorch-style interface for tensor operations, neural network modules,
-and functional operations.
+.. caution::
+
+    Experimental. The public API is not stable; names and module structure
+    may change.
+
+.. currentmodule:: max.experimental
 
 Modules
 -------
 
+.. autosummary::
+   :nosignatures:
+
+   max.experimental.torch
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
-   experimental.compilation
-   experimental.functional
-   experimental.nn
-   experimental.nn.norm
-   experimental.nn.rope
-   experimental.sharding
-   experimental.tensor
-   experimental.tree_utils
-   experimental.testing
    experimental.torch

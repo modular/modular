@@ -22,8 +22,10 @@ from max.dtype import DType
 from utils.assert_tensors import assert_tensors_close
 from utils.config_loader import ConfigNames, get_config_loader
 from utils.vision_embeddings_helpers import (
-    generate_max_outputs,
+    build_max_embeddings,
+    execute_max_embeddings,
     generate_torch_outputs,
+    patchify_pixel_values,
 )
 from utils.weight_generator import get_weight_generator
 
@@ -80,20 +82,27 @@ def test_vision_embeddings_square(
     batch_size = 1
     pixel_values = torch.randn(
         batch_size, 3, target_size, target_size, dtype=torch.bfloat16
-    ).to("cuda")
+    )
+    patched_pixel_values = patchify_pixel_values(
+        pixel_values, internvl_config.vision_config.patch_size
+    )
+
+    # Compile before anything touches the GPU, so `precompile_mefs` records
+    # the compile instead of stopping at the first device allocation.
+    compiled = build_max_embeddings(
+        internvl_config,
+        embeddings_weights,
+        patched_pixel_values.shape,
+        DType.bfloat16,
+    )
 
     # Generate reference output
     torch_output = generate_torch_outputs(
-        pixel_values, hf_config, embeddings_weights
+        pixel_values.to("cuda"), hf_config, embeddings_weights
     )
 
-    # Generate MAX output
-    max_output = generate_max_outputs(
-        pixel_values,
-        internvl_config,
-        embeddings_weights,
-        DType.bfloat16,
-        Accelerator(),
+    max_output = execute_max_embeddings(
+        compiled, patched_pixel_values, Accelerator()
     )
 
     # Verify output shape

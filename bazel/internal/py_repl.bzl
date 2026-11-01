@@ -54,13 +54,23 @@ def _py_repl_impl(ctx):
         os = "linux_x86_64"
     elif not is_linux:
         os = "macos"
+
+    # expand_location rejects a label that appears twice, so a target listed in
+    # both deps and data has to be passed once.
+    expansion_targets = []
+    seen_labels = {}
+    for target in ctx.attr.deps + ctx.attr.data:
+        if target.label not in seen_labels:
+            seen_labels[target.label] = True
+            expansion_targets.append(target)
+
     env = ctx.attr.env | env_for_available_tools(os = os, location_specifier = "execpath")
     for key, value in env.items():
         expanded_env[key] = ctx.expand_make_variables(
             "env",
             ctx.expand_location(
                 value,
-                targets = ctx.attr.deps + ctx.attr.data,
+                targets = expansion_targets,
             ),
             {},
         )

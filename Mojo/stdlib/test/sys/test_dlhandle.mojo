@@ -15,7 +15,7 @@ from std.pathlib import Path
 from std.ffi import OwnedDLHandle
 
 from std.sys.info import CompilationTarget
-from std.testing import assert_equal, assert_raises, assert_true
+from std.testing import assert_equal, assert_false, assert_raises, assert_true
 from std.testing import TestSuite
 
 
@@ -280,9 +280,9 @@ def test_owned_dlhandle_get_function_pointer_arg() raises:
     var lib = _load_libc()
     var atoi_fn = lib.get_function[Int32]("atoi")
     var s = String("123")
-    assert_equal(atoi_fn(s.as_c_string_slice()), Int32(123), "atoi(123)")
+    assert_equal(atoi_fn(s.as_c_string_span()), Int32(123), "atoi(123)")
     var s2 = String("-42")
-    assert_equal(atoi_fn(s2.as_c_string_slice()), Int32(-42), "atoi(-42)")
+    assert_equal(atoi_fn(s2.as_c_string_span()), Int32(-42), "atoi(-42)")
 
 
 @fieldwise_init
@@ -343,7 +343,7 @@ def test_owned_dlhandle_automatic_cleanup() raises:
     # This test primarily verifies that the code compiles and runs
     # without crashes. The actual cleanup happens automatically.
 
-    @always_inline
+    @inline(.always)
     def create_and_destroy_handle():
         try:
             var lib = OwnedDLHandle("libc.so.6")
@@ -356,6 +356,12 @@ def test_owned_dlhandle_automatic_cleanup() raises:
     create_and_destroy_handle()
     create_and_destroy_handle()
     create_and_destroy_handle()
+
+
+def test_owned_dlhandle_destroy_null_handle() raises:
+    var null_handle = OwnedDLHandle(unsafe_uninitialized=True)
+    assert_false(null_handle, "uninitialized handle should be null")
+    null_handle^.__deinit__()  # must not `dlclose(NULL)`
 
 
 def main() raises:

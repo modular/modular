@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Unit tests for the Apple M5 weight-only FP8 (W8A16) matmul.
 
-All shapes require `compute_capability() == 5` (Apple M5, Metal 4). The FP8
+All shapes require `compute_capability() >= 5` (Apple M5, Metal 4). The FP8
 sibling of `test_apple_fp4_matmul.mojo`, exercising the two dispatch routes of
 `enqueue_apple_fp8_matmul` against an INDEPENDENT fp32 host reference (the
 dequant -> bf16-matmul chain, computed in fp32):
@@ -35,9 +35,10 @@ The FP8 weight is the B operand (`out = x @ W^T`, `transpose_b=True`): W is
 """
 
 from std.random import random_float64, random_si64, seed
+from std.utils import IndexList
 from max.gpu.host import DeviceContext, HostBuffer
 
-from layout import TileTensor
+from layout import Coord, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
@@ -99,7 +100,7 @@ def _check_vs_host_ref[
             var got = Float32(out_host[i * N + j])
             if abs(got - acc) > Float32(1e-2) + Float32(1.6e-2) * abs(acc):
                 if pass_:
-                    print("FAIL[", name, "]:", i, j, "got", got, "exp", acc)
+                    print(t"FAIL[ {name} ]: {i} {j} got {got} exp {acc}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (", name, "; see FAIL lines above)")
@@ -114,7 +115,7 @@ def _run_fp8_matmul[
     the production launcher, so `M == 1` exercises the GEMV and `M > 1` the
     materialize -> dense path. Runs for the requested output `c_type`.
     """
-    print("== fp8-matmul", name, M, "x", N, "x", K, "c_type", c_type)
+    print(t"== fp8-matmul {name} {M} x {N} x {K} c_type {c_type}")
 
     # Host inputs.
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
@@ -130,10 +131,10 @@ def _run_fp8_matmul[
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(weight_dev, weight_host)
 
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var weight_tt = TileTensor(
         weight_dev.unsafe_ptr(), row_major(N, K)
-    ).as_immut()
+    ).as_imm()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
 
     enqueue_apple_fp8_matmul[c_type=c_type](out_tt, act_tt, weight_tt, ctx)
@@ -151,6 +152,70 @@ def _run_fp8_matmul[
     print("PASS")
 
 
+def _run_fp8_matmul_epilogue(
+    ctx: DeviceContext, M: Int, N: Int, K: Int, name: String
+) raises:
+    """Runs `enqueue_apple_fp8_matmul` with a fused epilogue.
+
+    The epilogue writes `2 * x + 1` to its own buffer; it must match the same
+    launch without one, at every `(row, col)`.
+    """
+    print(t"== fp8-matmul-epilogue {name} {M} x {N} x {K}")
+
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
+    for i in range(M * K):
+        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[.bfloat16]()
+    _fill_random_fp8_weight(weight_host, N, K)
+
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var weight_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * K)
+    var out_dev = ctx.enqueue_create_buffer[.float32](M * N)
+    var epi_dev = ctx.enqueue_create_buffer[.float32](M * N)
+    ctx.enqueue_copy(act_dev, act_host)
+    ctx.enqueue_copy(weight_dev, weight_host)
+
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_imm()
+    var weight_tt = TileTensor(
+        weight_dev.unsafe_ptr(), row_major(N, K)
+    ).as_imm()
+    var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
+
+    var epi_ptr = epi_dev.unsafe_ptr()
+
+    @inline(.always)
+    def epilogue_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {var epi_ptr, var N}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var out = val.cast[.float32]() * 2 + 1
+        epi_ptr.unsafe_store[width=width](Int(idx[0]) * N + Int(idx[1]), out)
+
+    enqueue_apple_fp8_matmul[c_type=.float32](out_tt, act_tt, weight_tt, ctx)
+    enqueue_apple_fp8_matmul[c_type=.float32, has_epilogue_fn=True](
+        out_tt, act_tt, weight_tt, ctx, epilogue_fn
+    )
+
+    var out_host = ctx.enqueue_create_host_buffer[.float32](M * N)
+    var epi_host = ctx.enqueue_create_host_buffer[.float32](M * N)
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.enqueue_copy(epi_host, epi_dev)
+    ctx.synchronize()
+
+    _ = act_dev^
+    _ = weight_dev^
+    _ = out_dev^
+    _ = epi_dev^
+
+    for i in range(M * N):
+        var want = out_host[i] * 2 + 1
+        if abs(epi_host[i] - want) > Float32(1e-3) * (1 + abs(want)):
+            raise Error(
+                "FAILED (", name, "): ", i, " got ", epi_host[i], " exp ", want
+            )
+    print("PASS")
+
+
 def _run_fp8_gemv_direct[
     c_type: DType
 ](ctx: DeviceContext, N: Int, K: Int, name: String) raises:
@@ -160,7 +225,7 @@ def _run_fp8_gemv_direct[
     route), so the decode kernel stays validated even if the launcher dispatch
     changes.
     """
-    print("== fp8-gemv", name, "1 x", N, "x", K, "c_type", c_type)
+    print(t"== fp8-gemv {name} 1 x {N} x {K} c_type {c_type}")
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](K)
     var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
@@ -174,8 +239,8 @@ def _run_fp8_gemv_direct[
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(weight_dev, weight_host)
 
-    var act_tt = TileTensor(act_dev, row_major(1, K)).as_immut()
-    var weight_tt = TileTensor(weight_dev, row_major(N, K)).as_immut()
+    var act_tt = TileTensor(act_dev, row_major(1, K)).as_imm()
+    var weight_tt = TileTensor(weight_dev, row_major(N, K)).as_imm()
     var out_tt = TileTensor(out_dev, row_major(1, N))
 
     enqueue_apple_fp8_gemv[c_type=c_type](out_tt, act_tt, weight_tt, N, K, ctx)
@@ -210,17 +275,7 @@ def _run_tiled_fp8[
       identical E4M3 weight to the same bf16 (bf16 is exact for E4M3) and use a
       bf16 MMA, so they differ only in fp32 reduction ORDER -- a tight tolerance.
     """
-    print(
-        "== tiled-fp8",
-        name,
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        "c_type",
-        c_type,
-    )
+    print(t"== tiled-fp8 {name} {M} x {N} x {K} c_type {c_type}")
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
@@ -234,10 +289,10 @@ def _run_tiled_fp8[
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(weight_dev, weight_host)
 
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var weight_tt = TileTensor(
         weight_dev.unsafe_ptr(), row_major(N, K)
-    ).as_immut()
+    ).as_imm()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
 
     enqueue_matmul2d_fp8[c_type=c_type](out_tt, act_tt, weight_tt, ctx)
@@ -264,7 +319,7 @@ def _run_tiled_fp8[
         var oracle_tt = TileTensor(oracle_dev.unsafe_ptr(), row_major(M, N))
         enqueue_apple_matmul[
             in_type=.bfloat16, c_type=c_type, transpose_b=True
-        ](oracle_tt, act_tt, wdense_tt.as_immut(), ctx)
+        ](oracle_tt, act_tt, wdense_tt.as_imm(), ctx)
         var oracle_host = ctx.enqueue_create_host_buffer[c_type](M * N)
         ctx.enqueue_copy(oracle_host, oracle_dev)
         ctx.synchronize()
@@ -280,14 +335,7 @@ def _run_tiled_fp8[
             if abs(f - o) > Float32(1e-2) + Float32(1.6e-2) * abs(o):
                 if pass_:
                     print(
-                        "PARITY FAIL[",
-                        name,
-                        "]: idx",
-                        i,
-                        "tiled",
-                        f,
-                        "oracle",
-                        o,
+                        t"PARITY FAIL[ {name} ]: idx {i} tiled {f} oracle {o}"
                     )
                 pass_ = False
         if not pass_:
@@ -321,8 +369,9 @@ def test_multi_row_launcher(ctx: DeviceContext) raises:
     """M > 1 via the production launcher: routes to the tiled FP8 matmul.
 
     `enqueue_apple_fp8_matmul` sends every `M > 1` shape (wide-N AND narrow-N) to
-    `enqueue_matmul2d_fp8`; the materialize -> dense path is retained only for a
-    fused epilogue or pre-M5. Checks vs the independent fp32 host reference.
+    `enqueue_matmul2d_fp8`; the materialize -> dense path is retained only for
+    pre-M5. Checks vs the independent fp32 host reference, and a fused epilogue
+    vs the same launch without one.
     """
     seed(1)
     # Wide-N (n > k).
@@ -334,6 +383,11 @@ def test_multi_row_launcher(ctx: DeviceContext) raises:
     # tiled (was materialize -> dense). Reduced N*K for the host-ref check.
     _run_fp8_matmul[.float32](ctx, 32, 64, 256, "multi-row-narrow-n-m32")
     _run_fp8_matmul[.bfloat16](ctx, 32, 96, 288, "multi-row-narrow-n-bf16")
+    # A fused epilogue on the tiled path (wide-N, ragged, narrow-N) and GEMV.
+    _run_fp8_matmul_epilogue(ctx, 16, 128, 64, "epilogue-wide-n")
+    _run_fp8_matmul_epilogue(ctx, 100, 200, 64, "epilogue-ragged")
+    _run_fp8_matmul_epilogue(ctx, 32, 64, 256, "epilogue-narrow-n")
+    _run_fp8_matmul_epilogue(ctx, 1, 512, 256, "epilogue-gemv")
 
 
 def test_k_tail_edge(ctx: DeviceContext) raises:
@@ -391,8 +445,8 @@ def test_tiled_matmul2d(ctx: DeviceContext) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     test_decode_gemv(ctx)
     test_multi_row_launcher(ctx)

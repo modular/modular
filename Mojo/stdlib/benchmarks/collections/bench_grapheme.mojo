@@ -72,7 +72,7 @@ def bench_count_graphemes[
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
-    @always_inline
+    @inline(.always)
     def call_fn() {imm}:
         var res = black_box(items).count_graphemes()
         keep(res)
@@ -85,7 +85,7 @@ def bench_count_codepoints[
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
-    @always_inline
+    @inline(.always)
     def call_fn() {imm}:
         var res = black_box(items).count_codepoints()
         keep(res)
@@ -98,7 +98,7 @@ def bench_grapheme_iter[
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
-    @always_inline
+    @inline(.always)
     def call_fn() {imm}:
         var count = 0
         for _ in black_box(items).graphemes():
@@ -117,7 +117,7 @@ def bench_grapheme_slice[
     var start = total // 4
     var end = (3 * total) // 4
 
-    @always_inline
+    @inline(.always)
     def call_fn() {imm}:
         var slice = StringSlice(black_box(items))
         var s = slice[grapheme=start:end]
@@ -142,10 +142,10 @@ def main() raises:
     comptime lengths = (100, 1000, 10_000, 100_000, 1_000_000)
 
     comptime for i in range(len(lengths)):
-        comptime length = rebind[Int](lengths[i])
+        comptime length = lengths[i]
 
         comptime for j in range(len(filenames)):
-            comptime fname = rebind[StaticString](filenames[j])
+            comptime fname = filenames[j]
             comptime suffix = String("[", fname, ",", length, "]")
             m.bench_function(
                 bench_count_codepoints[length, fname],

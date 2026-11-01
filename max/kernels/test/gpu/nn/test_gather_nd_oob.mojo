@@ -64,9 +64,7 @@ def execute_gather_nd_test[
     )
 
     # Compute output size
-    var output_size = 1
-    for i in range(output_shape.size):
-        output_size *= output_shape[i]
+    var output_size = Int(output_shape.product())
 
     var actual_output_device = ctx.enqueue_create_buffer[data_type](output_size)
 
@@ -81,7 +79,7 @@ def execute_gather_nd_test[
         indices_device, row_major(Coord(indices_shape))
     )
     var actual_output_tensor = TileTensor(
-        actual_output_device, row_major(Coord(output_shape))
+        actual_output_device, row_major(output_shape)
     )
 
     # execute the kernel

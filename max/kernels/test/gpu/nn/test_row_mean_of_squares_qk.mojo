@@ -15,10 +15,10 @@ from std.random import rand
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
-from nn.normalization import row_mean_of_squares_qk
+from builtin_kernels.rowwise_normalization import row_mean_of_squares_qk
 from std.testing import assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def run_row_mean_of_squares_qk_gpu[
@@ -32,12 +32,8 @@ def run_row_mean_of_squares_qk_gpu[
     atol: Float64 = 1e-3,
 ) raises:
     print(
-        "== run_row_mean_of_squares_qk_gpu rows=",
-        rows,
-        " q_cols=",
-        q_cols,
-        " k_cols=",
-        k_cols,
+        t"== run_row_mean_of_squares_qk_gpu rows= {rows}  q_cols= {q_cols} "
+        t" k_cols= {k_cols}"
     )
 
     comptime out_dtype = DType.float32
@@ -53,8 +49,8 @@ def run_row_mean_of_squares_qk_gpu[
     var k_d = ctx.enqueue_create_buffer[in_dtype](rows * k_cols)
     var out_d = ctx.enqueue_create_buffer[out_dtype](rows * 2)
 
-    var q_buf = TileTensor(q_d, row_major(Coord(Index(rows, q_cols))))
-    var k_buf = TileTensor(k_d, row_major(Coord(Index(rows, k_cols))))
+    var q_buf = TileTensor(q_d, row_major(rows, q_cols))
+    var k_buf = TileTensor(k_d, row_major(rows, k_cols))
     var out_buf = TileTensor(out_d, row_major(Coord(Index(rows, 2))))
 
     ctx.enqueue_copy(q_d, q_h)

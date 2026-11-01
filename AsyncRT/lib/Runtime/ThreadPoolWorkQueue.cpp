@@ -29,7 +29,7 @@
 #include "Support/Profiling/TimeProfiler.h"
 #if MODULAR_ASYNCRT_MAX_PROFILING_LEVEL != 0
 #include "Support/Profiling/Ranges.h"
-#include "Support/internal/Tracy/Tracy.h"
+#include "Support/max_license/Tracy/Tracy.h"
 #else
 // TODO: This is duplicating some things, maybe find a better way
 #define TRACY_ZONE_SCOPED_NC(name, color)
@@ -198,6 +198,9 @@ struct SharedThreadState {
     auto workerGroupID = localWorkerID >> multicastFactor;
     suspendedThreads.fetch_or(getSuspendedThreadIdMask(workerGroupID),
                               std::memory_order_seq_cst);
+    // Pairs with the fence in addTask: without it the queue recheck that
+    // runItemsImpl does after marking can hoist above this bit being visible.
+    std::atomic_thread_fence(std::memory_order_seq_cst);
   }
 
   /// If the specified localWorkerID is suspended, take its bit out of the
@@ -724,6 +727,20 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       std::move(spinning).record();
     }
 
+    // We've waited long enough for new work to show up, so check one last time
+    // and yield the thread to the OS so we don't burn power and starve other
+    // tasks on the system.
+
+    sharedState.markSuspended(localWorkerID);
+    // This and addTask are the two sides of a Dekker handshake: a worker sets
+    // its suspended bit then rechecks the queues, while an enqueuer pushes the
+    // task then reads the suspended bits. At least one side must observe the
+    // other, or the task sits in the queue with nobody awake to run it.
+    // The queue accesses alone do not give that: the enqueue ends in a release
+    // store and the recheck below is a relaxed/acquire load, so both sides can
+    // miss. The seq_cst fence in markSuspended and its counterpart in addTask
+    // restore the guarantee. Dropping either one is the GEX-4343 hang.
+
     // The lock-free task queue appears to be empty. Since we're about to go
     // to sleep anyway, we can justify the expense of pumping any items out
     // of the overflow/localSpill task queues into the lock-free queues.
@@ -755,25 +772,6 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       }
     }
 
-    // We've waited long enough for new work to show up, so check one last time
-    // and yield the thread to the OS so we don't burn power and starve other
-    // tasks on the system.
-
-    sharedState.markSuspended(localWorkerID);
-    // Lets reason about ordering of markSuspended here and takeSuspended in
-    // addTask.
-    // T0(scheduler)                            T1(worker)
-    // if(takeSuspended())                      markSuspended()
-    // sema.post()                              sema.wait()
-    //
-    // Ordering 1: markSuspended() andThen takeSuspended().
-    // if sema.post() andThen sema.wait() T1 does not go to sleep.
-    // else T1 sleeps and wakes immediately.
-    //
-    // Ordering 2: takeSuspended() andThen markSuspended()
-    // T0 is not going to post semaphore, but the task is already
-    // enqueued. Run it now, unMark and go back to KeepRunning.
-
     start = std::chrono::high_resolution_clock::now();
     if (auto labelledTask = affinityTaskList.dequeue()) {
       {
@@ -794,27 +792,43 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     affinityListAccessTime += (end - start);
     start = std::chrono::high_resolution_clock::now();
 #endif
-    // The same ordering explanation as above holds for the taskList too.
-    // Let's say there are 2 threads in the pool with both threads busy waiting
-    // on their way to sleep. The addTask() sees them as busy and does not post
-    // any semaphores. However they both go to sleep not to be woken up by
-    // anyone. We prefer checking for a dequeue here rather than always posting
-    // a semaphore after enqueue in the addTask(). Also scenario is highly
-    // unlikely for numThreads > 1.
-
-    if (WorkItem labelledTask; taskList.try_dequeue(labelledTask)) {
-      {
-        TRACY_ZONE_SCOPED_NC(
-            "Invoke WorkQueueThread::doWork (pre-suspend,global)",
-            TRACY_COLOR_BLUE);
-        doWork</*IsWaiter=*/false>(std::move(labelledTask), kGlobal);
-      }
+    // try_dequeue can fail while the queue is not empty: ProducerBase::dequeue
+    // decides from a dequeueOvercommit it loaded with relaxed ordering, so
+    // other workers' optimistic increments make it conclude every element is
+    // already claimed. Going to sleep on that false negative is the GEX-4343
+    // hang. A non-zero size_approx() does not promise a dequeue will succeed
+    // either, since it also counts an element another worker has claimed
+    // through dequeueOptimisticCount but whose headIndex advance has not
+    // landed yet; it only says work may remain, so this worker sleeps only
+    // when a failed try_dequeue and a zero size agree. The loop terminates
+    // because every claim is matched by an awake thread advancing headIndex
+    // or bumping the overcommit, and SpinWaiter yields and then sleeps while
+    // that happens.
+    {
+      SpinWaiter<> spinner;
+      while (true) {
+        if (WorkItem labelledTask; taskList.try_dequeue(labelledTask)) {
+          {
+            TRACY_ZONE_SCOPED_NC(
+                "Invoke WorkQueueThread::doWork (pre-suspend,global)",
+                TRACY_COLOR_BLUE);
+            doWork</*IsWaiter=*/false>(std::move(labelledTask), kGlobal);
+          }
 #if ASYNCRT_WORKER_STATS
-      auto end = std::chrono::high_resolution_clock::now();
-      ++globalAccessCount;
-      taskListAccessTime += (end - start);
+          auto end = std::chrono::high_resolution_clock::now();
+          ++globalAccessCount;
+          taskListAccessTime += (end - start);
 #endif
-      goto KeepRunning;
+          goto KeepRunning;
+        }
+        if (taskList.size_approx() == 0)
+          break;
+        // Neither an awaiter whose values are ready nor a shutdown should
+        // wait for another thread to drain the queue.
+        if (earlyStopPredicate() || lateStopPredicate())
+          break;
+        spinner.wait();
+      }
     }
 #if ASYNCRT_WORKER_STATS
     end = std::chrono::high_resolution_clock::now();
@@ -929,6 +943,37 @@ private:
   WorkQueueThread *getWorkQueueThread(size_t localWorkerID) const {
     assert(localWorkerID < numWorkers && "invalid worker id");
     return workers + localWorkerID;
+  }
+
+  /// These two are the only places that read the suspend bits to wake a
+  /// worker, and in both the fence has to sit immediately before that read,
+  /// pairing with the fence after the store in markSuspended. Route a new
+  /// wake path through one of them rather than writing the sequence again.
+  ///
+  /// Wakes one suspended worker, or one group of them, so that at least one
+  /// worker is awake to pick up work that was just enqueued for anybody.
+  void wakeOneSuspendedWorker() {
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    int workerIDToPoke = sharedState.takeAnySuspendedThread();
+    if (workerIDToPoke == -1)
+      return;
+    if (multicastFactor == 0) {
+      getWorkQueueThread(static_cast<size_t>(workerIDToPoke))->sema.post();
+      return;
+    }
+    size_t start = workerIDToPoke << multicastFactor;
+    size_t range = 1 << multicastFactor;
+    for (size_t i = start; i < start + range; ++i) {
+      if (i < numWorkers)
+        getWorkQueueThread(i)->sema.post();
+    }
+  }
+
+  /// Wakes one named worker, for work that only it can run.
+  void wakeSuspendedWorker(size_t localWorkerID) {
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    if (sharedState.takeSuspendedThread(localWorkerID))
+      getWorkQueueThread(localWorkerID)->sema.post();
   }
 
   /// This is the set of WorkQueueThread objects in the WorkQueue. If in
@@ -1097,10 +1142,11 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
     // NOTE: This may be a spurious post() because the thread may already be
     // awake. It does not cause any harm because the worst that can happen
     // is that the thread goes to sleep the next iteration of runItemsImpl
-    // rather than now.
+    // rather than now. A task that spilled into localSpillQueue because the
+    // ring was full is covered the same way, since that pump runs after
+    // markSuspended and the wake below pairs with the fence in it.
     if (multicastFactor == 0) {
-      if (sharedState.takeSuspendedThread(taskId))
-        workThread->sema.post();
+      wakeSuspendedWorker(static_cast<size_t>(taskId));
     } else {
       // TODO: post() should be low overhead if thread is already awake.
       // Nevertheless profile and check.
@@ -1116,21 +1162,7 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
   }
   // Try to add this work to the lock-free queue.
   if (taskList.enqueue(std::move(workItem))) {
-    // If there are any suspended workers, kick one of them now to make sure
-    // there's at least one worker still awake to pick up work.
-    int workerIDToPoke = sharedState.takeAnySuspendedThread();
-    if (workerIDToPoke != -1) {
-      if (multicastFactor == 0)
-        getWorkQueueThread(static_cast<size_t>(workerIDToPoke))->sema.post();
-      else {
-        size_t start = workerIDToPoke << multicastFactor;
-        size_t range = 1 << multicastFactor;
-        for (size_t i = start; i < start + range; ++i) {
-          if (i < numWorkers)
-            getWorkQueueThread(i)->sema.post();
-        }
-      }
-    }
+    wakeOneSuspendedWorker();
 #if ASYNCRT_WORKER_STATS
     auto end = std::chrono::high_resolution_clock::now();
     atomicAdd(taskListEnqueueCount, (uint64_t)1);
@@ -1156,8 +1188,13 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
   //    way the mutex overhead is only paid for in the uncommon case. However,
   //    we obviously risk starving these tasks.
   // We go for the last option.
-  std::lock_guard<std::mutex> guard(overflowMutex);
-  overflowTaskList.emplace_back(std::move(workItem));
+  {
+    std::lock_guard<std::mutex> guard(overflowMutex);
+    overflowTaskList.emplace_back(std::move(workItem));
+  }
+  // The overflow pump runs after markSuspended, so a worker on its way to
+  // sleep can pass this item without seeing it unless it is poked.
+  wakeOneSuspendedWorker();
 }
 
 void ThreadPoolWorkQueue::addLocalTask(WorkItem &&workItem) {

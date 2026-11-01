@@ -43,8 +43,8 @@ import torch  # type: ignore[import-not-found]
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
 from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
 from transformers.models.qwen3.modeling_qwen3 import (
@@ -62,6 +62,8 @@ from testbed.registry import register_harness
 
 @dataclass
 class Qwen3AttentionStaticParams(AttentionStaticParams):
+    """Static parameters for the Qwen3 attention harness."""
+
     rope_theta: float = 1000000.0
     qk_norm_eps: float = 1e-6
 
@@ -77,13 +79,16 @@ class Qwen3AttentionHarness(RaggedAttentionHarness[Qwen3AttentionStaticParams]):
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the Qwen3 harness."""
         return Qwen3AttentionStaticParams
 
     @property
     def name(self) -> str:
+        """Returns the registered harness name, ``qwen3_attention``."""
         return "qwen3_attention"
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the Qwen3 attention graph with its paged KV cache inputs."""
         p = self.static_params
         hidden_size = p.hidden_size
         n_heads = p.n_heads
@@ -174,9 +179,7 @@ class Qwen3AttentionHarness(RaggedAttentionHarness[Qwen3AttentionStaticParams]):
             ),
         ) as graph:
             inputs, input_row_offsets, *kv_cache = graph.inputs
-            kv_collection = kv_params.unflatten_kv_inputs(
-                iter(kv_cache)
-            ).inputs[0]
+            kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
             layer_idx_const = ops.constant(
                 0, DType.uint32, device=DeviceRef.CPU()
             )
@@ -199,6 +202,7 @@ class Qwen3AttentionHarness(RaggedAttentionHarness[Qwen3AttentionStaticParams]):
     def torch_reference_layer(
         self, device: str = "cuda"
     ) -> tuple[HFQwen3Attention, dict[str, Any]]:
+        """Returns the torch attention layer and the weights mapped for it."""
         p = self.static_params
         if not hasattr(self, "_torch_weights"):
             raise RuntimeError(
@@ -239,6 +243,7 @@ class Qwen3AttentionHarness(RaggedAttentionHarness[Qwen3AttentionStaticParams]):
         dynamic_params: AttentionDynamicParams,
         device: str = "cuda",
     ) -> list[Any]:
+        """Converts MAX execute args into torch inputs for the reference."""
         p = self.static_params
         seq_len = dynamic_params.seq_len
         ctx_len = dynamic_params.ctx_len

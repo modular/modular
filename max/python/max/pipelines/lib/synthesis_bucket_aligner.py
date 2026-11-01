@@ -15,7 +15,7 @@
 Device-graph synthesis records kernels into a driver ``DeviceGraph`` lazily
 inside ``execute`` and keys the recorded graph on symbolic dims, device, input
 addresses, and host-input *contents* read at enqueue time. Decode attention
-dispatch metadata (e.g. the 4-int MHA buffer
+dispatch metadata (such as the 4-int MHA buffer
 ``[batch_size, q, num_partitions, max_cache_valid_length]``) is a host input
 whose contents increment every decode step, which would force a fresh device
 graph per step (a ~3.3x decode cost measured on the 12B gsm8k run).
@@ -41,7 +41,7 @@ import bisect
 import logging
 from dataclasses import replace
 
-from max.nn.kv_cache import BatchCharacteristics, KVCacheParamInterface
+from max.nn.legacy.kv_cache import BatchCharacteristics, KVCacheParamInterface
 
 logger = logging.getLogger("max.pipelines")
 

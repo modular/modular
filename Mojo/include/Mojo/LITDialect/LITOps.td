@@ -62,7 +62,6 @@ def LIT_FnOp : LITOp<"fn", [
   let arguments = (ins
     OptionalAttr<SymbolNameAttr>:$sym_name,
     OptionalAttr<StrAttr>:$sym_visibility,
-    OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
     TypeAttrOf<LIT_FnTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$params,
@@ -74,7 +73,7 @@ def LIT_FnOp : LITOp<"fn", [
     UnitAttr:$external,
     UnitAttr:$defaultedTraitFn, // Present for trait methods with non-empty bodies.
     KGEN_ExportKindAttr:$exportKind,
-    KGEN_InlineLevelAttr:$inlineLevel,
+    TypedAttrInterface:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
     // The linkage name of this function within the compiled artifact. If null,
     // the flattened full symbol reference of the function will be used.
@@ -101,10 +100,14 @@ def LIT_FnOp : LITOp<"fn", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     OptionalAttr<AnyAttr>:$thunkKey,
-    UnitAttr:$noDocRequired
+    UnitAttr:$noDocRequired,
+    // The signature with the parameters of the enclosing struct, trait or
+    // extension prepended. Set once the signature is resolved, and only for
+    // functions that have such a parent.
+    OptionalAttr<TypeAttrOf<LIT_FnTypeGeneratorType>>:$resolvedFullSignature
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -112,7 +115,6 @@ def LIT_FnOp : LITOp<"fn", [
     ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
     Block *getBody() { return &getFunctionBody().back(); }
     Region *getCallableRegion() { return &getBodyRegion(); }
-    bool isOptionalSymbol() { return getParamDecl().has_value(); }
 
     /// Returns the result type of the MLIR function (not the user defined
     /// result type).  This is guaranteed to be present.
@@ -127,9 +129,12 @@ def LIT_FnOp : LITOp<"fn", [
     /// parameter bindings.
     TypedAttr getBoundReference(ParameterEvaluationContext &evalContext,
                                 ParameterExprArrayAttr bindings = {});
-    SymbolConstantAttr
+    FuncSymbolGenerator
     getBoundSymbolRef(ParameterEvaluationContext &evalContext,
                       ParameterExprArrayAttr bindings = {});
+    FuncSymbolGenerator
+    getBoundSymbolRef(ParameterEvaluationContext &evalContext,
+                      ArrayRef<TypedAttr> bindings);
 
     /// Return a GeneratorAttr that generates a FuncLiteralAttr for this
     /// function. `dischargedBodyConstraints` is an optional bitmask over the
@@ -382,11 +387,19 @@ def LIT_PackageOp : LITOp<"package", [
     If the package was precompiled it may also contain:
     - The set of link dependencies for this package, `dependencies`.
 
+    A package marked `namespace` models a namespace: plain directories
+    spanning import roots, which group the packages within them but are not a
+    package themselves.
+
     Example:
 
     ```mlir
     lit.package @foo {
       lit.file_module @bar {
+      }
+    }
+    lit.package namespace @ns {
+      lit.package @baz {
       }
     }
     ```
@@ -398,7 +411,8 @@ def LIT_PackageOp : LITOp<"package", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // References to the dependencies of this package.
     OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies,
-    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules
+    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules,
+    UnitAttr:$isNamespace
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -410,7 +424,9 @@ def LIT_PackageOp : LITOp<"package", [
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>
   ];
-  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
+  let assemblyFormat = [{
+    (`namespace` $isNamespace^)? $sym_name attr-dict-with-keyword $bodyRegion
+  }];
   let hasVerifier = 1;
 }
 
@@ -422,7 +438,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     IsolatedFromAbove, SymbolName, SymbolVisibility, Symbol, SymbolTable,
     DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
-    DeclareOpInterfaceMethods<StructDeclInterface>,
+    DeclareOpInterfaceMethods<StructDeclInterface,
+                              ["getAnnotationValues", "getAnnotationTypes"]>,
     DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
     StabilityDecoratorInterface
   ]> {
@@ -462,12 +479,13 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
     UnitAttr:$synthetic,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
-    OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
-    OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
+    OptionalAttr<KGEN_GeneratorAttr>:$moveInit,
+    OptionalAttr<KGEN_GeneratorAttr>:$copyInit,
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
-    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
+    // Mark the struct as a thunk struct for closures, see also FnOp::thunkKey
+    OptionalAttr<AnyAttr>:$closureThunkKey,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
@@ -479,14 +497,17 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // Explicit minimum alignment specified via @align(N) decorator.
     OptionalAttr<AttrOfType<Index>>:$minAlignment,
     EnumProp<LIT_TypeConvention>:$convention,
-    // If definesClosure attribute is present,
-    // then this is a compiler generated structure
-    // used to wrap a function as a closure.
-    UnitAttr:$definesClosure,
     // Present when the struct has a conditional RegisterPassable conformance.
     // Stores the ConstraintAttr whose proposition governs whether the struct
     // is register-passable for a given instantiation.
-    OptionalAttr<KGEN_ConstraintAttr>:$registerPassableConstraint
+    OptionalAttr<KGEN_ConstraintAttr>:$registerPassableConstraint,
+    // Comptime values attached with `@__annotation(...)`, in source order.
+    // Read back through `#kgen.get_annotation_value`, which the reflection
+    // library wraps as `reflect[T].annotation[index]`.
+    DefaultValuedAttr<ArrayAttr, "{}">:$annotations,
+    // Present if the struct is declared with `__enum`. Its cases are the
+    // `lit.enum.case` ops in its body.
+    UnitAttr:$isEnum
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -521,11 +542,17 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     /// Return the struct name as it appears in the source code (not mangled).
     StringAttr getDeclName() { return getSymNameAttr(); }
 
+    /// Return the `@__annotation` values selected by `fieldIndex`.
+    ArrayAttr getSelectedAnnotations(int64_t fieldIndex);
+
     /// Get a bound reference to the struct type.
     StructType bindReference(ArrayRef<TypedAttr> paramValues = {});
 
     /// Get whether this struct is compiler generated.
     bool isSynthetic();
+
+    /// Return true if this struct is declared with `__enum`.
+    bool isEnum() { return getIsEnum(); }
   }];
 
   let builders = [
@@ -564,7 +591,11 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     // Set if the field has an @doc_hidden decorator on it.
     UnitAttr:$isDocHidden,
     // Set if the field allows legacy AnyOrigin usage.
-    UnitAttr:$allowLegacyAnyOrigin
+    UnitAttr:$allowLegacyAnyOrigin,
+    // Comptime values attached with `@__annotation(...)`, in source order.
+    // Read back through `#kgen.get_annotation_value`, which the reflection
+    // library wraps as `reflect[T].field_annotation[field, index]`.
+    DefaultValuedAttr<ArrayAttr, "{}">:$annotations
   );
   let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
 
@@ -579,6 +610,45 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     Type getReboundType(StructType structSelfType,
                         ParameterEvaluationContext *ctx = nullptr);
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// EnumCaseOp
+//===----------------------------------------------------------------------===//
+
+def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
+  let summary = "Enum case declaration.";
+  let description = [{
+    The `lit.enum.case` operation declares a case of the enum whose
+    `lit.struct.decl` contains it. The cases of an enum are its
+    `lit.enum.case` ops, in declaration order. `payloadTypes` lists the
+    case's payload types as written, empty for a case without a payload; it
+    is absent until the payload is resolved.
+
+    Of the code that consumes an enum, only the generation of its members
+    reads these ops; everything else, pattern matching included, reads the
+    generated `EnumLike` members such as `_enum_case_names`.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @Color {
+      lit.enum.case red : []
+      lit.enum.case rgb : [!alias_Int1, !alias_Int1, !alias_Int1]
+    } {isEnum}
+    ```
+  }];
+
+  let arguments = (ins
+    StrAttr:$name,
+    OptionalAttr<TypeArrayAttr>:$payloadTypes,
+    OptionalAttr<LIT_DocStringAttr>:$docString
+  );
+  let assemblyFormat = [{
+    custom<KeywordAsString>($name) (`:` $payloadTypes^)? attr-dict
+  }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -747,7 +817,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     ```mlir
     lit.trait.decl @Trait<T: !Trait> {
       lit.fn @f() -> !kgen.none {
-        kgen.unreachable
+        hlcf.unreachable
       }
     }
     ```
@@ -761,10 +831,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     DefaultValuedAttr<KGEN_TraitSymbolArrayAttr,
                       "ArrayRef<TraitSymbolAttr>{}">:$immediateParents,
     EnumProp<LIT_TypeConvention>:$convention,
-    // If definesClosure attribute is present,
-    // then this is a compiler generated trait
-    // used to implement a closure
-    UnitAttr:$definesClosure,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
@@ -775,7 +841,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
-    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
     OptionalAttr<SourceNameAttr>:$sourceName
   );
 
@@ -1613,7 +1678,8 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
 
 class RefImmutType<string lhs, string rhs> : TypesMatchWith<
     "reference with mutability removed", lhs, rhs,
-    "llvm::cast<RefType>($_self).getWithMutability(false)">;
+    "llvm::isa<RefType>($_self) ? "
+    "llvm::cast<RefType>($_self).getWithMutability(false) : Type()">;
 
 def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
   let summary = "Drop mutability from a reference";
@@ -1681,7 +1747,8 @@ def LIT_RefUpcastOp : LITOp<"ref.upcast", [Pure]> {
 // Given a `!lit.ref<X, life>`, return `!kgen.pointer<X>`.
 class RefPointerType<string lhs, string rhs> : TypesMatchWith<
     "reference as pointer type", lhs, rhs,
-    "llvm::cast<RefType>($_self).getAsPointerType()">;
+    "llvm::isa<RefType>($_self) ? "
+    "llvm::cast<RefType>($_self).getAsPointerType() : Type()">;
 
 def LIT_RefToPointerOp : LITOp<"ref.to_pointer",
                               [RefPointerType<"ref", "ptr">]> {
@@ -1709,16 +1776,18 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   let summary = "Create an immortal reference from a pointer value";
   let description = [{
     This op converts a raw pointer to a reference with specified mutability and
-    origin.  When `startsUninit` is true, the reference is assumed to be
-    uninitialized but needs to be initialized before exit.  When false it is
-    assumed to be initialized and must be initialized on exit.
+    origin. `startUninit` and `endUninit` describe the referent's liveness
+    immediately before and after the operation, respectively. This represents
+    all four transitions: initialization, ownership transfer, and the two
+    no-op liveness states. The parser uses this for
+    `__get_address_as_uninit_lvalue` and `__get_address_as_owned_value`.
 
     ```mlir
     lit.ref.from_pointer %0, startUninit=true : !lit.ref<mut @Foo, life>
     ```
   }];
 
-  let arguments = (ins PointerType:$ptr, UnitAttr:$startUninit,
+  let arguments = (ins PointerType:$ptr, StrAttr:$name, UnitAttr:$startUninit,
                        UnitAttr:$endUninit);
   let results = (outs LIT_RefType:$ref);
   let assemblyFormat = [{
@@ -1729,7 +1798,8 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   let builders = [
     // Create with a pointer and origin, to infer result type.
     OpBuilder<(ins "Value":$pointer, "TypedAttr":$origin,
-                   "bool":$startsUninit, "bool":$endsUninit)>,
+                   "StringAttr":$name, "bool":$startsUninit,
+                   "bool":$endsUninit)>,
   ];
 }
 
@@ -1955,23 +2025,17 @@ def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"dest", "value">]>
 // MemcpyOp
 //===----------------------------------------------------------------------===//
 
-// Checks that all reference element types match.
-class EqualPointeeTypes<list<string> names> :
-    AllMatchSameOperatorTrait<
-        names, "llvm::cast<RefType>($_self.getType()).getElementType()",
-        "element types"
-    >;
-
-def LIT_MemcpyOp : LITOp<"memcpy", [EqualPointeeTypes<["src", "dst"]>]> {
+def LIT_MemcpyOp : LITOp<"memcpy"> {
   let summary = "memcpy operation";
   let description = [{
     Performs an in-memory copy operation between the source reference and
     destination reference. The source reference may either be mutable or
     immutable; the destination reference must be mutable. Unlike regular
     memcpy, this op doesn't work on bytes - it does a whole-value copy of the
-    references' element type. The two references may have differing address
-    space qualifiers. The destination is considered 'initialized' by this
-    operation.
+    references' element type. The element types must be canonically equal, so
+    they may differ in type sugar such as aliases. The two references may have
+    differing address space qualifiers. The destination is considered
+    'initialized' by this operation.
 
     Example:
 
@@ -1985,6 +2049,7 @@ def LIT_MemcpyOp : LITOp<"memcpy", [EqualPointeeTypes<["src", "dst"]>]> {
   let arguments = (ins LIT_RefType:$src, LIT_RefType:$dst);
   let results = (outs);
   let assemblyFormat = "$src `,` $dst attr-dict `:` type($src) `->` type($dst)";
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Model-agnostic DSpark draft: block nn.Module + registry placeholder.
+"""Model-agnostic DSpark draft: block nn.Module + registry entry.
 
 Speculators-format DSpark drafters declare the generic HuggingFace
 architectures ``["DSparkDraftModel"]`` shared across target model lines,
@@ -22,10 +22,8 @@ handling) live in the ``speculators_common`` package.
 
 from .arch import dspark_speculators_draft_arch
 from .dspark_speculators_draft import DSparkSpeculatorsDraft
-from .model import DSparkDraftPlaceholderModel
 
 __all__ = [
-    "DSparkDraftPlaceholderModel",
     "DSparkSpeculatorsDraft",
     "dspark_speculators_draft_arch",
 ]

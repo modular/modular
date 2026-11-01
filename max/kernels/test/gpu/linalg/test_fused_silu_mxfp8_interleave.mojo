@@ -27,26 +27,22 @@ block to FP8-E4M3 with FP8-UE8M0 block scales. This test:
 Multiple expert shapes are exercised (single expert, multi-expert with
 ragged token counts) to cover the per-expert offset / SF-block-id math.
 """
-from std.math import align_up, ceildiv, exp, recip
+from std.math import ceildiv, exp, recip
 from max.gpu.host import DeviceContext
 from std.memory import alloc
 from std.memory.unsafe import bitcast
+from std.memory.alloc import unsafe_alloc
 
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
-    get_scale_factor,
     set_scale_factor,
 )
+from linalg.swiglu_activation import get_swiglu_activation
 from shmem.ep_comm import fused_silu_mxfp8_interleaved_kernel
 
 
@@ -54,12 +50,9 @@ def _test_silu_mxfp8[
     num_active_experts: Int,
     H: Int,
     clamp_activation: Bool = False,
-](
-    num_tokens_by_expert: List[Int],
-    ctx: DeviceContext,
-    alpha: Float32 = Float32(1.702),
-    limit: Float32 = Float32(7.0),
-) raises:
+    alpha: Float32 = 1.702,
+    limit: Float32 = 7.0,
+](num_tokens_by_expert: List[Int], ctx: DeviceContext,) raises:
     """Run the kernel on a `num_active_experts` × ragged-M workload and
     assert byte-equality with a host-computed reference. When
     `clamp_activation=True` both the kernel and the host reference
@@ -81,27 +74,20 @@ def _test_silu_mxfp8[
     var M = total_num_tokens
 
     print(
-        "  H=",
-        H,
-        " M=",
-        M,
-        " active=",
-        num_active_experts,
-        " clamp=",
-        clamp_activation,
+        t"  H={H} M={M} active={num_active_experts} clamp={clamp_activation}",
         sep="",
     )
 
     # ---- Input / output / SF buffers ----
     comptime two_H = 2 * H
-    var in_shape = row_major(Coord(Int(M), Idx[two_H]))
-    var out_shape = row_major(Coord(Int(M), Idx[H]))
+    var in_shape = row_major(M, Idx[two_H])
+    var out_shape = row_major(M, Idx[H])
     var in_size = M * two_H
     var out_size = M * H
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](in_size)
-    var out_host_ptr = alloc[Scalar[fp8_dtype]](out_size)
-    var out_ref_host_ptr = alloc[Scalar[fp8_dtype]](out_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](in_size)
+    var out_host_ptr = unsafe_alloc[Scalar[fp8_dtype]](out_size)
+    var out_ref_host_ptr = unsafe_alloc[Scalar[fp8_dtype]](out_size)
 
     var in_device = ctx.enqueue_create_buffer[in_dtype](in_size)
     var in_tensor = TileTensor(in_device, in_shape)
@@ -109,22 +95,22 @@ def _test_silu_mxfp8[
     var out_tensor = TileTensor(out_device, out_shape)
 
     # ---- Per-expert offsets ----
-    var row_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
-    var scales_offsets_host_ptr = alloc[UInt32](num_active_experts)
+    var row_offsets_host_ptr = unsafe_alloc[UInt32](num_active_experts + 1)
+    var scales_offsets_host_ptr = unsafe_alloc[UInt32](num_active_experts)
 
     var row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var row_offsets_tensor = TileTensor(
         row_offsets_device,
-        row_major(Coord(Idx[num_active_experts + 1])),
+        row_major(Idx[num_active_experts + 1]),
     )
     var scales_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var scales_offsets_tensor = TileTensor(
         scales_offsets_device,
-        row_major(Coord(Idx[num_active_experts])),
+        row_major(Idx[num_active_experts]),
     )
 
     var scales_dim0 = 0
@@ -140,18 +126,16 @@ def _test_silu_mxfp8[
 
     comptime k_groups = ceildiv(H, SF_VECTOR_SIZE * SF_ATOM_K)
     var scales_shape = row_major(
-        Coord(
-            Int(scales_dim0),
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        scales_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var scales_size = scales_shape.product()
 
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
-    var scales_ref_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
+    var scales_ref_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_size)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
@@ -205,7 +189,7 @@ def _test_silu_mxfp8[
                         var g_c = min(g, limit)
                         var u_c = max(min(u, limit), -limit)
                         var sigmoid = recip(Float32(1.0) + exp(-(g_c * alpha)))
-                        zi = (u_c + Float32(1.0)) * g_c * sigmoid
+                        zi = g_c * sigmoid * (u_c + Float32(1.0))
                     else:
                         var silu_g = g * recip(Float32(1.0) + exp(-g))
                         zi = silu_g * u
@@ -248,9 +232,9 @@ def _test_silu_mxfp8[
 
     comptime hw_info = ctx.default_device_info
 
-    var in_immut = in_tensor.as_immut()
-    var row_offsets_immut = row_offsets_tensor.as_immut()
-    var scales_offsets_immut = scales_offsets_tensor.as_immut()
+    var in_immut = in_tensor.as_imm()
+    var row_offsets_immut = row_offsets_tensor.as_imm()
+    var scales_offsets_immut = scales_offsets_tensor.as_imm()
 
     comptime kernel = fused_silu_mxfp8_interleaved_kernel[
         fp8_dtype,
@@ -263,7 +247,16 @@ def _test_silu_mxfp8[
         scales_offsets_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
-        clamp_activation=clamp_activation,
+        activation=get_swiglu_activation[
+            "swigluoai" if clamp_activation else "silu",
+            alpha,
+            limit if clamp_activation else 0.0,
+        ],
+        OutputEngine=type_of(out_tensor).Engine,
+        ScalesEngine=type_of(scales_tensor).Engine,
+        InputEngine=type_of(in_immut).Engine,
+        RowOffsetsEngine=type_of(row_offsets_immut).Engine,
+        ScalesOffsetsEngine=type_of(scales_offsets_immut).Engine,
     ]
     ctx.enqueue_function[kernel](
         out_tensor,
@@ -271,8 +264,6 @@ def _test_silu_mxfp8[
         in_immut,
         row_offsets_immut,
         scales_offsets_immut,
-        alpha,
-        limit,
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )
@@ -314,18 +305,12 @@ def _test_silu_mxfp8[
 
     if out_mismatch != 0 or sf_mismatch != 0:
         print(
-            "    OUT mismatch count =",
-            out_mismatch,
-            " first @ idx=",
-            first_bad_out,
-            "  SF mismatch count =",
-            sf_mismatch,
-            " first @ idx=",
-            first_bad_sf,
+            t"    OUT mismatch count = {out_mismatch}  first @ idx="
+            t" {first_bad_out}   SF mismatch count = {sf_mismatch}  first @"
+            t" idx= {first_bad_sf}"
         )
         if first_bad_out >= 0:
-            var m_bad = first_bad_out // H
-            var k_bad = first_bad_out % H
+            var m_bad, k_bad = divmod(first_bad_out, H)
             var ref_byte = bitcast[.uint8, 1](
                 SIMD[fp8_dtype, 1](out_ref_host_ptr[first_bad_out])
             )[0]
@@ -333,14 +318,8 @@ def _test_silu_mxfp8[
                 SIMD[fp8_dtype, 1](out_host_ptr[first_bad_out])
             )[0]
             print(
-                "    first OUT bad: m=",
-                m_bad,
-                " k=",
-                k_bad,
-                " ref(byte)=",
-                ref_byte,
-                " got(byte)=",
-                got_byte,
+                t"    first OUT bad: m= {m_bad}  k= {k_bad}  ref(byte)="
+                t" {ref_byte}  got(byte)= {got_byte}"
             )
         raise Error("MXFP8 fused-silu reference disagrees with kernel output")
 
@@ -366,9 +345,9 @@ def main() raises:
 
     # Clamped (swigluoai) activation. limit=2.0 sits inside the
     # [-3.5, 3.5] input range so both clamp bounds actually bind.
-    _test_silu_mxfp8[num_active_experts=1, H=128, clamp_activation=True](
-        [49], ctx, alpha=Float32(1.702), limit=Float32(2.0)
-    )
+    _test_silu_mxfp8[
+        num_active_experts=1, H=128, clamp_activation=True, limit=2.0
+    ]([49], ctx)
 
     # Wide-H case: single small expert at a model-scale hidden dim,
     # keeping test runtime manageable while exercising many SF

@@ -54,24 +54,24 @@ def fn_returns_ref(x: String) -> ref[x] String:
 # CHECK-LABEL: lit.fn @"test_more_conversions
 def test_more_conversions():
     # CHECK: %test_raises = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr
     # CHECK-NEXT: lit.ref.store [[TMP]], %test_raises
     var test_raises: def() thin raises -> Int = fn_doesnt_raise
 
     # CHECK: %test_result_convert = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr
     # CHECK-NEXT: lit.ref.store [[TMP]], %test_result_convert
     var test_result_convert: def() thin raises -> Float32 = fn_doesnt_raise
 
     # CHECK: %test_error_convert = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr
     # CHECK-NEXT: lit.ref.store [[TMP]], %test_error_convert
     var test_error_convert: def() thin raises Float32 -> Float32 = (
         fn_doesnt_raise
     )
 
     # CHECK: %test_ref_result_convert = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr
     # CHECK-NEXT: lit.ref.store [[TMP]], %test_ref_result_convert
     var test_ref_result_convert: def(x: String) thin -> String = fn_returns_ref
 

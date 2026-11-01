@@ -1,0 +1,23 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 1x B200 recipe for Laguna S-2.1 (NVFP4) on ModuleV3. The architecture is
+# single-GPU, so there is no parallelism section.
+model:
+  model_path: poolside/Laguna-S-2.1-NVFP4
+  device_specs: [0]
+  max_length: 262144  # The vendor's serving length; the checkpoint declares
+                      # 1048576, which does not fit beside the weights on one
+                      # B200.
+
+runtime:
+  prefer_module_v3: true

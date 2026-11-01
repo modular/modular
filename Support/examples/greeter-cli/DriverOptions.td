@@ -27,23 +27,22 @@ include "Support/Driver/CommonOptions.td"
 
 // All command line options must belong to a group.
 //
-// All options and groups have an explicit ordering when printed in
-// documentation. This order is represented with an `Index` record.
-// `driver-tblgen` will error if you forget to include an index, or if two
-// indices overlap.
+// Groups have an explicit ordering when printed in documentation. This order is
+// represented with an `Index` record. `driver-tblgen` will error if you forget
+// to include an index, or if two indices overlap.
 def GreetingOptionGroup : OptionGroup<"Greeting options">, Index<0>;
 
 // This defines the `--busy` or `-busy` option. Some notes:
 // - The first prefix specified in the list of `["--", "-"]` is the one that's
 //   preferentially printed in documentation.
-// - Options are indexed within their group: this is at index 0 within the
-//   "Greeting options" group.
-def busy : Flag<["--", "-"], "busy">, Group<GreetingOptionGroup>, Index<0>,
+// - Options appear in documentation in the order they are defined within their
+//   group.
+def busy : Flag<["--", "-"], "busy">, Group<GreetingOptionGroup>,
   HelpText<"Eschews a traditional greeting in favor of a more curt response.">;
 
 // This defines `-b` as an alias for `--busy`.
-// - Aliases are indexed across other aliases: this is at index 0 within all
-//   other aliases for `--busy`.
+// - Aliases appear in the order they are defined among the other aliases for
+//   `--busy`.
 // - Aliases do not require help text, since they're documented with the aliased
 //   option's help text.
-def b : Flag<["-"], "b">, Group<GreetingOptionGroup>, Alias<busy>, Index<0>;
+def b : Flag<["-"], "b">, Group<GreetingOptionGroup>, Alias<busy>;

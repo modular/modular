@@ -13,7 +13,7 @@
 """Shared SM100 attention primitives used by both MHA and MLA kernels.
 
 This module contains generic SM100 (Blackwell) GPU primitives including:
-- TMEM access helpers (TMemTile, STMatrixLayout)
+- TMEM access helpers (TMemTile)
 - Pipeline synchronization (StagedPipeline, RolePipeline, etc.)
 - FTZ arithmetic (add_ftz, sub_ftz, mul_ftz, etc.)
 - Barrier helpers (FA4MiscMBars)
@@ -21,11 +21,13 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 - Masking utilities (apply_mask, apply_oob_mask)
 """
 
+from std.builtin.dtype import _unsigned_integral_type_of
 from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
-from std.sys import size_of, _RegisterPackType, get_defined_bool
+from std.sys import align_of, get_defined_int, size_of, _RegisterPackType
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
+from std.time import sleep
 from std.bit import prev_power_of_two, pop_count
 from max.gpu import block_idx
 from max.gpu.globals import WARP_SIZE
@@ -39,9 +41,10 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
 )
 from max.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
 from layout import (
+    Idx,
     IntTuple,
     Layout,
-    LayoutTensor,
+    TensorEngine,
     TileTensor,
     row_major,
 )
@@ -53,6 +56,7 @@ from layout.tile_layout import (
     Layout as InternalLayout,
     row_major as tt_row_major,
 )
+from layout.swizzle import make_swizzle
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
@@ -63,13 +67,11 @@ from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.common import elect
 from nn.attention.mha_mask import MHAMask, MASK_VALUE, MaskStrategy
 from nn.attention.mha_operand import (
-    MHAOperand,
     PagedRowIndices,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
     kv_tma_fold_chunks,
 )
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
@@ -85,6 +87,7 @@ comptime FP32_EXP_BIAS = 127
 comptime LocalTensor[
     dtype: DType,
     layout: InternalLayout,
+    Engine: TensorEngine,
 ] = TileTensor[
     dtype,
     InternalLayout[
@@ -92,29 +95,25 @@ comptime LocalTensor[
         stride_types=layout.stride_types,
     ],
     MutUntrackedOrigin,
+    Engine=Engine,
     address_space=.LOCAL,
 ]
-comptime SharedMemTensor[dtype: DType, layout: InternalLayout] = TileTensor[
+comptime SharedMemTensor[
+    dtype: DType,
+    layout: InternalLayout,
+    Engine: TensorEngine,
+] = TileTensor[
     dtype,
     InternalLayout[
         shape_types=layout.shape_types,
         stride_types=layout.stride_types,
     ],
     MutUntrackedOrigin,
+    Engine=Engine,
     address_space=.SHARED,
 ]
 
-# Legacy LayoutTensor aliases for TMA/MMA API boundaries
-comptime LocalLT[
-    dtype: DType, layout: Layout, element_layout: Layout = Layout(1, 1)
-] = LayoutTensor[
-    dtype,
-    layout,
-    MutAnyOrigin,
-    address_space=.LOCAL,
-    element_layout=element_layout,
-]
-comptime SharedMemPointer[type: AnyType] = UnsafePointer[
+comptime SharedMemPointer[type: AnyType] = Pointer[
     type, MutAnyOrigin, address_space=.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
@@ -149,24 +148,22 @@ def cumulative_power_of_two(N: Int, i: Int) -> Int:
 
 # Final call is with `pow_two == 0` (which isn't a power of 2)
 # to enable use of this function with pipelining.
-@always_inline("nodebug")
+@inline(.nodebug)
 def break_into_powers_of_two[
-    origins: OriginSet,
-    //,
-    func: def[pow_two: Int, offset: Int]() capturing[origins] -> None,
     N: Int,
     *,
     max_value: Int = 128,
-]():
+](func: Some[def[pow_two: Int, offset: Int]() -> None]):
     """Calls `func` for each power-of-two-sized chunk of `N`, plus a final `pow_two=0` call for pipeline cleanup.
 
     Parameters:
-        origins: Origin set captured by the callback (inferred).
-        func: Callback invoked once per power-of-two chunk with the chunk
-            size and starting offset, plus a final `pow_two=0` cleanup call.
         N: Total size to decompose into power-of-two chunks.
         max_value: Upper bound on the largest power-of-two chunk size
             (defaults to 128).
+
+    Args:
+        func: Callback invoked once per power-of-two chunk with the chunk
+            size and starting offset, plus a final `pow_two=0` cleanup call.
     """
     comptime power_of_two = prev_power_of_two(min(max_value, N))
 
@@ -186,138 +183,7 @@ def break_into_powers_of_two[
     func[0, N]()
 
 
-struct STMatrixLayout[
-    BM: Int,
-    BN: Int,
-    *,
-    num_threads: Int,
-    accum_dtype_size: Int,
-](TrivialRegisterPassable):
-    """
-    Layout for using `st_matrix` for writing the final accumulator to smem.
-
-    Parameters:
-        BM: Number of rows in the `BM` x `BN` output tile written via
-            `st_matrix`.
-        BN: Number of columns in the `BM` x `BN` output tile written via
-            `st_matrix`.
-        num_threads: Number of threads participating in the `st_matrix`
-            store, used to derive the warp-group count.
-        accum_dtype_size: Size in bytes of the accumulator element dtype,
-            used to compute the per-store bit width.
-    """
-
-    # We have a BM x BN tile
-    #
-    # The st_matrix layout wants to map it to threads in 16x8 blocks
-    # shape  (2,8), (2,4)
-    # stride (0,4), (0,1)
-    # Layout = ((2,8),(2,4)):((0,4),(0,1))
-    # Where `0` stride indicates that the same thread is repeated across these.
-    # We also need a layout for this local memory, which we define here.
-
-    # look at figure 108 https://docs.nvidia.com/cuda/parallel-thread-execution/#mma-stmatrix-fragments
-
-    # That first `2` is
-    comptime num_row_blocks_per_mma = 2
-    # The second `2` is
-    comptime frag_simdwidth: Int = 2
-
-    comptime thread_cols = 4
-    # When using tcgen05 ld/st we must repeat across all columns:
-    comptime repeat = Self.BN // (Self.thread_cols * Self.frag_simdwidth)
-
-    comptime num_warpgroups = ceildiv(Self.num_threads, 128)
-    # 2 = 32 // 16, i.e. we need to load 2 sets of 16
-    comptime num_m_tiles_total = ceildiv(2 * Self.BM, 128)
-    comptime num_m_tiles = Self.num_m_tiles_total // Self.num_warpgroups
-
-    comptime frag_size = Self.BN * Self.num_row_blocks_per_mma // Self.thread_cols
-
-    comptime elements_per_repeat = Self.frag_simdwidth * Self.num_row_blocks_per_mma
-
-    comptime vec_local_layout: Layout = Layout(
-        IntTuple(
-            IntTuple(Self.num_row_blocks_per_mma, Self.num_m_tiles),
-            IntTuple(Self.repeat),
-        ),
-        IntTuple(
-            IntTuple(
-                Self.frag_simdwidth, Self.frag_size
-            ),  # distance between vertical m tiles and local fragments
-            IntTuple(
-                Self.num_row_blocks_per_mma * Self.frag_simdwidth
-            ),  # distance between bn repeats
-        ),
-    )
-    comptime element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
-    comptime TensorType[dtype: DType] = LocalLT[
-        dtype, Self.vec_local_layout, Self.element_layout
-    ]
-    comptime row_of_frags_layout: Layout = Layout.row_major(
-        Self.num_m_tiles, Self.frag_size
-    )
-
-    comptime bits_per_byte = 8
-    comptime bits = Self.bits_per_byte * Self.frag_simdwidth * Self.thread_cols * Self.accum_dtype_size
-
-    @always_inline
-    def __init__(out self):
-        pass
-
-
-struct STMatrixOffsets[
-    BM: Int,
-    BN: Int,
-    *,
-    num_threads: Int,
-    accum_dtype_size: Int,
-    curr_repeat: Int,
-    cumulative_repeat: Int,
-    m_mma: Int,
-](TrivialRegisterPassable):
-    """Precomputed TMEM and local-fragment offsets for one `st_matrix` repeat column.
-
-    Parameters:
-        BM: Number of rows in the `BM` x `BN` output tile (forwarded to
-            `STMatrixLayout`).
-        BN: Number of columns in the `BM` x `BN` output tile (forwarded to
-            `STMatrixLayout`).
-        num_threads: Number of threads participating in the `st_matrix` store
-            (forwarded to `STMatrixLayout`).
-        accum_dtype_size: Size in bytes of the accumulator element dtype
-            (forwarded to `STMatrixLayout`).
-        curr_repeat: Number of repeat columns in this power-of-two chunk of
-            the `st_matrix` store.
-        cumulative_repeat: Number of repeat columns already stored before
-            this chunk, used as the TMEM column and local-fragment base
-            offset.
-        m_mma: M-tile index of the `st_matrix` store within the `BM`-row
-            tile, selecting the 16-row TMEM quadrant.
-    """
-
-    comptime STLayout = STMatrixLayout[
-        Self.BM,
-        Self.BN,
-        num_threads=Self.num_threads,
-        accum_dtype_size=Self.accum_dtype_size,
-    ]
-
-    comptime tmem_col_offset = Self.cumulative_repeat * Self.STLayout.frag_simdwidth * Self.STLayout.thread_cols
-    comptime tmem_row_offset = 16 * Self.m_mma
-    comptime tmem_offset = (Self.tmem_row_offset << 16) + Self.tmem_col_offset
-    comptime b32_per_repeat = Self.STLayout.elements_per_repeat * Self.accum_dtype_size // 4
-    comptime local_frag_size_b32 = Self.curr_repeat * Self.b32_per_repeat
-    comptime ptr_offset = Self.b32_per_repeat * (
-        Self.STLayout.repeat * Self.m_mma + Self.cumulative_repeat
-    )
-
-    @always_inline
-    def __init__(out self):
-        pass
-
-
-@always_inline
+@inline(.always)
 def o_store_tma_blocks_per_op[
     output_type: DType,
     output_swizzle_mode: TensorMapSwizzle,
@@ -357,7 +223,102 @@ def o_store_tma_blocks_per_op[
     return ceildiv(n_blocks, depth_splits)
 
 
-@always_inline
+@inline(.always)
+def opaque_u32(x: UInt32) -> UInt32:
+    """Returns `x` through a copy LLVM can neither hoist nor merge.
+
+    Epilogue addresses derive only from the thread's row, so LLVM hoists them
+    to the kernel entry (merging them across call sites) and they stay live
+    through the main loop, where ptxas spills them. Deriving them from this
+    copy pins the arithmetic at its use; the 2Q d128 kernel spilled 28 B
+    without it.
+    """
+    return inlined_assembly[
+        "mov.u32 $0, $1;",
+        UInt32,
+        constraints="=r,r",
+        has_side_effect=True,
+    ](x)
+
+
+@inline(.always)
+def o_smem_chunk_offset[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    rows: Int,
+](row: Int, chunk: Int) -> Int:
+    """Element offset of 16 B chunk `chunk` of output row `row` in the O
+    staging tile a per-block `swizzle_mode` O-TMA store reads.
+
+    The tile is block-major `[block, rows, K]`, `K = swizzle_mode.bytes() //
+    size_of[dtype]`, with `swizzle_mode`'s XOR applied within each block, so
+    the 8 rows of one store phase land on 8 distinct 16 B bank groups for every
+    mode. `chunk` counts 16 B units along the row (8 bf16 or 4 f32 columns).
+    SWIZZLE_NONE reduces to one chunk per block, `chunk * rows * K + row * K`.
+    """
+    comptime cw = 16 // size_of[dtype]()
+    comptime K = swizzle_mode.bytes() // size_of[dtype]()
+    comptime cpb = K // cw
+    var blk, c = divmod(chunk, cpb)
+    var r = Int(opaque_u32(UInt32(row)))
+    return blk * rows * K + make_swizzle[dtype, swizzle_mode]()(r * K + c * cw)
+
+
+def _o_split_band[esz: Int](ov: Int, P: Int, block_bytes: Int) -> Int:
+    """Widest partition band (columns) of the 1Q split-K reduce-scatter when
+    its unit is one `block_bytes`-wide O-store block."""
+    var K = block_bytes // esz
+    return ceildiv(ceildiv(ov, K), P) * K
+
+
+def fa4_o_store_swizzle[
+    output_type: DType, config: FA4Config
+]() -> TensorMapSwizzle:
+    """Swizzle of the FA4 O-TMA store, i.e. its block width.
+
+    SWIZZLE_128B (64 bf16 columns per box row) unless split-K reduce-scatters
+    O across the cluster: every partition TMA-stores only its own depth band,
+    so a block must not straddle two partitions' bands. There the widest block
+    is chosen that leaves the widest band no wider than the 16 B-block split
+    would, which keeps the reduce-scatter's critical path unchanged (d128:
+    P=2 -> 128B, P=4 -> 64B, P=6 or 16 -> NONE).
+    """
+    comptime esz = size_of[output_type]()
+    comptime P = config.splitk_partitions
+    comptime ov = config.ov_depth
+    comptime if P <= 1:
+        return TensorMapSwizzle.SWIZZLE_128B
+    elif config.use_ws:
+        # WS split-K: partition `p` owns the contiguous warp bands
+        # `[p*bpp, (p+1)*bpp)` of `ov // m_pack` columns each.
+        comptime cols = ceildiv(config.m_pack, P) * (ov // config.m_pack)
+        comptime if cols % (128 // esz) == 0:
+            return TensorMapSwizzle.SWIZZLE_128B
+        elif cols % (64 // esz) == 0:
+            return TensorMapSwizzle.SWIZZLE_64B
+        elif cols % (32 // esz) == 0:
+            return TensorMapSwizzle.SWIZZLE_32B
+        else:
+            return TensorMapSwizzle.SWIZZLE_NONE
+    else:
+        comptime floor_band = _o_split_band[esz](ov, P, 16)
+        comptime if ov % (128 // esz) == 0 and _o_split_band[esz](
+            ov, P, 128
+        ) <= floor_band:
+            return TensorMapSwizzle.SWIZZLE_128B
+        elif ov % (64 // esz) == 0 and _o_split_band[esz](
+            ov, P, 64
+        ) <= floor_band:
+            return TensorMapSwizzle.SWIZZLE_64B
+        elif ov % (32 // esz) == 0 and _o_split_band[esz](
+            ov, P, 32
+        ) <= floor_band:
+            return TensorMapSwizzle.SWIZZLE_32B
+        else:
+            return TensorMapSwizzle.SWIZZLE_NONE
+
+
+@inline(.always)
 def pack_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
 ](o_vals: Array[Float32, n]) -> SIMD[.uint32, 4]:
@@ -408,7 +369,7 @@ def pack_row[
     return packed
 
 
-@always_inline
+@inline(.always)
 def blasst_vote_unanimous(
     blasst_vote: SharedMemPointer[UInt8], wg: UInt32, phase: UInt32
 ) -> Bool:
@@ -429,10 +390,12 @@ def blasst_vote_unanimous(
     # (`kernel.mojo` zero-inits the region; `blasst_observe` writes 0/1), so
     # "all four nonzero" == "the word is 0x01010101".
     var base = (wg * UInt32(2) + phase) * UInt32(4)
-    return (blasst_vote + base).bitcast[UInt32]()[0] == UInt32(0x01010101)
+    return blasst_vote.unsafe_offset(base).unsafe_bitcast[UInt32]()[
+        0
+    ] == UInt32(0x01010101)
 
 
-@always_inline
+@inline(.always)
 def scale_pack_o_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
 ](o_vals: Array[Float32, n], inv_row_sum: Float32) -> SIMD[
@@ -475,7 +438,7 @@ def scale_pack_o_row[
     return packed
 
 
-@always_inline
+@inline(.always)
 def combine_pack_o_row[
     n: Int, //, output_type: DType
 ](
@@ -504,12 +467,12 @@ def combine_pack_o_row[
     return packed
 
 
-@always_inline
+@inline(.always)
 def st_shared_v4_b32[
     dtype: DType,
     //,
 ](
-    dst: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
+    dst: MutPointer[Scalar[dtype], _, address_space=.SHARED],
     elem_off: Int,
     packed: SIMD[.uint32, 4],
 ):
@@ -540,7 +503,7 @@ def st_shared_v4_b32[
         packed: Four `u32` words forming one 16 B SWIZZLE_NONE block to
             store.
     """
-    var dst_ptr = dst + elem_off
+    var dst_ptr = dst.unsafe_offset(elem_off)
     _ = inlined_assembly[
         "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
         NoneType,
@@ -549,7 +512,7 @@ def st_shared_v4_b32[
     ](dst_ptr, packed[0], packed[1], packed[2], packed[3])
 
 
-@always_inline
+@inline(.always)
 def store_p_quadrant[
     cols: Int,  # quadrant width; must equal BN // 4
     p_type: DType,
@@ -561,9 +524,7 @@ def store_p_quadrant[
     # A-descriptor is built over (`BM` for the shared-key datapath).
     p_tile_rows: Int,
 ](
-    p_smem: UnsafePointer[
-        mut=True, Scalar[p_type], _, address_space=AddressSpace.SHARED
-    ],
+    p_smem: MutPointer[Scalar[p_type], _, address_space=AddressSpace.SHARED],
     p: Array[Scalar[DType.float32], cols],
     row: UInt32,
     warp_in_wg: UInt32,
@@ -612,14 +573,14 @@ def store_p_quadrant[
         )
 
 
-@always_inline
+@inline(.always)
 def _tmem_offset(dtype_size: Int, *, MMA_N: Int, m_mma: Int, n_mma: Int) -> Int:
     var row = 16 * m_mma
     var col = (MMA_N * n_mma * dtype_size) // 4
     return (row << 16) + col
 
 
-@always_inline
+@inline(.always)
 def _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
     comptime linear = _tmem_offset(
         size_of[dtype](), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
@@ -647,15 +608,16 @@ struct TMemTile[
 
     var tmem_addr: UInt32
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, tmem_addr: UInt32):
         self.tmem_addr = tmem_addr
 
-    @always_inline
+    @inline(.always)
     def __getitem__(self, i: UInt32) -> Self:
-        return {self.tmem_addr + i * UInt32(Self.BN)}
+        # TMEM columns are 32-bit words; `BN` counts elements.
+        return {self.tmem_addr + i * UInt32(Self.BN * Self.dtype_size // 4)}
 
-    @always_inline
+    @inline(.always)
     def offset[m_mma: Int, n_mma: Int](self) -> UInt32:
         comptime if m_mma == 0 and n_mma == 0:
             return self.tmem_addr
@@ -666,201 +628,24 @@ struct TMemTile[
 
             return self.tmem_addr + UInt32(linear)
 
-    @staticmethod
-    @always_inline
-    def allocate_register_tile[
-        *, num_threads: Int
-    ](
-        out res: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        res = type_of(res).stack_allocation()
-
-    @always_inline
-    def store_async[
-        *, num_threads: Int
-    ](
-        self,
-        src: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        comptime assert Self.dtype_size <= 4
-        var ptr = src.ptr.bitcast[UInt32]()
-        comptime st_mat_layout = STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ]
-        comptime assert st_mat_layout.bits == 128 or st_mat_layout.bits == 256
-
-        @__parameter
-        @always_inline
-        def store_fn[pow_two: Int, offset: Int]():
-            # pow_two is current repeat, offset total so far
-            comptime if pow_two > 0:
-                comptime for m_mma in range(st_mat_layout.num_m_tiles):
-                    comptime offsets = STMatrixOffsets[
-                        Self.BM,
-                        Self.BN,
-                        num_threads=num_threads,
-                        accum_dtype_size=Self.dtype_size,
-                        curr_repeat=pow_two,
-                        cumulative_repeat=offset,
-                        m_mma=m_mma,
-                    ]()
-                    var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    var frag = Array[_, offsets.local_frag_size_b32](
-                        fill_with_unrolled=lambda [i: Int]() -> UInt32: (
-                            ptr.load(offsets.ptr_offset + i)
-                        )
-                    )
-                    # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
-                    tcgen05_st[
-                        datapaths=16,  # first dimension of the shape
-                        bits=st_mat_layout.bits,  # second dimension of the shape
-                        repeat=pow_two,
-                        pack=False,
-                    ](tmem, frag)
-
-        comptime max_value = 64 if st_mat_layout.bits == 128 else 32
-        break_into_powers_of_two[
-            func=store_fn, N=st_mat_layout.repeat, max_value=max_value
-        ]()
-
-    @always_inline
-    def load_async_with_st_matrix_layout[
-        *, num_threads: Int
-    ](
-        self,
-        out dst: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        comptime assert (
-            Self.dtype_size <= 4
-        ), "Loading for st matrix requires elements to be <= 4 bytes."
-        comptime st_mat_layout = STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ]()
-        comptime assert (st_mat_layout.num_m_tiles == 1) or (
-            st_mat_layout.num_m_tiles == 2
-        ), (
-            "Only 1 or 2 m tiles are supported, but"
-            " st_mat_layout.num_m_tiles == "
-            + String(st_mat_layout.num_m_tiles)
-        )
-
-        dst = type_of(dst).stack_allocation()
-        self.load_st_matrix_chunk[
-            num_threads=num_threads,
-            start_repeat=0,
-            num_repeats=st_mat_layout.repeat,
-        ](dst)
-
-    @always_inline
-    def load_st_matrix_chunk[
-        *, num_threads: Int, start_repeat: Int, num_repeats: Int
-    ](
-        self,
-        dst: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        """Load a range of repeat columns from tmem into a pre-allocated
-        tensor.
-
-        Parameters:
-            num_threads: Number of threads in the warp group.
-            start_repeat: First repeat index to load (0-based).
-            num_repeats: Number of repeats to load.
-
-        Args:
-            dst: Pre-allocated register tensor.
-        """
-        comptime st_mat_layout = STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ]()
-        comptime load_dtype = DType.uint32
-        var ptr = rebind[
-            UnsafePointer[
-                Scalar[load_dtype], MutAnyOrigin, address_space=.LOCAL
-            ]
-        ](dst.ptr)
-
-        @__parameter
-        @always_inline
-        def load_fn[pow_two: Int, local_offset: Int]():
-            comptime assert pow_two + local_offset <= num_repeats
-            comptime if pow_two > 0:
-                comptime for m_mma in range(st_mat_layout.num_m_tiles):
-                    comptime offsets = STMatrixOffsets[
-                        Self.BM,
-                        Self.BN,
-                        num_threads=num_threads,
-                        accum_dtype_size=Self.dtype_size,
-                        curr_repeat=pow_two,
-                        cumulative_repeat=start_repeat + local_offset,
-                        m_mma=m_mma,
-                    ]()
-                    var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    var frag = tcgen05_ld[
-                        datapaths=16,
-                        bits=st_mat_layout.bits,
-                        repeat=pow_two,
-                        dtype=load_dtype,
-                        pack=False,
-                        width=offsets.local_frag_size_b32,
-                    ](tmem)
-
-                    comptime for _i in range(offsets.local_frag_size_b32):
-                        ptr.store(offsets.ptr_offset + _i, frag[_i])
-
-        comptime max_value = 64 if st_mat_layout.bits == 128 else 32
-        break_into_powers_of_two[
-            func=load_fn, N=num_repeats, max_value=max_value
-        ]()
-
-    @always_inline
+    @inline(.always)
     def load_async(
         self,
         out dst: Array[Scalar[Self.dtype], Self.BN],
     ):
         dst = Array[Scalar[Self.dtype], Self.BN](uninitialized=True)
-        # The uint32 bitcast path below assumes dtype_size == 4.
-        # Sub-32-bit types (bf16, f16) pack multiple elements per uint32
-        # and would need unpacking logic not yet implemented.
-        comptime assert (
-            Self.dtype_size == 4
-        ), "load_async only supports 32-bit dtypes"
-        comptime repeat = Self.dtype_size * Self.BN // 4
-        comptime dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
+        comptime assert 4 % Self.dtype_size == 0
+        # Each 32-bit TMEM word holds `per_word` elements, lowest element in
+        # the low bits -- the order `store_async` packs them in.
+        comptime per_word = 4 // Self.dtype_size
+        comptime assert Self.BN % per_word == 0
+        comptime repeat = Self.BN // per_word
 
-        @__parameter
-        @always_inline
-        def load_fn[pow_two: Int, offset: Int]():
+        # `pow_two` and `offset` count words, not elements.
+        @inline(.always)
+        def load_fn[pow_two: Int, offset: Int]() {var, mut dst}:
             comptime if pow_two > 0:
-                comptime if dtype == Self.dtype:
+                comptime if per_word == 1:
                     var frag0 = tcgen05_ld[
                         datapaths=32,  # first dimension of the shape
                         bits=32,  # second dimension of the shape
@@ -883,24 +668,27 @@ struct TMemTile[
                     ](self.tmem_addr + UInt32(offset))
 
                     comptime for _i in range(pow_two):
-                        dst[offset + _i] = bitcast[Self.dtype](frag1[_i])
+                        var elems = bitcast[Self.dtype, per_word](frag1[_i])
+                        comptime for _j in range(per_word):
+                            dst[(offset + _i) * per_word + _j] = elems[_j]
 
-        break_into_powers_of_two[func=load_fn, N=repeat, max_value=128]()
+        break_into_powers_of_two[N=repeat, max_value=128](load_fn)
 
-    @always_inline
+    @inline(.always)
     def store_async[
         src_type: DType
-    ](self, src: LocalTensor[src_type, row_major[Self.BN]()]):
-        @__parameter
-        @always_inline
-        def store_fn[pow_two: Int, offset: Int]():
+    ](self, src: LocalTensor[src_type, row_major[Self.BN](), _]):
+        @inline(.always)
+        def store_fn[pow_two: Int, offset: Int]() {var}:
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
                 var frag = Array[UInt32, frag_width](uninitialized=True)
 
                 comptime if src_type == Self.dtype:
                     comptime for _i in range(frag_width):
-                        frag[_i] = src.ptr.bitcast[UInt32]().load(offset + _i)
+                        frag[_i] = src.bitcast[.uint32]().load[width=1](
+                            (Idx[offset + _i],)
+                        )
                 elif pow_two > 1:
                     comptime size_ratio = size_of[src_type]() // Self.dtype_size
                     comptime cast_width = min(
@@ -913,9 +701,10 @@ struct TMemTile[
 
                     comptime if u32_per_cast >= 1:
                         comptime for _i in range(num_casts):
-                            var src_vec = src.raw_load[width=cast_width](
-                                offset + _i * cast_width
-                            )
+                            var src_vec = src.load[
+                                width=cast_width,
+                                alignment=align_of[src_type](),
+                            ]((Idx[offset + _i * cast_width],))
                             var dst_vec = src_vec.cast[Self.dtype]()
                             var packed_chunk = bitcast[
                                 DType.uint32, u32_per_cast
@@ -924,14 +713,16 @@ struct TMemTile[
                                 frag[_i * u32_per_cast + _j] = packed_chunk[_j]
                     else:
                         var packed = bitcast[.uint32, frag_width](
-                            src.raw_load[width=pow_two](offset).cast[
-                                Self.dtype
-                            ]()
+                            src.load[
+                                width=pow_two, alignment=align_of[src_type]()
+                            ]((Idx[offset],)).cast[Self.dtype]()
                         )
                         comptime for _i in range(frag_width):
                             frag[_i] = packed[_i]
                 else:
-                    frag[0] = bitcast[.uint32](src[0].cast[Self.dtype]())
+                    frag[0] = bitcast[.uint32](
+                        src.load[width=1]((Idx[0],)).cast[Self.dtype]()
+                    )
 
                 tcgen05_st[
                     datapaths=32,  # first dimension of the shape
@@ -940,22 +731,21 @@ struct TMemTile[
                     pack=False,
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
 
-        break_into_powers_of_two[func=store_fn, N=Self.BN, max_value=128]()
+        break_into_powers_of_two[N=Self.BN, max_value=128](store_fn)
 
-    @always_inline
+    @inline(.always)
     def store_async[
         src_type: DType,
         src_len: Int,
         src_offset: Int = 0,
     ](self, src: Array[Scalar[src_type], src_len]):
-        @__parameter
-        @always_inline
-        def store_fn[pow_two: Int, offset: Int]():
+        @inline(.always)
+        def store_fn[pow_two: Int, offset: Int]() {var, imm src}:
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
                 var frag = Array[UInt32, frag_width](uninitialized=True)
 
-                comptime if src_type == Self.dtype:
+                comptime if src_type == Self.dtype and Self.dtype_size == 4:
                     comptime for _i in range(frag_width):
                         frag[_i] = bitcast[.uint32](
                             src[src_offset + offset + _i]
@@ -1000,7 +790,7 @@ struct TMemTile[
                     pack=False,
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
 
-        break_into_powers_of_two[func=store_fn, N=Self.BN, max_value=128]()
+        break_into_powers_of_two[N=Self.BN, max_value=128](store_fn)
 
 
 struct SM100TensorAccumulator[
@@ -1159,7 +949,7 @@ struct SM100TensorAccumulator[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=Self.transpose_b,
     ]()
 
@@ -1174,7 +964,7 @@ struct SM100TensorAccumulator[
     comptime CType = TMemTile[Self.accum_t, Self.MMA_M, Self.MMA_N]
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def mma[
         *, stage_idx: Int = 0
     ](
@@ -1358,7 +1148,7 @@ struct SM100TensorAccumulator[
                     )
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def mma_maybe_partial_k[
         *, stage_idx: Int = 0
     ](
@@ -1568,7 +1358,7 @@ def _build_mma[
 
     # Instruction mnemonic (no predicate prefix; that is applied per-block below).
     var instr = tcgen05_mma_type + kind if ws else (
-        "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+        String(t"tcgen05.mma.cta_group::{cta_group}.") + kind
     )
     # Non-ws zero-column mask operand; absent for ws.
     var mask = (
@@ -1651,7 +1441,7 @@ def _build_mma[
     return mma + "}"
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def bulk_mma[
     kind: UMMAKind,
     //,
@@ -1712,7 +1502,7 @@ def bulk_mma[
     )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def bulk_mma[
     kind: UMMAKind,
     //,
@@ -1772,7 +1562,7 @@ def bulk_mma[
     )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def bulk_mma_partial[
     kind: UMMAKind,
     //,
@@ -1848,7 +1638,7 @@ def bulk_mma_partial[
     )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def bulk_mma_ss_partial[
     kind: UMMAKind,
     //,
@@ -1938,7 +1728,7 @@ def bulk_mma_ss_partial[
 # ------------------------------------------------------------------------------
 
 
-@always_inline
+@inline(.always)
 def bulk_mma_ws[
     kind: UMMAKind,
     a_dtype: DType,
@@ -2049,7 +1839,7 @@ def bulk_mma_ws[
 # ---- TS (TMEM-SMEM) .ws MMA building blocks ----
 
 
-@always_inline
+@inline(.always)
 def bulk_mma_ws_ts[
     kind: UMMAKind,
     b_dtype: DType,
@@ -2133,7 +1923,7 @@ def bulk_mma_ws_ts[
 # ---- partial-K (.ws) MMA building blocks ----
 
 
-@always_inline
+@inline(.always)
 def bulk_mma_ws_partial[
     kind: UMMAKind,
     a_dtype: DType,
@@ -2253,7 +2043,7 @@ def bulk_mma_ws_partial[
     )
 
 
-@always_inline
+@inline(.always)
 def bulk_mma_ws_ts_partial[
     kind: UMMAKind,
     b_dtype: DType,
@@ -2347,16 +2137,42 @@ def bulk_mma_ws_ts_partial[
     )
 
 
-@always_inline
+@inline(.always)
 def llvm_opaque_tid() -> UInt32:
-    """Returns the opaque thread ID via the `llvm.nvvm.read.ptx.sreg.tid.x` intrinsic.
+    """Returns `tid.x` via a read LLVM may not CSE with any other `tid.x` read.
+
+    The point is the NON-merging, not the value: a single hoisted `tid.x` read
+    leaves everything derived from it live across the `setmaxnreg` boundary,
+    where only the reported register count is available, and ptxas then spills
+    it. Keeping the read inside the warp-role branch keeps the derived
+    addresses on the consumer's side of the boundary.
+
+    Must be INLINE ASM, not `llvm_intrinsic[..., has_side_effect=True]`:
+    NVVM's `llvm.nvvm.read.ptx.sreg.tid.x` carries IntrNoMem/IntrSpeculatable
+    from its own definition, so a call-site side-effect marking does not stop
+    the merge. Measured 2026-09-15 on the trimmed fp8-d128-prefill vehicle: the
+    intrinsic form emitted exactly ONE `%tid.x` per kernel on every 2Q and 1Q
+    arm (so the marking was inert and the helper bought nothing), while this
+    form emits one per role branch -- 3 on the 2Q kernels, with a fresh
+    `S2R SR_TID.X` immediately after each `USETMAXREG.TRY_ALLOC`. Spill across
+    the vehicle's 69 kernels went 456 B -> 408 B, 12 kernels improved and none
+    regressed, with no register-count change: the 2Q bf16/fp8 bodies reached
+    0 B (0 B stack frame) from 4 B, and 1Q went 56->52 / 20->16 / 4->0.
+
+    VERIFY IN SASS, NOT SOURCE (this helper has silently regressed once): count
+    `%tid.x` in the emitted PTX -- more than one read means the marking
+    survived, exactly one means it was merged -- and check that an
+    `S2R ... SR_TID.X` appears on BOTH sides of `USETMAXREG.TRY_ALLOC`.
     """
-    return llvm_intrinsic[
-        "llvm.nvvm.read.ptx.sreg.tid.x", UInt32, has_side_effect=True
+    return inlined_assembly[
+        "mov.u32 $0, %tid.x;",
+        UInt32,
+        constraints="=r",
+        has_side_effect=True,
     ]()
 
 
-@always_inline
+@inline(.always)
 def intrin_ftz[intrin: String](a: Float32, b: Float32) -> Float32:
     """Wraps a flush-to-zero (FTZ) binary float32 PTX intrinsic."""
     return inlined_assembly[
@@ -2367,7 +2183,7 @@ def intrin_ftz[intrin: String](a: Float32, b: Float32) -> Float32:
     ](a, b)
 
 
-@always_inline
+@inline(.always)
 def intrin[intrin: String](a: Float32, b: Float32, c: Float32) -> Float32:
     """Wraps a ternary float32 PTX intrinsic (e.g. `max.f32`)."""
     return inlined_assembly[
@@ -2378,7 +2194,7 @@ def intrin[intrin: String](a: Float32, b: Float32, c: Float32) -> Float32:
     ](a, b, c)
 
 
-@always_inline
+@inline(.always)
 def intrin_ftz_x2[
     intrin: String
 ](a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
@@ -2391,7 +2207,7 @@ def intrin_ftz_x2[
     ](a, b)
 
 
-@always_inline
+@inline(.always)
 def add_ftz(a: Float32, b: Float32) -> Float32:
     """Returns the flush-to-zero sum of two float32 values.
 
@@ -2402,7 +2218,7 @@ def add_ftz(a: Float32, b: Float32) -> Float32:
     return intrin_ftz["add"](a, b)
 
 
-@always_inline
+@inline(.always)
 def sub_ftz(a: Float32, b: Float32) -> Float32:
     """Returns the flush-to-zero difference of two float32 values.
 
@@ -2413,25 +2229,25 @@ def sub_ftz(a: Float32, b: Float32) -> Float32:
     return intrin_ftz["sub"](a, b)
 
 
-@always_inline
+@inline(.always)
 def mul_ftz(a: Float32, b: Float32) -> Float32:
     """Returns the flush-to-zero product of two float32 values."""
     return intrin_ftz["mul"](a, b)
 
 
-@always_inline
+@inline(.always)
 def max_ftz(a: Float32, b: Float32) -> Float32:
     """Returns the flush-to-zero maximum of two float32 values."""
     return intrin_ftz["max"](a, b)
 
 
-@always_inline
+@inline(.always)
 def max_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
     """Returns the flush-to-zero maximum of three float32 values."""
     return intrin["max.ftz"](a, b, c)
 
 
-@always_inline
+@inline(.always)
 def add_ftz(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Returns the flush-to-zero sum of two `f32x2` vectors.
 
@@ -2442,7 +2258,7 @@ def add_ftz(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     return intrin_ftz_x2["add"](a, b)
 
 
-@always_inline
+@inline(.always)
 def sub_ftz(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Returns the flush-to-zero difference of two `f32x2` vectors.
 
@@ -2453,13 +2269,13 @@ def sub_ftz(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     return intrin_ftz_x2["sub"](a, b)
 
 
-@always_inline
+@inline(.always)
 def mul_ftz(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Returns the flush-to-zero product of two `f32x2` vectors."""
     return intrin_ftz_x2["mul"](a, b)
 
 
-@always_inline
+@inline(.always)
 def add_ftz_rm(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Returns the round-to-nearest-even flush-to-zero sum of two `f32x2` vectors.
 
@@ -2470,12 +2286,41 @@ def add_ftz_rm(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     return intrin_ftz_x2["add.rm"](a, b)
 
 
-@always_inline
+@inline(.always)
+def relu_cvt_bf16x2(hi: Float32, lo: Float32) -> SIMD[.bfloat16, 2]:
+    """Returns `{relu(lo), relu(hi)}` as a packed `bf16x2`, in one instruction.
+
+    `cvt.rn.relu.bf16x2.f32` fuses the clamp-at-zero into the narrowing convert
+    and lowers to a single `F2FP.RELU.BF16.F32.PACK_AB` on SM100, so a relu that
+    costs one `FMNMX` per lane in f32 (PTX has no `max.f32x2` at any ISA
+    version) becomes free. Pairs with a `bf16x2` `.fma()` to fold two columns in
+    two instructions instead of three.
+
+    Inline asm rather than `max(...).cast[bfloat16]()` because LLVM emits the
+    plain `cvt.rn.bf16x2.f32` and leaves the two `max` instructions standing.
+
+    Args:
+        hi: Value converted into the HIGH half of the result -- lane 1. PTX
+            names the packed halves high-first, the reverse of the SIMD index
+            order, so swapping these silently misaligns every lane downstream.
+        lo: Value converted into the LOW half of the result -- lane 0.
+    """
+    return bitcast[DType.bfloat16, 2](
+        inlined_assembly[
+            "cvt.rn.relu.bf16x2.f32 $0, $1, $2;",
+            UInt32,
+            constraints="=r,f,f",
+            has_side_effect=False,
+        ](hi, lo)
+    )
+
+
+@inline(.always)
 def fma_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
     return intrin["fma.rn.ftz"](a, b, c)
 
 
-@always_inline
+@inline(.always)
 def fma_ftz(
     a: SIMD[.float32, 2],
     b: SIMD[.float32, 2],
@@ -2568,7 +2413,7 @@ def _mask_select8_asm[byte_idx: Int]() -> String:
     return asm
 
 
-@always_inline
+@inline(.always)
 def mask_select8[
     byte_idx: Int
 ](
@@ -2635,7 +2480,7 @@ def mask_select8[
     ](s0, s1, s2, s3, s4, s5, s6, s7, mask_bits)
 
 
-@always_inline
+@inline(.always)
 def exp2_emulation[
     use_exp2_emulation: Bool = True
 ](x: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
@@ -2677,10 +2522,10 @@ def exp2_emulation[
         return exp2(x)
 
 
-@always_inline
+@inline(.always)
 def elect_mma_arrive[
     cta_group: Int = 1
-](mbar_ptr: UnsafePointer[address_space=.SHARED, ...], elect: Int32,):
+](mbar_ptr: ImmPointer[address_space=.SHARED, ...], elect: Int32,):
     """Arrive at the mbar pointer for the MMA instruction.
 
     Parameters:
@@ -2711,9 +2556,9 @@ def elect_mma_arrive[
     ](Int32(Int(mbar_ptr)), elect)
 
 
-@always_inline
+@inline(.always)
 def expect_bytes_pred(
-    mbar_ptr: UnsafePointer[address_space=.SHARED, ...],
+    mbar_ptr: Pointer[address_space=.SHARED, ...],
     bytes: Int32,
     pred: Int32,
 ):
@@ -2752,13 +2597,13 @@ def expect_bytes_pred(
     ](Int32(Int(mbar_ptr)), bytes, pred)
 
 
-@always_inline
+@inline(.always)
 def store_global_pred[
     dtype: DType,
     address_space: AddressSpace,
     //,
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], _, address_space=address_space],
+    ptr: MutPointer[Scalar[dtype], _, address_space=address_space],
     value: Scalar[dtype],
     pred: Int32,
 ):
@@ -2785,7 +2630,7 @@ def store_global_pred[
     not read back what they store here without an explicit fence.
 
     Parameters:
-        dtype: Element dtype of the store; must be 4 or 8 bytes (inferred).
+        dtype: Element dtype of the store; must be 2, 4 or 8 bytes (inferred).
         address_space: Address space of `ptr` (inferred).
 
     Args:
@@ -2799,17 +2644,16 @@ def store_global_pred[
         address_space == .GENERIC or address_space == .GLOBAL
     ), "store_global_pred emits `st.global`; the pointer must address gmem"
     comptime size = size_of[dtype]()
-    comptime assert size in (4, 8), (
-        "store_global_pred handles 4- and 8-byte scalars; got a "
-        + String(size)
-        + "-byte dtype"
+    comptime assert size in (2, 4, 8), String(
+        t"store_global_pred handles 2-, 4- and 8-byte scalars; got a "
+        t"{size}-byte dtype"
     )
-    comptime bits = "b32" if size == 4 else "b64"
+    comptime bits = String(t"b{8 * size}")
     # Bitcast to the same-width unsigned integer so one `.bXX`/register-class
     # pair covers float and integer dtypes alike; `st.global.bXX` is
     # bit-preserving.
-    comptime word_type = DType.uint32 if size == 4 else DType.uint64
-    comptime word_constraint = "r" if size == 4 else "l"
+    comptime word_type = _unsigned_integral_type_of[dtype]()
+    comptime word_constraint = "h" if size == 2 else ("r" if size == 4 else "l")
 
     inlined_assembly[
         """{
@@ -2824,7 +2668,7 @@ def store_global_pred[
     ](ptr, bitcast[word_type](value), pred)
 
 
-@always_inline
+@inline(.always)
 def maximum[
     BN: Int, //, *, width: Int = 4
 ](x: Array[Float32, BN], out res: StaticTuple[Float32, width],):
@@ -2867,7 +2711,7 @@ def maximum[
         res[end_iters] = max_ftz(res[end_iters], x[BN - 1])
 
 
-@always_inline
+@inline(.always)
 def maximum[
     BN: Int, //, *, width: Int = 4
 ](
@@ -2901,19 +2745,19 @@ def maximum[
         res[end_iters] = max_ftz(res[end_iters], x[BN - 1])
 
 
-@always_inline
+@inline(.always)
 def maximum(x: StaticTuple[Float32, 4]) -> Float32:
     """Returns the maximum of four float32 values packed in a `StaticTuple`."""
     return max_ftz(max_ftz(x[0], x[1], x[2]), x[3])
 
 
-@always_inline
+@inline(.always)
 def maximum(x: StaticTuple[Float32, 4], init: Float32) -> Float32:
     """Returns the FTZ maximum of a `StaticTuple[4]` and an initial value."""
     return max_ftz(max_ftz(x[0], x[1], x[2]), x[3], init)
 
 
-@always_inline
+@inline(.always)
 def maximum(x: StaticTuple[Float32, 8]) -> Float32:
     """Returns the maximum of eight float32 values packed in a `StaticTuple`."""
     var a = max_ftz(x[0], x[1], x[2])
@@ -2922,7 +2766,7 @@ def maximum(x: StaticTuple[Float32, 8]) -> Float32:
     return max_ftz(a, b, c)
 
 
-@always_inline
+@inline(.always)
 def maximum(x: StaticTuple[Float32, 8], init: Float32) -> Float32:
     """Returns the FTZ maximum of a `StaticTuple[8]` and an initial value."""
     var a = max_ftz(init, x[0], x[1])
@@ -2931,10 +2775,10 @@ def maximum(x: StaticTuple[Float32, 8], init: Float32) -> Float32:
     return max_ftz(a, b, c)
 
 
-@always_inline
+@inline(.always)
 def sum[
     dtype: DType, BN: Int, //, *, width: Int = 8
-](x: LocalTensor[dtype, row_major[BN]()]) -> SIMD[dtype, 2]:
+](x: LocalTensor[dtype, row_major[BN](), _]) -> SIMD[dtype, 2]:
     """Reduces a `BN`-element local tensor into a width-2 SIMD vector via vectorized accumulation.
 
     Parameters:
@@ -2956,6 +2800,27 @@ def sum[
 
     return acc.reduce_add[size_out=2]()
     # return rebind[SIMD[dtype,width]](acc)
+
+
+# Test-only forced schedules for the ring-liveness tests. A nonzero value makes
+# that side of every `StagedPipeline` ring sleep this many nanoseconds before
+# it acquires a slot (producer) or waits for a tile (consumer), so the other
+# side runs as far ahead as the ring lets it: a slow consumer keeps the
+# producer blocked on a full ring, a slow producer keeps the consumer waiting
+# on an empty one. A ring with too few slots for its schedule then hangs
+# instead of completing. Zero, the default, compiles to nothing.
+comptime FA4_RING_SLEEP_PRODUCER_NS = get_defined_int[
+    "FA4_RING_SLEEP_PRODUCER_NS", 0
+]()
+comptime FA4_RING_SLEEP_CONSUMER_NS = get_defined_int[
+    "FA4_RING_SLEEP_CONSUMER_NS", 0
+]()
+
+
+@inline(.always)
+def _ring_sleep(ns: Int):
+    if ns > 0:
+        sleep(Float64(ns) * 1e-9)
 
 
 struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
@@ -2985,26 +2850,30 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
     var mbar: MBarType
     var state: PipelineState[Self.num_kv_stages]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, mbar: MBarType):
         self.mbar = mbar
         self.state = {}
 
-    @always_inline
+    @inline(.always)
     def producer_mbar[qk_stage: Int = 0](self) -> MBarType:
         var idx: UInt32 = self.state.index()
-        return self.mbar + UInt32(Self.num_qk_stages) * idx + qk_stage
+        return self.mbar.unsafe_offset(
+            UInt32(Self.num_qk_stages) * idx
+        ).unsafe_offset(qk_stage)
 
-    @always_inline
+    @inline(.always)
     def consumer_mbar[qk_stage: Int = 0](self, idx: UInt32) -> MBarType:
         comptime const_offset = qk_stage + Self.num_stages
-        return self.mbar + UInt32(Self.num_qk_stages) * idx + const_offset
+        return self.mbar.unsafe_offset(
+            UInt32(Self.num_qk_stages) * idx
+        ).unsafe_offset(const_offset)
 
-    @always_inline
+    @inline(.always)
     def consumer_mbar[qk_stage: Int = 0](self) -> MBarType:
         return self.consumer_mbar[qk_stage](self.state.index())
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def producer_acquire[qk_stage: Int = Self.num_qk_stages - 1](self):
         """Wait until consumer has released the buffer for this stage.
 
@@ -3012,9 +2881,10 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
             qk_stage: K-loading sub-stage to acquire (defaults to the last
                 sub-stage).
         """
+        _ring_sleep(FA4_RING_SLEEP_PRODUCER_NS)
         self.consumer_mbar[qk_stage]()[].wait(self.state.phase())
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def consumer_wait[qk_stage: Int = Self.num_qk_stages - 1](self):
         """Wait for producer to complete this stage.
 
@@ -3022,9 +2892,10 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
             qk_stage: K-loading sub-stage to wait on (defaults to the last
                 sub-stage).
         """
+        _ring_sleep(FA4_RING_SLEEP_CONSUMER_NS)
         self.producer_mbar[qk_stage]()[].wait(self.state.phase())
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def consumer_release[
         qk_stage: Int = Self.num_qk_stages - 1
     ](mut self, e: Int32):
@@ -3043,7 +2914,7 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
         comptime if qk_stage == Self.num_qk_stages - 1:
             self.state.step()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def consumer_release_at(self, idx: UInt32, e: Int32):
         """Release a specific stage without stepping the pipeline state.
 
@@ -3057,11 +2928,13 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
         """
         comptime qk_stage = Self.num_qk_stages - 1
         comptime const_offset = qk_stage + Self.num_stages
-        var mbar = self.mbar + UInt32(Self.num_qk_stages) * idx + const_offset
+        var mbar = self.mbar.unsafe_offset(
+            UInt32(Self.num_qk_stages) * idx
+        ).unsafe_offset(const_offset)
         elect_mma_arrive(mbar, e)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def num_mbars() -> UInt32:
         return UInt32(2 * Self.num_qk_stages * Self.num_kv_stages)
 
@@ -3097,7 +2970,7 @@ struct TMADestination[dtype: DType, smem_elems: Int](TrivialRegisterPassable):
     @__allow_legacy_any_origin_fields
     var smem: Self.SmemType
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         mbar: MBarType,
@@ -3156,7 +3029,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     @__allow_legacy_any_origin_fields
     var smem: Self.SMemType
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, mbar: MBarType, smem: Self.SMemType):
         comptime if Self.is_k:
             comptime assert (
@@ -3166,7 +3039,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         self.smem = smem
         self.pipeline.state._phase = 1
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         pipeline: StagedPipeline[
@@ -3182,7 +3055,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         self.smem = smem
         self.pipeline.state._phase = 1
 
-    @always_inline
+    @inline(.always)
     def get_smem[*, qk_stage: Int = 0](self) -> Self.SMemType:
         """Get smem pointer for current stage.
 
@@ -3196,14 +3069,16 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
             var dyn_offset: UInt32 = (
                 UInt32(Self.elements_full) * self.pipeline.state.index()
             )
-            return self.smem + stage_offset + dyn_offset
+            return self.smem.unsafe_offset(stage_offset).unsafe_offset(
+                dyn_offset
+            )
         else:
             var dyn_offset: UInt32 = (
                 UInt32(Self.elements) * self.pipeline.state.index()
             )
-            return self.smem + dyn_offset
+            return self.smem.unsafe_offset(dyn_offset)
 
-    @always_inline
+    @inline(.always)
     def get_tile[*, qk_stage: Int = 0](self) -> Self.PairType:
         """Get TMA destination for this stage.
 
@@ -3218,7 +3093,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         )
         return {p_mbar, smem}
 
-    @always_inline
+    @inline(.always)
     def get_tile[*, qk_stage: Int = 0](self, e: Int32) -> Self.PairType:
         """Get TMA destination with optional expect_bytes.
 
@@ -3239,7 +3114,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         )
         return {p_mbar, smem}
 
-    @always_inline
+    @inline(.always)
     def acquire[*, qk_stage: Int = 0](self):
         """Wait for consumer to release the buffer.
 
@@ -3248,7 +3123,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         """
         self.pipeline.producer_acquire[qk_stage]()
 
-    @always_inline
+    @inline(.always)
     def commit_step(mut self):
         """Step the pipeline. Commit is handled by tma_op.async_copy."""
         self.pipeline.state.step()
@@ -3256,31 +3131,31 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     # Backward-compatible K methods (for KProducerPipeline)
     comptime KPairType = Self.PairType  # Alias for backward compatibility
 
-    @always_inline
+    @inline(.always)
     def get_k_smem[*, qk_stage: Int](self) -> Self.SMemType:
         return self.get_smem[qk_stage=qk_stage]()
 
-    @always_inline
+    @inline(.always)
     def get_k[*, qk_stage: Int](self) -> Self.PairType:
         return self.get_tile[qk_stage=qk_stage]()
 
-    @always_inline
+    @inline(.always)
     def get_k[*, qk_stage: Int](self, e: Int32) -> Self.PairType:
         return self.get_tile[qk_stage=qk_stage](e)
 
-    @always_inline
+    @inline(.always)
     def acquire_k[*, qk_stage: Int](self):
         self.acquire[qk_stage=qk_stage]()
 
-    @always_inline
+    @inline(.always)
     def get_v_smem(self) -> Self.SMemType:
         return self.get_smem[qk_stage=0]()
 
-    @always_inline
+    @inline(.always)
     def get_v(self, e: Int32) -> Self.PairType:
         return self.get_tile[qk_stage=0](e)
 
-    @always_inline
+    @inline(.always)
     def acquire_v(self):
         self.acquire[qk_stage=0]()
 
@@ -3356,7 +3231,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     ]
     var smem_desc: MMASmemDescriptorPair
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         pipeline: StagedPipeline[
@@ -3373,7 +3248,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
             page_dense=Self.page_dense,
         ](smem)
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         mbar: MBarType,
@@ -3381,7 +3256,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     ):
         return Self(type_of(self.pipeline)(mbar), smem)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def get(self) -> MMASmemDescriptorPair:
         """Get smem descriptor for current stage."""
         var dyn_offset: UInt32 = (
@@ -3389,7 +3264,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         )
         return self.smem_desc + dyn_offset
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def wait[*, qk_stage: Int = 0](self):
         """Wait for tile from producer.
 
@@ -3398,7 +3273,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         """
         self.pipeline.consumer_wait[qk_stage]()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def release[*, qk_stage: Int = 0](mut self, e: Int32):
         """Release buffer after consuming.
 
@@ -3412,11 +3287,11 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         self.pipeline.consumer_release[qk_stage](e)
 
     # Backward-compatible K methods (for KConsumerPipeline)
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def get_k(self) -> MMASmemDescriptorPair:
         return self.get()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def wait_k[*, qk_stage: Int = Self.config.num_qk_stages - 1](mut self):
         """Wait on K stage from the producer.
 
@@ -3426,7 +3301,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         """
         self.wait[qk_stage=qk_stage]()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def release_k[
         *, qk_stage: Int = Self.config.num_qk_stages - 1
     ](mut self, e: Int32):
@@ -3443,16 +3318,16 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         self.release[qk_stage=qk_stage](e)
 
     # Backward-compatible V methods (for VConsumerPipeline)
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def get_v(self) -> MMASmemDescriptorPair:
         return self.get()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def wait_v(self):
         """Wait for V tile."""
         self.wait[qk_stage=0]()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def release_v(mut self, e: Int32):
         """Release V buffer after consuming.
 
@@ -3521,7 +3396,7 @@ struct RolePipeline[
     var consumer_mbar_base: MBarType
     var state: PipelineState[Self.num_stages]
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self, producer_mbar_base: MBarType, consumer_mbar_base: MBarType
     ):
@@ -3533,7 +3408,7 @@ struct RolePipeline[
             # Producer starts with phase=1 so initial waits fall through
             self.state._phase = 1
 
-    @always_inline
+    @inline(.always)
     def producer_mbar[sub_stage_idx: Int = 0](self) -> MBarType:
         """Get producer mbar for current stage and optional sub-stage.
 
@@ -3543,13 +3418,11 @@ struct RolePipeline[
         comptime assert (
             sub_stage_idx < Self.producer_sub_stages
         ), "sub_stage_idx out of range"
-        return (
-            self.producer_mbar_base
-            + self.state.index() * UInt32(Self.producer_sub_stages)
-            + sub_stage_idx
-        )
+        return self.producer_mbar_base.unsafe_offset(
+            self.state.index() * UInt32(Self.producer_sub_stages)
+        ).unsafe_offset(sub_stage_idx)
 
-    @always_inline
+    @inline(.always)
     def consumer_mbar[sub_stage_idx: Int = 0](self) -> MBarType:
         """Get consumer mbar for current stage and optional sub-stage.
 
@@ -3559,14 +3432,12 @@ struct RolePipeline[
         comptime assert (
             sub_stage_idx < Self.consumer_sub_stages
         ), "sub_stage_idx out of range"
-        return (
-            self.consumer_mbar_base
-            + self.state.index() * UInt32(Self.consumer_sub_stages)
-            + sub_stage_idx
-        )
+        return self.consumer_mbar_base.unsafe_offset(
+            self.state.index() * UInt32(Self.consumer_sub_stages)
+        ).unsafe_offset(sub_stage_idx)
 
     # Producer methods
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def acquire[sub_stage_idx: Int = 0](self):
         """Wait until consumer has released the buffer. Producer-only.
 
@@ -3576,19 +3447,19 @@ struct RolePipeline[
         """
         self.consumer_mbar[sub_stage_idx]()[].wait(self.state.phase())
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def commit(mut self):
         """Commit production and step. Producer-only."""
         _ = self.producer_mbar()[].arrive()
         self.state.step()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def commit_mma(self):
         """Commit via MMA arrive using elected thread. Producer-only."""
         var mbar = self.producer_mbar()
         elect_mma_arrive[cta_group=Self.cta_group](mbar, elect())
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def commit_mma(self, elect: Int32):
         """Commit via MMA arrive with explicit elect value. Producer-only.
 
@@ -3599,12 +3470,12 @@ struct RolePipeline[
         elect_mma_arrive[cta_group=Self.cta_group](mbar, elect)
 
     # Consumer methods
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def wait(self):
         """Wait for producer to complete. Consumer-only."""
         self.producer_mbar()[].wait(self.state.phase())
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def release[sub_stage_idx: Int = 0](mut self):
         """Release buffer at sub-stage and step. Consumer-only.
 
@@ -3615,7 +3486,7 @@ struct RolePipeline[
         _ = self.consumer_mbar[sub_stage_idx]()[].arrive()
         self.state.step()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def release_no_step[sub_stage_idx: Int = 0](self):
         """Release buffer without stepping. For multi-sub-stage release.
 
@@ -3626,7 +3497,7 @@ struct RolePipeline[
         _ = self.consumer_mbar[sub_stage_idx]()[].arrive()
 
     # Shared method
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def step(mut self):
         self.state.step()
 
@@ -3651,12 +3522,12 @@ struct MBarPipeline[number_of_stages: Int](TrivialRegisterPassable):
     var mbar: MBarType
     var state: PipelineState[Self.num_stages]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, mbar: MBarType):
         self.mbar = mbar
         self.state = {}
 
-    @always_inline
+    @inline(.always)
     def init[*, num_producer: UInt32 = 1, num_consumer: UInt32 = 1](self):
         comptime for i in range(Self.number_of_stages):
             self.mbar[i].init(Int32(Int(num_producer)))
@@ -3665,12 +3536,12 @@ struct MBarPipeline[number_of_stages: Int](TrivialRegisterPassable):
             self.mbar[i + Self.number_of_stages].init(Int32(Int(num_consumer)))
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def num_mbars() -> UInt32:
         return UInt32(2 * Self.number_of_stages)
 
 
-@always_inline
+@inline(.always)
 def apply_oob_mask[
     *,
     mask_strategy: MaskStrategy,
@@ -3726,7 +3597,7 @@ def apply_oob_mask[
     return s
 
 
-@always_inline
+@inline(.always)
 def apply_mask[
     BN: Int,
     MaskType: MHAMask,
@@ -3748,7 +3619,7 @@ def apply_mask[
 ):
     """Applies bitmask, computed, and out-of-bounds masking strategies to a row of `BN` attention scores.
 
-    Scales by `scale_log2e` (unless `skip_scale`), then applies the mask strategy: the bitmask path uses `mask_select8` per 32-column batch, the computed path calls `mask.mask`, and both paths apply the out-of-bounds clip via `apply_oob_mask`.
+    Scales by `scale_log2e` (unless `skip_scale`), then applies the mask strategy: the bitmask path uses `mask_select8` per 32-column batch, the computed path calls `mask.visibility_mask` (after `mask.add_row_bias` on the whole row for a mask with `has_row_bias`), and both paths apply the out-of-bounds clip via `apply_oob_mask`.
 
     Parameters:
         BN: Number of scores in the row; must be a multiple of 32 for
@@ -3858,23 +3729,40 @@ def apply_mask[
 
     else:
         comptime block_size = BN // simd_size
+        # A mask with a row-wise bias takes the whole scaled row at once;
+        # each pair then only needs the visibility select.
+        comptime row_bias = (
+            MaskType.has_row_bias and MaskStrategy.COMPUTED in mask_strategy
+        )
+        comptime if row_bias:
+            comptime if not skip_scale:
+                comptime for n in range(block_size):
+                    comptime frag_col = simd_size * n
+                    var scaled = mul_ftz(
+                        F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
+                    )
+                    srow[frag_col] = scaled[0]
+                    srow[frag_col + 1] = scaled[1]
+            mask.add_row_bias(
+                srow,
+                prompt_idx,
+                q_head_idx,
+                UInt32(score_row),
+                kv_tile_start_row,
+            )
 
         comptime for n in range(block_size):
             # score_col = mask_frag_col + j * 8
             comptime frag_col = simd_size * n
-            var s: F32x2
-
-            comptime if skip_scale:
-                s = F32x2(srow[frag_col], srow[frag_col + 1])
-            else:
-                s = mul_ftz(
-                    F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
-                )
+            var s = F32x2(srow[frag_col], srow[frag_col + 1])
+            comptime if not (skip_scale or row_bias):
+                s = mul_ftz(s, scale_log2e)
             var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
 
+            # `visibility_mask` is `mask` for every mask without a row bias.
             comptime if MaskStrategy.COMPUTED in mask_strategy:
-                s = mask.mask(
-                    IndexList[4, element_type=.uint32](
+                s = mask.visibility_mask(
+                    (
                         Int(prompt_idx),
                         Int(q_head_idx),
                         Int(score_row),
@@ -3900,7 +3788,7 @@ def apply_mask[
             srow[frag_col + 1] = result[1]
 
 
-@always_inline
+@inline(.always)
 def clusters_per_wave[cluster_size: Int, sm_count: Int]() -> Int:
     """Number of size-`cluster_size` thread-block clusters that fit on the target
     Blackwell datacenter GPU in ONE wave, honoring GPC co-residency.
@@ -3923,19 +3811,20 @@ def clusters_per_wave[cluster_size: Int, sm_count: Int]() -> Int:
     the `else` branch is a comptime error on any other chip.
     """
     comptime C = cluster_size
-    comptime if sm_count == 148:
-        # B200: irregular 11-GPC layout -- three 20s, four 18s, one 10, three 2s.
-        return 3 * (20 // C) + 4 * (18 // C) + (10 // C) + 3 * (2 // C)
-    elif sm_count == 160:
-        # B300 / Blackwell Ultra: uniform 8 GPCs x 20 SMs.
-        return 8 * (20 // C)
-    else:
-        comptime assert (
-            False
-        ), "clusters_per_wave: only B200 (148) / B300 (160) modeled"
+    comptime match sm_count:
+        case 148:
+            # B200: irregular 11-GPC layout -- three 20s, four 18s, one 10, three 2s.
+            return 3 * (20 // C) + 4 * (18 // C) + (10 // C) + 3 * (2 // C)
+        case 160:
+            # B300 / Blackwell Ultra: uniform 8 GPCs x 20 SMs.
+            return 8 * (20 // C)
+        case _:
+            comptime assert (
+                False
+            ), "clusters_per_wave: only B200 (148) / B300 (160) modeled"
 
 
-@always_inline
+@inline(.always)
 def splitk_p_ladder[sm_count: Int]() -> List[Int]:
     """The rung ladder of split-K partition counts `P`, shared by the producer
     and the consumer of a workspace split-K launch.
@@ -3959,7 +3848,7 @@ def splitk_p_ladder[sm_count: Int]() -> List[Int]:
     return [2, 4, 6, 8, 10, 12, 16, 18, 20, 24, 32, 48, 64, 96, sm_count]
 
 
-@always_inline
+@inline(.always)
 def splitk_num_partitions[
     config: FA4Config
 ](ws_num_partitions: UInt32) -> UInt32:
@@ -3995,7 +3884,7 @@ def splitk_num_partitions[
         return ws_num_partitions
 
 
-@always_inline
+@inline(.always)
 def splitk_partition_idx(splitk_partitions: UInt32) -> UInt32:
     """This CTA's split-K partition index `[0, splitk_partitions)`.
 
@@ -4016,7 +3905,7 @@ def splitk_partition_idx(splitk_partitions: UInt32) -> UInt32:
     return UInt32(block_idx.x) % splitk_partitions
 
 
-@always_inline
+@inline(.always)
 def splitk_window(
     T: UInt32, num_partitions: UInt32, partition_idx: UInt32
 ) -> Tuple[UInt32, UInt32]:
@@ -4057,13 +3946,17 @@ def splitk_window(
     return (cb, ce)
 
 
-@always_inline
+@inline(.always)
 def peel_mask[
     num_sets: Int,
+    LoadFnType: def[mask_strategy: MaskStrategy](UInt32) -> Float32,
     //,
     mask_strategies: StaticTuple[MaskStrategy, num_sets],
-    load_fn: def[mask_strategy: MaskStrategy](UInt32) capturing -> Float32,
-](mut mask_iters: StaticTuple[UInt32, num_sets], kv_row: UInt32,) -> Float32:
+](
+    load_fn: LoadFnType,
+    mut mask_iters: StaticTuple[UInt32, num_sets],
+    kv_row: UInt32,
+) -> Float32:
     """Determine which mask strategy applies to the peeled first iteration.
 
     Walks through mask sets to find the first with remaining iterations,
@@ -4073,39 +3966,41 @@ def peel_mask[
 
     Parameters:
         num_sets: Number of mask sets to walk through (inferred).
+        LoadFnType: Type of `load_fn` (inferred).
         mask_strategies: `MaskStrategy` per set, in evaluation order;
             the first set with remaining iterations supplies the
             strategy.
+
+    Args:
         load_fn: Callback invoked as
             `load_fn[strategy](kv_row)` to load the mask value for the
             selected strategy.
-
-    Args:
         mask_iters: Remaining iteration count per set; the selected
             set's count is decremented in place.
         kv_row: KV row index forwarded to `load_fn`.
     """
     comptime assert num_sets in (1, 2, 3)
-    comptime if num_sets == 1:
-        mask_iters[0] -= 1
-        return load_fn[mask_strategies[0]](kv_row)
-    elif num_sets == 2:
-        if mask_iters[0] > 0:
+    comptime match num_sets:
+        case 1:
             mask_iters[0] -= 1
             return load_fn[mask_strategies[0]](kv_row)
-        else:
-            mask_iters[1] -= 1
-            return load_fn[mask_strategies[1]](kv_row)
-    else:
-        if mask_iters[0] > 0:
-            mask_iters[0] -= 1
-            return load_fn[mask_strategies[0]](kv_row)
-        elif mask_iters[1] > 0:
-            mask_iters[1] -= 1
-            return load_fn[mask_strategies[1]](kv_row)
-        else:
-            mask_iters[2] -= 1
-            return load_fn[mask_strategies[2]](kv_row)
+        case 2:
+            if mask_iters[0] > 0:
+                mask_iters[0] -= 1
+                return load_fn[mask_strategies[0]](kv_row)
+            else:
+                mask_iters[1] -= 1
+                return load_fn[mask_strategies[1]](kv_row)
+        case _:
+            if mask_iters[0] > 0:
+                mask_iters[0] -= 1
+                return load_fn[mask_strategies[0]](kv_row)
+            elif mask_iters[1] > 0:
+                mask_iters[1] -= 1
+                return load_fn[mask_strategies[1]](kv_row)
+            else:
+                mask_iters[2] -= 1
+                return load_fn[mask_strategies[2]](kv_row)
 
 
 struct FA4MiscMBars[
@@ -4160,10 +4055,10 @@ struct FA4MiscMBars[
             When False (default), the non-WS full-depth-tile count applies and
             the layout is byte-identical.
         crossp: Whether cross-stage P applies to the config this type was
-            built from, i.e. `FA4Config.crossp_on()`. Threaded in rather than
-            read from the `FA4_TMEM_CROSS_P` define, because that define
-            defaults ON and this type cannot see the config fields that scope
-            it to the MHA 2Q shape. False (default) keeps the mbar layout
+            built from, i.e. `FA4Config.crossp_on()`. Threaded in rather
+            than read off the config's `cross_p` parameter, because this
+            type cannot see the config fields that scope it to the MHA 2Q
+            shape. False (default) keeps the mbar layout
             byte-identical to cross-P-off.
 
     Memory layout (count=128 first, then count=1):
@@ -4226,9 +4121,9 @@ struct FA4MiscMBars[
     # 2Q + non-WS only -- mutually exclusive with Publish (num_q==1 only), so
     # appending after it never collides.
     # `crossp` is `FA4Config.crossp_on()`, threaded in by whoever built this
-    # type, so this count and `FA4Config.smem_used` always agree. Do NOT read
-    # the `FA4_TMEM_CROSS_P` define here: it defaults ON, and this struct
-    # cannot see the config fields that scope it to the MHA 2Q shape.
+    # type, so this count and `FA4Config.smem_used` always agree. Do NOT
+    # read the config's `cross_p` parameter here: it defaults ON, and this
+    # struct cannot see the config fields that scope it to the MHA 2Q shape.
     comptime CrossP_enabled: Bool = (
         Self.crossp and Self.num_q == 2 and not Self.use_ws
     )
@@ -4242,7 +4137,7 @@ struct FA4MiscMBars[
     comptime size = Self.CrossP_offset + Self.CrossP_count
     comptime number_warpgroup_count = Self.S0_producer_offset
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, mbar_base: MBarType):
         self.mbar_base = mbar_base
 
@@ -4290,7 +4185,7 @@ struct FA4MiscMBars[
                 return 128
         return 1
 
-    @always_inline
+    @inline(.always)
     def init(self, *, lane_idx: Int32):
         comptime if Self.size < WARP_SIZE:
             if lane_idx < Int32(Self.size):
@@ -4318,23 +4213,23 @@ struct FA4MiscMBars[
     comptime SPipelineProducer = RolePipeline[1, True, 1, Self.num_pv_stages]
     comptime SPipelineConsumer = RolePipeline[1, False, 1, Self.num_pv_stages]
 
-    @always_inline
+    @inline(.always)
     def producer_s0(self) -> Self.SPipelineProducer:
         """Get S producer for warp group 0."""
         return {
-            self.mbar_base + Self.S0_producer_offset,
-            self.mbar_base + Self.S0_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.S0_producer_offset),
+            self.mbar_base.unsafe_offset(Self.S0_consumer_offset),
         }
 
-    @always_inline
+    @inline(.always)
     def producer_s1(self) -> Self.SPipelineProducer:
         """Get S producer for warp group 1."""
         return {
-            self.mbar_base + Self.S1_producer_offset,
-            self.mbar_base + Self.S1_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.S1_producer_offset),
+            self.mbar_base.unsafe_offset(Self.S1_consumer_offset),
         }
 
-    @always_inline
+    @inline(.always)
     def consumer_s(self, wg_idx: UInt32) -> Self.SPipelineConsumer:
         """Get S consumer for given warp group.
 
@@ -4343,62 +4238,71 @@ struct FA4MiscMBars[
                 pipeline.
         """
         return {
-            self.mbar_base + Self.S0_producer_offset + wg_idx,
-            self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx,
+            self.mbar_base.unsafe_offset(Self.S0_producer_offset).unsafe_offset(
+                wg_idx
+            ),
+            self.mbar_base.unsafe_offset(UInt32(Self.num_pv_stages) * wg_idx),
         }
 
-    @always_inline
+    @inline(.always)
     def consumer_c0(self) -> ConsumerPipeline[1]:
         return {
-            self.mbar_base + Self.C0_offset,
-            self.mbar_base + Self.C0_offset + 1,
+            self.mbar_base.unsafe_offset(Self.C0_offset),
+            self.mbar_base.unsafe_offset(Self.C0_offset).unsafe_offset(1),
         }
 
-    @always_inline
+    @inline(.always)
     def consumer_c1(self) -> ConsumerPipeline[1]:
         return {
-            self.mbar_base + Self.C1_offset,
-            self.mbar_base + Self.C1_offset + 1,
+            self.mbar_base.unsafe_offset(Self.C1_offset),
+            self.mbar_base.unsafe_offset(Self.C1_offset).unsafe_offset(1),
         }
 
-    @always_inline
+    @inline(.always)
     def producer_c(self, wg_idx: UInt32) -> ProducerPipeline[1]:
         var base = UInt32(Self.C0_offset) + 2 * wg_idx
-        return {self.mbar_base + base, self.mbar_base + base + 1}
+        return {
+            self.mbar_base.unsafe_offset(base),
+            self.mbar_base.unsafe_offset(base).unsafe_offset(1),
+        }
 
-    @always_inline
+    @inline(.always)
     def pipeline_order_wait(self, wg_idx: UInt32) -> MBarType:
-        return self.mbar_base + Self.order_offset + wg_idx
+        return self.mbar_base.unsafe_offset(Self.order_offset).unsafe_offset(
+            wg_idx
+        )
 
-    @always_inline
+    @inline(.always)
     def pipeline_order_arrive(self, wg_idx: UInt32) -> MBarType:
-        return self.mbar_base + (Self.order_offset + 1) - wg_idx
+        return self.mbar_base.unsafe_offset(
+            Self.order_offset + 1
+        ).unsafe_offset(-wg_idx)
 
-    @always_inline
+    @inline(.always)
     def q1_wait_mbar(self) -> MBarType:
         comptime assert Self.num_q == 2, (
             "q1_wait_mbar() requires num_q == 2; the Q1Sync slot is"
             " collapsed when num_q == 1."
         )
-        return self.mbar_base + Self.Q1SyncIdx
+        return self.mbar_base.unsafe_offset(Self.Q1SyncIdx)
 
     # K/V/O barrier accessors
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def get_k_mbars(self) -> MBarType:
         """Returns base pointer for K pipeline barriers."""
-        return self.mbar_base + Self.K_offset
+        return self.mbar_base.unsafe_offset(Self.K_offset)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def get_v_mbars(self) -> MBarType:
         """Returns base pointer for V pipeline barriers.
         In shared mode, returns the same as get_k_mbars (shared pipeline).
         """
         comptime if Self.use_shared_kv:
-            return self.mbar_base + Self.K_offset
+            return self.mbar_base.unsafe_offset(Self.K_offset)
         else:
-            return self.mbar_base + Self.V_offset
+            return self.mbar_base.unsafe_offset(Self.V_offset)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def combined_p_o_consumer(self, wg_idx: UInt32) -> MBarType:
         """Combined P+O consumer barrier for given warp group.
 
@@ -4409,7 +4313,7 @@ struct FA4MiscMBars[
             wg_idx: Warp group index (0 or 1) selecting the consumer
                 barrier slot.
         """
-        return self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx
+        return self.mbar_base.unsafe_offset(UInt32(Self.num_pv_stages) * wg_idx)
 
     # ---- Cross-stage P handshake accessors (CrossP_enabled, 2Q, non-WS) ----
     comptime CrossPProducer = RolePipeline[1, True, 1, 1]
@@ -4424,40 +4328,40 @@ struct FA4MiscMBars[
     # sfree{wg}: softmax commits "S{wg} scores consumed" (producer-only, 1
     # mbar, consumer_mbar aliased/unused -- natural throttle); MMA QK{wg}
     # acquires it (consumer .wait/.step) before overwriting S{wg}.
-    @always_inline
+    @inline(.always)
     def sfree_producer(self, wg: UInt32) -> Self.CrossPProducer:
-        var m = self.mbar_base + UInt32(Self.CrossP_offset) + wg
+        var m = self.mbar_base.unsafe_offset(
+            UInt32(Self.CrossP_offset)
+        ).unsafe_offset(wg)
         return {m, m}
 
-    @always_inline
+    @inline(.always)
     def sfree_consumer(self, wg: UInt32) -> Self.CrossPConsumer:
-        var m = self.mbar_base + UInt32(Self.CrossP_offset) + wg
+        var m = self.mbar_base.unsafe_offset(
+            UInt32(Self.CrossP_offset)
+        ).unsafe_offset(wg)
         return {m, m}
 
     # inplace{k}: k=0 -> s0_p1 (softmax0 produces "S0 window free", softmax1
     # consumes before storing P1 into S0's window); k=1 -> s1_p0 (mirror).
     # DEPTH-4 one-sided: 4 full mbars at base; both producer and consumer
     # cycle them via state.index() (producer_mbar_base == consumer_mbar_base).
-    @always_inline
+    @inline(.always)
     def inplace_producer(self, k: UInt32) -> Self.InplaceProducer:
-        var base = (
-            self.mbar_base
-            + UInt32(Self.CrossP_offset + 2)
-            + k * UInt32(Self.InplaceDepth)
-        )
+        var base = self.mbar_base.unsafe_offset(
+            UInt32(Self.CrossP_offset + 2)
+        ).unsafe_offset(k * UInt32(Self.InplaceDepth))
         return {base, base}
 
-    @always_inline
+    @inline(.always)
     def inplace_consumer(self, k: UInt32) -> Self.InplaceConsumer:
-        var base = (
-            self.mbar_base
-            + UInt32(Self.CrossP_offset + 2)
-            + k * UInt32(Self.InplaceDepth)
-        )
+        var base = self.mbar_base.unsafe_offset(
+            UInt32(Self.CrossP_offset + 2)
+        ).unsafe_offset(k * UInt32(Self.InplaceDepth))
         return {base, base}
 
     # O pipeline convenience methods
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def consumer_o(self) -> RolePipeline[2, False, 1, Self.num_pv_stages]:
         """Get O consumer pipeline.
 
@@ -4466,11 +4370,11 @@ struct FA4MiscMBars[
         stride num_pv_stages).
         """
         return {
-            self.mbar_base + Self.O_producer_offset,
+            self.mbar_base.unsafe_offset(Self.O_producer_offset),
             self.mbar_base,
         }
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def consumer_o0(self) -> RolePipeline[1, False, 1, Self.num_pv_stages]:
         """Single-O (1Q wide-V) O consumer: a ONE-stage pipeline on WG0's
         O-producer barrier only.
@@ -4485,27 +4389,29 @@ struct FA4MiscMBars[
         in `producer_o0`.
         """
         return {
-            self.mbar_base + Self.O_producer_offset,
+            self.mbar_base.unsafe_offset(Self.O_producer_offset),
             self.combined_p_o_consumer(0),
         }
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def producer_o0(self) -> ProducerPipeline[1]:
         """Get O producer for warp group 0."""
         return {
-            self.mbar_base + Self.O_producer_offset,
+            self.mbar_base.unsafe_offset(Self.O_producer_offset),
             self.combined_p_o_consumer(0),
         }
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def producer_o1(self) -> ProducerPipeline[1]:
         """Get O producer for warp group 1."""
         return {
-            self.mbar_base + Self.O_producer_offset + 1,
+            self.mbar_base.unsafe_offset(Self.O_producer_offset).unsafe_offset(
+                1
+            ),
             self.combined_p_o_consumer(1),
         }
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def publish_mbar(self) -> MBarType:
         """Split-K cross-CTA O-combine publish barrier (count=`BM * P`).
 
@@ -4515,9 +4421,9 @@ struct FA4MiscMBars[
         the publish sites need no CTA-local `named_barrier` to collect rows. Only
         present for 1Q split-K (`Publish_count > 0`).
         """
-        return self.mbar_base + Self.Publish_offset
+        return self.mbar_base.unsafe_offset(Self.Publish_offset)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def num_mbars() -> UInt32:
         return UInt32(Self.size)

@@ -21,8 +21,8 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.kernels import grouped_matmul_ragged
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.kernels import grouped_matmul_ragged
 from test_common.graph_utils import is_b100_b200, is_h100_h200
 
 
@@ -176,7 +176,7 @@ def test_ep_comm(n_devices: int) -> None:
                     ep_manager.ep_combine_wait(router_weight, dev_idx)
                 )
 
-            graph.output(*outputs)
+            graph.output(outputs)
 
             return graph
 

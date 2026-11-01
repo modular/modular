@@ -10,10 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+from std.memory.alloc import unsafe_alloc
+
+
 # ========================== KERNEL CODE ==========================
 def histogram_sequential(
-    input: UnsafePointer[mut=False, Float32, _],
-    output: UnsafePointer[mut=True, Float32, _],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     w: Int,
     h: Int,
 ):
@@ -38,7 +42,7 @@ def main() raises:
     var num_bins = 6
 
     # Allocate and initialize input
-    var input = alloc[Float32](size)
+    var input = unsafe_alloc[Float32](size)
     input[0] = 0.0
     input[1] = 1.0
     input[2] = 2.0
@@ -57,7 +61,7 @@ def main() raises:
     input[15] = 1.0
 
     # Allocate and initialize output bins to zero
-    var output = alloc[Float32](num_bins)
+    var output = unsafe_alloc[Float32](num_bins)
     for i in range(num_bins):
         output[i] = 0.0
 
@@ -97,5 +101,5 @@ def main() raises:
         print("✗ Test FAILED")
 
     # Clean up
-    input.free()
-    output.free()
+    input.unsafe_free()
+    output.unsafe_free()

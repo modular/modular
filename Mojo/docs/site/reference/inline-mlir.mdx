@@ -1,7 +1,6 @@
 ---
 title: Mojo inline MLIR reference
 sidebar_label: Inline MLIR
-sidebar_position: 11
 description: >
   Use Mojo's inline MLIR built-ins to call hardware intrinsics, atomic
   operations, and GPU dialect operations that the language doesn't yet
@@ -605,10 +604,8 @@ name. This example defines a region and passes it to
 execution and later resumes by running the provided region:
 
 ```mojo
-@always_inline
-def _suspend_async[
-    body: def(AnyCoroutine) capturing -> None
-]():
+@inline(.always)
+def _suspend_async(body: Some[def(AnyCoroutine) -> None]):
     # Runs when the coroutine resumes.
     # The operation passes the coroutine handle as `hdl`.
     __mlir_region await_body(
@@ -674,8 +671,7 @@ They serve as a reference for common use cases.
 
 ### Wrapper structs
 
-<!-- VERIFIED: builtin/bool.mojo, builtin/int.mojo,
-     builtin/simd.mojo -->
+<!-- VERIFIED: builtin/bool.mojo, builtin/int.mojo, simd.mojo -->
 
 The most common pattern: a Mojo struct wraps a raw MLIR type in
 a field called `_mlir_value`. The struct provides a Mojo-friendly

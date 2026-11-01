@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -verify-diagnostics %s -I=%S/inputs
+# RUN: %parse-mojo-isolated -verify-diagnostics %s -I%S/inputs
 
 struct HasIntParam[x: Int](Movable where False):
   def __init__(out self): pass
@@ -45,12 +45,22 @@ def missing_ret_val() -> __mlir_type.index:
 def ret_type_mismatch() -> __mlir_type.index:
   return 4.0 # expected-error {{cannot implicitly convert 'FloatLiteral[4]' value to '__mlir_type.index' in return value}}
 
-async def testAsyncVoid(): pass
-async def testAsyncInt() -> Int: return 42
+__async def testAsyncVoid(): pass
+__async def testAsyncInt() -> Int: return 42
 
 def callsWith():
-  testAsyncVoid() # expected-warning {{'Coroutine[None, {}]' value is not awaited; use 'await' to get its result}}
-  testAsyncInt() # expected-warning {{'Coroutine[Int, {}]' value is not awaited; use 'await' to get its result}}
+  testAsyncVoid() # expected-warning {{'Coroutine[None, {}]' value is not awaited; use '__await' to get its result}}
+  testAsyncInt() # expected-warning {{'Coroutine[Int, {}]' value is not awaited; use '__await' to get its result}}
+
+# expected-warning @+1 {{async/await support in Mojo is experimental and unstable, there are many known issues. Please do not use it in production and do not expect correctness. To suppress this warning, use '__async' and '__await' keywords. That does not make the feature stable, it merely suppresses the warning.}}
+async def testUnprefixedAsync() -> Int: return 1
+
+__async def testUnprefixedAwait() -> Int:
+  # expected-warning @+1 {{async/await support in Mojo is experimental and unstable}}
+  return await testUnprefixedAsync()
+
+# expected-warning @+1 {{async/await support in Mojo is experimental and unstable}}
+def testUnprefixedAsyncFnType(f: async def() thin -> Int): pass
 
 
 struct ThingWithStaticMethod(Movable where False):
@@ -71,7 +81,7 @@ def use_non_copyable_type(a: ThingWithStaticMethod) raises:
   pass
 
 def test_use_non_copyable_type(var b: ThingWithStaticMethod) raises:
-  use_non_copyable_type(b^)
+  use_non_copyable_type(b)
 
 
 @fieldwise_init
@@ -316,7 +326,7 @@ def badPackCalls(value: Int):
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType](Movable where False):
-    # expected-error @+3 {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, Ts]'}}
+    # expected-error @+3 {{'self' argument must have type 'TestPackErrorMessage[*Ts]', but actually has type 'VariadicPack[False, *Ts]'}}
     # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
     @__allow_legacy_custom_self_type
     def __init__(*args: *Self.Ts):
@@ -326,7 +336,7 @@ struct TestPackErrorMessage[*Ts: AnyType](Movable where False):
 
 # expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
 @always_inline("builtin")
-async def always_inline_builtin_1(): pass
+__async def always_inline_builtin_1(): pass
 
 # expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
 @always_inline("builtin")
@@ -425,6 +435,27 @@ def unprovable_param_constraints[x: Int]()
 def test_param_constraints():
   # expected-error @below {{invalid call to 'unprovable_param_constraints': violated constraint}}
   unprovable_param_constraints[0]()
+
+# Printing the violated constraint remaps the reducer's bound argument, whose
+# type depends on the argument pack's origin, inside the reducer's scope. This
+# used to crash with "Failed to specialize generator".
+trait HasOriginElement:
+  comptime Element[origin: Origin]: AnyType
+
+struct BoolElement(HasOriginElement):
+  comptime Element[origin: Origin] = Bool
+
+comptime _element_is_int[T0: AnyType, Prev: Bool, T: HasOriginElement] = T0 == Int
+
+# expected-note @below {{function declared here}}
+def origin_dependent_reduce_constraint[*Ts: HasOriginElement](*xs: *Ts)
+  # expected-note @below {{constraint declared here evaluated to False, expected '#kgen.param_list.reduce(values, base=True, reducer=[PrevV: Bool, VA: KGENParamList[HasOriginElement], idx: __mlir_type.index] Bool(identical(values[0].Element[origin], Int)))'}}
+  where Ts.reduce[True, _element_is_int[Ts[0].Element[xs.origin], _, _]]:
+  pass
+
+def test_origin_dependent_reduce_constraint(b: BoolElement):
+  # expected-error @below {{invalid call to 'origin_dependent_reduce_constraint': violated constraint}}
+  origin_dependent_reduce_constraint(b)
 
 # expected-error @below {{'where' clauses inside parameter lists are no longer supported}}
 # expected-note @below {{use a trailing 'where' clause after the signature instead}}
@@ -1010,10 +1041,11 @@ struct OnlyCopyableField[T: Copyable & Deinitable](ImplicitlyCopyable where conf
 
 # MOCO-2186: Initializer syntax should reject incorrect result type
 struct StructWithSpecificInit[X: Int](Movable where False):
+    # expected-note @+1 {{constraint declared here evaluated to False, expected 'identical(X, Int(4))': Self type 'StructWithSpecificInit[X]' is not identical to the declared type 'StructWithSpecificInit[Int(4)]'}}
     def __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
         pass
 def testStructWithSpecificInit() raises:
-    # expected-error @+1 {{invalid initialization: return type 'StructWithSpecificInit[Int(4)]' parameter 'X' value 'Int(4)' doesn't match expected value 'Int(1)'}}
+    # expected-error @+1 {{invalid initialization: violated constraint}}
     var a = StructWithSpecificInit[1]()  # Infers to A[4]
 
     # This is ok.
@@ -1060,7 +1092,8 @@ struct ShapeContainer(Movable where False):
 
 # MSTDL-2267: Structs with "AnyOrigin" fields stop keeping things alive when passed to a function
 struct SwallowAnyOrigin(Movable where False):
-    # expected-error @below {{struct fields cannot expose AnyOrigin in their type; foo has type 'Pointer[Int, MutAnyOrigin]'}}
+    # expected-error @below {{struct fields cannot expose AnyOrigin in their type; foo has type 'UnsafePointer[Int, MutAnyOrigin]'}}
+    # expected-note @below {{'UnsafePointer[Int, MutAnyOrigin]' is aka 'Pointer[Int, MutAnyOrigin]'}}
     # expected-note @below {{consider parameterizing enclosing struct with an Origin}}
     # expected-note @below {{alternatively, use UntrackedOrigin if lifetime is managed explicitly}}
     var foo: UnsafePointer[Int, MutAnyOrigin]

@@ -17,19 +17,19 @@ tensorcore 5th generation (tcgen05) instructions."""
 from std.os import abort
 from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
-from std.sys.info import _has_blackwell_tcgen05
-from std._gpu.intrinsics import _get_nvtx_register_constraint
+from std.sys.info import current_accelerator
 from std.memory import bitcast
 
 from max.gpu import external_memory
 from max.gpu.compute.mma import _str_iota  # TODO: move to a string module
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from max.gpu.intrinsics import _get_nvtx_register_constraint
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def check_blackwell_constraint():
     """Compile-time constraint ensuring Blackwell hardware is targeted."""
-    comptime assert _has_blackwell_tcgen05(), (
+    comptime assert current_accelerator()._has_blackwell_tcgen05(), (
         "The tcgen05 instructions are only applicable on nVidia Blackwell"
         " (sm_100a, sm_101a) hardware."
     )
@@ -44,7 +44,7 @@ struct TensorMemory(TrivialRegisterPassable):
     var num_cols: UInt32
     """The number of columns in the tensor memory."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, num_cols: UInt32):
         """Initialize the TensorMemory struct.
 
@@ -52,19 +52,17 @@ struct TensorMemory(TrivialRegisterPassable):
             num_cols: The number of columns to allocate.
         """
         # Bitcast to avoid `cannot implicitly convert` error.
-        self.ptr = (
-            external_memory[UInt32, address_space=.SHARED, alignment=16]()
-            .unsafe_bitcast[UInt32]()
-            .unsafe_origin_cast[MutUntrackedOrigin]()
-        )
+        self.ptr = external_memory[
+            UInt32, address_space=.SHARED, alignment=16
+        ]().unsafe_bitcast[UInt32]()
         self.num_cols = num_cols
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def tcgen05_alloc[
     cta_group: Int32
 ](
-    ptr_tmem_addr: Pointer[mut=True, UInt32, _, address_space=.SHARED],
+    ptr_tmem_addr: Pointer[mut=False, UInt32, _, address_space=.SHARED],
     num_cols: UInt32,
 ):
     """Allocates tensor memory for use with tcgen05 instructions.
@@ -94,7 +92,7 @@ def tcgen05_alloc[
     )
 
 
-@always_inline
+@inline(.always)
 def tcgen05_dealloc[cta_group: Int32](tmem_addr: UInt32, num_cols: UInt32):
     """Deallocates tensor memory allocated by tcgen05_alloc().
 
@@ -123,7 +121,7 @@ def tcgen05_dealloc[cta_group: Int32](tmem_addr: UInt32, num_cols: UInt32):
     ](tmem_addr, num_cols)
 
 
-@always_inline
+@inline(.always)
 def tcgen05_ld[
     *,
     datapaths: Int,
@@ -205,7 +203,7 @@ def tcgen05_ld[
         (repeat * bits * datapaths) // (32 * 32),
     )
 
-    comptime shape_str = String(datapaths) + "x" + String(bits)
+    comptime shape_str = String(t"{datapaths}x{bits}")
     comptime num_str = String(repeat)
     comptime pack_str = ".pack::16b" if pack else ""
     comptime constraints_str = (
@@ -214,13 +212,12 @@ def tcgen05_ld[
     comptime output_args_str = "{" + _str_iota[
         width, prefix="$", sep=","
     ]() + "}"
-    comptime addr_str = "[$" + String(width) + "]"
+    comptime addr_str = String(t"[${width}]")
 
-    @__parameter
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def call_ld_intrinsic[
         pack_type: TrivialRegisterPassable
-    ]() -> Array[Scalar[dtype], width]:
+    ]() {imm} -> Array[Scalar[dtype], width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."
             + shape_str
@@ -237,55 +234,58 @@ def tcgen05_ld[
             has_side_effect=True,
         ](tmem_addr)
         var ptr = Pointer(to=r).unsafe_bitcast[Scalar[dtype]]()
-        var result = Array[Scalar[dtype], width](uninitialized=True)
-        comptime for i in range(width):
-            result[i] = ptr[unsafe_offset=i]
+        var result = Array[Scalar[dtype], width](
+            fill_with_unrolled=lambda [i: Int]() -> Scalar[dtype]: ptr[
+                unsafe_offset=i
+            ]
+        )
         return result^
 
     # fmt: off
     comptime S = Scalar[dtype]
-    comptime if width == 1:
-        return call_ld_intrinsic[S]()
-    elif width == 2:
-        return call_ld_intrinsic[
+    comptime match width:
+        case 1:
+            return call_ld_intrinsic[S]()
+        case 2:
+            return call_ld_intrinsic[
                 _RegisterPackType[S, S]
             ]()
-    elif width == 4:
-        return  call_ld_intrinsic[
+        case 4:
+            return  call_ld_intrinsic[
                 _RegisterPackType[S, S, S, S]
             ]()
-    elif width == 8:
-        return call_ld_intrinsic[
+        case 8:
+            return call_ld_intrinsic[
                 _RegisterPackType[S, S, S, S, S, S, S, S]
              ]()
-    elif width == 16:
-        return call_ld_intrinsic[
+        case 16:
+            return call_ld_intrinsic[
                 _RegisterPackType[S, S, S, S, S, S, S, S,
                                   S, S, S, S, S, S, S, S
             ]
         ]()
-    elif width == 32:
-        return call_ld_intrinsic[
+        case 32:
+            return call_ld_intrinsic[
                 _RegisterPackType[S, S, S, S, S, S, S, S,
-                                  S, S, S, S, S, S, S, S,
-                                  S, S, S, S, S, S, S, S,
-                                  S, S, S, S, S, S, S, S
-            ]
-        ]()
-    elif width == 64:
-        return call_ld_intrinsic[
-                _RegisterPackType[S, S, S, S, S, S, S, S,
-                                  S, S, S, S, S, S, S, S,
-                                  S, S, S, S, S, S, S, S,
-                                  S, S, S, S, S, S, S, S,
-                                  S, S, S, S, S, S, S, S,
                                   S, S, S, S, S, S, S, S,
                                   S, S, S, S, S, S, S, S,
                                   S, S, S, S, S, S, S, S
             ]
         ]()
-    elif width == 128:
-        return call_ld_intrinsic[
+        case 64:
+            return call_ld_intrinsic[
+                _RegisterPackType[S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S
+            ]
+        ]()
+        case 128:
+            return call_ld_intrinsic[
                 _RegisterPackType[S, S, S, S, S, S, S, S,
                                   S, S, S, S, S, S, S, S,
                                   S, S, S, S, S, S, S, S,
@@ -301,11 +301,11 @@ def tcgen05_ld[
                                   S, S, S, S, S, S, S, S,
                                   S, S, S, S, S, S, S, S,
                                   S, S, S, S, S, S, S, S,
-                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S
             ]
         ]()
-    else:
-        comptime assert False, "width must be a power of 2 in the range [1, 128]."
+        case _:
+            comptime assert False, "width must be a power of 2 in the range [1, 128]."
     # fmt: on
 
 
@@ -372,13 +372,13 @@ def tcgen05_st[
         " * m) // (32 * 32)."
     )
 
-    comptime shape_str = String(datapaths) + "x" + String(bits)
+    comptime shape_str = String(t"{datapaths}x{bits}")
     comptime num_str = String(repeat)
     comptime pack_str = ".unpack::16b" if pack else ""
     comptime constraints_str = (
         _get_nvtx_register_constraint[dtype]() + ","
     ) * Int(width) + "r"
-    comptime addr_str = "[$" + String(Int(width)) + "]"
+    comptime addr_str = String(t"[${Int(width)}]")
     comptime input_args_str = "{" + _str_iota[
         Int(width), prefix="$", sep=","
     ]() + "}"
@@ -397,68 +397,69 @@ def tcgen05_st[
     )
 
     # fmt: off
-    comptime if width == 1:
-        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
-            data[0],
-            tmem_addr)
-    elif width == 2:
-        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
-            data[0], data[1],
-            tmem_addr)
-    elif width == 4:
-        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
-            data[0], data[1], data[2], data[3],
-            tmem_addr)
-    elif width == 8:
-        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
-            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-            tmem_addr)
-    elif width == 16:
-        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
-            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-            data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
-            tmem_addr)
-    elif width == 32:
-        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
-            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-            data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
-            data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
-            data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
-            tmem_addr)
-    elif width == 64:
-        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
-            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-            data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
-            data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
-            data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
-            data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
-            data[40], data[41], data[42], data[43], data[44], data[45], data[46], data[47],
-            data[48], data[49], data[50], data[51], data[52], data[53], data[54], data[55],
-            data[56], data[57], data[58], data[59], data[60], data[61], data[62], data[63],
-            tmem_addr)
-    else:
-        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
-            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-            data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
-            data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
-            data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
-            data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
-            data[40], data[41], data[42], data[43], data[44], data[45], data[46], data[47],
-            data[48], data[49], data[50], data[51], data[52], data[53], data[54], data[55],
-            data[56], data[57], data[58], data[59], data[60], data[61], data[62], data[63],
-            data[64], data[65], data[66], data[67], data[68], data[69], data[70], data[71],
-            data[72], data[73], data[74], data[75], data[76], data[77], data[78], data[79],
-            data[80], data[81], data[82], data[83], data[84], data[85], data[86], data[87],
-            data[88], data[89], data[90], data[91], data[92], data[93], data[94], data[95],
-            data[96], data[97], data[98], data[99], data[100], data[101], data[102], data[103],
-            data[104], data[105], data[106], data[107], data[108], data[109], data[110], data[111],
-            data[112], data[113], data[114], data[115], data[116], data[117], data[118], data[119],
-            data[120], data[121], data[122], data[123], data[124], data[125], data[126], data[127],
-            tmem_addr)
+    comptime match width:
+        case 1:
+            inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+                data[0],
+                tmem_addr)
+        case 2:
+            inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+                data[0], data[1],
+                tmem_addr)
+        case 4:
+            inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+                data[0], data[1], data[2], data[3],
+                tmem_addr)
+        case 8:
+            inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+                tmem_addr)
+        case 16:
+            inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+                data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+                tmem_addr)
+        case 32:
+            inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+                data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+                data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
+                data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
+                tmem_addr)
+        case 64:
+            inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+                data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+                data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
+                data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
+                data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
+                data[40], data[41], data[42], data[43], data[44], data[45], data[46], data[47],
+                data[48], data[49], data[50], data[51], data[52], data[53], data[54], data[55],
+                data[56], data[57], data[58], data[59], data[60], data[61], data[62], data[63],
+                tmem_addr)
+        case _:
+            inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+                data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+                data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
+                data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
+                data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
+                data[40], data[41], data[42], data[43], data[44], data[45], data[46], data[47],
+                data[48], data[49], data[50], data[51], data[52], data[53], data[54], data[55],
+                data[56], data[57], data[58], data[59], data[60], data[61], data[62], data[63],
+                data[64], data[65], data[66], data[67], data[68], data[69], data[70], data[71],
+                data[72], data[73], data[74], data[75], data[76], data[77], data[78], data[79],
+                data[80], data[81], data[82], data[83], data[84], data[85], data[86], data[87],
+                data[88], data[89], data[90], data[91], data[92], data[93], data[94], data[95],
+                data[96], data[97], data[98], data[99], data[100], data[101], data[102], data[103],
+                data[104], data[105], data[106], data[107], data[108], data[109], data[110], data[111],
+                data[112], data[113], data[114], data[115], data[116], data[117], data[118], data[119],
+                data[120], data[121], data[122], data[123], data[124], data[125], data[126], data[127],
+                tmem_addr)
     # fmt: on
 
 
-@always_inline
+@inline(.always)
 def tcgen05_release_allocation_lock[cta_group: Int32]():
     """Releases the allocation lock for the current CTA group.
 
@@ -481,7 +482,7 @@ def tcgen05_release_allocation_lock[cta_group: Int32]():
     ]()
 
 
-@always_inline
+@inline(.always)
 def tcgen05_load_wait():
     """Waits for tensor memory loads to complete.
 
@@ -499,7 +500,7 @@ def tcgen05_load_wait():
     ]()
 
 
-@always_inline
+@inline(.always)
 def tcgen05_store_wait():
     """Waits for tensor memory stores to complete.
 
@@ -516,7 +517,7 @@ def tcgen05_store_wait():
     ]()
 
 
-@always_inline
+@inline(.always)
 def tcgen05_fence_before():
     """Orders all the prior asynchronous `tcgen05` operations.
 
@@ -533,7 +534,7 @@ def tcgen05_fence_before():
     ]()
 
 
-@always_inline
+@inline(.always)
 def tcgen05_fence_after():
     """Orders all the subsequent asynchronous `tcgen05` operations.
 
@@ -550,7 +551,7 @@ def tcgen05_fence_after():
     ]()
 
 
-@always_inline
+@inline(.always)
 def tcgen05_cp[
     *,
     cta_group: Int32,

@@ -24,23 +24,20 @@ from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
 from std.math import gcd
 from std.sys import align_of
-from std.sys.info import _current_target, simd_width_of
+from std.sys.info import CompilationTarget, simd_width_of
 
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheT, PagedKVCacheCollection
 from layout import (
     Coord,
     CoordLike,
-    Idx,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.fused_qk_rope import rope_value
 from nn.rope import get_safetensors_idx
-from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -56,7 +53,7 @@ from std.utils.index import IndexList
 # exclusivity check is a stopgap workaround; the proper fix is to give the k/v
 # views provably-disjoint origins instead of sharing the collection's.
 @__unsafe_nested_origins_read_only
-@always_inline
+@inline(.always)
 def _rope_split_store_ragged_impl[
     dtype: DType,
     freq_dtype: DType,
@@ -124,11 +121,6 @@ def _rope_split_store_ragged_impl[
     if batch_size == 0:
         return
 
-    var freqs_ptr = freqs_cis.ptr
-    var freqs_stride0 = head_size
-    var qkv_ptr = qkv.ptr
-    var q_out_ptr = q_output.ptr
-
     var combined_dim = Int(qkv.dim[1]())
     var qk_offset = q_dim + k_dim
 
@@ -139,10 +131,9 @@ def _rope_split_store_ragged_impl[
         var qk_offset,
         var combined_dim,
         var batch_size,
-        var freqs_ptr,
-        var freqs_stride0,
-        var qkv_ptr,
-        var q_out_ptr,
+        var freqs_cis,
+        var qkv,
+        var q_output,
         var k_cache,
         var v_cache,
         var input_row_offsets,
@@ -150,9 +141,8 @@ def _rope_split_store_ragged_impl[
     }:
         comptime simd_width = width
         comptime assert idx_arg.rank == 2
-        var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
-        var global_token_idx = idx[0]
-        var col = idx[1]
+        var global_token_idx = Int(idx_arg[0])
+        var col = Int(idx_arg[1])
 
         # Guard: simd_width >= 2 is guaranteed by the comptime assert after
         # this function. We wrap in comptime if because elementwise
@@ -175,7 +165,8 @@ def _rope_split_store_ragged_impl[
                 input_row_offsets, global_token_idx
             )
             var ti = Int(
-                UInt32(global_token_idx) - input_row_offsets.raw_load(bi)
+                UInt32(global_token_idx)
+                - rebind[UInt32](input_row_offsets.load((bi,)))
             )
 
             # Cache position: used for cache stores and as the default
@@ -187,22 +178,16 @@ def _rope_split_store_ragged_impl[
                 var hdi = col % head_size
                 var freq_pos = get_freq_pos(hdi, global_token_idx, cache_pos)
 
-                var qkv_base = global_token_idx * combined_dim + col
-                var q_base = global_token_idx * q_dim + col
-
                 comptime if interleaved:
-                    var val = (qkv_ptr + qkv_base).load[
-                        width=simd_width,
-                        alignment=align_qkv,
-                    ]()
-                    var freq = (
-                        freqs_ptr + freq_pos * freqs_stride0 + hdi
-                    ).load[
-                        width=simd_width,
-                        alignment=align_freq,
-                    ]()
-                    (q_out_ptr + q_base).store[alignment=align_q_out](
-                        cast_saturating[q_out_dtype](rope_value(val, freq))
+                    var val = qkv.load[width=simd_width, alignment=align_qkv](
+                        (global_token_idx, col)
+                    )
+                    var freq = freqs_cis.load[
+                        width=simd_width, alignment=align_freq
+                    ]((freq_pos, hdi))
+                    q_output.store[alignment=align_q_out](
+                        (global_token_idx, col),
+                        cast_saturating[q_out_dtype](rope_value(val, freq)),
                     )
                 else:
                     # Non-interleaved: gather re/im halves, rope, scatter.
@@ -215,36 +200,32 @@ def _rope_split_store_ragged_impl[
                     ]() if is_gpu[target]() else align_of[
                         SIMD[q_out_dtype, 1]
                     ]()
-                    var head_start_qkv = qkv_base - hdi
-                    var head_start_q = q_base - hdi
+                    var head_start = col - hdi
                     var re_idx, im_idx = get_safetensors_idx(hdi, head_size)
-                    var val_re = (qkv_ptr + head_start_qkv + re_idx).load[
-                        width=width_2,
-                        alignment=align_qkv_2,
-                    ]()
-                    var val_im = (qkv_ptr + head_start_qkv + im_idx).load[
-                        width=width_2,
-                        alignment=align_qkv_2,
-                    ]()
+                    var val_re = qkv.load[width=width_2, alignment=align_qkv_2](
+                        (global_token_idx, head_start + re_idx)
+                    )
+                    var val_im = qkv.load[width=width_2, alignment=align_qkv_2](
+                        (global_token_idx, head_start + im_idx)
+                    )
                     var val = rebind[SIMD[dtype, simd_width]](
                         val_re.interleave(val_im)
                     )
-                    var freq = (
-                        freqs_ptr + freq_pos * freqs_stride0 + hdi
-                    ).load[
-                        width=simd_width,
-                        alignment=align_freq,
-                    ]()
+                    var freq = freqs_cis.load[
+                        width=simd_width, alignment=align_freq
+                    ]((freq_pos, hdi))
                     var res = rope_value(val, freq)
                     var res_re: SIMD[dtype, width_2]
                     var res_im: SIMD[dtype, width_2]
                     res_re, res_im = res.deinterleave()
-                    (q_out_ptr + head_start_q + re_idx).store[
-                        alignment=align_q_out_2
-                    ](cast_saturating[q_out_dtype](res_re))
-                    (q_out_ptr + head_start_q + im_idx).store[
-                        alignment=align_q_out_2
-                    ](cast_saturating[q_out_dtype](res_im))
+                    q_output.store[alignment=align_q_out_2](
+                        (global_token_idx, head_start + re_idx),
+                        cast_saturating[q_out_dtype](res_re),
+                    )
+                    q_output.store[alignment=align_q_out_2](
+                        (global_token_idx, head_start + im_idx),
+                        cast_saturating[q_out_dtype](res_im),
+                    )
                 return
 
             if col < qk_offset:
@@ -259,17 +240,12 @@ def _rope_split_store_ragged_impl[
                 )
 
                 comptime if interleaved:
-                    var qkv_base = global_token_idx * combined_dim + col
-                    var val = (qkv_ptr + qkv_base).load[
-                        width=simd_width,
-                        alignment=align_qkv,
-                    ]()
-                    var freq = (
-                        freqs_ptr + freq_pos * freqs_stride0 + Int(di)
-                    ).load[
-                        width=simd_width,
-                        alignment=align_freq,
-                    ]()
+                    var val = qkv.load[width=simd_width, alignment=align_qkv](
+                        (global_token_idx, col)
+                    )
+                    var freq = freqs_cis.load[
+                        width=simd_width, alignment=align_freq
+                    ]((freq_pos, Int(di)))
                     k_cache.store(
                         bi,
                         Int(hi),
@@ -284,29 +260,20 @@ def _rope_split_store_ragged_impl[
                     comptime align_qkv_2 = align_of[
                         SIMD[dtype, width_2]
                     ]() if is_gpu[target]() else align_of[SIMD[dtype, 1]]()
-                    var k_head_base = (
-                        global_token_idx * combined_dim
-                        + q_dim
-                        + Int(hi) * head_size
-                    )
+                    var k_head_base = q_dim + Int(hi) * head_size
                     var re_idx, im_idx = get_safetensors_idx(Int(di), head_size)
-                    var val_re = (qkv_ptr + k_head_base + re_idx).load[
-                        width=width_2,
-                        alignment=align_qkv_2,
-                    ]()
-                    var val_im = (qkv_ptr + k_head_base + im_idx).load[
-                        width=width_2,
-                        alignment=align_qkv_2,
-                    ]()
+                    var val_re = qkv.load[width=width_2, alignment=align_qkv_2](
+                        (global_token_idx, k_head_base + re_idx)
+                    )
+                    var val_im = qkv.load[width=width_2, alignment=align_qkv_2](
+                        (global_token_idx, k_head_base + im_idx)
+                    )
                     var val = rebind[SIMD[dtype, simd_width]](
                         val_re.interleave(val_im)
                     )
-                    var freq = (
-                        freqs_ptr + freq_pos * freqs_stride0 + Int(di)
-                    ).load[
-                        width=simd_width,
-                        alignment=align_freq,
-                    ]()
+                    var freq = freqs_cis.load[
+                        width=simd_width, alignment=align_freq
+                    ]((freq_pos, Int(di)))
                     var roped = rope_value(val, freq)
                     var roped_re: SIMD[dtype, width_2]
                     var roped_im: SIMD[dtype, width_2]
@@ -328,11 +295,9 @@ def _rope_split_store_ragged_impl[
                 return
 
             # V region: store directly to v_cache (no rope).
-            var qkv_base = global_token_idx * combined_dim + col
-            var val = (qkv_ptr + qkv_base).load[
-                width=simd_width,
-                alignment=align_qkv,
-            ]()
+            var val = qkv.load[width=simd_width, alignment=align_qkv](
+                (global_token_idx, col)
+            )
             var v_col = col - qk_offset
             var hi, di = divmod(
                 UInt(v_col),
@@ -348,10 +313,11 @@ def _rope_split_store_ragged_impl[
             )
 
     var launch_shape = (total_seq_len, combined_dim)
-    comptime compile_target = _current_target() if is_cpu[
-        target
-    ]() else get_gpu_target()
-    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime target_simd_width = (
+        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
+            target
+        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+    )
     comptime kernel_simd_width = gcd(target_simd_width, head_size)
     comptime assert (
         kernel_simd_width >= 2
@@ -376,7 +342,7 @@ def _rope_split_store_ragged_impl[
 # impl, so it inherits the same false-positive aliasing rejection. See
 # `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
 @__unsafe_nested_origins_read_only
-@always_inline
+@inline(.always)
 def _rope_split_store_ragged[
     dtype: DType,
     freq_dtype: DType,
@@ -427,7 +393,7 @@ def _rope_split_store_ragged[
     )
 
 
-@always_inline
+@inline(.always)
 def rope_split_store_paged_ragged[
     dtype: DType,
     freq_dtype: DType,
@@ -493,7 +459,7 @@ def rope_split_store_paged_ragged[
 # impl, so it inherits the same false-positive aliasing rejection. See
 # `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
 @__unsafe_nested_origins_read_only
-@always_inline
+@inline(.always)
 def _rope_split_store_ragged_with_position_ids[
     dtype: DType,
     freq_dtype: DType,
@@ -543,35 +509,31 @@ def _rope_split_store_ragged_with_position_ids[
     # Validate mrope_section alignment with kernel SIMD width.
     comptime kv_params = cache_t.kv_params
     comptime head_size = kv_params.head_size
-    comptime compile_target = _current_target() if is_cpu[
-        target
-    ]() else get_gpu_target()
-    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime target_simd_width = (
+        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
+            target
+        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+    )
     comptime kernel_simd_width = gcd(target_simd_width, head_size)
-    comptime if mrope_section:
-        comptime for i in range(len(mrope_section.value())):
+    comptime if case .Some(sections) = mrope_section:
+        comptime for i in range(len(sections)):
             comptime assert (
-                Int(mrope_section.value()[i].value()) % kernel_simd_width == 0
+                Int(sections[i]) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
-
-    var pos_ids_ptr = position_ids.ptr
-    var pos_ids_stride = Int(position_ids.dim[1]())
 
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
-    ) {var pos_ids_ptr, var pos_ids_stride} -> Int:
-        comptime if mrope_section:
+    ) {var position_ids} -> Int:
+        comptime if case .Some(sections) = mrope_section:
             var section_idx = 0
-            comptime for i in range(len(mrope_section.value())):
-                comptime val = Int(mrope_section.value()[i].value())
+            comptime for i in range(len(sections)):
+                comptime val = Int(sections[i])
                 if dim_idx < val:
                     section_idx = i
                     break
-            return Int(
-                pos_ids_ptr[section_idx * pos_ids_stride + global_token_idx]
-            )
+            return Int(position_ids[section_idx, global_token_idx])
         else:
-            return Int(pos_ids_ptr[global_token_idx])
+            return Int(position_ids[0, global_token_idx])
 
     return _rope_split_store_ragged_impl[
         target=target,
@@ -588,7 +550,7 @@ def _rope_split_store_ragged_with_position_ids[
     )
 
 
-@always_inline
+@inline(.always)
 def rope_split_store_paged_ragged_with_position_ids[
     dtype: DType,
     freq_dtype: DType,

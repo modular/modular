@@ -10,7 +10,7 @@
 
 kgen.generator @return_one() -> index {
   %0 = index.constant 1
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK: a = #kgen.type
@@ -62,7 +62,7 @@ kgen.generator @struct_constants<T: type, A: !kgen.param<T>, value: !kgen.scalar
   kgen.param.constant: struct<(scalar<f32>)> = <{ value }>
   // CHECK: struct<(T)> = <{ A }>
   kgen.param.constant: struct<(T)> = <{ A }>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @variant_constants
@@ -71,16 +71,16 @@ kgen.generator @variant_constants<T: type, U: type, value: !kgen.param<T>>() {
   %0 = kgen.param.constant: variant<f32, f64> = <{:f32 2.5, 0}>
   // CHECK: variant<T, U> = <{:!kgen.param<T> value, 0}>
   %1 = kgen.param.constant: variant<T, U> = <{:!kgen.param<T> value, 0}>
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @entry1() -> index {
   %0 = index.constant 1
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 kgen.generator @entry2() -> index {
   %0 = index.constant 1
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK: #kgen.type<index> : !kgen.type
@@ -128,7 +128,7 @@ kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> =
 
 kgen.generator @"LinkedList::__bool__(::LinkedList)"<T: type, x: !kgen.param<T>>(%arg0: !kgen.struct<(T, pointer<none>)>) -> i1 {
   %index1 = kgen.param.constant : i1 = <1>
-  kgen.return %index1 : i1
+  hlcf.return %index1 : i1
 }
 
 
@@ -137,22 +137,20 @@ kgen.generator @"LinkedList::__bool__(::LinkedList)"<T: type, x: !kgen.param<T>>
   a = #kgen.genref<@LinkedList<:type index, 3>>,
   // CHECK-SAME: b = #kgen.get_witness<#kgen.genref<@LinkedList<:type index, 3>>, @Boolable, "__bool__"> : !kgen.generator<(!kgen.struct<(index, pointer<none>)>) -> i1>,
   b = #kgen.get_witness<#kgen.genref<@LinkedList<:type index, 3>>, @Boolable, "__bool__"> : !kgen.generator<(!kgen.struct<(index, pointer<none>)>) -> i1>,
-  // CHECK-SAME: c = #kgen.get_linkage_name<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
-  c = #kgen.get_linkage_name<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
+  // CHECK-SAME: c = #kgen.get_linkage_name<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, #kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : !kgen.string,
+  c = #kgen.get_linkage_name<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, #kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : !kgen.string,
   // CHECK-SAME: d = #kgen.get_type_name<#kgen.genref<@LinkedList<:type index, 3>>, true> : !kgen.string,
   d = #kgen.get_type_name<#kgen.genref<@LinkedList<:type index, 3>>, true> : !kgen.string,
-  // CHECK-SAME: e = #kgen.compile_offload_closure<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string
-  e = #kgen.compile_offload_closure<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
   // CHECK-SAME: f = #kgen.compile_assembly<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, =llvm, "", false, :() -> index @return_one> : !kgen.string,
   f = #kgen.compile_assembly<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, =llvm, "", false, :() -> index @return_one> : !kgen.string,
-  // CHECK-SAME: g = #kgen.get_source_name<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
-  g = #kgen.get_source_name<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
-  // CHECK-SAME: h = #kgen.get_function_parameter_count<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : index,
-  h = #kgen.get_function_parameter_count<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : index,
-  // CHECK-SAME: i = #kgen.get_function_parameter_names<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.param_list<string>,
-  i = #kgen.get_function_parameter_names<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.param_list<string>,
-  // CHECK-SAME: j = #kgen.get_function_is_raising<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : i1
-  j = #kgen.get_function_is_raising<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : i1
+  // CHECK-SAME: g = #kgen.get_source_name<#kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : !kgen.string,
+  g = #kgen.get_source_name<#kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : !kgen.string,
+  // CHECK-SAME: h = #kgen.get_function_parameter_count<#kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : index,
+  h = #kgen.get_function_parameter_count<#kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : index,
+  // CHECK-SAME: i = #kgen.get_function_parameter_names<#kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : !kgen.param_list<string>,
+  i = #kgen.get_function_parameter_names<#kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : !kgen.param_list<string>,
+  // CHECK-SAME: j = #kgen.get_function_is_raising<#kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : i1
+  j = #kgen.get_function_is_raising<#kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>> : i1
 } : () -> ()
 
 !BaseTrait = !lit.trait<@BaseTrait>
@@ -163,7 +161,7 @@ kgen.generator @canonicalize_get_witness_upcast<T: !DerivedTrait>() {
   // CHECK-NOT: upcast
   // CHECK: #kgen.get_witness<:trait<@BaseTrait> T, @BaseTrait, "AssociatedType">
   kgen.param.constant: !kgen.type = <#kgen.get_witness<upcast(:!BaseTrait T), @BaseTrait, "AssociatedType"> : !kgen.type>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK: kgen.param.assert <rebind(:i53 42)>, "rebind must fold"
@@ -448,7 +446,7 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
 
 "some.op"() {
   // Equality against an unknown value stays symbolic.
-  // CHECK: a = #kgen.param.expr<eq, #kgen<simd 2> : !kgen.scalar<si32>, #kgen.unknown : !kgen.scalar<si32>> : !kgen.scalar<bool>
+  // CHECK: a = #kgen.param.identical<#kgen<simd 2> : !kgen.scalar<si32>, #kgen.unknown : !kgen.scalar<si32>> : !kgen.scalar<bool>
   a = #kgen.param.expr<eq, #kgen.unknown : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
   // CHECK: b = #kgen<simd false> : !kgen.scalar<bool>
   b = #kgen.param.expr<eq, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
@@ -651,3 +649,45 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
   // CHECK: f = #kgen.param.expr<floor_div_s, #kgen<simd 9223372036854775807>
   f = #kgen.param.expr<floor_div_s,  #kgen.simd<9223372036854775807> : !kgen.scalar<index>, #kgen.simd<-3> : !kgen.scalar<index>> : !kgen.scalar<index>
 } : () -> ()
+
+// `opaque_plugin` itself round-trips in Support/test/m-ir/m-attrs.mlir; what
+// matters here is that a KGEN param value survives the `#kgen.target` spelling,
+// which wraps TargetInfoAttr rather than printing it directly.
+"some.op"() {
+  // CHECK: a = #kgen.target<triple = "unknown", arch = "", simd_bit_width = 128> : !kgen.target
+  a = #kgen.target<triple = "unknown", arch = "", simd_bit_width = 128> : !kgen.target,
+  // CHECK-SAME: b = #kgen.target<triple = "unknown", arch = "", opaque_plugin = #kgen.param_list<index, struct<(index)>> : !kgen.param_list<type>, simd_bit_width = 128> : !kgen.target
+  b = #kgen.target<triple = "unknown", arch = "", simd_bit_width = 128, opaque_plugin = #kgen.param_list<index, !kgen.struct<(index)>> : !kgen.param_list<!kgen.type>> : !kgen.target
+} : () -> ()
+
+// CHECK-LABEL: kgen.generator @get_target_plugin_folds
+kgen.generator @get_target_plugin_folds<t0: target>() {
+  // Matching concrete payload folds to the opaque_plugin payload.
+  // CHECK-NEXT: = kgen.param.constant: param_list<type> = <[index, f32]>
+  kgen.param.constant: !kgen.param_list<!kgen.type> =
+    <#kgen.get_target_plugin<
+      #kgen.target<triple = "unknown", arch = "",
+        opaque_plugin = #kgen.param_list<index, f32> : !kgen.param_list<!kgen.type>
+      > : !kgen.target,
+      :!kgen.param_list<!kgen.type> #kgen.param_list<f16>
+    > : !kgen.param_list<!kgen.type>>
+
+  // A concrete target with no opaque_plugin payload folds to its fallback.
+  // CHECK-NEXT: = kgen.param.constant: param_list<type> = <[f16]>
+  kgen.param.constant: !kgen.param_list<!kgen.type> =
+    <#kgen.get_target_plugin<
+      #kgen.target<triple = "unknown", arch = ""> : !kgen.target,
+      :!kgen.param_list<!kgen.type> #kgen.param_list<f16>
+    > : !kgen.param_list<!kgen.type>>
+
+  // A target parameter has no payload decision yet, so the get_target_plugin
+  // attribute remains unresolved.
+  // CHECK-NEXT: = kgen.param.constant: param_list<type> = <#kgen.get_target_plugin<t0, :param_list<type> [f16]>>
+  kgen.param.constant: !kgen.param_list<!kgen.type> =
+    <#kgen.get_target_plugin<t0, :!kgen.param_list<!kgen.type> #kgen.param_list<f16>>
+      : !kgen.param_list<!kgen.type>>
+
+  // A literal target whose opaque_plugin payload has a different type than
+  // expected is rejected at parse time; see kgen-errors.mlir.
+  hlcf.return
+}

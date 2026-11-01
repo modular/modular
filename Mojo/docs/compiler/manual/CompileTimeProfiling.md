@@ -12,15 +12,19 @@ act on.
 | `--mlir-timing`              | Times every MLIR pass and analysis.                                                            |
 | `--llvm-timing`              | Times every LLVM pass and analysis.                                                            |
 | `--mlir-timing-display MODE` | `tree` (default) nests by pipeline structure; `list` aggregates per pass name, sorted by time. |
+| `--timing-json`              | Writes the reports as one JSON object instead of as text.                                      |
+| `--timing-file FILE`         | Writes the reports to `FILE` instead of to stderr.                                             |
 
 See them and their full help text with `mojo build --help-hidden` or
 `mojo run --help-hidden`. Their definitions live in
-`KGEN/tools/mojo/Common/CompilationOptions.td`.
+`Mojo/tools/mojo/Common/CompilationOptions.td`.
 
 Four things to know before reading any report they produce:
 
 1. Both reports go to **stderr** when compilation finishes, so capture with
-   `2>`. For `mojo run` they print before the program starts.
+   `2>`. For `mojo run` they print before the program starts. `--timing-file`
+   redirects them to a file instead, in either format; see
+   [JSON output](#json-output).
 2. `--llvm-timing` forces single threaded compilation. LLVM's timers are
    process global and not thread safe, so the flag sets `numThreads = 1` and
    overrides `--num-threads`. The report therefore measures total CPU work, not
@@ -87,6 +91,60 @@ MLIR root spans the whole compile including code generation. See
 [Reading the numbers by hand](#reading-the-numbers-by-hand) for the
 consequences.
 
+## JSON output
+
+`--timing-json` writes the reports as one JSON object rather than as text, and
+`--timing-file FILE` sends them to a file rather than to stderr. The two are
+independent, so JSON on stderr and text in a file both work. Neither changes
+the measurement: `--llvm-timing` still forces single threaded compilation, and
+a warm cache still reports nothing.
+
+The object holds one member per report, and only the members the command asked
+for — `--timing-json` with no timing flag gets `{}`.
+
+```json
+{
+  "mlir": [
+    {
+      "name": "ElaborateGenerators",
+      "wall": {"duration": 119.7262, "percentage": 45.1},
+      "passes": [
+        {
+          "name": "offload nvptx64-nvidia-cuda sm_100a (also in host)",
+          "wall": {"duration": 101.8517, "percentage": 38.4},
+          "passes": []
+        }
+      ]
+    }
+  ],
+  "llvm": [
+    {
+      "pipeline": "offload nvptx64-nvidia-cuda sm_100a",
+      "times": {"time.pass.SROAPass.wall": 0.000464}
+    }
+  ]
+}
+```
+
+`mlir` follows `--mlir-timing-display`. `tree` nests each entry's children
+under `passes`; `list` is flat and opens with a `root` entry. `llvm` is one
+entry per pipeline in the order they ran — each accelerator target, then the
+host — each with a flat `times` map.
+
+Those `times` keys are `time.<group>.<name>.<metric>`, with `<metric>` one of
+`wall`, `user`, `sys` or `instr`. The four groups are the same four the text
+report prints and they overlap the same way, so the arithmetic in
+[The LLVM groups overlap](#the-llvm-groups-overlap) applies unchanged.
+
+One difference from the text report: accelerator scope names in `mlir` carry no
+`===---` rule. The rule exists to set the scope apart from the host passes it
+sits beside when a human reads a tree, and it only gets in a matcher's way.
+Match the `(also in host)` suffix instead.
+
+The digest script reads the text report, not the JSON. Use `--timing-json`
+when feeding another consumer, and `2> log.txt` or `--timing-file` when feeding
+[the digest](#digesting-the-report).
+
 ## Timing a model
 
 Two steps: get the Mojo that the graph compiler emits for the model, then
@@ -95,14 +153,15 @@ compile that with the timing flags. The example uses gemma-4-31B.
 ### 1. Get the emitted Mojo
 
 ```bash
-MODULAR_DEBUG=ir-output-dir=/tmp/gemma4/out-dir \
+MODULAR_DEBUG=ir-output-dir=/tmp/gemma4/out-dir,pre-jit \
 ./bazelw run //max/python/max/_entrypoints:pipelines -- warm-cache \
   --model-path google/gemma-4-31B-it --target cuda:sm_100a
 ```
 
-This runs the whole pipeline, so it fails without the matching GPU. Run it
-anyway: the emitted files land before the failure. The output directory holds
-the graph IR at each stage plus two Mojo files:
+`pre-jit` stops the graph compiler as soon as the Mojo is written, so this
+needs no GPU and skips the kernel compile, which is most of the time a full
+`warm-cache` takes. The output directory holds the graph IR at each stage plus
+two Mojo files:
 
 - `gemma4_vision+gemma4_language.mojo` — about 3 MB, the file to compile.
 - `gemma4_vision_constant_subgraphs.mojo` — about 12 KB, the constant
@@ -124,8 +183,8 @@ no GPU present, only a valid arch such as `sm_100a` or `gfx950`. `-o /dev/null`
 skips writing the object file, since the timing is the point.
 
 Record which build of `mojo` produced the log. A debug build and a production
-build are not comparable — see
-[Notes for benchmarking](#notes-for-benchmarking).
+build run different pass pipelines, so their timings are not comparable and a
+debug measurement cannot be scaled into a production estimate.
 
 ## Digesting the report
 
@@ -140,7 +199,7 @@ digests it:
 Or run its script directly:
 
 ```bash
-python3 .claude/skills/mojo-compile-timing/scripts/digest_timing_log.py log.txt
+python3 .agents/skills/mojo-compile-timing/scripts/digest_timing_log.py log.txt
 ```
 
 Useful options:
@@ -149,7 +208,7 @@ Useful options:
   first argument is the subject, the second the baseline.
 - `--top N` — passes to name per group before rolling the tail up (default 5).
 - `--markdown` — the tree in a fenced block plus a rollup table.
-- `--json` — machine readable, for a dashboard.
+- `--json` — machine readable, for another consumer.
 
 The output for the gemma-4 debug compile above:
 
@@ -194,7 +253,7 @@ them; they matter when checking its output or writing another consumer.
 ### The MLIR root is the whole compile
 
 It spans parsing, the passes, and code generation, because the `MLIRPassTiming`
-object lives for all of `build()` in `KGEN/tools/mojo/Build/mojo-build.cpp`. On
+object lives for all of `build()` in `Mojo/tools/mojo/Build/mojo-build.cpp`. On
 one gemma-4 compile the root read 272.34s against 272.56s of wall clock. Take
 the compile total from the root; never add sections to it.
 
@@ -209,7 +268,8 @@ computes `Rest` as the root minus the sum of the children, so double counted
 time lands there with its sign flipped: the row reads `-59.0020` in place of the
 42.85s that is genuinely unattributed. Adding the scope back recovers it:
 `-59.00 + 101.85 = 42.85` seconds. A consumer of the report has to either skip
-rows whose name starts with `===---` or subtract them.
+those scope rows or subtract them — by the `===---` prefix in the text report,
+or by the `(also in host)` suffix, which both formats carry.
 
 ### `Rest` is host code generation, not noise
 
@@ -222,12 +282,12 @@ and 8.4s of translation to LLVM IR plus object emission.
 
 Each LLVM section prints up to four groups, and only two are disjoint:
 
-| Group                                  | Relationship                       |
-|----------------------------------------|------------------------------------|
-| `Pass execution timing report`         | the passes                         |
-| `Analysis execution timing report`     | the analyses, separate from passes |
-| `Instruction Selection and Scheduling` | sub-timers inside the ISel pass    |
-| `Register Allocation`                  | sub-timers inside the RA pass      |
+| Group                                  | JSON key prefix    | Relationship                       |
+|----------------------------------------|--------------------|------------------------------------|
+| `Pass execution timing report`         | `time.pass.`       | the passes                         |
+| `Analysis execution timing report`     | `time.analysis.`   | the analyses, separate from passes |
+| `Instruction Selection and Scheduling` | `time.sdag.`       | sub-timers inside the ISel pass    |
+| `Register Allocation`                  | `time.regalloc.`   | sub-timers inside the RA pass      |
 
 The last two come from `NamedRegionTimer` objects inside
 `SelectionDAGISel::CodeGenAndEmitDAG` and the greedy allocator, so their time is
@@ -240,193 +300,3 @@ One more detail when ranking accelerator passes: the report has one row per pass
 per module, so `InstCombinePass` appears 765 times at about 0.30s each.
 Aggregate by name, stripping the `#N` instance suffix, or the top of the list
 is ten identical rows.
-
-## The tracked benchmark
-
-The steps above time one compile on one machine. To watch compile time move
-over weeks, CI runs the same measurement daily through
-`utils/benchmarking/kepler/mojo_compilation/`, which has two targets:
-
-| Target                     | What it does                                                 |
-|----------------------------|--------------------------------------------------------------|
-| `make_snapshot`            | Builds the frozen input and publishes it to S3.              |
-| `bench_mojo_compile_time`  | Compiles that input and reports the breakdown.               |
-
-The input is frozen because a compile time only means something against a fixed
-input. The emitted Mojo changes whenever the graph compiler or the kernel
-library changes, and either can move compile time as much as the Mojo compiler
-can. A snapshot pins all of it, so a step in the series is attributable.
-
-The snapshot holds the library as **source**, not as precompiled `.mojoc`. A
-`.mojoc` loads only in a compiler whose MLIR dialect checksum matches, and that
-checksum hashes the dialect `.td` text, so it changes most days — a snapshot of
-compiled packages is unusable within a day of being taken. Source stays
-compilable for as long as the language accepts it, so the benchmark rebuilds the
-packages with the compiler under test on every invocation. That rebuild is not
-overhead: it compiles the whole standard library and every kernel library, far
-more code than one emitted model, and is reported as `precompile.*`.
-
-### Generating a snapshot
-
-```bash
-./bazelw run //utils/benchmarking/kepler/mojo_compilation:make_snapshot -- \
-  --out ~/mojo-compile-snapshot --skip-upload
-```
-
-`--skip-upload` builds and archives the snapshot without publishing it, which is
-what a local run wants. It also bypasses the cadence check, so the snapshot is
-always rebuilt.
-
-The run emits the Mojo for every model in `model_inputs.yaml` the same way
-[step 1 above](#1-get-the-emitted-mojo) does, copies the library sources, reads
-the precompile recipe out of `bazel aquery`, rebuilds the packages once to
-confirm the frozen tree compiles, and counts each source's offload kernels. It
-produces:
-
-```text
-~/mojo-compile-snapshot/
-├── SNAPSHOT.yaml               the recipe, plus a hash and size per file
-├── library/                    stdlib, kernel and max sources at their repo paths
-├── sources/<dir>/              the emitted .mojo files
-└── mojo_compile_snapshot.tar.gz
-```
-
-Two things to expect. The graph compiler run needs HuggingFace access to the
-model and fails on the target it cannot reach from here, exactly as in step 1;
-its output is kept in a log and only shown if a source is missing, which is the
-real failure. And `--skip-emit` reuses the `.mojo` already under `--out` instead
-of running the graph compiler again, which is much faster when iterating on
-everything downstream of the emit.
-
-### Running the benchmark locally
-
-```bash
-./bazelw run //utils/benchmarking/kepler/mojo_compilation:bench_mojo_compile_time -- \
-  --snapshot ~/mojo-compile-snapshot \
-  --runs 1 \
-  --results /tmp/compile-time.json
-```
-
-| Option        | Meaning                                                             |
-|---------------|---------------------------------------------------------------------|
-| `--list`      | Print the benchmark names the manifest declares, and exit.          |
-| `--snapshot`  | Compile an unpacked snapshot instead of fetching the published one. |
-| `--runs`      | Repeats per source, each two full compiles (default: 3).            |
-| `--results`   | Also write the results to a file; `.json` or `.yaml` by extension.  |
-| `--benchmark` | Run only the named benchmark. Repeatable.                           |
-
-The first four are this benchmark's own. `--benchmark` comes from the shared
-Kepler runner, as does everything else on that command line not listed here.
-
-To see what there is to measure:
-
-```bash
-./bazelw run //utils/benchmarking/kepler/mojo_compilation:bench_mojo_compile_time \
-  -- --list
-```
-
-```text
-gemma-4-31b.language            sm_100a  gemma4/gemma4_vision+gemma4_language.mojo
-gemma-4-31b.constant-subgraphs  sm_100a  gemma4/gemma4_vision_constant_subgraphs.mojo
-```
-
-Then measure one of them, naming it exactly as `--list` printed it:
-
-```bash
-./bazelw run //utils/benchmarking/kepler/mojo_compilation:bench_mojo_compile_time -- \
-  --snapshot ~/mojo-compile-snapshot \
-  --runs 1 \
-  --benchmark gemma-4-31b.language
-```
-
-The library rebuild happens either way: it is the input to whatever is being
-measured, so filtering saves the model compiles and nothing else.
-
-Each repeat compiles the source twice: once with no timing flags at the
-compiler's default thread count, reported as `wall.total`, and once with
-`--mlir-timing --llvm-timing` for the phase breakdown. Only the first is a
-latency figure, for the reason in [the flags](#the-flags) — the second is
-single threaded.
-
-Omitting `--snapshot` fetches the most recently published snapshot over HTTPS,
-which is what CI does.
-
-Budget for the cost in compiles rather than in minutes, which vary by machine.
-An invocation is one library rebuild plus, per source, two full compiles per
-repeat. The rebuild happens once per invocation and not once per repeat, since
-every source compiles against the same packages, and the large emitted source
-dominates everything else. Start with `--runs 1`.
-
-### Adding a model
-
-Every series the benchmark tracks comes from `model_inputs.yaml` beside the two
-targets. A model there is one extraction — one run of the graph compiler — and
-the files that extraction produces are its sources, each compiled and plotted on
-its own.
-
-To add one:
-
-1. Emit it by hand first, with the command from
-   [step 1 above](#1-get-the-emitted-mojo) pointed at the new model, and look at
-   what lands in the output directory. You need the emitted file names, and they
-   are not predictable from the model name.
-2. Add an entry:
-
-   ```yaml
-   - name: my-model
-     target_accelerator: sm_100a
-     emitted_by:
-       model_path: org/My-Model
-       target: cuda:sm_100a
-       command: >-
-         MODULAR_DEBUG=ir-output-dir=<out-dir>
-         ./bazelw run //max/python/max/_entrypoints:pipelines -- warm-cache
-         --model-path org/My-Model --target cuda:sm_100a
-     sources:
-       - name: language
-         file: my-model/the_emitted_file.mojo
-   ```
-
-3. Regenerate the snapshot. The emit, the offload-kernel count and the source
-   statistics all follow from the manifest, so nothing else needs editing.
-
-Four things to get right:
-
-- `file` is the path **inside the snapshot**, not where the extraction wrote it.
-  Only its basename has to match an emitted file; the leading directory is
-  yours to choose, and exists to keep one model's sources away from another's.
-- `emitted_by` is not read at benchmark time. It is recorded so that a refresh
-  is reproducible, since what the graph compiler emits depends on those
-  settings — so keep `command` in step with the fields above it.
-- `name` and each source's `name` form the series name, `<model>.<source>`.
-  They are the dashboard's identity for the series: renaming one starts a fresh
-  line rather than continuing the existing one. A model name must not contain a
-  dot, because the BigQuery view splits the series name on the first one.
-- Each source costs two full compiles per repeat on every CI run, so add
-  sources that answer a question, not every file an extraction happens to
-  produce.
-
-The results land in BigQuery and Looker. See the Kepler docs for the tables and
-the dashboard: `docs/internal/KeplerBenchmarking.md`.
-
-## Notes for benchmarking
-
-Benchmark the production build. It is what ships, and it is faster, so runs cost
-less. More importantly the two builds are not comparable: on the gemma-4 pair
-measured here, production ran 56 outermost passes against 60 in debug, with
-`LowerGlobalPOPToLLVM` absent entirely, and `VerifyParameters` ran twice instead
-of five times. Per pass speedups ranged from 1.2x to 8.2x, so a debug
-measurement cannot be scaled into a production estimate.
-
-Because the timing flags force single threaded compilation, these numbers are
-total CPU work rather than the latency a user sees. Tracking user visible
-compile time needs a second measurement with default threads and no timing
-flags.
-
-The accelerator module count is a property of the input, not the compiler. If it
-moves, the emitted Mojo changed shape, so compare compile times across snapshots
-only while it holds steady.
-
-Some time still belongs to no pass, about 10% of the compiles measured so far:
-the translation and object emit rows on both the host and the accelerator side.
-A regression landing there shows up only in the total.

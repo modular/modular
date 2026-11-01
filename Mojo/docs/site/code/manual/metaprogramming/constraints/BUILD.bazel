@@ -1,0 +1,45 @@
+load("//bazel:api.bzl", "lit_tests", "modular_run_binary_test", "mojo_binary")
+
+package(default_visibility = ["//visibility:private"])
+
+COMPILE_ERROR_SRCS = glob(["*_compile_error.mojo"])
+
+MOJO_SRCS = glob(
+    ["*.mojo"],
+    allow_empty = True,
+    exclude = COMPILE_ERROR_SRCS,
+)
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in MOJO_SRCS
+]
+
+[
+    modular_run_binary_test(
+        name = src.split(".")[0] + "_test",
+        size = "small",
+        binary = src.split(".")[0],
+    )
+    for src in MOJO_SRCS
+]
+
+lit_tests(
+    name = "lit_tests",
+    size = "large",
+    srcs = COMPILE_ERROR_SRCS,
+    mojo_deps = [
+        "@mojo//:std",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

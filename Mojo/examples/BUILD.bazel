@@ -1,3 +1,19 @@
 # gazelle:default_visibility //visibility:private
 
+load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
+
 package(default_visibility = ["//visibility:private"])
+
+exports_files(["hello.mojo"])
+
+mojo_binary(
+    name = "hello",
+    srcs = ["hello.mojo"],
+    deps = ["@mojo//:std"],
+)
+
+modular_run_binary_test(
+    name = "hello_test",
+    size = "small",
+    binary = "hello",
+)

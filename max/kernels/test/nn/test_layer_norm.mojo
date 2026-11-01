@@ -14,9 +14,10 @@
 from std.math import rsqrt
 
 from std.itertools import product
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from layout.math import mean, variance
 from nn.normalization import *
+from builtin_kernels.rowwise_normalization import layer_norm
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -49,21 +50,19 @@ def run_layer_norm_cpu[
     var beta = TileTensor(beta_ptr, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype](0.0001)
 
-    @always_inline
+    @inline(.always)
     def input_fn[
         width: Int,
         alignment: Int,
     ](coords: Coord) {var input_buf} -> SIMD[dtype, width]:
-        var idx = input_buf.layout(coords)
-        return input_buf.raw_load[width=width, alignment=alignment](idx)
+        return input_buf.load[width=width, alignment=alignment](coords)
 
-    @always_inline
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var output_buf}:
-        var idx = output_buf.layout(coords)
-        output_buf.raw_store[width=width, alignment=alignment](
-            idx, rebind[SIMD[dtype, width]](val)
+        output_buf.store[alignment=alignment](
+            coords, rebind[SIMD[dtype, width]](val)
         )
 
     layer_norm[dtype, rank, target="cpu"](
@@ -76,12 +75,10 @@ def run_layer_norm_cpu[
         epsilon,
     )
 
-    var input_ptr_ptr: MutPointer[
-        input_ptr.T, origin_of(input_ptr)
-    ] = input_ptr.unsafe_ptr()
+    var input_ptr_ptr = input_ptr.unsafe_ptr()
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr_ptr + r * cols,
+            input_ptr_ptr.unsafe_offset(r * cols),
             row_major(cols),
         )
         var mean_ref = mean(vec)

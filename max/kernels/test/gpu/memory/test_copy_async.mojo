@@ -20,13 +20,15 @@ from std.memory import unsafe_stack_allocation
 from std.testing import assert_true
 
 
-def test_mbarrier(
-    addr0: MutPointer[Int8, MutAnyOrigin],
-    addr1: MutPointer[UInt8, MutAnyOrigin],
-    addr2: MutPointer[Float32, MutAnyOrigin, address_space=.GLOBAL],
-    addr3: MutPointer[Float32, MutAnyOrigin, address_space=.SHARED],
-    addr4: MutPointer[Float64, MutAnyOrigin, address_space=.GLOBAL],
-    addr5: MutPointer[Float64, MutAnyOrigin, address_space=.SHARED],
+def test_mbarrier[
+    origin: MutOrigin
+](
+    addr0: MutPointer[Int8, origin],
+    addr1: MutPointer[UInt8, origin],
+    addr2: MutPointer[Float32, origin, address_space=.GLOBAL],
+    addr3: MutPointer[Float32, origin, address_space=.SHARED],
+    addr4: MutPointer[Float64, origin, address_space=.GLOBAL],
+    addr5: MutPointer[Float64, origin, address_space=.SHARED],
 ):
     async_copy_arrive(addr0)
     async_copy_arrive(addr1)
@@ -43,21 +45,23 @@ def _verify_mbarrier(asm: StringSlice) raises -> None:
 
 def test_mbarrier_sm80() raises:
     print("test_mbarrier_sm80")
-    var asm = _compile_code[test_mbarrier, target=get_gpu_target()]().asm
+    var asm = _compile_code[
+        test_mbarrier[MutUntrackedOrigin], target=get_gpu_target()
+    ]().asm
     _verify_mbarrier(asm)
 
 
 def test_mbarrier_sm90() raises:
     print("test_mbarrier_sm90")
     var asm = _compile_code[
-        test_mbarrier, target=get_gpu_target["sm_90"]()
+        test_mbarrier[MutUntrackedOrigin], target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_mbarrier(asm)
 
 
-def test_mbarrier_init(
-    shared_mem: MutPointer[Int32, MutAnyOrigin, address_space=.SHARED],
-):
+def test_mbarrier_init[
+    origin: MutOrigin
+](shared_mem: MutPointer[Int32, origin, address_space=.SHARED],):
     mbarrier_init(shared_mem, 4)
 
 
@@ -69,7 +73,9 @@ def _verify_mbarrier_init(asm: StringSlice) raises -> None:
 
 def test_mbarrier_init_sm80() raises:
     print("test_mbarrier_init_sm80")
-    var asm = _compile_code[test_mbarrier_init, target=get_gpu_target()]().asm
+    var asm = _compile_code[
+        test_mbarrier_init[MutUntrackedOrigin], target=get_gpu_target()
+    ]().asm
 
     _verify_mbarrier_init(asm)
 
@@ -77,15 +83,14 @@ def test_mbarrier_init_sm80() raises:
 def test_mbarrier_init_sm90() raises:
     print("test_mbarrier_init_sm90")
     var asm = _compile_code[
-        test_mbarrier_init, target=get_gpu_target["sm_90"]()
+        test_mbarrier_init[MutUntrackedOrigin], target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_mbarrier_init(asm)
 
 
-def test_mbarrier_test_wait(
-    shared_mem: MutPointer[Int32, MutAnyOrigin, address_space=.SHARED],
-    state: Int,
-):
+def test_mbarrier_test_wait[
+    origin: MutOrigin
+](shared_mem: MutPointer[Int32, origin, address_space=.SHARED], state: Int,):
     var done = False
     while not done:
         done = mbarrier_test_wait(shared_mem, state)
@@ -98,7 +103,7 @@ def _verify_mbarrier_test_wait(asm: StringSlice) raises -> None:
 def test_mbarrier_test_wait_sm80() raises:
     print("test_mbarrier_test_wait_sm80")
     var asm = _compile_code[
-        test_mbarrier_test_wait, target=get_gpu_target()
+        test_mbarrier_test_wait[MutUntrackedOrigin], target=get_gpu_target()
     ]().asm
     _verify_mbarrier_test_wait(asm)
 
@@ -106,14 +111,15 @@ def test_mbarrier_test_wait_sm80() raises:
 def test_mbarrier_test_wait_sm90() raises:
     print("test_mbarrier_test_wait_sm90")
     var asm = _compile_code[
-        test_mbarrier_test_wait, target=get_gpu_target["sm_90"]()
+        test_mbarrier_test_wait[MutUntrackedOrigin],
+        target=get_gpu_target["sm_90"](),
     ]().asm
     assert_true("mbarrier.test_wait.shared.b64" in asm)
 
 
-def test_async_copy(
-    src: ImmPointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
-):
+def test_async_copy[
+    origin: ImmOrigin
+](src: ImmPointer[Float32, origin, address_space=.GLOBAL]):
     var shared_mem = unsafe_stack_allocation[
         4, DType.float32, address_space=.SHARED
     ]()
@@ -128,21 +134,23 @@ def _verify_async_copy(asm: StringSlice) raises -> None:
 
 def test_async_copy_sm80() raises:
     print("test_async_copy_sm80")
-    var asm = _compile_code[test_async_copy, target=get_gpu_target()]().asm
+    var asm = _compile_code[
+        test_async_copy[ImmUntrackedOrigin], target=get_gpu_target()
+    ]().asm
     _verify_async_copy(asm)
 
 
 def test_async_copy_sm90() raises:
     print("test_async_copy_sm90")
     var asm = _compile_code[
-        test_async_copy, target=get_gpu_target["sm_90"]()
+        test_async_copy[ImmUntrackedOrigin], target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_async_copy(asm)
 
 
-def test_async_copy_l2_prefetch(
-    src: ImmPointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
-):
+def test_async_copy_l2_prefetch[
+    origin: ImmOrigin
+](src: ImmPointer[Float32, origin, address_space=.GLOBAL]):
     var shared_mem = unsafe_stack_allocation[
         4, DType.float32, address_space=.SHARED
     ]()
@@ -158,7 +166,7 @@ def _verify_async_copy_l2_prefetch(asm: StringSlice) raises -> None:
 def test_async_copy_l2_prefetch_sm80() raises:
     print("test_async_l2_prefetch_sm80")
     var asm = _compile_code[
-        test_async_copy_l2_prefetch, target=get_gpu_target()
+        test_async_copy_l2_prefetch[ImmUntrackedOrigin], target=get_gpu_target()
     ]().asm
     _verify_async_copy_l2_prefetch(asm)
 
@@ -166,14 +174,15 @@ def test_async_copy_l2_prefetch_sm80() raises:
 def test_async_copy_l2_prefetch_sm90() raises:
     print("test_async_l2_prefetch_sm90")
     var asm = _compile_code[
-        test_async_copy_l2_prefetch, target=get_gpu_target["sm_90"]()
+        test_async_copy_l2_prefetch[ImmUntrackedOrigin],
+        target=get_gpu_target["sm_90"](),
     ]().asm
     _verify_async_copy_l2_prefetch(asm)
 
 
-def test_async_copy_with_zero_fill_kernel(
-    src: ImmPointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
-):
+def test_async_copy_with_zero_fill_kernel[
+    origin: ImmOrigin
+](src: ImmPointer[Float32, origin, address_space=.GLOBAL]):
     var shared_mem = unsafe_stack_allocation[
         4, DType.float32, address_space=.SHARED
     ]()
@@ -234,14 +243,15 @@ def _verify_test_async_copy_with_zero_fill(asm: StringSlice) raises -> None:
 def test_async_copy_with_zero_fill() raises:
     print("test_async_copy_zero_fill")
     var asm = _compile_code[
-        test_async_copy_with_zero_fill_kernel, target=get_gpu_target()
+        test_async_copy_with_zero_fill_kernel[ImmUntrackedOrigin],
+        target=get_gpu_target(),
     ]().asm
     _verify_test_async_copy_with_zero_fill(asm)
 
 
-def test_async_copy_with_eviction(
-    src: ImmPointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
-):
+def test_async_copy_with_eviction[
+    origin: ImmOrigin
+](src: ImmPointer[Float32, origin, address_space=.GLOBAL]):
     print("test_async_copy_with_eviction")
     var shared_mem = unsafe_stack_allocation[
         4, DType.float32, address_space=.SHARED
@@ -251,9 +261,9 @@ def test_async_copy_with_eviction(
     async_copy[16, eviction_policy=CacheEviction.EVICT_LAST](src, shared_mem)
 
 
-def async_copy_with_non_zero_fill_kernel(
-    src: ImmPointer[Int32, ImmutAnyOrigin, address_space=.GLOBAL]
-):
+def async_copy_with_non_zero_fill_kernel[
+    origin: ImmOrigin
+](src: ImmPointer[Int32, origin, address_space=.GLOBAL]):
     var shared_mem = unsafe_stack_allocation[
         4, DType.int32, address_space=.SHARED
     ]()
@@ -275,7 +285,8 @@ def _verify_async_copy_with_non_zero_fill(asm: StringSlice) raises -> None:
 def test_async_copy_with_non_zero_fill() raises:
     print("test_async_copy_with_non_zero_fill")
     var asm = _compile_code[
-        async_copy_with_non_zero_fill_kernel, target=get_gpu_target()
+        async_copy_with_non_zero_fill_kernel[ImmUntrackedOrigin],
+        target=get_gpu_target(),
     ]().asm
     _verify_async_copy_with_non_zero_fill(asm)
 
@@ -289,7 +300,8 @@ def _verify_async_copy_with_eviction(asm: StringSlice) raises -> None:
 def test_async_copy_with_eviction_sm80() raises:
     print("test_async_copy_with_eviction_sm80")
     var asm = _compile_code[
-        test_async_copy_with_eviction, target=get_gpu_target["sm_80"]()
+        test_async_copy_with_eviction[ImmUntrackedOrigin],
+        target=get_gpu_target["sm_80"](),
     ]().asm
     _verify_async_copy_with_eviction(asm)
 
@@ -297,7 +309,8 @@ def test_async_copy_with_eviction_sm80() raises:
 def test_async_copy_with_eviction_sm90() raises:
     print("test_async_copy_with_eviction_sm90")
     var asm = _compile_code[
-        test_async_copy_with_eviction, target=get_gpu_target["sm_90"]()
+        test_async_copy_with_eviction[ImmUntrackedOrigin],
+        target=get_gpu_target["sm_90"](),
     ]().asm
     _verify_async_copy_with_eviction(asm)
 

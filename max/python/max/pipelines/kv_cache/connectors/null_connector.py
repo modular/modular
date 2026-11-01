@@ -21,12 +21,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnector,
     KVConnectorTransfer,
+    KVTransfer,
 )
 
 
@@ -35,29 +36,44 @@ class NullConnector(KVConnector):
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        """Returns the single ``full`` leaf this connector serves."""
         return {"full": KVCacheGroupId.full()}
 
     @property
     def name(self) -> str:
+        """Reports ``NullConnector`` as the connector name."""
         return "NullConnector"
+
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+        chain_start: int | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        """Holds nothing, so every block is absent."""
+        return {leaf_id: [False] * len(block_hashes) for leaf_id in self.leaves}
 
     def load(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
         hint: bytes | None = None,
-    ) -> KVConnectorTransfer:
-        return CompletedTransfer.load()
+    ) -> KVTransfer:
+        """Returns a completed transfer without reading any block."""
+        return CompletedTransfer()
 
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        return CompletedTransfer.offload()
+        """Returns a completed transfer without writing any block."""
+        return CompletedTransfer()
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Reports empty transfer metrics."""
         return KVCacheMetrics()

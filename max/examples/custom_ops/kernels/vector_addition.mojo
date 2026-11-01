@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/build-custom-ops.mdx
+# DOC: develop/build-custom-ops.mdx
 import extensibility
 
 from max.gpu.host import DeviceContext
@@ -53,9 +53,15 @@ def _vector_addition_gpu(
     var gpu_ctx = ctx
     var vector_length = output.dim_size(0)
 
-    # The function that will be launched and distributed across GPU threads.
-    @__parameter
-    def vector_addition_gpu_kernel(length_dev: Int32):
+    # The closure that will be launched and distributed across GPU threads.
+    # It copies the tensors and the length it needs into its captures, which
+    # are passed to the device along with it. `Int` is not device-passable, so
+    # the length travels as an `Int32`.
+    var length_dev = Int32(vector_length)
+
+    def vector_addition_gpu_kernel() {
+        var output, var lhs, var rhs, var length_dev
+    }:
         var length = Int(length_dev)
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < length:
@@ -69,8 +75,8 @@ def _vector_addition_gpu(
 
     # The GPU function is compiled and enqueued to run on the GPU across the
     # 1-D vector, split into blocks of `BLOCK_SIZE` width.
-    gpu_ctx.enqueue_function[vector_addition_gpu_kernel](
-        Int32(vector_length), grid_dim=num_blocks, block_dim=BLOCK_SIZE
+    gpu_ctx.enqueue_function(
+        vector_addition_gpu_kernel, grid_dim=num_blocks, block_dim=BLOCK_SIZE
     )
 
 

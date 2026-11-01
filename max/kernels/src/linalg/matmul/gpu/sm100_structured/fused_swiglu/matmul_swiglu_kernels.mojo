@@ -28,6 +28,7 @@ Weight layout: natural row-interleaved (gate, up) pairs in both swap modes.
 """
 
 from std.math import ceildiv, exp, recip
+from std.collections import OptionalReg
 from std.sys import size_of
 from std.math.uutils import umod, ufloordiv
 
@@ -59,14 +60,20 @@ from max.gpu.sync import (
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from max.gpu.primitives.grid_controls import (
-    launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,
 )
 import max.gpu.primitives.warp as warp
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
-from layout import Layout, RowMajorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Layout,
+    RowMajorLayout,
+    TensorEngine,
+    TileTensor,
+    row_major,
+)
 from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product
 from structured_kernels.tile_types import (
     SMemTileArray2D,
@@ -76,13 +83,13 @@ from structured_kernels.tile_types import (
 )
 from layout.tile_layout import _IntToComptimeInt
 
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.structuring import SMemArray, SMemPtr
+from linalg.structuring import SMemArray
 
-from ..structured_kernels.config import OutputPipelineConfig
 from .config import FusedSwiGLUMatmulConfig
 from ..structured_kernels.tile_scheduler import TileScheduler
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
@@ -170,16 +177,14 @@ struct _SwiGLUSmem[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def load_AB[
     a_type: DType,
     b_type: DType,
-    a_rank: Int,
-    a_tile_shape: IndexList[a_rank],
-    a_desc_shape: IndexList[a_rank],
-    b_rank: Int,
-    b_tile_shape: IndexList[b_rank],
-    b_desc_shape: IndexList[b_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     a_dim0: Int,
     a_dim1: Int,
     a_num_tiles: Int,
@@ -191,13 +196,16 @@ def load_AB[
     num_pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
     k_group_size: Int = 1,
+    load_a: Bool = True,
+    load_b: Bool = True,
+    claim_stage: Bool = True,
 ](
-    a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     a_smem_tiles: SMemTileArray2D[
         a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
     ],
@@ -211,21 +219,27 @@ def load_AB[
     b_multicast_mask: UInt16,
     iter_idx: UInt32,
     elect_one_cta: Bool,
+    stage_in: UInt32 = UInt32.MAX,
 ):
     """TMA producer phase that loads A and B tiles from GMEM into SMEM via multicast.
+
+    ``claim_stage`` waits for the stage to be free and sets the barrier's
+    expected bytes for both operands; with it False the call fills the
+    ``stage_in`` stage that an earlier ``claim_stage`` call claimed.
+    ``load_a`` and ``load_b`` select the operands this call loads, so the
+    static weight can be loaded ahead of the PDL wait and the activation after
+    it.
 
     Parameters:
         a_type: DType of the A operand elements.
         b_type: DType of the B operand elements.
-        a_rank: Number of dimensions in the A TMA tensor map.
         a_tile_shape: Shape of each A tile loaded by TMA, in elements.
         a_desc_shape: Shape of the A TMA descriptor, in elements.
-        b_rank: Number of dimensions in the B TMA tensor map.
         b_tile_shape: Shape of each B tile loaded by TMA, in elements.
         b_desc_shape: Shape of the B TMA descriptor, in elements.
         a_dim0: Row extent of each A SMEM tile, in elements.
         a_dim1: Column extent of each A SMEM tile, in elements.
-        a_num_tiles: Number of A SMEM tiles in the pipeline buffer.
+        a_num_tiles: Number of stages in the A SMEM tile array.
         a_swizzle_bytes: SMEM swizzle granularity for A tiles, in bytes.
         b_dim0: Row extent of each B SMEM tile, in elements.
         b_dim1: Column extent of each B SMEM tile, in elements.
@@ -238,6 +252,10 @@ def load_AB[
             (defaults to 1).
         k_group_size: Number of K tiles loaded per pipeline stage
             (defaults to 1).
+        load_a: Whether to load the A tiles (defaults to True).
+        load_b: Whether to load the B tiles (defaults to True).
+        claim_stage: Whether to claim the current producer stage (defaults
+            to True).
 
     Args:
         a_tma_op: TMA tensor map descriptor for the A operand.
@@ -257,6 +275,7 @@ def load_AB[
         iter_idx: Current K iteration index for this pipeline stage.
         elect_one_cta: Whether this CTA sets up the TMA barrier byte
             expectation.
+        stage_in: Stage to fill when ``claim_stage`` is False.
     """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -270,12 +289,19 @@ def load_AB[
         cta_group * (a_expected_bytes + b_expected_bytes)
     ) * k_group_size
 
-    comptime a_tma_load_size = _idx_product[a_rank, a_desc_shape]()
-    comptime b_tma_load_size = _idx_product[b_rank, b_desc_shape]()
-    comptime a_tma_rows = a_desc_shape[1]
-    comptime b_tma_rows = b_desc_shape[1]
+    comptime a_tma_load_size = _idx_product[a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape.element_types[1].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[1].static_value
 
-    var stage = load_mma_pipeline.producer_stage()
+    var stage = stage_in
+    comptime if claim_stage:
+        stage = load_mma_pipeline.producer_stage()
+    else:
+        debug_assert(
+            stage_in != UInt32.MAX,
+            "claim_stage=False needs the stage an earlier call claimed",
+        )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
     var a_gmem_slice_coord = (
         peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
@@ -287,11 +313,13 @@ def load_AB[
     )
     var batch_coord = work_tile_coord[2]
 
-    load_mma_pipeline.wait_consumer()
+    comptime if claim_stage:
+        load_mma_pipeline.wait_consumer()
 
     if elect_one_sync():
-        if elect_one_cta:
-            tma_mbar[0].expect_bytes(Int32(expected_bytes))
+        comptime if claim_stage:
+            if elect_one_cta:
+                tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
         for jj in range(k_group_size):
             var j = UInt32(jj)
@@ -300,35 +328,41 @@ def load_AB[
             var b_smem_tile = b_smem_tiles[offset]
 
             var a_smem_slice = type_of(a_smem_tile)(
-                a_smem_tile._storage + peer_cta_coord[2] * a_tma_load_size,
+                a_smem_tile._storage.unsafe_offset(
+                    peer_cta_coord[2] * a_tma_load_size
+                ),
                 a_smem_tile.layout,
             )
             var b_smem_slice = type_of(b_smem_tile)(
-                b_smem_tile._storage + peer_cta_coord[1] * b_tma_load_size,
+                b_smem_tile._storage.unsafe_offset(
+                    peer_cta_coord[1] * b_tma_load_size
+                ),
                 b_smem_tile.layout,
             )
 
-            a_tma_op.async_multicast_load_3d[cta_group](
-                a_smem_slice,
-                tma_mbar[0],
-                (
-                    Int(iter_idx + j) * BK,
-                    a_gmem_slice_coord,
-                    batch_coord,
-                ),
-                a_multicast_mask,
-            )
+            comptime if load_a:
+                a_tma_op.async_multicast_load_3d[cta_group](
+                    a_smem_slice,
+                    tma_mbar[0],
+                    (
+                        Int(iter_idx + j) * BK,
+                        a_gmem_slice_coord,
+                        batch_coord,
+                    ),
+                    a_multicast_mask,
+                )
 
-            b_tma_op.async_multicast_load_3d[cta_group](
-                b_smem_slice,
-                tma_mbar[0],
-                (
-                    Int(iter_idx + j) * BK,
-                    b_gmem_slice_coord,
-                    batch_coord,
-                ),
-                b_multicast_mask,
-            )
+            comptime if load_b:
+                b_tma_op.async_multicast_load_3d[cta_group](
+                    b_smem_slice,
+                    tma_mbar[0],
+                    (
+                        Int(iter_idx + j) * BK,
+                        b_gmem_slice_coord,
+                        batch_coord,
+                    ),
+                    b_multicast_mask,
+                )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -336,7 +370,7 @@ def load_AB[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
@@ -356,10 +390,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
@@ -450,7 +484,7 @@ def consumer_main_loop[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _swiglu_epilogue_gmem[
     a_type: DType,
     b_type: DType,
@@ -462,13 +496,13 @@ def _swiglu_epilogue_gmem[
     tmem_offset: UInt32,
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_stages],
     output_stage_index: UInt32,
-    c_gmem_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    c_gmem_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
     c_gmem_stride: UInt32,
     c_m_base: UInt32,
     c_h_base: UInt32,
     M_bound: UInt32,
     H_bound: UInt32,
-    bias_smem_ptr: UnsafePointer[
+    bias_smem_ptr: MutPointer[
         Scalar[c_type], MutAnyOrigin, address_space=.SHARED
     ],
 ):
@@ -590,7 +624,7 @@ def _swiglu_epilogue_gmem[
                     and h_row_top < H_bound
                 ):
                     var sig_u0 = recip(Float32(1.0) + exp(-gate_u0))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(m_col_a) * Int(c_gmem_stride) + Int(h_row_top),
                         (gate_u0 * sig_u0 * up_u0).cast[c_type](),
                     )
@@ -600,7 +634,7 @@ def _swiglu_epilogue_gmem[
                     and h_row_top < H_bound
                 ):
                     var sig_u1 = recip(Float32(1.0) + exp(-gate_u1))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(m_col_b) * Int(c_gmem_stride) + Int(h_row_top),
                         (gate_u1 * sig_u1 * up_u1).cast[c_type](),
                     )
@@ -636,7 +670,7 @@ def _swiglu_epilogue_gmem[
                     and h_row_bu < H_bound
                 ):
                     var sig_u2 = recip(Float32(1.0) + exp(-gate_u2))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(m_col_a) * Int(c_gmem_stride) + Int(h_row_bu),
                         (gate_u2 * sig_u2 * up_u2).cast[c_type](),
                     )
@@ -646,7 +680,7 @@ def _swiglu_epilogue_gmem[
                     and h_row_bu < H_bound
                 ):
                     var sig_u3 = recip(Float32(1.0) + exp(-gate_u3))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(m_col_b) * Int(c_gmem_stride) + Int(h_row_bu),
                         (gate_u3 * sig_u3 * up_u3).cast[c_type](),
                     )
@@ -687,7 +721,7 @@ def _swiglu_epilogue_gmem[
                         and h_row_tl < H_bound
                     ):
                         var sig_l0 = recip(Float32(1.0) + exp(-gate_l0))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(m_col_a) * Int(c_gmem_stride) + Int(h_row_tl),
                             (gate_l0 * sig_l0 * up_l0).cast[c_type](),
                         )
@@ -697,7 +731,7 @@ def _swiglu_epilogue_gmem[
                         and h_row_tl < H_bound
                     ):
                         var sig_l1 = recip(Float32(1.0) + exp(-gate_l1))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(m_col_b) * Int(c_gmem_stride) + Int(h_row_tl),
                             (gate_l1 * sig_l1 * up_l1).cast[c_type](),
                         )
@@ -734,7 +768,7 @@ def _swiglu_epilogue_gmem[
                         and h_row_bl < H_bound
                     ):
                         var sig_l2 = recip(Float32(1.0) + exp(-gate_l2))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(m_col_a) * Int(c_gmem_stride) + Int(h_row_bl),
                             (gate_l2 * sig_l2 * up_l2).cast[c_type](),
                         )
@@ -744,7 +778,7 @@ def _swiglu_epilogue_gmem[
                         and h_row_bl < H_bound
                     ):
                         var sig_l3 = recip(Float32(1.0) + exp(-gate_l3))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(m_col_b) * Int(c_gmem_stride) + Int(h_row_bl),
                             (gate_l3 * sig_l3 * up_l3).cast[c_type](),
                         )
@@ -780,14 +814,14 @@ def _swiglu_epilogue_gmem[
 
                 if grow_tu < M_bound and gcol_tu < H_bound:
                     var sig_tu = recip(Float32(1.0) + exp(-gate_tu))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(grow_tu) * Int(c_gmem_stride) + Int(gcol_tu),
                         (gate_tu * sig_tu * up_tu).cast[c_type](),
                     )
 
                 if grow_bu < M_bound and gcol_bu < H_bound:
                     var sig_bu = recip(Float32(1.0) + exp(-gate_bu))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(grow_bu) * Int(c_gmem_stride) + Int(gcol_bu),
                         (gate_bu * sig_bu * up_bu).cast[c_type](),
                     )
@@ -828,14 +862,14 @@ def _swiglu_epilogue_gmem[
 
                     if grow_tl < M_bound and gcol_tl < H_bound:
                         var sig_tl = recip(Float32(1.0) + exp(-gate_tl))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(grow_tl) * Int(c_gmem_stride) + Int(gcol_tl),
                             (gate_tl * sig_tl * up_tl).cast[c_type](),
                         )
 
                     if grow_bl < M_bound and gcol_bl < H_bound:
                         var sig_bl = recip(Float32(1.0) + exp(-gate_bl))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(grow_bl) * Int(c_gmem_stride) + Int(gcol_bl),
                             (gate_bl * sig_bl * up_bl).cast[c_type](),
                         )
@@ -846,30 +880,27 @@ def _swiglu_epilogue_gmem[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _swiglu_epilogue_smem_tma[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     transpose_b: Bool,
     config: FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b],
-    c_rank: Int,
-    c_tile_shape: IndexList[c_rank],
-    c_desc_shape: IndexList[c_rank],
+    c_tile_shape: Coord,
+    c_desc_shape: Coord,
     num_accum_stages: Int,
 ](
     tmem_offset: UInt32,
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_stages],
     output_stage_index: UInt32,
-    c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
-    c_out_smem: UnsafePointer[
-        Scalar[c_type], MutAnyOrigin, address_space=.SHARED
-    ],
+    c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
+    c_out_smem: MutPointer[Scalar[c_type], MutAnyOrigin, address_space=.SHARED],
     c_m_base: UInt32,
     c_h_base: UInt32,
     M_bound: UInt32,
     H_bound: UInt32,
-    bias_smem_ptr: UnsafePointer[
+    bias_smem_ptr: MutPointer[
         Scalar[c_type], MutAnyOrigin, address_space=.SHARED
     ],
 ):
@@ -965,7 +996,9 @@ def _swiglu_epilogue_smem_tma[
                 mma_output_pipeline, output_stage_index
             )
 
-        var buf_base = c_out_smem + Int(store_idx & 1) * c_out_tile_elems
+        var buf_base = c_out_smem.unsafe_offset(
+            Int(store_idx & 1) * c_out_tile_elems
+        )
         var bias_stage_offset: Int = stage * stageN
         # For cg2 MMA_M=128 non-swap, warps 0-1 write the top SMEM half (→ H-cols
         # c_h_base .. c_h_base+stageN/2-1) while warps 2-3 write the bot SMEM half
@@ -985,8 +1018,9 @@ def _swiglu_epilogue_smem_tma[
                 var m_col_b = m_col_a + 1
 
                 var pair_base = (
-                    buf_base
-                    + UInt32(warp_id // 2) * UInt32(c_out_pair_tile_elems)
+                    buf_base.unsafe_offset(
+                        UInt32(warp_id // 2) * UInt32(c_out_pair_tile_elems)
+                    )
                 ) if _is_layout_b_swap else buf_base
 
                 var own_ua = upper_frag_partial[r * 4 + 0]
@@ -1003,7 +1037,7 @@ def _swiglu_epilogue_smem_tma[
                         up_ua += Float32(bias_smem_ptr[Int(h_row_top) * 2 + 1])
                 var sig_ua = recip(Float32(1.0) + exp(-gate_ua))
                 if lane_row_is_even:
-                    pair_base.store(
+                    pair_base.unsafe_store(
                         Int(m_col_a) * c_out_smem_inner + Int(h_row_top),
                         (gate_ua * sig_ua * up_ua).cast[c_type](),
                     )
@@ -1022,7 +1056,7 @@ def _swiglu_epilogue_smem_tma[
                         up_ub += Float32(bias_smem_ptr[Int(h_row_top) * 2 + 1])
                 var sig_ub = recip(Float32(1.0) + exp(-gate_ub))
                 if lane_row_is_even:
-                    pair_base.store(
+                    pair_base.unsafe_store(
                         Int(m_col_b) * c_out_smem_inner + Int(h_row_top),
                         (gate_ub * sig_ub * up_ub).cast[c_type](),
                     )
@@ -1043,7 +1077,7 @@ def _swiglu_epilogue_smem_tma[
                         up_uc += Float32(bias_smem_ptr[Int(h_row_top) * 2 + 9])
                 var sig_uc = recip(Float32(1.0) + exp(-gate_uc))
                 if lane_row_is_even:
-                    pair_base.store(
+                    pair_base.unsafe_store(
                         Int(m_col_a) * c_out_smem_inner + Int(h_row_top + 4),
                         (gate_uc * sig_uc * up_uc).cast[c_type](),
                     )
@@ -1064,7 +1098,7 @@ def _swiglu_epilogue_smem_tma[
                         up_ud += Float32(bias_smem_ptr[Int(h_row_top) * 2 + 9])
                 var sig_ud = recip(Float32(1.0) + exp(-gate_ud))
                 if lane_row_is_even:
-                    pair_base.store(
+                    pair_base.unsafe_store(
                         Int(m_col_b) * c_out_smem_inner + Int(h_row_top + 4),
                         (gate_ud * sig_ud * up_ud).cast[c_type](),
                     )
@@ -1088,7 +1122,7 @@ def _swiglu_epilogue_smem_tma[
                             )
                     var sig_la = recip(Float32(1.0) + exp(-gate_la))
                     if lane_row_is_even:
-                        pair_base.store(
+                        pair_base.unsafe_store(
                             Int(m_col_a) * c_out_smem_inner
                             + Int(h_row_top + 8),
                             (gate_la * sig_la * up_la).cast[c_type](),
@@ -1112,7 +1146,7 @@ def _swiglu_epilogue_smem_tma[
                             )
                     var sig_lb = recip(Float32(1.0) + exp(-gate_lb))
                     if lane_row_is_even:
-                        pair_base.store(
+                        pair_base.unsafe_store(
                             Int(m_col_b) * c_out_smem_inner
                             + Int(h_row_top + 8),
                             (gate_lb * sig_lb * up_lb).cast[c_type](),
@@ -1136,7 +1170,7 @@ def _swiglu_epilogue_smem_tma[
                             )
                     var sig_lc = recip(Float32(1.0) + exp(-gate_lc))
                     if lane_row_is_even:
-                        pair_base.store(
+                        pair_base.unsafe_store(
                             Int(m_col_a) * c_out_smem_inner
                             + Int(h_row_top + 12),
                             (gate_lc * sig_lc * up_lc).cast[c_type](),
@@ -1160,7 +1194,7 @@ def _swiglu_epilogue_smem_tma[
                             )
                     var sig_ld = recip(Float32(1.0) + exp(-gate_ld))
                     if lane_row_is_even:
-                        pair_base.store(
+                        pair_base.unsafe_store(
                             Int(m_col_b) * c_out_smem_inner
                             + Int(h_row_top + 12),
                             (gate_ld * sig_ld * up_ld).cast[c_type](),
@@ -1178,7 +1212,7 @@ def _swiglu_epilogue_smem_tma[
                 var sig_tu = recip(Float32(1.0) + exp(-gate_tu))
                 var row_tu = smem_row_base + frag_coords.top_upper[0]
                 var col_tu = (frag_coords.top_upper[1] + UInt32(inc)) >> 1
-                buf_base.store(
+                buf_base.unsafe_store(
                     Int(row_tu) * HalfN + Int(col_tu),
                     (gate_tu * sig_tu * up_tu).cast[c_type](),
                 )
@@ -1195,7 +1229,7 @@ def _swiglu_epilogue_smem_tma[
                 var sig_bu = recip(Float32(1.0) + exp(-gate_bu))
                 var row_bu = smem_row_base + frag_coords.bottom_upper[0]
                 var col_bu = (frag_coords.bottom_upper[1] + UInt32(inc)) >> 1
-                buf_base.store(
+                buf_base.unsafe_store(
                     Int(row_bu) * HalfN + Int(col_bu),
                     (gate_bu * sig_bu * up_bu).cast[c_type](),
                 )
@@ -1213,7 +1247,7 @@ def _swiglu_epilogue_smem_tma[
                     var sig_tl = recip(Float32(1.0) + exp(-gate_tl))
                     var row_tl = smem_row_base + frag_coords.top_lower[0]
                     var col_tl = (frag_coords.top_lower[1] + UInt32(inc)) >> 1
-                    buf_base.store(
+                    buf_base.unsafe_store(
                         Int(row_tl) * HalfN + Int(col_tl),
                         (gate_tl * sig_tl * up_tl).cast[c_type](),
                     )
@@ -1232,7 +1266,7 @@ def _swiglu_epilogue_smem_tma[
                     var col_bl = (
                         frag_coords.bottom_lower[1] + UInt32(inc)
                     ) >> 1
-                    buf_base.store(
+                    buf_base.unsafe_store(
                         Int(row_bl) * HalfN + Int(col_bl),
                         (gate_bl * sig_bl * up_bl).cast[c_type](),
                     )
@@ -1251,20 +1285,20 @@ def _swiglu_epilogue_smem_tma[
                 if pair0_row < M_bound and out_col < H_bound:
                     cp_async_bulk_tensor_global_shared_cta(
                         buf_base,
-                        UnsafePointer(to=c_tma_op.descriptor).bitcast[
+                        Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(pair0_row)),
+                        (Int(out_col), Int(pair0_row)),
                     )
 
-                var pair1_buf = buf_base + c_out_pair_tile_elems
+                var pair1_buf = buf_base.unsafe_offset(c_out_pair_tile_elems)
                 if pair1_row < M_bound and out_col < H_bound:
                     cp_async_bulk_tensor_global_shared_cta(
                         pair1_buf,
-                        UnsafePointer(to=c_tma_op.descriptor).bitcast[
+                        Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(pair1_row)),
+                        (Int(out_col), Int(pair1_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1278,10 +1312,10 @@ def _swiglu_epilogue_smem_tma[
                 if out_row < M_bound and out_col < H_bound:
                     cp_async_bulk_tensor_global_shared_cta(
                         buf_base,
-                        UnsafePointer(to=c_tma_op.descriptor).bitcast[
+                        Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(out_row)),
+                        (Int(out_col), Int(out_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1295,10 +1329,10 @@ def _swiglu_epilogue_smem_tma[
                 if out_row < M_bound and out_col < H_bound:
                     cp_async_bulk_tensor_global_shared_cta(
                         buf_base,
-                        UnsafePointer(to=c_tma_op.descriptor).bitcast[
+                        Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(out_row)),
+                        (Int(out_col), Int(out_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1315,20 +1349,20 @@ def _swiglu_epilogue_smem_tma[
                 if out_row < M_bound and top_out_col < H_bound:
                     cp_async_bulk_tensor_global_shared_cta(
                         buf_base,
-                        UnsafePointer(to=c_tma_op.descriptor).bitcast[
+                        Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(top_out_col), Int(out_row)),
+                        (Int(top_out_col), Int(out_row)),
                     )
 
-                var bot_buf = buf_base + BM * HalfN
+                var bot_buf = buf_base.unsafe_offset(BM * HalfN)
                 if out_row < M_bound and bot_out_col < H_bound:
                     cp_async_bulk_tensor_global_shared_cta(
                         bot_buf,
-                        UnsafePointer(to=c_tma_op.descriptor).bitcast[
+                        Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(bot_out_col), Int(out_row)),
+                        (Int(bot_out_col), Int(out_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1360,6 +1394,7 @@ struct SwiGLUKernelConstants[
     c_type: DType,
     transpose_b: Bool,
     config: FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b],
+    BiasEngine: TensorEngine,
 ]:
     """Compile-time constants for TMA descriptor creation and kernel launch.
 
@@ -1370,6 +1405,7 @@ struct SwiGLUKernelConstants[
         transpose_b: Whether B is transposed (always True for SwiGLU).
         config: Fused SwiGLU matmul config carrying tile shapes and pipeline
             stages.
+        BiasEngine: Engine of the 1D bias tile.
     """
 
     comptime BM = Self.config.block_tile_shape[0]
@@ -1445,7 +1481,10 @@ struct SwiGLUKernelConstants[
     comptime NUM_THREADS = 224 + Self.EPILOGUE_LOAD_THREADS
     comptime Bias1DTileLayout = row_major[1, Self.MMA_N]()
     comptime Bias1DTile = TileTensor[
-        Self.c_type, type_of(Self.Bias1DTileLayout), ImmutAnyOrigin
+        Self.c_type,
+        type_of(Self.Bias1DTileLayout),
+        ImmutAnyOrigin,
+        Engine=Self.BiasEngine,
     ]
 
 
@@ -1454,7 +1493,13 @@ struct SwiGLUKernelConstants[
 # ===----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -1466,32 +1511,33 @@ def blackwell_swiglu_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_rank: Int,
-    a_tile_shape: IndexList[a_rank],
-    a_desc_shape: IndexList[a_rank],
-    b_rank: Int,
-    b_tile_shape: IndexList[b_rank],
-    b_desc_shape: IndexList[b_rank],
-    c_rank: Int,
-    c_tile_shape: IndexList[c_rank],
-    c_desc_shape: IndexList[c_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    c_tile_shape: Coord,
+    c_desc_shape: Coord,
     transpose_b: Bool,
     config: FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b],
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    BiasEngine: TensorEngine,
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
-    c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
-    c_gmem_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
+    c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
+    c_gmem_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
     c_gmem_stride: UInt32,
-    bias_1d_tile: SwiGLUKernelConstants[
-        a_type,
-        b_type,
-        c_type,
-        transpose_b,
-        config=config,
-    ].Bias1DTile,
+    bias_1d_tile: OptionalReg[
+        SwiGLUKernelConstants[
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            config=config,
+            BiasEngine=BiasEngine,
+        ].Bias1DTile
+    ],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
@@ -1509,18 +1555,16 @@ def blackwell_swiglu_warp_specialized_kernel[
         a_type: Element data type of the A operand.
         b_type: Element data type of the B operand.
         c_type: Element data type of the C output.
-        a_rank: Rank of the A TMA tile and descriptor shapes.
-        a_tile_shape: A TMA tile shape as an ``IndexList``.
-        a_desc_shape: A TMA descriptor shape as an ``IndexList``.
-        b_rank: Rank of the B TMA tile and descriptor shapes.
-        b_tile_shape: B TMA tile shape as an ``IndexList``.
-        b_desc_shape: B TMA descriptor shape as an ``IndexList``.
-        c_rank: Rank of the C TMA tile and descriptor shapes.
-        c_tile_shape: C TMA tile shape as an ``IndexList``.
-        c_desc_shape: C TMA descriptor shape as an ``IndexList``.
+        a_tile_shape: A TMA tile shape as a ``Coord``.
+        a_desc_shape: A TMA descriptor shape as a ``Coord``.
+        b_tile_shape: B TMA tile shape as a ``Coord``.
+        b_desc_shape: B TMA descriptor shape as a ``Coord``.
+        c_tile_shape: C TMA tile shape as a ``Coord``.
+        c_desc_shape: C TMA descriptor shape as a ``Coord``.
         transpose_b: Whether B is transposed (always True for SwiGLU).
         config: Fused SwiGLU matmul config carrying tile shapes and pipeline
             stages.
+        BiasEngine: Engine of the 1D bias tile.
         cluster_shape: CTA cluster shape as an (M, N, K) ``StaticTuple``
             (defaults to a singleton cluster).
         pdl_level: Programmatic dependency level for grid launch (defaults to
@@ -1534,7 +1578,8 @@ def blackwell_swiglu_warp_specialized_kernel[
         c_gmem_ptr: Base pointer to the C output tensor in GMEM (register to
             GMEM path).
         c_gmem_stride: Row stride of the C output tensor in GMEM, in elements.
-        bias_1d_tile: 1D bias tile in GMEM loaded by the epilogue load warp.
+        bias_1d_tile: 1D bias tile in GMEM loaded by the epilogue load warp;
+            absent when the config has no bias.
         cluster_dim: CTA cluster dimensions used by the tile scheduler.
         mnk: Kernel-frame (M, N, K) dimensions; N is the pre-SwiGLU width,
             equal to twice the output H.
@@ -1556,6 +1601,30 @@ def blackwell_swiglu_warp_specialized_kernel[
     comptime num_group_pipeline_stages = num_pipeline_stages // k_group_size
     comptime num_clc_pipeline_stages = config.num_clc_pipeline_stages
     comptime num_accum_pipeline_stages = config.num_accum_pipeline_stages
+
+    # The weight tiles of the first work tile's leading pipeline groups load
+    # before the PDL wait, so they stream in while the predecessor grid drains.
+    # Two groups measured as well as four and holds less of the ring. By
+    # contract the weight (the B operand, or A when swapped) and the bias are
+    # constant model weights, written before any grid in the chain launches, so
+    # both are read ahead of the wait; only the activation waits for the
+    # predecessor.
+    #
+    # The kernel never calls `launch_dependent_grids()`, so a dependent grid
+    # launches when this one completes. On B200 in an RMSNorm -> gate/up ->
+    # down chain, releasing at kernel entry was slower per layer at one token
+    # (3.4-3.9 us on Llama-3.1-8B, 2.3 us on the 70B shard, 0.3 us on the tuned
+    # shape) and at up to 64 tokens on the two-wave 8B config. It was 0.5-2 us
+    # faster per layer from 4 tokens up on the one-wave configs (the 70B shard,
+    # the tuned shape). That gain is inside the tie band, and avoiding the
+    # one-token loss needs a runtime branch on M, so no release is issued.
+    comptime assert (
+        pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+    ), "the fused SwiGLU kernel always waits when PDL is on"
+    comptime pdl_on = pdl_level > PDLLevel.OFF
+    comptime prefetch_tiles_n = min(
+        2, num_group_pipeline_stages
+    ) if pdl_on else 0
 
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = NUM_TMEM_COLS // num_accum_pipeline_stages
@@ -1600,12 +1669,14 @@ def blackwell_swiglu_warp_specialized_kernel[
         address_space=.SHARED,
         alignment=128,
     ]()
-    ref smem = smem_bytes.bitcast[SmemType]()[]
-    var ptr_tmem_addr: UnsafePointer[
+    ref smem = smem_bytes.unsafe_bitcast[SmemType]()[]
+    var ptr_tmem_addr: MutPointer[
         UInt32, origin_of(smem.tmem_addr), address_space=.SHARED
     ] = smem.tmem_addr.unsafe_ptr()
     var tmem_dealloc_mbar = smem.tmem_dealloc_mbar.unsafe_ptr()
-    var c_out_smem = (smem_bytes + c_out_smem_offset).bitcast[Scalar[c_type]]()
+    var c_out_smem = smem_bytes.unsafe_offset(c_out_smem_offset).unsafe_bitcast[
+        Scalar[c_type]
+    ]()
 
     # ===== A/B SMEM tile views =====
     var a_smem_tt = SMemTileArray2D[
@@ -1650,7 +1721,7 @@ def blackwell_swiglu_warp_specialized_kernel[
     )
     var scheduler = TileScheduler[
         num_stages=num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](CLUSTER_M, CLUSTER_N, 1),
+        cluster_shape=(CLUSTER_M, CLUSTER_N, 1),
         block_swizzle_size=config.block_swizzle_size,
         rasterize_order=RasterOrder(config.raster_order._value),
     ](cluster_dim, clc_resp, clc_full, clc_empty, clc_throttle)
@@ -1755,12 +1826,80 @@ def blackwell_swiglu_warp_specialized_kernel[
 
     # ===== TMA Load Warp =====
     if WarpRole.is_main_load():
-        comptime if pdl_level > PDLLevel.OFF:
+        comptime if pdl_on and prefetch_tiles_n == 0:
             wait_on_dependent_grids()
 
+        var first_tile = True
         for current in scheduler.work_iterator():
-            scheduler.throttle_signal(is_first_cta_in_cluster)
-            for i in range(0, Int(num_iters), k_group_size):
+            # With no CLC stages the scheduler warp exits before consuming
+            # throttle signals, and the zero-length throttle array aliases
+            # the next barrier in shared memory (`tmem_dealloc_mbar`).
+            comptime if num_clc_pipeline_stages > 0:
+                scheduler.throttle_signal(is_first_cta_in_cluster)
+            var first_iter = 0
+            comptime if prefetch_tiles_n > 0:
+                if first_tile:
+                    first_tile = False
+                    var pf_stages = StaticTuple[UInt32, prefetch_tiles_n]()
+                    comptime for pf in range(prefetch_tiles_n):
+                        if pf * k_group_size < Int(num_iters):
+                            pf_stages[pf] = load_mma_pipeline.producer_stage()
+                            load_AB[
+                                block_tile_shape=config.block_tile_shape,
+                                mma_shape=config.mma_shape,
+                                cta_group=cta_group,
+                                k_group_size=k_group_size,
+                                load_a=AB_swapped,
+                                load_b=not AB_swapped,
+                            ](
+                                a_tma_op,
+                                b_tma_op,
+                                a_smem_tt,
+                                b_smem_tt,
+                                load_mma_pipeline,
+                                peer_cta_coord,
+                                (
+                                    Int(current.m),
+                                    Int(current.n),
+                                    Int(current.k_start),
+                                ),
+                                a_multicast_mask,
+                                b_multicast_mask,
+                                UInt32(pf * k_group_size),
+                                elect_one_cta,
+                            )
+                            load_mma_pipeline.producer_step()
+                    wait_on_dependent_grids()
+                    comptime for pf in range(prefetch_tiles_n):
+                        if pf * k_group_size < Int(num_iters):
+                            load_AB[
+                                block_tile_shape=config.block_tile_shape,
+                                mma_shape=config.mma_shape,
+                                cta_group=cta_group,
+                                k_group_size=k_group_size,
+                                load_a=not AB_swapped,
+                                load_b=AB_swapped,
+                                claim_stage=False,
+                            ](
+                                a_tma_op,
+                                b_tma_op,
+                                a_smem_tt,
+                                b_smem_tt,
+                                load_mma_pipeline,
+                                peer_cta_coord,
+                                (
+                                    Int(current.m),
+                                    Int(current.n),
+                                    Int(current.k_start),
+                                ),
+                                a_multicast_mask,
+                                b_multicast_mask,
+                                UInt32(pf * k_group_size),
+                                elect_one_cta,
+                                pf_stages[pf],
+                            )
+                    first_iter = prefetch_tiles_n * k_group_size
+            for i in range(first_iter, Int(num_iters), k_group_size):
                 load_AB[
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
@@ -1846,17 +1985,19 @@ def blackwell_swiglu_warp_specialized_kernel[
         tcgen05_release_allocation_lock[Int32(cta_group)]()
         tmem_dealloc_mbar[].wait()
 
-        comptime if pdl_level > PDLLevel.OFF:
-            launch_dependent_grids()
-
         tcgen05_dealloc[Int32(cta_group)](tmem_addr, NUM_TMEM_COLS)
 
     # ===== Epilogue Load Producer Warp (warp 7, bias only) =====
     comptime if config.use_bias:
         if WarpRole.is_epilogue_load():
+            # The bias is a constant model weight (see the prefetch note
+            # above), so this warp reads it without waiting on the predecessor.
             var epi_load_pl = ProducerConsumerPipeline[2](
                 smem.epilogue_load_mbars.unsafe_ptr()
             )
+            comptime assert (
+                BiasEngine.element_size == 1
+            ), "bias load assumes a scalar-element engine"
             comptime bias_dim = BM if AB_swapped else MMA_N
             comptime elems_per_lane = 8
             comptime bytes_per_lane = elems_per_lane * size_of[c_type]()
@@ -1883,16 +2024,18 @@ def blackwell_swiglu_warp_specialized_kernel[
                         0
                     )
                     var src_ptr = (
-                        bias_1d_tile._storage + gmem_offset + lane_start
-                    ).address_space_cast[.GLOBAL]()
-                    var bias_smem_base: UnsafePointer[
+                        bias_1d_tile.value()
+                        .ptr.unsafe_offset(gmem_offset)
+                        .unsafe_offset(lane_start)
+                    ).unsafe_address_space_cast[.GLOBAL]()
+                    var bias_smem_base: MutPointer[
                         Scalar[c_type],
                         origin_of(smem.bias_smem),
                         address_space=.SHARED,
                     ] = smem.bias_smem.unsafe_ptr()
-                    var dst_ptr = (
-                        bias_smem_base + Int(stage) * bias_dim + lane_start
-                    )
+                    var dst_ptr = bias_smem_base.unsafe_offset(
+                        Int(stage) * bias_dim
+                    ).unsafe_offset(lane_start)
                     async_copy[bytes_per_lane, fill=Scalar[c_type](0)](
                         src_ptr, dst_ptr, src_size=src_bytes
                     )
@@ -1942,12 +2085,14 @@ def blackwell_swiglu_warp_specialized_kernel[
 
                 var epi_stage = Int(epi_load_pl.consumer_stage())
                 epi_load_pl.wait_producer()
-                var bias_smem_base: UnsafePointer[
+                var bias_smem_base: MutPointer[
                     Scalar[c_type],
                     origin_of(smem.bias_smem),
                     address_space=.SHARED,
                 ] = smem.bias_smem.unsafe_ptr()
-                var bias_smem_ptr = bias_smem_base + epi_stage * bias_dim
+                var bias_smem_ptr = bias_smem_base.unsafe_offset(
+                    epi_stage * bias_dim
+                )
                 comptime if config.register_swiglu:
                     _swiglu_epilogue_gmem[
                         a_type,
@@ -1975,7 +2120,6 @@ def blackwell_swiglu_warp_specialized_kernel[
                         c_type,
                         transpose_b,
                         config,
-                        c_rank,
                         c_tile_shape,
                         c_desc_shape,
                         num_accum_pipeline_stages,
@@ -2040,7 +2184,6 @@ def blackwell_swiglu_warp_specialized_kernel[
                         c_type,
                         transpose_b,
                         config,
-                        c_rank,
                         c_tile_shape,
                         c_desc_shape,
                         num_accum_pipeline_stages,

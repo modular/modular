@@ -13,17 +13,27 @@
 
 from __future__ import annotations
 
+import gc
 import queue
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator, Mapping, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from types import ModuleType
+from typing import Any, TypeVar, get_args
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 from max.driver import CPU, Device
-from max.nn.kv_cache import MultiKVCacheParams
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn.legacy.kv_cache import (
+    KVCacheGroupId,
+    KVConnectorType,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+)
 from max.pipelines.context import (
     GenerationStatus,
     TextContext,
@@ -31,11 +41,15 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.context import FUTURE_TOKEN
+from max.pipelines.kv_cache import JengaKVCacheManager, PagedKVCacheManager
 from max.pipelines.kv_cache.config import KVConnectorConfig
+from max.pipelines.kv_cache.connectors import NullConnector
+from max.pipelines.kv_cache.kv_connector import KVTransfer
+from max.pipelines.kv_cache.paged_kv_cache import jenga_cache_manager
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngineMetadata,
 )
-from max.pipelines.lib import MemoryPlan, OverlapTextGenerationPipeline
+from max.pipelines.lib import OverlapTextGenerationPipeline
 from max.pipelines.lib.pipeline_variants.utils import (
     update_spec_decode_context_and_prepare_responses,
 )
@@ -43,12 +57,16 @@ from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
 )
-from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.config import (
+    SpeculativeConfig,
+    SpeculativeMethod,
+)
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,
     PrefillResponse,
     SchedulerProgress,
+    check_di_supports,
 )
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
     TextBatchConstructor,
@@ -77,15 +95,24 @@ from max.serve.worker_interface._zmq_queue import (
 from tests.serve.scheduler.common import (
     FakeOverlapPipeline,
     FakeTokenGeneratorPipeline,
-    PagedKVCacheManager,
-    create_kv_cache,
+    PagedKVCacheManagerInterface,
+    create_jenga_fp8_kv_cache,
+    create_jenga_kv_cache,
 )
 
-# Window for one blocking dispatcher read over loopback ZMQ IPC (delivery is
-# ~ms). Every run_iteration burns one full window on the terminal Empty of
-# its dispatcher drain loop, so this constant dominates suite wall time.
-TIMEOUT = 0.2
+# How long a sent message may take to arrive over loopback ZMQ IPC. Only a
+# lost message waits this long.
+TIMEOUT = 30.0
 _T = TypeVar("_T")
+
+
+@pytest.fixture(autouse=True)
+def _collect_di_scheduler_cycles() -> Generator[None]:
+    yield
+    # Scheduler callbacks form cycles that retain NIXL progress threads.
+    # Rust-backed Jenga pools trigger less Python GC, so collect between tests
+    # instead of letting idle agents burn CPU throughout subsequent tests.
+    gc.collect()
 
 
 @dataclass
@@ -97,14 +124,33 @@ class DIQueues:
     cancel_queue: queue.Queue[list[RequestID]]
 
 
-def blocking_recv(fn: Callable[[], _T], timeout: float = TIMEOUT) -> _T:
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        try:
+@dataclass
+class InFlight:
+    """Messages sent one way between the test dispatchers but not yet read.
+
+    ZMQ delivers in the background, and the first message on a new dealer
+    also waits for the connect. So a nowait read can miss a message that was
+    already sent. Waiting for the sent count makes each ``run_iteration`` see
+    every message sent before it, however slow the host is.
+    """
+
+    count: int = 0
+
+    def recv(self, fn: Callable[[], _T]) -> _T:
+        """Receives one message, and waits for it only if one was sent."""
+        if self.count == 0:
             return fn()
-        except queue.Empty:
-            time.sleep(0.001)
-    raise queue.Empty()
+        # Some tests patch time.monotonic, so use a clock they leave alone.
+        deadline = time.perf_counter() + TIMEOUT
+        while time.perf_counter() < deadline:
+            try:
+                msg = fn()
+            except queue.Empty:
+                time.sleep(0.001)
+                continue
+            self.count -= 1
+            return msg
+        raise TimeoutError(f"a sent message did not arrive within {TIMEOUT}s")
 
 
 def run_until(
@@ -181,21 +227,86 @@ def is_cancelled(decode: DecodeScheduler, req_id: RequestID) -> bool:
 
 
 class BasicDispatcherServer(PrefillDispatcherServer):
-    def __init__(self, bind_addr: str):
+    def __init__(self, bind_addr: str, requests: InFlight, replies: InFlight):
         self.bind_addr = bind_addr
+        self.requests = requests
+        self.replies = replies
         super().__init__(bind_addr=bind_addr)
 
+    def send_reply_nowait(
+        self, msg: ReplyType, identity: ClientIdentity
+    ) -> None:
+        super().send_reply_nowait(msg, identity)
+        self.replies.count += 1
+
     def recv_request_nowait(self) -> tuple[RequestType, ClientIdentity]:
-        return blocking_recv(super().recv_request_nowait)
+        return self.requests.recv(super().recv_request_nowait)
 
 
 class BasicDispatcherClient(DecodeDispatcherClient):
-    def __init__(self, bind_addr: str):
+    def __init__(self, bind_addr: str, requests: InFlight, replies: InFlight):
         self.bind_addr = bind_addr
+        self.requests = requests
+        self.replies = replies
         super().__init__(bind_addr=bind_addr)
 
+    def send_request_nowait(self, request: RequestType, dest_addr: str) -> None:
+        super().send_request_nowait(request, dest_addr)
+        self.requests.count += 1
+
     def recv_reply_nowait(self) -> ReplyType:
-        return blocking_recv(super().recv_reply_nowait)
+        return self.replies.recv(super().recv_reply_nowait)
+
+
+class HintRecordingConnector(NullConnector):
+    """Stand in for the dKV connector. Records the hint of every ``lookup``
+    and ``load`` it is handed.
+
+    Reports the first block of each lookup as held off-device, so the block
+    manager goes on to ``load`` it rather than stopping at a miss.
+    """
+
+    def __init__(self) -> None:
+        self.lookup_hints: list[bytes | None] = []
+        self.load_hints: list[bytes | None] = []
+        self._leaves: Mapping[str, KVCacheGroupId] = {}
+
+    def build(
+        self, *, leaves: Mapping[str, KVCacheGroupId], **_: object
+    ) -> HintRecordingConnector:
+        """Stands in for ``create_connector``, serving the manager's leaves."""
+        self._leaves = leaves
+        return self
+
+    @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return self._leaves
+
+    @property
+    def name(self) -> str:
+        # The block manager bypasses a connector named "NullConnector".
+        return "HintRecordingConnector"
+
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+        chain_start: int | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        self.lookup_hints.append(hint)
+        held = [i == 0 for i in range(len(block_hashes))]
+        return {leaf_id: held for leaf_id in self.leaves}
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        self.load_hints.append(hint)
+        return super().load(block_ids, block_hashes, replica_idx, hint)
 
 
 def create_text_context(
@@ -236,6 +347,8 @@ def create_di_scheduler(
     prefill_tp_per_replica: int = 1,
     prefill_dp: int | None = None,
     decode_dp: int | None = None,
+    jenga_fp8: bool = False,
+    prefill_connector: HintRecordingConnector | None = None,
 ) -> tuple[DecodeScheduler, PrefillScheduler, str, DIQueues]:
     """Creates a DecodeScheduler and PrefillScheduler pair for testing.
 
@@ -259,6 +372,10 @@ def create_di_scheduler(
             topologies while keeping the same total device count.
         decode_dp: Override ``dp`` for the decode worker only (defaults to
             ``dp``).
+        jenga_fp8: Give both workers a Jenga manager for an fp8 cache, whose
+            values and scales leaves hold independent block ids.
+        prefill_connector: Build the prefill KV cache with this connector
+            in place of the one its config names. Decode keeps its own.
     """
 
     effective_prefill_dp = prefill_dp if prefill_dp is not None else dp
@@ -274,14 +391,17 @@ def create_di_scheduler(
     # KVTransferEngine.from_paged_kv_cache goes untested.
     multi_kv = effective_num_spec_tokens > 0
 
-    def _create_prefill_kv_cache() -> PagedKVCacheManager:
-        return create_kv_cache(
+    def _create_prefill_kv_cache() -> PagedKVCacheManagerInterface:
+        return create_jenga_kv_cache(
             num_blocks=num_blocks,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
-            kv_connector_config=kv_connector_config,
+            # Jenga discards the connector when the config names none.
+            kv_connector_config=KVConnectorConfig(type=KVConnectorType.dkv)
+            if prefill_connector is not None
+            else kv_connector_config,
             dp=effective_prefill_dp,
             device=device,
             num_speculative_tokens=effective_num_spec_tokens,
@@ -290,8 +410,8 @@ def create_di_scheduler(
             multi_kv=multi_kv,
         )
 
-    def _create_decode_kv_cache() -> PagedKVCacheManager:
-        return create_kv_cache(
+    def _create_decode_kv_cache() -> PagedKVCacheManagerInterface:
+        return create_jenga_kv_cache(
             num_blocks=num_blocks,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,
@@ -334,12 +454,33 @@ def create_di_scheduler(
     ] = queue.Queue()
     cancel_queue: queue.Queue[list[RequestID]] = queue.Queue()
 
-    kv_cache_prefill = _create_prefill_kv_cache()
-    kv_cache_decode = _create_decode_kv_cache()
+    def _prefill_connector_patch(
+        manager_module: ModuleType,
+    ) -> AbstractContextManager[object]:
+        if prefill_connector is None:
+            return nullcontext()
+        return patch.object(
+            manager_module, "create_connector", prefill_connector.build
+        )
+
+    kv_cache_prefill: PagedKVCacheManagerInterface
+    kv_cache_decode: PagedKVCacheManagerInterface
+    if jenga_fp8:
+        kv_cache_prefill = create_jenga_fp8_kv_cache(
+            64, max_batch_size, max_seq_len, page_size, enable_prefix_caching
+        )
+        kv_cache_decode = create_jenga_fp8_kv_cache(
+            64, max_batch_size, max_seq_len, page_size, enable_prefix_caching
+        )
+    else:
+        with _prefill_connector_patch(jenga_cache_manager):
+            kv_cache_prefill = _create_prefill_kv_cache()
+        kv_cache_decode = _create_decode_kv_cache()
     server_addr = generate_zmq_ipc_path()
     client_addr = generate_zmq_ipc_path()
-    dispatcher_server = BasicDispatcherServer(bind_addr=server_addr)
-    dispatcher_client = BasicDispatcherClient(bind_addr=client_addr)
+    requests, replies = InFlight(), InFlight()
+    dispatcher_server = BasicDispatcherServer(server_addr, requests, replies)
+    dispatcher_client = BasicDispatcherClient(client_addr, requests, replies)
 
     decode_pipeline = (
         FakeOverlapPipeline(
@@ -477,6 +618,71 @@ def test_one_req_end_to_end() -> None:
         assert single_token.tokens == [tok]
 
 
+def test_jenga_fp8_end_to_end_moves_each_leaf_by_its_own_ids() -> None:
+    decode, prefill, server_addr, q = create_di_scheduler(jenga_fp8=True)
+    ctx = create_text_context(
+        target_endpoint=server_addr,
+        prompt_len=300,
+        output_len=5,
+    )
+    q.request_queue.put(ctx)
+
+    decode.run_iteration()
+    prefill.run_iteration()
+
+    (active,) = prefill.active_transfers.values()
+    src_idxs = active.transfer.src_idxs
+    dst_idxs = active.transfer.dst_idxs
+    leaf_ids = set(prefill.kv_cache.params.leaves())
+    assert len(leaf_ids) == 2
+    assert src_idxs.keys() == dst_idxs.keys() == leaf_ids
+    values_src, scales_src = src_idxs.values()
+    assert len(values_src) == len(scales_src) == 3
+    assert values_src != scales_src
+
+    run_until(lambda: ctx.request_id in done_request_ids(q), decode, prefill)
+    assert prefill.kv_cache.block_count(replica_idx=0).used == 0
+
+
+def test_ttft_join_hops_ride_first_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAX_SERVE_TTFT_JOIN", "1")
+    decode, prefill, q, ctx = (
+        create_default_di_scheduler_and_submit_one_request()
+    )
+    req_id = ctx.request_id
+    decode.run_iteration()
+    prefill.run_iteration()
+    run_until(lambda: req_id in done_request_ids(q), decode, prefill)
+
+    first = q.response_queue.get()[req_id]
+    assert first.result is not None
+    hops = first.result.ttft_join_hops_ms
+    assert hops is not None
+    assert "admit_ms" in hops
+    assert "mw_queue_wait_ms" in hops
+    # PrefillResponse is before transfer/TG. onload_wait is recorded at
+    # ready (first decode token). The finer TG split lands there too.
+    assert "transfer_wait_ms" not in hops
+    assert "tg_queue_ms" not in hops
+    assert "tg_first_out_ms" not in hops
+    later = q.response_queue.get()[req_id]
+    assert later.result is not None
+    # Hop-carry keeps the stamp on later outputs until the request is
+    # released, so a skipped first chunk can still join leftover.
+    later_hops = later.result.ttft_join_hops_ms
+    assert later_hops is not None
+    assert "admit_ms" in later_hops
+    assert later_hops.get("onload_wait_ms", 0.0) >= 0.0
+    assert "transfer_wait_ms" in later_hops
+    assert later_hops["transfer_wait_ms"] >= 0.0
+    assert "tg_queue_ms" in later_hops
+    assert later_hops["tg_queue_ms"] >= 0.0
+    assert "tg_first_out_ms" in later_hops
+    assert later_hops["tg_first_out_ms"] >= 0.0
+
+
 def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
     """
     Both engines are constructed with their natural ``[dp][tp]`` layout.
@@ -605,19 +811,25 @@ def test_di_with_dp2_requests_distributed_to_different_replicas() -> None:
     prefill_request1, _ = prefill.dispatcher.recv_request_nowait()
     assert isinstance(prefill_request1, PrefillRequest)
     assert prefill_request1.dst_replica_idx == 0
-    assert prefill_request1.dst_block_ids == [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    assert list(prefill_request1.dst_block_ids.values()) == [
+        [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    ]
 
     # Check that second request was assigned to replica 1
     prefill_request2, _ = prefill.dispatcher.recv_request_nowait()
     assert isinstance(prefill_request2, PrefillRequest)
     assert prefill_request2.dst_replica_idx == 1
-    assert prefill_request2.dst_block_ids == [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    assert list(prefill_request2.dst_block_ids.values()) == [
+        [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    ]
 
     # Check that third request was assigned to replica 0
     prefill_request3, _ = prefill.dispatcher.recv_request_nowait()
     assert isinstance(prefill_request3, PrefillRequest)
     assert prefill_request3.dst_replica_idx == 0
-    assert prefill_request3.dst_block_ids == [9, 10, 11, 12, 13, 14, 15, 16, 17]
+    assert list(prefill_request3.dst_block_ids.values()) == [
+        [10, 11, 12, 13, 14, 15, 16, 17, 18]
+    ]
 
 
 def test_di_with_dp2_end_to_end() -> None:
@@ -1007,6 +1219,7 @@ def test_structured_output_handoff_discards_prefill_token_by_default(
     one-token chunked-CE continuation instead of a completed generation
     step.
     """
+    monkeypatch.setenv("MAX_SERVE_TTFT_JOIN", "1")
     monkeypatch.setattr(
         TextBatchConstructor,
         "structured_output_enabled",
@@ -1044,6 +1257,7 @@ def test_structured_output_handoff_discards_prefill_token_by_default(
     assert response_count(q, req_id) == 0, (
         "No output is produced until decode's own forward samples token 1"
     )
+    assert decode._ttft_join_hops.get(req_id, {}).get("handoff") == 1.0
 
 
 def test_handoff_to_first_token_metric_recorded_end_to_end(
@@ -1256,7 +1470,7 @@ def test_prefix_caching_marks_cached_blocks_in_prefill_request() -> None:
             break
 
     # The leading pages should be marked -1 (prefix-cached on decode)
-    dst_ids = msg.dst_block_ids
+    (dst_ids,) = msg.dst_block_ids.values()
     num_cached = dst_ids.count(-1)
 
     assert num_cached > 0, "Expected some blocks to be prefix-cached"
@@ -1311,7 +1525,8 @@ def test_prefix_caching_marks_cached_blocks_independent_of_decode_dp() -> None:
             if isinstance(msg, PrefillRequest):
                 break
 
-        return msg.dst_block_ids.count(-1)
+        (dst_ids,) = msg.dst_block_ids.values()
+        return dst_ids.count(-1)
 
     baseline = num_cached_blocks(decode_dp=1)
     assert baseline > 0, "Expected some blocks to be prefix-cached"
@@ -1351,11 +1566,70 @@ def test_prefix_caching_prefill_skips_cached_blocks_in_transfer() -> None:
     # Transfer should only cover the non-cached pages
     assert len(prefill.active_transfers) == 1
     active = next(iter(prefill.active_transfers.values()))
-    transferred_pages = len(active.transfer.src_idxs)
+    transferred_pages = max(
+        len(idxs) for idxs in active.transfer.src_idxs.values()
+    )
     assert transferred_pages < num_total_pages, (
         f"Expected fewer than {num_total_pages} pages transferred, "
         f"got {transferred_pages}"
     )
+
+
+def test_dkv_cache_hint_reaches_prefill_connector() -> None:
+    """A request's ``dkv_cache_hint`` reaches the prefill connector's
+    ``lookup`` and ``load`` through the real DI path.
+
+    Only prefill is built with the recording connector, so the hint it sees
+    can only have crossed the wire inside the ``PrefillRequest``.
+    """
+    page_size = 128
+    # Note: the last token is never hashed, so this leaves two full blocks for a
+    # fresh prefill to ask the connector about.
+    prompt_len = 2 * page_size + 44
+    connector = HintRecordingConnector()
+    decode, prefill, server_addr, q = create_di_scheduler(
+        page_size=page_size,
+        enable_prefix_caching=True,
+        prefill_connector=connector,
+    )
+
+    dkv_cache_hint = b'{"version":2,"instances":[{"instance_name":"dkv-peer"}]}'
+    hinted = create_text_context(
+        target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
+    )
+    hinted.dkv_cache_hint = dkv_cache_hint
+    q.request_queue.put(hinted)
+    decode.run_iteration()
+    prefill.run_iteration()
+    run_until(lambda: hinted.request_id in done_request_ids(q), decode, prefill)
+
+    assert connector.lookup_hints, "prefill never looked up the connector"
+    assert connector.load_hints, "prefill never loaded from the connector"
+    for hint in connector.lookup_hints + connector.load_hints:
+        assert type(hint) is bytes
+        assert hint == dkv_cache_hint
+
+    # Different tokens, so the prefill device cache cannot serve this one
+    # before the connector is asked.
+    unhinted = TextContext(
+        request_id=RequestID(),
+        max_length=prompt_len + 5,
+        tokens=TokenBuffer(np.full(prompt_len, 2, dtype=np.int64)),
+        target_endpoint=server_addr,
+    )
+    num_hinted_lookups = len(connector.lookup_hints)
+    num_hinted_loads = len(connector.load_hints)
+    q.request_queue.put(unhinted)
+    run_until(
+        lambda: unhinted.request_id in done_request_ids(q), decode, prefill
+    )
+
+    unhinted_hints = (
+        connector.lookup_hints[num_hinted_lookups:]
+        + connector.load_hints[num_hinted_loads:]
+    )
+    assert unhinted_hints
+    assert all(hint is None for hint in unhinted_hints)
 
 
 def test_completed_request_cleans_up_all_state() -> None:
@@ -1496,35 +1770,20 @@ def test_cancel_request_before_prefill_executes() -> None:
     assert batch[req_id].is_done
     assert batch[req_id].result is None
 
-    found_cancel = False
-    for _ in range(10):
-        try:
-            msg, _ = prefill.dispatcher.recv_request_nowait()
-            if isinstance(msg, CancelRequest) and msg.id == req_id:
-                found_cancel = True
-                break
-        except queue.Empty:
-            break
-    assert found_cancel, "Expected a CancelRequest to be sent to prefill"
+    # Prefill reads the handshake, the PrefillRequest and the CancelRequest,
+    # runs CE, and drops the result because the request was cancelled.
+    with patch.object(
+        prefill, "handle_cancel_request", wraps=prefill.handle_cancel_request
+    ) as handle_cancel:
+        prefill.run_iteration()
+    handle_cancel.assert_called_once()
+    assert handle_cancel.call_args.args[0].id == req_id
 
-    # Run prefill...cancel should cause it to discard the result
-    prefill.run_iteration()
-
-    # Verify no PrefillResponse was sent back to decode.
-    try:
-        reply = blocking_recv(decode.dispatcher.recv_reply_nowait, timeout=0.1)
-        if isinstance(reply, KVTransferEngineMetadata):
-            try:
-                reply2 = blocking_recv(
-                    decode.dispatcher.recv_reply_nowait, timeout=0.1
-                )
-                assert not isinstance(reply2, PrefillResponse), (
-                    "Did not expect a PrefillResponse after cancellation"
-                )
-            except queue.Empty:
-                pass  # Valid (no PrefillResponse)
-    except queue.Empty:
-        pass  # Valid
+    # Only the engine-registration handshake comes back, no PrefillResponse.
+    reply = decode.dispatcher.recv_reply_nowait()
+    assert isinstance(reply, KVTransferEngineMetadata)
+    with pytest.raises(queue.Empty):
+        decode.dispatcher.recv_reply_nowait()
 
 
 def test_chunked_prefill_completes_across_multiple_iterations() -> None:
@@ -1562,8 +1821,9 @@ def test_chunked_prefill_completes_across_multiple_iterations() -> None:
         f"got {prefill_progress_count}"
     )
 
-    # Decode receives the response and runs decode to completion
-    run_until(lambda: req_id in done_request_ids(q), decode, prefill)
+    # The prefill token is already done (output_len=1), so wait for the TG
+    # output too. It comes only after the KV transfer completes.
+    run_until(lambda: response_count(q, req_id) >= 2, decode, prefill)
 
     # Verify tokens
     outputs: list[TextGenerationOutput] = []
@@ -1648,7 +1908,7 @@ def test_kv_backpressure_stops_sending_to_prefill() -> None:
     # After the first request: 9/10 = 90% utilization, which is NOT < 0.9
     # Therefore, backpressure gate blocks the second request
     decode, _, server_addr, q = create_di_scheduler(
-        num_blocks=10, page_size=128
+        num_blocks=10, page_size=128, max_seq_len=1280
     )
 
     ctx1 = create_text_context(
@@ -1855,7 +2115,7 @@ def test_overlap_prefill_pending_first_token_defers_insufficient_blocks() -> (
     new CE request hitting InsufficientBlocksError at that moment must
     requeue as transient rather than raise (SERVOPT-1551)."""
     decode, prefill, server_addr, q = create_di_scheduler(
-        overlap_prefill=True, num_blocks=2, page_size=128
+        overlap_prefill=True, num_blocks=2, page_size=128, max_seq_len=256
     )
     assert isinstance(prefill.pipeline, FakeOverlapPipeline)
 
@@ -2366,8 +2626,11 @@ def test_spec_decode_prefill_decode_receives_draft_tokens() -> None:
     )
 
 
-def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
-    """load_prefill_scheduler returns a PrefillScheduler for eagle spec decode.
+@pytest.mark.parametrize("method", get_args(SpeculativeMethod))
+def test_load_prefill_scheduler_accepts_spec_method(
+    method: SpeculativeMethod,
+) -> None:
+    """load_prefill_scheduler returns a PrefillScheduler for every spec method.
 
     PrefillScheduler is patched so the test stays a unit — it would otherwise
     need a full KV cache, transfer engine, and NIXL agent.
@@ -2375,7 +2638,7 @@ def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
     pipeline = MagicMock()
     pipeline.kv_manager = MagicMock()
     config = MagicMock()
-    config.speculative = SpeculativeConfig(speculative_method="eagle")
+    config.speculative = SpeculativeConfig(speculative_method=method)
     sentinel = MagicMock(name="PrefillScheduler")
 
     with (
@@ -2401,29 +2664,6 @@ def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
     from_pipeline_config.assert_called_once_with(
         config, pipeline.max_batch_size, None
     )
-
-
-def test_load_prefill_scheduler_accepts_mtp_spec_decode() -> None:
-    """load_prefill_scheduler accepts mtp spec decode just like eagle."""
-    pipeline = MagicMock()
-    pipeline.kv_manager = MagicMock()
-    config = MagicMock()
-    config.speculative = SpeculativeConfig(speculative_method="mtp")
-
-    with (
-        patch("max.serve.scheduler.prefill_scheduler.PrefillScheduler"),
-        patch("max.serve.scheduler.prefill_scheduler.PrefillDispatcherServer"),
-        patch(
-            "max.serve.scheduler.prefill_scheduler."
-            "TokenGenerationSchedulerConfig.from_pipeline_config",
-        ),
-        patch(
-            "max.serve.scheduler.prefill_scheduler."
-            "PIPELINE_REGISTRY.retrieve_context_type",
-            return_value=TextContext,
-        ),
-    ):
-        load_prefill_scheduler(pipeline, config, MagicMock(), None)
 
 
 # Overlap + speculative decoding on the prefill side: CE deferral and
@@ -2596,126 +2836,6 @@ def test_update_spec_decode_skips_draft_tokens_when_is_done() -> None:
     )
 
 
-def test_update_spec_decode_skip_fsm_advance_does_not_call_advance_fsm() -> (
-    None
-):
-    """With skip_fsm_advance=True, advance_fsm is never called for committed tokens.
-
-    When a CUDA host callback has already advanced the FSM, the Python-side
-    update should skip FSM calls to avoid double-advancing.
-    """
-    ctx = TextContext(
-        request_id=RequestID(),
-        max_length=2048,
-        tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
-    )
-    ctx.update_with_future_token()  # sets generated_length=1 so the loop runs
-
-    mock_matcher = MagicMock()
-    ctx._matcher = mock_matcher
-
-    with patch.object(ctx, "advance_fsm") as mock_advance_fsm:
-        update_spec_decode_context_and_prepare_responses(
-            draft_tokens=np.array([[1, 2]], dtype=np.int32),
-            next_draft_tokens=np.array([[3, 4]], dtype=np.int32),
-            num_accepted_draft_tokens=np.array([1], dtype=np.int32),
-            next_tokens=np.array([5], dtype=np.int32),
-            context_batch=[ctx],
-            max_seq_len=2048,
-            skip_fsm_advance=True,
-        )
-
-    mock_advance_fsm.assert_not_called()
-
-
-def test_update_spec_decode_without_skip_fsm_advance_calls_advance_fsm() -> (
-    None
-):
-    """Without skip_fsm_advance, advance_fsm is called for each committed token.
-
-    Verifies the baseline (skip_fsm_advance=False) so the skip test has
-    a meaningful contrast.
-    """
-    ctx = TextContext(
-        request_id=RequestID(),
-        max_length=2048,
-        tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
-    )
-    ctx.update_with_future_token()
-
-    mock_matcher = MagicMock()
-    ctx._matcher = mock_matcher
-
-    with patch.object(ctx, "advance_fsm") as mock_advance_fsm:
-        update_spec_decode_context_and_prepare_responses(
-            draft_tokens=np.array([[1, 2]], dtype=np.int32),
-            next_draft_tokens=np.array([[3, 4]], dtype=np.int32),
-            num_accepted_draft_tokens=np.array([1], dtype=np.int32),
-            next_tokens=np.array([5], dtype=np.int32),
-            context_batch=[ctx],
-            max_seq_len=2048,
-            skip_fsm_advance=False,
-        )
-
-    # advance_fsm called for the first token (realize_future_token path)
-    # and subsequent tokens go through update() which also calls advance_fsm
-    assert mock_advance_fsm.call_count >= 1
-
-
-def test_update_spec_decode_does_not_early_stop_near_max_seq_len() -> None:
-    """update_spec_decode_context_and_prepare_responses keeps a near-limit
-    context live as long as there is room for at least one more token.
-
-    MAX-615 was originally mitigated by reserving worst-case
-    (num_spec_tokens + 1) growth in build_response, which stopped a sequence
-    up to num_spec_tokens tokens short of the cap. Now the KV pool carries
-    num_draft_tokens slack beyond max_seq_len (see overlap_text_generation
-    ``_effective_max_cache_length``), so a step may over-speculate into that
-    slack and the per-token commit loop truncates to the cap. A context that
-    still has room must therefore NOT be early-stopped here.
-    """
-    num_spec_tokens = 3
-
-    # At prompt_len=96 / max_seq_len=100 the old worst-case reservation
-    # (96 + 1 + 4 > 100) marked this MAXIMUM_LENGTH; it must no longer do so
-    # because there is still room for more tokens (97 < 100).
-    max_seq_len = 100
-    prompt_len = max_seq_len - (num_spec_tokens + 1)  # = 96
-    output_len = max_seq_len - prompt_len  # = 4
-
-    ctx = create_text_context(
-        target_endpoint="ipc:///tmp/test",
-        prompt_len=prompt_len,
-        output_len=output_len,
-    )
-    assert ctx.max_length == max_seq_len
-
-    # Prepare the context for spec dec: add future token placeholder
-    ctx.update_with_future_token()
-    assert not ctx.is_done, "Context should not be done before the test"
-
-    next_draft = [4, 5, 6]
-    update_spec_decode_context_and_prepare_responses(
-        draft_tokens=np.array([[1, 2, 3]], dtype=np.int32),
-        next_draft_tokens=np.array([next_draft], dtype=np.int32),
-        num_accepted_draft_tokens=np.array([0], dtype=np.int32),
-        next_tokens=np.array([99], dtype=np.int32),
-        context_batch=[ctx],
-        max_seq_len=max_seq_len,
-    )
-
-    # Only the bonus token committed (current_position=97 < 100), so the
-    # context stays live and keeps its drafts for the next verify step.
-    assert ctx.status != GenerationStatus.MAXIMUM_LENGTH, (
-        "Context with room for more tokens must not be early-stopped: "
-        f"current_position={ctx.tokens.current_position}, "
-        f"max_seq_len={max_seq_len}"
-    )
-    assert ctx.spec_decoding_state.draft_tokens_to_verify == next_draft, (
-        "A still-active context must retain its next-step draft tokens"
-    )
-
-
 # ---------------------------------------------------------------------------
 # Stall watchdog tests
 # ---------------------------------------------------------------------------
@@ -2824,33 +2944,6 @@ def test_decode_request_ttl_default_is_disabled() -> None:
     assert decode.scheduler_config.decode_request_ttl_s is None
 
 
-def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
-    """``decode_request_ttl_s`` flows through ``from_pipeline_config``."""
-    pipeline_config = MagicMock()
-    pipeline_config.runtime.max_batch_size = 1
-    pipeline_config.runtime.max_batch_input_tokens = 8192
-    pipeline_config.runtime.enable_chunked_prefill = True
-    pipeline_config.runtime.chunked_prefill_min_chunk_size = 0
-    pipeline_config.runtime.enable_in_flight_batching = False
-    pipeline_config.runtime.dp_ce_balance_threshold = 0.8
-    pipeline_config.runtime.decode_stall_timeout_s = None
-    pipeline_config.runtime.decode_request_ttl_s = 42.0
-    pipeline_config.model.data_parallel_degree = 1
-    pipeline_config.speculative = None
-    memory_plan = MemoryPlan(
-        planned_max_batch_size=1,
-        footprint=0,
-        planned_max_length=2048,
-        planned_max_batch_total_tokens=8192,
-    )
-
-    config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config, max_batch_size=1, memory_plan=memory_plan
-    )
-
-    assert config.decode_request_ttl_s == 42.0
-
-
 def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2922,7 +3015,7 @@ def _setup_tg_alloc_deferred_with_pending_prefill() -> DecodeScheduler:
     that never arrives (prefill is not pumped after req2 is sent).
     """
     decode, prefill, server_addr, q = create_di_scheduler(
-        num_blocks=2, page_size=128
+        num_blocks=2, page_size=128, max_seq_len=256
     )
 
     ctx1 = create_text_context(
@@ -2970,7 +3063,7 @@ def test_decode_insufficient_blocks_defers_with_pending_prefill() -> None:
 
 
 # ---------------------------------------------------------------------------
-# maxserve.num_requests_queued gauge (MXSERV-29).
+# max.num_requests_queued gauge (MXSERV-29).
 #
 # The gauge is a synchronous OTel Gauge: ``BatchMetrics.publish_metrics``
 # samples ``num_pending_reqs`` once per scheduler iteration and replaces
@@ -3026,3 +3119,29 @@ def test_decode_publish_metrics_emits_pending_snapshot() -> None:
 
         assert recorder.last == 0
         assert len(decode.pending_reqs) + len(decode.requests) == recorder.last
+
+
+def test_check_di_supports_rejects_the_legacy_manager() -> None:
+    with pytest.raises(NotImplementedError, match="legacy KV manager"):
+        check_di_supports(MagicMock(spec=PagedKVCacheManager))
+
+
+def test_check_di_supports_rejects_a_sliding_window_leaf() -> None:
+    kv_cache = MagicMock(spec=JengaKVCacheManager)
+    kv_cache.params = MHAKVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=1,
+        head_dim=1,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        page_size=128,
+        window_size=256,
+    )
+    with pytest.raises(NotImplementedError, match="full-attention"):
+        check_di_supports(kv_cache)
+
+
+def test_check_di_supports_accepts_full_attention_jenga() -> None:
+    decode, prefill, _, _ = create_di_scheduler()
+    check_di_supports(decode.kv_cache)
+    check_di_supports(prefill.kv_cache)

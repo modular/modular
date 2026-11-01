@@ -19,6 +19,7 @@
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
@@ -244,19 +245,15 @@ bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   return paramBindings.size() < other.paramBindings.size();
 }
 
-OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
-                                          const OverloadSet &callable,
-                                          PValue selfPValue) {
-  DeclResolver &resolver = *callable.getShared().declResolver;
-  FnTypeGeneratorType signature = candidate->getDeclFullSignature();
+OverloadFitness
+OverloadFitness::evaluateDirectCall(ASTDecl *candidate,
+                                    const OverloadSet &callable) {
+  FnTypeGeneratorType signature =
+      candidate->getDeclFullSignature(callable.getContextualType(candidate));
 
-  if (auto witness = candidate->getIfWitness(); witness && selfPValue) {
-    // TODO(MOCO-1259): Support static methods with associated aliases
-    signature = substituteTraitAliasesIntoSignature(
-        resolver, witness->traitSymbol, signature, selfPValue);
-  }
-
-  ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
+  ParamBindings paramBindings = callable.getParamBindings(candidate);
+  // TODO(MOCO-5244): Speculative trials install no DeferredTypingContext.
+  ParamInf inference(paramBindings, signature.getInputParamTypes(),
                      signature.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, candidate,
                      /*discardError=*/true,
@@ -281,83 +278,9 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   return fitness;
 }
 
-/// Extract the closure name from a self operand. This handles two cases:
-/// (1) Closure parameters: the type is a ParamType wrapping a ParamDeclRefAttr,
-///     and the name is the parameter name (e.g. "C").
-/// (2) Closure instances: the value is defined by a VarDeclOp (a nested
-///     function materialized as a closure), and the name is the variable name
-///     (e.g. "kernel").
-static StringAttr closureNameFromSelfOperand(SharedState &shared,
-                                             CValue selfCValue) {
-  auto paramType = sugarDynCast<ParamType>(selfCValue.getRValueType().mlirType);
-  if (paramType) {
-    auto paramRef = dyn_cast<ParamDeclRefAttr>(paramType.getParam());
-    if (paramRef) {
-      if (ClosureEmitter::isClosureType(shared, paramRef.getType()))
-        return paramRef.getName();
-    }
-  }
-  Value mlirValue = selfCValue.getMlirValue();
-  if (mlirValue) {
-    if (auto varDecl = mlirValue.getDefiningOp<VarDeclOp>()) {
-      if (ClosureEmitter::isClosureType(shared, varDecl.getType()))
-        return varDecl.getNameAttr();
-    }
-  }
-  return {};
-}
-
-static ArrayRef<ClosureParamCapture>
-closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
-                              const CallOperands &operands,
-                              const OverloadSet &callable) {
-  if (!funcIfDirect)
-    return {};
-
-  StringRef declNames = [=]() -> StringRef {
-    if (auto witness = funcIfDirect->getIfWitness())
-      return witness->getWitnessEntry().witnessName;
-    return cast<FnOp>(funcIfDirect->getIfOperation()).getDeclName();
-  }();
-  if (!declNames.starts_with("__call__"))
-    return {};
-
-  if (operands.empty())
-    return {};
-  auto selfCValue = operands[0].ir.getIfCValue();
-  if (!selfCValue)
-    return {};
-  StringAttr closureName =
-      closureNameFromSelfOperand(funcIfDirect->getShared(), selfCValue);
-  if (!closureName)
-    return {};
-
-  // Look up the captures registered for the closure. The captures live on the
-  // operation that owns the closure definition:
-  //  - closure instances and closure-typed function parameters register on the
-  //    enclosing function (the closure is called within that function's body);
-  //  - closure-typed struct parameters/fields register on the struct (the
-  //    closure is callable from any of the struct's methods).
-  Value mlirValue = selfCValue.getMlirValue();
-  if (!mlirValue)
-    return {};
-
-  SharedState &shared = funcIfDirect->getShared();
-  return shared.lookupClosureCaptureFromOp(
-      mlirValue.getParentBlock()->getParentOp(), closureName);
-}
-
-/// Determine whether the specified signature can be invoked with the
-/// parameter bindings specified in `callable` and the arguments specified in
-/// `callOperands`.
-///
-/// The 'funcIfDirect' member is set if this is a direct call, or null if
-/// indirect.  It can be used to tune diagnostics.
-OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
-                                          ASTDecl *funcIfDirect,
-                                          const OverloadSet &callable,
-                                          const CallOperands &operands,
-                                          bool allowImplicitConversions) {
+OverloadFitness OverloadFitness::evaluateDirectCall(
+    ASTDecl *candidate, const OverloadSet &callable,
+    const CallOperands &operands, bool allowImplicitConversions) {
   SMLoc callLoc = callable.getExpr()->getLoc();
   SharedState &shared = callable.getShared();
 
@@ -365,8 +288,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // @implicit, so reject other candidates before running parameter inference.
   // Types with large __init__ overload sets (e.g. SIMD) make the inference
   // cost significant when converting many values, as in collection literals.
-  if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
-      funcIfDirect->getDeclImplicitConversionKind() ==
+  if (callable.syntax == CallSyntax::kImplicitConvert &&
+      candidate->getDeclImplicitConversionKind() ==
           ImplicitConversionKind::None) {
     // Name the target with the concrete Self type rather than the signature's
     // result type, which is still unsubstituted this early.
@@ -380,20 +303,116 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     return std::move(diag);
   }
 
-  if (!operands.empty() && funcIfDirect) {
-    if (auto selfCValue = operands[0].ir.getIfCValue()) {
-      if (auto selfPValue = PValue(selfCValue.getRValueType().mlirType)) {
-        // TODO(MOCO-1259): Support static methods with associated aliases
-        if (WitnessDecl *witness = funcIfDirect->getIfWitness();
-            witness &&
-            isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType)) {
-          signature = substituteTraitAliasesIntoSignature(
-              *shared.declResolver, witness->traitSymbol, signature,
-              selfPValue);
-        }
+  FnTypeGeneratorType signature =
+      candidate->getDeclFullSignature(callable.getContextualType(candidate));
+  OverloadFitness result = evaluateImpl(
+      signature, candidate, callable.getParamBindings(candidate),
+      callable.additionalAssumptions, operands, allowImplicitConversions);
+  if (result.getValidity() == Validity::kInvalid)
+    return result;
+
+  // Turn inclusiveness into invalid if contextual type and result type is
+  // mismatch.
+  //
+  // FIXME: this is wrong, we do this for backward compatibility reason. The
+  // whole overload set should be considered invalid. Consider
+  //
+  // ```mojo
+  //   struct Vec[n: Int]:
+  //     @implicit
+  //     def __init__(out self, value: Int):
+  //         pass
+  //
+  //     def __init__[T: Intable](out self: Vec[1], value: T):
+  //         pass
+  //
+  //    def splat[n: Int](x: Int) -> Vec[n]:
+  //       # We can not prove that `Vec[1]` != `Vec[n]`, the following call
+  //       # should lead to a overload resolution error. But we compile it
+  //       # currently.
+  //       return Vec[n](x)
+  // ```
+
+  if (callable.syntax == CallSyntax::kTypeCall &&
+      result.getValidity() == Validity::kFunctionConstraintInconclusive) {
+    FnTypeGeneratorType specialized = cast<GeneratorType>(
+        result.paramBindings.specializeGeneratorType(signature));
+
+    ASTType resultType = ASTType(specialized.getUserResultType());
+    ASTType ctxType = callable.getContextualType(candidate);
+
+    bool equalAllowingUnbound = [&]() -> bool {
+      // Must have the same struct declarations.
+      assert(ctxType.getDecl(shared) == resultType.getDecl(shared));
+
+      if (resultType.isEqualCanon(ctxType))
+        return true;
+
+      // A generator's body refers to its own unbound inputs through depth-0
+      // index refs, so those match anything just like `UnboundAttr`.
+      bool ctxIsGenerator = sugarIsa<GeneratorAttr>(PValue(ctxType));
+      auto isUnbound = [&](TypedAttr param) {
+        if (isa<UnboundAttr>(param))
+          return true;
+        auto indexRef = dyn_cast<ParamIndexRefAttr>(param);
+        return ctxIsGenerator && indexRef && indexRef.getDepth() == 0;
+      };
+
+      ArrayRef<TypedAttr> ctxParams = ctxType.getParamBindings();
+      ArrayRef<TypedAttr> lhsParams = resultType.getParamBindings();
+      for (auto [lhsParam, ctxParam] : llvm::zip_equal(lhsParams, ctxParams)) {
+        if (!isUnbound(ctxParam) &&
+            getCanonicalAttr(lhsParam) != getCanonicalAttr(ctxParam))
+          return false;
       }
+      return true;
+    }();
+
+    if (!equalAllowingUnbound) {
+      DeclResolver::DiagnosticDeclContextChanger x(candidate);
+      return shared.emitError(callLoc) << "return type " << resultType
+                                       << " doesn't match expected " << ctxType;
     }
   }
+
+  if (ASTType contextualType = callable.getContextualType(candidate)) {
+    if (auto genAttr = sugarDynCast<GeneratorAttr>(PValue(contextualType));
+        genAttr && sugarIsa<StructType>(ASTType(genAttr.getBody()))) {
+      VerifiedParamBindings &verifiedBindings = result.paramBindings;
+      auto genNumParams = genAttr.getInputParamTypes().size();
+      ArrayRef binding = verifiedBindings.getValues().take_front(genNumParams);
+      auto bound = BindParamsAttr::get(genAttr.getContext(), genAttr, binding,
+                                       &shared.getEvaluationContext());
+      SmallVector<TypedAttr> remappedBinding(ASTType(bound).getParamBindings());
+      llvm::append_range(remappedBinding,
+                         verifiedBindings.getValues().drop_front(genNumParams));
+      verifiedBindings.setBindings(
+          ParameterExprArrayAttr::get(genAttr.getContext(), remappedBinding));
+    }
+  }
+
+  return result;
+}
+
+OverloadFitness
+OverloadFitness::evaluateIndirectCall(FnTypeGeneratorType signature,
+                                      ASTDecl &declScope,
+                                      const CallOperands &operands) {
+  // An indirect callee has no use-site parameter bindings; everything is
+  // inferred from the operands.
+  ParamBindings noBindings(declScope, operands.callExpr);
+  return evaluateImpl(signature, /*funcIfDirect=*/nullptr, noBindings,
+                      /*additionalAssumptions=*/{}, operands,
+                      /*allowImplicitConversions=*/true);
+}
+
+OverloadFitness OverloadFitness::evaluateImpl(
+    FnTypeGeneratorType signature, ASTDecl *funcIfDirect,
+    const ParamBindings &paramBindings,
+    ArrayRef<ConstraintAttr> additionalAssumptions,
+    const CallOperands &operands, bool allowImplicitConversions) {
+  SMLoc callLoc = paramBindings.getExprLoc();
+  SharedState &shared = paramBindings.shared;
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
   PogListAttr argListAttr = signature.getArgListAttrs();
@@ -411,44 +430,10 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // Check that the signature can be rebound with this set of bindings.
   OperandsNeedingOriginsList operandsNeedingOrigins;
   CallParamInf inference(
-      callable.paramBindings, signature.getInputParamTypes(),
+      paramBindings, signature.getInputParamTypes(),
       signature.getParamListAttrs(), allowImplicitConversions, funcIfDirect,
       /*discardError=*/false, signature, operands, pogAssignment,
-      operandsNeedingOrigins, callable.additionalAssumptions);
-  // Check if we're calling a closure's __call__ method and need to set
-  // captured closure parameters. Only applies to method call syntax on a
-  // __call__ method — not direct calls that happen to pass a closure as an
-  // argument.
-  ArrayRef<ClosureParamCapture> implicitParams =
-      closureParamCapturesIfClosure(funcIfDirect, operands, callable);
-  if (!implicitParams.empty()) {
-    // Capture slots are at the front of the method's own parameter list
-    // (Inferred PassingKind), but getFullSignature() prepends contextual
-    // params (e.g. the trait's _Self). Skip past them.
-    //
-    // TODO: we won't be needing this after migrating to parametric trait.
-    size_t contextualParams = [&]() -> size_t {
-      if (funcIfDirect->getIfWitness())
-        return 1; // _Self param for trait witness
-      auto fnOp = cast<FnOp>(funcIfDirect->getIfOperation());
-      return signature.getInputParamTypes().size() -
-             fnOp.getFuncTypeGenerator().getInputParamTypes().size();
-    }();
-    const CallOperands &paramBindings = callable.paramBindings.getParameters();
-    size_t paramIdx = contextualParams;
-    for (const auto &[paramName, paramType] : implicitParams) {
-      // These capture slots are inferred parameters, but a user is allowed to
-      // bind them explicitly by keyword. Only seed the captured value when the
-      // user hasn't already provided it
-      StringAttr slotName = signature.getParamName(paramIdx);
-      if (!slotName || !paramBindings.findKwArg(slotName)) {
-        TypedAttr paramValue = ParamDeclRefAttr::get(paramName, paramType);
-        inference.setInitialInferredValue(paramIdx, paramValue);
-      }
-      ++paramIdx;
-    }
-  }
-
+      operandsNeedingOrigins, additionalAssumptions);
   VerifiedParamBindings verifiedBindings = inference.inferForCall();
   if (!verifiedBindings) {
     // Failed inference must have emitted a diagnostic.
@@ -481,39 +466,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
              << "result cannot bind __TypeOfAllTypes type to memory-only type "
              << ASTType(outputType);
     }
-
-  // Fail if this is a constructor call that returns the wrong result type. This
-  // can happen with weird things like this:
-  //     struct A[X: Int]: def __init__(out self: A[4]): pass
-  //     var a = A[1]()  # Infers to A[4]; error!
-  //     var b = A[4]()  # Ok!
-  if (callable.syntax == CallSyntax::kTypeCall) {
-    // Check to see if any of the parameter bound to the result type disagree
-    // with the 'Self' parameters, which are bound into the verified bindings.
-    auto resultType = ASTType(signature.getUserResultType());
-    auto numBindings = resultType.getParamBindings().size();
-    for (auto [paramIdx, actual, expected] : llvm::enumerate(
-             resultType.getParamBindings(),
-             result.getParamBindings().getValues().take_front(numBindings))) {
-      if (!isEqualCanon(actual, expected)) {
-        DeclResolver::DiagnosticDeclContextChanger x(funcIfDirect);
-        assert(resultType.getDecl(shared) &&
-               "result type should have an associated decl");
-        assert(resultType.getDecl(shared)->getIfOperation() &&
-               "result type decl should have an operation");
-        auto declOp =
-            cast<StructDeclOp>(resultType.getDecl(shared)->getIfOperation());
-        auto paramType = declOp.getSignature().getInputParamTypes()[paramIdx];
-        MojoInflightDiag resultTypeDiag = shared.emitError(callLoc);
-        resultTypeDiag << "return type " << resultType << " parameter "
-                       << ParamDeclRefAttr::get(
-                              declOp.getParams()[paramIdx].getName(), paramType)
-                       << " has value " << actual
-                       << " that doesn't match expected " << expected;
-        return std::move(resultTypeDiag);
-      }
-    }
-  }
 
   // Otherwise we succeeded!
   return result;

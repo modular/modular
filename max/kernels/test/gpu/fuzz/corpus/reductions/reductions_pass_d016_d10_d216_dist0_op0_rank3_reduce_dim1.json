@@ -1,0 +1,16 @@
+{
+  "target": "reductions",
+  "spec": {
+    "rank": 3,
+    "reduce_dim": 1,
+    "d0": 16,
+    "d1": 0,
+    "d2": 16,
+    "op": 0,
+    "dist": 0
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "empty non-inner axis, argmax: 256 output rows with no candidate each, which the tier picker sends to the tiled tier. Its rowwise.pjoin no-ops, so the entry point's emit must fold the Int64.MAX identity to index 0 itself -- it escaped as a tensor value before.",
+  "findings": []
+}

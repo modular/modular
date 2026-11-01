@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up
+from std.memory.alloc import unsafe_alloc
 from std.sys import align_of
 
-from layout import Idx, TileTensor
+from layout import TileTensor
 from layout.tile_layout import row_major
 from linalg.matmul.cpu.default import Inner_matmul_default
 from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
@@ -33,7 +34,6 @@ from linalg.utils import (
 from std.testing import assert_equal
 
 from std.utils import IndexList
-from std.utils.index import Index
 
 comptime M: Int = 64
 comptime N: Int = 64
@@ -131,7 +131,7 @@ def matmul_inner_loop[
         #  use the trivial numbers for now.
         GemmShape(0, 0, 0),  # Tile offset.
         GemmShape(m, n, k),  # Global tile dimension.
-        Index(n, k),  # Local tile dimension.
+        (n, k),  # Local tile dimension.
         True,  # skip_boundary_check
     )
 
@@ -150,14 +150,14 @@ def test_micro_kernel[
 
     comptime alignment = align_of[SIMD[c_type, config.simd_size]]()
 
-    var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
-    var b_packed_ptr = alloc[Scalar[b_type]](
+    var a_ptr = unsafe_alloc[Scalar[a_type],](m * k, alignment=alignment)
+    var b_packed_ptr = unsafe_alloc[Scalar[b_type]](
         (np // config.kernel_cols)
         * (kh // factor)
         * (factor * config.kernel_cols),
         alignment=alignment,
     )
-    var c_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var c_ptr = unsafe_alloc[Scalar[c_type],](m * n, alignment=alignment)
     var a = TileTensor(a_ptr, row_major(m, k))
     var b_packed = TileTensor(
         b_packed_ptr,
@@ -176,26 +176,24 @@ def test_micro_kernel[
     matmul_inner_loop[config](c, a, b_packed, m, n, k)
 
     assert_equal(Int(c_ptr[0]), k)
-    a_ptr.free()
-    b_packed_ptr.free()
-    c_ptr.free()
+    a_ptr.unsafe_free()
+    b_packed_ptr.unsafe_free()
+    c_ptr.unsafe_free()
 
 
 @export
 def kernel_export_dynamic(m: Int, n: Int, k: Int) abi("Mojo") raises:
-    test_micro_kernel[.float32, DType.float32, DType.float32](m, n, k)
+    test_micro_kernel[.float32, .float32, .float32](m, n, k)
 
 
 def main() raises:
-    test_micro_kernel[.float32, DType.float32, DType.float32](M, N, K)
-    test_micro_kernel[.uint8, DType.int8, DType.int32](M, N, K)
-    test_micro_kernel[
-        DType.uint8, DType.int8, DType.int32, saturated_vnni=True
-    ](M, N, K)
+    test_micro_kernel[.float32, .float32, .float32](M, N, K)
+    test_micro_kernel[.uint8, .int8, .int32](M, N, K)
+    test_micro_kernel[.uint8, .int8, .int32, saturated_vnni=True](M, N, K)
 
-    test_micro_kernel[.bfloat16, DType.bfloat16, DType.bfloat16](M, N, K)
-    test_micro_kernel[.bfloat16, DType.bfloat16, DType.float32](M, N, K)
+    test_micro_kernel[.bfloat16, .bfloat16, .bfloat16](M, N, K)
+    test_micro_kernel[.bfloat16, .bfloat16, .float32](M, N, K)
 
     # Test int8 x int8 -> int8 to ensure it doesn't dispatch to i8mm (which
     # requires 32-bit output). Use smaller k to fit in int8 range.
-    test_micro_kernel[.int8, DType.int8, DType.int8](M, N, 100)
+    test_micro_kernel[.int8, .int8, .int8](M, N, 100)

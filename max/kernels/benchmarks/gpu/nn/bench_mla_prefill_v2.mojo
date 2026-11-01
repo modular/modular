@@ -92,16 +92,13 @@ from std.benchmark import (
 )
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from std.utils import StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
-from layout import Idx, LayoutTensor, TileTensor, row_major
-from layout.coord import Coord
-from layout.runtime_layout import RuntimeLayout
+from layout import Idx, TileTensor, row_major
 
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand, MHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 from nn.attention.gpu.amd_structured.mha_mma_op import MlaConfigV2
 from nn.attention.gpu.amd_structured.mla_prefill_v2 import MlaPrefillV2
@@ -247,58 +244,38 @@ def run_mla_prefill_v2[
         # `compile_function`'s cache. ----
         comptime _kernel = MlaPrefillV2[_config]
         var _q0 = TileTensor(
-            cb_q.offset_ptr(0).bitcast[Scalar[qkv_type]](),
+            cb_q.offset_ptr(0).unsafe_bitcast[Scalar[qkv_type]](),
             row_major(
-                Coord(
-                    Int32(batch_size),
-                    Int32(seq_len),
-                    Idx[num_heads],
-                    Idx[_D_QK],
-                )
+                Int32(batch_size), Int32(seq_len), Idx[num_heads], Idx[_D_QK]
             ),
         )
         var _o0 = TileTensor(
-            cb_o.offset_ptr(0).bitcast[Scalar[out_type]](),
+            cb_o.offset_ptr(0).unsafe_bitcast[Scalar[out_type]](),
             row_major(
-                Coord(
-                    Int32(batch_size),
-                    Int32(seq_len),
-                    Idx[num_heads],
-                    Idx[_D_NOPE],
-                )
+                Int32(batch_size), Int32(seq_len), Idx[num_heads], Idx[_D_NOPE]
             ),
         )
         var _k0 = TileTensor(
-            cb_k.offset_ptr(0).bitcast[Scalar[qkv_type]](),
+            cb_k.offset_ptr(0).unsafe_bitcast[Scalar[qkv_type]](),
             row_major(
-                Coord(
-                    Int32(batch_size),
-                    Int32(cache_seq_len),
-                    Idx[num_kv_heads],
-                    Idx[_CACHE_DEPTH],
-                )
+                Int32(batch_size),
+                Int32(cache_seq_len),
+                Idx[num_kv_heads],
+                Idx[_CACHE_DEPTH],
             ),
         )
-        var _knope0 = LayoutTensorMHAOperand(
-            _k0.as_immut().as_unsafe_any_origin()
-        )
-        var _krope0 = LayoutTensorMHAOperand(
-            _k0.as_immut().as_unsafe_any_origin()
-        )
+        var _knope0 = TileTensorMHAOperand(_k0.as_imm().as_unsafe_any_origin())
+        var _krope0 = TileTensorMHAOperand(_k0.as_imm().as_unsafe_any_origin())
         var _v0 = TileTensor(
-            cb_v.offset_ptr(0).bitcast[Scalar[qkv_type]](),
+            cb_v.offset_ptr(0).unsafe_bitcast[Scalar[qkv_type]](),
             row_major(
-                Coord(
-                    Int32(batch_size),
-                    Int32(cache_seq_len),
-                    Idx[num_kv_heads],
-                    Idx[_D_NOPE],
-                )
+                Int32(batch_size),
+                Int32(cache_seq_len),
+                Idx[num_kv_heads],
+                Idx[_D_NOPE],
             ),
         )
-        var _vop0 = LayoutTensorMHAOperand(
-            _v0.as_immut().as_unsafe_any_origin()
-        )
+        var _vop0 = TileTensorMHAOperand(_v0.as_imm().as_unsafe_any_origin())
         comptime _kernel_run = _kernel.run[
             type_of(_knope0),
             type_of(_krope0),
@@ -308,6 +285,8 @@ def run_mla_prefill_v2[
             _o0.dtype,
             _q0.LayoutType,
             _o0.LayoutType,
+            _q0.Engine,
+            _o0.Engine,
             ragged=False,
         ]
         comptime _DUMP_ASM: StaticString = get_defined_string["dump_asm", ""]()
@@ -352,7 +331,7 @@ def run_mla_prefill_v2[
         var work_info_ptr = dev_work_info.unsafe_ptr()
         var num_works = md.num_works
 
-        @always_inline
+        @inline(.always)
         def bench_func(
             mut b: Bencher,
         ) raises {
@@ -368,46 +347,42 @@ def run_mla_prefill_v2[
             var num_cu,
             imm,
         }:
-            @always_inline
+            @inline(.always)
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
-                var q_ptr = cb_q.offset_ptr(iteration).bitcast[
+                var q_ptr = cb_q.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
-                var k_ptr = cb_k.offset_ptr(iteration).bitcast[
+                var k_ptr = cb_k.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
-                var v_ptr = cb_v.offset_ptr(iteration).bitcast[
+                var v_ptr = cb_v.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
-                var o_ptr = cb_o.offset_ptr(iteration).bitcast[
+                var o_ptr = cb_o.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[out_type]
                 ]()
 
                 var q_tt = TileTensor(
                     q_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(seq_len),
-                            Idx[num_heads],
-                            Idx[_D_QK],
-                        )
+                        Int32(batch_size),
+                        Int32(seq_len),
+                        Idx[num_heads],
+                        Idx[_D_QK],
                     ),
                 )
                 var o_tt = TileTensor(
                     o_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(seq_len),
-                            Idx[num_heads],
-                            Idx[_D_NOPE],
-                        )
+                        Int32(batch_size),
+                        Int32(seq_len),
+                        Idx[num_heads],
+                        Idx[_D_NOPE],
                     ),
                 )
 
                 # Latent K cache TileTensor at cache_depth=576. Two
-                # separate `LayoutTensorMHAOperand` values back the same
+                # separate `TileTensorMHAOperand` values back the same
                 # physical buffer; the borrow checker rejects passing one
                 # operand SSA value twice through `enqueue_function`, so we
                 # materialize two distinct values (same pointer, distinct
@@ -415,34 +390,30 @@ def run_mla_prefill_v2[
                 var k_tt = TileTensor(
                     k_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(cache_seq_len),
-                            Idx[num_kv_heads],
-                            Idx[_CACHE_DEPTH],
-                        )
+                        Int32(batch_size),
+                        Int32(cache_seq_len),
+                        Idx[num_kv_heads],
+                        Idx[_CACHE_DEPTH],
                     ),
                 )
-                var k_nope_op = LayoutTensorMHAOperand(
-                    k_tt.as_immut().as_unsafe_any_origin()
+                var k_nope_op = TileTensorMHAOperand(
+                    k_tt.as_imm().as_unsafe_any_origin()
                 )
-                var k_rope_op = LayoutTensorMHAOperand(
-                    k_tt.as_immut().as_unsafe_any_origin()
+                var k_rope_op = TileTensorMHAOperand(
+                    k_tt.as_imm().as_unsafe_any_origin()
                 )
 
                 var v_tt = TileTensor(
                     v_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(cache_seq_len),
-                            Idx[num_kv_heads],
-                            Idx[_D_NOPE],
-                        )
+                        Int32(batch_size),
+                        Int32(cache_seq_len),
+                        Idx[num_kv_heads],
+                        Idx[_D_NOPE],
                     ),
                 )
-                var v_op = LayoutTensorMHAOperand(
-                    v_tt.as_immut().as_unsafe_any_origin()
+                var v_op = TileTensorMHAOperand(
+                    v_tt.as_imm().as_unsafe_any_origin()
                 )
 
                 # Enqueue ONLY — the kernel was compiled once above and the
@@ -605,12 +576,8 @@ def main() raises:
     print("  q_block_size:", cfg.q_block_size)
     print("  cache_busting:", cfg.cache_busting)
     print(
-        "  seq_len:     ",
-        seq_len,
-        " cache_seq_len:",
-        cache_seq_len,
-        " batch_size:",
-        batch_size,
+        t"  seq_len:      {seq_len}  cache_seq_len: {cache_seq_len} "
+        t" batch_size: {batch_size}"
     )
 
     var m = Bench()

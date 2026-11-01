@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Constructor for hybrid sliding + full KV trees"""
+"""Constructor for hybrid sliding + full KV trees."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 
 
@@ -38,7 +38,10 @@ def hybrid_swa_full_kv_params(
     sliding_head_dim: int | None = None,
     full_n_kv_heads: int | None = None,
     full_head_dim: int | None = None,
+    sliding_v_head_dim: int | None = None,
+    full_v_head_dim: int | None = None,
 ) -> MultiKVCacheParams:
+    """Builds the KV cache params for a mix of sliding and full layers."""
     sliding_layers = 0
     full_layers = 0
     for attention_type in layer_types:
@@ -72,6 +75,7 @@ def hybrid_swa_full_kv_params(
         num_draft_tokens=num_spec_tokens,
         allow_kv_head_replication=allow_kv_head_replication,
         window_size=sliding_window,
+        v_head_dim=sliding_v_head_dim,
     )
     full_kv_params = kv_cache_config.to_params(
         dtype=cache_dtype,
@@ -84,6 +88,7 @@ def hybrid_swa_full_kv_params(
         num_draft_tokens=num_spec_tokens,
         allow_kv_head_replication=allow_kv_head_replication,
         window_size=None,
+        v_head_dim=full_v_head_dim,
     )
     return MultiKVCacheParams.from_params(
         {

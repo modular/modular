@@ -38,7 +38,9 @@ Batch processing
 
    BatchProcessor
    BatchProcessorRuntime
+   ModuleV3SingleReplicaBatchProcessor
    RaggedBatchProcessor
+   SingleReplicaRaggedBatchProcessor
 
 Functions
 ---------
@@ -49,3 +51,10 @@ Functions
    :template: autosummary/function.rst
 
    arch_has_vision_tower
+   build_single_replica_ragged_token_arrays
+   modulev3_ragged_kv_symbolic_input_tree
+   ragged_batch_inputs
+   ragged_kv_symbolic_input_tree
+   signal_inputs
+   single_replica_context_batch
+   vision_merge_inputs

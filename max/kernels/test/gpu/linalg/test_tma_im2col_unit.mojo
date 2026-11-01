@@ -22,22 +22,19 @@ Test cases from CUTLASS (simplest first):
 """
 
 from std.sys import size_of
-from layout import Layout, LayoutTensor
+from layout import Coord, TileTensor, coord, row_major
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.testing import assert_false
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
-from layout import Layout, LayoutTensor
 
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTileIm2col,
     create_tensor_tile_im2col,
 )
-from std.memory import alloc
-from std.utils.index import Index, IndexList
 
 
 # ============================================================================
@@ -48,16 +45,15 @@ from std.utils.index import Index, IndexList
 @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
 def im2col_load_kernel[
     dtype: DType,
-    tile_rank: Int,
-    tile_shape: IndexList[tile_rank],
-    desc_shape: IndexList[tile_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     BM: Int,
     BK: Int,
 ](
-    act_tma_op: TMATensorTileIm2col[dtype, tile_rank, tile_shape, desc_shape],
+    act_tma_op: TMATensorTileIm2col[dtype, tile_shape, desc_shape],
     output_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
-    k_coord: Int,
-    m_coord: Int,
+    k_coord: Int32,
+    m_coord: Int32,
 ):
     """Kernel that loads one tile using im2col TMA and copies to global memory.
     """
@@ -81,31 +77,22 @@ def im2col_load_kernel[
             address_space=.SHARED,
             alignment=128,
             name="im2col_smem",
-        ]()
-        + barrier_offset
-    ).bitcast[SharedMemBarrier]()
+        ]().unsafe_offset(barrier_offset)
+    ).unsafe_bitcast[SharedMemBarrier]()
 
     # Thread 0 initializes barrier and issues TMA load
     if thread_idx.x == 0:
         barrier_ptr[].init()
-        barrier_ptr[].expect_bytes(tile_bytes)
+        barrier_ptr[].expect_bytes(Int32(tile_bytes))
 
         # Create shared memory tile view
-        comptime smem_layout = Layout.row_major(BM, BK)
-        comptime smem_tile_t = LayoutTensor[
-            dtype,
-            smem_layout,
-            MutAnyOrigin,
-            address_space=.SHARED,
-            alignment=128,
-        ]
-        var smem_tile = smem_tile_t(smem_ptr)
+        var smem_tile = TileTensor(smem_ptr, row_major[BM, BK]())
 
         # Issue im2col TMA load using async_copy
         act_tma_op.async_copy[cta_group=1](
             smem_tile,
             barrier_ptr[],
-            (k_coord, m_coord),
+            (Int(k_coord), Int(m_coord)),
         )
 
     barrier()
@@ -196,7 +183,7 @@ def im2col_reference[
                     + iw * in_channels
                     + c
                 )
-                val = input.load(input_idx)
+                val = input.unsafe_load(input_idx)
 
             output[m_local * BK + k_local] = val
 
@@ -235,28 +222,14 @@ def run_im2col_test[
     comptime K_gemm = filter_h * filter_w * in_channels
 
     print(
-        "    Input: [",
-        batch,
-        ",",
-        in_height,
-        ",",
-        in_width,
-        ",",
-        in_channels,
-        "] NHWC",
+        t"    Input: [ {batch} , {in_height} , {in_width} , {in_channels} ]"
+        t" NHWC"
     )
     print(
-        "    Filter: [",
-        out_channels,
-        ",",
-        filter_h,
-        ",",
-        filter_w,
-        ",",
-        in_channels,
-        "] KRSC",
+        t"    Filter: [ {out_channels} , {filter_h} , {filter_w} ,"
+        t" {in_channels} ] KRSC"
     )
-    print("    Output spatial: [", out_height, ",", out_width, "]")
+    print(t"    Output spatial: [ {out_height} , {out_width} ]")
     print("    GEMM: M=", M, " K=", K_gemm)
     print("    Tile: BM=", BM, " BK=", BK)
 
@@ -272,12 +245,9 @@ def run_im2col_test[
     var input_device = ctx.enqueue_create_buffer[dtype](input_size)
     ctx.enqueue_copy(input_device, input_host)
 
-    # Create LayoutTensor view with compile-time static shape for TMA
-    comptime input_layout = Layout.row_major(
-        batch, in_height, in_width, in_channels
-    )
-    var input_tensor = LayoutTensor[dtype, input_layout, MutAnyOrigin](
-        input_device.unsafe_ptr()
+    # Create TileTensor view with compile-time static shape for TMA
+    var input_tensor = TileTensor(
+        input_device, row_major[batch, in_height, in_width, in_channels]()
     )
 
     # Create im2col TMA descriptor
@@ -292,14 +262,14 @@ def run_im2col_test[
 
     # Debug: print descriptor parameters
     print("    Descriptor params:")
-    print("      lower_corner: (", lower_corner_h, ",", lower_corner_w, ")")
-    print("      upper_corner: (", upper_corner_h, ",", upper_corner_w, ")")
+    print(t"      lower_corner: ( {lower_corner_h} , {lower_corner_w} )")
+    print(t"      upper_corner: ( {upper_corner_h} , {upper_corner_w} )")
     print("      channels_per_pixel: 64 (128B swizzle / 2B bf16)")
     print("      pixels_per_column: 1")
 
     var act_tma = create_tensor_tile_im2col[
         dtype,
-        tile_shape=Index(BM, BK),
+        tile_shape=coord[BM, BK],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
     ](
         ctx,
@@ -347,7 +317,6 @@ def run_im2col_test[
 
     comptime kernel = im2col_load_kernel[
         dtype,
-        type_of(act_tma).rank,
         type_of(act_tma).tile_shape,
         type_of(act_tma).desc_shape,
         BM,
@@ -357,12 +326,14 @@ def run_im2col_test[
     ctx.enqueue_function[kernel, dump_asm=False](
         act_tma,
         output_device,
-        0,  # k_coord
-        0,  # m_coord
+        Int32(0),  # k_coord
+        Int32(0),  # m_coord
         grid_dim=(1, 1, 1),
         block_dim=128,
         shared_mem_bytes=smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_bytes),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_bytes)
+        ),
     )
     ctx.synchronize()
 

@@ -14,14 +14,14 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.mlp import MLP
+from max.nn.embedding import Embedding
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .attention import Qwen3AttentionNoCache
 from .pooling import last_token_pool, normalize_embeddings
@@ -52,6 +52,7 @@ class Qwen3EmbeddingTransformerBlock(
         x: Tensor,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         # Attention with pre-normalization
         attn_out = self.self_attn(
             self.input_layernorm(x),
@@ -61,8 +62,7 @@ class Qwen3EmbeddingTransformerBlock(
         # Only allocate the scalar constant when actually needed, since
         # dtype/device are not available at __init__ time.
         if self.residual_multiplier != 1.0:
-            rm = F.constant(self.residual_multiplier, x.dtype, device=x.device)
-            attn_out = attn_out * rm
+            attn_out = attn_out * float(self.residual_multiplier)
 
         h = x + attn_out
 
@@ -70,8 +70,7 @@ class Qwen3EmbeddingTransformerBlock(
         mlp_out = self.mlp(self.post_attention_layernorm(h))
 
         if self.residual_multiplier != 1.0:
-            rm = F.constant(self.residual_multiplier, x.dtype, device=x.device)
-            mlp_out = mlp_out * rm
+            mlp_out = mlp_out * float(self.residual_multiplier)
 
         return h + mlp_out
 
@@ -105,12 +104,11 @@ class Qwen3EmbeddingTransformer(
         input_row_offsets: Tensor,
         return_n_logits: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the encoder stack over the tokens."""
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * F.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         # Process through transformer layers
         input_row_offsets_device = input_row_offsets.to(h.device)
@@ -146,4 +144,5 @@ class Qwen3Embedding(
         input_row_offsets: Tensor,
         return_n_logits: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the language model over the tokens."""
         return self.language_model(tokens, input_row_offsets, return_n_logits)

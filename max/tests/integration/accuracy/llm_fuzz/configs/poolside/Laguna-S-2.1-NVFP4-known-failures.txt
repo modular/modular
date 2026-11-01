@@ -1,0 +1,53 @@
+# Laguna S-2.1 llm-fuzz known failures, one `scenario:test` per line.
+#
+# Read by the ad-hoc lane through `Laguna-S-2.1-NVFP4.sh`, which names this
+# file in `exclude_files`, for MAX Serve and for Mach alike (use_mach). Keep one
+# list: a test Mach fails and MAX passes is a Mach gap and stays red, not an
+# entry here, so an entry belongs here only if the checkpoint fails it on both
+# engines.
+#
+# No Mammoth overlay runs Laguna yet. One would point the llm-fuzz image's
+# EXCLUDE_FILE at this file -- it takes a single path -- which is why the list
+# is a .txt rather than a shell fragment.
+#
+# Every entry carries both controls: the same test, same box, under Mach and
+# under `max serve --prefer-module-v3`. The five entries' controls were
+# measured at batch 16, and the first batch-64 dispatch re-verifies them.
+
+# ---------------------------------------------------------------------------
+# Reasoning the checkpoint does not stop doing.
+# ---------------------------------------------------------------------------
+
+# Two prompts the model never stops reasoning about: 4 of 4 draws reach
+# `finish_reason: length` at the 16,384-token cap with no answer in them, on
+# both engines on the same box. Nothing between them decides it. The
+# scenario's third runaway, q41, terminates under legacy and runs away only on
+# Mach, so it is not here.
+reasoning_runaway:engineering_q21
+reasoning_runaway:engineering_q46
+
+# ---------------------------------------------------------------------------
+# Reasoning this checkpoint does not do.
+# ---------------------------------------------------------------------------
+
+# The test requires a thinking-on turn to spend more than one reasoning token.
+# On S-2.1 the model closes its block at once and answers directly: 10 of 10
+# draws through Mach report exactly one reasoning token (the `</think>` it
+# emits to close the prefilled block), and 20 of 20 draws through
+# `max serve --prefer-module-v3` on the same checkpoint, prompt and sampling
+# report ZERO -- MAX Serve's parser does not count the close at all. The draws
+# are at temperature 1, so this is not a near-tie: the model declines to think
+# on this prompt. Those draws are the control; no recorded sweep covers the
+# id on either engine.
+#
+# The same id is excluded for Muse Glimmer, for the same reason.
+basic_reasoning_and_tool_usage:special-token-content-thinking-on
+
+# Both ask a thinking turn for a `reasoning` / `reasoning_content` span back.
+# `max serve --prefer-module-v3` on the same S-2.1 checkpoint and box fails
+# both in the same scenario run -- 12 of `openrouter_tests`' 61 against Mach's
+# 2 -- so this is the checkpoint declining to think, the same class as
+# `special-token-content-thinking-on` above, rather than the engine serving
+# it.
+openrouter_tests:yes-no
+openrouter_tests:reasoning

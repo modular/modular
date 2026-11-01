@@ -26,7 +26,7 @@ def c_neg(a: Int) -> Int:
 
 
 struct Pack2:
-    comptime T = def(* args: * Tuple[Int, Int].Ts) thin -> Int
+    comptime T = def(*args: *Tuple[Int, Int].Ts) thin -> Int
     var ptr: Self.T
 
     def __init__(out self, p: Self.T):
@@ -37,7 +37,7 @@ struct Pack2:
 
 
 struct Pack1:
-    comptime T = def(* args: * Tuple[Int].Ts) thin -> Int
+    comptime T = def(*args: *Tuple[Int].Ts) thin -> Int
     var ptr: Self.T
 
     def __init__(out self, p: Self.T):
@@ -53,10 +53,10 @@ struct Pack1:
 # CHECK-DAG: kgen.call_indirect {{.*}} : (!kgen.scalar<index>) -> !kgen.scalar<index>
 def main():
     var p2 = Pointer(to=c_add).unsafe_bitcast[
-        def(* args: * Tuple[Int, Int].Ts) thin -> Int
+        def(*args: *Tuple[Int, Int].Ts) thin -> Int
     ]()[]
     var p1 = Pointer(to=c_neg).unsafe_bitcast[
-        def(* args: * Tuple[Int].Ts) thin -> Int
+        def(*args: *Tuple[Int].Ts) thin -> Int
     ]()[]
     print(Pack2(p2)(3, 4))
     print(Pack1(p1)(5))

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Parses Llama tool calls out of a model's output."""
+
 from __future__ import annotations
 
 import json

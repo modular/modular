@@ -29,13 +29,13 @@ comptime SIZES = [64, 1024, 16384]
 
 
 def bench_append[size: Int](mut b: Bencher) raises:
-    @always_inline
+    @inline(.always)
     def call_fn():
         var n = black_box(size)
         var list = List[Int]()
         for i in range(n):
             list.append(i)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 
@@ -43,32 +43,32 @@ def bench_append[size: Int](mut b: Bencher) raises:
 def bench_extend_owned[size: Int](mut b: Bencher) raises:
     # Extending in a loop is the shape that turns an exact-reserve `extend`
     # into quadratic work.
-    @always_inline
+    @inline(.always)
     def call_fn():
         var n = black_box(size)
         var list = List[Int]()
         for i in range(n // 4):
             var chunk: List[Int] = [i, i + 1, i + 2, i + 3]
             list.extend(chunk^)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 
 
 def bench_insert_front[size: Int](mut b: Bencher) raises:
-    @always_inline
+    @inline(.always)
     def call_fn():
         var n = black_box(size)
         var list = List[Int]()
         for i in range(n):
             list.insert(0, i)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 
 
 def bench_pop_back[size: Int](mut b: Bencher) raises:
-    @always_inline
+    @inline(.always)
     def call_fn():
         var n = black_box(size)
         var list = List[Int](length=n, fill=0)
@@ -83,7 +83,7 @@ def bench_pop_back[size: Int](mut b: Bencher) raises:
 def bench_iterate_sum[size: Int](mut b: Bencher) raises:
     var list = List[Int](length=black_box(size), fill=1)
 
-    @always_inline
+    @inline(.always)
     def call_fn() {imm list}:
         var total = 0
         for element in list:
@@ -99,10 +99,10 @@ def bench_reverse[size: Int](mut b: Bencher) raises:
     # measure of whether that load stays hoisted out of the loop.
     var list = List[Int](length=black_box(size), fill=1)
 
-    @always_inline
+    @inline(.always)
     def call_fn() {mut list}:
         list.reverse()
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
     _ = list^
@@ -113,23 +113,23 @@ def bench_resize_grow[size: Int](mut b: Bencher) raises:
     # quadratic. `bench_byte_resize_fill` reaches its length in one step, where
     # an exact reserve and an amortized one allocate the same amount, so it
     # cannot see that difference.
-    @always_inline
+    @inline(.always)
     def call_fn():
         var n = black_box(size)
         var list = List[Int]()
         for length in range(4, n + 1, 4):
             list.resize(length, 0)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 
 
 def bench_byte_resize_fill[size: Int](mut b: Bencher) raises:
-    @always_inline
+    @inline(.always)
     def call_fn():
         var list = List[Byte]()
         list.resize(black_box(size), 0)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 

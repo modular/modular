@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Pixtral pipeline model."""
 
 from __future__ import annotations
 
@@ -18,11 +19,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import functional as F
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import (
     SafetensorWeights,
@@ -30,9 +31,10 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -43,6 +45,7 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import (
     parse_state_dict_from_weights,
 )
+from max.tensor import default_dtype
 
 from .batch_processor import PixtralModuleV3BatchProcessor
 from .model_config import PixtralConfig
@@ -100,7 +103,6 @@ class PixtralModel(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -110,6 +112,7 @@ class PixtralModel(
             adapter=adapter,
             return_logits=return_logits,
             memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         if self.pipeline_config.model.enable_echo:
@@ -117,19 +120,20 @@ class PixtralModel(
                 "Pixtral model does not currently implement enable echo."
             )
 
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         if len(self.devices) > 1:
             raise NotImplementedError(
                 "Pixtral does not support distributed inference"
             )
 
-        self.vision_model, self.language_model = self.load_model()
+        self.vision_model, self.language_model = self._load_towers(session)
 
     def execute(
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the graphs over the prepared inputs."""
         assert isinstance(model_inputs, PixtralInputs)
         assert model_inputs.kv_cache_inputs is not None, (
             "Pixtral has KV cache inputs, but none were provided"
@@ -160,7 +164,7 @@ class PixtralModel(
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         if len(model_outputs) == 3:
@@ -241,14 +245,14 @@ class PixtralModel(
         model_config.return_logits = self.return_logits
         return model_config
 
-    def _compile_vision_model(
+    def _vision_spec(
         self,
         model_config: PixtralConfig,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         patch_dim = self._patch_dim
 
-        # ---- Build and compile vision model ----
+        # ---- Build vision model ----
         with F.lazy(), default_dtype(model_config.dtype):
             vision_nn = PixtralVision(model_config)
             vision_nn.to(self.devices[0])
@@ -269,21 +273,21 @@ class PixtralModel(
             device=DeviceRef.GPU(),
         )
 
-        return vision_nn.compile(
-            pixel_patches_type,
-            attention_mask_type,
-            position_ids_type,
+        return GraphSpec(
+            vision_nn,
+            type(vision_nn).__qualname__,
+            [pixel_patches_type, attention_mask_type, position_ids_type],
             weights=state_dict,
         )
 
-    def _compile_language_model(
+    def _language_spec(
         self,
         model_config: PixtralConfig,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         device_ref = DeviceRef.from_device(self.devices[0])
 
-        # ---- Build and compile language model ----
+        # ---- Build language model ----
         with F.lazy(), default_dtype(model_config.dtype):
             language_nn = PixtralLanguage(model_config)
             language_nn.kv_params = self.kv_params
@@ -311,12 +315,16 @@ class PixtralModel(
 
         kv_inputs = self.kv_params.flattened_kv_inputs()
 
-        return language_nn.compile(
-            input_ids_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            image_embeddings_type,
-            image_token_indices_type,
-            *kv_inputs,
+        return GraphSpec(
+            language_nn,
+            type(language_nn).__qualname__,
+            [
+                input_ids_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                image_embeddings_type,
+                image_token_indices_type,
+                *kv_inputs,
+            ],
             weights=state_dict,
         )

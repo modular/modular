@@ -30,7 +30,7 @@ kgen.func @self_pointer() {
   // CHECK: %[[SLOT:.*]] = pop.offset %[[BYTES]][%[[O]]]
   // CHECK: %[[SLOTP:.*]] = pop.pointer.bitcast %[[SLOT]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK: pop.store %[[TARGET]], %[[SLOTP]]
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -53,8 +53,8 @@ kgen.func @external_pointer() {
   %1 = kgen.param.materialize: struct<(pointer<none>, scalar<index>) memoryOnly> = <{ #interp.memref<{[(#handle, heap, [], [])], []}, 0, 0>, 4 }>
   // CHECK-NEXT: pop.store %[[VAL]], %[[DEST]] : !kgen.pointer<struct<(pointer<none>, scalar<index>) memoryOnly>>
   pop.store %1, %0 : !kgen.pointer<struct<(pointer<none>, scalar<index>) memoryOnly>>
-  // CHECK-NEXT: kgen.return
-  kgen.return
+  // CHECK-NEXT: hlcf.return
+  hlcf.return
 }
 
 // -----
@@ -82,8 +82,8 @@ kgen.func @interior_target() {
   // CHECK-NEXT: %[[SLOT:.*]] = pop.offset %[[BYTES]][%[[I8]]] : !kgen.pointer<i8>
   // CHECK-NEXT: %[[SLOTP:.*]] = pop.pointer.bitcast %[[SLOT]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[TARGET]], %[[SLOTP]] : !kgen.pointer<pointer<i8>>
-  // CHECK-NEXT: kgen.return
-  kgen.return
+  // CHECK-NEXT: hlcf.return
+  hlcf.return
 }
 
 // -----
@@ -123,8 +123,8 @@ kgen.func @two_self_pointers() {
   // CHECK-NEXT: %[[S1P:.*]] = pop.pointer.bitcast %[[S1]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[T1]], %[[S1P]] : !kgen.pointer<pointer<i8>>
 
-  // CHECK-NEXT: kgen.return
-  kgen.return
+  // CHECK-NEXT: hlcf.return
+  hlcf.return
 }
 
 // -----
@@ -159,8 +159,8 @@ kgen.func @self_and_external() {
   // CHECK-NEXT: %[[SLOTP:.*]] = pop.pointer.bitcast %[[SLOT]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[TARGET]], %[[SLOTP]] : !kgen.pointer<pointer<i8>>
 
-  // CHECK-NEXT: kgen.return
-  kgen.return
+  // CHECK-NEXT: hlcf.return
+  hlcf.return
 }
 
 // -----
@@ -202,8 +202,8 @@ kgen.func @two_stores() {
   // CHECK-NEXT: %[[BSLOTP:.*]] = pop.pointer.bitcast %[[BSLOT]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[BTGT]], %[[BSLOTP]] : !kgen.pointer<pointer<i8>>
 
-  // CHECK-NEXT: kgen.return
-  kgen.return
+  // CHECK-NEXT: hlcf.return
+  hlcf.return
 }
 
 // -----
@@ -224,6 +224,6 @@ kgen.func @non_store_user() -> !kgen.struct<(struct<(array<8, scalar<si8>>) memo
 
   // CHECK-NEXT: pop.store %[[VAL]], %[[DEST]]
   pop.store %1, %0 : !kgen.pointer<struct<(struct<(array<8, scalar<si8>>) memoryOnly>, pointer<none>) memoryOnly>>
-  // CHECK-NEXT: kgen.return %[[VAL]]
-  kgen.return %1 : !kgen.struct<(struct<(array<8, scalar<si8>>) memoryOnly>, pointer<none>) memoryOnly>
+  // CHECK-NEXT: hlcf.return %[[VAL]]
+  hlcf.return %1 : !kgen.struct<(struct<(array<8, scalar<si8>>) memoryOnly>, pointer<none>) memoryOnly>
 }

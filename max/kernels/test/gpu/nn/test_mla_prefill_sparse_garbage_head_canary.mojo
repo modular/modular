@@ -86,28 +86,19 @@ post-fix, 0/24 seeds fail, every element bit-exact.
 """
 
 from std.math import ceildiv, sqrt
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, randn_float64, seed
-from std.sys import has_nvidia_gpu_accelerator
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
-from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -227,18 +218,8 @@ def _run_prefill_sparse_diff[
     the caller to compare directly.
     """
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_heads:",
-        num_heads,
-        " num_kv_tokens:",
-        num_kv_tokens,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  seq_len: {seq_len} "
+        t" num_heads: {num_heads}  num_kv_tokens: {num_kv_tokens}  topk: {topk}"
     )
 
     var scale = Float32(1.0) / sqrt(Float32(SOFTMAX_SCALE_BASE_DIM))
@@ -256,14 +237,6 @@ def _run_prefill_sparse_diff[
     var total_pages = batch_size * ceildiv(num_kv_tokens, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_kv_tokens, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        num_layers,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -277,14 +250,14 @@ def _run_prefill_sparse_diff[
     # Generate random BF16 KV data: [batch_size * num_kv_tokens, qk_depth]
     # -----------------------------------------------------------------------
     var kv_total = batch_size * num_kv_tokens * QK_DEPTH
-    var kv_host = alloc[Scalar[q_type]](kv_total)
+    var kv_host = unsafe_alloc[Scalar[q_type]](kv_total)
     randn[q_type](kv_host, kv_total, mean=0.0, standard_deviation=qkv_std)
 
     # -----------------------------------------------------------------------
     # Build shuffled page mapping (coprime permutation).
     # -----------------------------------------------------------------------
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
     var page_offset = 0
     for bi in range(batch_size):
         var np = ceildiv(num_kv_tokens, PAGE_SIZE)
@@ -299,7 +272,7 @@ def _run_prefill_sparse_diff[
     # -----------------------------------------------------------------------
     # Fill KV cache blocks from random data with paged layout.
     # -----------------------------------------------------------------------
-    var blocks_host = alloc[Scalar[q_type]](block_elems)
+    var blocks_host = unsafe_alloc[Scalar[q_type]](block_elems)
     # Multi-layer: seed every layer with distinct random data so a gather
     # into the wrong layer (the num_layers>1 addressing bug) reads garbage
     # and trips the cosine / tail gates. Layer `layer_idx` is overwritten
@@ -325,8 +298,7 @@ def _run_prefill_sparse_diff[
     )
     for bi in range(batch_size):
         for t in range(num_kv_tokens):
-            var page_idx = t // PAGE_SIZE
-            var tok_in_page = t % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
             var block_id = Int(
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
@@ -349,7 +321,7 @@ def _run_prefill_sparse_diff[
     # SMALL (small kv_std => small V), so the scale-calibrated error gates
     # stay valid (bf16 ULP ~ output_magnitude * 2^-8).
     var q_std_eff = qkv_std if q_std < 0.0 else q_std
-    var q_host = alloc[Scalar[q_type]](q_elems)
+    var q_host = unsafe_alloc[Scalar[q_type]](q_elems)
     randn[q_type](q_host, q_elems, mean=0.0, standard_deviation=q_std_eff)
     if len(q_override) > 0:
         for i in range(q_elems):
@@ -361,7 +333,7 @@ def _run_prefill_sparse_diff[
     # selections (catches per-query stride bugs in the kernel).
     # selected_tokens[bs * topk + i] = which physical-row in batch `b` to use
     # -----------------------------------------------------------------------
-    var selected_tokens = alloc[Int](total_q_tokens * topk)
+    var selected_tokens = unsafe_alloc[Int](total_q_tokens * topk)
     var sel_mult = _coprime_multiplier(num_kv_tokens)
     for bi in range(batch_size):
         for s in range(seq_len):
@@ -377,7 +349,7 @@ def _run_prefill_sparse_diff[
     # Gather selected rows from the full KV buffer per query.
     # -----------------------------------------------------------------------
     var kv_sparse_size = total_q_tokens * topk * QK_DEPTH
-    var kv_sparse = alloc[Scalar[q_type]](kv_sparse_size)
+    var kv_sparse = unsafe_alloc[Scalar[q_type]](kv_sparse_size)
 
     for bi in range(batch_size):
         for s in range(seq_len):
@@ -400,7 +372,7 @@ def _run_prefill_sparse_diff[
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
     for bi in range(batch_size):
         cache_lengths_host[bi] = UInt32(num_kv_tokens)
 
@@ -422,15 +394,14 @@ def _run_prefill_sparse_diff[
     # indices[bs * topk + i] = physical_block * PAGE_SIZE + tok_in_page.
     # -----------------------------------------------------------------------
     var total_indices = total_q_tokens * topk
-    var h_indices = alloc[UInt32](total_indices)
+    var h_indices = unsafe_alloc[UInt32](total_indices)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
             for i in range(topk):
                 if i < valid_topk:
                     var t = selected_tokens[bs * topk + i]
-                    var page_idx = t // PAGE_SIZE
-                    var tok_in_page = t % PAGE_SIZE
+                    var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
                     var block_id = Int(
                         lookup_table_host[bi * max_pages_per_batch + page_idx]
                     )
@@ -455,7 +426,7 @@ def _run_prefill_sparse_diff[
     var reported_topk_length = (
         valid_topk if topk_lengths_override < 0 else topk_lengths_override
     )
-    var h_topk_lengths = alloc[UInt32](total_q_tokens)
+    var h_topk_lengths = unsafe_alloc[UInt32](total_q_tokens)
     for i in range(total_q_tokens):
         h_topk_lengths[i] = UInt32(reported_topk_length)
 
@@ -467,47 +438,40 @@ def _run_prefill_sparse_diff[
     # -----------------------------------------------------------------------
     # Build PagedKVCacheCollection on device
     # -----------------------------------------------------------------------
-    var blocks_lt = LayoutTensor[q_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(num_layers),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
 
-    var kv_collection = PagedKVCacheCollection[q_type, kv_params, PAGE_SIZE](
-        LayoutTensor[q_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
+        q_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),
         UInt32(num_kv_tokens),
     )
@@ -562,18 +526,20 @@ def _run_prefill_sparse_diff[
     # `None` (kernel skips the `exp2(sink - mi)` softmax term). Non-empty ->
     # a device buffer of EXACTLY `num_heads` Float32 so a broken sub-64
     # padded-row guard reading sink[num_heads..63] is a real OOB.
-    var attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    var attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
     var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
-        var sink_host = alloc[Float32](len(sink_values))
+        var sink_host = unsafe_alloc[Float32](len(sink_values))
         for i in range(len(sink_values)):
             sink_host[i] = sink_values[i]
         ctx.enqueue_copy(sink_device, sink_host)
         ctx.synchronize()
-        sink_host.free()
-        attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](
-            sink_device.unsafe_ptr().bitcast[Float32]().as_unsafe_any_origin()
+        sink_host.unsafe_free()
+        attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](
+            sink_device.unsafe_ptr()
+            .unsafe_bitcast[Float32]()
+            .as_unsafe_any_origin()
         )
 
     mla_prefill_sparse[
@@ -597,7 +563,7 @@ def _run_prefill_sparse_diff[
     # -----------------------------------------------------------------------
     # Read output back to host
     # -----------------------------------------------------------------------
-    var out_host = alloc[Scalar[q_type]](out_elems)
+    var out_host = unsafe_alloc[Scalar[q_type]](out_elems)
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -617,16 +583,16 @@ def _run_prefill_sparse_diff[
     _ = topk_lengths_device
     _ = sink_device
 
-    blocks_host.free()
-    kv_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    q_host.free()
-    kv_sparse.free()
-    selected_tokens.free()
-    out_host.free()
-    h_indices.free()
-    h_topk_lengths.free()
+    blocks_host.unsafe_free()
+    kv_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    q_host.unsafe_free()
+    kv_sparse.unsafe_free()
+    selected_tokens.unsafe_free()
+    out_host.unsafe_free()
+    h_indices.unsafe_free()
+    h_topk_lengths.unsafe_free()
     return result^
 
 
@@ -702,7 +668,7 @@ def test_garbage_head_canary(ctx: DeviceContext, rng_seed: Int) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             var failures = List[String]()

@@ -25,7 +25,7 @@ Author contract — one body, two targets:
 def reduce_sum[...](shape, target="cpu", ctx=None) raises:
     var axis_size: DType = ...
 
-    @always_inline
+    @inline(.always)
     def body[
         params: rowwise.ContextParams
     ](row_coords: Coord, mut ctx: rowwise.Context[params]) {var axis_size}:
@@ -33,7 +33,7 @@ def reduce_sum[...](shape, target="cpu", ctx=None) raises:
         comptime rank = row_coords.rank
         var state = ReduceSum[accum_type, W]()
 
-        @always_inline
+        @inline(.always)
         def tile_fn[
             ws: Int
         ](mut state: ReduceSum[accum_type, W], coords: RowCoord[rank]):
@@ -43,7 +43,7 @@ def reduce_sum[...](shape, target="cpu", ctx=None) raises:
         rowwise.reduce(row_coords, axis_size, ctx, state, tile_fn)
         rowwise.pjoin(state, ctx)
 
-        @always_inline
+        @inline(.always)
         def emit() {...}:
             ...
 
@@ -77,6 +77,8 @@ from algorithm.cpu.rowwise import (
     launch as _cpu_launch,
     once as _cpu_once,
     pjoin as _cpu_pjoin,
+    pointwise_splitk_combine as _cpu_pointwise_splitk_combine,
+    pointwise_splitk_store_partial as _cpu_pointwise_splitk_store_partial,
     reduce as _cpu_reduce,
 )
 from algorithm.gpu.rowwise import (
@@ -96,6 +98,7 @@ from algorithm.rowwise_types import (
     tile_alignment,
 )
 from algorithm.reduce_op import ReduceOp, Reducer
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.collections import Optional
 from max.gpu import (
     WARP_SIZE,
@@ -105,22 +108,18 @@ from max.gpu import (
 )
 from max.gpu import barrier, syncwarp
 from max.gpu.host import DeviceContext, get_gpu_target
-from max.gpu.memory import external_memory
 from max.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv, iota
-from std.memory import bitcast, stack_allocation
-from std.memory.unsafe_pointer import UnsafePointer
+from std.memory import stack_allocation
 from std.sys.info import (
-    _current_target,
     align_of,
-    bit_width_of,
     is_apple_gpu,
     simd_width_of,
     size_of,
+    CompilationTarget,
 )
 from std.sys.intrinsics import strided_load as _strided_load
 from std.utils.coord import Coord, CoordLike
-from std.utils.static_tuple import StaticTuple
 
 
 # ===-----------------------------------------------------------------------===#
@@ -128,7 +127,7 @@ from std.utils.static_tuple import StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def reduce[
     params: ContextParams,
     rank: Int,
@@ -161,7 +160,7 @@ def reduce[
         _gpu_reduce(row_coords, axis_size, ctx, tile_fn)
 
 
-@always_inline
+@inline(.always)
 def reduce[
     State: ReduceOp,
     params: ContextParams,
@@ -205,7 +204,7 @@ def reduce[
         _gpu_reduce(row_coords, axis_size, ctx, state, tile_fn)
 
 
-@always_inline
+@inline(.always)
 def pjoin[
     State: ReduceOp,
     params: ContextParams,
@@ -236,7 +235,7 @@ def pjoin[
         _gpu_pjoin(state, ctx)
 
 
-@always_inline
+@inline(.always)
 def once[
     Emit: ImplicitlyCopyable & RegisterPassable & (def() -> None),
     params: ContextParams,
@@ -267,13 +266,13 @@ def once[
         _gpu_once(emit, ctx)
 
 
-@always_inline
+@inline(.always)
 # ===-----------------------------------------------------------------------===#
 # `pick_simd_width` — body-side SIMD width selection.
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def pick_simd_width[
     M: ReduceOp,
     target: StaticString = "cpu",
@@ -319,11 +318,15 @@ def pick_simd_width[
     # `simd_width_of` defaults to `_current_target()` (host = CPU),
     # giving wrong widths for a GPU-bound body. Resolve against the
     # actual launch target.
-    comptime resolved_target = get_gpu_target() if is_gpu_target else _current_target()
-
     var w_out = 1
     comptime for T in Ts:
-        comptime wi = simd_width_of[T, resolved_target]()
+        comptime wi = (
+            simd_width_of[
+                T, get_gpu_target()
+            ]() if is_gpu_target else simd_width_of[
+                T, CompilationTarget.current()
+            ]()
+        )
         if wi > w_out:
             w_out = wi
 
@@ -347,7 +350,7 @@ def pick_simd_width[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def strided_load[
     dtype: DType,
     //,
@@ -357,7 +360,7 @@ def strided_load[
     alignment: Int = align_of[Scalar[dtype]](),
     invariant: Bool = True,
 ](
-    addr: UnsafePointer[mut=False, Scalar[dtype], ...],
+    addr: ImmPointer[Scalar[dtype], ...],
     mask: SIMD[.bool, simd_width] = SIMD[.bool, simd_width](fill=True),
 ) -> SIMD[dtype, simd_width]:
     """Loads `simd_width` values from `addr` with a compile-time `stride`.
@@ -397,19 +400,23 @@ def strided_load[
       A vector containing the loaded data.
     """
     comptime if simd_width == 1:
-        return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
+        return addr.unsafe_load[invariant=invariant]() if mask else Scalar[
+            dtype
+        ]()
 
     # Contiguous / broadcast fast paths. Both touch every lane, so they require
     # a fully-active mask; otherwise fall through to the masked gather. With the
     # default all-true mask the guard constant-folds away.
     comptime if not is_apple_gpu() and stride == 1:
         if Bool(mask.reduce_and()):
-            return addr.load[
+            return addr.unsafe_load[
                 width=simd_width, alignment=alignment, invariant=invariant
             ]()
     comptime if not is_apple_gpu() and stride == 0:
         if Bool(mask.reduce_and()):
-            return SIMD[dtype, simd_width](addr.load[invariant=invariant]())
+            return SIMD[dtype, simd_width](
+                addr.unsafe_load[invariant=invariant]()
+            )
 
     # General case (Apple GPU, |stride| > 1, or a partially-masked load):
     # delegate to the runtime-stride overload — no logic duplicated.
@@ -441,18 +448,19 @@ def strided_load[
 #   phase-aware K+1-launch schedule, where `num_phases - 1` is the number
 #   of dependent `row.reduce` phases before the final per-element write.
 #
-# `num_phases` counts phases uniformly across both shapes: the 8 pure
-# reductions plus `row_mean_of_squares` pass `1` (the reduce's own result
-# IS the final output — no separate normalize phase); `rms_norm` /
-# `layer_norm` / `rms_norm_rope` / `rms_norm_fused_residual_add` /
-# `rms_norm_fused_quantize_dynamic_scaled_fp8` pass `2` (one reduce, then a
-# normalizing per-element write); `softmax` / `log_softmax` pass `3` (two
-# dependent reduces — max, then sum(exp(x-max)) — then the normalizing
-# write). Asserted `> 0`; a reduce-shaped body's `num_phases == 1` never
-# reaches the phase-aware split-K branch (that branch is gated on
-# `num_phases > 1`), so `associative` (reduce-shaped's CPU-only accumulator
-# knob) and `dtype_size` (normalize-shaped's split-K byte gate) are each
-# meaningless — and simply left at their defaults — for the other shape.
+# `num_phases` is the number of plain (uncached) `row.reduce` calls plus one:
+# the 8 pure reductions plus `row_mean_of_squares` pass `1` (the reduce's own
+# result IS the final output — no separate normalize phase); `rms_norm` /
+# `layer_norm` / `rms_norm_rope` / `layer_norm_rope_ragged` /
+# `rms_norm_fused_residual_add` (its second reduce reads a cache) pass `2`;
+# `softmax` / `log_softmax` / `rms_norm_fused_quantize_dynamic_scaled_fp8`
+# pass `3` (two plain reduces, then the per-element write). Cached reduces,
+# `cache`, and `emit` aren't phase-aware, so a body using them must leave
+# `dtype_size = 0` (asserted). Asserted `> 0`; a reduce-shaped body's
+# `num_phases == 1` never reaches the phase-aware split-K branch (that branch
+# is gated on `num_phases > 1`), so `dtype_size` (normalize-shaped's split-K
+# byte gate) is meaningless — and simply left at its default — for a
+# reduce-shaped body.
 # (`BLOCK_SIZE` / `COOPERATIVE_BLOCK_SIZE` / `WARP_BLOCK_WARPS` are internal
 # GPU launch-geometry constants, not part of the public signature — no caller
 # anywhere in the repo has ever overridden them. `supports_tiled` is likewise
@@ -631,8 +639,9 @@ def launch[
     target: StaticString,
     num_phases: Int,
     computationally_expensive: Bool = False,
-    associative: Bool = False,
     dtype_size: Int = 0,
+    name: StaticString = "rowwise",
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](body: Body, shape: Coord, ctx: Optional[DeviceContext] = None) raises:
     """Top-level scaffolder. `num_phases` picks reduce-shaped
     (`num_phases == 1`, output collapses the reduced axis, terminal
@@ -653,22 +662,20 @@ def launch[
             Asserted `> 0`.
         computationally_expensive: GPU author hint — flips the block tier's
             SIMD-full threshold for compute-heavy bodies. CPU ignores.
-        associative: Reduce-shaped (`num_phases == 1`) only, CPU-only. Set
-            `True` to widen the accumulator on long rows so the running
-            total doesn't serialize into one add-per-element chain
-            (recovers memory bandwidth). Only correct when reordering the
-            accumulation doesn't change the result — additive reductions
-            like `reduce_sum` / `reduce_mean`. Leave `False` for anything
-            where element order matters (`product`'s narrower-dtype
-            rounding, tie-breaking in `arg_max` / `arg_min`, ...). Ignored
-            on GPU and meaningless for normalize-shaped bodies.
-        dtype_size: Normalize-shaped (`num_phases > 1`) only, GPU only.
-            Byte size of the body's primary dtype (`size_of[dtype]()`),
-            used only by the phase-aware split-K byte gate; `0` (the
-            default) leaves that tier's runtime condition permanently
-            false, so the extra codegen it introduces is unreachable
-            (softmax / log-softmax pass their dtype's size to actually
-            engage it). Meaningless for reduce-shaped bodies.
+        dtype_size: Normalize-shaped (`num_phases > 1`) only. Byte size
+            of the body's primary dtype (`size_of[dtype]()`), used by the
+            GPU phase-aware split-K byte gate; any value `> 0` also opts
+            the body into the CPU pointwise split-axis tier. `0` (the
+            default) leaves both tiers unreachable (softmax / log-softmax
+            / rms_norm pass their dtype's size to engage them).
+            Meaningless for reduce-shaped bodies.
+        name: Operation name propagated to the GPU tier kernels'
+            `@__name` so a profile row identifies the op (defaults to
+            `"rowwise"`). CPU ignores.
+        pdl_level: GPU programmatic dependent launch level of the tier
+            kernels (NVIDIA SM90+ only). `OVERLAP_AT_BEGINNING` releases
+            dependent kernels right after the predecessor wait instead of
+            at exit. CPU ignores.
 
     Args:
         body: The per-row computation. Receives a `Context` and the
@@ -691,7 +698,8 @@ def launch[
                 axis=axis,
                 simd_width=simd_width,
                 supports_tiled=True,
-                associative=associative,
+                reduce_shaped=True,
+                supports_splitk=True,
             ](body, shape)
         else:
             comptime assert is_gpu[target](), "unknown rowwise target"
@@ -709,6 +717,8 @@ def launch[
                 BLOCK_SIZE=BLOCK_SIZE,
                 COOPERATIVE_BLOCK_SIZE=COOPERATIVE_BLOCK_SIZE,
                 WARP_BLOCK_WARPS=WARP_BLOCK_WARPS,
+                name=name,
+                pdl_level=pdl_level,
             ](body, shape, ctx.value())
     else:
         # Normalize-shaped: output keeps the input shape, per-element
@@ -718,6 +728,7 @@ def launch[
                 axis=axis,
                 simd_width=simd_width,
                 supports_tiled=False,
+                num_phases=num_phases if dtype_size > 0 else 0,
             ](body, shape)
         else:
             comptime assert is_gpu[target](), "unknown rowwise target"
@@ -737,6 +748,8 @@ def launch[
                 WARP_BLOCK_WARPS=WARP_BLOCK_WARPS,
                 num_phases=num_phases,
                 dtype_size=dtype_size,
+                name=name,
+                pdl_level=pdl_level,
             ](body, shape, ctx.value())
 
 
@@ -821,7 +834,7 @@ struct RowCache[
     var row_coord: RowCoord[Self.rank]
     """The row's coords (reduced axis pinned to its base)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, copy: Self):
         """Explicit copy constructor: `Array` lost `ImplicitlyCopyable`
         conformance, so `_owned` can't be auto-derived and needs `.copy()`.
@@ -833,7 +846,7 @@ struct RowCache[
         self._shmem_addr = copy._shmem_addr
         self.row_coord = copy.row_coord
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, row_coord: RowCoord[Self.rank]):
         """Builds an empty handle; `cache` fills the backing.
 
@@ -850,9 +863,9 @@ struct RowCache[
         # `UnsafePointer(unsafe_from_address=...)`'s IntLiteral overload,
         # whose comptime null check rejects it. `cache` overwrites this
         # with the real base when `shared`.
-        self._shmem_addr = Int(row_coord.coord[0].value())
+        self._shmem_addr = Int(row_coord.coord[0])
 
-    @always_inline
+    @inline(.always)
     def recompute[
         w: Int,
         InputFn: ImplicitlyCopyable
@@ -897,7 +910,7 @@ struct RowCache[
         comptime al = tile_alignment[Self.dtype, w, Self.params.target]()
         return compute[w](input_fn[w, al](coord), coord)
 
-    @always_inline
+    @inline(.always)
     def load[
         w: Int,
         InputFn: ImplicitlyCopyable
@@ -947,11 +960,11 @@ struct RowCache[
             var warp_off = (
                 Int(warp_id()) * Self.cols
             ) if Self.params._tier == ReduceTier.Warp else 0
-            var sh = UnsafePointer[
+            var sh = MutPointer[
                 Scalar[Self.T], MutUntrackedOrigin, address_space=.SHARED
             ](unsafe_from_address=self._shmem_addr)
-            return sh.load[width=w, alignment=al](
-                warp_off + Int(coord.coord[Self.axis].value())
+            return sh.unsafe_load[width=w, alignment=al](
+                warp_off + Int(coord.coord[Self.axis])
             )
         else:
             return self.recompute[w](coord, input_fn, compute)
@@ -1072,7 +1085,7 @@ struct Row[
     # no-op against `ctx._phase`); unused and DCE'd on every other tier.
     var _reduce_index: Int
 
-    @always_inline
+    @inline(.always)
     def __init__[
         InputFn: ImplicitlyCopyable
         & RegisterPassable
@@ -1124,17 +1137,17 @@ struct Row[
                     self._row_regs[chunk] = input_fn[Self._W, al](idx)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _participant() -> Int:
         # Row-local participant index (comptime-resolved): lane within the
         # warp (warp tier) or thread within the block (block tier).
         comptime if Self.params._tier == ReduceTier.Warp:
             return Int(lane_id())
         else:
-            return Int(thread_idx.x)
+            return thread_idx.x
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _index_vector[w: Int](pos: Int) -> SIMD[.int64, w]:
         # Per-lane axis positions for a tile starting at `pos`. Lane stride
         # is the tier discriminator (comptime): `1` when lanes are
@@ -1145,7 +1158,7 @@ struct Row[
         comptime lane_stride = 0 if Self.params.emit_tile_width > 1 else 1
         return SIMD[.int64, w](pos) + iota[.int64, w]() * Int64(lane_stride)
 
-    @always_inline
+    @inline(.always)
     def reduce[
         M: ReduceOp,
         Contribute: ImplicitlyCopyable
@@ -1202,34 +1215,47 @@ struct Row[
             self._reduce_index = i + 1
             var phase = Int(self.ctx._phase)
             if i < phase:
-                return _pointwise_splitk_combine[M](self.ctx, i)
+                comptime if is_cpu[Self.params.target]():
+                    return _cpu_pointwise_splitk_combine[M](self.ctx, i)
+                else:
+                    return _pointwise_splitk_combine[M](self.ctx, i)
             if i > phase:
                 return M()
 
             var partial = M()
             var ctx = self.ctx
 
-            @always_inline
+            @inline(.always)
             def splitk_reduce_tile[
                 ws: Int
             ](mut state: M, coords: RowCoord[Self.rank]) {
                 var input_fn, var contribute, var ctx
             }:
                 comptime al = ctx.element_alignment[Self.dtype, ws]()
-                var pos = Int(coords.coord[Self.axis].value())
+                var pos = Int(coords.coord[Self.axis])
                 state.accumulate[Self.accum, ws](
                     contribute[ws](input_fn[ws, al](coords), coords),
                     Self._index_vector[ws](pos),
                 )
 
-            _gpu_reduce(
-                self.row_coord,
-                Int(self.axis_size.value()),
-                self.ctx,
-                partial,
-                splitk_reduce_tile,
-            )
-            _pointwise_splitk_store_partial(partial, self.ctx, i)
+            comptime if is_cpu[Self.params.target]():
+                _cpu_reduce(
+                    self.row_coord,
+                    Int(self.axis_size),
+                    self.ctx,
+                    partial,
+                    splitk_reduce_tile,
+                )
+                _cpu_pointwise_splitk_store_partial(partial, self.ctx, i)
+            else:
+                _gpu_reduce(
+                    self.row_coord,
+                    Int(self.axis_size),
+                    self.ctx,
+                    partial,
+                    splitk_reduce_tile,
+                )
+                _pointwise_splitk_store_partial(partial, self.ctx, i)
             return partial
 
         var state = M()
@@ -1249,14 +1275,14 @@ struct Row[
         else:
             var ctx = self.ctx
 
-            @always_inline
+            @inline(.always)
             def reduce_tile[
                 ws: Int
             ](mut state: M, coords: RowCoord[Self.rank]) {
                 var input_fn, var contribute, var ctx
             }:
                 comptime al = ctx.element_alignment[Self.dtype, ws]()
-                var pos = Int(coords.coord[Self.axis].value())
+                var pos = Int(coords.coord[Self.axis])
                 state.accumulate[Self.accum, ws](
                     contribute[ws](input_fn[ws, al](coords), coords),
                     Self._index_vector[ws](pos),
@@ -1265,7 +1291,7 @@ struct Row[
             comptime if is_cpu[Self.params.target]():
                 _cpu_reduce(
                     self.row_coord,
-                    Int(self.axis_size.value()),
+                    Int(self.axis_size),
                     self.ctx,
                     state,
                     reduce_tile,
@@ -1276,7 +1302,7 @@ struct Row[
                 ](), "unknown rowwise target"
                 _gpu_reduce(
                     self.row_coord,
-                    Int(self.axis_size.value()),
+                    Int(self.axis_size),
                     self.ctx,
                     state,
                     reduce_tile,
@@ -1285,7 +1311,7 @@ struct Row[
         pjoin(state, self.ctx)
         return state
 
-    @always_inline
+    @inline(.always)
     def elementwise[
         G: ImplicitlyCopyable
         & RegisterPassable
@@ -1318,6 +1344,10 @@ struct Row[
                 (non-fuse path only).
         """
         comptime if Self.params._num_phases > 1:
+            debug_assert(
+                self._reduce_index == Self.params._num_phases - 1,
+                "num_phases must be the number of plain reduces + 1",
+            )
             # Split-K terminal: write only in the final phase (`p == N`,
             # every reduce already combined to its global stat; `N` is the
             # number of dependent reduces, `Self.params._num_phases - 1`).
@@ -1327,19 +1357,27 @@ struct Row[
             if Int(self.ctx._phase) == Self.params._num_phases - 1:
                 var ctx = self.ctx
 
-                @always_inline
+                @inline(.always)
                 def splitk_emit_tile[
                     ws: Int
                 ](coords: RowCoord[Self.rank]) {var input_fn, var g, var ctx}:
                     comptime al = ctx.element_alignment[Self.dtype, ws]()
                     g[ws](input_fn[ws, al](coords), coords)
 
-                _gpu_reduce(
-                    self.row_coord,
-                    Int(self.axis_size.value()),
-                    self.ctx,
-                    splitk_emit_tile,
-                )
+                comptime if is_cpu[Self.params.target]():
+                    _cpu_reduce(
+                        self.row_coord,
+                        Int(self.axis_size),
+                        self.ctx,
+                        splitk_emit_tile,
+                    )
+                else:
+                    _gpu_reduce(
+                        self.row_coord,
+                        Int(self.axis_size),
+                        self.ctx,
+                        splitk_emit_tile,
+                    )
             return
 
         comptime if Self._fuse:
@@ -1357,7 +1395,7 @@ struct Row[
         else:
             var ctx = self.ctx
 
-            @always_inline
+            @inline(.always)
             def emit_tile[
                 ws: Int
             ](coords: RowCoord[Self.rank]) {var input_fn, var g, var ctx}:
@@ -1367,7 +1405,7 @@ struct Row[
             comptime if is_cpu[Self.params.target]():
                 _cpu_reduce(
                     self.row_coord,
-                    Int(self.axis_size.value()),
+                    Int(self.axis_size),
                     self.ctx,
                     emit_tile,
                 )
@@ -1377,12 +1415,12 @@ struct Row[
                 ](), "unknown rowwise target"
                 _gpu_reduce(
                     self.row_coord,
-                    Int(self.axis_size.value()),
+                    Int(self.axis_size),
                     self.ctx,
                     emit_tile,
                 )
 
-    @always_inline
+    @inline(.always)
     def emit[
         Write: ImplicitlyCopyable
         & RegisterPassable
@@ -1409,9 +1447,12 @@ struct Row[
                 row's output(s) at the collapsed coordinate (reduced axis
                 pinned to 0).
         """
+        comptime assert (
+            Self.params._num_phases <= 1
+        ), "emit isn't phase-aware; pass dtype_size=0 to launch"
         var row_coord = self.row_coord
 
-        @always_inline
+        @inline(.always)
         def emit_once() {var write, var row_coord}:
             var oc = row_coord.at_axis[Self.axis](0)
             write(oc)
@@ -1419,7 +1460,7 @@ struct Row[
         once(emit_once, self.ctx)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _row_sync():
         # Row-local barrier for shmem staging: warp-level on the warp tier
         # (one warp per row — a block `barrier()` would deadlock when the
@@ -1430,7 +1471,7 @@ struct Row[
         else:
             barrier()
 
-    @always_inline
+    @inline(.always)
     def cache[
         T: DType,
         Compute: ImplicitlyCopyable
@@ -1477,6 +1518,9 @@ struct Row[
         Returns:
             A `RowCache` handle over the cached row.
         """
+        comptime assert (
+            Self.params._num_phases <= 1
+        ), "cache isn't phase-aware; pass dtype_size=0 to launch"
         var out = RowCache[
             Self.params,
             T,
@@ -1519,7 +1563,7 @@ struct Row[
                             idx,
                         )
                         out._owned[chunk] = v
-                        sh.store[alignment=al](warp_off + pos, v)
+                        sh.unsafe_store[alignment=al](warp_off + pos, v)
                 out._shmem_addr = Int(sh)
                 # Publish this row's writes to all participants.
                 Self._row_sync()
@@ -1534,7 +1578,7 @@ struct Row[
                         )
         return out
 
-    @always_inline
+    @inline(.always)
     def reduce[
         T: DType,
         shared: Bool,
@@ -1609,6 +1653,9 @@ struct Row[
         Returns:
             The joined `M`, broadcast to every participant.
         """
+        comptime assert (
+            Self.params._num_phases <= 1
+        ), "cached reduce isn't phase-aware; pass dtype_size=0 to launch"
         var state = M()
 
         comptime if Self._fuse:
@@ -1625,9 +1672,9 @@ struct Row[
                     )
         else:
             var over_ = over
-            var axis_size = Int(self.axis_size.value())
+            var axis_size = Int(self.axis_size)
 
-            @always_inline
+            @inline(.always)
             def reduce_tile[
                 ws: Int
             ](mut state: M, coords: RowCoord[Self.rank]) {
@@ -1636,7 +1683,7 @@ struct Row[
                 var input_fn,
                 var compute,
             }:
-                var pos = Int(coords.coord[Self.axis].value())
+                var pos = Int(coords.coord[Self.axis])
                 state.accumulate[Self.accum, ws](
                     contribute[ws](
                         over_.recompute[ws](coords, input_fn, compute),
@@ -1668,7 +1715,7 @@ struct Row[
         pjoin(state, self.ctx)
         return state
 
-    @always_inline
+    @inline(.always)
     def elementwise[
         T: DType,
         shared: Bool,
@@ -1745,6 +1792,9 @@ struct Row[
                 (non-fuse path only).
             compute: The producer that built `over` (non-fuse path only).
         """
+        comptime assert (
+            Self.params._num_phases <= 1
+        ), "cached elementwise isn't phase-aware; pass dtype_size=0 to launch"
         comptime if Self._fuse:
             var participant = Self._participant()
             var base = over.row_coord
@@ -1759,9 +1809,9 @@ struct Row[
                     )
         else:
             var over_ = over
-            var axis_size = Int(self.axis_size.value())
+            var axis_size = Int(self.axis_size)
 
-            @always_inline
+            @inline(.always)
             def emit_tile[
                 ws: Int
             ](coords: RowCoord[Self.rank]) {

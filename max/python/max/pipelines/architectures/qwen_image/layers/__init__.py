@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen-Image layers."""
 
 from .embeddings import QwenImagePosEmbed, QwenImageTimestepProjEmbeddings
 from .qwen_image_attention import (

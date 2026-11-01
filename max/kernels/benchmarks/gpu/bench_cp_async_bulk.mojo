@@ -31,6 +31,7 @@ The g2s issued in steady state overlaps with the mbar_wait + s2g of a
 different slot, hiding g2s latency behind S-1 iterations of work.
 """
 
+from std.math import ceildiv
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from max.benchmark import bencher_iter_custom
@@ -41,14 +42,9 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.gpu import (
-    block_idx,
-    grid_dim as gpu_grid_dim,
-    thread_idx,
-    warp_id,
-)
+from max.gpu import block_idx, grid_dim as gpu_grid_dim, warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_prefetch,
@@ -66,7 +62,7 @@ from internal_utils import arg_parse
 from layout.tma_async import SharedMemBarrier
 
 
-@always_inline
+@inline(.always)
 def _smem_ptr[
     BYTES_PER_COPY: Int, S: Int
 ](
@@ -74,10 +70,10 @@ def _smem_ptr[
     warp: Int,
     slot: Int,
 ) -> type_of(base):
-    return base + (warp * S + slot) * BYTES_PER_COPY
+    return base.unsafe_offset((warp * S + slot) * BYTES_PER_COPY)
 
 
-@always_inline
+@inline(.always)
 def _mbar_ref[
     S: Int
 ](
@@ -85,7 +81,7 @@ def _mbar_ref[
     warp: Int,
     slot: Int,
 ) -> type_of(base):
-    return base + warp * S + slot
+    return base.unsafe_offset(warp * S).unsafe_offset(slot)
 
 
 def bulk_memcpy_kernel[
@@ -101,7 +97,9 @@ def bulk_memcpy_kernel[
     var smem_base = external_memory[
         UInt8, address_space=.SHARED, alignment=128
     ]()
-    var mbar_base = (smem_base + DATA_BYTES).bitcast[SharedMemBarrier]()
+    var mbar_base = smem_base.unsafe_offset(DATA_BYTES).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     var w = Int(warp_id())
     var is_leader = elect_one_sync()
@@ -112,12 +110,12 @@ def bulk_memcpy_kernel[
     fence_mbarrier_init()
     barrier()
 
-    var src_g = src.address_space_cast[.GLOBAL]()
-    var dst_g = dst.address_space_cast[.GLOBAL]()
+    var src_g = src.unsafe_address_space_cast[.GLOBAL]()
+    var dst_g = dst.unsafe_address_space_cast[.GLOBAL]()
 
-    var first = Int(block_idx.x) * NUM_WARPS + w
+    var first = block_idx.x * NUM_WARPS + w
     var stride = Int(gpu_grid_dim.x) * NUM_WARPS
-    var my_total = max(0, (Int(total_chunks) - first + stride - 1) // stride)
+    var my_total = max(0, ceildiv(Int(total_chunks) - first, stride))
 
     if not is_leader:
         return
@@ -134,14 +132,16 @@ def bulk_memcpy_kernel[
             var next_i = i + 1
             if next_i < my_total:
                 cp_async_bulk_prefetch(
-                    src_g + (first + next_i * stride) * BYTES_PER_COPY,
+                    src_g.unsafe_offset(
+                        (first + next_i * stride) * BYTES_PER_COPY
+                    ),
                     Int32(BYTES_PER_COPY),
                 )
 
         mbar[].expect_bytes(Int32(BYTES_PER_COPY))
         cp_async_bulk_shared_cluster_global(
             smem,
-            src_g + (first + i * stride) * BYTES_PER_COPY,
+            src_g.unsafe_offset((first + i * stride) * BYTES_PER_COPY),
             Int32(BYTES_PER_COPY),
             mbar[].unsafe_ptr(),
         )
@@ -156,7 +156,9 @@ def bulk_memcpy_kernel[
             var next_i = i + 1
             if next_i < my_total:
                 cp_async_bulk_prefetch(
-                    src_g + (first + next_i * stride) * BYTES_PER_COPY,
+                    src_g.unsafe_offset(
+                        (first + next_i * stride) * BYTES_PER_COPY
+                    ),
                     Int32(BYTES_PER_COPY),
                 )
 
@@ -167,7 +169,7 @@ def bulk_memcpy_kernel[
         mbar_new[].expect_bytes(Int32(BYTES_PER_COPY))
         cp_async_bulk_shared_cluster_global(
             smem_new,
-            src_g + (first + i * stride) * BYTES_PER_COPY,
+            src_g.unsafe_offset((first + i * stride) * BYTES_PER_COPY),
             Int32(BYTES_PER_COPY),
             mbar_new[].unsafe_ptr(),
         )
@@ -177,7 +179,7 @@ def bulk_memcpy_kernel[
         mbar_drain[].wait(phase=UInt32((drain_idx // S) & 1))
 
         cp_async_bulk_global_shared_cta(
-            dst_g + (first + drain_idx * stride) * BYTES_PER_COPY,
+            dst_g.unsafe_offset((first + drain_idx * stride) * BYTES_PER_COPY),
             smem_drain,
             Int32(BYTES_PER_COPY),
         )
@@ -193,7 +195,7 @@ def bulk_memcpy_kernel[
         mbar_drain[].wait(phase=UInt32((drain_idx // S) & 1))
 
         cp_async_bulk_global_shared_cta(
-            dst_g + (first + drain_idx * stride) * BYTES_PER_COPY,
+            dst_g.unsafe_offset((first + drain_idx * stride) * BYTES_PER_COPY),
             smem_drain,
             Int32(BYTES_PER_COPY),
         )
@@ -229,9 +231,9 @@ def main() raises:
         var src_dev = ctx.enqueue_create_buffer[.uint8](total_bytes)
         var dst_dev = ctx.enqueue_create_buffer[.uint8](total_bytes)
 
-        @always_inline
+        @inline(.always)
         def bench_func(mut b: Bencher) {imm}:
-            @always_inline
+            @inline(.always)
             def kernel_launch(ctx: DeviceContext) raises {imm}:
                 ctx.enqueue_function[
                     bulk_memcpy_kernel[NUM_THREADS, BYTES_PER_COPY, S, PREFETCH]

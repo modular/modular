@@ -53,10 +53,14 @@ from datasets import load_dataset
 from eval_common import (
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
+    dump_config,
     exact_match_score,
     expand_repeats,
     make_client,
+    prepare_out_dir,
+    response_fields,
+    resumable_config,
     run_parallel,
     select_rows,
     self_judge,
@@ -184,9 +188,7 @@ def infer(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ]
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(model, messages, params)
-    )
+    resp = chat_completion(client, model, messages, params)
     choice = resp.choices[0]
     # Count only the model-under-test's answer call; the judge call is NOT
     # counted toward output-token stats.
@@ -215,6 +217,7 @@ def infer(
         "missing_docs": missing,
         "finish_reason": choice.finish_reason,
         "completion_tokens": answer_tokens,
+        **response_fields(choice),
     }
 
 
@@ -228,6 +231,7 @@ def run_eval(
     system_prompt: str,
     doc_text: dict[tuple[str, str], str],
     out_dir: str | None = None,
+    resume: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Runs AA-LCR over ``indexed_dataset`` with ``repeats``.
 
@@ -257,12 +261,13 @@ def run_eval(
             "prompt_index": qi,
             "document_set_id": q["document_set_id"],
             "question": q["question"][:200],
+            "reference": str(q["answer"]).strip(),
             "error": str(exc),
             "correct": False,
         }
 
     results, errors = run_parallel(
-        samples, fn, on_error, workers, "AA-LCR", out_dir=out_dir
+        samples, fn, on_error, workers, "AA-LCR", out_dir=out_dir, resume=resume
     )
     return results, exact_match_score(results, len(samples), errors)
 
@@ -314,6 +319,12 @@ def run_eval(
     default="AA_LCR",
     help="Prefix for the GITHUB_ENV metric keys the job summary reads.",
 )
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Keep the finished rows already in --out-dir and run only the rest. "
+    "Refuses when they were produced with different options.",
+)
 def main(
     base_url: str,
     model: str,
@@ -328,17 +339,28 @@ def main(
     top_p: float,
     system_prompt: str,
     metric_prefix: str,
+    resume: bool,
 ) -> None:
     """Runs AA-LCR against a running OpenAI-compatible server and scores it."""
+    prepare_out_dir(
+        out_dir,
+        resumable_config(click.get_current_context().params),
+        resume,
+    )
     client = make_client(base_url)
     doc_text = build_doc_index(download_context_zip())
-    indexed_dataset = select_rows(
-        list(load_dataset("ArtificialAnalysis/AA-LCR", split="test")),
-        sample_size,
-        row_ids,
-    )
+    dataset = list(load_dataset("ArtificialAnalysis/AA-LCR", split="test"))
+    indexed_dataset = select_rows(dataset, sample_size, row_ids)
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
+    )
+    dump_config(
+        out_dir,
+        base_url,
+        params,
+        indexed_dataset,
+        dataset,
+        system_prompt=system_prompt,
     )
     results, summary = run_eval(
         client,
@@ -350,6 +372,7 @@ def main(
         system_prompt,
         doc_text,
         out_dir=out_dir,
+        resume=resume,
     )
     write_outputs(out_dir, results, summary, metric_prefix, label="AA-LCR")
 

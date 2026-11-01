@@ -106,31 +106,10 @@ def bench_conv2d[
         filter_w,
     )
     print(
-        "Conv2D: batch=",
-        batch,
-        " in=(",
-        in_height,
-        "x",
-        in_width,
-        "x",
-        in_channels,
-        ") filter=(",
-        filter_h,
-        "x",
-        filter_w,
-        ") out=(",
-        out_height,
-        "x",
-        out_width,
-        "x",
-        out_channels,
-        ") pad=(",
-        pad_h,
-        ",",
-        pad_w,
-        ") GFLOPS=",
-        Float64(flops) / 1e9,
-        sep="",
+        t"Conv2D: batch={batch} in=({in_height}x{in_width}x{in_channels})"
+        t" filter=({filter_h}x{filter_w})"
+        t" out=({out_height}x{out_width}x{out_channels}) pad=({pad_h},{pad_w})"
+        t" GFLOPS={Float64(flops) / 1e9}"
     )
 
     # Problem shape for implicit im2col
@@ -194,15 +173,11 @@ def bench_conv2d[
     )
     var filter_tt = TileTensor(
         filter_dev,
-        row_major(
-            Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
-        ),
+        row_major(out_channels, filter_h, filter_w, in_channels),
     )
     var output_sm100_tt = TileTensor(
         output_sm100_dev,
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     # Create TileTensor views for cuDNN
@@ -212,15 +187,11 @@ def bench_conv2d[
     )
     var filter_nchw_dev_tensor = TileTensor(
         filter_nchw_dev,
-        row_major(
-            Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
-        ),
+        row_major(out_channels, in_channels, filter_h, filter_w),
     )
     var output_cudnn_dev_tensor = TileTensor(
         output_cudnn_dev,
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     # ==================== Warmup ====================
@@ -288,29 +259,9 @@ def bench_conv2d[
 
     # Report
     var ratio = cudnn_time_ms / sm100_time_ms
-    print(
-        "  SM100 Im2col: ",
-        sm100_time_ms,
-        " ms  (",
-        sm100_tflops,
-        " TFLOPS)",
-        sep="",
-    )
-    print(
-        "  cuDNN conv2d: ",
-        cudnn_time_ms,
-        " ms  (",
-        cudnn_tflops,
-        " TFLOPS)",
-        sep="",
-    )
-    print(
-        "  Ratio: ",
-        ratio,
-        "x",
-        "  (Both include full conv with im2col)",
-        sep="",
-    )
+    print(t"  SM100 Im2col: {sm100_time_ms} ms  ({sm100_tflops} TFLOPS)")
+    print(t"  cuDNN conv2d: {cudnn_time_ms} ms  ({cudnn_tflops} TFLOPS)")
+    print(t"  Ratio: {ratio}x  (Both include full conv with im2col)")
     print("  Correctness: max_diff=", max_diff, sep="")
     print()
 
@@ -369,21 +320,8 @@ def bench_all_configs[
     )
 
     print(
-        "Conv2D: ",
-        in_height,
-        "x",
-        in_width,
-        "x",
-        in_channels,
-        " -> ",
-        out_channels,
-        "ch (",
-        filter_h,
-        "x",
-        filter_w,
-        " filter)  GFLOPS=",
-        Float64(flops) / 1e9,
-        sep="",
+        t"Conv2D: {in_height}x{in_width}x{in_channels} -> {out_channels}ch"
+        t" ({filter_h}x{filter_w} filter)  GFLOPS={Float64(flops) / 1e9}"
     )
 
     # Allocate host memory
@@ -432,21 +370,15 @@ def bench_all_configs[
     )
     var filter_tt = TileTensor(
         filter_dev,
-        row_major(
-            Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
-        ),
+        row_major(out_channels, filter_h, filter_w, in_channels),
     )
     var output_1sm_tt = TileTensor(
         output_1sm_dev,
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        row_major(batch, out_height, out_width, out_channels),
     )
     var output_2sm_tt = TileTensor(
         output_2sm_dev,
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     # Create TileTensor views for cuDNN
@@ -456,15 +388,11 @@ def bench_all_configs[
     )
     var filter_nchw_dev_tensor = TileTensor(
         filter_nchw_dev,
-        row_major(
-            Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
-        ),
+        row_major(out_channels, in_channels, filter_h, filter_w),
     )
     var output_cudnn_dev_tensor = TileTensor(
         output_cudnn_dev,
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     # Get configs
@@ -539,33 +467,14 @@ def bench_all_configs[
 
     # Report
     print(
-        "  1-SM (cta_group=1): ",
-        time_1sm_ms,
-        " ms  (",
-        tflops_1sm,
-        " TFLOPS)  ",
-        Int(tflops_1sm / cudnn_tflops * 100),
-        "% of cuDNN",
-        sep="",
+        t"  1-SM (cta_group=1): {time_1sm_ms} ms  ({tflops_1sm} TFLOPS) "
+        t" {Int(tflops_1sm / cudnn_tflops * 100)}% of cuDNN"
     )
     print(
-        "  2-SM (cta_group=2): ",
-        time_2sm_ms,
-        " ms  (",
-        tflops_2sm,
-        " TFLOPS)  ",
-        Int(tflops_2sm / cudnn_tflops * 100),
-        "% of cuDNN",
-        sep="",
+        t"  2-SM (cta_group=2): {time_2sm_ms} ms  ({tflops_2sm} TFLOPS) "
+        t" {Int(tflops_2sm / cudnn_tflops * 100)}% of cuDNN"
     )
-    print(
-        "  cuDNN:              ",
-        cudnn_time_ms,
-        " ms  (",
-        cudnn_tflops,
-        " TFLOPS)",
-        sep="",
-    )
+    print(t"  cuDNN:              {cudnn_time_ms} ms  ({cudnn_tflops} TFLOPS)")
     print()
 
     _ = input_dev^
@@ -623,21 +532,9 @@ def bench_residual[
     )
 
     print(
-        "Conv2D+Residual: ",
-        in_height,
-        "x",
-        in_width,
-        "x",
-        in_channels,
-        " -> ",
-        out_channels,
-        "ch (",
-        filter_h,
-        "x",
-        filter_w,
-        " filter)  GFLOPS=",
-        Float64(flops) / 1e9,
-        sep="",
+        t"Conv2D+Residual: {in_height}x{in_width}x{in_channels} ->"
+        t" {out_channels}ch ({filter_h}x{filter_w} filter) "
+        t" GFLOPS={Float64(flops) / 1e9}"
     )
 
     # Allocate
@@ -665,27 +562,19 @@ def bench_residual[
     )
     var filter_tt = TileTensor(
         filter_dev,
-        row_major(
-            Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
-        ),
+        row_major(out_channels, filter_h, filter_w, in_channels),
     )
     var output_tt = TileTensor(
         output_dev,
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        row_major(batch, out_height, out_width, out_channels),
     )
     var output_res_tt = TileTensor(
         output_res_dev,
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        row_major(batch, out_height, out_width, out_channels),
     )
     var source_tt = TileTensor(
         source_dev,
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     comptime config_1sm = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm()
@@ -736,29 +625,9 @@ def bench_residual[
 
     # Report
     var overhead_pct = (time_res_ms - time_conv_ms) / time_conv_ms * 100
-    print(
-        "  Conv only:          ",
-        time_conv_ms,
-        " ms  (",
-        tflops_conv,
-        " TFLOPS)",
-        sep="",
-    )
-    print(
-        "  Conv+Residual fused:",
-        " ",
-        time_res_ms,
-        " ms  (",
-        tflops_res,
-        " TFLOPS)",
-        sep="",
-    )
-    print(
-        "  Fusion overhead:     ",
-        overhead_pct,
-        "%",
-        sep="",
-    )
+    print(t"  Conv only:          {time_conv_ms} ms  ({tflops_conv} TFLOPS)")
+    print(t"  Conv+Residual fused: {time_res_ms} ms  ({tflops_res} TFLOPS)")
+    print(t"  Fusion overhead:     {overhead_pct}%")
     print()
 
     _ = input_dev^

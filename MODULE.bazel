@@ -7,19 +7,33 @@ module(
 
 include("//bazel:common.MODULE.bazel")
 
+# The internal build resolves every Rust crate from one third-party manifest
+# that does not ship here, so this build resolves rust_kv's crates from
+# rust_kv's own Cargo.lock under the same repo name.
+crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "crates",
+    cargo_lock = "//rust_kv:Cargo.lock",
+    cargo_toml = "//rust_kv:Cargo.toml",
+    platform_triples = [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+use_repo(crate, "crates")
+
 mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 
 mojo_aliases(name = "mojo")
-
-modular_wheel_repository = use_repo_rule("//bazel:modular_wheel_repository.bzl", "modular_wheel_repository")
-
-modular_wheel_repository(name = "modular_wheel")
 
 macos_sysroot_repository = use_repo_rule("//bazel/internal/cc-toolchain:macos_sysroot_repository.bzl", "macos_sysroot_repository")
 
 macos_sysroot_repository(name = "sysroot-macos")
 
-include("//bazel:mojo.MODULE.bazel")
+# SDLC-4549: the prebuilt path is gone. `bazel/mojo.MODULE.bazel` (which unpacked
+# the nightly wheel via `rebuild_wheel` and pulled the prebuilt `@mojo_toolchains`
+# compiler) is no longer generated or included; the whole tree builds from source.
 
 link_hack = use_repo_rule("//bazel/internal:link_hack.bzl", "link_hack")
 
@@ -29,16 +43,12 @@ link_hack(
 
 register_toolchains(
     "//bazel/internal:mojo_toolchain",
-    "@mojo_toolchains//...",
     "//bazel/internal/cc-toolchain:all",
     "//bazel/internal:mojo_copts_toolchain",
+    "//bazel/internal:pyo3_toolchain",
 )
 
-llvm_source = use_extension("//bazel/public-patches:llvm_source.bzl", "llvm_source")
-use_repo(llvm_source, "llvm-raw")
-
-llvm_configure = use_extension("//bazel/public-patches:llvm_project.bzl", "llvm_configure")
-use_repo(llvm_configure, "llvm-project")
+include("//bazel/public-patches:llvm.MODULE.bazel")
 
 cfg_workaround = use_repo_rule("//bazel/internal:cfg_workaround.bzl", "cfg_workaround")
 

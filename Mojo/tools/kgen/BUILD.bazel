@@ -1,6 +1,16 @@
 load("//bazel:api.bzl", "modular_cc_binary")
+load("//bazel:tablegen.bzl", "driver_option_tablegen")
 
 package(default_visibility = ["//Mojo:consumers"])
+
+driver_option_tablegen(
+    name = "KGEN",
+    srcs = ["KGENOptions.td"],
+    manual_name = "kgen",
+    markdown_name = "kgen",
+    td_file = "KGENOptions.td",
+    deps = ["//Mojo/tools/mojo:MojoDescriptionTdFiles"],
+)
 
 modular_cc_binary(
     name = "kgen",
@@ -24,6 +34,8 @@ modular_cc_binary(
         "//conditions:default": [],
     }),
     deps = [
+        ":KGEN.inc_files",
+        "//:accel_registration",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Config",
@@ -35,14 +47,18 @@ modular_cc_binary(
         "//Mojo:MojoTooling",
         "//Mojo:ObjectCompiler",
         "//Mojo:Pipeline",
+        "//Mojo:Precompile",
         "//Mojo:Support",
         "//Mojo:SupportForceLinkMLIRC",
         "//Mojo:TargetTraits",
         "//Mojo:ToolCommon",
         "//Support:Base",
         "//Support:Compiler",
+        "//Support:Driver",
+        "//Support:Filesystem",
         "//Support:Globals",
         "//Support:MArchTarget",
+        "//Support:MDialect",
         "@llvm-project//mlir:BytecodeWriter",
     ],
 )

@@ -1,0 +1,47 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
+
+package(default_visibility = ["//visibility:private"])
+
+# logit_comparison.py
+modular_py_binary(
+    name = "logit_comparison",
+    srcs = ["logit_comparison.py"],
+    # The registry imports every architecture registered as Qwen3ForCausalLM
+    # when it resolves the model by name.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/qwen3",
+        "//max/python/max/pipelines/architectures/qwen3_embedding",
+    ],
+    imports = ["."],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/qwen3",
+        "//max/python/max/pipelines/architectures/qwen3_embedding",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_run_binary_test(
+    name = "logit_comparison_test",
+    size = "enormous",
+    binary = "logit_comparison",
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    # This test downloads ~1.2GB of Qwen3-0.6B-Base weights from Hugging Face
+    # and requires a GPU. Run manually with `bt-b200 //max/docs/site/code/develop/logit-comparison:logit_comparison_test`.
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

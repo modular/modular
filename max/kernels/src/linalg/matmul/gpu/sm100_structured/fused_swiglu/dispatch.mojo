@@ -17,16 +17,17 @@ caller is responsible for choosing the config (MMA shape, pipeline stages,
 etc.).
 """
 
-from std.math import align_up
+from std.math import align_up, ceildiv
+from max.gpu import WARP_SIZE, block_dim, global_idx, grid_dim, lane_id
+import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
-from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from std.collections import OptionalReg
 
-from std.utils.index import Index
 
 from internal_utils import Table
+from linalg.swiglu_activation import swiglu
 
 from .config import (
     FusedSwiGLUMatmulConfig,
@@ -37,18 +38,87 @@ from .config import (
 from .matmul_swiglu import _blackwell_matmul_swiglu
 from .tuning_configs import TuningConfigSwiGLU, _get_tuning_list_swiglu_bf16
 
+comptime _FALLBACK_ROWS_PER_WARP = 4
+
+
+def _matmul_swiglu_fallback[
+    has_bias: Bool
+](
+    output: MutPointer[BFloat16, MutAnyOrigin],
+    activation: ImmPointer[BFloat16, ImmutAnyOrigin],
+    weight: ImmPointer[BFloat16, ImmutAnyOrigin],
+    bias: ImmPointer[BFloat16, ImmutAnyOrigin],
+    m_arg: Int64,
+    h_arg: Int64,
+    k_arg: Int64,
+    work_count_arg: Int64,
+    a_row_stride_arg: Int64,
+    a_col_stride_arg: Int64,
+    w_row_stride_arg: Int64,
+    w_col_stride_arg: Int64,
+    out_row_stride_arg: Int64,
+    out_col_stride_arg: Int64,
+):
+    var m = Int(m_arg)
+    var h = Int(h_arg)
+    var k = Int(k_arg)
+    var work_count = Int(work_count_arg)
+    var a_row_stride = Int(a_row_stride_arg)
+    var a_col_stride = Int(a_col_stride_arg)
+    var w_row_stride = Int(w_row_stride_arg)
+    var w_col_stride = Int(w_col_stride_arg)
+    var out_row_stride = Int(out_row_stride_arg)
+    var out_col_stride = Int(out_col_stride_arg)
+    var lane = Int(lane_id())
+    var work = global_idx.x // WARP_SIZE
+    var stride = grid_dim.x * (block_dim.x // WARP_SIZE)
+    while work < work_count:
+        var row_start = (work // h) * _FALLBACK_ROWS_PER_WARP
+        var column = work % h
+        var gates = Array[Float32, _FALLBACK_ROWS_PER_WARP](fill=0)
+        var ups = Array[Float32, _FALLBACK_ROWS_PER_WARP](fill=0)
+        for index in range(lane, k, WARP_SIZE):
+            var gate_weight = weight.unsafe_load(
+                (2 * column) * w_row_stride + index * w_col_stride
+            ).cast[.float32]()
+            var up_weight = weight.unsafe_load(
+                (2 * column + 1) * w_row_stride + index * w_col_stride
+            ).cast[.float32]()
+            comptime for r in range(_FALLBACK_ROWS_PER_WARP):
+                if row_start + r < m:
+                    var value = activation.unsafe_load(
+                        (row_start + r) * a_row_stride + index * a_col_stride
+                    ).cast[.float32]()
+                    gates[r] += value * gate_weight
+                    ups[r] += value * up_weight
+        var gate_bias = Float32(0)
+        var up_bias = Float32(0)
+        comptime if has_bias:
+            if lane == 0:
+                gate_bias = bias.unsafe_load(2 * column).cast[.float32]()
+                up_bias = bias.unsafe_load(2 * column + 1).cast[.float32]()
+        comptime for r in range(_FALLBACK_ROWS_PER_WARP):
+            var gate = warp.sum(gates[r])
+            var up = warp.sum(ups[r])
+            if lane == 0 and row_start + r < m:
+                gate += gate_bias
+                up += up_bias
+                output.unsafe_store(
+                    (row_start + r) * out_row_stride + column * out_col_stride,
+                    swiglu[0.0](gate, up).cast[.bfloat16](),
+                )
+        work += stride
+
 
 def matmul_swiglu_dispatch_sm100[
     config: FusedSwiGLUMatmulConfig[_, _, _, True],
     pdl_level: PDLLevel = PDLLevel(0),
 ](
-    c_out: TileTensor[
-        mut=True, .bfloat16, Engine=DefaultEngine[element_width=1], ...
-    ],
+    c_out: TileTensor[mut=True, .bfloat16, ...],
     a: TileTensor[mut=False, .bfloat16, ...],
     b: TileTensor[mut=False, .bfloat16, ...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[UnsafePointer[BFloat16, ImmutAnyOrigin]] = None,
+    bias_ptr: OptionalReg[ImmPointer[BFloat16, ImmutAnyOrigin]] = None,
 ) raises:
     """Dispatch fused GEMM+SwiGLU to SM100 kernel with given config.
 
@@ -73,16 +143,19 @@ def matmul_swiglu_dispatch_sm100[
         bias_ptr: Optional [N=2H] BF16 bias (interleaved gate/up pairs).
               Ignored when ``config.use_bias`` is False.
     """
-    # When config.use_bias=False, c_out._storage is a valid dummy (bias never
+    if Int(c_out.dim[0]()) == 0 or Int(c_out.dim[1]()) == 0:
+        return
+
+    # When config.use_bias=False, c_out.ptr is a valid dummy (bias never
     # accessed).
-    var bias_ptr_c = rebind[
-        UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
-    ](c_out._storage)
+    var bias_ptr_c = rebind[ImmPointer[Scalar[config.c_type], ImmutAnyOrigin]](
+        c_out.ptr
+    )
     comptime if config.use_bias:
-        bias_ptr_c = rebind[
-            UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
-        ](bias_ptr.value())
-    var bias_tile = TileTensor(bias_ptr_c, row_major(Coord(Int(b.dim[0]()))))
+        bias_ptr_c = rebind[ImmPointer[Scalar[config.c_type], ImmutAnyOrigin]](
+            bias_ptr.value()
+        )
+    var bias_tile = TileTensor(bias_ptr_c, row_major(Int(b.dim[0]())))
     comptime if config.AB_swapped:
         # Swap inputs so the kernel sees A = W (b) and B = X (a). The
         # inner implementation reads kernel-frame M from a_device.dim[0]
@@ -101,14 +174,14 @@ def matmul_swiglu_dispatch_sm100[
 
 
 def matmul_swiglu_dispatch_sm100_bf16[
-    pdl_level: PDLLevel = PDLLevel(0),
+    pdl_level: PDLLevel = PDLLevel.ON,
     has_bias: Bool = False,
 ](
-    c_out: TileTensor[mut=True, Engine=DefaultEngine[element_width=1], ...],
-    a: TileTensor[...],
+    c_out: TileTensor[mut=True, ...],
+    a: TileTensor[address_space=.GENERIC, ...],
     b: TileTensor[...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[UnsafePointer[BFloat16, ImmutAnyOrigin]] = None,
+    bias_ptr: OptionalReg[ImmPointer[BFloat16, ImmutAnyOrigin]] = None,
 ) raises:
     """Auto-dispatch fused GEMM+SwiGLU on SM100 using shape-based tuning table.
 
@@ -135,16 +208,70 @@ def matmul_swiglu_dispatch_sm100_bf16[
               Only used when ``has_bias`` is True.
     """
     var m = Int(c_out.dim[0]())
-    comptime dtype = DType.bfloat16
-    comptime static_N = b.static_shape[0]
+    if m == 0 or Int(c_out.dim[1]()) == 0:
+        return
     comptime static_K = b.static_shape[1]
-    # When has_bias=False, c_out._storage is a valid dummy (bias never accessed).
-    var bias_base = rebind[UnsafePointer[BFloat16, ImmutAnyOrigin]](
-        c_out._storage
-    )
+    var h = Int(c_out.dim[1]())
+    var a_row_stride = Int(a.dynamic_stride(0))
+    var a_col_stride = Int(a.dynamic_stride(1))
+    var w_row_stride = Int(b.dynamic_stride(0))
+    var w_col_stride = Int(b.dynamic_stride(1))
+    var out_row_stride = Int(c_out.dynamic_stride(0))
+    var out_col_stride = Int(c_out.dynamic_stride(1))
+    # When has_bias=False, c_out.ptr is a valid dummy (bias never accessed).
+    var bias_base = rebind[ImmPointer[BFloat16, ImmutAnyOrigin]](c_out.ptr)
     comptime if has_bias:
         bias_base = bias_ptr.value()
-    var bias_tile = TileTensor(bias_base, row_major(Coord(Idx[static_N])))
+    # TMA needs aligned, dense tensors. The fallback avoids transient scratch
+    # that could be reused while a captured device graph still references it.
+    var requires_fallback = (
+        Int(a.ptr) % 16 != 0
+        or Int(b.ptr) % 16 != 0
+        or Int(c_out.ptr) % 16 != 0
+        or static_K % 8 != 0
+        or h % 8 != 0
+        or a_row_stride != static_K
+        or a_col_stride != 1
+        or w_row_stride != static_K
+        or w_col_stride != 1
+        or out_row_stride != h
+        or out_col_stride != 1
+    )
+    comptime if has_bias:
+        requires_fallback = requires_fallback or Int(bias_base) % 16 != 0
+    if requires_fallback:
+        comptime threads = 128
+        comptime warps_per_block = threads // WARP_SIZE
+        var work_count = ceildiv(m, _FALLBACK_ROWS_PER_WARP) * h
+        ctx.enqueue_function[_matmul_swiglu_fallback[has_bias]](
+            MutPointer[BFloat16, MutAnyOrigin](
+                unsafe_from_address=Int(c_out.ptr)
+            ),
+            ImmPointer[BFloat16, ImmutAnyOrigin](
+                unsafe_from_address=Int(a.ptr)
+            ),
+            ImmPointer[BFloat16, ImmutAnyOrigin](
+                unsafe_from_address=Int(b.ptr)
+            ),
+            bias_base,
+            Int64(m),
+            Int64(h),
+            Int64(b.dim[1]()),
+            Int64(work_count),
+            Int64(a_row_stride),
+            Int64(a_col_stride),
+            Int64(w_row_stride),
+            Int64(w_col_stride),
+            Int64(out_row_stride),
+            Int64(out_col_stride),
+            grid_dim=min(ceildiv(work_count, warps_per_block), 65535),
+            block_dim=threads,
+        )
+        return
+
+    comptime dtype = DType.bfloat16
+    comptime static_N = b.static_shape[0]
+    var bias_tile = TileTensor(bias_base, row_major(Idx[static_N]))
     comptime assert static_N % 2 == 0, "N must be even for SwiGLU gate/up split"
 
     comptime tuning_table = Table(
@@ -218,8 +345,8 @@ def matmul_swiglu_dispatch_sm100_bf16[
 
     # Last-resort hardcoded config if heuristic set is exhausted (e.g. M > 8192).
     comptime default_config = swiglu_matmul_config[dtype, dtype, dtype, True](
-        mma_shape=Index(256, 224, 16),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(256, 224, 16),
+        cluster_shape=(2, 1, 1),
         block_swizzle_size=0,
         cta_group=2,
         AB_swapped=False,

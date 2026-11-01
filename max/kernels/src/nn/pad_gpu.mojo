@@ -10,27 +10,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements GPU-specific tensor padding kernels with constant or edge-fill strategies."""
+"""Implements GPU-specific tensor padding kernels with constant, reflect, and repeat (edge-fill) strategies."""
 
 from std.algorithm.functional import vectorize
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout import Coord, TensorEngine, TensorLayout, TileTensor
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
+from layout import (
+    Coord,
+    TensorEngine,
+    TensorLayout,
+    TileTensor,
+)
+from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
 from std.math import align_down, ceildiv
 from std.sys.info import align_of
 from std.collections import Array
-from std.utils.index import IndexList
+from std.utils import StaticTuple
+from nn.pad import _pad_reflect_repeat_src_index
 
 
-def _fill_strides_indexlist[
+def _fill_strides[
     rank: Int,
-](input_shape: IndexList[rank], mut strides: Array[Int, rank],):
+](shape: Coord, mut strides: Array[Int, rank]):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
-    `buf` contains contiguous buf.
+    `shape` describes a contiguous buffer.
 
-    Note that `buf` is only used for querying its dimensions.
+    Note that `shape` is only used for querying its dimensions.
     """
     comptime assert rank > 0
     strides[rank - 1] = 1
@@ -38,18 +50,18 @@ def _fill_strides_indexlist[
     comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
-        var next_axis_dim = input_shape[axis + 1]
+        var next_axis_dim = Int(shape[axis + 1])
         var curr_axis_stride = next_axis_stride * next_axis_dim
         strides[axis] = curr_axis_stride
 
 
-@always_inline
+@inline(.always)
 def _vectorized_copy_row[
     dtype: DType,
     simd_width: Int,
 ](
-    input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    input_ptr: ImmPointer[Scalar[dtype], _],
+    output_ptr: MutPointer[Scalar[dtype], _],
     row_length: Int,
     threads_per_row: Int,
 ):
@@ -83,9 +95,11 @@ def _vectorized_copy_row[
         def _copy_aligned[n: Int](blk: Int) {input_ptr, output_ptr, mut}:
             for j in range(n):
                 var off = my_start + (blk + j) * stride
-                output_ptr.store[width=simd_width, alignment=alignment](
+                output_ptr.unsafe_store[width=simd_width, alignment=alignment](
                     off,
-                    input_ptr.load[width=simd_width, alignment=alignment](off),
+                    input_ptr.unsafe_load[
+                        width=simd_width, alignment=alignment
+                    ](off),
                 )
 
         vectorize[simd_width](num_blocks, _copy_aligned)
@@ -94,8 +108,8 @@ def _vectorized_copy_row[
         def _copy[n: Int](blk: Int) {input_ptr, output_ptr, mut}:
             for j in range(n):
                 var off = my_start + (blk + j) * stride
-                output_ptr.store[width=simd_width](
-                    off, input_ptr.load[width=simd_width](off)
+                output_ptr.unsafe_store(
+                    off, input_ptr.unsafe_load[width=simd_width](off)
                 )
 
         vectorize[simd_width](num_blocks, _copy)
@@ -137,20 +151,21 @@ def padded_copy_kernel[
 
     start_row += thread_idx.y
 
-    for row in range(start_row, end_row, rows_per_iter):
-        var coord = input_tensor.layout.idx2crd(row * _row_length)
-        var output_offset = Int(output_tensor.layout(coord))
-        var input_offset = row * _row_length
+    with PDL():
+        for row in range(start_row, end_row, rows_per_iter):
+            var coord = input_tensor.layout.idx2crd(row * _row_length)
+            var output_offset = Int(output_tensor.layout(coord))
+            var input_offset = row * _row_length
 
-        var output_ptr = output_tensor.ptr + output_offset
-        var input_ptr = input_tensor.ptr + input_offset
+            var output_ptr = output_tensor.ptr.unsafe_offset(output_offset)
+            var input_ptr = input_tensor.ptr.unsafe_offset(input_offset)
 
-        _vectorized_copy_row[dtype, simd_width](
-            input_ptr,
-            output_ptr,
-            _row_length,
-            threads_per_row,
-        )
+            _vectorized_copy_row[dtype, simd_width](
+                input_ptr,
+                output_ptr,
+                _row_length,
+                threads_per_row,
+            )
 
 
 def _pad_constant_impl[
@@ -180,7 +195,9 @@ def _pad_constant_impl[
 
     comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
 
     var linear_block_count: Int
 
@@ -201,29 +218,30 @@ def _pad_constant_impl[
         OutputLayoutType=output_tensor.LayoutType,
         dtype=dtype,
         simd_width=simd_width,
-        InputEngine=type_of(input_tensor.as_immut()).Engine,
+        InputEngine=type_of(input_tensor.as_imm()).Engine,
         OutputEngine=output_tensor.Engine,
     ]
 
     ctx.enqueue_function[kernel](
-        input_tensor.as_immut(),
+        input_tensor.as_imm(),
         output_tensor,
         Int32(rows_per_block),
         Int32(total_rows),
         Int32(row_length),
         grid_dim=(linear_block_count),
         block_dim=(threads_per_row, block_rows),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
 def pad_constant[
-    rank: Int, dtype: DType, padding_type: DType
+    dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype], _],
-    output_shape: IndexList[rank],
-    input: UnsafePointer[mut=False, Scalar[dtype], _],
-    input_shape: IndexList[rank],
-    paddings: UnsafePointer[mut=False, Scalar[padding_type], _],
+    output: MutPointer[Scalar[dtype], _],
+    output_shape: Coord,
+    input: ImmPointer[Scalar[dtype], _],
+    input_shape: Coord,
+    paddings: ImmPointer[Scalar[padding_type], _],
     constant: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -253,52 +271,83 @@ def pad_constant[
         ```
     """
 
-    var input_strides = Array[Int, rank]()
+    var input_strides = Array[Int, input_shape.rank]()
+    _fill_strides[input_shape.rank](input_shape, input_strides)
+
+    var input_tensor = TileTensor(
+        input,
+        Layout(input_shape, Coord(input_strides)),
+    )
+    pad_constant[dtype, padding_type](
+        output, output_shape, input_tensor, paddings, constant, ctx
+    )
+
+
+def pad_constant[
+    dtype: DType, padding_type: DType
+](
+    output: MutPointer[Scalar[dtype], _],
+    output_shape: Coord,
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    paddings: ImmPointer[Scalar[padding_type], _],
+    constant: Scalar[dtype],
+    ctx: DeviceContext,
+) raises:
+    """
+    Fill `output` with values from `input`, and edges padded with `constant`
+    based on `paddings`.
+
+    Args:
+        output: The output buffer.
+        output_shape: The output shape.
+        input: The input tensor, copied with its own layout.
+        paddings: Ordered (before, after) padding sizes for each axis.
+        constant: The constant to pad output with.
+        ctx: Device context for participating GPU.
+    """
+
+    comptime rank = output_shape.rank
+    var input_shape = input.layout.shape_coord()
+    comptime assert (
+        input_shape.rank == rank
+    ), "input and output shapes must have the same rank"
     var output_strides = Array[Int, rank]()
 
     var output_size: Int = 1
 
     comptime for i in range(rank):
-        output_size *= output_shape[i]
+        output_size *= Int(output_shape[i])
 
     var output_buffer = DeviceBuffer[dtype](
         ctx, output, output_size, owning=False
     )
     output_buffer.enqueue_fill(constant)
 
-    _fill_strides_indexlist[rank](input_shape, input_strides)
-    _fill_strides_indexlist[rank](output_shape, output_strides)
-
-    var input_tensor = TileTensor(
-        input,
-        Layout(Coord(input_shape), Coord(input_strides)),
-    )
+    _fill_strides[rank](output_shape, output_strides)
 
     var pre_pad_offset = 0
 
     for i in range(rank):
         pre_pad_offset += Int(paddings[2 * i]) * output_strides[i]
 
-    var adjusted_output_ptr = output + pre_pad_offset
+    var adjusted_output_ptr = output.unsafe_offset(pre_pad_offset)
 
     var output_tensor = TileTensor(
         adjusted_output_ptr,
-        Layout(Coord(input_shape), Coord(output_strides)),
+        Layout(input_shape, Coord(output_strides)),
     )
 
     _pad_constant_impl[dtype](
-        input_tensor,
+        input,
         output_tensor,
         ctx,
     )
 
 
-def get_padding_output_shape[
-    rank: Int
-](
-    input_shape: IndexList[rank],
+def get_padding_output_shape(
+    input_shape: Coord,
     paddings: TileTensor[mut=False, .int, ...],
-) -> IndexList[rank]:
+) -> DynamicCoord[.int, input_shape.rank]:
     """Computes the output shape produced by padding `input_shape` with the
     before/after amounts given in `paddings`.
 
@@ -314,12 +363,270 @@ def get_padding_output_shape[
     Returns:
         The padded output shape with the same rank as `input_shape`.
     """
+    comptime rank = input_shape.rank
     comptime assert (
         paddings.flat_rank == 1 and paddings.static_shape[0] == 2 * rank
     )
-    var output_shape = IndexList[rank]()
-    for i in range(rank):
+    var output_shape = DynamicCoord[.int, rank]()
+    comptime for i in range(rank):
         var before = paddings[2 * i]
         var after = paddings[2 * i + 1]
-        output_shape[i] = Int(before) + input_shape[i] + Int(after)
+        output_shape.replace_dynamic[i](
+            Int(before) + Int(input_shape[i]) + Int(after)
+        )
     return output_shape
+
+
+comptime _pad_src_index = _pad_reflect_repeat_src_index
+
+
+@__name(t"padded_{mode}_{dtype}")
+def padded_index_mode_kernel[
+    mode: StaticString,
+    InputLayoutType: TensorLayout,
+    input_origin: ImmOrigin,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    dtype: DType,
+    rank: Int,
+    InputEngine: TensorEngine,
+    OutputEngine: TensorEngine,
+](
+    input_tensor: TileTensor[
+        dtype, InputLayoutType, input_origin, Engine=InputEngine
+    ],
+    output_tensor: TileTensor[
+        dtype, OutputLayoutType, output_origin, Engine=OutputEngine
+    ],
+    pre_pads: StaticTuple[Int32, rank],
+    rows_per_sm: Int32,
+    total_rows: Int32,
+    row_length: Int32,
+):
+    """GPU kernel shared by the reflect and edge (repeat) pad modes.
+
+    Rows of the output are split across SMs and the last axis across
+    threads. Axes `0..rank-2` of the source coordinate are computed once
+    per row via the shared `_pad_src_index` mapping; the last axis is
+    mapped per element.
+    """
+    var _rows_per_sm = Int(rows_per_sm)
+    var _total_rows = Int(total_rows)
+    var _row_length = Int(row_length)
+    var start_row = block_idx.x * _rows_per_sm
+    var threads_per_row = block_dim.x
+
+    var rows_per_iter = block_dim.y
+    var end_row = min(start_row + _rows_per_sm, _total_rows)
+
+    start_row += thread_idx.y
+
+    with PDL():
+        for row in range(start_row, end_row, rows_per_iter):
+            # `idx2crd` yields an all-dynamic coordinate, so the last axis can be
+            # rewritten in place per element below.
+            var out_coord = output_tensor.layout.idx2crd(row * _row_length)
+
+            # Compute the source coordinate for axes 0..rank-2 via the shared
+            # index map. The last axis is handled per-element below.
+            var src_idx = DynamicCoord[.int, rank]()
+            comptime for axis in range(output_tensor.rank - 1):
+                var in_len = Int(input_tensor.dim[axis]())
+                src_idx.replace_dynamic[axis](
+                    _pad_src_index[mode](
+                        Int(out_coord[axis]), in_len, Int(pre_pads[axis])
+                    )
+                )
+
+            var in_last = Int(input_tensor.dim[output_tensor.rank - 1]())
+            var pre_last = Int(pre_pads[output_tensor.rank - 1])
+
+            var tid = thread_idx.x % threads_per_row
+            for j in range(tid, _row_length, threads_per_row):
+                src_idx.replace_dynamic[rank - 1](
+                    _pad_src_index[mode](j, in_last, pre_last)
+                )
+                out_coord.replace_dynamic[rank - 1](Int64(j))
+                output_tensor.store(
+                    out_coord,
+                    input_tensor.load[invariant=False](src_idx),
+                )
+
+
+def _pad_index_mode_impl[
+    mode: StaticString,
+    dtype: DType,
+    //,
+    padding_type: DType,
+    max_threads: Int = 256,
+    threads_per_row: Int = 16,
+](
+    output: MutPointer[Scalar[dtype], _],
+    output_shape: Coord,
+    input: ImmPointer[Scalar[dtype], _],
+    input_shape: Coord,
+    paddings: ImmPointer[Scalar[padding_type], _],
+    ctx: DeviceContext,
+) raises:
+    """Launch `padded_index_mode_kernel` for the given pad `mode`.
+
+    Host-side setup (row-major strides, per-axis pre-pads, tensor views) and
+    the launch geometry (rows split across SMs, `threads_per_row` lanes
+    handling the last axis) are shared by every mode.
+    """
+    comptime rank = output_shape.rank
+    comptime assert (
+        input_shape.rank == rank
+    ), "input and output shapes must have the same rank"
+    var input_strides = Array[Int, input_shape.rank]()
+    var output_strides = Array[Int, output_shape.rank]()
+
+    _fill_strides[input_shape.rank](input_shape, input_strides)
+    _fill_strides[output_shape.rank](output_shape, output_strides)
+
+    var pre_pads = StaticTuple[Int32, rank](fill=0)
+    for axis in range(rank):
+        pre_pads[axis] = Int32(paddings[2 * axis])
+
+    var input_tensor = TileTensor(
+        input,
+        Layout(input_shape, Coord(input_strides)),
+    )
+    var output_tensor = TileTensor(
+        output,
+        Layout(output_shape, Coord(output_strides)),
+    )
+
+    # Zero-element input: nothing to reflect or repeat. The output is left
+    # as-is, which matches the CPU implementation (which also has no defined
+    # behavior for an empty input).
+    if input_tensor.num_elements() == 0:
+        return
+
+    var row_length = Int(output_tensor.dim(output_tensor.rank - 1))
+    var total_rows = output_tensor.num_elements() // row_length
+
+    comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
+
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
+
+    var linear_block_count: Int
+    var rows_per_block: Int
+
+    if sm_count > total_rows:
+        linear_block_count = total_rows
+        rows_per_block = 1
+    else:
+        linear_block_count = sm_count
+        rows_per_block = ceildiv(total_rows, sm_count)
+
+    comptime block_rows = max_threads // threads_per_row
+    comptime kernel = padded_index_mode_kernel[
+        mode=mode,
+        input_origin=ImmOrigin(input_tensor.origin),
+        InputLayoutType=input_tensor.LayoutType,
+        output_origin=output_tensor.origin,
+        OutputLayoutType=output_tensor.LayoutType,
+        dtype=dtype,
+        rank=rank,
+        InputEngine=type_of(input_tensor.as_imm()).Engine,
+        OutputEngine=output_tensor.Engine,
+    ]
+
+    ctx.enqueue_function[kernel](
+        input_tensor.as_imm(),
+        output_tensor,
+        pre_pads,
+        Int32(rows_per_block),
+        Int32(total_rows),
+        Int32(row_length),
+        grid_dim=(linear_block_count),
+        block_dim=(threads_per_row, block_rows),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
+def pad_reflect[
+    dtype: DType, padding_type: DType
+](
+    output: MutPointer[Scalar[dtype], _],
+    output_shape: Coord,
+    input: ImmPointer[Scalar[dtype], _],
+    input_shape: Coord,
+    paddings: ImmPointer[Scalar[padding_type], _],
+    ctx: DeviceContext,
+) raises:
+    """
+    Fill `output` with values from `input`, and edges padded with reflected
+    values from the unpadded region.
+
+    Args:
+        output: The output buffer.
+        output_shape: The output shape.
+        input: The input buffer.
+        input_shape: The input shape.
+        paddings: Ordered (before, after) padding sizes for each axis.
+        ctx: Device context for participating GPU.
+
+    Example:
+        ```mojo
+        var input_shape = (X, Y, Z)
+        var paddings = [x0, x1, y0, y1, z0, z1]
+
+        out[x, y, z] =
+          input[reflect(x - x0), reflect(y - y0), reflect(z - z0)]
+        ```
+    """
+    _pad_index_mode_impl[
+        mode="reflect", dtype=dtype, padding_type=padding_type
+    ](
+        output,
+        output_shape,
+        input,
+        input_shape,
+        paddings,
+        ctx,
+    )
+
+
+def pad_repeat[
+    dtype: DType, padding_type: DType
+](
+    output: MutPointer[Scalar[dtype], _],
+    output_shape: Coord,
+    input: ImmPointer[Scalar[dtype], _],
+    input_shape: Coord,
+    paddings: ImmPointer[Scalar[padding_type], _],
+    ctx: DeviceContext,
+) raises:
+    """
+    Fill `output` with values from `input`, and edges padded with the
+    boundary values from the unpadded region.
+
+    Args:
+        output: The output buffer.
+        output_shape: The output shape.
+        input: The input buffer.
+        input_shape: The input shape.
+        paddings: Ordered (before, after) padding sizes for each axis.
+        ctx: Device context for participating GPU.
+
+    Example:
+        ```mojo
+        var input_shape = (X, Y, Z)
+        var paddings = [x0, x1, y0, y1, z0, z1]
+
+        out[x, y, z] =
+          input[clamp(x - x0), clamp(y - y0), clamp(z - z0)]
+        ```
+    """
+    _pad_index_mode_impl[mode="repeat", dtype=dtype, padding_type=padding_type](
+        output,
+        output_shape,
+        input,
+        input_shape,
+        paddings,
+        ctx,
+    )

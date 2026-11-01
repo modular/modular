@@ -48,11 +48,11 @@ def _bench_gemm(
     var bsc = ctx.enqueue_create_buffer[.float32](n)
     var bias = ctx.enqueue_create_buffer[.bfloat16](1)
     var c = ctx.enqueue_create_buffer[.bfloat16](m * n)
-    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_immut()
-    var b_tt = TileTensor(b.unsafe_ptr(), row_major(n, k)).as_immut()
-    var as_tt = TileTensor(asc.unsafe_ptr(), row_major(m)).as_immut()
-    var bs_tt = TileTensor(bsc.unsafe_ptr(), row_major(n)).as_immut()
-    var bias_tt = TileTensor(bias.unsafe_ptr(), row_major(1)).as_immut()
+    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_imm()
+    var b_tt = TileTensor(b.unsafe_ptr(), row_major(n, k)).as_imm()
+    var as_tt = TileTensor(asc.unsafe_ptr(), row_major(m)).as_imm()
+    var bs_tt = TileTensor(bsc.unsafe_ptr(), row_major(n)).as_imm()
+    var bias_tt = TileTensor(bias.unsafe_ptr(), row_major(1)).as_imm()
     var c_tt = TileTensor(c.unsafe_ptr(), row_major(m, n))
 
     for _ in range(30):
@@ -72,20 +72,7 @@ def _bench_gemm(
         if avg < best:
             best = avg
     var tops = 2.0 * Float64(m) * Float64(n) * Float64(k) / (best * 1e12)
-    print(
-        "  GEMM ",
-        label,
-        m,
-        "x",
-        n,
-        "x",
-        k,
-        ":",
-        best * 1000.0,
-        "ms",
-        tops,
-        "Tops/s",
-    )
+    print(t"  GEMM  {label} {m} x {n} x {k} : {best * 1000.0} ms {tops} Tops/s")
     _ = a^
     _ = b^
     _ = asc^
@@ -98,7 +85,7 @@ def _bench_quant(m: Int, k: Int, label: String, ctx: DeviceContext) raises:
     var a = ctx.enqueue_create_buffer[.bfloat16](m * k)
     var q = ctx.enqueue_create_buffer[.int8](m * k)
     var s = ctx.enqueue_create_buffer[.float32](m)
-    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_immut()
+    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_imm()
     var q_tt = TileTensor(q.unsafe_ptr(), row_major(m, k))
     var s_tt = TileTensor(s.unsafe_ptr(), row_major(m))
 
@@ -116,7 +103,7 @@ def _bench_quant(m: Int, k: Int, label: String, ctx: DeviceContext) raises:
         var avg = (perf_counter() - st) / 20.0
         if avg < best:
             best = avg
-    print("  QUANT", label, "M=", m, "K=", k, ":", best * 1000.0, "ms")
+    print(t"  QUANT {label} M= {m} K= {k} : {best * 1000.0} ms")
     _ = a^
     _ = q^
     _ = s^
@@ -124,8 +111,8 @@ def _bench_quant(m: Int, k: Int, label: String, ctx: DeviceContext) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     print("=== Apple M5 int8 W8A8, FLUX.2-Klein Linear shapes, M=4096 ===")
     print(

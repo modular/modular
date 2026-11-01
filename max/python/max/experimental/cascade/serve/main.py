@@ -50,6 +50,7 @@ from typing import Annotated
 
 import cyclopts
 from cyclopts import Parameter
+from max.experimental.cascade.core.fd_limits import raise_nofile_soft_limit
 from max.experimental.cascade.deployment.context_config import ContextConfig
 from max.experimental.cascade.pipelines.all_pipelines import (
     build_pipeline,
@@ -57,6 +58,7 @@ from max.experimental.cascade.pipelines.all_pipelines import (
 )
 from max.experimental.cascade.serve.all_routes import build_router
 from max.experimental.cascade.serve.cascade_fastapi import CascadeFastAPI
+from max.experimental.cascade.telemetry import configure_telemetry
 from max.pipelines.lib import PipelineArgs
 
 logger = logging.getLogger(__name__)
@@ -90,7 +92,8 @@ async def serve(
     endpoints (``--remote-cpu-workers`` / ``--remote-gpu-workers``). Workers
     run in dedicated child processes; the pipeline's workers are routed by
     their ``deploy_hints`` to the matching device pool and load-balanced
-    round-robin within it.
+    round-robin within it. With no CPU workers, local or remote, every
+    worker runs in the server process.
 
     Args:
         pipeline_args: Flat user-facing pipeline arguments. All fields are
@@ -101,20 +104,32 @@ async def serve(
         host: Interface to bind uvicorn to.
         port: TCP port to bind uvicorn to.
     """
+    raise_nofile_soft_limit()
+
     # Size the GPU worker pool from the model arguments unless the user
-    # set it explicitly.
-    if context_config.local_gpu_workers == 0:
+    # set it explicitly or every worker runs in this process.
+    if context_config.local_gpu_workers is None and (
+        context_config.local_cpu_workers or context_config.remote_cpu_workers
+    ):
         n_gpu_workers = count_unique_device_specs(pipeline_args)
         logger.info("Setting local_gpu_workers to %d", n_gpu_workers)
         context_config = context_config.model_copy(
             update={"local_gpu_workers": n_gpu_workers}
         )
 
+    # Before any worker subprocess inherits the environment: the OTLP
+    # exporters read the endpoint from it themselves, in every process.
+    context_config.export_otlp_endpoint()
+
     logger.info("Building cascade pipeline ...")
     pipeline = await build_pipeline(pipeline_args)
+    rust_pool = any(
+        "rust" in worker.deploy_hints
+        for worker in pipeline._get_workers().values()
+    )
 
     logger.info("Opening %s context ...", context_config.transport)
-    async with context_config.open_context() as runtime:
+    async with context_config.open_context(rust_pool) as runtime:
         logger.info("Deploying cascade pipeline ...")
         await pipeline.deploy(runtime)
 
@@ -127,5 +142,6 @@ async def serve(
                 pipeline_args.runtime.emit_reasoning_content,
             )
         )
+        configure_telemetry("cascade.frontend", f"{host}:{port}")
 
         await app.serve(host, port)

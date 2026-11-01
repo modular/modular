@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 
 import pytest
 import torch
@@ -29,14 +30,15 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_kernels import (
-    ep_mxfp4_max_padded_m,
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_kernels import (
+    _ep_dispatch_output_types,
     uses_mx_ep_token_format,
 )
-from max.nn.moe import MoEGate, MoEQuantized
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.quant_config import (
+from max.nn.legacy.kernels import amd_mega_ffn_workspace_words
+from max.nn.legacy.moe import GatedActivation, MoEGate, MoEQuantized, moe_fp8
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -226,7 +228,6 @@ def test_ep_moe_mxfp8_nvidia(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
         quant_config=mxfp8_config,
     )
@@ -269,7 +270,7 @@ def test_ep_moe_mxfp8_nvidia(
         inputs_tensors = [x.tensor for x in graph.inputs[:n_devices]]
         ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
         outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
-        graph.output(*outputs)
+        graph.output(outputs)
 
     compiled = session.load(graph, weights_registry=moe.state_dict())
     result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
@@ -350,9 +351,7 @@ def test_ep_moe_mxfp8_nvidia(
         )
 
 
-def _mx_quant_config(
-    fmt: QuantFormat, *, preshuffled_b: bool = True
-) -> QuantConfig:
+def _mx_quant_config(fmt: QuantFormat) -> QuantConfig:
     """Builds an MX (block-scaled, group 32) quant config for the fold gate."""
     return QuantConfig(
         input_scale=InputScaleSpec(
@@ -370,20 +369,23 @@ def _mx_quant_config(
         attn_quantized_layers=set(),
         embedding_output_dtype=None,
         format=fmt,
-        block_scaled_preshuffled_b=preshuffled_b,
         can_use_fused_swiglu=True,
     )
 
 
 def _build_ep_moe(
-    quant_config: QuantConfig, n_devices: int, max_tokens_per_rank: int
+    quant_config: QuantConfig,
+    n_devices: int,
+    max_tokens_per_rank: int,
+    hidden_dim: int = HIDDEN_DIM,
+    moe_dim: int = MOE_DIM,
 ) -> tuple[MoEQuantized, EPConfig]:
     ep_config = EPConfig(
         dispatch_dtype=(
             DType.uint8 if quant_config.is_mxfp4 else DType.float8_e4m3fn
         ),
         combine_dtype=DType.bfloat16,
-        hidden_size=HIDDEN_DIM,
+        hidden_size=hidden_dim,
         top_k=8,
         n_experts=NUM_EXPERTS,
         max_tokens_per_rank=max_tokens_per_rank,
@@ -395,22 +397,45 @@ def _build_ep_moe(
     devices_ref = [DeviceRef.GPU(i) for i in range(n_devices)]
     moe = MoEQuantized(
         devices=[DeviceRef.CPU()] + devices_ref,
-        hidden_dim=HIDDEN_DIM,
+        hidden_dim=hidden_dim,
         num_experts=NUM_EXPERTS,
         num_experts_per_token=8,
-        moe_dim=MOE_DIM,
+        moe_dim=moe_dim,
         has_shared_experts=True,
-        shared_experts_dim=MOE_DIM,
+        shared_experts_dim=moe_dim,
         ep_size=n_devices,
         dtype=ep_config.dispatch_dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=EPBatchManager(ep_config),
         quant_config=quant_config,
-        use_swigluoai=True,
-        swiglu_alpha=1.702,
-        swiglu_limit=7.0,
+        activation=GatedActivation("swigluoai", alpha=1.702, limit=7.0),
     )
     return moe, ep_config
+
+
+def _lower_ep_moe(
+    moe: MoEQuantized, n_devices: int, hidden_dim: int, name: str
+) -> Graph:
+    """Builds the EP MoE's graph across `n_devices`, with no weights loaded."""
+    # no weights are loaded: name them as loading would
+    for weight_name, weight in moe.raw_state_dict().items():
+        weight.name = weight_name
+    devices_ref = [DeviceRef.GPU(i) for i in range(n_devices)]
+    moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
+    moe_shards = moe.shard(devices_ref)
+    with Graph(
+        name,
+        input_types=[
+            *(
+                TensorType(DType.bfloat16, (f"input_len_{i}", hidden_dim), d)
+                for i, d in enumerate(devices_ref)
+            ),
+            *moe.ep_batch_manager.input_types(),
+        ],
+    ) as graph:
+        moe.ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
+        xs = [x.tensor for x in graph.inputs[:n_devices]]
+        graph.output(*forward_moe_sharded_layers(moe_shards, xs))
+    return graph
 
 
 @pytest.mark.skipif(
@@ -418,10 +443,10 @@ def _build_ep_moe(
     reason="The MX EP A-scale dispatch fold is AMD-only",
 )
 @pytest.mark.parametrize("n_devices", [2])
-def test_ep_mxfp8_scale_fold_gate_amd(n_devices: int) -> None:
-    """The dispatch A-scale fold must engage for MXFP8, not just MXFP4.
+def test_ep_mx_scale_fold_amd(n_devices: int) -> None:
+    """The dispatch writes MXFP8 and MXFP4 A-scales in the matmul's slot layout.
 
-    Pinned where the fold is decided -- before any weight is loaded.
+    Pinned at graph build -- before any weight is loaded.
     """
     assert n_devices <= accelerator_count(), (
         "Devices are not enough to run EP test"
@@ -430,29 +455,78 @@ def test_ep_mxfp8_scale_fold_gate_amd(n_devices: int) -> None:
     # The fold's single source of truth for the per-expert slot stride.
     max_recv_per_expert = max_tokens_per_rank * n_devices
     expected_stride = (max_recv_per_expert + 31) // 32 * 32
+    # `_build_ep_moe` fuses the shared expert into the local experts.
+    n_local_experts = NUM_EXPERTS // n_devices + 1
 
     for fmt in (QuantFormat.MXFP8, QuantFormat.MXFP4):
-        moe, ep_config = _build_ep_moe(
+        _, ep_config = _build_ep_moe(
             _mx_quant_config(fmt), n_devices, max_tokens_per_rank
         )
         assert uses_mx_ep_token_format(ep_config), (
             f"{fmt} should dispatch through MXTokenFormat on AMD"
         )
-        moe.configure_ep_scale_fusion(dispatch_supports_fold=True)
-        assert ep_config.mxfp4_a_scales_preshuffled, (
-            f"{fmt} EP A-scale fold did not engage"
-        )
-        assert ep_mxfp4_max_padded_m(ep_config) == expected_stride
+        assert ep_config._max_recv_tokens_per_expert() == expected_stride
+        scales_type = _ep_dispatch_output_types(ep_config, DeviceRef.GPU(0))[1]
+        assert int(scales_type.shape[0]) == n_local_experts * expected_stride
 
-    # Boundary: the fold still requires the preshuffled-B grouped matmul, so
-    # widening the format check must not make it fire on the row-major kernel.
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip", reason="The AMD MoE FFN op is gfx950-only"
+)
+def test_ep_moe_mxfp8_mega_ffn_default_amd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """At MiniMax M3's expert shapes the MXFP8 EP MoE lowers to the AMD FFN
+    op, with a workspace sized for its dispatch buffer. Pinned at graph
+    build."""
+    sized: list[int] = []
+
+    def workspace_words(
+        experts: int, max_rows: int, rows: int, grids: int = 1
+    ) -> int:
+        sized.append(rows)
+        return amd_mega_ffn_workspace_words(experts, max_rows, rows, grids)
+
+    monkeypatch.setattr(
+        moe_fp8, "amd_mega_ffn_workspace_words", workspace_words
+    )
+    n_devices = 2
+    hidden_dim = 6144
+    # a DP-heavy dispatch buffer: more 128-row blocks than a fixed region of
+    # 4096 slots held
     moe, ep_config = _build_ep_moe(
-        _mx_quant_config(QuantFormat.MXFP8, preshuffled_b=False),
+        _mx_quant_config(QuantFormat.MXFP8),
         n_devices,
-        max_tokens_per_rank,
+        32768,
+        hidden_dim=hidden_dim,
+        moe_dim=3072,
     )
-    moe.configure_ep_scale_fusion(dispatch_supports_fold=True)
-    assert not ep_config.mxfp4_a_scales_preshuffled, (
-        "the fold must stay off without a preshuffled-B matmul to read it"
+    graph = _lower_ep_moe(moe, n_devices, hidden_dim, "EPMoE_MXFP8_MegaFFN")
+    assert "mo.grouped.ffn.block.scaled.amd" in str(graph)
+    capacity = ep_config.get_max_recv_tokens() + ep_config.max_tokens_per_rank
+    assert NUM_EXPERTS // n_devices + 1 + capacity // 128 > 4096
+    assert sized and set(sized) == {capacity}
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip", reason="The AMD MoE FFN op is gfx950-only"
+)
+def test_ep_moe_mxfp4_interleaved_gate_up_raises_amd() -> None:
+    """At MiniMax M3's expert shapes an MXFP4 EP MoE with an interleaved
+    gate_up has no AMD reader (the MXFP4 MegaFFN and its chain read split
+    gate/up), so it raises at graph build rather than pairing the wrong
+    columns."""
+    n_devices = 2
+    hidden_dim = 6144
+    moe, _ = _build_ep_moe(
+        replace(
+            _mx_quant_config(QuantFormat.MXFP4), can_use_fused_swiglu=False
+        ),
+        n_devices,
+        128,
+        hidden_dim=hidden_dim,
+        moe_dim=3072,
     )
-    assert ep_mxfp4_max_padded_m(ep_config) == 0
+    moe.interleaved_gate_up = True
+    with pytest.raises(ValueError, match="interleaved gate_up"):
+        _lower_ep_moe(moe, n_devices, hidden_dim, "EPMoE_MXFP4_Interleaved")

@@ -18,12 +18,12 @@
 # CHECK-SAME: <?, [[T:.*]]: !AnyType_Trait>
 trait Trait:
     # CHECK: lit.fn @"f0{{.*}}(%self: !lit.ref<:!AnyType_Trait [[T]], imm {{.*}}> imm_mem) -> !kgen.none
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f0(self):
         ...
 
     # CHECK: lit.fn @"f1{{.*}}(%self: !lit.ref<{{.*}}> mut) -> !kgen.none
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f1(mut self):
         ...
 
@@ -35,7 +35,7 @@ trait Trait:
         pass
 
     # CHECK: lit.fn @"f3{{.*}}(%self: !lit.ref<{{.*}}> imm_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> !kgen.scalar<bool>
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f3(self) raises:
         ...
 
@@ -49,7 +49,7 @@ trait Trait:
         pass
 
     # CHECK: lit.fn @"f5{{.*}}(%self: !lit.ref<{{.*}}> mut, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, {{.*}}> byref_result) throws -> !kgen.scalar<bool>
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f5(mut self) raises:
         ...
 
@@ -343,8 +343,7 @@ struct ChangedResultTypeStruct(ChangedResultTypeTrait, RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"convert_result_type
 def convert_result_type():
-    @__parameter
-    def convert_result_type[T: ChangedResultTypeTrait]():
+    def convert_result_type[T: ChangedResultTypeTrait]() {imm}:
         pass
 
     # CHECK: call{{.*}}!ChangedResultTypeStruct
@@ -365,8 +364,7 @@ struct VariadicTrait[*I: Int](RegisterPassable, SimpleTraitMethod):
 
 # CHECK-LABEL: lit.fn @"test_bind_variadic
 def test_bind_variadic():
-    @__parameter
-    def bind_trait[T: SimpleTraitMethod]():
+    def bind_trait[T: SimpleTraitMethod]() {imm}:
         pass
 
     # CHECK: call{{.*}}@VariadicTrait<:param_list<!Int> []
@@ -572,7 +570,7 @@ trait ParentTraitSameSig:
 # CHECK-LABEL: lit.trait.decl @ChildTraitSameSig
 trait ChildTraitSameSig(ParentTraitSameSig):
     # CHECK-NEXT: lit.fn @"foo
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def foo(self):
         ...
 
@@ -634,16 +632,13 @@ struct TraitInheritance(Father, Movable where False):
 
 # CHECK-LABEL: lit.fn @"test_trait_inheritance
 def test_trait_inheritance():
-    @__parameter
-    def take_great_grand_father[T: GreatGrandFather]():
+    def take_great_grand_father[T: GreatGrandFather]() {imm}:
         pass
 
-    @__parameter
-    def take_grand_father[T: GrandFather]():
+    def take_grand_father[T: GrandFather]() {imm}:
         pass
 
-    @__parameter
-    def take_father[T: Father]():
+    def take_father[T: Father]() {imm}:
         pass
 
     # CHECK: call{{.*}}!TraitInheritance
@@ -964,7 +959,7 @@ struct FormVariadicPackWithCastedElementVariadic[
 # to Movable correctly.
 def take_movable_pointer[T: Movable&AnyType](ptr: UnsafePointer[T, AnyOrigin[mut=True]]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !lit.struct<#Pointer <{{.*}}meta<!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>
+# CHECK-SAME: %ptr: !kgen.param<:meta<!lit.struct<#Pointer <{{.*}}meta<!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>
 def test_parametric_anytype_movable[element_trait: _CollectionElementMetaType, //,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0], AnyOrigin[mut=True]]):

@@ -12,17 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm implementation for GPT-OSS models."""
 
-from max.experimental.nn.norm import RMSNorm, rms_norm
-from max.experimental.tensor import Tensor
+from max.nn.norm import RMSNorm, rms_norm
+from max.tensor import Tensor
 
 
 class GptOssRMSNorm(RMSNorm):
     """RMSNorm implementation for GPT-OSS models.
+
     Similar to the traditional RMSNorm, but does (x * w).to(orig_dtype) instead
     of x.to(orig_dtype) * w.
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` by its RMS, scaling by the weight."""
         return rms_norm(
             x,
             self.weight,

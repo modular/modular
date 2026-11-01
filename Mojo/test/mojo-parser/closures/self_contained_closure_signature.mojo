@@ -39,6 +39,6 @@ def capture_implicit_origin(var x: Foo, y: Thing[origin_of(x)]):
     # `x`. The nested `__call__` witness binds that origin into the method
     # symbol; the method body type keeps the named parent-param ref.
     #
-    # CHECK: @"capture_it()`"<:origin<true> *"x`">> : !kgen.generator<!lit.generator<[1](!lit.ref<!lit.struct<{{#[A-Za-z0-9_]+}} <:origin<true> *"x`">>
+    # CHECK: #kgen.func.symbol<@{{.*}}@"capture_it()`"<:origin<true> *"x`">>> : !kgen.generator<!lit.generator<[1](!lit.ref<!lit.struct<{{#[A-Za-z0-9_]+}} <:origin<true> *"x`">>
     def capture_it() {imm y}:
         use(y)

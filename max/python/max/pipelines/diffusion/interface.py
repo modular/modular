@@ -29,12 +29,12 @@ from max._core.driver import Device
 from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
+from max.nn import Module
 from max.pipelines.context import PixelContext
 from max.pipelines.modeling.base.component_model import ComponentModel
+from max.tensor import Tensor
 from tqdm import tqdm
 
 from .cache import DenoisingCacheState
@@ -70,7 +70,7 @@ class DiffusionPipeline(ABC):
     unprefixed_weight_component: str | None = None
     """When set, weight files without a ``<component>/`` prefix are assigned to
     this component.  This supports multi-repo layouts where quantized weights
-    for one component (e.g. the transformer) are shipped as flat files in a
+    for one component, such as the transformer, are shipped as flat files in a
     separate repo while the remaining components use the base model repo."""
 
     default_num_inference_steps: int = 50
@@ -111,7 +111,7 @@ class DiffusionPipeline(ABC):
 
     @abstractmethod
     def init_remaining_components(self) -> None:
-        """Initialize non-ComponentModel components (e.g., image processors)."""
+        """Initialize non-ComponentModel components (such as image processors)."""
 
     @abstractmethod
     def prepare_inputs(self, context: PixelContext) -> Any:

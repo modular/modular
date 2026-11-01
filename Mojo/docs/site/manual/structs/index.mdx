@@ -143,8 +143,8 @@ var b = a  # value of type 'MyPair' cannot be implicitly copied,
 
 # Explicit copy
 var c = a.copy()  # 'MyPair' has no attribute 'copy'
-                    # it does not conform to 'Copyable'
-# Move
+                  # it does not conform to 'Copyable'
+# Transfer
 var d = a^  # OK
 ```
 
@@ -442,7 +442,7 @@ Python, like operator overloading (which lets you change how math symbols like
 methods](#special-methods)).
 
 As mentioned above, Mojo builds all its standard types
-([`Int`](/docs/std/builtin/simd/#int),
+([`Int`](/docs/std/simd/#int),
 [`String`](/docs/std/collections/string/string/String/), etc.) from structs,
 rather than hardwiring them into the language itself. This gives you more
 flexibility and control when writing your code, and it means you can define your

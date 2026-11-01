@@ -45,7 +45,7 @@ comptime dtype = DType.int32
 
 def sum_kernel[
     size: Int, batch_size: Int
-](output: Pointer[Int32, MutAnyOrigin], a: Pointer[Int32, MutAnyOrigin],):
+](output: Pointer[Int32, MutAnyOrigin], a: Pointer[Int32, ImmutAnyOrigin],):
     """Efficient reduction of the vector a."""
     comptime KERNEL_TPB: Int = 512
     var sums = unsafe_stack_allocation[
@@ -92,23 +92,23 @@ struct SumKernelBenchmarkParams:
     var out_ptr: Pointer[Int32, MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var a_ptr: Pointer[Int32, MutAnyOrigin]
+    var a_ptr: Pointer[Int32, ImmutAnyOrigin]
 
     def __init__(
         out self,
         out_ptr: Pointer[mut=True, Int32, _],
-        a_ptr: Pointer[mut=True, Int32, _],
+        a_ptr: Pointer[mut=False, Int32, _],
     ):
         self.out_ptr = out_ptr.as_unsafe_any_origin()
         self.a_ptr = a_ptr.as_unsafe_any_origin()
 
 
 # Benchmark function for sum_kernel
-@always_inline
+@inline(.always)
 def sum_kernel_benchmark(
     mut b: Bencher, input_data: SumKernelBenchmarkParams
 ) raises:
-    @always_inline
+    @inline(.always)
     def kernel_launch_sum(ctx: DeviceContext) raises {imm}:
         comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
         var out_ptr = input_data.out_ptr

@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Wan configuration."""
 
 from typing import Any
 
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -35,7 +36,7 @@ def build_wan_fp8_quant_config() -> QuantConfig:
     The Comfy-Org checkpoints store every linear weight as ``float8_e4m3fn``
     with a scalar ``scale_weight`` and a scalar ``scale_input`` (static input
     quantization). This maps onto MAX's ``matmul_static_scaled_float8`` path
-    via :class:`~max.nn.quant_config.QuantConfig` with per-tensor scales.
+    via :class:`~max.nn.legacy.quant_config.QuantConfig` with per-tensor scales.
 
     Biases, norms, modulation tables, and the patch-embedding Conv3d stay in
     ``bfloat16`` — only the linear projections are quantized.
@@ -60,6 +61,8 @@ def build_wan_fp8_quant_config() -> QuantConfig:
 
 
 class WanConfigBase(MAXModelConfigBase):
+    """The transformer's shapes, shared by every Wan checkpoint."""
+
     # Defaults mirror diffusers WanTransformer3DModel constructor defaults.
     patch_size: tuple[int, int, int] = (1, 2, 2)
     num_attention_heads: int = 40
@@ -85,12 +88,15 @@ class WanConfigBase(MAXModelConfigBase):
 
 
 class WanConfig(WanConfigBase):
+    """Wan configuration, read from the checkpoint."""
+
     @staticmethod
     def generate(
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> "WanConfig":
+        """Builds the config from the model index's transformer section."""
         init_dict = {
             key: value
             for key, value in config_dict.items()

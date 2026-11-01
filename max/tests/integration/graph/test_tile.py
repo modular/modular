@@ -14,7 +14,7 @@
 
 import numpy as np
 import pytest
-from max.driver import Buffer, accelerator_count
+from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DevicePlacementPolicy, DeviceRef, Graph, TensorType, ops
@@ -56,16 +56,28 @@ def test_tile_2d(session: InferenceSession) -> None:
 
 
 @pytest.mark.skipif(
-    accelerator_count() == 0, reason="requires a GPU to test device check"
+    accelerator_count() == 0, reason="requires a GPU to tile on device"
 )
-def test_tile_raises_on_gpu() -> None:
-    """ops.tile raises ValueError at graph construction time on GPU input."""
-    with pytest.raises(ValueError, match=r"ops\.tile"):
-        with Graph(
-            "tile_gpu",
-            input_types=[
-                TensorType(DType.float32, [3], device=DeviceRef.GPU())
-            ],
-            strict_device_placement=DevicePlacementPolicy.Error,
-        ):
-            ops.tile(Graph.current.inputs[0].tensor, repeats=[2])
+def test_tile_on_gpu_stays_on_device(session: InferenceSession) -> None:
+    """ops.tile runs on the GPU without staging the input through the CPU."""
+    with Graph(
+        "tile_gpu",
+        input_types=[TensorType(DType.float32, [3], device=DeviceRef.GPU())],
+        strict_device_placement=DevicePlacementPolicy.Error,
+    ) as graph:
+        out = ops.tile(graph.inputs[0].tensor, repeats=[2])
+        assert out.device == DeviceRef.GPU()
+        graph.output(out)
+
+    # The graph must not have picked up an implicit host round-trip.
+    assert "mo.transfer" not in str(graph)
+
+    model = session.load(graph)
+    gpu = Accelerator()
+    input_data = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    output = model.execute(Buffer.from_dlpack(input_data).to(gpu))[0]
+    assert isinstance(output, Buffer)
+    assert output.device == gpu
+    np.testing.assert_array_equal(
+        output.to_numpy(), np.array([1.0, 2.0, 3.0, 1.0, 2.0, 3.0])
+    )

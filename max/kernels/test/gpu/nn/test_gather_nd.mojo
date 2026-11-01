@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.gather_scatter import gather_nd, gather_nd_shape
 from std.testing import assert_equal
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 
 def execute_gather_nd_test[
@@ -71,8 +72,8 @@ def test_gather_nd_eg1(ctx: DeviceContext) raises:
     comptime data_type = DType.int32
     comptime indices_type = DType.int64
 
-    var data_shape = IndexList[2](2, 2)
-    var indices_shape = IndexList[2](2, 2)
+    var data_shape = Index(2, 2)
+    var indices_shape = Index(2, 2)
 
     # Create device buffers
     var data_device = ctx.enqueue_create_buffer[data_type](
@@ -112,12 +113,10 @@ def test_gather_nd_eg1(ctx: DeviceContext) raises:
     ](data_tensor, indices_tensor)
 
     var expected_output_device = ctx.enqueue_create_buffer[data_type](
-        output_shape.flattened_length()
+        Int(output_shape.product())
     )
     with expected_output_device.map_to_host() as expected_host:
-        var expected_tensor = TileTensor(
-            expected_host, row_major(Coord(output_shape))
-        )
+        var expected_tensor = TileTensor(expected_host, row_major(output_shape))
         expected_tensor[0] = 0
         expected_tensor[1] = 3
 
@@ -129,7 +128,7 @@ def test_gather_nd_eg1(ctx: DeviceContext) raises:
         indices_device,
         indices_shape,
         expected_output_device,
-        output_shape,
+        coord_to_index_list(output_shape),
         ctx,
     )
 
@@ -140,8 +139,8 @@ def test_gather_nd_eg2(ctx: DeviceContext) raises:
     comptime data_type = DType.int8
     comptime indices_type = DType.int64
 
-    var data_shape = IndexList[2](2, 2)
-    var indices_shape = IndexList[2](2, 1)
+    var data_shape = Index(2, 2)
+    var indices_shape = Index(2, 1)
 
     var data_device = ctx.enqueue_create_buffer[data_type](
         data_shape.flattened_length()
@@ -176,12 +175,10 @@ def test_gather_nd_eg2(ctx: DeviceContext) raises:
     ](data_tensor, indices_tensor)
 
     var expected_output_device = ctx.enqueue_create_buffer[data_type](
-        output_shape.flattened_length()
+        Int(output_shape.product())
     )
     with expected_output_device.map_to_host() as expected_host:
-        var expected_tensor = TileTensor(
-            expected_host, row_major(Coord(output_shape))
-        )
+        var expected_tensor = TileTensor(expected_host, row_major(output_shape))
         expected_tensor[0, 0] = 2
         expected_tensor[0, 1] = 3
         expected_tensor[1, 0] = 0
@@ -195,7 +192,7 @@ def test_gather_nd_eg2(ctx: DeviceContext) raises:
         indices_device,
         indices_shape,
         expected_output_device,
-        output_shape,
+        coord_to_index_list(output_shape),
         ctx,
     )
 
@@ -206,8 +203,8 @@ def test_gather_nd_eg3(ctx: DeviceContext) raises:
     comptime data_type = DType.float32
     comptime indices_type = DType.int64
 
-    var data_shape = IndexList[3](2, 2, 2)
-    var indices_shape = IndexList[2](2, 2)
+    var data_shape = Index(2, 2, 2)
+    var indices_shape = Index(2, 2)
 
     var data_device = ctx.enqueue_create_buffer[data_type](
         data_shape.flattened_length()
@@ -248,12 +245,10 @@ def test_gather_nd_eg3(ctx: DeviceContext) raises:
     ](data_tensor, indices_tensor)
 
     var expected_output_device = ctx.enqueue_create_buffer[data_type](
-        output_shape.flattened_length()
+        Int(output_shape.product())
     )
     with expected_output_device.map_to_host() as expected_host:
-        var expected_tensor = TileTensor(
-            expected_host, row_major(Coord(output_shape))
-        )
+        var expected_tensor = TileTensor(expected_host, row_major(output_shape))
         expected_tensor[0, 0] = 2
         expected_tensor[0, 1] = 3
         expected_tensor[1, 0] = 4
@@ -267,7 +262,7 @@ def test_gather_nd_eg3(ctx: DeviceContext) raises:
         indices_device,
         indices_shape,
         expected_output_device,
-        output_shape,
+        coord_to_index_list(output_shape),
         ctx,
     )
 
@@ -278,8 +273,8 @@ def test_gather_nd_eg4(ctx: DeviceContext) raises:
     comptime data_type = DType.int8
     comptime indices_type = DType.int64
 
-    var data_shape = IndexList[3](2, 2, 2)
-    var indices_shape = IndexList[3](2, 1, 2)
+    var data_shape = Index(2, 2, 2)
+    var indices_shape = Index(2, 1, 2)
 
     var data_device = ctx.enqueue_create_buffer[data_type](
         data_shape.flattened_length()
@@ -320,12 +315,10 @@ def test_gather_nd_eg4(ctx: DeviceContext) raises:
     ](data_tensor, indices_tensor)
 
     var expected_output_device = ctx.enqueue_create_buffer[data_type](
-        output_shape.flattened_length()
+        Int(output_shape.product())
     )
     with expected_output_device.map_to_host() as expected_host:
-        var expected_tensor = TileTensor(
-            expected_host, row_major(Coord(output_shape))
-        )
+        var expected_tensor = TileTensor(expected_host, row_major(output_shape))
         expected_tensor[0, 0, 0] = 2
         expected_tensor[0, 0, 1] = 3
         expected_tensor[1, 0, 0] = 4
@@ -339,7 +332,7 @@ def test_gather_nd_eg4(ctx: DeviceContext) raises:
         indices_device,
         indices_shape,
         expected_output_device,
-        output_shape,
+        coord_to_index_list(output_shape),
         ctx,
     )
 
@@ -350,8 +343,8 @@ def test_gather_nd_eg5(ctx: DeviceContext) raises:
     comptime data_type = DType.int32
     comptime indices_type = DType.int64
 
-    var data_shape = IndexList[3](2, 2, 2)
-    var indices_shape = IndexList[2](2, 1)
+    var data_shape = Index(2, 2, 2)
+    var indices_shape = Index(2, 1)
 
     var data_device = ctx.enqueue_create_buffer[data_type](
         data_shape.flattened_length()
@@ -390,12 +383,10 @@ def test_gather_nd_eg5(ctx: DeviceContext) raises:
     ](data_tensor, indices_tensor)
 
     var expected_output_device = ctx.enqueue_create_buffer[data_type](
-        output_shape.flattened_length()
+        Int(output_shape.product())
     )
     with expected_output_device.map_to_host() as expected_host:
-        var expected_tensor = TileTensor(
-            expected_host, row_major(Coord(output_shape))
-        )
+        var expected_tensor = TileTensor(expected_host, row_major(output_shape))
         expected_tensor[0, 0] = 2
         expected_tensor[0, 1] = 3
         expected_tensor[1, 0] = 4
@@ -409,7 +400,7 @@ def test_gather_nd_eg5(ctx: DeviceContext) raises:
         indices_device,
         indices_shape,
         expected_output_device,
-        output_shape,
+        coord_to_index_list(output_shape),
         ctx,
     )
 
@@ -420,8 +411,8 @@ def test_gather_nd_eg6(ctx: DeviceContext) raises:
     comptime data_type = DType.int8
     comptime indices_type = DType.int64
 
-    var data_shape = IndexList[3](2, 3, 4)
-    var indices_shape = IndexList[4](2, 3, 1, 1)
+    var data_shape = Index(2, 3, 4)
+    var indices_shape = Index(2, 3, 1, 1)
 
     var data_device = ctx.enqueue_create_buffer[data_type](
         data_shape.flattened_length()
@@ -480,12 +471,10 @@ def test_gather_nd_eg6(ctx: DeviceContext) raises:
     ](data_tensor, indices_tensor)
 
     var expected_output_device = ctx.enqueue_create_buffer[data_type](
-        output_shape.flattened_length()
+        Int(output_shape.product())
     )
     with expected_output_device.map_to_host() as expected_host:
-        var expected_tensor = TileTensor(
-            expected_host, row_major(Coord(output_shape))
-        )
+        var expected_tensor = TileTensor(expected_host, row_major(output_shape))
         expected_tensor[0, 0, 0] = 2
         expected_tensor[0, 1, 0] = 5
         expected_tensor[0, 2, 0] = 11
@@ -501,7 +490,7 @@ def test_gather_nd_eg6(ctx: DeviceContext) raises:
         indices_device,
         indices_shape,
         expected_output_device,
-        output_shape,
+        coord_to_index_list(output_shape),
         ctx,
     )
 
@@ -512,8 +501,8 @@ def test_gather_nd_eg7(ctx: DeviceContext) raises:
     comptime data_type = DType.int8
     comptime indices_type = DType.int64
 
-    var data_shape = IndexList[3](2, 2, 2)
-    var indices_shape = IndexList[3](2, 1, 1)
+    var data_shape = Index(2, 2, 2)
+    var indices_shape = Index(2, 1, 1)
 
     var data_device = ctx.enqueue_create_buffer[data_type](
         data_shape.flattened_length()
@@ -552,12 +541,10 @@ def test_gather_nd_eg7(ctx: DeviceContext) raises:
     ](data_tensor, indices_tensor)
 
     var expected_output_device = ctx.enqueue_create_buffer[data_type](
-        output_shape.flattened_length()
+        Int(output_shape.product())
     )
     with expected_output_device.map_to_host() as expected_host:
-        var expected_tensor = TileTensor(
-            expected_host, row_major(Coord(output_shape))
-        )
+        var expected_tensor = TileTensor(expected_host, row_major(output_shape))
         expected_tensor[0, 0, 0, 0] = 0
         expected_tensor[0, 0, 0, 1] = 1
         expected_tensor[0, 0, 1, 0] = 2
@@ -575,7 +562,7 @@ def test_gather_nd_eg7(ctx: DeviceContext) raises:
         indices_device,
         indices_shape,
         expected_output_device,
-        output_shape,
+        coord_to_index_list(output_shape),
         ctx,
     )
 
@@ -586,8 +573,8 @@ def test_gather_nd_eg8(ctx: DeviceContext) raises:
     comptime data_type = DType.int8
     comptime indices_type = DType.int64
 
-    var data_shape = IndexList[2](2, 3)
-    var indices_shape = IndexList[2](2, 1)
+    var data_shape = Index(2, 3)
+    var indices_shape = Index(2, 1)
 
     var data_device = ctx.enqueue_create_buffer[data_type](
         data_shape.flattened_length()
@@ -624,12 +611,10 @@ def test_gather_nd_eg8(ctx: DeviceContext) raises:
     ](data_tensor, indices_tensor)
 
     var expected_output_device = ctx.enqueue_create_buffer[data_type](
-        output_shape.flattened_length()
+        Int(output_shape.product())
     )
     with expected_output_device.map_to_host() as expected_host:
-        var expected_tensor = TileTensor(
-            expected_host, row_major(Coord(output_shape))
-        )
+        var expected_tensor = TileTensor(expected_host, row_major(output_shape))
         expected_tensor[0, 0] = 3
         expected_tensor[0, 1] = 4
         expected_tensor[0, 2] = 5
@@ -645,7 +630,7 @@ def test_gather_nd_eg8(ctx: DeviceContext) raises:
         indices_device,
         indices_shape,
         expected_output_device,
-        output_shape,
+        coord_to_index_list(output_shape),
         ctx,
     )
 

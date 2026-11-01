@@ -1,4 +1,5 @@
-load("//bazel:api.bzl", "driver_option_tablegen", "modular_cc_binary", "modular_cc_library", "pkg_files", "td_library")
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "pkg_files")
+load("//bazel:tablegen.bzl", "driver_option_tablegen", "td_library")
 
 package(default_visibility = ["//Mojo:consumers"])
 
@@ -24,16 +25,6 @@ package(default_visibility = ["//Mojo:consumers"])
         "Run",
     ]
 ]
-
-# A thin wrapper around Doc.inc_files that adds includes = ["."] so that
-# external tools (e.g. kgen-doc) can access the generated option headers via
-# short paths like "Doc/DocOptions.inc" rather than the full workspace-root
-# path.
-modular_cc_library(
-    name = "DocIncFiles",
-    includes = ["."],
-    deps = [":Doc.inc_files"],
-)
 
 td_library(
     name = "MojoDescriptionTdFiles",
@@ -91,6 +82,14 @@ _MOJO_LINKOPTS = select({
     "//conditions:default": [],
 })
 
+_MOJO_MALLOC = select({
+    "//:asan_linux": "@bazel_tools//tools/cpp:malloc",
+    "//:tsan_linux": "@bazel_tools//tools/cpp:malloc",
+    "//:ubsan_linux": "@bazel_tools//tools/cpp:malloc",
+    "@platforms//os:linux": "//bazel/internal:jemalloc_global",
+    "//conditions:default": "@bazel_tools//tools/cpp:malloc",
+})
+
 modular_cc_library(
     name = "mojo_common",
     srcs = glob(["**/*.cpp"]),
@@ -117,6 +116,7 @@ modular_cc_library(
         ":Precompile.inc_files",
         ":REPL.inc_files",
         ":Run.inc_files",
+        "//:accel_registration",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Config",
@@ -130,6 +130,7 @@ modular_cc_library(
         "//Mojo:MojoTooling",
         "//Mojo:ObjectCompiler",
         "//Mojo:POPDialect",
+        "//Mojo:Precompile",
         "//Mojo:Support",
         "//Mojo:SupportForceLinkMLIRC",
         "//Mojo:TargetBackend.headers",
@@ -152,6 +153,7 @@ modular_cc_library(
 modular_cc_binary(
     name = "mojo",
     linkopts = _MOJO_LINKOPTS,
+    malloc = _MOJO_MALLOC,
     deps = [":mojo_common"],
 )
 
@@ -169,6 +171,7 @@ modular_cc_binary(
         "MODULAR_CRASH_REPORTING_ENABLED": "0",
     },
     linkopts = _MOJO_LINKOPTS,
+    malloc = _MOJO_MALLOC,
     mojo_deps = ["@mojo//:std"],
     tags = ["manual"],
     deps = [":mojo_common"],

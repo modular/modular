@@ -1,0 +1,44 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_gather_sum
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_gather_sum.mojo
+
+params:
+# DLRM-style multi-hot embedding bag: large table, wide multi-hot list.
+- dtype: float32
+  table_size: 100000
+  embedding_dim: 64
+  batch: 1024
+  multi_hot: 100
+
+# Narrow multi-hot list: closer to a plain row gather.
+- dtype: float32
+  table_size: 100000
+  embedding_dim: 64
+  batch: 1024
+  multi_hot: 2
+
+# Small batch: launch-bound end, where one-block-per-row wasted the GPU.
+- dtype: float32
+  table_size: 100000
+  embedding_dim: 64
+  batch: 8
+  multi_hot: 100
+
+# bfloat16 halves the bytes per element; the vector width doubles.
+- dtype: bfloat16
+  table_size: 100000
+  embedding_dim: 64
+  batch: 1024
+  multi_hot: 100

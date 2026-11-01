@@ -11,10 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os import abort
 from std.testing import (
     assert_raises,
-    assert_equal,
     assert_true,
     assert_false,
     TestSuite,

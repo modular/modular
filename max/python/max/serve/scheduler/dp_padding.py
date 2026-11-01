@@ -148,7 +148,7 @@ class DPBatchPadder:
         """Allocates `count` fresh dummy contexts for `replica_idx`.
 
         Each dummy's `generated_length` is set to 1 so that
-        downstream logic (e.g. EAGLE) treats the batch as a
+        downstream logic (such as EAGLE) treats the batch as a
         TG batch.
 
         Args:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Config parsing for vLLM speculators-format DSpark draft checkpoints.
 
-A speculators DSpark checkpoint (e.g.
+A speculators DSpark checkpoint (such as
 ``RedHatAI/gemma-4-31B-it-speculator.dspark``) has no top-level
 ``model_type`` (MAX's raw-JSON config fallback wraps it in a
 ``PretrainedConfig``), DSpark fields at the top level, and the llama-style
@@ -30,13 +30,15 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.lib.config import (
+    KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
     SpeculativeConfig,
 )
 from transformers import AutoConfig
+from typing_extensions import Self
 
 logger = logging.getLogger("max.pipelines")
 
@@ -53,12 +55,18 @@ def _get(obj: Any, name: str, default: Any = None) -> Any:
 
 def construct_draft_kv_params(
     pipeline_config: PipelineConfig,
-    draft_config: DSparkSpeculatorsDraftConfig,
     devices: list[DeviceRef],
     *,
-    num_draft_tokens: int,
+    n_kv_heads: int,
+    head_dim: int,
+    num_layers: int,
+    num_draft_tokens: int = 0,
 ) -> KVCacheParams:
-    """Builds the draft KV leaf from the DSpark drafter's own geometry."""
+    """Builds a DSpark draft's KV leaf from its own geometry.
+
+    A draft served by the unified spec-decode model leaves
+    ``num_draft_tokens`` unset: the model stamps it on the whole KV tree.
+    """
     assert pipeline_config.speculative is not None
     # The dtype is deliberately pinned rather than derived from
     # ``kv_cache_format``: the draft block runs generic ``AttentionWithRope``,
@@ -68,9 +76,9 @@ def construct_draft_kv_params(
     # draft leaf; mixed-dtype trees are valid (dtype is per-leaf).
     return pipeline_config.model.kv_cache.to_params(
         dtype=DType.bfloat16,
-        n_kv_heads=draft_config.num_key_value_heads,
-        head_dim=draft_config.head_dim,
-        num_layers=draft_config.num_hidden_layers,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
+        num_layers=num_layers,
         devices=devices,
         data_parallel_degree=pipeline_config.model.data_parallel_degree,
         speculative_method=pipeline_config.speculative.speculative_method,
@@ -126,8 +134,10 @@ class DSparkSpeculatorsDraftConfig:
 
     @property
     def num_speculative_tokens(self) -> int:
-        """Drafted tokens per step: the anchor slot never predicts unless
-        ``sample_from_anchor`` is set."""
+        """Drafted tokens per step.
+
+        The anchor slot never predicts unless ``sample_from_anchor`` is set.
+        """
         return self.block_size - (0 if self.sample_from_anchor else 1)
 
     def checkpoint_draft_width(
@@ -188,7 +198,21 @@ class DSparkSpeculatorsDraftConfig:
 
     @property
     def num_context_features(self) -> int:
+        """The number of target layers the draft reads taps from."""
         return len(self.aux_hidden_state_layer_ids)
+
+    @property
+    def has_d2t(self) -> bool:
+        """Whether the checkpoint carries a draft-to-target vocabulary map.
+
+        ``d2t`` exists to undo vocabulary pruning, so a drafter trained on
+        the full target vocabulary ships none and its draft ids are already
+        target ids. Both cases occur in published checkpoints:
+        ``RedHatAI/gemma-4-31B-it-speculator.dspark`` prunes 262144 to 32000
+        and carries ``d2t``; ``RedHatAI/Kimi-K3-speculator.dspark`` keeps all
+        163840 and carries none.
+        """
+        return self.draft_vocab_size < self.vocab_size
 
     @classmethod
     def from_huggingface_config(
@@ -399,7 +423,8 @@ class DSparkSpeculatorsDraftArchConfig:
         model_config: MAXModelConfig | None = None,
         *,
         max_seq_len: int,
-    ) -> DSparkSpeculatorsDraftArchConfig:
+    ) -> Self:
+        """Builds the config from the checkpoint's position bound."""
         del pipeline_config
         assert model_config is not None
         huggingface_config = model_config.huggingface_config
@@ -418,6 +443,7 @@ class DSparkSpeculatorsDraftArchConfig:
         return cls(max_position_embeddings=int(max_pos))
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_position_embeddings
 
     @classmethod
@@ -426,6 +452,7 @@ class DSparkSpeculatorsDraftArchConfig:
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """Returns the checkpoint's ``max_position_embeddings``."""
         del model_config
         layer_cfg = _get(huggingface_config, "transformer_layer_config")
         max_pos = (
@@ -439,6 +466,31 @@ class DSparkSpeculatorsDraftArchConfig:
                 " transformer_layer_config.max_position_embeddings."
             )
         return int(max_pos)
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Returns the draft's KV leaf, from its own geometry.
+
+        The draft's cache is bfloat16 whatever the target's is.
+        """
+        del kv_cache_config, cache_dtype
+        draft = DSparkSpeculatorsDraftConfig.from_huggingface_config(
+            huggingface_config
+        )
+        return construct_draft_kv_params(
+            pipeline_config,
+            devices,
+            n_kv_heads=draft.num_key_value_heads,
+            head_dim=draft.head_dim,
+            num_layers=draft.num_hidden_layers,
+        )
 
 
 def speculators_dspark_width(

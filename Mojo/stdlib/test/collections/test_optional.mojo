@@ -133,6 +133,38 @@ def test_optional_reg_isnot() raises:
     assert_false(a is not None)
 
 
+def _describe_optional_reg[
+    T: TrivialRegisterPassable & Writable
+](value: OptionalReg[T]) -> String:
+    match value:
+        case .Some(payload):
+            return String("some:", payload)
+        case .None:
+            return "none"
+
+
+def test_optional_reg_pattern_matching() raises:
+    assert_equal(_describe_optional_reg(OptionalReg(7)), "some:7")
+    assert_equal(_describe_optional_reg(OptionalReg[Int]()), "none")
+
+    var counter: OptionalReg[Int] = 1
+    if case .Some(ref count) = counter:
+        count += 41
+    assert_equal(counter.value(), 42)
+
+    var target = 5
+    comptime PointerType = Pointer[Int, origin_of(target)]
+    var ptr: OptionalReg[PointerType] = PointerType(to=target)
+    if case .Some(p) = ptr:
+        assert_equal(p[], 5)
+    else:
+        raise Error("expected a pointer")
+
+    ptr = None
+    if case .Some(_) = ptr:
+        raise Error("expected no pointer")
+
+
 def test_optional_take_mutates() raises:
     var opt1 = Optional[Int](5)
 
@@ -535,7 +567,7 @@ def test_optional_deinit_with_none_does_not_call_destroy() raises:
 
 # `Deinitable` but explicitly not `Movable`: rejected at the parameter
 # bound under the old `Optional[T: Movable]`, admitted under the `AnyType` floor.
-struct _NotMovable(Deinitable, Movable where False):
+struct _NotMovable(Deinitable, not Movable):
     var x: Int
 
     def __init__(out self, x: Int):
@@ -551,10 +583,9 @@ def test_optional_non_movable_element_type() raises:
 
 def test_optional_non_movable_construct_in_place() raises:
     # `init_with=` populates an `Optional` with a non-`Movable` value in place.
-    def make() -> _NotMovable:
-        return _NotMovable(7)
-
-    var opt = Optional[_NotMovable](init_with=make)
+    var opt = Optional[_NotMovable](
+        init_with=lambda () -> _NotMovable: _NotMovable(7)
+    )
     assert_true(opt)
     assert_equal(opt.bounds()[0], 1)
     assert_equal(opt.value().x, 7)

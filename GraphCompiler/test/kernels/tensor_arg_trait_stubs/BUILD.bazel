@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "mojo_library")
+
+# gazelle:default_visibility //GraphCompiler:__subpackages__
+
+package(default_visibility = ["//GraphCompiler:__subpackages__"])
+
+mojo_library(
+    name = "TensorArgTraitStubs",
+    testonly = True,
+    srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
+    deps = [
+        "//max:extensibility",
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)

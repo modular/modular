@@ -16,7 +16,7 @@
 # deliberately different from module scope, where a def above the import line
 # can use the imported name (see import_fn_scope_binding.mojo).
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%S/inputs %s
 
 # Using the name before the import statement in the same function is an error.
 

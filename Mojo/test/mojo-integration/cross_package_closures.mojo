@@ -11,7 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# Closures cross the package boundary both from source and from bytecode.
 # RUN: mojo -I %S/inputs %s 4 | FileCheck %s
+# RUN: rm -rf %t.closure-dir && mkdir -p %t.closure-dir
+# RUN: mojo precompile %S/inputs/closure -o %t.closure-dir/closure.mojoc
+# RUN: mojo -I %t.closure-dir %s 4 | FileCheck %s
+# RUN: kgen-opt %t.closure-dir/closure.mojoc | FileCheck %s -check-prefix=CHECK-PACK
+
+# CHECK-PACK: lit.trait.decl @"##__mojo_closure__##"
 
 from closure import printIt, defineIt
 from std.sys import argv

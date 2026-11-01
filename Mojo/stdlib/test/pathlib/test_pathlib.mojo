@@ -13,7 +13,6 @@
 
 import std.os
 from std.pathlib import DIR_SEPARATOR, Path, cwd
-from std.sys import CompilationTarget
 from std.tempfile import NamedTemporaryFile
 
 from std.reflection import source_location

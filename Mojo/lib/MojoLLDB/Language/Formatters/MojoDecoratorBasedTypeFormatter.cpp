@@ -15,7 +15,6 @@
 #include "../../TypeSystem/MojoTypeSystem.h"
 #include "../../Utils/Errors.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"

@@ -139,7 +139,7 @@ def test_bicubic_kernel[
         "--------------------------------now we want to call the bicubic"
         " upsampling kernel--------------------------------"
     )
-    # Call the bicubic upsampling kernel - convert to LayoutTensor
+    # Call the bicubic upsampling kernel.
     resize_bicubic[target="cpu"](output_host, input_host, ctx)
     print(
         "--------------------------------after calling the bicubic upsampling"
@@ -550,30 +550,16 @@ def test_bicubic_kernel[
                 if not is_match:
                     mismatch_count += 1
                     print(
-                        "Mismatch at [0,",
-                        c,
-                        ",",
-                        h,
-                        ",",
-                        w,
-                        "]: Actual =",
-                        actual,
-                        ", Expected =",
-                        expected,
-                        ", Diff =",
-                        abs(actual - expected),
+                        t"Mismatch at [0, {c} , {h} , {w} ]: Actual ="
+                        t" {actual} , Expected = {expected} , Diff ="
+                        t" {abs(actual - expected)}"
                     )
 
     if mismatch_count == 0:
         print(
-            (
-                "--------------------------------All values match within"
-                " tolerances (rel:"
-            ),
-            rel_tolerance * 100,
-            "%, abs:",
-            abs_tolerance,
-            ")--------------------------------",
+            t"--------------------------------All values match within"
+            t" tolerances (rel: {rel_tolerance * 100} %, abs:"
+            t" {abs_tolerance} )--------------------------------"
         )
     else:
         print(
@@ -688,7 +674,7 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     # This would fail with block_dim=(64, 64) = 4096 threads.
     ctx.enqueue_function[kernel](
         output_dev_nd,
-        input_dev_nd.as_immut(),
+        input_dev_nd.as_imm(),
         grid_dim=(1, 3),
         block_dim=(256,),
     )

@@ -33,7 +33,7 @@ CLI handlers wire this up in two places:
 When ``nsys`` is not installed or no NVIDIA GPU is detected, a friendly
 note is printed and the cProfile output alone is shown.
 
-Output ordering (under nsys): ``cudaProfilerStop`` fires *after* the
+Output ordering (under nsys): ``cuProfilerStop`` fires *after* the
 generate stats are printed, so the order on the terminal is:
 generate output → generate metrics → ``Capture range ended`` →
 nsys ``Generating ...`` → cProfile table → GPU kernel table. The child
@@ -58,7 +58,7 @@ from ._backend import (
     detect_backend,
 )
 from ._cprofile import _render_cprofile, _render_cprofile_from_dump
-from ._cuda import _cuda_profiler_region
+from ._cuda import cuda_profiler_region
 from ._nsys import _reexec_under_nsys, render_nsys_kernel_summary
 
 logger = logging.getLogger("max.profiler.oneshot")
@@ -121,7 +121,7 @@ def maybe_reexec_under_nsys(
 
     - If we are already running inside the nsys-spawned child (detected via
       env var), return immediately so the caller proceeds normally.
-    - If GPU capture is unavailable (no nsys, no NVIDIA GPU, no libcudart),
+    - If GPU capture is unavailable (no nsys, no NVIDIA GPU, no libcuda),
       print a one-line explanation and return so the caller falls through
       to a ``profiled_region`` cProfile-only run.
     - Otherwise, spawn ``nsys profile`` with the same argv, wait for the
@@ -182,9 +182,9 @@ def _write_no_capture_reason(backend: ProfileBackend, out: TextIO) -> None:
             "\nNote: no NVIDIA GPU detected; only Python/CPU profile will "
             "be captured.\n"
         )
-    elif not backend.cudart_loadable:
+    elif not backend.cuda_driver_loadable:
         out.write(
-            "\nNote: libcudart could not be loaded; only Python/CPU "
+            "\nNote: libcuda could not be loaded; only Python/CPU "
             "profile will be captured.\n"
         )
 
@@ -201,7 +201,7 @@ def profiled_region(
     Always wraps the region with a ``cProfile.Profile()`` so a Python/CPU
     summary is printed on exit. When running inside an nsys-spawned child
     (set up via :func:`maybe_reexec_under_nsys`), additionally calls
-    ``cudaProfilerStart``/``Stop`` so the nsys capture is bounded to just
+    ``cuProfilerStart``/``Stop`` so the nsys capture is bounded to just
     this region — excluding warmup, model compile, and weight load time.
 
     The cuda-profiler stop fires *before* anything is rendered to ``out``,
@@ -221,12 +221,12 @@ def profiled_region(
     prof = cProfile.Profile()
 
     under_nsys = _is_under_nsys()
-    cuda_region = _cuda_profiler_region() if under_nsys else _null_context()
+    cuda_region = cuda_profiler_region() if under_nsys else _null_context()
     prof.enable()
     try:
         with cuda_region:
             yield
-        # cudaProfilerStop has fired here — "Capture range ended in the
+        # cuProfilerStop has fired here — "Capture range ended in the
         # application" is already on stderr before any of our rendering.
     finally:
         prof.disable()
@@ -272,10 +272,10 @@ class OneShotCapture:
 
     Lifecycle:
 
-    - :meth:`start` calls ``cudaProfilerStart`` (under nsys) and
+    - :meth:`start` calls ``cuProfilerStart`` (under nsys) and
       enables ``cProfile``. Safe to call multiple times; subsequent calls
       are no-ops.
-    - :meth:`end_and_finalize` calls ``cudaProfilerStop``, disables
+    - :meth:`end_and_finalize` calls ``cuProfilerStop``, disables
       ``cProfile``, and either dumps the cProfile data to disk (under
       nsys, for the parent to render) or renders it inline. Idempotent;
       callers must invoke it (typically from a ``finally`` block).
@@ -300,8 +300,8 @@ class OneShotCapture:
             return
         self._started = True
         if self._under_nsys:
-            self._cuda_cm = _cuda_profiler_region()
-            # __enter__ runs cudaProfilerStart.
+            self._cuda_cm = cuda_profiler_region()
+            # __enter__ runs cuProfilerStart.
             self._cuda_cm.__enter__()
         self._cprofile.enable()
 
@@ -312,12 +312,12 @@ class OneShotCapture:
         self._ended = True
         self._cprofile.disable()
         if self._cuda_cm is not None:
-            # __exit__ runs cudaProfilerStop. nsys begins writing the
+            # __exit__ runs cuProfilerStop. nsys begins writing the
             # ``.nsys-rep`` immediately after this returns, so anything
             # the caller wanted to print *first* must already be flushed.
             try:
                 self._cuda_cm.__exit__(None, None, None)
             except Exception:
-                logger.exception("cudaProfilerStop failed")
+                logger.exception("cuProfilerStop failed")
             self._cuda_cm = None
         _finalize_cprofile(self._cprofile, self._top_n, self._out)

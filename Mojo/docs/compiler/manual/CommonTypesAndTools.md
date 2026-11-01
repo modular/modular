@@ -240,8 +240,8 @@ and we define that `getDirectCallee` in our own `LITOps.cpp`:
 
 ```c++
 SymbolRefAttr LIT::CallOp::getDirectCallee() {
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(getCallee()))
-    return symbolCst.getSymbol();
+  if (auto symbol = FuncSymbolGenerator::dynCast(getCallee()))
+    return symbol.getSymbol();
   return {};
 }
 ```

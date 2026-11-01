@@ -67,6 +67,94 @@ def with_it_err(handle: Bool) raises -> Int:
     return 3
 
 
+# Both __exit__ methods consume the context manager.
+struct ConsumingCtxtMgr(Movable):
+    var handle: Bool
+
+    def __init__(out self, handle: Bool):
+        self.handle = handle
+
+    def __enter__(self):
+        pass
+
+    def __exit__(var self):
+        print("consuming exit:", self.handle)
+
+    def __exit__(var self, err: Error) -> Bool:
+        print("consuming exit error:", err)
+        return self.handle
+
+    def __deinit__(deinit self):
+        print("consuming deinit")
+
+
+def with_consuming(handle: Bool, fail: Bool, early: Bool) raises -> Int:
+    with ConsumingCtxtMgr(handle):
+        if early:
+            return 1
+        if fail:
+            raise Error("boom")
+    return 2
+
+
+# A linear context manager can only be destroyed by one of its __exit__
+# methods, so the error-handling one must be able to consume it too.
+struct LinearCtxtMgr(not Deinitable, Movable):
+    var handle: Bool
+
+    def __init__(out self, handle: Bool):
+        self.handle = handle
+
+    def __enter__(self):
+        pass
+
+    def __exit__(deinit self):
+        print("linear exit:", self.handle)
+
+    def __exit__(deinit self, err: Error) -> Bool:
+        print("linear exit error:", err)
+        return self.handle
+
+
+def with_linear(handle: Bool, fail: Bool) raises -> Int:
+    with LinearCtxtMgr(handle):
+        if fail:
+            raise Error("boom")
+    return 1
+
+
+def with_linear_moved(fail: Bool) raises -> Int:
+    var mgr = LinearCtxtMgr(True)
+    with mgr^:
+        if fail:
+            raise Error("boom")
+    return 2
+
+
+# The error-handling __exit__ forwards to the normal one.
+struct ForwardingCtxtMgr(not Deinitable, Movable):
+    def __init__(out self):
+        pass
+
+    def __enter__(self):
+        pass
+
+    def __exit__(deinit self):
+        print("forwarding exit")
+
+    def __exit__(var self, err: Error) -> Bool:
+        print("forwarding exit error:", err)
+        self^.__exit__()
+        return True
+
+
+def with_forwarding(fail: Bool) raises -> Int:
+    with ForwardingCtxtMgr():
+        if fail:
+            raise Error("boom")
+    return 3
+
+
 @fieldwise_init
 struct MemoryType(ImplicitlyCopyable):
     def __deinit__(deinit self):
@@ -187,6 +275,52 @@ def main() raises:
     except:
         # CHECK-NEXT: an error was raised
         print("an error was raised")
+
+    # CHECK-NEXT: consuming exit: True
+    # CHECK-NEXT: consuming deinit
+    # CHECK-NEXT: 2
+    print(with_consuming(True, False, False))
+    # CHECK-NEXT: consuming exit: True
+    # CHECK-NEXT: consuming deinit
+    # CHECK-NEXT: 1
+    print(with_consuming(True, False, True))
+    # CHECK-NEXT: consuming exit error: boom
+    # CHECK-NEXT: consuming deinit
+    # CHECK-NEXT: 2
+    print(with_consuming(True, True, False))
+    try:
+        # CHECK-NEXT: consuming exit error: boom
+        # CHECK-NEXT: consuming deinit
+        print(with_consuming(False, True, False))
+    except e:
+        # CHECK-NEXT: reraised: boom
+        print("reraised:", e)
+
+    # CHECK-NEXT: linear exit: False
+    # CHECK-NEXT: 1
+    print(with_linear(False, False))
+    # CHECK-NEXT: linear exit error: boom
+    # CHECK-NEXT: 1
+    print(with_linear(True, True))
+    try:
+        # CHECK-NEXT: linear exit error: boom
+        print(with_linear(False, True))
+    except e:
+        # CHECK-NEXT: reraised: boom
+        print("reraised:", e)
+    # CHECK-NEXT: linear exit: True
+    # CHECK-NEXT: 2
+    print(with_linear_moved(False))
+    # CHECK-NEXT: linear exit error: boom
+    # CHECK-NEXT: 2
+    print(with_linear_moved(True))
+    # CHECK-NEXT: forwarding exit
+    # CHECK-NEXT: 3
+    print(with_forwarding(False))
+    # CHECK-NEXT: forwarding exit error: boom
+    # CHECK-NEXT: forwarding exit
+    # CHECK-NEXT: 3
+    print(with_forwarding(True))
 
     # CHECK-NEXT: start
     # CHECK-NEXT: delete
