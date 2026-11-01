@@ -277,11 +277,16 @@ mojo_test(
 # asm, so it needs no GPU. Under ASan the test is compiled by the instrumented
 # Mojo compiler, whose gfx950 backend overruns the 900 s compile timeout even
 # for one kernel (all eight take about 5 s uninstrumented). The test checks
-# codegen, not host memory, so ASan has nothing to add.
+# codegen, not host memory, so ASan has nothing to add. A `skip-ci-asan` tag is
+# not enough: the asan job builds with `--build_tests_only`, which ignores
+# `--build_tag_filters`, so the compile still runs.
 mojo_test(
     name = "test_allreduce_peer_load_codegen.mojo.test",
     srcs = ["test_allreduce_peer_load_codegen.mojo"],
-    tags = ["skip-ci-asan"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max:comm",
         "//max:max_mojo",
