@@ -34,7 +34,7 @@ import json
 import struct
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -44,7 +44,7 @@ from dspark_test_support import TESTDATA
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, load_weights
+from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.architectures.deepseekV41.weight_adapters import (
     e4m3_to_float32,
@@ -71,10 +71,13 @@ from max.pipelines.architectures.deepseekV41_modulev3.weight_adapters import (
     rewire_dspark_state_dict,
     with_dtype,
 )
-from max.pipelines.architectures.dspark_deepseekV41_modulev3.model import (
-    DSparkDeepseekV41ModuleV3DraftArchConfig,
+from max.pipelines.architectures.dspark_deepseekV41_modulev3 import (
+    DSparkDeepseekV41Draft,
+    DSparkDeepseekV41ModuleV3DraftConfig,
+    dspark_deepseekV41_modulev3_draft_arch,
 )
 from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib.registration_draft import RegisteredDraftBuilder
 from max.tensor.sharding import DeviceMesh
 
 HIDDEN = 128
@@ -395,7 +398,8 @@ def test_the_draft_checkpoint_weights_bind_the_adapter_s_output(
     The real chain end to end, nothing renamed by hand: the checkpoint
     fixture written as one real safetensors file, read back through
     ``load_weights`` -- the lazy leaves the pairing hands the draft --
-    converted by the ModuleV3 draft's ``checkpoint_weights``, which the
+    converted by the registered draft's weight adapter, checked against
+    the stages it builds, returned by its ``checkpoint_weights``, which the
     pairing keys under ``draft.``, and loaded through the drafter's own
     ``load_state_dict``. A name that kept the adapter's prefix would
     leave the drafter's own leaves unfed, which the load refuses.
@@ -404,9 +408,40 @@ def test_the_draft_checkpoint_weights_bind_the_adapter_s_output(
     _write_safetensors(checkpoint, mtp_checkpoint())
     lazy = load_weights([checkpoint])
     converted = convert_dspark_state_dict(dict(lazy.items()), num_stages=STAGES)
-    weights = DSparkDeepseekV41ModuleV3DraftArchConfig.checkpoint_weights(
-        cast(Any, SimpleNamespace(weights=lazy)), _small_config()
+    small = _small_config()
+    config = DSparkDeepseekV41ModuleV3DraftConfig(
+        **{f.name: getattr(small, f.name) for f in dataclasses.fields(small)},
+        rope=_rope(),
     )
+    arch = dspark_deepseekV41_modulev3_draft_arch
+    assert arch.draft is not None
+    builder = RegisteredDraftBuilder(
+        dataclasses.replace(
+            arch,
+            draft=dataclasses.replace(
+                arch.draft, configure=lambda context, weights: config
+            ),
+        )
+    )
+    context: Any = SimpleNamespace(
+        pipeline_config=SimpleNamespace(
+            speculative=SimpleNamespace(speculative_method="dspark"),
+            draft_model=None,
+            model=SimpleNamespace(
+                huggingface_config=SimpleNamespace(n_mtp_layers=STAGES),
+                data_parallel_degree=1,
+            ),
+        ),
+        weights=lazy,
+        adapter=arch.weight_adapters[WeightsFormat.safetensors],
+        kv_params=small.kv_params,
+    )
+    stages, _ = builder.build_module(context)
+    assert isinstance(stages, DSparkDeepseekV41Draft)
+    assert stages.mesh.num_devices == 1
+    weights = builder.checkpoint_weights(context, config)
+    # The checkpoint feeds every stage weight and nothing else.
+    assert weights.keys() == {name for name, _ in stages.parameters}
     assert "main_proj.weight" in weights
     assert not any(name.startswith("dspark.") for name in weights)
     drafter = _drafter()

@@ -10,103 +10,125 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The ModuleV3 DSpark stages' config, which builds their module."""
+"""The ModuleV3 DSpark stages' registration, which builds their module."""
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+from dataclasses import dataclass, fields
 
-from max import functional as F
 from max.dtype import DType
+from max.graph.weights import WeightData, Weights
 from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.tensor import default_device, default_dtype
-from max.tensor.sharding import DeviceMesh
+from max.pipelines.lib.registration_draft import DraftRegistration
+from max.tensor import default_dtype, defaults
+from transformers import AutoConfig
 
 from ..deepseekV41_modulev3.dspark_drafter import DSparkDrafter
 from ..deepseekV41_modulev3.layers.rope import RopeParams
-from ..deepseekV41_modulev3.model_config import DeepseekV41Config
+from ..deepseekV41_modulev3.model_config import (
+    DeepseekV41Config,
+    num_dspark_stages,
+)
 from ..deepseekV41_modulev3.weight_adapters import (
     DSPARK_MODULE_PREFIX,
     convert_dspark_state_dict,
 )
-from ..dspark_deepseekV41.model import DSparkDeepseekV41DraftArchConfigBase
 
-__all__ = ["DSparkDeepseekV41ModuleV3DraftArchConfig"]
+__all__ = [
+    "DSparkDeepseekV41Draft",
+    "DSparkDeepseekV41ModuleV3DraftConfig",
+    "configure_dspark_draft",
+    "convert_dspark_modulev3_safetensor_state_dict",
+    "dspark_draft_registration",
+]
 
 
-class DSparkDeepseekV41ModuleV3DraftArchConfig(
-    DSparkDeepseekV41DraftArchConfigBase
-):
-    """The ModuleV3 stages' config, which builds their module."""
+@dataclass(kw_only=True)
+class DSparkDeepseekV41ModuleV3DraftConfig(DeepseekV41Config):
+    """The trunk's config, with the RoPE the stages read off its checkpoint."""
 
-    @classmethod
-    def build_module(
-        cls, context: ModelLoadContext
-    ) -> tuple[DSparkDrafter, DeepseekV41Config]:
-        """Builds the stages for the trunk's checkpoint named by ``context``.
+    rope: RopeParams | None = None
 
-        The module holds no weights: it compiles with those
-        :meth:`checkpoint_weights` returns. The stages embed and project
-        through the trunk's embedding and head, which their proposer reads.
-        Under data-parallel attention every one-device replica holds the
-        whole stage stack and drafts its own rows.
 
-        Raises:
-            ValueError: If the method isn't ``dspark``, or the checkpoint
-                names no token to fill the block with.
-        """
-        pipeline_config = context.pipeline_config
-        speculative = pipeline_config.speculative
-        assert speculative is not None
-        if speculative.speculative_method != "dspark":
-            raise ValueError(
-                "DeepSeek-V4.1's DSpark stages require --speculative-method"
-                f" dspark, got {speculative.speculative_method!r}."
-            )
-        config = DeepseekV41Config.initialize(
-            pipeline_config, max_seq_len=context.max_seq_len
-        )
-        if config.dspark_noise_token_id is None:
-            raise ValueError(
-                "DeepSeek-V4.1 DSpark needs dspark_noise_token_id to fill the"
-                " draft block."
-            )
-        if context.kv_params is not None:
-            assert isinstance(context.kv_params, KVCacheParamInterface)
-            config.kv_params = context.kv_params
-        dp = pipeline_config.model.data_parallel_degree
-        devices = [ref.to_device() for ref in config.devices]
-        # The trunk's mesh rule, so the stages place their rows on the axis
-        # the trunk's split shards.
-        axis = "dp" if dp > 1 else "tp"
-        mesh = DeviceMesh(tuple(devices), (len(devices),), (axis,))
-        with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
-            draft = DSparkDrafter(
+class DSparkDeepseekV41Draft(DSparkDrafter):
+    """The DSpark stages, constructed on the mesh the framework sets.
+
+    Under data-parallel attention every one-device replica holds the whole
+    stage stack and drafts its own rows. The stages embed and project
+    through the trunk's embedding and head, which their proposer reads.
+    """
+
+    def __init__(self, config: DSparkDeepseekV41ModuleV3DraftConfig) -> None:
+        assert config.rope is not None
+        with default_dtype(DType.bfloat16):
+            super().__init__(
                 config,
-                mesh,
-                rope=RopeParams.from_text_config(
-                    DeepseekV41Config.get_text_config(
-                        pipeline_config.model.huggingface_config
-                    )
-                ),
-                data_parallel_degree=dp,
+                defaults()[1],
+                rope=config.rope,
+                data_parallel_degree=config.data_parallel_degree,
             )
-        return draft, config
 
-    @classmethod
-    def checkpoint_weights(
-        cls, context: ModelLoadContext, config: DeepseekV41Config
-    ) -> dict[str, Any]:
-        """Returns the checkpoint's ``mtp.*`` weights.
 
-        The weights are named as the built stages name them.
-        """
-        prefix = f"{DSPARK_MODULE_PREFIX}."
-        return {
-            name.removeprefix(prefix): value
-            for name, value in convert_dspark_state_dict(
-                dict(context.weights.items()),
-                num_stages=config.num_dspark_layers,
-            ).items()
-        }
+def configure_dspark_draft(
+    context: ModelLoadContext, state_dict: Mapping[str, WeightData]
+) -> DSparkDeepseekV41ModuleV3DraftConfig:
+    """Finalizes the stages' config from the trunk's checkpoint.
+
+    The stages read and write the trunk's KV leaves, which ``context``
+    carries.
+
+    Raises:
+        ValueError: If the checkpoint names no token to fill the block with.
+    """
+    del state_dict
+    pipeline_config = context.pipeline_config
+    trunk = DeepseekV41Config.initialize(
+        pipeline_config, max_seq_len=context.max_seq_len
+    )
+    if trunk.dspark_noise_token_id is None:
+        raise ValueError(
+            "DeepSeek-V4.1 DSpark needs dspark_noise_token_id to fill the"
+            " draft block."
+        )
+    if context.kv_params is not None:
+        assert isinstance(context.kv_params, KVCacheParamInterface)
+        trunk.kv_params = context.kv_params
+    # The trunk's mesh rule, so the stages place their rows on the axis the
+    # trunk's split shards.
+    trunk.data_parallel_degree = pipeline_config.model.data_parallel_degree
+    return DSparkDeepseekV41ModuleV3DraftConfig(
+        **{f.name: getattr(trunk, f.name) for f in fields(trunk)},
+        rope=RopeParams.from_text_config(
+            DeepseekV41Config.get_text_config(
+                pipeline_config.model.huggingface_config
+            )
+        ),
+    )
+
+
+def convert_dspark_modulev3_safetensor_state_dict(
+    state_dict: dict[str, Weights],
+    huggingface_config: AutoConfig,
+    **unused_kwargs: object,
+) -> dict[str, WeightData]:
+    """Returns the checkpoint's ``mtp.*`` weights, named as the stages name them.
+
+    The trunk's weights load through the trunk's own adapter.
+    """
+    prefix = f"{DSPARK_MODULE_PREFIX}."
+    return {
+        name.removeprefix(prefix): value
+        for name, value in convert_dspark_state_dict(
+            state_dict,
+            num_stages=num_dspark_stages(
+                DeepseekV41Config.get_text_config(huggingface_config)
+            ),
+        ).items()
+    }
+
+
+dspark_draft_registration = DraftRegistration[
+    DSparkDeepseekV41Draft, DSparkDeepseekV41ModuleV3DraftConfig
+](method="dspark", configure=configure_dspark_draft)
