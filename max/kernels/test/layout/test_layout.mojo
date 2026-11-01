@@ -862,8 +862,8 @@ def test_transpose() raises:
     assert_equal(trans_nested.transpose(), nested)
 
     # Test memory mapping preservation for 2D
-    comptime for i in range(3):
-        comptime for j in range(4):
+    for i in range(3):
+        for j in range(4):
             var original_idx = row_major(IntTuple(i, j))
             var transposed_idx = transposed(IntTuple(j, i))
             assert_equal(original_idx, transposed_idx)

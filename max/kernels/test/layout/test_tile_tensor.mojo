@@ -246,8 +246,8 @@ def test_tile() raises:
 
     var counter = 0
 
-    comptime for tile_i in range(2):
-        comptime for tile_j in range(2):
+    for tile_i in range(2):
+        for tile_j in range(2):
             var current_tile = layout_tensor.tile[2, 2](
                 (tile_i, tile_j),
             )
@@ -284,8 +284,8 @@ def test_tile_with_coord_shape() raises:
 
     # Tile with Coord shape — same logic as test_tile but using the
     # tile(tile_shape, tile_coord) overload instead of tile[2, 2](coord).
-    comptime for tile_i in range(2):
-        comptime for tile_j in range(2):
+    for tile_i in range(2):
+        for tile_j in range(2):
             var current_tile = layout_tensor.tile(
                 tile_shape,
                 (tile_i, tile_j),
@@ -1637,14 +1637,14 @@ def test_copy_from_roundtrip_tile_by_tile() raises:
     var mid = TileTensor(mid_data, row_major[4, 4]())
     var dst = TileTensor(dst_data, row_major[4, 4]())
 
-    comptime for tile_i in range(2):
-        comptime for tile_j in range(2):
+    for tile_i in range(2):
+        for tile_j in range(2):
             var s = src.tile[2, 2]((tile_i, tile_j))
             var m = mid.tile[2, 2]((tile_i, tile_j))
             m.copy_from(s)
 
-    comptime for tile_i in range(2):
-        comptime for tile_j in range(2):
+    for tile_i in range(2):
+        for tile_j in range(2):
             var m = mid.tile[2, 2]((tile_i, tile_j))
             var d = dst.tile[2, 2]((tile_i, tile_j))
             d.copy_from(m)
@@ -2234,7 +2234,7 @@ def test_storage_abs_out_of_place() raises:
 def test_tuple_getter() raises:
     var data = Array[Float32, 4](fill=0)
     var a = TileTensor(data, row_major[2, 2]())
-    comptime for i in range(data.length):
+    for i in range(data.length):
         data[i] = Float32(i)
 
     assert_equal(a[(1, 1)], 3)

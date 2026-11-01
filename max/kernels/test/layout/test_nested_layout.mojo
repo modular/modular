@@ -448,7 +448,7 @@ def test_mha_mma_op_att_layout_nested_tile_semantics() raises:
     # Walk the (H=4, W=1) outer grid via `.tile[FRAG_H, FRAG_W](i, j)`
     # and stamp a value into the (i, 0)-th base tile's first per-lane
     # row.
-    comptime for outer_h in range(H):
+    for outer_h in range(H):
         var base = att.tile[FRAG_H_COL_L, FRAG_W_COL_L](outer_h, 0)
         base[0, 0] = Float32(100 + outer_h)
 

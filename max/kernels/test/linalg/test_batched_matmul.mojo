@@ -88,7 +88,7 @@ def callback_values[
     comptime assert t == dtype
     comptime assert idx.rank == 4
     var result = SIMD[t, width](0)
-    comptime for lane in range(width):
+    for lane in range(width):
         var encoded = (
             Int(idx[0].value()) * 96
             + Int(idx[1].value()) * 24
