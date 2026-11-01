@@ -14,18 +14,28 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import ClassVar
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
+from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.legacy.comm.ep import EPConfig, calculate_ep_max_tokens_per_rank
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelDeploymentConfig,
+    ModuleRuntime,
+)
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.pipelines.weights.quant import parse_quant_config
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 from ..deepseekV3_2_modulev3.model_config import (
@@ -36,12 +46,19 @@ from ..glm5_1.model_config import glm_rope_scaling, glm_unpadded_vocab_size
 
 
 @dataclass(kw_only=True)
-class Glm5_1Config(DeepseekV3_2Config):
+class Glm5_1Config(DeepseekV3_2Config, ExpertParallelDeploymentConfig):
     """Configuration for GLM-5.x models (ModuleV3).
 
     GLM shares DeepSeek-V3.2's sparse-MLA decoder; it differs in declaring
     standard RoPE rather than YaRN, and in padding ``lm_head`` past the
     tokenizer's vocabulary.
+    """
+
+    takes_batch_context_lengths: ClassVar[bool] = True
+    ep_dispatch_token_layout: ClassVar[str | None] = "tp_sharded"
+    """How tokens reach the expert dispatch. Without allreduce, attention
+    reduce-scatters them across the TP ranks first, which is the layout
+    GLM-5.3's recipe serves; exporters pick the matching EP backend from it.
     """
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
@@ -148,4 +165,105 @@ class Glm5_1Config(DeepseekV3_2Config):
             ),
             quantization_encoding=quantization_encoding,
             unpadded_vocab_size=glm_unpadded_vocab_size(pipeline_config),
+        )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns the config completed with the checkpoint's quantization.
+
+        The decoder returns only the last token's logits, whatever
+        ``outputs`` asks for; the fused MTP graph sets its own outputs.
+
+        Raises:
+            KeyError: If a ``noaux_tc`` router has no correction bias.
+        """
+        del outputs
+        quant_config = None
+        if self.dtype in (
+            DType.float8_e4m3fn,
+            DType.uint8,
+            DType.float4_e2m1fn,
+        ):
+            quant_config = parse_quant_config(
+                huggingface_config, state_dict, self.dtype
+            )
+        correction_bias_dtype = self.correction_bias_dtype
+        if self.topk_method == "noaux_tc":
+            bias = next(
+                (
+                    value
+                    for key, value in state_dict.items()
+                    if key.endswith("e_score_correction_bias")
+                ),
+                None,
+            )
+            if bias is None:
+                raise KeyError("Expected e_score_correction_bias in state_dict")
+            correction_bias_dtype = bias.dtype
+        return replace(
+            self,
+            quant_config=quant_config,
+            correction_bias_dtype=correction_bias_dtype,
+        )
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        """Sizes the expert-parallel buffers for ``runtime``.
+
+        Tokens dispatch in the checkpoint's FP8 or NVFP4 format when it is
+        quantized, else in bf16. The shared expert fuses with the routed ones
+        only when it has their shape and weight layout.
+        """
+        quant_config = self.quant_config
+        quantized_dispatch = quant_config is not None and (
+            self.dtype.is_float8() or quant_config.is_nvfp4
+        )
+        n_devices = len(runtime.mesh.devices)
+        return EPConfig(
+            dispatch_dtype=self.dtype if quantized_dispatch else DType.bfloat16,
+            dispatch_quant_config=quant_config if quantized_dispatch else None,
+            combine_dtype=DType.bfloat16,
+            hidden_size=self.hidden_size,
+            top_k=self.num_experts_per_tok,
+            n_experts=self.n_routed_experts,
+            max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=runtime.max_batch_input_tokens,
+                ep_size=runtime.ep_size,
+                data_parallel_degree=runtime.data_parallel_degree,
+                use_allreduce=runtime.ep_use_allreduce,
+            ),
+            n_gpus_per_node=n_devices,
+            n_nodes=runtime.ep_size // n_devices,
+            fused_shared_expert=self.n_shared_experts == 1
+            and (
+                quant_config is None
+                or quant_config.shared_experts_use_quant(self.dtype)
+            ),
+            use_allreduce=runtime.ep_use_allreduce,
+        )
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Returns the config placed on the deployment's mesh.
+
+        Raises:
+            NotImplementedError: If data parallelism runs over fewer
+                replicas than devices.
+        """
+        n_devices = len(runtime.mesh.devices)
+        if 1 < runtime.data_parallel_degree != n_devices:
+            raise NotImplementedError(
+                f"data_parallel_degree={runtime.data_parallel_degree} must "
+                f"equal the device count ({n_devices}); dp x tp meshes are "
+                "not supported yet."
+            )
+        return replace(
+            self,
+            mesh=runtime.mesh,
+            ep_config=runtime.ep,
+            max_batch_context_length=(
+                runtime.max_batch_total_tokens or self.max_batch_context_length
+            ),
         )

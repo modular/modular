@@ -15,13 +15,10 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV3_2_modulev3 import weight_adapters
-from ..deepseekV3_modulev3.batch_processor import (
-    DeepseekV3ModuleV3BatchProcessor,
-)
 from ..deepseekV3_modulev3.memory_planner import (
     DeepseekV3ModuleV3MemoryPlanner,
 )
@@ -31,7 +28,7 @@ from ..glm5_1.reasoning import (
 )
 from ..glm5_1.tokenizer import GlmTokenizer
 from ..glm5_1.tool_parser import GlmToolParser  # noqa: F401  registers "glm45"
-from .model import Glm5_1Model
+from .glm5_1 import Glm5_1Decoder
 from .model_config import Glm5_1Config
 
 glm5_1_modulev3_arch = SupportedArchitecture(
@@ -48,8 +45,7 @@ glm5_1_modulev3_arch = SupportedArchitecture(
     default_encoding=Glm5_1Config.DEFAULT_ENCODING,
     supported_encodings=Glm5_1Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
-    pipeline_model=Glm5_1Model,
-    batching=DeepseekV3ModuleV3BatchProcessor,
+    modules={GraphRole.DECODER: Glm5_1Decoder},
     tokenizer=GlmTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
