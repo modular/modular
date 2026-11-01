@@ -1106,6 +1106,14 @@ LogicalResult ParamInf::inferFromDefaults() {
           ASTType(evaluator.getReboundType(declaredParamTypes[idx]))
               .getParameterListInfo();
 
+      // If the element type still refers to an uninferred parameter, we cannot
+      // synthesize an empty list for it: the list binding would refer to a
+      // parameter that ends up unbound, which specialization cannot handle.
+      // Leave the variadic uninferred so it reports the normal inference
+      // failure instead.
+      if (hasReferences(varArgsEltType))
+        continue;
+
       // If there are no values, default to an empty list.
       if (isa<ParamIndexRefAttr>(expectedValueList)) {
         auto paramVA = ParamListAttr::get(
