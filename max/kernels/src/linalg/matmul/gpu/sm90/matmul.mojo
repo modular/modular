@@ -18,7 +18,6 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.primitives.grid_controls import pdl_launch_attributes
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
@@ -604,7 +603,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
         partitioned_multicast=config.partitioned_multicast,
         use_tma_store=use_tma_store,
         promotion_frequency=1,
-        pdl_level=config.pdl_level(),
         hilbert_swizzle=hilbert_swizzle,
         k_group_size=k_group_size,
         swapAB=swapAB,
@@ -709,7 +707,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(smem_size)
                     ),
-                    attributes=pdl_launch_attributes(config.pdl_level()),
                 )
             else:
                 comptime kernel = matmul_kernel_regular[
@@ -745,7 +742,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(smem_size)
                     ),
-                    attributes=pdl_launch_attributes(config.pdl_level()),
                 )
         else:
             var a_tma_op = create_tensor_tile[
@@ -796,7 +792,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(smem_size)
                     ),
-                    attributes=pdl_launch_attributes(config.pdl_level()),
                 )
 
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
@@ -826,7 +821,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(smem_size)
             ),
-            attributes=pdl_launch_attributes(config.pdl_level()),
         )
 
 
@@ -1109,7 +1103,6 @@ def warp_specialize_gemm_with_multicasting_splitk[
         partitioned_multicast=config.partitioned_multicast,
         use_tma_store=use_tma_store,
         promotion_frequency=1,
-        pdl_level=config.pdl_level(),
         a_engine=type_of(a_device).Engine,
         b_engine=type_of(b_device).Engine,
         c_engine=type_of(c_device).Engine,
@@ -1156,7 +1149,6 @@ def warp_specialize_gemm_with_multicasting_splitk[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_size)
         ),
-        attributes=pdl_launch_attributes(config.pdl_level()),
     )
 
     _ = workspace_data^

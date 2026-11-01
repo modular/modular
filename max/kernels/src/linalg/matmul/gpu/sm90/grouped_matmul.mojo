@@ -219,7 +219,6 @@ def grouped_matmul_sm90[
         partitioned_multicast=config.partitioned_multicast,
         use_tma_store=False,
         promotion_frequency=1,
-        pdl_level=config.pdl_level(),
         a_engine=type_of(a).Engine,
         b_engine=type_of(b_flat).Engine,
         c_engine=type_of(c).Engine,

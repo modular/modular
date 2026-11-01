@@ -32,11 +32,6 @@ from max.gpu.primitives.cluster import (
     elect_one_sync,
 )
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.primitives.grid_controls import (
-    PDLLevel,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
-)
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import (
     block_id_in_cluster,
@@ -257,7 +252,6 @@ struct HopperMatmulSM90Kernel[
     partitioned_multicast: Bool = False,
     use_tma_store: Bool = False,
     promotion_frequency: Int = 1,
-    pdl_level: PDLLevel = PDLLevel(),
     hilbert_swizzle: Bool = False,
     k_group_size: Int = 1,
     swapAB: Bool = False,
@@ -300,7 +294,6 @@ struct HopperMatmulSM90Kernel[
             regular stores).
         promotion_frequency: How often FP8 accumulation is promoted to
             higher precision.
-        pdl_level: Programmatic Dependency Launch (PDL) level.
         hilbert_swizzle: Whether Hilbert-curve thread block scheduling is
             used.
         k_group_size: Number of K-dimension tiles loaded and consumed per
@@ -447,9 +440,6 @@ struct HopperMatmulSM90Kernel[
     @inline(.always)
     def finalize_kernel():
         """Common finalization for all kernel variants."""
-
-        comptime if Self.pdl_level >= PDLLevel.OVERLAP_AT_END:
-            launch_dependent_grids()
 
         # Synchronize all thread blocks in the cluster before kernel exit
         # to ensure shared memory isn't deallocated while other blocks are still using it
@@ -1016,13 +1006,6 @@ struct HopperMatmulSM90Kernel[
         # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
             # Producer warp group
-
-            # Check and wait for PDL grids if needed
-            comptime if (
-                Self.pdl_level > PDLLevel.OFF
-                and Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-            ):
-                wait_on_dependent_grids()
 
             _ = Self.setup_producer()
 
