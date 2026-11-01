@@ -164,7 +164,7 @@ def reference_kernel[
         )
         var k_row = k.unsafe_offset(kv_row * k_dim)
         var s = Float32(0)
-        comptime for c in range(k_dim // chunk):
+        for c in range(k_dim // chunk):
             var qc = q_row.unsafe_offset(c * chunk).unsafe_load[width=chunk]()
             var kc = k_row.unsafe_offset(c * chunk).unsafe_load[width=chunk]()
             s += (

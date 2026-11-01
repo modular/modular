@@ -458,7 +458,7 @@ def _run_case[
                     var qo = (t * NH + h) * DEPTH
                     var dot = Float64(0)
                     var absdot = Float64(0)
-                    comptime for c in range(0, DEPTH, 8):
+                    for c in range(0, DEPTH, 8):
                         var prod = qp.unsafe_load[width=8](
                             qo + c
                         ) * kp.unsafe_load[width=8](s * DEPTH + c)

@@ -364,7 +364,7 @@ def _comptime_np_table[is_fp8_kv: Bool]() -> List[Int]:
 def _head_counts() -> List[Int]:
     """`_RUNTIME_HEAD_COUNTS` as a runtime list, for the pairwise sweep."""
     var out = List[Int]()
-    comptime for num_heads in _RUNTIME_HEAD_COUNTS:
+    for num_heads in materialize[_RUNTIME_HEAD_COUNTS]():
         out.append(num_heads)
     return out^
 

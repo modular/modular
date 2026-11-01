@@ -62,7 +62,7 @@ def test_convert_asm() raises:
 def convert_kernel[
     src_type: DType, dst_type: DType, size: Int, dst_origin: MutOrigin
 ](dst_ptr: MutPointer[Scalar[dst_type], dst_origin]):
-    comptime for i in range(0, size, 2):
+    for i in range(0, size, 2):
         var src_vec = SIMD[src_type, 2](
             Scalar[src_type](i), Scalar[src_type](i + 1)
         )

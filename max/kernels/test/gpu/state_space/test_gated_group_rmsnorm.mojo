@@ -231,7 +231,7 @@ def test_gated_group_rmsnorm_nemotron_lightning_decode() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    comptime for rows in [1, 8, 64]:
+    for rows in [1, 8, 64]:
         run_gated_group_rmsnorm[.bfloat16, .bfloat16, 512](
             ctx, n_rows=rows, num_groups=8, gate_stride=10304
         )
