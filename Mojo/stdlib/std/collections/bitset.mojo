@@ -283,7 +283,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         Args:
             idx: The non-negative index of the bit to set (must be < `size`).
         """
-        check_bounds(idx, Self.size)
+        check_bounds(idx, length=Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) |= Int64(_bit_mask(idx))
 
@@ -297,7 +297,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         Args:
             idx: The non-negative index of the bit to clear (must be < `size`).
         """
-        check_bounds(idx, Self.size)
+        check_bounds(idx, length=Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) &= Int64(~_bit_mask(idx))
 
@@ -312,7 +312,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         Args:
             idx: The non-negative index of the bit to toggle (must be < `size`).
         """
-        check_bounds(idx, Self.size)
+        check_bounds(idx, length=Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) ^= Int64(_bit_mask(idx))
 
@@ -329,7 +329,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         Returns:
             True if the bit at `idx` is set, False otherwise.
         """
-        check_bounds(idx, Self.size)
+        check_bounds(idx, length=Self.size)
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & Int64(_bit_mask(idx))) != 0
 
