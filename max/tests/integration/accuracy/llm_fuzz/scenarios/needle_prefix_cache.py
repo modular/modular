@@ -66,7 +66,7 @@ if TYPE_CHECKING:
 _SEED = 7331
 # Large enough for a reasoning model to think before it echoes the code; a
 # budget spent entirely on reasoning is reported, never scored as a miss.
-_MAX_TOKENS = 512
+_MAX_TOKENS = 2048
 # A half-window prefill co-batched with several others on a slow model
 # outlasts the tool's interactive default timeout by a wide margin.
 _REQUEST_TIMEOUT = 300.0
