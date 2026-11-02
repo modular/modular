@@ -20,7 +20,7 @@ from std.memory import (
     ArcPointer,
     OwnedPointer,
 )
-from std.ffi import CStringSpan, c_char, external_call
+from std.ffi import CStringSpan, MutNull, c_char, external_call
 import std.format._utils as fmt
 from std.sys import is_gpu
 
@@ -91,7 +91,7 @@ struct StackTrace(ImplicitlyCopyable, Movable, Writable):
         if depth < 0:
             return None
 
-        var buffer = Optional[Pointer[UInt8, MutUntrackedOrigin]]()
+        var buffer = MutNull[UInt8]
         var num_bytes = external_call[
             "KGEN_CompilerRT_GetStackTrace", SIMDLength
         ](Pointer(to=buffer), depth)

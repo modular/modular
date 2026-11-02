@@ -22,6 +22,8 @@ foreign code. It includes:
 - **External function calls**: `external_call()` for calling C functions
   by name with compile-time resolution.
 - **String interop**: `CStringSpan` for working with null-terminated C strings.
+- **Null pointers**: `MutNull`, `ImmNull`, and `Null` for passing C `NULL` to
+  `Optional[Pointer[T, _]]` parameters.
 
 Example:
 
@@ -179,6 +181,108 @@ def _c_long_long_dtype[unsigned: Bool = False]() -> DType:
         is_64bit() or is_32bit()
     ), "size of C `long long` is unknown on this target"
     return DType.uint64 if unsigned else DType.int64
+
+
+# ===-----------------------------------------------------------------------===#
+# Null pointers
+# ===-----------------------------------------------------------------------===#
+
+comptime Null[
+    mut: Bool,
+    //,
+    T: AnyType,
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
+    *,
+    address_space: AddressSpace = .GENERIC,
+] = Optional[Pointer[T, origin, address_space=address_space]]()
+"""An empty (null) `Optional[Pointer[T, origin]]`, equivalent to C's `NULL`.
+
+Passing `None` to a parameter of type `Optional[Pointer[T, _]]` doesn't
+compile, because `None` doesn't determine the pointer's origin. `Null` names
+an empty optional pointer with a concrete type, so the callee can infer the
+origin from it. The origin defaults to an untracked origin, because a null
+pointer aliases no value.
+
+Prefer `MutNull` and `ImmNull`, which fix the mutability. Use `Null` directly
+to pick a different origin, or to spell the mutability as a parameter.
+
+The pointee type `T` can't be inferred from the call site, so you must always
+pass it. Use `NoneType` for a C `void*`.
+
+Parameters:
+    mut: Whether the pointer is mutable.
+    T: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+
+Examples:
+
+```mojo
+from std.ffi import Null
+
+def is_set(ptr: Optional[Pointer[Int, _]]) -> Bool:
+    return Bool(ptr)
+
+def main():
+    print(is_set(Null[mut=True, Int]))  # False
+    print(is_set(Null[Int, MutAnyOrigin]))  # False
+```
+"""
+
+comptime MutNull = Null[mut=True, ...]
+"""An empty (null) mutable `Optional[Pointer[T, origin]]`, equivalent to C's
+`NULL` for a `T*` parameter.
+
+Pass `MutNull[T]` where a function takes an `Optional[MutPointer[T, _]]` or an
+`Optional[Pointer[T, _]]`. Use `MutNull[NoneType]` for a C `void*`.
+
+Parameters:
+    T: The pointee type.
+    origin: The origin of the pointer, defaulting to `MutUntrackedOrigin`.
+    address_space: The address space of the pointer.
+
+Examples:
+
+```mojo
+from std.ffi import MutNull, external_call
+
+def is_set(ptr: Optional[MutPointer[Int, _]]) -> Bool:
+    return Bool(ptr)
+
+def main():
+    print(is_set(MutNull[Int]))  # False
+
+    # time_t time(time_t *tloc): a null `tloc` only returns the time.
+    print(external_call["time", Int](MutNull[NoneType]) > 0)  # True
+```
+"""
+
+comptime ImmNull = Null[mut=False, ...]
+"""An empty (null) immutable `Optional[Pointer[T, origin]]`, equivalent to C's
+`NULL` for a `const T*` parameter.
+
+Pass `ImmNull[T]` where a function takes an `Optional[ImmPointer[T, _]]` or an
+`Optional[Pointer[T, _]]`. Use `ImmNull[NoneType]` for a C `const void*`.
+
+Parameters:
+    T: The pointee type.
+    origin: The origin of the pointer, defaulting to `ImmUntrackedOrigin`.
+    address_space: The address space of the pointer.
+
+Examples:
+
+```mojo
+from std.ffi import ImmNull
+
+def is_set(ptr: Optional[ImmPointer[Int, _]]) -> Bool:
+    return Bool(ptr)
+
+def main():
+    print(is_set(ImmNull[Int]))  # False
+    var ptr = ImmNull[Int]
+    print(ptr is None)  # True
+```
+"""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -617,9 +721,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Raises:
             If `dlopen(nullptr, flags)` fails.
         """
-        self = Self._dlopen(
-            Optional[Pointer[c_char, ImmUntrackedOrigin]](), flags
-        )
+        self = Self._dlopen(ImmNull[c_char], flags)
 
     def __init__[
         PathLike: stdPathLike, //

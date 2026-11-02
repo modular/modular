@@ -100,6 +100,22 @@ This version is still a work in progress.
 
 - Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
 
+- Added `MutNull`, `ImmNull`, and `Null` to `std.ffi` for passing a null
+  pointer (C's `NULL`) to an `Optional[Pointer[T, _]]` parameter. Passing
+  `None` there doesn't compile, because `None` doesn't determine the pointer's
+  origin. These names give an empty optional pointer with an untracked origin.
+  You must still pass the pointee type, and use `NoneType` for `void*`:
+
+  ```mojo
+  from std.ffi import ImmNull, MutNull, external_call
+
+  def fill(ptr: Optional[MutPointer[Int, _]]): ...
+
+  # Before: fill(Optional[MutPointer[Int, MutUntrackedOrigin]]())
+  fill(MutNull[Int])
+  _ = external_call["time", Int](MutNull[NoneType])
+  ```
+
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
   `Movable` only when all of its elements are.
   `Tuple` has a new `init_with` initializer, which constructs each element in

@@ -24,6 +24,8 @@ from std.ffi import (
     c_pid_t,
     external_call,
     CStringSpan,
+    ImmNull,
+    MutNull,
 )
 from std.sys import CompilationTarget
 from std.sys.info import platform_map
@@ -156,8 +158,8 @@ def posix_spawnp[
     return external_call["posix_spawnp", c_int](
         pid,
         file,
-        Optional[Pointer[NoneType, ImmUntrackedOrigin]](),
-        Optional[Pointer[NoneType, ImmUntrackedOrigin]](),
+        ImmNull[NoneType],
+        ImmNull[NoneType],
         argv,
         envp,
     )
@@ -187,7 +189,7 @@ def _get_environ() -> (
         # On Linux, look up `environ` via dlsym(RTLD_DEFAULT, "environ").
         # RTLD_DEFAULT is ((void *)0) on Linux.
         return dlsym[_EnvpType](
-            Optional[Pointer[NoneType, MutUntrackedOrigin]](),
+            MutNull[NoneType],
             "environ".as_c_string_span().ptr(),
         ).value()[]
     else:

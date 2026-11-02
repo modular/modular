@@ -21,7 +21,7 @@ import std.sys._libc as libc
 from std.ffi import external_call
 from std.memory.unsafe_pointer import unsafe_cast
 from std.sys._libc import FILE_ptr, pclose, popen
-from std.ffi import c_char
+from std.ffi import c_char, MutNull
 
 from std.collections import Span
 
@@ -65,7 +65,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = Optional[Pointer[c_char, MutUntrackedOrigin]]()
+        var line = MutNull[c_char]
         var res = String()
 
         while True:

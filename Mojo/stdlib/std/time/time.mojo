@@ -21,7 +21,7 @@ from std.time import perf_counter_ns
 
 from std._plugin import CurrentPlugin
 from std.math import ceil, floor
-from std.ffi import external_call
+from std.ffi import external_call, MutNull
 from std.sys import CompilationTarget, is_gpu
 
 # ===-----------------------------------------------------------------------===#
@@ -288,7 +288,7 @@ def sleep(sec: Float64):
         nsecs,
     )
     var req = Pointer(to=tv_spec)
-    var rem = Optional[Pointer[_CTimeSpec, MutUntrackedOrigin]]()
+    var rem = MutNull[_CTimeSpec]
     _ = external_call["nanosleep", Int32](req, rem)
 
 
