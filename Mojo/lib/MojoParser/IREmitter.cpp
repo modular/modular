@@ -1358,7 +1358,8 @@ void IREmitter::emitExpressionWithoutEvaluatingIt(
 //===----------------------------------------------------------------------===//
 // Emission helpers for specific value types.
 
-ASTType IREmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
+ASTType IREmitter::emitExprType(const ExprNode *expr,
+                                TypeStrictness strictness) {
   // `None` can be either a type or a dynamic value.  In a type context, we
   // want to treat it as a type.
   const ExprNode *innerExpr = expr->getWithoutParens();
@@ -1377,12 +1378,13 @@ ASTType IREmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   }
 
   auto value = emitExprPValue(expr, EC_Type);
-  return emitType({value, expr}, allowUnbound);
+  return emitType({value, expr}, strictness);
 }
 
 /// This emits the specified PValue as a type, binding defaulted parameters
 /// etc if needed.
-ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
+ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
+                            TypeStrictness strictness) {
   if (!value.ir)
     return {};
 
@@ -1393,9 +1395,8 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
     return {};
   }
 
-  // If the caller accepts a fully unbound type and the type is unbound, return
-  // it now without verifying the bindings.
-  if (allowUnbound)
+  // A partially bound type is returned without verifying the bindings.
+  if (strictness == TypeStrictness::kIncomplete)
     return type;
 
   // Check for a function type.
@@ -1409,22 +1410,26 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
     }
 
     // Function types with non-singleton parameters can only be used at
-    // comptime.
-    for (auto [paramType, pog] : llvm::zip(sig.getInputParamTypes(),
-                                           sig.getParamListAttrs().getPogs())) {
-      // Singleton values like origins are fine. They will be removed by
-      // lowerlit before code generation.
-      if (ASTType(paramType).isSingleton(shared))
-        continue;
+    // comptime. This is only a runtime-ness restriction: it applies when the
+    // type describes runtime storage, not to comptime type values (which are
+    // only checked for concreteness below).
+    if (strictness == TypeStrictness::kConcrete) {
+      for (auto [paramType, pog] : llvm::zip(
+               sig.getInputParamTypes(), sig.getParamListAttrs().getPogs())) {
+        // Singleton values like origins are fine. They will be removed by
+        // lowerlit before code generation.
+        if (ASTType(paramType).isSingleton(shared))
+          continue;
 
-      auto diag =
-          emitError(value.expr->getLoc(),
-                    "cannot use parametric function as a runtime closure")
-          << value.expr->getRange();
-      diag.attachNote(value.expr->getLoc())
-          << "parameter " << ParamDeclRefAttr::get(pog.getName(), paramType)
-          << " of type " << ASTType(paramType) << " is not bound";
-      return {};
+        auto diag =
+            emitError(value.expr->getLoc(),
+                      "cannot use parametric function as a runtime closure")
+            << value.expr->getRange();
+        diag.attachNote(value.expr->getLoc())
+            << "parameter " << ParamDeclRefAttr::get(pog.getName(), paramType)
+            << " of type " << ASTType(paramType) << " is not bound";
+        return {};
+      }
     }
   }
   if (llvm::any_of(type.getParamBindings(),

@@ -78,13 +78,13 @@ static StructASTDecl *getStructOrTargetStruct(ASTDecl &decl,
 /// failure on parse error.
 static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
                              std::optional<size_t> stmtIndent,
-                             bool allowUnbound) {
+                             TypeStrictness strictness) {
   ExprNode *expr = nullptr;
   if (p.parseExpression(expr, stmtIndent))
     return failure();
 
   IREmitter emitter(declScope, EC_Type);
-  result = emitter.emitExprType(expr, allowUnbound);
+  result = emitter.emitExprType(expr, strictness);
   if (!result)
     return failure();
 
@@ -2804,7 +2804,7 @@ LogicalResult AliasASTDecl::resolveSignature(Lexer &lexer) {
   ASTType type;
   if (bodyTypeExpr) {
     IREmitter emitter(sigDecl, EC_Type);
-    type = emitter.emitExprType(bodyTypeExpr, /*allowUnbound=*/true);
+    type = emitter.emitExprType(bodyTypeExpr, TypeStrictness::kIncomplete);
     if (!type)
       return failure();
   }
@@ -3369,7 +3369,7 @@ static ParseResult resolveConformanceList(
   for (const ParsedConformanceEntry &conformance : parsedConformances) {
     IREmitter typeEmitter(declScope, EC_Type);
     ASTType type = typeEmitter.emitExprType(conformance.typeExpr,
-                                            /*allowUnbound=*/false);
+                                            TypeStrictness::kParametric);
     if (!type)
       return failure();
 
@@ -3596,7 +3596,8 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
           callNode->operands.size() == 1) {
         if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].expr)) {
           IREmitter emitter(*parentDecl, EC_Type);
-          if (ASTType t = emitter.emitExprType(drn)) {
+          if (ASTType t =
+                  emitter.emitExprType(drn, TypeStrictness::kConcrete)) {
             structOp.setNonmaterializableTargetAttr(TypeAttr::get(t.mlirType));
             return success();
           }
@@ -4684,7 +4685,7 @@ LogicalResult StructFieldASTDecl::resolveSignature(Lexer &lexer) {
                         &identifierLoc) ||
       p.parseToken(Token::colon, "struct field declaration must have a type") ||
       parseType(p, type, getStructDecl(), getIndentation(),
-                /*allowUnbound=*/false))
+                TypeStrictness::kConcrete))
     return failure();
 
   if (sugarIsa<TraitType>(type)) {
@@ -4883,7 +4884,7 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
   SmallVector<Type> payloadTypes;
   for (ExprNode *typeExpr : payload) {
     IREmitter emitter(enumDecl, EC_Type);
-    ASTType type = emitter.emitExprType(typeExpr, /*allowUnbound=*/false);
+    ASTType type = emitter.emitExprType(typeExpr, TypeStrictness::kConcrete);
     if (!type)
       return failure();
     if (sugarIsa<TraitType>(type)) {

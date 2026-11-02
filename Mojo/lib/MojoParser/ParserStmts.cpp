@@ -5117,7 +5117,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     ExprNode *typeExpr = nullptr;
     if (parseExpression(typeExpr, stmtIndent))
       return declParseError();
-    parsedType = emitter.emitExprType(typeExpr);
+    parsedType = emitter.emitExprType(typeExpr, TypeStrictness::kConcrete);
     if (!parsedType)
       return declParseError();
   }
@@ -5532,7 +5532,8 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
           parseToken(Token::colon, "expected ':' after region argument") ||
           parseExpression(typeExpr))
         return failure();
-      ASTType type = getEmitter().emitExprType(typeExpr);
+      ASTType type =
+          getEmitter().emitExprType(typeExpr, TypeStrictness::kConcrete);
       if (!type)
         return failure();
       argTypes.push_back(type);
@@ -5699,7 +5700,7 @@ static AnyValue emitComprehension(const ComprehensionNode *node, ExprDest &dest,
                                 : ArrayRef<Operand>(subscriptOperand[0]),
                             loc);
     return stmtEmitter.getParamEmitter(EC_CollectionCompElt)
-        .emitExprType(&subscript);
+        .emitExprType(&subscript, TypeStrictness::kConcrete);
   };
 
   // Dummy node with the correct location.

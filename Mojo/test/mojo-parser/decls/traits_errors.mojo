@@ -43,6 +43,24 @@ struct ParamType[x: Int](FooTrait, Movable where False):
         pass
 
 
+# A parametric function type in a conformance list is a trait-ness error, not
+# a runtime-materialization error: the list is resolved entirely at compile
+# time, so "cannot use parametric function as a runtime closure" would be
+# misleading. The generic "may only contain traits" diagnostic is the right one.
+struct ConformsFnTypeInConformanceList(def(ParamType) thin -> None):
+    # expected-error @above {{refinement and conformance lists may only contain traits}}
+    pass
+
+
+comptime UnboundTraitAlias[n: Int] = FooTrait
+
+
+# expected-error @below {{'UnboundTraitAlias' is not a concrete type, use '[]' to bind missing parameters}}
+# expected-note @below {{'UnboundTraitAlias' is aka 'comptime[n: Int] FooTrait'}}
+struct ConformsUnboundAliasInConformanceList(UnboundTraitAlias):
+    pass
+
+
 def invalid_trait_bind():
     # expected-error @below {{'ParamType[_]' is not concrete, use '[]' to bind missing parameters}}
     comptime Bound: FooTrait = ParamType

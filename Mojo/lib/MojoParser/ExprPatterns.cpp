@@ -591,7 +591,7 @@ CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
     return buildEnumCheckList(builder, subject, path, out);
 
   IREmitter emitter = builder.getParamEmitter();
-  ASTType patternType = emitter.emitExprType(callee);
+  ASTType patternType = emitter.emitExprType(callee, TypeStrictness::kConcrete);
   if (!patternType)
     return failure();
 
@@ -723,7 +723,8 @@ static TriBool getEnumIsExhaustive(IREmitter &emitter, ASTType subjectType,
 static LogicalResult checkEnumCaseTypeBase(IREmitter &emitter, CValue subject,
                                            const ExprNode *typeBase,
                                            const ExprNode *expr) {
-  ASTType baseType = emitter.emitExprType(typeBase, /*allowUnbound=*/true);
+  ASTType baseType =
+      emitter.emitExprType(typeBase, TypeStrictness::kIncomplete);
   if (!baseType)
     return failure();
   ASTType baseNominal = baseType.getWithoutParameters(emitter.shared);

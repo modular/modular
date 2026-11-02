@@ -3972,8 +3972,12 @@ ExprNode::ELVIITResult BinOpNode::emitLValueIfImplicitlyTyped(
   if (kind != kTypePattern)
     return this;
 
-  // Emit the RHS as a type expression.
-  ASTType type = emitter.emitExprType(rhs, hasInferrableRHS);
+  // Emit the RHS as a type expression. When the RHS isn't inferrable, the
+  // pattern declares runtime storage (e.g. `var g: SomeType`), so the type
+  // must be runtime-materializable.
+  ASTType type =
+      emitter.emitExprType(rhs, hasInferrableRHS ? TypeStrictness::kIncomplete
+                                                 : TypeStrictness::kConcrete);
   if (!type)
     return {};
 
@@ -4896,7 +4900,7 @@ AnyValue GeneratorTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   // Evaluate the body type in the param scope so generator params resolve.
   IREmitter typeEmitter(dummyScope, EC_Type);
   ASTType bodyType =
-      typeEmitter.emitExprType(bodyTypeExpr, /*allowUnbound=*/true);
+      typeEmitter.emitExprType(bodyTypeExpr, TypeStrictness::kIncomplete);
   if (!bodyType)
     return {};
 

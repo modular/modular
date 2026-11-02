@@ -1241,7 +1241,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       {
         DeferredTypingScope deferredTypingScope(result, &emitter, arg.name,
                                                 append);
-        type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+        type = emitter.emitExprType(arg.typeExpr, TypeStrictness::kIncomplete);
         assert(result.paramDeclAttrs.size() == numParams &&
                "parameter list changed under a deferred typing scope");
       }
@@ -2001,7 +2001,8 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   {
     TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
         tcSignature.paramList, &emitter, arg.name, /*append=*/true);
-    elementType = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+    elementType =
+        emitter.emitExprType(arg.typeExpr, TypeStrictness::kIncomplete);
   }
   if (!elementType) // Error emitting the expression is already diagnosed.
     return {};
@@ -2096,7 +2097,8 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
       // appended to the function parameters.
       TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
           tcSignature.paramList, &typeEmitter, arg.name, /*append=*/true);
-      type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+      type =
+          typeEmitter.emitExprType(arg.typeExpr, TypeStrictness::kIncomplete);
     }
 
     // If the type couldn't be emitted, mark this argument erroneous (so uses
@@ -2421,7 +2423,8 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
     IREmitter typeEmitter(declScope, EC_Type);
     TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
         tcSignature.paramList, &typeEmitter);
-    resultType = typeEmitter.emitExprType(resultArg.typeExpr);
+    resultType =
+        typeEmitter.emitExprType(resultArg.typeExpr, TypeStrictness::kConcrete);
 
     // If the resultType is a generated type, ensure that it is convertible to a
     // concrete type as we do not allow runtime generators, and we do not
@@ -2583,7 +2586,8 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
       IREmitter typeEmitter(declScope, EC_Type);
       TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
           tcSignature.paramList, &typeEmitter);
-      errorType = typeEmitter.emitExprType(tcSignature.argList.thrownTypeExpr);
+      errorType = typeEmitter.emitExprType(tcSignature.argList.thrownTypeExpr,
+                                           TypeStrictness::kConcrete);
     }
     if (!errorType)
       errorType = shared.lookupBuiltinType(
