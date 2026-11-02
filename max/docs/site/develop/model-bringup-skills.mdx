@@ -201,12 +201,12 @@ when its module tree differs from every architecture MAX ships, as with Gemma 3
 and Llama 4.
 
 The scaffold's default mode writes subclasses, so the package starts out
-importing the architecture you chose. Copy the files those imports name into
-your package and import them locally: a shipped model directory imports its own
-files and the shared MAX libraries, and no other model. Where several models
-need the same symbol, the skill moves it into the shared libraries. The
-`self_contained.py` check lists every import that still leaves the package, and
-the skill does not report the implementation complete while any remain.
+importing the architecture you chose. The skill's first implementation step
+turns each of those imports into a copy: the files move into your package and
+the imports point at them. A shipped model directory imports its own files and
+the shared MAX libraries, and no other model, and its `BUILD.bazel` names no
+other architecture directory. Where several models need the same symbol, the
+skill moves it into the shared libraries.
 
 The package still runs the copied model's computation until the agent
 implements each row of the delta list as `max.nn` modules, maps the remaining
