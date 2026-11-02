@@ -46,7 +46,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.testing import assert_equal, assert_raises
+from std.testing import assert_equal, assert_raises, assert_true
 
 from linalg.block_scaled_quantization import (
     block_scaled_matmul,
@@ -62,9 +62,14 @@ from linalg.fp4_utils import (
 )
 from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
     DISPATCH_HIT,
+    _block_scaled_matmul_with_epilogue,
     heuristic_and_outliers_dispatch,
 )
-from linalg.utils import _as_compute_fn
+from linalg.matmul.gpu.sm100.block_scaled_matmul import (
+    _blackwell_block_scaled_matmul_impl,
+)
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.utils import _as_compute_fn, no_compute_fn, no_epilogue_fn
 
 
 def test_mxfp8_dispatch[
@@ -78,6 +83,7 @@ def test_mxfp8_dispatch[
     col_period: Int = 0,
     col_start: Int = 0,
     pass_col_start: Int = col_start,
+    fp32_mma_n: Int = 0,
 ](
     ctx: DeviceContext,
     m: Int,
@@ -96,7 +102,9 @@ def test_mxfp8_dispatch[
     columns, which only works on column vectors. With `col_period`, the
     closure swaps only the columns at or past `col_start` in each period,
     and the matmul is told that the changed columns start at
-    `pass_col_start`."""
+    `pass_col_start`. With `fp32_mma_n`, also runs the 2-SM 256 x
+    `fp32_mma_n` config with a float32 output and requires it to round to
+    the bits of the same config's bfloat16 output."""
     var M = m
     var N = Int(n)
     var K = Int(k)
@@ -241,6 +249,84 @@ def test_mxfp8_dispatch[
     )
     print("  -> PASSED")
 
+    comptime if fp32_mma_n > 0:
+        comptime accum_stages = 1 if fp32_mma_n > 128 else 2
+        comptime config_bf16 = BlockScaledMatmulConfig[
+            input_type, input_type, .bfloat16, scales_type, scales_type, True
+        ](
+            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            mma_shape=(256, fp32_mma_n, 32),
+            cta_group=2,
+            cluster_shape=(2, 1, 1),
+            num_accum_pipeline_stages=accum_stages,
+        )
+        comptime config_fp32 = BlockScaledMatmulConfig[
+            input_type, input_type, .float32, scales_type, scales_type, True
+        ](
+            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            mma_shape=(256, fp32_mma_n, 32),
+            cta_group=2,
+            cluster_shape=(2, 1, 1),
+            num_accum_pipeline_stages=accum_stages,
+        )
+        print(
+            "  pipeline stages: bfloat16 C",
+            config_bf16.num_pipeline_stages,
+            ", float32 C",
+            config_fp32.num_pipeline_stages,
+        )
+        var c_bf16_device = ctx.enqueue_create_buffer[.bfloat16](c_size)
+        var c_fp32_device = ctx.enqueue_create_buffer[.float32](c_size)
+        var c_bf16 = TileTensor(c_bf16_device, c_shape)
+        var c_fp32 = TileTensor(c_fp32_device, c_shape)
+        _block_scaled_matmul_with_epilogue[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=True,
+            config=config_bf16,
+        ](
+            c_bf16,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            Float32(1.0),
+            no_epilogue_fn,
+            no_compute_fn,
+            ctx,
+        )
+        _block_scaled_matmul_with_epilogue[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=True,
+            config=config_fp32,
+        ](
+            c_fp32,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            Float32(1.0),
+            no_epilogue_fn,
+            no_compute_fn,
+            ctx,
+        )
+        var host_bf16 = ctx.enqueue_create_host_buffer[.bfloat16](c_size)
+        var host_fp32 = ctx.enqueue_create_host_buffer[.float32](c_size)
+        ctx.enqueue_copy(host_bf16, c_bf16_device)
+        ctx.enqueue_copy(host_fp32, c_fp32_device)
+        ctx.synchronize()
+        var nonzero = 0
+        for i in range(c_size):
+            # Both configs accumulate identically, so the float32 result
+            # must round to exactly the bfloat16 one.
+            assert_equal(
+                host_fp32[i].cast[.bfloat16]().to_bits(),
+                host_bf16[i].to_bits(),
+            )
+            if host_bf16[i] != 0:
+                nonzero += 1
+        assert_true(nonzero > 0)
+        print("  -> PASSED (float32 output rounds to bfloat16 output)")
+
     if expect_heuristic_hit:
 
         def store_fn[
@@ -357,6 +443,176 @@ def test_mxfp8_dispatch[
     _ = b_scales_device^
 
 
+def test_prefill_compute_precision[
+    mma_n: Int, round_input: Bool = False
+](ctx: DeviceContext,) raises:
+    comptime M = 513
+    comptime N = 256
+    comptime K = 128
+    comptime scales_type = MXFP8_SF_DTYPE
+    comptime SF = MXFP8_SF_VECTOR_SIZE
+    comptime config = BlockScaledMatmulConfig[
+        .float8_e4m3fn,
+        .float8_e4m3fn,
+        .bfloat16,
+        scales_type,
+        scales_type,
+        True,
+    ](
+        scaling_kind=UMMAKind.KIND_MXF8F6F4,
+        mma_shape=(256, mma_n, 32),
+        cta_group=2,
+        cluster_shape=(2, 1, 1),
+        num_accum_pipeline_stages=1 if mma_n == 256 else 2,
+    )
+    var a_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
+    for i in range(M * K):
+        a_host[i] = 0
+    for i in range(N * K):
+        b_host[i] = 0
+    # The exact accumulator 1 + 2^-13 rounds to 1 in bf16. Subtracting
+    # 1 inside the closure must preserve the low bits for raw callbacks.
+    for i in range(M):
+        a_host[i * K] = 1
+        a_host[i * K + 1] = Float32(1.0 / 64).cast[.float8_e4m3fn]()
+    for i in range(N):
+        b_host[i * K] = 1
+        b_host[i * K + 1] = Float32(1.0 / 128).cast[.float8_e4m3fn]()
+
+    var a_sf_shape = row_major(
+        ceildiv(M, SF_MN_GROUP_SIZE),
+        Idx[ceildiv(K, SF * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
+    )
+    var b_sf_shape = row_major(
+        Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(K, SF * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
+    )
+    var a_sf_host = ctx.enqueue_create_host_buffer[scales_type](
+        a_sf_shape.product()
+    )
+    var b_sf_host = ctx.enqueue_create_host_buffer[scales_type](
+        b_sf_shape.product()
+    )
+    for i in range(a_sf_shape.product()):
+        a_sf_host[i] = 0
+    for i in range(b_sf_shape.product()):
+        b_sf_host[i] = 0
+    var a_sf = TileTensor(a_sf_host, a_sf_shape)
+    var b_sf = TileTensor(b_sf_host, b_sf_shape)
+    for i in range(M):
+        for k in range(0, K, SF):
+            set_scale_factor[SF_VECTOR_SIZE=SF](
+                a_sf, i, k, Scalar[scales_type](1)
+            )
+    for i in range(N):
+        for k in range(0, K, SF):
+            set_scale_factor[SF_VECTOR_SIZE=SF](
+                b_sf, i, k, Scalar[scales_type](1)
+            )
+
+    var a_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](M * K)
+    var b_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * K)
+    var a_sf_dev = ctx.enqueue_create_buffer[scales_type](a_sf_shape.product())
+    var b_sf_dev = ctx.enqueue_create_buffer[scales_type](b_sf_shape.product())
+    var fused_dev = ctx.enqueue_create_buffer[.bfloat16](M * N)
+    var separate_dev = ctx.enqueue_create_buffer[.bfloat16](M * N)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+    ctx.enqueue_copy(a_sf_dev, a_sf_host)
+    ctx.enqueue_copy(b_sf_dev, b_sf_host)
+    var a = TileTensor(a_dev, row_major(M, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var a_scales = TileTensor(a_sf_dev, a_sf_shape)
+    var b_scales = TileTensor(b_sf_dev, b_sf_shape)
+    var fused = TileTensor(fused_dev, row_major(M, Idx[N]))
+    var separate = TileTensor(separate_dev, row_major(M, Idx[N]))
+
+    @inline(.always)
+    def subtract_one[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, value: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime if round_input:
+            # Graph compute callbacks cast to their logical dtype before
+            # evaluating the fused expression, then widen the result.
+            return (
+                (value.cast[.bfloat16]().cast[.float32]() - 1)
+                .cast[.bfloat16]()
+                .cast[dtype]()
+            )
+        else:
+            return value - 1
+
+    var fused_host = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
+    var separate_host = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
+    for scale in [Float32(1), Float32(1 - 1.0 / 8192)]:
+        _blackwell_block_scaled_matmul_impl[
+            transpose_b=True,
+            K=K,
+            config=config,
+            pdl_level=PDLLevel.OFF,
+            has_epilogue_fn=False,
+            has_compute_fn=True,
+        ](
+            fused,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            no_epilogue_fn,
+            _as_compute_fn(subtract_one),
+            ctx,
+            scale,
+        )
+        _block_scaled_matmul_with_epilogue[
+            SF_VECTOR_SIZE=SF,
+            transpose_b=True,
+            config=config,
+            pdl_level=PDLLevel.OFF,
+            has_compute_fn=True,
+        ](
+            separate,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            scale,
+            no_epilogue_fn,
+            _as_compute_fn(subtract_one),
+            ctx,
+        )
+        ctx.enqueue_copy(fused_host, fused_dev)
+        ctx.enqueue_copy(separate_host, separate_dev)
+        ctx.synchronize()
+        print(
+            t"precision"
+            t" mma_n={mma_n} round_input={round_input} scale={scale} fused={fused_host[0]} separate={separate_host[0]}"
+        )
+        for i in range(M * N):
+            assert_equal(fused_host[i].to_bits(), separate_host[i].to_bits())
+            comptime if round_input:
+                assert_equal(fused_host[i], 0)
+            else:
+                if scale == 1:
+                    assert_equal(
+                        fused_host[i], Float32(1.0 / 8192).cast[.bfloat16]()
+                    )
+                else:
+                    # Contraction is permitted, not required. Both results
+                    # exclude ignoring the non-unit tensor scale.
+                    assert_true(
+                        fused_host[i] == 0
+                        or fused_host[i]
+                        == Float32(-1.0 / 67108864).cast[.bfloat16]()
+                    )
+
+
 def test_tuned_decode_shape[N: Int, K: Int](ctx: DeviceContext) raises:
     # M inside and at the edges of the shape's tuning-table rows, plus one
     # past the last row. PDL on turns on the rows' weight prefetch.
@@ -371,6 +627,10 @@ def test_tuned_decode_shape[N: Int, K: Int](ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
+        test_prefill_compute_precision[256](ctx)
+        test_prefill_compute_precision[128](ctx)
+        test_prefill_compute_precision[256, True](ctx)
+        test_prefill_compute_precision[128, True](ctx)
         test_tuned_decode_shape[1792, 5120](ctx)
         test_tuned_decode_shape[4096, 1280](ctx)
         test_tuned_decode_shape[4608, 5120](ctx)
@@ -399,6 +659,25 @@ def main() raises:
         test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
             ctx, 36, Idx[6144], Idx[3072], expect_heuristic_hit=True
         )
+        # The same shapes at prefill M, where the compute closure also runs
+        # separately; 513 and 4097 are ragged against every tile size.
+        for m in [513, 4097]:
+            test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
+                ctx, m, Idx[3072], Idx[6144], expect_heuristic_hit=True
+            )
+            test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
+                ctx, m, Idx[6144], Idx[3072], expect_heuristic_hit=True
+            )
+        # Float32 output from the 2-SM 256 x 256 (one accumulator stage) and
+        # 256 x 128 (two) tiles the prefill path writes its closure input
+        # with, at ragged and aligned M.
+        for m in [513, 4097]:
+            test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16, fp32_mma_n=256](
+                ctx, m, Idx[3072], Idx[6144], expect_heuristic_hit=False
+            )
+            test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16, fp32_mma_n=128](
+                ctx, m, Idx[6144], Idx[3072], expect_heuristic_hit=False
+            )
         # m in (8, 16] with N past one wave of SM tiles skips the small-BN
         # kernel.
         test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](

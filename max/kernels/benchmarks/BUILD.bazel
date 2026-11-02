@@ -192,6 +192,7 @@ _EXTRA_CONSTRAINTS = {
     "gpu/nn/bench_mhc_pre.mojo": ["//:mi355_gpu"],  # mhc_pre is gfx950-only (bf16 MFMA projection)
     "gpu/quantization/bench_qmatmul_int4.mojo": ["//:nvidia_gpu"],  # INT4 GEMM only compiles for NVIDIA
     "gpu/linalg/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
+    "gpu/linalg/bench_block_scaled_matmul_compute_fn.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
     "gpu/linalg/bench_o_proj_matmul_mxfp8_amd.mojo": ["//:mi355_gpu"],  # CDNA4 block-scaled matmul
     "gpu/linalg/bench_matmul_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific TMA epilogue matmul
     "gpu/linalg/bench_matmul_1d_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific 1D bias TMA epilogue matmul
