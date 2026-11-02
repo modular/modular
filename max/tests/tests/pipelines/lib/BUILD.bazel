@@ -19,6 +19,7 @@ modular_py_test(
             "test_graph_specs.py",
             "test_hf_dynamic_modules.py",
             "test_module_registration.py",
+            "test_input_binding.py",
             "test_registration_graph_api.py",
             "test_registration_encoder.py",
             "test_request_state.py",
@@ -81,6 +82,15 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_input_binding",
+    srcs = ["test_input_binding.py"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
     name = "test_hf_dynamic_modules",
     srcs = ["test_hf_dynamic_modules.py"],
     deps = [requirement("transformers")],
@@ -123,6 +133,7 @@ modular_py_test(
     srcs = ["test_module_registration.py"],
     deps = [
         "//max/python/max:tensor",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -164,6 +175,7 @@ modular_py_test(
     srcs = ["test_request_state.py"],
     deps = [
         "//max/python/max:tensor",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

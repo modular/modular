@@ -55,7 +55,7 @@ from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from max import tree
 from max.driver import Buffer, Device
@@ -86,6 +86,7 @@ from max.pipelines.modeling.types import PipelineTask
 from transformers import AutoConfig
 
 from .graph_specs import GraphRole, GraphSpec
+from .input_binding import _flatten_role_inputs
 from .interfaces.arch_config import ArchConfig, ModelOutputConfig
 from .interfaces.batch_processor import (
     BatchProcessor,
@@ -114,7 +115,7 @@ from .request_state import (
     RequestStateStore,
     split_state_outputs,
 )
-from .role_contracts import DecoderInputs, DecoderOutputs
+from .role_contracts import DecoderInputs, DecoderOutputs, VisionInputs
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -353,6 +354,43 @@ def _graph_outputs(
     return grouped, RequestStateGroup(state=tuple(outputs.state))
 
 
+def _decoder_input_fields(
+    input_types: Mapping[str, object],
+) -> OrderedDict[str, object]:
+    """Maps graph-API export groups to the shared semantic input fields."""
+    fields: OrderedDict[str, object] = OrderedDict()
+    for name, group in input_types.items():
+        if name == "batch":
+            assert isinstance(group, Mapping)
+            fields.update(
+                (_BATCH_FIELDS[key], value) for key, value in group.items()
+            )
+        elif name == "vision":
+            assert isinstance(group, Mapping)
+            fields[name] = VisionInputs(
+                embeddings=group["image_embeddings"],
+                scatter_indices=group["image_token_indices"],
+            )
+        elif name in ("signals", "state", "batch_context_lengths"):
+            fields[name] = tuple(tree.leaves(group))
+        else:
+            fields[name] = group
+    return fields
+
+
+def _decoder_graph_value(
+    field: str, expected: object, value: Value[Any]
+) -> object:
+    """Lowers a flat graph input to the value the role field consumes."""
+    if field == "kv":
+        return value
+    if field == "state":
+        return value if isinstance(value, BufferValue) else value.tensor
+    if field == "signals" or isinstance(expected, BufferType):
+        return value.buffer
+    return value.tensor
+
+
 class _DecoderGraph(GraphApiModule):
     """Traces a decoder with :class:`DecoderInputs` built from graph inputs.
 
@@ -370,38 +408,26 @@ class _DecoderGraph(GraphApiModule):
     ) -> None:
         super().__init__()
         self.decoder = decoder
-        self._field_types = OrderedDict(input_types)
+        fields = _decoder_input_fields(input_types)
+        self._input_types, self._input_tree_def = tree.flatten(fields)
+        self._leaf_fields = tuple(
+            name
+            for name, field_types in fields.items()
+            for _ in tree.leaves(field_types)
+        )
         self._return_hidden_states = return_hidden_states
 
     def _unflatten_inputs(
         self, values: Sequence[Value[Any]]
     ) -> DecoderInputs[Any]:
-        """Unflattens the graph's flat inputs into the decoder's fields.
-
-        Raises:
-            ValueError: If the input types hold a group the contract doesn't
-                name.
-        """
-        flat = iter(values)
-        fields: dict[str, Any] = {}
-        for name, group in self._field_types.items():
-            leaves, treedef = tree.flatten(group)
-            taken = [next(flat) for _ in leaves]
-            if name == "kv":
-                fields["kv"] = tree.unflatten(treedef, taken)
-            elif name == "signals":
-                fields["signals"] = tuple(v.buffer for v in taken)
-            elif name == "state":
-                fields["state"] = tuple(
-                    v if isinstance(v, BufferValue) else v.tensor for v in taken
-                )
-            elif name == "batch":
-                assert isinstance(group, Mapping)
-                for key, value in zip(group, taken, strict=True):
-                    fields[_BATCH_FIELDS[key]] = value.tensor
-            else:
-                raise ValueError(f"a decoder takes no {name!r} inputs")
-        return DecoderInputs(**fields)
+        """Restores the shared role tree from the graph's flat inputs."""
+        converted = [
+            _decoder_graph_value(name, expected, value)
+            for name, expected, value in zip(
+                self._leaf_fields, self._input_types, values, strict=True
+            )
+        ]
+        return DecoderInputs(**tree.unflatten(self._input_tree_def, converted))
 
     def __call__(
         self, *values: Value[Any]
@@ -458,29 +484,28 @@ class _DecoderGraph(GraphApiModule):
 class GraphApiDecoderModelInputs(DecoderModelInputs):
     """The prepared inputs of a registered graph-API ``DECODER``."""
 
-    signal_buffers: tuple[Buffer, ...] = ()
-    """The allreduce signal buffers, when the graph takes them."""
-
     batch_fields: tuple[str, ...] = _BATCH
     """The batch fields the graph takes, in its order."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """The step's buffers, in the graph's input order."""
-        batch: list[Buffer] = []
-        for field in self.batch_fields:
-            value = getattr(self, field)
-            assert isinstance(value, Buffer), f"no {field} for the graph"
-            batch.append(value)
-        return (
-            *batch,
-            *self.signal_buffers,
-            *(
-                tree.leaves(self.kv_cache_inputs)
-                if self.kv_cache_inputs is not None
-                else ()
+        fields = self.input_fields()
+        structure = self.input_tree_def
+        if structure is None:
+            order = (*self.batch_fields, "signals", "kv", "state")
+            _, structure = tree.flatten(
+                OrderedDict(
+                    (name, getattr(fields, name))
+                    for name in order
+                    if getattr(fields, name) is not None
+                )
+            )
+        return cast(
+            tuple[Buffer, ...],
+            _flatten_role_inputs(
+                structure, fields, flat_fields=("ep",), strict=True
             ),
-            *self.state,
         )
 
 
@@ -490,6 +515,13 @@ class GraphApiDecoderBatchProcessor(DecoderBatchProcessor):
     It feeds the fields of the input tree the pipeline model binds, so it
     adds signal buffers only when the graph takes them.
     """
+
+    def bind_input_tree(self, input_tree: OrderedDict[str, object]) -> None:
+        """Binds export metadata and the shared role's semantic input order."""
+        super().bind_input_tree(input_tree)
+        _, self._input_tree_def = tree.flatten(
+            _decoder_input_fields(input_tree)
+        )
 
     def get_symbolic_inputs(
         self,
@@ -530,6 +562,7 @@ class GraphApiDecoderBatchProcessor(DecoderBatchProcessor):
             kv_cache_inputs=inputs.kv_cache_inputs,
             state=inputs.state,
             request_ids=inputs.request_ids,
+            input_tree_def=inputs.input_tree_def,
         )
 
 

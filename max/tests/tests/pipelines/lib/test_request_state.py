@@ -24,6 +24,7 @@ from unittest.mock import NonCallableMock
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -341,13 +342,18 @@ def test_the_graph_api_graph_feeds_state_and_returns_it_last() -> None:
 
 
 def test_the_graph_api_batch_processor_feeds_state_after_the_kv() -> None:
-    kv = NonCallableMock(spec=KVCacheInputsPerDevice)
+    kv_buffer = Buffer.from_numpy(np.zeros(1, np.float32))
+    kv = KVCacheInputsPerDevice(
+        kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer
+    )
     state = ToyState((X,))
     processor = GraphApiDecoderBatchProcessor(ToyConfig(), _runtime())
     processor.bind_input_tree(
         OrderedDict(
             batch=RaggedBatch(tokens=X, row_offsets=X, return_n_logits=X),
-            kv={"a": X},
+            kv=KVCacheInputsPerDevice(
+                BufferType(DType.float32, [2], device=CPU_REF), X, X, X, X, X
+            ),
             state=(X,),
         )
     )
@@ -360,7 +366,7 @@ def test_the_graph_api_batch_processor_feeds_state_after_the_kv() -> None:
         inputs.tokens,
         inputs.input_row_offsets,
         inputs.return_n_logits,
-        kv,
+        *tree.leaves(kv),
         state_input,
     )
     assert inputs.request_ids == tuple(ctx.request_id for ctx in batch)

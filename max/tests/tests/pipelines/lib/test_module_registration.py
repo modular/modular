@@ -23,6 +23,7 @@ from unittest.mock import NonCallableMock
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -78,6 +79,7 @@ from transformers import AutoConfig
 from typing_extensions import Self
 
 X = TensorType(DType.float32, [2], device=DeviceRef.CPU())
+_KV_BLOCKS = BufferType(DType.float32, [2], device=DeviceRef.CPU())
 _HF_CONFIG = NonCallableMock(spec=AutoConfig)
 
 
@@ -302,6 +304,76 @@ def test_optional_decoder_inputs_take_their_canonical_place() -> None:
     ]
 
 
+def test_a_decoder_keeps_its_existing_input_layout() -> None:
+    layout = (
+        "tokens",
+        "return_n_logits",
+        "input_row_offsets",
+        "batch_context_lengths",
+        "kv",
+    )
+    types = decoder_input_types(
+        NonCallableMock(
+            get_symbolic_inputs=lambda: (
+                KVCacheInputsPerDevice(_KV_BLOCKS, X, X, X, X, X),
+            )
+        ),
+        DeviceRef.CPU(),
+        batch_context_lengths=(X,),
+        input_layout=layout,
+    )
+    assert tuple(types) == layout
+    processor = _batch_processor(1)
+    processor.bind_input_tree(types)
+    assert processor.get_symbolic_inputs(
+        kv_params=NonCallableMock(), device_refs=[DeviceRef.CPU()]
+    ) == [
+        leaf
+        for field_types in types.values()
+        for leaf in tree.leaves(field_types)
+    ]
+    kv_buffer = Buffer.from_numpy(np.zeros(1, np.float32))
+    kv = KVCacheInputsPerDevice(
+        kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer
+    )
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1, position=1)]], kv_cache_inputs=(kv,)
+    )
+    assert inputs.batch_context_lengths is not None
+    assert inputs.buffers == (
+        inputs.tokens,
+        inputs.return_n_logits,
+        inputs.input_row_offsets,
+        *inputs.batch_context_lengths,
+        *tree.leaves(kv),
+    )
+
+
+@pytest.mark.parametrize(
+    ("layout", "error"),
+    [
+        (
+            ("tokens", "tokens", "input_row_offsets", "return_n_logits", "kv"),
+            "duplicate",
+        ),
+        (
+            ("tokens", "input_row_offsets", "return_n_logits", "other", "kv"),
+            "unknown",
+        ),
+        (("tokens", "input_row_offsets", "return_n_logits"), "missing"),
+    ],
+)
+def test_input_layout_rejects_invalid_fields(
+    layout: tuple[str, ...], error: str
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        decoder_input_types(
+            NonCallableMock(get_symbolic_inputs=lambda: (X,)),
+            DeviceRef.CPU(),
+            input_layout=layout,
+        )
+
+
 @pytest.mark.parametrize(
     ("data_parallel_degree", "lora", "expected"),
     [
@@ -440,7 +512,7 @@ def test_the_batch_processor_fills_the_optional_inputs_its_graph_takes() -> (
     )
     inputs = processor.prepare_initial_token_inputs(
         [[_context(1, 2, position=5), _context(3, position=1)], []],
-        kv_cache_inputs=kv,
+        kv_cache_inputs=(kv,),
     )
     assert inputs.batch_context_lengths is not None
     assert [b.to_numpy()[0] for b in inputs.batch_context_lengths] == [12, 0]
@@ -975,6 +1047,31 @@ def test_a_later_stage_starts_from_the_boundary_with_its_own_weights() -> None:
     np.testing.assert_array_equal(
         np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 15)
     )
+
+
+def test_the_bound_inputs_keep_a_nested_stage_boundary_last() -> None:
+    types = decoder_input_types(
+        NonCallableMock(
+            get_symbolic_inputs=lambda: (
+                KVCacheInputsPerDevice(_KV_BLOCKS, X, X, X, X, X),
+            )
+        ),
+        DeviceRef.CPU(),
+    )
+    types["stage_boundary"] = {"h": X, "skip": (X,)}
+    processor = _batch_processor(1)
+    processor.bind_input_tree(types)
+    kv_buffer, h, skip = (
+        Buffer.from_numpy(np.full(2, value, np.float32)) for value in (1, 2, 3)
+    )
+    kv = KVCacheInputsPerDevice(
+        kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer
+    )
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1)]], kv_cache_inputs=(kv,)
+    )
+    inputs.stage_boundary = {"skip": (skip,), "h": h}
+    assert inputs.buffers[-2:] == (h, skip)
 
 
 class NestedStagedDecoder(StagedDecoder):

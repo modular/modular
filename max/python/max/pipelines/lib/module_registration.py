@@ -22,6 +22,7 @@ the graph signature, batching and execution.
 A registered module class can also set:
 
 - ``graph_name``, the name its graph compiles under (:func:`graph_name`);
+- ``input_layout``, the role field names in a graph's existing input order;
 - ``lora_targets``, the projections it serves LoRA adapters on
   (:func:`lora_targets`);
 - ``supports_data_parallel``, when it runs one replica per device
@@ -96,6 +97,7 @@ from transformers import AutoConfig
 
 from .decoder_scratch import DecoderScratch, build_decoder_scratch
 from .graph_specs import GraphRole, GraphSpec
+from .input_binding import _flatten_role_inputs
 from .interfaces.arch_config import ArchConfig, ModelOutputConfig
 from .interfaces.batch_processor import (
     BatchProcessor,
@@ -273,6 +275,7 @@ def decoder_input_types(
     lora: Sequence[TensorType] = (),
     state: Sequence[Any] = (),
     scratch: Sequence[BufferType] = (),
+    input_layout: Sequence[str] | None = None,
 ) -> OrderedDict[str, object]:
     """Returns a ``DECODER`` graph's input types, keyed by field.
 
@@ -297,6 +300,8 @@ def decoder_input_types(
         lora: The LoRA input types, when serving LoRA adapters.
         state: The input types of the decoder's per-request state.
         scratch: The decoder's workspace buffer types.
+        input_layout: The semantic fields in an existing graph's input
+            order. Defaults to the role's canonical order.
     """
     data_parallel = data_parallel_degree > 1
     fields = [
@@ -326,9 +331,17 @@ def decoder_input_types(
         types["state"] = tuple(state)
     if scratch:
         types["scratch"] = tuple(scratch)
-    return OrderedDict(
-        (name, types[name]) for name in _FIELD_ORDER if name in types
-    )
+    order = _FIELD_ORDER if input_layout is None else tuple(input_layout)
+    if input_layout is not None:
+        duplicates = sorted({name for name in order if order.count(name) > 1})
+        unknown = sorted(set(order) - set(_FIELD_ORDER))
+        missing = sorted(set(types) - set(order))
+        if duplicates or unknown or missing:
+            raise ValueError(
+                f"invalid decoder input_layout: duplicate fields {duplicates}, "
+                f"unknown fields {unknown}, missing fields {missing}"
+            )
+    return OrderedDict((name, types[name]) for name in order if name in types)
 
 
 def decoder_vision_input_types(
@@ -389,47 +402,60 @@ class DecoderModelInputs(ModelInputs):
     ep_inputs: tuple[Buffer, ...] = ()
     """The expert-parallel communication buffers, under expert parallelism."""
 
+    signal_buffers: tuple[Buffer, ...] = ()
+    """The graph-API decoder's allreduce signal buffers, when required."""
+
     state: tuple[Buffer, ...] = ()
     """The decoder's per-request state inputs, when it declares any."""
 
     scratch: tuple[Buffer, ...] = ()
     """The decoder's workspace buffers, when it declares any."""
+    stage_boundary: tree.Tree[Buffer] | None = None
+    """The preceding stage's forwarded tensors, in its declared tree."""
 
     request_ids: tuple[RequestID, ...] = ()
     """The step's requests in batch order, when the decoder keeps state for
     them."""
 
+    input_tree_def: tree.TreeDef | None = None
+    """The graph's semantic input order, bound by its batch processor."""
+
+    def input_fields(self) -> DecoderInputs[tree.Tree[Buffer], Buffer]:
+        """Returns the step's buffers as the shared role tree dataclass."""
+        return DecoderInputs[tree.Tree[Buffer], Buffer](
+            tokens=self.tokens,
+            vision=VisionInputs[tree.Tree[Buffer]](
+                embeddings=tuple(self.vision_embeddings),
+                scatter_indices=tuple(self.vision_scatter_indices),
+            ),
+            input_row_offsets=self.input_row_offsets,
+            host_input_row_offsets=self.host_input_row_offsets,
+            return_n_logits=self.return_n_logits,
+            data_parallel_splits=self.data_parallel_splits,
+            signals=self.signal_buffers,
+            kv=self.kv_cache_inputs,
+            batch_context_lengths=(
+                tuple(self.batch_context_lengths)
+                if self.batch_context_lengths is not None
+                else None
+            ),
+            ep=self.ep_inputs,
+            lora=tuple(self.lora_buffers),
+            state=self.state,
+            scratch=self.scratch,
+            stage_boundary=self.stage_boundary,
+        )
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """The step's buffers, in the graph's input order."""
-        data_parallel = (
-            ()
-            if self.data_parallel_splits is None
-            else (self.data_parallel_splits,)
-        )
-        host_input_row_offsets = (
-            ()
-            if self.host_input_row_offsets is None
-            else (self.host_input_row_offsets,)
-        )
-        return (
-            self.tokens,
-            *self.vision_embeddings,
-            *self.vision_scatter_indices,
-            self.input_row_offsets,
-            *host_input_row_offsets,
-            self.return_n_logits,
-            *data_parallel,
-            *(
-                tree.leaves(self.kv_cache_inputs)
-                if self.kv_cache_inputs is not None
-                else ()
-            ),
-            *(self.batch_context_lengths or ()),
-            *self.ep_inputs,
-            *self.lora_buffers,
-            *self.state,
-            *self.scratch,
+        fields = self.input_fields()
+        structure = self.input_tree_def
+        if structure is None:
+            _, structure = tree.flatten(fields)
+        return cast(
+            tuple[Buffer, ...],
+            _flatten_role_inputs(structure, fields, flat_fields=("ep",)),
         )
 
 
@@ -444,10 +470,12 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
 
     _batch_context_lengths: BatchContextLengths | None = None
     _ep_comm_initializer: ExpertParallelExchange | None = None
+    _input_tree_def: tree.TreeDef | None = None
 
     def bind_input_tree(self, input_tree: OrderedDict[str, object]) -> None:
         """Binds the graph's inputs, and sizes the ones this fills."""
         super().bind_input_tree(input_tree)
+        _, self._input_tree_def = tree.flatten(input_tree)
         self._batch_context_lengths = (
             BatchContextLengths(
                 self.runtime.data_parallel_degree,
@@ -500,7 +528,9 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[Any]:
-        """Returns the graph's input types without LoRA's, in order."""
+        """Returns the bound graph's inputs, or its defaults before binding."""
+        if self.input_tree is not None:
+            return tree.leaves(self.input_tree)
         return tree.leaves(
             decoder_input_types(
                 kv_params,
@@ -562,6 +592,7 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
+            input_tree_def=self._input_tree_def,
         )
         if data_parallel_degree > 1:
             inputs.host_input_row_offsets = Buffer.from_numpy(input_row_offsets)
@@ -984,6 +1015,7 @@ class ModuleV3DecoderPipelineModel(
                 else ()
             ),
             scratch=scratch.input_types if scratch is not None else (),
+            input_layout=getattr(decoder_cls, "input_layout", None),
         )
         # A stage after the first takes the previous stage's return last.
         if boundary := stage_input_types(stage, ()):

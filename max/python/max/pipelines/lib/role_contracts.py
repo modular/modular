@@ -46,6 +46,7 @@ TensorT = TypeVar("TensorT", default=Tensor)
 """
 
 _LeafT = TypeVar("_LeafT")
+_SignalT = TypeVar("_SignalT", default=BufferValue)
 
 
 @tree.dataclass(frozen=True, kw_only=True)
@@ -66,7 +67,7 @@ class VisionInputs(Generic[_LeafT]):
 
 
 @tree.dataclass(frozen=True, kw_only=True)
-class DecoderInputs(Generic[TensorT]):
+class DecoderInputs(Generic[TensorT, _SignalT]):
     """The inputs of a ``DECODER`` module's ``forward``.
 
     The decoder graph takes the fields in this order, which is the canonical
@@ -103,12 +104,13 @@ class DecoderInputs(Generic[TensorT]):
     ``data_parallel_splits[i + 1]``.
     """
 
-    signals: tuple[BufferValue, ...] | None = None
+    signals: tuple[_SignalT, ...] | None = None
     """The allreduce signal buffers, one per device, of a graph-API decoder.
 
     A multi-device graph-API decoder takes them, and so does one that sets
     ``always_signal_buffers``. A ModuleV3 decoder never sees them: its
-    compiled graph adds its own.
+    compiled graph adds its own. Runtime inputs hold driver buffers;
+    graph-API inputs hold buffer values by default.
     """
 
     kv: Any

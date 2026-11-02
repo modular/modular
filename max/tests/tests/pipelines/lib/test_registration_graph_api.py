@@ -319,6 +319,9 @@ def _batch_processor(
             signal_buffers=signal_buffers,
         ),
     )
+    # These batching cases supply one mocked KV input, rather than the graph
+    # tests' two separately named KV inputs.
+    input_types = {**input_types, "kv": X}
     processor.bind_input_tree(OrderedDict(input_types))
     return processor
 
