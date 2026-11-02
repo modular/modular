@@ -37,39 +37,11 @@ MO::TensorType refineShape(MO::TensorType ty1, MO::TensorType ty2);
 MO::TensorType refineShapeWithDType(MO::TensorType ty1, MO::TensorType ty2,
                                     DType dtype);
 
-/// inferMoTypesImpl for scatter-reduction ops whose axis is a scalar tensor
-/// operand (`scatter.add/max/min/mul`).
-void inferMOTypesScatterImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    TensorValue updates, TensorValue indices, TensorValue axis,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls);
-
-/// inferMoTypesImpl for `scatter`, whose axis is an attribute, not an operand.
-void inferMOTypesScatterImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    TensorValue updates, TensorValue indices,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls);
-
 /// inferMoTypesImpl for TopK-like ops
 void inferMOTypesTopKImpl(
     MLIRContext *context, MO::GraphOp graphOp, TensorValue input, TensorValue k,
     TensorValue axis, TensorValue sorted, std::optional<ValueRange> rmoResults,
     SmallVectorImpl<Type> &moOperandTypes, SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls);
-
-/// inferMoTypesImpl for all scatternd-like ops
-void inferMOTypesScatterNdImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    TensorValue updates, TensorValue indices,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
     SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
     SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls);
 

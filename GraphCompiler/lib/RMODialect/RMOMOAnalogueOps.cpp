@@ -203,51 +203,6 @@ void MOCastOp::build(OpBuilder &odsBuilder, OperationState &odsState,
   build(odsBuilder, odsState, input.getType().cloneWith(dtype), input);
 }
 
-void RMO::inferMOTypesScatterImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    TensorValue updates, TensorValue indices,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls) {
-
-  moOperandTypes.push_back(input.getType());
-  moInputParamDecls.push_back({});
-
-  // Updates and indices must have the same shape.
-  auto updatesTy = cast<MO::TensorType>(updates.getType());
-  auto indicesTy = cast<MO::TensorType>(indices.getType());
-  auto newUpdatesTy =
-      refineShapeWithDType(updatesTy, indicesTy, updatesTy.getDtype());
-  auto newIndicesTy =
-      refineShapeWithDType(updatesTy, indicesTy, indicesTy.getDtype());
-
-  moOperandTypes.push_back(newUpdatesTy);
-  moOperandTypes.push_back(newIndicesTy);
-  moInputParamDecls.push_back({});
-  moInputParamDecls.push_back({});
-
-  moResultTypes.push_back(input.getType());
-  moOutputParamDecls.push_back({});
-}
-
-void RMO::inferMOTypesScatterImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    TensorValue updates, TensorValue indices, TensorValue axis,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls) {
-
-  // Same as the attribute-axis `scatter`, plus a scalar `axis` operand.
-  inferMOTypesScatterImpl(context, graphOp, input, updates, indices, rmoResults,
-                          moOperandTypes, moResultTypes, moInputParamDecls,
-                          moOutputParamDecls);
-
-  moOperandTypes.push_back(axis.getType().cloneWith(ArrayRef<TypedAttr>{}));
-  moInputParamDecls.push_back({});
-}
-
 static void inferConvMOTypesImpl(
     MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
     TensorValue filter, TensorValue strides, TensorValue dilations,
@@ -874,25 +829,6 @@ void MORandomUniformOp::inferMOTypesImpl(
     return;
   moResultTypes.push_back(cast<TensorType>((*rmoResults)[0].getType()));
   moOutputParamDecls.push_back({});
-}
-
-void RMO::inferMOTypesScatterNdImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    TensorValue updates, TensorValue indices,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls) {
-  TensorType inOutTy = input.getType();
-  moOperandTypes.push_back(inOutTy);
-  moInputParamDecls.push_back({});
-  moResultTypes.push_back(inOutTy);
-  moOutputParamDecls.push_back({});
-
-  moOperandTypes.push_back(updates.getType());
-  moInputParamDecls.push_back({});
-  moOperandTypes.push_back(indices.getType());
-  moInputParamDecls.push_back({});
 }
 
 void MONonMaximumSuppressionOp::inferMOTypesImpl(

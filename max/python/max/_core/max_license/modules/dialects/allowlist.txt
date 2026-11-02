@@ -332,16 +332,6 @@ RMO_MOResizeBicubicOp          # MoResizeBicubicOp
 RMO_MOResizeLinearOp           # MoResizeLinearOp
 RMO_MOResizeNearestOp          # MoResizeNearestOp
 RMO_MORoiAlignOp               # MoRoiAlignOp
-RMO_MOScatterAddOp             # MoScatterAddOp
-RMO_MOScatterMaxOp             # MoScatterMaxOp
-RMO_MOScatterMinOp             # MoScatterMinOp
-RMO_MOScatterMulOp             # MoScatterMulOp
-RMO_MOScatterNdAddOp           # MoScatterNdAddOp
-RMO_MOScatterNdMaxOp           # MoScatterNdMaxOp
-RMO_MOScatterNdMinOp           # MoScatterNdMinOp
-RMO_MOScatterNdMulOp           # MoScatterNdMulOp
-RMO_MOScatterNdOp              # MoScatterNdOp
-RMO_MOScatterOp                # MoScatterOp
 RMO_MOSelectOp                 # MoSelectOp; declares output params; graph.py reaches it structurally
 RMO_MOShapeOfOp                # MoShapeOfOp; declares output params; graph.py reaches it structurally
 RMO_MOSliceOp                  # MoSliceOp

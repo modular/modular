@@ -5379,7 +5379,7 @@ class TestScatterAddOp:
     """Tests for scatter_add op via MO interpreter on CPU.
 
     Uses ``F.scatter_add`` which routes through ``ops.scatter_add`` ->
-    ``rmo.MoScatterAddOp`` -> ``mo.scatter.add`` -> interpreter handler.
+    ``mo.ScatterAddOp`` -> ``mo.scatter.add`` -> interpreter handler.
     The reference is ``numpy.add.at``, which accumulates duplicate indices.
     """
 
@@ -5540,7 +5540,7 @@ class TestScatterMaxOp:
     """Tests for scatter_max op via MO interpreter on CPU.
 
     Uses ``F.scatter_max`` which routes through ``ops.scatter_max`` ->
-    ``rmo.MoScatterMaxOp`` -> ``mo.scatter.max`` -> interpreter handler.
+    ``mo.ScatterMaxOp`` -> ``mo.scatter.max`` -> interpreter handler.
     The reference keeps ``max(existing, update)`` at duplicate indices.
     """
 
@@ -5651,7 +5651,7 @@ class TestScatterMinOp:
     """Tests for scatter_min op via MO interpreter on CPU.
 
     Uses ``F.scatter_min`` which routes through ``ops.scatter_min`` ->
-    ``rmo.MoScatterMinOp`` -> ``mo.scatter.min`` -> interpreter handler.
+    ``mo.ScatterMinOp`` -> ``mo.scatter.min`` -> interpreter handler.
     The reference keeps ``min(existing, update)`` at duplicate indices.
     """
 
@@ -5764,7 +5764,7 @@ class TestScatterMulOp:
     """Tests for scatter_mul op via MO interpreter on CPU.
 
     Uses ``F.scatter_mul`` which routes through ``ops.scatter_mul`` ->
-    ``rmo.MoScatterMulOp`` -> ``mo.scatter.mul`` -> interpreter handler.
+    ``mo.ScatterMulOp`` -> ``mo.scatter.mul`` -> interpreter handler.
     The reference multiplies ``output[...][idx] *= update`` at each index.
     """
 
@@ -5966,7 +5966,7 @@ class TestScatterNdOp:
     """Tests for scatter_nd op via the MO interpreter (CPU + GPU capable).
 
     Uses ``F.scatter_nd`` which routes through ``ops.scatter_nd`` ->
-    ``rmo.MoScatterNdOp`` -> ``mo.scatter_nd`` -> interpreter handler.
+    ``mo.ScatterNdOp`` -> ``mo.scatter_nd`` -> interpreter handler.
     The NumPy reference iterates over update positions via ``np.ndindex``
     to mirror the kernel's exact flat-index semantics.
     """
@@ -6114,7 +6114,7 @@ class TestScatterNdAddOp:
     """Tests for scatter_nd_add op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_add`` which routes through ``ops.scatter_nd_add`` ->
-    ``rmo.MoScatterNdAddOp`` -> ``mo.scatter_nd.add`` -> interpreter handler.
+    ``mo.ScatterNdAddOp`` -> ``mo.scatter_nd.add`` -> interpreter handler.
     Duplicate index vectors are accumulated (summed).
     """
 
@@ -6262,7 +6262,7 @@ class TestScatterNdMaxOp:
     """Tests for scatter_nd_max op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_max`` which routes through ``ops.scatter_nd_max`` ->
-    ``rmo.MoScatterNdMaxOp`` -> ``mo.scatter_nd.max`` -> interpreter handler.
+    ``mo.ScatterNdMaxOp`` -> ``mo.scatter_nd.max`` -> interpreter handler.
     Duplicate index vectors keep the maximum.
     """
 
@@ -6388,7 +6388,7 @@ class TestScatterNdMinOp:
     """Tests for scatter_nd_min op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_min`` which routes through ``ops.scatter_nd_min`` ->
-    ``rmo.MoScatterNdMinOp`` -> ``mo.scatter_nd.min`` -> interpreter handler.
+    ``mo.ScatterNdMinOp`` -> ``mo.scatter_nd.min`` -> interpreter handler.
     Duplicate index vectors keep the minimum.
     """
 
@@ -6514,7 +6514,7 @@ class TestScatterNdMulOp:
     """Tests for scatter_nd_mul op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_mul`` which routes through ``ops.scatter_nd_mul`` ->
-    ``rmo.MoScatterNdMulOp`` -> ``mo.scatter_nd.mul`` -> interpreter handler.
+    ``mo.ScatterNdMulOp`` -> ``mo.scatter_nd.mul`` -> interpreter handler.
     Duplicate index vectors multiply.
     """
 
