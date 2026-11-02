@@ -24,7 +24,11 @@ from unittest.mock import MagicMock
 
 import pytest
 from max.benchmark.benchmark_serving import validate_task_and_endpoint
-from max.benchmark.benchmark_shared.config import SamplingConfig
+from max.benchmark.benchmark_shared.config import (
+    BenchmarkTask,
+    Endpoint,
+    SamplingConfig,
+)
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatMessage,
     ImageContentBlock,
@@ -1687,74 +1691,103 @@ class TestCountGeneratedMedia:
 class TestValidateTaskAndEndpoint:
     """Tests for validate_task_and_endpoint."""
 
-    def test_text_gen_modular_chat_ok(self) -> None:
-        validate_task_and_endpoint("text-generation", "/v1/chat/completions")
+    @pytest.mark.parametrize(
+        ("task", "endpoint"),
+        [
+            pytest.param(
+                "text-generation", "/v1/chat/completions", id="text_gen_chat"
+            ),
+            pytest.param(
+                "text-generation", "/v1/completions", id="text_gen_completions"
+            ),
+            pytest.param(
+                "text-to-image", "/v1/responses", id="pixel_responses"
+            ),
+            pytest.param(
+                "text-to-image", "/v1/images/generations", id="pixel_images"
+            ),
+            pytest.param(
+                "text-to-image", "/v1/chat/completions", id="pixel_chat"
+            ),
+            pytest.param(
+                "text-to-video", "/v1/videos/sync", id="pixel_videos_sync"
+            ),
+            # i2v is a video task and may use the video endpoints.
+            pytest.param(
+                "image-to-video", "/v1/videos/sync", id="i2v_videos_sync"
+            ),
+            pytest.param("text-to-video", "/v1/videos", id="pixel_videos"),
+            pytest.param("image-to-video", "/v1/videos", id="i2v_videos"),
+            pytest.param("image-to-image", "/v1/responses", id="i2i_responses"),
+        ],
+    )
+    def test_accepts(self, task: BenchmarkTask, endpoint: Endpoint) -> None:
+        validate_task_and_endpoint(task, endpoint)
 
-    def test_text_gen_modular_completions_ok(self) -> None:
-        validate_task_and_endpoint("text-generation", "/v1/completions")
-
-    def test_text_gen_responses_rejected(self) -> None:
-        with pytest.raises(ValueError, match="does not support"):
-            validate_task_and_endpoint("text-generation", "/v1/responses")
-
-    def test_text_gen_images_rejected(self) -> None:
-        with pytest.raises(ValueError, match="does not support"):
-            validate_task_and_endpoint(
-                "text-generation", "/v1/images/generations"
-            )
-
-    def test_pixel_gen_responses_ok(self) -> None:
-        validate_task_and_endpoint("text-to-image", "/v1/responses")
-
-    def test_pixel_gen_images_ok(self) -> None:
-        validate_task_and_endpoint("text-to-image", "/v1/images/generations")
-
-    def test_pixel_gen_chat_ok(self) -> None:
-        validate_task_and_endpoint("text-to-image", "/v1/chat/completions")
-
-    def test_pixel_gen_completions_rejected(self) -> None:
-        with pytest.raises(ValueError, match="requires --endpoint"):
-            validate_task_and_endpoint("text-to-image", "/v1/completions")
-
-    def test_pixel_gen_videos_sync_ok(self) -> None:
-        validate_task_and_endpoint("text-to-video", "/v1/videos/sync")
-
-    def test_image_to_video_videos_sync_ok(self) -> None:
-        # i2v is a video task and may use the video endpoints.
-        validate_task_and_endpoint("image-to-video", "/v1/videos/sync")
-
-    def test_text_gen_videos_sync_rejected(self) -> None:
-        with pytest.raises(ValueError, match="does not support"):
-            validate_task_and_endpoint("text-generation", "/v1/videos/sync")
-
-    def test_text_to_image_videos_sync_rejected(self) -> None:
-        with pytest.raises(ValueError, match="only valid for"):
-            validate_task_and_endpoint("text-to-image", "/v1/videos/sync")
-
-    def test_image_to_image_videos_sync_rejected(self) -> None:
-        with pytest.raises(ValueError, match="only valid for"):
-            validate_task_and_endpoint("image-to-image", "/v1/videos/sync")
-
-    def test_pixel_gen_videos_ok(self) -> None:
-        validate_task_and_endpoint("text-to-video", "/v1/videos")
-
-    def test_image_to_video_videos_ok(self) -> None:
-        validate_task_and_endpoint("image-to-video", "/v1/videos")
-
-    def test_text_gen_videos_rejected(self) -> None:
-        with pytest.raises(ValueError, match="does not support"):
-            validate_task_and_endpoint("text-generation", "/v1/videos")
-
-    def test_text_to_image_videos_rejected(self) -> None:
-        with pytest.raises(ValueError, match="only valid for"):
-            validate_task_and_endpoint("text-to-image", "/v1/videos")
-
-    def test_image_to_image_videos_rejected(self) -> None:
-        with pytest.raises(ValueError, match="only valid for"):
-            validate_task_and_endpoint("image-to-image", "/v1/videos")
-
-    def test_image_to_image_responses_ok(self) -> None:
-        validate_task_and_endpoint("image-to-image", "/v1/responses")
+    @pytest.mark.parametrize(
+        ("task", "endpoint", "match"),
+        [
+            pytest.param(
+                "text-generation",
+                "/v1/responses",
+                "does not support",
+                id="text_gen_responses",
+            ),
+            pytest.param(
+                "text-generation",
+                "/v1/images/generations",
+                "does not support",
+                id="text_gen_images",
+            ),
+            pytest.param(
+                "text-to-image",
+                "/v1/completions",
+                "requires --endpoint",
+                id="pixel_completions",
+            ),
+            pytest.param(
+                "text-generation",
+                "/v1/videos/sync",
+                "does not support",
+                id="text_gen_videos_sync",
+            ),
+            pytest.param(
+                "text-to-image",
+                "/v1/videos/sync",
+                "only valid for",
+                id="t2i_videos_sync",
+            ),
+            pytest.param(
+                "image-to-image",
+                "/v1/videos/sync",
+                "only valid for",
+                id="i2i_videos_sync",
+            ),
+            pytest.param(
+                "text-generation",
+                "/v1/videos",
+                "does not support",
+                id="text_gen_videos",
+            ),
+            pytest.param(
+                "text-to-image",
+                "/v1/videos",
+                "only valid for",
+                id="t2i_videos",
+            ),
+            pytest.param(
+                "image-to-image",
+                "/v1/videos",
+                "only valid for",
+                id="i2i_videos",
+            ),
+        ],
+    )
+    def test_rejects(
+        self, task: BenchmarkTask, endpoint: Endpoint, match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            validate_task_and_endpoint(task, endpoint)
 
 
 class TestMarkCancelledIfPastDeadline:
