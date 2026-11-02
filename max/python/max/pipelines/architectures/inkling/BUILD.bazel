@@ -10,7 +10,10 @@ filegroup(
 modular_py_library(
     name = "inkling",
     srcs = glob(["**/*.py"]),
-    data = [":recipe_configs"],
+    data = [
+        "formatspec.json",
+        ":recipe_configs",
+    ],
     deps = [
         requirement("huggingface-hub"),
         requirement("numpy"),
@@ -33,4 +36,9 @@ modular_py_library(
         "//max/python/max/profiler",
         "//max/python/max/support",
     ],
+)
+
+exports_files(
+    ["formatspec.json"],
+    visibility = ["//formatspec:__subpackages__"],
 )

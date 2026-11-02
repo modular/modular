@@ -344,6 +344,7 @@ def test_checkpoint_format_spec_is_picked_per_checkpoint() -> None:
         "deepseekV41",
         "gemma4",
         "glm5_1",
+        "inkling",
         "laguna",
         "lfm3",
         "mimo_v2",
