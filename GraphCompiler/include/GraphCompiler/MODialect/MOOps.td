@@ -5021,6 +5021,7 @@ class MO_DistributedOp<string name, list<Trait> traits = []> :
 def MO_AllReduceSumOp : MO_DistributedOp<"distributed.allreduce.sum", [
   AllTypesMatch<["inputs", "outputs"]>,
   MO_MultiDevice,
+  MO_DistributedExpansion,
 ]> {
   let summary = "Allreduce sum across N devices.";
   let description = [{
@@ -5278,6 +5279,7 @@ def MO_DistributedScatterOp : MO_DistributedOp<"distributed.scatter", [
 def MO_AllGatherOp : MO_DistributedOp<"distributed.allgather", [
   MO_HasDeviceInterface,
   MO_MultiDevice,
+  MO_DistributedExpansion,
 ]> {
   let summary = "AllGather across N devices (variadic).";
   let description = [{
@@ -5635,6 +5637,7 @@ def MO_DistributedBroadcastOp : MO_Op<"distributed.broadcast", [
   MO_HasDeviceInterface,
   MO_MultiDeviceFrom<"outputs">,
   MO_TensorOpInterface,
+  MO_DistributedExpansion,
 ]> {
   let summary = "Broadcast from root device to all participating devices.";
   let description = [{

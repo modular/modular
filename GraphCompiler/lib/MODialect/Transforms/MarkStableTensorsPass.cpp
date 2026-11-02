@@ -21,7 +21,6 @@
 #include "mlir/IR/Visitors.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallVector.h"
 
 #define DEBUG_TYPE "mo-mark-stable-tensors"
 
@@ -41,109 +40,21 @@ namespace {
 // MarkStableTensorsPass
 //===----------------------------------------------------------------------===//
 
-// Replaces each distributed collective with one bundled op per participating
-// device. The distributed kernels launch on every device from a single host
-// entry point, which has no device-graph form; the bundled kernels record a
-// single device's launch and read their peers through stable address slots,
-// so the collective partitioner can place each copy in its device's region.
-static void replaceDistributedOp(Operation *op, IRRewriter &rewriter,
-                                 ValueRange outputs, ValueRange outChains,
-                                 ValueRange origOutputs, Value origOutChain) {
-  Value outChain = ChainCreateOp::create(rewriter, op->getLoc(), outChains);
-  rewriter.replaceAllUsesWith(origOutputs, outputs);
-  rewriter.replaceAllUsesWith(origOutChain, outChain);
-  rewriter.eraseOp(op);
-}
-
-static LogicalResult expandAllReduce(AllReduceSumOp allReduce) {
-  IRRewriter rewriter(allReduce);
-  Location loc = allReduce.getLoc();
-  Value inChain = allReduce.getInChain();
-  ValueRange origOutputs = allReduce.getOutputs();
-
-  SmallVector<Value> outputs, outChains;
-  for (auto [rank, origOutput] : llvm::enumerate(origOutputs)) {
-    auto bundled = BundledAllReduceSumOp::create(
-        rewriter, loc, origOutput.getType(), inChain.getType(),
-        allReduce.getInputs(), allReduce.getSignalBuffers(), inChain,
-        allReduce.getGroupSizeAttr(), rewriter.getI64IntegerAttr(rank));
-    outputs.push_back(bundled.getOutput());
-    outChains.push_back(bundled.getOutChain());
-  }
-  replaceDistributedOp(allReduce, rewriter, outputs, outChains, origOutputs,
-                       allReduce.getOutChain());
-  return success();
-}
-
-static LogicalResult expandBroadcast(DistributedBroadcastOp broadcast) {
-  IRRewriter rewriter(broadcast);
-  Location loc = broadcast.getLoc();
-  Value inChain = broadcast.getInChain();
-  ValueRange origOutputs = broadcast.getOutputs();
-
-  // Every device's copy, the root's included, reads the root tensor; the
-  // stable marking below routes that read through a slot.
-  SmallVector<Value> outputs, outChains;
-  for (auto [rank, origOutput] : llvm::enumerate(origOutputs)) {
-    auto bundled = BundledBroadcastOp::create(
-        rewriter, loc, origOutput.getType(), inChain.getType(),
-        broadcast.getInput(), broadcast.getSignalBuffers(), inChain,
-        broadcast.getRootAttr(), rewriter.getI64IntegerAttr(rank));
-    outputs.push_back(bundled.getOutput());
-    outChains.push_back(bundled.getOutChain());
-  }
-  replaceDistributedOp(broadcast, rewriter, outputs, outChains, origOutputs,
-                       broadcast.getOutChain());
-  return success();
-}
-
-static LogicalResult expandAllGather(AllGatherOp allGather) {
-  ValueRange inputs = allGather.getInputs();
-  auto numDevices = static_cast<int64_t>(inputs.size());
-  int64_t groupSize = allGather.getGroupSize();
-  if (groupSize != numDevices)
-    return allGather.emitOpError()
-           << "a device graph supports only a full-world allgather "
-              "(group_size equal to the number of inputs, "
-           << numDevices << "), but group_size is " << groupSize
-           << ": a grouped allgather routes part of a shard through a paired "
-              "group's buffers, which a device graph cannot express";
-  if (allGather.getSliceRows())
-    return allGather.emitOpError()
-           << "a device graph has no per-device form of a row-sliced "
-              "allgather (slice_rows)";
-
-  IRRewriter rewriter(allGather);
-  Location loc = allGather.getLoc();
-  Value inChain = allGather.getInChain();
-
-  // The distributed op's outputs are device-major: device `d` owns the run
-  // `[d * N, (d + 1) * N)`, one gathered piece per peer.
-  ValueRange origOutputs = allGather.getOutputs();
-  SmallVector<Value> outputs, outChains;
-  for (auto rank : llvm::seq(numDevices)) {
-    auto types =
-        llvm::map_to_vector(origOutputs.slice(rank * numDevices, numDevices),
-                            [](Value v) { return v.getType(); });
-    auto bundled =
-        BundledAllGatherOp::create(rewriter, loc, types, inChain.getType(),
-                                   inputs, allGather.getSignalBuffers(),
-                                   inChain, rewriter.getI64IntegerAttr(rank));
-    llvm::append_range(outputs, bundled.getOutputs());
-    outChains.push_back(bundled.getOutChain());
-  }
-  replaceDistributedOp(allGather, rewriter, outputs, outChains, origOutputs,
-                       allGather.getOutChain());
-  return success();
-}
-
+// Distributed collectives launch on every device from a single host entry
+// point, which has no device-graph form. Ops with a per-device form say how to
+// rewrite themselves, so the walk stays free of any concrete distributed op;
+// the bundled copies declare stable peers, so the marking below is what routes
+// their inputs through `mo.stable.create`.
 static LogicalResult expandDistributedCollectives(GraphOp graphOp) {
   auto result = graphOp.walk([](Operation *op) -> WalkResult {
-    return TypeSwitch<Operation *, LogicalResult>(op)
-        .Case<DistributedBroadcastOp>(expandBroadcast)
-        .Case<AllReduceSumOp>(expandAllReduce)
-        .Case<AllGatherOp>(expandAllGather)
-        .Default([](auto) { return success(); });
+    auto expansion = dyn_cast<MODistributedExpansionInterface>(op);
+    if (!expansion)
+      return WalkResult::advance();
+
+    IRRewriter rewriter(op);
+    if (failed(expansion.replaceWithBundledOps(rewriter)))
+      return WalkResult::interrupt();
+    return WalkResult::advance();
   });
   return success(!result.wasInterrupted());
 }

@@ -3791,6 +3791,28 @@ void AllReduceSumOp::getEffects(
     effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
 }
 
+LogicalResult AllReduceSumOp::replaceWithBundledOps(IRRewriter &rewriter) {
+  Location loc = getLoc();
+  Value inChain = getInChain();
+
+  // Every copy reduces over the whole world rather than its own group: the
+  // kernel indexes the peer arrays by global rank, which is `peer_rank` here,
+  // so slicing a grouped allreduce down to its group's operands would make
+  // each device outside the first group read past the end of its arrays.
+  SmallVector<Value> outputs, outChains;
+  for (auto [rank, origOutput] : llvm::enumerate(getOutputs())) {
+    auto bundled = BundledAllReduceSumOp::create(
+        rewriter, loc, origOutput.getType(), inChain.getType(), getInputs(),
+        getSignalBuffers(), inChain, getGroupSizeAttr(),
+        rewriter.getI64IntegerAttr(rank));
+    outputs.push_back(bundled.getOutput());
+    outChains.push_back(bundled.getOutChain());
+  }
+  ::Impl::replaceDistributedOp(rewriter, getOperation(), getOutputs(),
+                               getOutChain(), outputs, outChains);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // BundledExpandOp
 //===----------------------------------------------------------------------===//
@@ -4582,6 +4604,44 @@ void AllGatherOp::getEffects(
     effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
 }
 
+LogicalResult AllGatherOp::replaceWithBundledOps(IRRewriter &rewriter) {
+  ValueRange inputs = getInputs();
+  auto numDevices = static_cast<int64_t>(inputs.size());
+  int64_t groupSize = getGroupSize();
+  if (groupSize != numDevices)
+    return emitOpError()
+           << "a device graph supports only a full-world allgather "
+              "(group_size equal to the number of inputs, "
+           << numDevices << "), but group_size is " << groupSize
+           << ": a grouped allgather routes part of a shard through a paired "
+              "group's buffers, which a device graph cannot express";
+  if (getSliceRows())
+    return emitOpError()
+           << "a device graph has no per-device form of a row-sliced "
+              "allgather (slice_rows)";
+
+  Location loc = getLoc();
+  Value inChain = getInChain();
+
+  // The distributed op's outputs are device-major: device `d` owns the run
+  // `[d * N, (d + 1) * N)`, one gathered piece per peer.
+  ValueRange origOutputs = getOutputs();
+  SmallVector<Value> outputs, outChains;
+  for (auto rank : llvm::seq(numDevices)) {
+    auto types =
+        llvm::map_to_vector(origOutputs.slice(rank * numDevices, numDevices),
+                            [](Value v) { return v.getType(); });
+    auto bundled = BundledAllGatherOp::create(
+        rewriter, loc, types, inChain.getType(), inputs, getSignalBuffers(),
+        inChain, rewriter.getI64IntegerAttr(rank));
+    llvm::append_range(outputs, bundled.getOutputs());
+    outChains.push_back(bundled.getOutChain());
+  }
+  ::Impl::replaceDistributedOp(rewriter, getOperation(), origOutputs,
+                               getOutChain(), outputs, outChains);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // AllGatherConcatOp
 //===----------------------------------------------------------------------===//
@@ -4727,6 +4787,28 @@ void DistributedBroadcastOp::getEffects(
 
   for (auto &sig : signalBuffers)
     effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+LogicalResult
+DistributedBroadcastOp::replaceWithBundledOps(IRRewriter &rewriter) {
+  Location loc = getLoc();
+  Value inChain = getInChain();
+  Value input = getInput();
+
+  // Every device's copy, the root's included, reads the root tensor; stable
+  // marking routes that read through a slot afterwards.
+  SmallVector<Value> outputs, outChains;
+  for (auto [rank, origOutput] : llvm::enumerate(getOutputs())) {
+    auto bundled = BundledBroadcastOp::create(
+        rewriter, loc, origOutput.getType(), inChain.getType(), input,
+        getSignalBuffers(), inChain, getRootAttr(),
+        rewriter.getI64IntegerAttr(rank));
+    outputs.push_back(bundled.getOutput());
+    outChains.push_back(bundled.getOutChain());
+  }
+  ::Impl::replaceDistributedOp(rewriter, getOperation(), getOutputs(),
+                               getOutChain(), outputs, outChains);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

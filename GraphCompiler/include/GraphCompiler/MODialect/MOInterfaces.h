@@ -176,6 +176,13 @@ LogicalResult verifyExplicitDevice(Operation *op);
 /// `isDeviceGraph` `mo.graph`.
 LogicalResult verifyBundledCollectiveInterface(Operation *op);
 
+/// Replaces a distributed collective with the bundled ops that produced
+/// `outputs` and `outChains`: merges the out-chains, replaces the uses of
+/// `origOutputs` and `origOutChain`, and erases the op.
+void replaceDistributedOp(IRRewriter &rewriter, Operation *distributedOp,
+                          ValueRange origOutputs, Value origOutChain,
+                          ValueRange outputs, ValueRange outChains);
+
 ShapeMaterializeResult
 materializeReductionShapeDefs(Reduction op, ArrayRef<TypedAttr> inputAttrs);
 
