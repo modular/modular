@@ -31,7 +31,6 @@ from std.sys.info import size_of
 from extensibility import (
     Fused,
     Input,
-    InputTensor,
     InputVariadicTensors,
     MutableInput,
     Output,
@@ -42,15 +41,11 @@ from extensibility import (
     Tensor,
     TensorTuple,
     TileTensorable,
-)
-from extensibility import (
-    _MutableInputTensor as MutableInputTensor,
+    UnsafeFusedView,
+    unsafe_fused_view,
 )
 from extensibility import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
-)
-from extensibility import (
-    _FusedOutputTensor as FusedOutputTensor,
 )
 
 from comm.device_collective import _launch_device_collective
@@ -113,10 +108,10 @@ struct Struct_ep_init:
         *,
         nvfp4_dyn_global_scales: Bool = False,
     ](
-        dev_ptrs: OutputTensor[dtype=.uint64, rank=2, ...],
-        my_rank_tensor: OutputTensor[dtype=.int32, rank=1, ...],
-        atomic_counters_0: MutableInputTensor[dtype=.int32, ...],
-        atomic_counters_1: MutableInputTensor[dtype=.int32, ...],
+        dev_ptrs: Some[Output & Tensor],
+        my_rank_tensor: Some[Output & Tensor],
+        atomic_counters_0: Some[MutableInput & Tensor],
+        atomic_counters_1: Some[MutableInput & Tensor],
         context: DeviceContext,
     ) raises:
         """This kernel initializes the vendor library for Expert Parallelism
@@ -146,6 +141,14 @@ struct Struct_ep_init:
             atomic_counters_1: Atomic counters for buffer group 1.
             context: GPU device context
         """
+        comptime assert conforms_to(type_of(dev_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(my_rank_tensor), TileTensorable)
+        comptime assert conforms_to(type_of(atomic_counters_0), TileTensorable)
+        comptime assert conforms_to(type_of(atomic_counters_1), TileTensorable)
+        comptime assert type_of(dev_ptrs).rank == 2
+        comptime assert type_of(my_rank_tensor).rank == 1
+        comptime assert type_of(atomic_counters_0).rank == 1
+        comptime assert type_of(atomic_counters_1).rank == 1
         # Ensure this kernel only runs on GPU targets
         comptime assert is_gpu[target](), "EP is only supported on GPU."
         var gpu_ctx = context
@@ -233,20 +236,28 @@ struct Struct_ep_init:
         # These counters coordinate work between different thread blocks.
         # A config that can host a fused EP kernel allocates the reserved
         # words too (`allocation_size()`); the memset zeroes them as well.
+        comptime counters_0_size = type_of(atomic_counters_0)._shape_types[
+            0
+        ].static_value
+        comptime counters_1_size = type_of(atomic_counters_1)._shape_types[
+            0
+        ].static_value
         comptime assert (
-            atomic_counters_0.static_spec.static_size
-            == EPLocalSyncCounters[n_experts].total_size()
-            or atomic_counters_0.static_spec.static_size
+            counters_0_size == EPLocalSyncCounters[n_experts].total_size()
+            or counters_0_size
             == EPLocalSyncCounters[n_experts].allocation_size()
         ), "Atomic counters 0 size doesn't match expected size."
-        var atomic_counters_0_buf = atomic_counters_0.to_device_buffer(gpu_ctx)
+        var atomic_counters_0_buf = atomic_counters_0.to_tile_tensor[
+            .int32
+        ]().to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_0_buf, Int32(0))
 
         comptime assert (
-            atomic_counters_1.static_spec.static_size
-            == atomic_counters_0.static_spec.static_size
+            counters_1_size == counters_0_size
         ), "Atomic counters 1 size doesn't match expected size."
-        var atomic_counters_1_buf = atomic_counters_1.to_device_buffer(gpu_ctx)
+        var atomic_counters_1_buf = atomic_counters_1.to_tile_tensor[
+            .int32
+        ]().to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
         var dispatch_send_p: MutPointer[UInt8, MutUntrackedOrigin]
@@ -311,15 +322,17 @@ struct Struct_ep_init:
         )
         gpu_ctx.enqueue_memset(combine_recv_count_buf, UInt64.MAX_FINITE)
 
+        var dev_ptrs_tensor = dev_ptrs.to_tile_tensor[.uint64]()
+
         # Group 0: Dispatch phase buffer pointers
-        dev_ptrs[0, 0] = UInt64(Int(dispatch_send_p))
-        dev_ptrs[0, 1] = UInt64(Int(dispatch_recv_p))
-        dev_ptrs[0, 2] = UInt64(Int(dispatch_recv_count_p))
+        dev_ptrs_tensor[0, 0] = UInt64(Int(dispatch_send_p))
+        dev_ptrs_tensor[0, 1] = UInt64(Int(dispatch_recv_p))
+        dev_ptrs_tensor[0, 2] = UInt64(Int(dispatch_recv_count_p))
 
         # Group 1: Combine phase buffer pointers
-        dev_ptrs[1, 0] = UInt64(pointer_to_int(combine_send_p))
-        dev_ptrs[1, 1] = UInt64(Int(combine_recv_p))
-        dev_ptrs[1, 2] = UInt64(Int(combine_recv_count_p))
+        dev_ptrs_tensor[1, 0] = UInt64(pointer_to_int(combine_send_p))
+        dev_ptrs_tensor[1, 1] = UInt64(Int(combine_recv_p))
+        dev_ptrs_tensor[1, 2] = UInt64(Int(combine_recv_count_p))
 
         # Store current device's rank
         var my_rank: Int32
@@ -328,7 +341,7 @@ struct Struct_ep_init:
             my_rank = Int32(shmem_my_pe())
         else:
             my_rank = Int32(gpu_ctx.device().id)
-        my_rank_tensor[0] = my_rank
+        my_rank_tensor.to_tile_tensor[.int32]()[0] = my_rank
 
 
 @extensibility.register("ep.dispatch_async")
@@ -2793,7 +2806,6 @@ struct Struct_ep_combine_wait:
     @staticmethod
     def execute[
         combine_dtype: DType,
-        router_weights_dtype: DType,
         //,
         hidden_size: Int,
         top_k: Int,
@@ -2803,11 +2815,11 @@ struct Struct_ep_combine_wait:
         n_nodes: Int,
         target: StaticString,
     ](
-        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
-        atomic_counters: MutableInputTensor[dtype=.int32, rank=1, ...],
-        recv_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_count_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
+        output_tokens: Some[Output & Fused & StoreAccess],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        router_weights: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism combine completion kernel.
@@ -2819,8 +2831,6 @@ struct Struct_ep_combine_wait:
         Parameters:
             combine_dtype: `DType` used for the token payload during
                 the combine phase (inferred).
-            router_weights_dtype: `DType` of the router weights
-                tensor used to compute the weighted sum (inferred).
             hidden_size: Size of the model's hidden dimension.
             top_k: Number of experts each token is routed to.
             n_experts: Total number of experts across all GPUs.
@@ -2845,12 +2855,26 @@ struct Struct_ep_combine_wait:
                 Shape `[num_tokens, top_k]`.
             context: GPU device context for the current device.
         """
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(router_weights), TileTensorable)
+        comptime assert type_of(output_tokens).dtype == combine_dtype
+        comptime assert type_of(output_tokens).rank == 2
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        comptime assert type_of(router_weights).rank == 2
         comptime assert (
-            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
+            type_of(output_tokens)._shape_types[1].static_value == hidden_size
         ), "EP combine: output tokens shape doesn't match hidden size."
-        var router_weights_tensor = router_weights.to_tile_tensor[.int64]()
+        var router_weights_tensor = router_weights.to_tile_tensor()
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
+
+        comptime assert conforms_to(type_of(output_tokens), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output_tokens)
+        comptime assert conforms_to(type_of(out_view), Storable)
 
         @inline(.always)
         def router_weights_fn[
@@ -2868,12 +2892,10 @@ struct Struct_ep_combine_wait:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
-            output_tokens._fused_store[
-                width=width, element_alignment=alignment
-            ](
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[combine_dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         ep_combine_wait_kernel_api[
@@ -2886,10 +2908,10 @@ struct Struct_ep_combine_wait:
             n_nodes,
             target,
         ](
-            output_tokens.dim_size[0](),
-            atomic_counters.to_tile_tensor[.int64](),
-            recv_ptrs.to_tile_tensor[.int64](),
-            recv_count_ptrs.to_tile_tensor[.int64](),
+            coord_to_index_list(output_tokens.shape())[0],
+            atomic_counters.to_tile_tensor[.int32](),
+            recv_ptrs.to_tile_tensor[.uint64](),
+            recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
             output_fn,
             router_weights_fn,
@@ -2903,8 +2925,6 @@ struct Struct_ep_combine:
     @inline(.always)
     @staticmethod
     def execute[
-        combine_dtype: DType,
-        router_weights_dtype: DType,
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -2916,14 +2936,14 @@ struct Struct_ep_combine:
         //,
         target: StaticString,
     ](
-        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
-        atomic_counters: MutableInputTensor[dtype=.int32, rank=1, ...],
-        input_tokens: InputTensor[dtype=combine_dtype, rank=2, ...],
-        src_info: InputTensor[dtype=.int32, rank=2, ...],
-        send_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_count_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
+        output_tokens: Some[Output & Fused & StoreAccess],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        src_info: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        router_weights: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         """Execute the fused Expert Parallelism combine kernel.
@@ -2933,10 +2953,6 @@ struct Struct_ep_combine:
         routed expert outputs for each token.
 
         Parameters:
-            combine_dtype: `DType` used for the token payload during
-                the combine phase (inferred).
-            router_weights_dtype: `DType` of the router weights tensor
-                used to compute the weighted sum (inferred).
             hidden_size: Size of the model's hidden dimension
                 (inferred).
             top_k: Number of experts each token is routed to
@@ -2981,12 +2997,32 @@ struct Struct_ep_combine:
         comptime assert (
             not skip_a2a
         ), "ep.combine: skip_a2a is lowered to ep.combine.skip_a2a."
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(input_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(src_info), TileTensorable)
+        comptime assert conforms_to(type_of(send_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(router_weights), TileTensorable)
+        comptime combine_dtype = type_of(output_tokens).dtype
+        comptime assert type_of(output_tokens).rank == 2
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(input_tokens).rank == 2
+        comptime assert type_of(src_info).rank == 2
+        comptime assert type_of(send_ptrs).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        comptime assert type_of(router_weights).rank == 2
         comptime assert (
-            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
+            type_of(output_tokens)._shape_types[1].static_value == hidden_size
         ), "EP combine: output tokens shape doesn't match hidden size."
-        var router_weights_tensor = router_weights.to_tile_tensor[.int64]()
+        var router_weights_tensor = router_weights.to_tile_tensor()
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
+
+        comptime assert conforms_to(type_of(output_tokens), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output_tokens)
+        comptime assert conforms_to(type_of(out_view), Storable)
 
         @inline(.always)
         def router_weights_fn[
@@ -3004,12 +3040,10 @@ struct Struct_ep_combine:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
-            output_tokens._fused_store[
-                width=width, element_alignment=alignment
-            ](
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[combine_dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         ep_fused_combine_kernel_api[
@@ -3023,13 +3057,13 @@ struct Struct_ep_combine:
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
         ](
-            output_tokens.dim_size[0](),
-            atomic_counters.to_tile_tensor[.int64](),
-            input_tokens.to_tile_tensor[.int64](),
-            src_info.to_tile_tensor[.int64](),
-            send_ptrs.to_tile_tensor[.int64](),
-            recv_ptrs.to_tile_tensor[.int64](),
-            recv_count_ptrs.to_tile_tensor[.int64](),
+            coord_to_index_list(output_tokens.shape())[0],
+            atomic_counters.to_tile_tensor[.int32](),
+            input_tokens.to_tile_tensor[combine_dtype](),
+            src_info.to_tile_tensor[.int32](),
+            send_ptrs.to_tile_tensor[.uint64](),
+            recv_ptrs.to_tile_tensor[.uint64](),
+            recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
             output_fn,
             router_weights_fn,
@@ -3043,8 +3077,6 @@ struct Struct_ep_combine_skip_a2a:
     @inline(.always)
     @staticmethod
     def execute[
-        combine_dtype: DType,
-        router_weights_dtype: DType,
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -3057,15 +3089,15 @@ struct Struct_ep_combine_skip_a2a:
         //,
         target: StaticString,
     ](
-        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
-        atomic_counters: MutableInputTensor[dtype=.int32, rank=1, ...],
-        input_tokens: InputTensor[dtype=combine_dtype, rank=2, ...],
-        src_info: InputTensor[dtype=.int32, rank=2, ...],
-        send_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_count_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
-        topk_ids: InputTensor[dtype=.int32, rank=2, ...],
+        output_tokens: Some[Output & Fused & StoreAccess],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        src_info: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        router_weights: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         """Execute the fused Expert Parallelism combine kernel.
@@ -3077,10 +3109,6 @@ struct Struct_ep_combine_skip_a2a:
         locally using an allreduce of size `allreduce_world_size`.
 
         Parameters:
-            combine_dtype: `DType` used for the token payload during
-                the combine phase (inferred).
-            router_weights_dtype: `DType` of the router weights
-                tensor used to compute the weighted sum (inferred).
             hidden_size: Size of the model's hidden dimension
                 (inferred).
             top_k: Number of experts each token is routed to
@@ -3128,12 +3156,34 @@ struct Struct_ep_combine_skip_a2a:
                 Shape `[num_tokens, top_k]`.
             context: GPU device context for the current device.
         """
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(input_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(src_info), TileTensorable)
+        comptime assert conforms_to(type_of(send_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(router_weights), TileTensorable)
+        comptime assert conforms_to(type_of(topk_ids), TileTensorable)
+        comptime combine_dtype = type_of(output_tokens).dtype
+        comptime assert type_of(output_tokens).rank == 2
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(input_tokens).rank == 2
+        comptime assert type_of(src_info).rank == 2
+        comptime assert type_of(send_ptrs).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        comptime assert type_of(router_weights).rank == 2
+        comptime assert type_of(topk_ids).rank == 2
         comptime assert (
-            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
+            type_of(output_tokens)._shape_types[1].static_value == hidden_size
         ), "EP combine: output tokens shape doesn't match hidden size."
-        var router_weights_tensor = router_weights.to_tile_tensor[.int64]()
+        var router_weights_tensor = router_weights.to_tile_tensor()
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
+
+        comptime assert conforms_to(type_of(output_tokens), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output_tokens)
+        comptime assert conforms_to(type_of(out_view), Storable)
 
         @inline(.always)
         def router_weights_fn[
@@ -3151,12 +3201,10 @@ struct Struct_ep_combine_skip_a2a:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
-            output_tokens._fused_store[
-                width=width, element_alignment=alignment
-            ](
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[combine_dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         ep_fused_combine_kernel_api[
@@ -3171,17 +3219,17 @@ struct Struct_ep_combine_skip_a2a:
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
-            output_tokens.dim_size[0](),
-            atomic_counters.to_tile_tensor[.int64](),
-            input_tokens.to_tile_tensor[.int64](),
-            src_info.to_tile_tensor[.int64](),
-            send_ptrs.to_tile_tensor[.int64](),
-            recv_ptrs.to_tile_tensor[.int64](),
-            recv_count_ptrs.to_tile_tensor[.int64](),
+            coord_to_index_list(output_tokens.shape())[0],
+            atomic_counters.to_tile_tensor[.int32](),
+            input_tokens.to_tile_tensor[combine_dtype](),
+            src_info.to_tile_tensor[.int32](),
+            send_ptrs.to_tile_tensor[.uint64](),
+            recv_ptrs.to_tile_tensor[.uint64](),
+            recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
             output_fn,
             router_weights_fn,
-            topk_ids._ptr.as_imm(),
+            topk_ids.to_tile_tensor[.int32]().as_imm().ptr,
         )
 
 
