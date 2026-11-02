@@ -192,6 +192,7 @@
 /max/tests/integration/accuracy/ @modular/max-serve
 /max/tests/integration/architectures/ @modular/max-serve @copilot-pull-request-reviewer
 /max/tests/integration/pipelines/ @modular/max-sdk
+/max/tests/integration/generate_api/ @modular/max-sdk
 /max/tests/integration/c/ @modular/max-sdk @modular/GraphExecution
 /max/tests/integration/cli/ @modular/max-serve
 /max/tests/integration/dataprocessing/ @modular/max-sdk
