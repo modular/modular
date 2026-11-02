@@ -20,6 +20,7 @@ _AMD_ONLY_TESTS = [
 _CPU_ONLY_TESTS = [
     "test_bf16_cpu_error.py",
     "test_devices_infos_mapping.py",
+    "test_host_float8_outputs.py",
     "test_int_indexing.py",
     "test_is_inf.py",
     "test_is_nan.py",
@@ -604,6 +605,7 @@ modular_py_test(
         "conftest.py",
         "test_bf16_cpu_error.py",
         "test_devices_infos_mapping.py",
+        "test_host_float8_outputs.py",
         "test_int_indexing.py",
         "test_is_inf.py",
         "test_is_nan.py",

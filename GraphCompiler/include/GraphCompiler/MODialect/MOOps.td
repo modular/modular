@@ -4528,7 +4528,8 @@ def MO_DebugPrintOp : MO_TensorOp<"debug.print", [
 //===----------------------------------------------------------------------===//
 
 def MO_DebugTensorPrintOp : MO_TensorOp<"debug.tensor.print", [
-  MO_PreservedDuringKernelLowering,
+  DeclareOpInterfaceMethods<MO_PreservedDuringKernelLowering,
+    ["isDataTypeAgnostic"]>,
   MO_SingleDeviceWithHostOperands<[], ["input"]>,
   MemoryEffects<[MemWrite]>,
 ]> {

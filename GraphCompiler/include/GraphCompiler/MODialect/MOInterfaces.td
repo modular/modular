@@ -588,9 +588,14 @@ def MO_ConstantLike : MO_TensorOpInterfaceBase<"ConstantLike"> {
 
 def MO_PreservedDuringKernelLowering : OpInterface<"PreservedDuringKernelLowering"> {
   let description = [{
-    An MO op that must be lowered to a kernel implementation.
+    An MO op that is not lowered to a kernel implementation.
   }];
   let cppNamespace = "::M::MO";
+
+  let methods = [
+    InterfaceMethod<"Returns true if any data type may pass through this op.",
+      "bool", "isDataTypeAgnostic", (ins), [{}], [{ return true; }]>,
+  ];
 }
 
 // Bundled collectives (e.g. `mo.bundled.expand`, `mo.bundled.allreduce.sum`)

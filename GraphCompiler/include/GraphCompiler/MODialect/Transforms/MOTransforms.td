@@ -237,10 +237,12 @@ def SupportConversionsTest : Pass<"mo-support-conversions-test", "ModuleOp"> {
 }
 
 def ValidateDevicesPass : Pass<"mo-validate-devices", "GraphOp"> {
-  let summary = "Validates that each data type used in tensors in the graph "
-                "can be implemented on the target device.";
+  let summary = "Validates that each data type an op computes on can be "
+                "implemented on the target device.";
   let description = [{
-    Checks the graph's inputs and outputs.
+    Checks the tensor operands and results of every op that is not exempt. An
+    op is exempt when it implements `MO_PreservedDuringKernelLowering` and
+    reports that any data type may pass through it.
   }];
 
   let options = [
