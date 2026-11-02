@@ -16,14 +16,14 @@ from pathlib import Path
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
 from .batch_processor import MuseGlimmerBatchProcessor
 from .memory_planner import MuseGlimmerMemoryPlanner
-from .model import MuseGlimmerModel
 from .model_config import MuseGlimmerConfig
+from .modules import MuseGlimmerDecoder, MuseGlimmerVision
 from .reasoning import (
     MuseGlimmerReasoningParser,  # noqa: F401  registers "muse_glimmer"
 )
@@ -37,7 +37,10 @@ muse_glimmer_arch = SupportedArchitecture(
     example_repo_ids=["meta-models/Muse-Glimmer-30B"],
     default_encoding=MuseGlimmerConfig.DEFAULT_ENCODING,
     supported_encodings=MuseGlimmerConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=MuseGlimmerModel,
+    modules={
+        GraphRole.DECODER: MuseGlimmerDecoder,
+        GraphRole.VISION: MuseGlimmerVision,
+    },
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=MuseGlimmerTokenizer,
     context_type=TextAndVisionContext,
@@ -45,7 +48,7 @@ muse_glimmer_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_language_state_dict,
+        WeightsFormat.safetensors: weight_adapters.convert_registered_state_dict,
     },
     config=MuseGlimmerConfig,
     batching=MuseGlimmerBatchProcessor,
