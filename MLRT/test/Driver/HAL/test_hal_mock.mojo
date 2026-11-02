@@ -93,7 +93,7 @@ def test_driver_create() raises:
     var device_count: Int
     try:
         var driver = Driver.create(_get_plugin_spec())
-        device_count = Int(driver[].get_device_count())
+        device_count = Int(driver[].device_count())
     except e:
         raise Error(String(e))
     assert_equal(device_count, 2)
@@ -104,7 +104,7 @@ def test_driver_device_enumeration() raises:
     try:
         var device_count: Int
         var driver = Driver.create(_get_plugin_spec())
-        device_count = Int(driver[].get_device_count())
+        device_count = Int(driver[].device_count())
         for i in range(device_count):
             var device = driver[].get_device_dynamic(Int64(i))
             if Int(device[].id) != i:

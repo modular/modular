@@ -278,7 +278,7 @@ def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
     if not maybe_driver[]:
         raise Error("no accelerator driver plugin is loaded")
     var driver = maybe_driver[].value()
-    var api = String(driver[].get_name()).lower()
+    var api = String(driver[].name()).lower()
     # A plugin listed as a bare path, without a `name@`, is named after its
     # file, which is no API and so no `--target-accelerator` vendor either.
     if "/" in api or api.endswith(".so"):
@@ -286,7 +286,7 @@ def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
     var device = driver[].get_device_dynamic[Optional[Int64](0)](
         Int64(device_id)
     )
-    return (api, device[].get_arch())
+    return (api, device[].arch())
 
 
 struct _PeerState(Movable):
@@ -353,7 +353,7 @@ def _init_peer_state() -> _PeerState:
         var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
         if not maybe_driver[]:
             return _PeerState(0)
-        return _PeerState(Int(maybe_driver[].value()[].get_device_count()))
+        return _PeerState(Int(maybe_driver[].value()[].device_count()))
     except:
         return _PeerState(0)
 
@@ -576,7 +576,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
             # Validate that the loaded plugin satisfies the requested api (its
             # concrete vendor name, or the generic accelerator alias "gpu").
-            var driver_name = self._driver[].get_name()
+            var driver_name = self._driver[].name()
             if not _driver_satisfies_api(String(driver_name), api):
                 raise Error(
                     String(
@@ -595,7 +595,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                     String(t"failed to load accelerator plugin '{chosen}'")
                 )
             var driver = maybe_driver[].value()
-            var driver_name = driver[].get_name()
+            var driver_name = driver[].name()
             if not _driver_satisfies_api(String(driver_name), api):
                 raise Error(
                     String(
@@ -603,7 +603,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                         t" {driver_name}"
                     )
                 )
-            var count = Int(driver[].get_device_count())
+            var count = Int(driver[].device_count())
             if device_id < 0 or device_id >= count:
                 raise Error(
                     String(t"device_id {device_id} out of range [0, {count})")
@@ -1858,7 +1858,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         # Runs before any cross-stream wait, which would hand this plugin
         # another driver's event.
-        var dst_device = dst_buf._inner[]._context[].get_device_id()
+        var dst_device = dst_buf._inner[]._context[].device_id()
         if dst_device != self._device[].id:
             raise Error(
                 String(
@@ -1867,7 +1867,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 )
             )
         var src_context = src_buf._inner[]._context
-        if src_context[].get_device_id() != self._device[].id and not (
+        if src_context[].device_id() != self._device[].id and not (
             src_context[]._raw is self._context[]._raw
         ):
             raise Error(
@@ -1881,7 +1881,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         var src_context = src_buf._inner[]._context
         var dst_view = dst_buf._inner[]._buffer.view()
         var src_view = src_buf._inner[]._buffer.view()
-        if src_context[].get_device_id() == self._device[].id:
+        if src_context[].device_id() == self._device[].id:
             self._stream[].copy_intra_device(dst_view, src_view)
         else:
             self._stream[].copy_inter_device(
@@ -2136,7 +2136,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         """
         # The HAL plugin names are "CUDA"/"HIP"/"Metal"; AsyncRT exposes
         # them lowercased so dispatchers can match `ctx.api() == "cuda"`.
-        return String(self._driver[].get_name()).lower()
+        return String(self._driver[].name()).lower()
 
     def enqueue_copy_no_cross_stream_sync[
         dtype: DType
@@ -2376,7 +2376,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             if not maybe_driver[]:
                 return
             var driver = maybe_driver[].value()
-            var count = Int(driver[].get_device_count())
+            var count = Int(driver[].device_count())
             if count <= 1:
                 return
             var state = _PEER_STATE.get_or_create_ptr()
@@ -2492,9 +2492,9 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             if not maybe_driver[]:
                 return 0
             var driver = maybe_driver[].value()
-            if not _driver_satisfies_api(driver[].get_name(), api):
+            if not _driver_satisfies_api(driver[].name(), api):
                 return 0
-            return Int(driver[].get_device_count())
+            return Int(driver[].device_count())
         except:
             return 0
 
@@ -2636,7 +2636,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         Raises:
             If the device name cannot be queried.
         """
-        return self._ctx[]._device[].get_name()
+        return self._ctx[]._device[].name()
 
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
         """Returns the specified attribute for this device.
@@ -2673,7 +2673,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         Raises:
             If the plugin does not report an architecture.
         """
-        return self._ctx[]._device[].get_arch()
+        return self._ctx[]._device[].arch()
 
     def can_access_peer[
         peer_target: CompilationTarget, peer_origin: ImmOrigin, //

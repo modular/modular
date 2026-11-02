@@ -28,7 +28,7 @@ from std.testing import assert_equal, assert_false, assert_true
 def test_driver_create() raises HALError:
     var host = Host()
     print("Driver count:", host.driver_count())
-    print("Driver0 name:", host.driver(0)[].get_name())
+    print("Driver0 name:", host.driver(0)[].name())
     print("Accelerator count:", host.accelerator_count())
     print("----------------------")
 
@@ -36,10 +36,10 @@ def test_driver_create() raises HALError:
 def test_device_get() raises:
     var host = Host()
     var driver = host.driver(0)
-    var device_count = driver[].get_device_count()
+    var device_count = driver[].device_count()
     for i in range(device_count):
         var device = driver[].get_device_dynamic(Int64(i))
-        var name = device[].get_name()
+        var name = device[].name()
         assert_true(name.byte_length() > 0, "device has an empty name")
         print("Device", i, name)
     print("----------------------")

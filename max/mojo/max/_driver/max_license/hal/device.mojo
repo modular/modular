@@ -199,14 +199,14 @@ struct Device[spec: DeviceSpec](Deinitable, Movable):
             != 0
         )
 
-    def get_name(self) raises HALError -> String:
+    def name(self) raises HALError -> String:
         """Queries the device's human-readable name."""
         var buf = Array[Int8, _DEVICE_PROPERTY_MAX_LEN](fill=0)
         var buf_ptr: Pointer[Int8, origin_of(buf)] = buf.unsafe_ptr()
         self._raw[].get_device_property_string["name"](self._handle, buf_ptr)
         return String(unsafe_from_utf8_ptr=buf_ptr.unsafe_bitcast[c_char]())
 
-    def get_arch(self) raises HALError -> String:
+    def arch(self) raises HALError -> String:
         """Queries the device's compile-target architecture name.
 
         For AMD GPUs this is the `gfx*` name (e.g. `gfx942`); vendors whose arch
