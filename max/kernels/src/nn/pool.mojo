@@ -430,6 +430,70 @@ def max_pool_gpu[
         output: (On device) Pre-allocated output tensor space.
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
+    comptime if simd_width > 1:
+        # A thread pools `simd_width` adjacent channels with one vector load and
+        # one vector store, and a vector covers consecutive *physical* elements.
+        # That is only the channel axis when the channel count is a multiple of
+        # the width and channels are contiguous in both tensors; anything else
+        # keeps the scalar kernel.
+        if (
+            Int(input.dim(3)) % simd_width != 0
+            or Int(input.layout.stride[3]()) != 1
+            or Int(output.layout.stride[3]()) != 1
+        ):
+            max_pool_gpu_impl[dtype, int_type, 1](
+                ctx,
+                input,
+                filter,
+                strides,
+                dilations,
+                paddings,
+                output,
+                ceil_mode,
+            )
+            return
+    max_pool_gpu_impl[dtype, int_type, simd_width](
+        ctx, input, filter, strides, dilations, paddings, output, ceil_mode
+    )
+
+
+@inline(.always)
+def max_pool_gpu_impl[
+    dtype: DType,
+    int_type: DType,
+    simd_width: Int,
+](
+    ctx: DeviceContext,
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
+    output: TileTensor[mut=True, dtype, ...],
+    ceil_mode: Bool = False,
+) raises:
+    """Computes max pooling on GPU with a fixed channel vector width.
+
+    Parameters:
+        dtype: Data type of the input and output tensors.
+        int_type: Data type of the filter, strides, dilations, and paddings tensors.
+        simd_width: Channels pooled per thread. Must divide the channel count.
+
+    Args:
+        ctx: The DeviceContext to use for GPU execution.
+        input: (On device) Batched image input to the pool2d operator.
+        filter: (On host) Filter size on height and width dimensions with assumed tuple
+            (filter_h, filter_w).
+        strides: (On host) Strides on height and width dimensions with assumed
+            tuple (stride_h, stride_w).
+        dilations: (On host) Dilations on height and width dimensions with assumed
+            tuple (dilation_h, dilation_w).
+        paddings: (On host) Paddings on height and width dimensions with assumed
+            tuple (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
+        output: (On device) Pre-allocated output tensor space.
+        ceil_mode: Ceiling mode defines the output shape and implicit padding.
+    """
 
     comptime assert filter.flat_rank == 1
     comptime assert strides.flat_rank == 1
@@ -446,8 +510,9 @@ def max_pool_gpu[
     var padding_w_low = 0 if empty_padding else Int(paddings[2])
     # var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
-    comptime simd_width = 1
-
+    # One thread pools `simd_width` adjacent channels (the innermost, contiguous
+    # axis); `max_pool_gpu` picks the width so that a vector never runs past the
+    # channel axis.
     var pool_window_h = Int(filter[0])
     var pool_window_w = Int(filter[1])
 
@@ -885,6 +950,72 @@ def avg_pool_gpu[
         output: (On device) Pre-allocated output tensor space.
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
+    comptime if simd_width > 1:
+        # A thread pools `simd_width` adjacent channels with one vector load and
+        # one vector store, and a vector covers consecutive *physical* elements.
+        # That is only the channel axis when the channel count is a multiple of
+        # the width and channels are contiguous in both tensors; anything else
+        # keeps the scalar kernel.
+        if (
+            Int(input.dim(3)) % simd_width != 0
+            or Int(input.layout.stride[3]()) != 1
+            or Int(output.layout.stride[3]()) != 1
+        ):
+            avg_pool_gpu_impl[dtype, int_type, count_boundary, 1](
+                ctx,
+                input,
+                filter,
+                strides,
+                dilations,
+                paddings,
+                output,
+                ceil_mode,
+            )
+            return
+    avg_pool_gpu_impl[dtype, int_type, count_boundary, simd_width](
+        ctx, input, filter, strides, dilations, paddings, output, ceil_mode
+    )
+
+
+@inline(.always)
+def avg_pool_gpu_impl[
+    dtype: DType,
+    int_type: DType,
+    count_boundary: Bool = False,
+    simd_width: Int = 1,
+](
+    ctx: DeviceContext,
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
+    output: TileTensor[mut=True, dtype, ...],
+    ceil_mode: Bool = False,
+) raises:
+    """Computes the average pool on GPU with a fixed channel vector width.
+
+    Params:
+        dtype: Data type of the input and output tensors.
+        int_type: Data type of the filter, strides, dilations, and paddings tensors.
+        count_boundary: Whether to count the boundary in the average computation.
+        simd_width: Channels pooled per thread. Must divide the channel count.
+
+    Args:
+        ctx: The DeviceContext to use for GPU execution.
+        input: (On device) Batched image input to the pool2d operator.
+        filter: (On host) Filter size on height and width dimensions with assumed tuple
+            (filter_h, filter_w).
+        strides: (On host) Strides on height and width dimensions with assumed
+            tuple (stride_h, stride_w).
+        dilations: (On host) Dilations on height and width dimensions with assumed
+            tuple (dilation_h, dilation_w).
+        paddings: (On host) Paddings on height and width dimensions with assumed
+            tuple (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
+        output: (On device) Pre-allocated output tensor space.
+        ceil_mode: Ceiling mode defines the output shape and implicit padding.
+    """
 
     comptime assert paddings.flat_rank == 1
     comptime assert filter.flat_rank == 1
@@ -922,8 +1053,9 @@ def avg_pool_gpu[
         padding_h_high = padding_h_high + implicit_pad0
         padding_w_high = padding_w_high + implicit_pad1
 
-    comptime simd_width = 1  # Must be 1 for GPU
-
+    # One thread pools `simd_width` adjacent channels (the innermost, contiguous
+    # axis); `avg_pool_gpu` picks the width so that a vector never runs past the
+    # channel axis.
     var output_height = Int(output.dim(1))
     var output_width = Int(output.dim(2))
 

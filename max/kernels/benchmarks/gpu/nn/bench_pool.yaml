@@ -1,0 +1,83 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_pool
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_pool.mojo
+
+params:
+# Served shape: FLUX/FLUX2 VAE `Downsample2D`, 2x2 window, stride 2.
+- op: maxpool
+  dtype: bfloat16
+  in_shape: 1x128x128x512
+  kernel: 2x2
+  stride: 2x2
+  pad: 0
+- op: avgpool
+  dtype: bfloat16
+  in_shape: 1x128x128x512
+  kernel: 2x2
+  stride: 2x2
+  pad: 0
+
+# Served shape: the other VAE downsample resolution.
+- op: maxpool
+  dtype: bfloat16
+  in_shape: 1x256x256x256
+  kernel: 2x2
+  stride: 2x2
+  pad: 0
+- op: avgpool
+  dtype: bfloat16
+  in_shape: 1x256x256x256
+  kernel: 2x2
+  stride: 2x2
+  pad: 0
+
+# Served shape: Gemma-3/Qwen3-VL vision tower pooling, 3x3 window, stride 3.
+- op: maxpool
+  dtype: bfloat16
+  in_shape: 1x64x64x1152
+  kernel: 3x3
+  stride: 3x3
+  pad: 0
+- op: avgpool
+  dtype: bfloat16
+  in_shape: 1x64x64x1152
+  kernel: 3x3
+  stride: 3x3
+  pad: 0
+
+# Overlapping 3x3 window, stride 1, SAME padding: maximum window reuse.
+- op: avgpool
+  dtype: bfloat16
+  in_shape: 1x64x64x1152
+  kernel: 3x3
+  stride: 1x1
+  pad: 1
+
+# Ragged channel count: not a multiple of the vector width, so this exercises
+# the scalar fallback.
+- op: avgpool
+  dtype: bfloat16
+  in_shape: 1x32x32x3
+  kernel: 2x2
+  stride: 2x2
+  pad: 0
+
+# fp32 at the VAE downsample shape: the width is half of the bf16 width.
+- op: avgpool
+  dtype: float32
+  in_shape: 1x128x128x256
+  kernel: 2x2
+  stride: 2x2
+  pad: 0
