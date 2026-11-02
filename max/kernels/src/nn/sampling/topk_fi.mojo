@@ -2017,6 +2017,16 @@ def TopKTopPSamplingFromProbKernel[
         var probs_ptr = probs.ptr.unsafe_offset(row_idx * _d)
         var probs_row = TileTensor(probs_ptr, row_major(Idx[1], _d))
 
+        # A greedy row is one argmax pass, which one block already does without
+        # any group traffic, so a split row drops back to a single block for it:
+        # the rest of the group returns and rank 0 scans the whole row below.
+        # `k` is read on the device and every block of a group reads the same
+        # row, so the whole group takes this exit together and a captured graph
+        # keeps deciding per row.
+        comptime if coop_size > 1 and not emit_dist:
+            if k == 1 and rank != 0:
+                return
+
         comptime if is_apple_gpu() and coop_size == 1:
             # A k=1 draw returns a row maximum whatever the temperature, top-p
             # or min-p, so greedy rows skip the Apple search below, which runs
@@ -2047,23 +2057,33 @@ def TopKTopPSamplingFromProbKernel[
                     )
                 return
 
-        comptime if not is_apple_gpu() and not emit_dist and coop_size == 1:
+        comptime if not is_apple_gpu() and not emit_dist:
             # A k=1 draw is the row's first argmax whatever the temperature,
             # top-p or min-p: the k == 1 block after the search overwrites
             # whatever the search drew. Take that argmax up front and skip the
             # softmax passes and the search, which would only be thrown away.
-            # `k` is uniform per block, so the collectives stay legal, and
-            # the branch is decided on the device, so a captured graph keeps
-            # serving each row by its own `k`. Rows with k > 1 run the code
-            # below unchanged. `emit_dist` still needs the distribution, and
-            # split rows (`coop_size > 1`) keep the combined path below.
+            # `k` is uniform per group (every block of a group reads the same
+            # row), so the collectives stay legal, and the branch is decided on
+            # the device, so a captured graph keeps serving each row by its own
+            # `k`. Rows with k > 1 run the code below unchanged. `emit_dist`
+            # still needs the distribution.
             if k == 1:
                 comptime vec_bytes = align_of[SIMD[dtype, vec_size]]()
+                # A split row only reaches this point when its row is greedy,
+                # and then every peer has already returned, so the surviving
+                # block scans the whole row rather than a slice and needs no
+                # combine: the group costs a greedy row nothing but its empty
+                # blocks.
+                var scan_begin = vec_begin
+                var scan_end = vec_end
+                comptime if coop_size > 1:
+                    scan_begin = 0
+                    scan_end = n_vec
                 var best = _block_reduce_topk[ascending=True](
                     _argmax_block_partial[dtype, vec_size, 4](
                         probs_ptr.as_unsafe_any_origin(),
-                        0,
-                        _d,
+                        scan_begin * vec_size,
+                        (scan_end - scan_begin) * vec_size,
                         _d % vec_size == 0 and Int(probs.ptr) % vec_bytes == 0,
                         Int(tx),
                         block_size,
@@ -2713,6 +2733,7 @@ def topk_topp_sampling_from_prob[
             dist_dtype, DistLayoutType, MutAnyOrigin, Engine=OutDistEngine
         ]
     ] = None,
+    num_coop_blocks: Int = 0,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
 
@@ -2775,6 +2796,11 @@ def topk_topp_sampling_from_prob[
             when `from_logits` is True.
         out_dist: Output masked distribution [batch_size, d]. Required when
             `emit_dist` is set.
+        num_coop_blocks: Blocks per row to split the fused softmax and the
+            search across, for tests and profiles that want a group size other
+            than the one the device picks. Only used with `from_logits`;
+            values above what the device can keep resident fall back to the
+            largest group that fits. Zero derives the group from the device.
 
     Raises:
         Error: If tensor ranks or shapes are invalid.
@@ -2862,10 +2888,23 @@ def topk_topp_sampling_from_prob[
         if batch_size == 0:
             return
 
-        comptime coop_capable = from_logits and ctx.target.is_amd_gpu()
+        # Apple keeps its single-block path; every other target splits the row
+        # across a resident group sized from the device.
+        comptime coop_capable = from_logits and not ctx.target.is_apple_gpu()
+        # A launch whose k is the scalar one draws each row's argmax, which one
+        # block does in a single pass: a group would only add its barrier and
+        # its zeroed counters to that pass. A per-row k vector can still hold a
+        # row with k > 1, so the vector case keeps the split and the kernel's
+        # own greedy exit handles the rows that ask for it.
+        var greedy_launch = top_k_val == 1
+        if case .Some(_) = top_k_arr:
+            greedy_launch = False
         var coop = 1
         comptime if coop_capable:
-            coop = coop_group_size(ctx, batch_size, block_size, d // vec_size)
+            if not greedy_launch:
+                coop = coop_group_size(
+                    ctx, batch_size, block_size, d // vec_size, num_coop_blocks
+                )
         var coop_buf = ctx.enqueue_create_buffer[.int32](
             coop_row_words(batch_size, coop) if coop > 1 else 1
         )
@@ -3721,7 +3760,9 @@ def topk_topp_masked_probs[
         if case .Some(temperature) = temperature:
             temperature_ptr = temperature.ptr
 
-        comptime coop_capable = ctx.target.is_amd_gpu()
+        # Apple keeps its single-block path; every other target picks a
+        # resident group for the row.
+        comptime coop_capable = not ctx.target.is_apple_gpu()
         var coop = 1
         comptime if coop_capable:
             coop = coop_group_size(ctx, batch_size, block_size, d // vec_size)

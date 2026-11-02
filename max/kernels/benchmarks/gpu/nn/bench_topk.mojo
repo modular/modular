@@ -551,6 +551,7 @@ def bench_topk_topp_dist[
     top_p: Float32 = 0.95,
     temperature: Float32 = 1.0,
     logit_sigma: Float64 = 2.0,
+    num_coop_blocks: Int = 0,
 ) raises:
     """Benchmarks the fused softmax + top-k/top-p sampler that spec decode uses.
 
@@ -559,6 +560,11 @@ def bench_topk_topp_dist[
     renormalized distribution written back alongside the sampled token. Running
     the same shape with `emit_dist` off isolates what the distribution costs,
     which is the cutoff search rather than the [batch, vocab] store.
+
+    With `emit_dist` off the launch is the one-CTA-per-row sampler, which
+    splits a row across `num_coop_blocks` blocks when the device has
+    multiprocessors to spare. `num_coop_blocks=1` pins it back to one block per
+    row, and 0 lets the launch size the group from the device.
 
     How many iterations the searches take depends on the shape of the softmax,
     so a fill that collapses it (iota puts all the mass on one token) measures
@@ -630,6 +636,7 @@ def bench_topk_topp_dist[
                     dist_dev,
                     row_major(batch_size, d) if emit_dist else row_major(1, 1),
                 ).as_unsafe_any_origin(),
+                num_coop_blocks=num_coop_blocks,
             )
 
         bencher_iter_custom(b, kernel_launch, ctx)
@@ -648,6 +655,8 @@ def bench_topk_topp_dist[
         top_p,
         "/emit_dist=",
         emit_dist,
+        "/coop=",
+        num_coop_blocks,
     )
 
     var num_bytes = in_size * size_of[dtype]()
@@ -803,6 +812,37 @@ def fill_normal[
         i += 2
 
 
+@inline(.always)
+def _hash_unit(i: Int) -> Float64:
+    """A deterministic uniform in (0, 1) for one element index."""
+    var h = (i * 1_000_003 + 7919) % 1_000_000_007
+    h = (h * 1_000_003 + 7919) % 1_000_000_007
+    return (Float64(h) + 0.5) / 1_000_000_007.0
+
+
+def fill_normal_hash[
+    rank: Int, dtype: DType
+](mut buffer: TileTensor[mut=True, dtype, ...], sigma: Float64):
+    """`fill_normal`, but from a hash of the element index instead of the RNG.
+
+    The number of passes the searches need follows the shape of the softmax, so
+    two arms of an A/B benchmark have to see the same logits or they are
+    measuring different amounts of work. A random fill makes that a different
+    number every process.
+    """
+    var total_elements = buffer.num_elements()
+    var flat = buffer.reshape(row_major(total_elements))
+    var i = 0
+    while i < total_elements:
+        var u1 = max(_hash_unit(i), 1e-12)
+        var u2 = _hash_unit(i + 1)
+        var r = sigma * (-2.0 * log(u1)) ** 0.5
+        flat.store((i,), (r * cos(2.0 * pi * u2)).cast[dtype]())
+        if i + 1 < total_elements:
+            flat.store((i + 1,), (r * sin(2.0 * pi * u2)).cast[dtype]())
+        i += 2
+
+
 def fill_constant[
     rank: Int, dtype: DType
 ](mut buffer: TileTensor[mut=True, dtype, ...]):
@@ -838,6 +878,8 @@ def fill_buffer[
         fill_iota[rank, dtype](buffer)
     elif mode == "fill_normal":
         fill_normal[rank, dtype](buffer, sigma)
+    elif mode == "fill_normal_hash":
+        fill_normal_hash[rank, dtype](buffer, sigma)
     else:
         raise Error("fill mode not found")
 
@@ -887,6 +929,9 @@ def main() raises:
     var emit_dist = arg_parse("emit_dist", True)
     var in_dtype_name = arg_parse("in_dtype", String("float32"))
     var masked_probs = arg_parse("masked_probs", False)
+    # Blocks per row the single-CTA sampler splits into; 0 lets the launch size
+    # the group from the device, 1 pins one block per row.
+    var num_coop_blocks = arg_parse("num_coop_blocks", 0)
 
     var m = Bench()
     m.config.show_progress = False
@@ -935,6 +980,7 @@ def main() raises:
                         fill_fn_name,
                         top_p=top_p,
                         logit_sigma=logit_sigma,
+                        num_coop_blocks=num_coop_blocks,
                     )
 
                 # The pipeline feeds this kernel f32 logits today; bf16

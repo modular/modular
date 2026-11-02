@@ -252,6 +252,7 @@ def topk_topp_sampling_from_prob[
             dist_dtype, DistLayoutType, MutAnyOrigin, Engine=OutDistEngine
         ]
     ] = None,
+    num_coop_blocks: Int = 0,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
 
@@ -260,6 +261,10 @@ def topk_topp_sampling_from_prob[
     thread-block cluster; everything else takes the single-block
     launcher. The branch is a comptime one, so a target without
     thread-block clusters never instantiates the cluster kernels.
+
+    `num_coop_blocks` reaches only the single-block launcher, which is the one
+    that splits a row across a resident block group; the cluster launcher sizes
+    its cluster itself.
 
     See `topk_fi.topk_topp_sampling_from_prob` for the parameters,
     arguments and output contract; both sides share them.
@@ -311,4 +316,5 @@ def topk_topp_sampling_from_prob[
             temperature,
             min_p,
             out_dist,
+            num_coop_blocks=num_coop_blocks,
         )
