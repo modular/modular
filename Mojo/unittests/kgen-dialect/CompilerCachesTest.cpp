@@ -69,7 +69,7 @@ TEST(CompilerCachesTest, RecreatedAfterRelease) {
   CompilerCaches::getOrCreate(&context)->canonical.insert(ptr(1), ptr(2));
   std::shared_ptr<CompilerCaches> caches =
       CompilerCaches::getOrCreate(&context);
-  EXPECT_EQ(caches->canonical.lookup(ptr(1)), nullptr);
+  EXPECT_EQ(caches->canonical.lookup(ptr(1)), std::nullopt);
 }
 
 // Threads cache their last lookup, so a change must be visible to them.
@@ -119,5 +119,49 @@ TEST(CompilerCachesTest, ConcurrentInsertAndLookup) {
     thread.join();
   EXPECT_FALSE(failed);
   EXPECT_EQ(cache.lookup(ptr(1)), ptr(3));
-  EXPECT_EQ(cache.lookup(ptr(uintptr_t(1) << 40)), nullptr);
+  EXPECT_EQ(cache.lookup(ptr(uintptr_t(1) << 40)), std::nullopt);
+}
+
+// A miss computes once; any value, including `false`, is a hit afterwards, and
+// a later insert keeps the first value.
+TEST(CompilerCachesTest, GetOrComputeCachesEveryValue) {
+  ShardedCache<const void *, bool> cache;
+  int calls = 0;
+  auto compute = [&] {
+    ++calls;
+    return false;
+  };
+  EXPECT_FALSE(cache.getOrCompute(ptr(1), compute));
+  EXPECT_FALSE(cache.getOrCompute(ptr(1), compute));
+  EXPECT_EQ(calls, 1);
+  EXPECT_EQ(cache.lookup(ptr(1)), false);
+  EXPECT_FALSE(cache.insert(ptr(1), true));
+}
+
+// The static helpers use the caches of the context while an owner is alive,
+// and compute without caching otherwise.
+TEST(CompilerCachesTest, StaticHelpersFollowOwner) {
+  mlir::MLIRContext context;
+  int calls = 0;
+  auto getOrCompute = [&] {
+    return CompilerCaches::getOrCompute(&context, &CompilerCaches::canonical,
+                                        ptr(1), [&] {
+                                          ++calls;
+                                          return ptr(4);
+                                        });
+  };
+  EXPECT_EQ(getOrCompute(), ptr(4));
+  EXPECT_EQ(getOrCompute(), ptr(4));
+  EXPECT_EQ(calls, 2);
+  CompilerCaches::insert(&context, &CompilerCaches::canonical, ptr(2), ptr(3));
+
+  std::shared_ptr<CompilerCaches> caches =
+      CompilerCaches::getOrCreate(&context);
+  EXPECT_EQ(caches->canonical.lookup(ptr(2)), std::nullopt);
+  EXPECT_EQ(getOrCompute(), ptr(4));
+  EXPECT_EQ(getOrCompute(), ptr(4));
+  EXPECT_EQ(calls, 3);
+  EXPECT_EQ(caches->canonical.lookup(ptr(1)), ptr(4));
+  CompilerCaches::insert(&context, &CompilerCaches::canonical, ptr(2), ptr(3));
+  EXPECT_EQ(caches->canonical.lookup(ptr(2)), ptr(3));
 }

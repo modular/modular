@@ -5589,14 +5589,26 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     // Walking is repeated for the same value many times; cache across calls.
     using Base =
         std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
-    ShardedCache<const void *> *cache = getCache(value.getContext());
-    if (cache) {
-      if (const void *hit = cache->lookup(value.getAsOpaquePointer()))
-        return Base::getFromOpaquePointer(hit);
-    }
+    MLIRContext *context = value.getContext();
+    return Base::getFromOpaquePointer(CompilerCaches::getOrCompute(
+        context, &CompilerCaches::canonical, value.getAsOpaquePointer(), [&] {
+          Base result = rebuildUncached(value, depth);
+          // A canonical form is its own canonical form.
+          if (result != Base(value))
+            CompilerCaches::insert(context, &CompilerCaches::canonical,
+                                   result.getAsOpaquePointer(),
+                                   result.getAsOpaquePointer());
+          return result.getAsOpaquePointer();
+        }));
+  }
 
-    // Otherwise, recursively walk and rebuild the attribute with
-    // canonicalized subelements.
+  /// Recursively walks `value` and rebuilds it with canonicalized subelements.
+  /// Does not consult the cache; only `doReplace` calls it.
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  rebuildUncached(T value, size_t depth) {
+    using Base =
+        std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;
     bool changed = false;
@@ -5608,20 +5620,8 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     value.walkImmediateSubElements(
         [&](Attribute attr) { walkFn(attr, newAttrs); },
         [&](Type type) { walkFn(type, newTypes); });
-    Base result =
-        changed ? Base(value.replaceImmediateSubElements(newAttrs, newTypes))
-                : Base(value);
-    if (cache && result) {
-      cache->insert(value.getAsOpaquePointer(), result.getAsOpaquePointer());
-      if (changed)
-        cache->insert(result.getAsOpaquePointer(), result.getAsOpaquePointer());
-    }
-    return result;
-  }
-
-  static ShardedCache<const void *> *getCache(MLIRContext *context) {
-    CompilerCaches *caches = CompilerCaches::get(context);
-    return caches ? &caches->canonical : nullptr;
+    return changed ? Base(value.replaceImmediateSubElements(newAttrs, newTypes))
+                   : Base(value);
   }
 
   friend class ParameterReplacer<Canonicalizer>;

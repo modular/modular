@@ -110,17 +110,13 @@ template <typename BaseT>
 BaseT IndexDepthAdjuster::replaceCached(BaseT value) {
   if (!value)
     return value;
-  CompilerCaches *caches = CompilerCaches::get(value.getContext());
-  if (!caches)
-    return IndexParameterReplacer<IndexDepthAdjuster>::replace(value);
   std::tuple<const void *, int64_t, unsigned> key(
       value.getAsOpaquePointer(), adjustDepth, onlyAdjustIndexRef);
-  if (const void *hit = caches->depthAdjust.lookup(key))
-    return BaseT::getFromOpaquePointer(hit);
-  BaseT result = IndexParameterReplacer<IndexDepthAdjuster>::replace(value);
-  if (result)
-    caches->depthAdjust.insert(key, result.getAsOpaquePointer());
-  return result;
+  return BaseT::getFromOpaquePointer(CompilerCaches::getOrCompute(
+      value.getContext(), &CompilerCaches::depthAdjust, key, [&] {
+        return IndexParameterReplacer<IndexDepthAdjuster>::replace(value)
+            .getAsOpaquePointer();
+      }));
 }
 
 template Attribute IndexDepthAdjuster::replaceCached(Attribute);
