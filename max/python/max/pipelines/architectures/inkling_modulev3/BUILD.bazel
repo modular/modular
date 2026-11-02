@@ -13,6 +13,7 @@ modular_py_library(
     data = [":recipe_configs"],
     deps = [
         requirement("numpy"),
+        requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max:tensor",
         "//max/python/max:tree",
