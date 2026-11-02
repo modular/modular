@@ -541,25 +541,26 @@ struct DistributedAllGather:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
+        Outs: TypeList[Trait=Output & Tensor, ...],
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        Sigs: TypeList[Trait=MutableInput & Tensor, ...],
+        //,
         target: StaticString,
         _trace_name: StaticString,
         group_size: Int = 0,
         slice_rows: Bool = False,
     ](
-        outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
-        signal_buffers: MutableInputVariadicTensors[
-            dtype=DType.uint8, rank=1, ...
-        ],
+        outputs: TensorTuple[*Outs],
+        inputs: TensorTuple[*Ins],
+        signal_buffers: TensorTuple[*Sigs],
         dev_ctxs_input: DeviceContextArray,
     ) raises:
         """Distributed allgather operation implementation.
 
         Parameters:
-            dtype: Element type of the input and output tensors.
-            rank: Tensor rank (number of dimensions) of the inputs and outputs.
+            Outs: The element types of `outputs` (inferred).
+            Ins: The element types of `inputs` (inferred).
+            Sigs: The element types of `signal_buffers` (inferred).
             target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             group_size: Number of devices per allgather group; must be at
@@ -576,10 +577,11 @@ struct DistributedAllGather:
             signal_buffers: Device buffer values used for synchronization.
             dev_ctxs_input: Device contexts for participating GPUs.
         """
-        comptime num_devices = inputs.size
+        comptime num_devices = len(Ins)
+        comptime dtype = Ins[0].dtype
+        comptime rank = Ins[0].rank
         comptime assert (
-            signal_buffers.size == num_devices
-            and outputs.size == num_devices * group_size
+            len(Sigs) == num_devices and len(Outs) == num_devices * group_size
         ), (
             "expected allgather inputs, signal buffers to have the same"
             " number of elements and outputs to have num_devices * group_size"
@@ -588,58 +590,73 @@ struct DistributedAllGather:
         comptime assert (
             num_devices % group_size == 0
         ), "group_size must evenly divide the number of devices"
+        _check_tensor_tuple[num_devices, dtype, rank, *Ins]()
+        _check_tensor_tuple[num_devices * group_size, dtype, rank, *Outs]()
+        _check_tensor_tuple[num_devices, .uint8, 1, *Sigs]()
 
         var scratch_buffer_size_bytes = 0  # no allgather impl uses scratch
         _check_signal_buffer_size(
-            signal_buffers[0].size(), scratch_buffer_size_bytes
+            Int(signal_buffers[0].shape().product()), scratch_buffer_size_bytes
         )
 
         # World-view input/output tensors and signals, indexed by GLOBAL
         # device rank (`outputs` is already `num_devices * group_size` -- one
         # contiguous `group_size` slice per device); `allgather` does its own
         # group-local slicing internally.
+        comptime assert conforms_to(type_of(inputs[0]), TileTensorable)
+        comptime assert conforms_to(type_of(outputs[0]), TileTensorable)
         comptime InputTensorType = type_of(
             TileTensor(
                 rebind[ImmPointer[Scalar[dtype], ImmUntrackedOrigin]](
-                    inputs[0]._ptr
+                    inputs[0].to_tile_tensor[dtype]().ptr
                 ),
-                row_major(inputs[0].size()),
+                row_major(Int(inputs[0].shape().product())),
             )
         )
         comptime OutputTensorType = type_of(
             TileTensor(
                 rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
-                    outputs[0]._ptr
+                    outputs[0].to_tile_tensor[dtype]().ptr
                 ),
-                row_major(outputs[0].size()),
+                row_major(Int(outputs[0].shape().product())),
             )
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var out_tensors = Array[OutputTensorType, num_devices * group_size](
             uninitialized=True
         )
-        var rank_sigs = Array[_, num_devices](
-            fill_with_unrolled=lambda [i: Int]() -> Pointer[
-                Signal, MutAnyOrigin
-            ]: (
+
+        # A collective addresses the signal buffers through flat pointers; a
+        # non-pointer storage policy aborts here at run time.
+        def rank_sig[
+            i: Int
+        ]() {imm signal_buffers} -> Pointer[Signal, MutAnyOrigin]:
+            comptime assert conforms_to(
+                type_of(signal_buffers[i]), TileTensorable
+            )
+            return (
                 signal_buffers[i]
-                ._ptr.unsafe_bitcast[Signal]()
+                .to_tile_tensor()
+                .ptr.unsafe_bitcast[Signal]()
                 .as_unsafe_any_origin()
             )
-        )
+
+        var rank_sigs = Array[_, num_devices](fill_with_unrolled=rank_sig)
         comptime for i in range(num_devices):
+            comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
             in_tensors[i] = TileTensor(
                 rebind[ImmPointer[Scalar[dtype], ImmUntrackedOrigin]](
-                    inputs[i]._ptr
+                    inputs[i].to_tile_tensor[dtype]().ptr
                 ),
-                row_major(inputs[i].size()),
+                row_major(Int(inputs[i].shape().product())),
             )
         comptime for i in range(num_devices * group_size):
+            comptime assert conforms_to(type_of(outputs[i]), TileTensorable)
             out_tensors[i] = TileTensor(
                 rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
-                    outputs[i]._ptr
+                    outputs[i].to_tile_tensor[dtype]().ptr
                 ),
-                row_major(outputs[i].size()),
+                row_major(Int(outputs[i].shape().product())),
             )
 
         comptime if slice_rows:
@@ -647,10 +664,10 @@ struct DistributedAllGather:
                 group_size == num_devices
             ), "slice_rows requires one full-world allgather group"
             comptime assert rank >= 2, "slice_rows needs a row axis to slice"
-            var rows = inputs[0].dim_size(0)
+            var rows = Int(inputs[0].shape()[0].value())
             var row_elems = 1
             comptime for dim in range(1, rank):
-                row_elems *= inputs[0].dim_size(dim)
+                row_elems *= Int(inputs[0].shape()[dim].value())
             if row_elems == 0:
                 if rows % num_devices != 0:
                     raise Error(
@@ -658,13 +675,16 @@ struct DistributedAllGather:
                         " multiple of the device count"
                     )
                 comptime for i in range(num_devices):
-                    if inputs[i].dim_size(0) != rows or inputs[i].size() != 0:
+                    if (
+                        Int(inputs[i].shape()[0].value()) != rows
+                        or Int(inputs[i].shape().product()) != 0
+                    ):
                         raise Error(
                             "allgather_rows_slice requires empty shards with"
                             " the same row count on every device"
                         )
                 comptime for i in range(num_devices * group_size):
-                    if outputs[i].size() != 0:
+                    if Int(outputs[i].shape().product()) != 0:
                         raise Error(
                             "allgather_rows_slice: an output buffer is not"
                             " one row block"
@@ -739,24 +759,23 @@ struct DistributedBroadcast:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
+        Outs: TypeList[Trait=Output & Tensor, ...],
+        Sigs: TypeList[Trait=MutableInput & Tensor, ...],
+        //,
         root: Int,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        signal_buffers: MutableInputVariadicTensors[
-            dtype=DType.uint8, rank=1, ...
-        ],
+        outputs: TensorTuple[*Outs],
+        input: Some[Input & Tensor],
+        signal_buffers: TensorTuple[*Sigs],
         dev_ctxs_input: DeviceContextArray,
     ) raises:
         """Execute distributed broadcast operation.
 
         Parameters:
-            dtype: Data type of the tensor.
-            rank: Tensor rank (number of dimensions).
+            Outs: The element types of `outputs` (inferred).
+            Sigs: The element types of `signal_buffers` (inferred).
             root: Index of the root GPU (source of data).
             target: Target device string for tracing.
             _trace_name: Trace name for profiling.
@@ -771,10 +790,15 @@ struct DistributedBroadcast:
             - Maximum of 8 GPUs supported (MAX_GPUS).
             - Requires P2P access between GPUs (NVLink or PCIe P2P).
         """
-        comptime num_devices = outputs.size
+        comptime num_devices = len(Outs)
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert (
-            signal_buffers.size == num_devices
+            len(Sigs) == num_devices
         ), "expected 1 signal buffer per device"
+        _check_tensor_tuple[num_devices, dtype, rank, *Outs]()
+        _check_tensor_tuple[num_devices, .uint8, 1, *Sigs]()
         comptime assert (
             root >= 0 and root < num_devices
         ), "root GPU index must be in range [0, ngpus)"
@@ -784,22 +808,29 @@ struct DistributedBroadcast:
         # Use 2-stage requirement as upper bound.
         var scratch_buffer_size_bytes = _partitioned_scratch_requirement[
             num_devices, dtype
-        ](input.size())
+        ](Int(input.shape().product()))
         _check_signal_buffer_size(
-            signal_buffers[0].size(), scratch_buffer_size_bytes
+            Int(signal_buffers[0].shape().product()), scratch_buffer_size_bytes
         )
 
-        var in_buf = input.to_tile_tensor[.int64]()
+        var in_buf = input.to_tile_tensor[dtype]()
 
-        var rank_sigs = Array[_, num_devices](
-            fill_with_unrolled=lambda [i: Int]() -> Pointer[
-                Signal, MutAnyOrigin
-            ]: (
+        # A collective addresses the signal buffers through flat pointers; a
+        # non-pointer storage policy aborts here at run time.
+        def rank_sig[
+            i: Int
+        ]() {imm signal_buffers} -> Pointer[Signal, MutAnyOrigin]:
+            comptime assert conforms_to(
+                type_of(signal_buffers[i]), TileTensorable
+            )
+            return (
                 signal_buffers[i]
-                ._ptr.unsafe_bitcast[Signal]()
+                .to_tile_tensor()
+                .ptr.unsafe_bitcast[Signal]()
                 .as_unsafe_any_origin()
             )
-        )
+
+        var rank_sigs = Array[_, num_devices](fill_with_unrolled=rank_sig)
 
         @inline(.always)
         def launch_broadcast[
@@ -810,12 +841,10 @@ struct DistributedBroadcast:
             imm dev_ctxs_input,
             imm outputs,
         }:
-            var out_buf = TileTensor[mut=True](
-                outputs[index]
-                .to_tile_tensor[.int64]()
-                .make_dynamic[.int64]()
-                ._storage,
-                in_buf.layout,
+            comptime assert conforms_to(type_of(outputs[index]), TileTensorable)
+            var out_buf = TileTensor(
+                ptr=outputs[index].to_tile_tensor[dtype]().ptr,
+                layout=in_buf.layout,
             )
             broadcast[num_devices](
                 in_buf,
@@ -846,57 +875,73 @@ struct DistributedScatter:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
+        Outs: TypeList[Trait=Output & Tensor, ...],
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        Sigs: TypeList[Trait=MutableInput & Tensor, ...],
+        //,
         root: Int,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
-        signal_buffers: MutableInputVariadicTensors[
-            dtype=DType.uint8, rank=1, ...
-        ],
+        outputs: TensorTuple[*Outs],
+        inputs: TensorTuple[*Ins],
+        signal_buffers: TensorTuple[*Sigs],
         dev_ctxs_input: DeviceContextArray,
     ) raises:
-        comptime ngpus = signal_buffers.size
+        comptime ngpus = len(Sigs)
+        comptime dtype = Ins[0].dtype
+        comptime rank = Ins[0].rank
         comptime assert (
             root >= 0 and root < ngpus
         ), "root GPU index must be in range [0, ngpus)"
-        comptime assert inputs.size == ngpus, (
+        comptime assert len(Ins) == ngpus, (
             "expected scatter inputs and signal buffers to have"
             " the same number of elements"
         )
+        _check_tensor_tuple[ngpus, dtype, rank, *Ins]()
+        _check_tensor_tuple[len(Outs), dtype, rank, *Outs]()
+        _check_tensor_tuple[ngpus, .uint8, 1, *Sigs]()
 
         # Scatter uses signal buffers for barriers only (no payload staging),
         # so payload_size=0. This still validates the buffer holds a Signal.
         var scratch_buffer_size_bytes = 0
         _check_signal_buffer_size(
-            signal_buffers[0].size(), scratch_buffer_size_bytes
+            Int(signal_buffers[0].shape().product()), scratch_buffer_size_bytes
         )
 
         # Inputs can have different static shapes, so use make_dynamic to
         # produce a homogeneous fully-dynamic TileTensor type for Array.
-        comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_imm()
-        )
-        var in_tensors = Array[InputTensorType, ngpus](uninitialized=True)
-        var rank_sigs = Array[_, ngpus](
-            fill_with_unrolled=lambda [i: Int]() -> Pointer[
-                Signal, MutAnyOrigin
-            ]: (
+        comptime InputTile = TileTensor[
+            dtype,
+            TileLayout[
+                shape_types=DynamicCoord[.int64, rank].element_types,
+                stride_types=DynamicCoord[.int64, rank].element_types,
+            ],
+            ImmUntrackedOrigin,
+        ]
+        var in_tensors = Array[InputTile, ngpus](uninitialized=True)
+
+        # A collective addresses the signal buffers through flat pointers; a
+        # non-pointer storage policy aborts here at run time.
+        def rank_sig[
+            i: Int
+        ]() {imm signal_buffers} -> Pointer[Signal, MutAnyOrigin]:
+            comptime assert conforms_to(
+                type_of(signal_buffers[i]), TileTensorable
+            )
+            return (
                 signal_buffers[i]
-                ._ptr.unsafe_bitcast[Signal]()
+                .to_tile_tensor()
+                .ptr.unsafe_bitcast[Signal]()
                 .as_unsafe_any_origin()
             )
-        )
+
+        var rank_sigs = Array[_, ngpus](fill_with_unrolled=rank_sig)
 
         comptime for i in range(ngpus):
-            in_tensors[i] = rebind[InputTensorType](
-                inputs[i]
-                .to_tile_tensor[.int64]()
-                .make_dynamic[.int64]()
-                .as_imm()
+            comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+            in_tensors[i] = rebind[InputTile](
+                inputs[i].to_tile_tensor().make_dynamic[.int64]().as_imm()
             )
 
         @inline(.always)
@@ -908,7 +953,8 @@ struct DistributedScatter:
             imm dev_ctxs_input,
             imm outputs,
         }:
-            var out_buf = outputs[index].to_tile_tensor[.int64]()
+            comptime assert conforms_to(type_of(outputs[index]), TileTensorable)
+            var out_buf = outputs[index].to_tile_tensor[dtype]()
             scatter[ngpus=ngpus, dp_size=ngpus](
                 in_tensors,
                 out_buf,
