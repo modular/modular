@@ -43,6 +43,12 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import is_gpu
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
@@ -595,6 +601,7 @@ def multistage_qgemm_kernel[
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
     EpilogueFnType: ElementwiseEpilogueFn,
     has_epilogue_fn: Bool,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_tt: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
     a_tt: TileTensor[mut=False, a_type, a_layout, ImmutAnyOrigin],
@@ -622,6 +629,13 @@ def multistage_qgemm_kernel[
         EpilogueFnType: Type of `epilogue_fn`.
         has_epilogue_fn: Whether `epilogue_fn` stores the output instead of
             the kernel.
+        pdl_level: Programmatic dependent launch level. Above `OFF` the kernel
+            waits for its predecessor grids before its first read of the
+            activations or packed weights. `OVERLAP_AT_BEGINNING` then releases
+            its own dependents right after that wait, on entry, as
+            `PDL[overlap_at_beginning=True]` does; `OVERLAP_AT_END` releases
+            them once the MMA loop has consumed the inputs, so the epilogue
+            store overlaps the next kernel's prologue.
 
     Args:
         c_tt: The output accumulator matrix in global memory.
@@ -851,6 +865,23 @@ def multistage_qgemm_kernel[
         row_major[num_m_mmas * num_n_mmas, c_frag_size]()
     ).fill(0)
 
+    # Programmatic dependent launch: everything above only touches indices and
+    # local storage, so the predecessor grids get this long to finish before
+    # the first cp.async reads the activations and the packed weights.
+    comptime if pdl_level > PDLLevel.OFF and (
+        pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+    ):
+        wait_on_dependent_grids()
+
+    # `OVERLAP_AT_BEGINNING` releases its dependents here, as
+    # `PDL[overlap_at_beginning=True]` does on entry: this grid's own inputs are
+    # committed, and it only writes `c` below, so a dependent that reads `c`
+    # must still pass its own wait. The dependents therefore turn resident and
+    # overlap their prologue with the whole of this kernel, not just with the
+    # epilogue.
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
+
     multistage_mma_q[
         BM,
         BN,
@@ -875,6 +906,16 @@ def multistage_qgemm_kernel[
         scales_native_ring,
         ceildiv(K // num_warp_k_partitions, BK),
     )
+
+    # The MMA loop consumed the last prefetched tiles, so nothing below reads
+    # this grid's inputs any more: release the dependent grids now rather than
+    # at exit, and let the with-in-threadblock reduction and the epilogue
+    # overlap with their prologue. Every thread reaches this point.
+    # `OVERLAP_AT_BEGINNING` already released at entry, above.
+    comptime if pdl_level > PDLLevel.OFF and (
+        pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
+        launch_dependent_grids()
 
     # reduce within the threadblock
     comptime if num_warp_k_partitions > 1:
@@ -1481,6 +1522,7 @@ def multistage_gemm_q[
     pack_factor: Int,
     config: MatmulConfig[a_type, b_type, c_type, True],
     has_epilogue_fn: Bool = False,
+    pdl_level: PDLLevel = config.pdl_level(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -1501,6 +1543,9 @@ def multistage_gemm_q[
         config: The matmul configuration describing tile and warp shapes.
         has_epilogue_fn: Whether `epilogue_fn` stores the output instead of
             the kernel.
+        pdl_level: Programmatic dependent launch level for the kernel; see
+            `multistage_qgemm_kernel`. Defaults to the level the `config`
+            carries, so a tuned configuration can pin it per shape.
 
     Args:
         c: The output matrix in global memory.
@@ -1563,6 +1608,7 @@ def multistage_gemm_q[
                         adjusted_config,
                         EpilogueFnType,
                         has_epilogue_fn,
+                        pdl_level,
                     ]
 
                     ctx.enqueue_function[gemm_kernel_type](
@@ -1576,6 +1622,7 @@ def multistage_gemm_q[
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                             UInt32(adjusted_smem),
                         ),
+                        attributes=pdl_launch_attributes(pdl_level),
                     )
 
                     return
@@ -1593,6 +1640,7 @@ def multistage_gemm_q[
         config,
         EpilogueFnType,
         has_epilogue_fn,
+        pdl_level,
     ]
 
     ctx.enqueue_function[gemm_kernel_type](
@@ -1606,6 +1654,7 @@ def multistage_gemm_q[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_usage),
         ),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 

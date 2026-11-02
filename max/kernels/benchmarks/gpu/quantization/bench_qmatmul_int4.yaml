@@ -1,0 +1,51 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# INT4 (GPTQ / Q4) weight-only quantized GEMM through its production
+# dispatcher. `M` is a runtime argument (kbench `$` prefix) because the
+# dispatcher takes M at launch time; `N`, `K` and `group_size` are compile-time
+# defines because it picks its MatmulConfig from their static values.
+#
+# The M sweep spans the two regimes: 1..64 is decode, where each call streams
+# `N * K / 2` bytes of weights and the roofline is HBM bandwidth; 1024..4096 is
+# prefill, where `2 * M * N * K` flops dominate and the roofline is the
+# tensor-core rate.
+#
+# `cache_busting: True` spreads every tensor over a buffer larger than the GPU
+# cache, so each iteration re-streams the weights from HBM the way a real
+# weight-only quantized layer does.
+
+name: bench_qmatmul_int4
+file: $KERNEL_BENCHMARKS_ROOT/gpu/quantization/bench_qmatmul_int4.mojo
+
+params:
+# 7B-class projection (hidden 4096): attn q/k/v/o and mlp down.
+- $M: [1, 2, 16, 64, 1024, 4096]
+  N: 4096
+  K: 4096
+  group_size: 128
+  cache_busting: true
+
+# 7B-class mlp up/gate (intermediate 14336).
+- $M: [1, 2, 16, 64, 1024, 4096]
+  N: 14336
+  K: 4096
+  group_size: 128
+  cache_busting: true
+
+# 70B-class projection at tp=4 (hidden 8192, intermediate 28672/4 = 7168).
+- $M: [1, 2, 16, 64, 1024, 4096]
+  N: 4096
+  K: 8192
+  group_size: 128
+  cache_busting: true
