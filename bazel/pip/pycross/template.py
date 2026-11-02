@@ -159,26 +159,6 @@ def targets():
     )
 
     native.alias(
-        name = "hf-xet@multiple",
-        actual = select({{
-            "@@//:use_aiperf_setting": ":hf-xet@1.6.0",
-            "@@//:use_sglang_setting": ":hf-xet@1.6.0",
-            "@@//:use_vllm_setting": ":hf-xet@1.6.0",
-            "//conditions:default": ":hf-xet@1.4.2",
-        }}),
-    )
-
-    native.alias(
-        name = "huggingface-hub@multiple",
-        actual = select({{
-            "@@//:use_aiperf_setting": ":huggingface-hub@1.33.0",
-            "@@//:use_sglang_setting": ":huggingface-hub@1.33.0",
-            "@@//:use_vllm_setting": ":huggingface-hub@1.33.0",
-            "//conditions:default": ":huggingface-hub@1.8.0",
-        }}),
-    )
-
-    native.alias(
         name = "apache-tvm-ffi@multiple",
         actual = select({{
             "@@//:use_sglang_setting": ":apache-tvm-ffi@0.1.9",

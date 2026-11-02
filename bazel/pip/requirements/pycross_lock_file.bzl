@@ -67,9 +67,8 @@ PINS = {
     "gptqmodel": "gptqmodel@2.0.0+cu126torch2.6",
     "grpcio": "grpcio@1.80.0",
     "hf-transfer": "hf-transfer@0.1.9",
-    "hf-xet": "hf-xet@multiple",
     "httpx": "httpx@0.27.2",
-    "huggingface-hub": "huggingface-hub@multiple",
+    "huggingface-hub": "huggingface-hub@1.33.0",
     "hypothesis": "hypothesis@6.108.4",
     "idna": "idna@multiple",
     "ipython": "ipython@8.18.1",
@@ -296,26 +295,6 @@ def targets():
             "@@//:use_sglang_setting": ":sse-starlette@2.1.2",
             "@@//:use_vllm_setting": ":sse-starlette@3.5.0",
             "//conditions:default": ":sse-starlette@2.1.2",
-        }),
-    )
-
-    native.alias(
-        name = "hf-xet@multiple",
-        actual = select({
-            "@@//:use_aiperf_setting": ":hf-xet@1.6.0",
-            "@@//:use_sglang_setting": ":hf-xet@1.6.0",
-            "@@//:use_vllm_setting": ":hf-xet@1.6.0",
-            "//conditions:default": ":hf-xet@1.4.2",
-        }),
-    )
-
-    native.alias(
-        name = "huggingface-hub@multiple",
-        actual = select({
-            "@@//:use_aiperf_setting": ":huggingface-hub@1.33.0",
-            "@@//:use_sglang_setting": ":huggingface-hub@1.33.0",
-            "@@//:use_vllm_setting": ":huggingface-hub@1.33.0",
-            "//conditions:default": ":huggingface-hub@1.8.0",
         }),
     )
 
@@ -820,7 +799,7 @@ def targets():
     )
 
     _accelerate_1_15_0_deps = [
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
         ":numpy@multiple",
         ":packaging@25.0",
         ":psutil@7.0.0",
@@ -991,7 +970,6 @@ def targets():
     _aiperf_0_12_0_deps = [
         ":datasets@multiple",
         ":fastapi@multiple",
-        ":huggingface-hub@multiple",
         ":numpy@multiple",
         ":plotly@multiple",
         ":pyzmq@multiple",
@@ -1009,6 +987,7 @@ def targets():
             ":dash@3.1.1",
             ":ffmpeg-python@0.2.0",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":jinja2@3.1.6",
             ":jmespath@1.0.1",
             ":kaleido@0.2.1",
@@ -1046,6 +1025,7 @@ def targets():
             ":dash@3.1.1",
             ":ffmpeg-python@0.2.0",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":jinja2@3.1.6",
             ":jmespath@1.0.1",
             ":kaleido@0.2.1",
@@ -1083,6 +1063,7 @@ def targets():
             ":dash@3.1.1",
             ":ffmpeg-python@0.2.0",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":jinja2@3.1.6",
             ":jmespath@1.0.1",
             ":kaleido@0.2.1",
@@ -1120,6 +1101,7 @@ def targets():
             ":dash@3.1.1",
             ":ffmpeg-python@0.2.0",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":jinja2@3.1.6",
             ":jmespath@1.0.1",
             ":kaleido@0.2.1",
@@ -1157,6 +1139,7 @@ def targets():
             ":dash@3.1.1",
             ":ffmpeg-python@0.2.0",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":jinja2@3.1.6",
             ":jmespath@1.0.1",
             ":kaleido@0.2.1",
@@ -1194,6 +1177,7 @@ def targets():
             ":dash@3.1.1",
             ":ffmpeg-python@0.2.0",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":jinja2@3.1.6",
             ":jmespath@1.0.1",
             ":kaleido@0.2.1",
@@ -1231,6 +1215,7 @@ def targets():
             ":dash@3.1.1",
             ":ffmpeg-python@0.2.0",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":jinja2@3.1.6",
             ":jmespath@1.0.1",
             ":kaleido@0.2.1",
@@ -1268,6 +1253,7 @@ def targets():
             ":dash@3.1.1",
             ":ffmpeg-python@0.2.0",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":jinja2@3.1.6",
             ":jmespath@1.0.1",
             ":kaleido@0.2.1",
@@ -1305,6 +1291,7 @@ def targets():
             ":dash@3.1.1",
             ":ffmpeg-python@0.2.0",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":jinja2@3.1.6",
             ":jmespath@1.0.1",
             ":kaleido@0.2.1",
@@ -3409,7 +3396,7 @@ def targets():
         ":dill@0.3.8",
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
         ":multiprocess@0.70.16",
         ":numpy@multiple",
         ":packaging@25.0",
@@ -3434,7 +3421,6 @@ def targets():
     )
 
     _datasets_5_1_0_deps = [
-        ":huggingface-hub@multiple",
         ":numpy@multiple",
         ":tqdm@multiple",
     ] + select({
@@ -3442,6 +3428,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3453,6 +3440,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3464,6 +3452,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3475,6 +3464,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3486,6 +3476,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3497,6 +3488,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3508,6 +3500,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3519,6 +3512,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3530,6 +3524,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3541,6 +3536,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3552,6 +3548,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3563,6 +3560,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3574,6 +3572,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3585,6 +3584,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3596,6 +3596,7 @@ def targets():
             ":dill@0.3.8",
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
+            ":huggingface-hub@1.33.0",
             ":multiprocess@0.70.16",
             ":packaging@25.0",
             ":pandas@2.3.3",
@@ -3754,7 +3755,7 @@ def targets():
     _diffusers_0_37_0_deps = [
         ":filelock@3.16.1",
         ":httpx@0.27.2",
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
         ":importlib-metadata@7.1.0",
         ":numpy@multiple",
         ":pillow@12.3.0",
@@ -3895,7 +3896,7 @@ def targets():
         ":datasets@multiple",
         ":dill@0.3.8",
         ":fsspec@2024.6.1",
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
         ":multiprocess@0.70.16",
         ":numpy@multiple",
         ":packaging@25.0",
@@ -5837,36 +5838,6 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_hf-xet@1.4.2",
-        actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
-        }),
-    )
-
-    pycross_wheel_library(
-        name = "hf-xet@1.4.2",
-        wheel = ":_wheel_hf-xet@1.4.2",
-        testonly = "hf-xet" in _TESTONLY_DEPS,
-    )
-
-    native.alias(
         name = "_wheel_hf-xet@1.6.0",
         actual = select({
             ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.6.0_cp38_abi3_macosx_11_0_arm64//file",
@@ -6011,35 +5982,11 @@ def targets():
         testonly = "httpx2" in _TESTONLY_DEPS,
     )
 
-    _huggingface_hub_1_8_0_deps = [
-        ":filelock@3.16.1",
-        ":fsspec@2024.6.1",
-        ":hf-xet@multiple",
-        ":httpx@0.27.2",
-        ":packaging@25.0",
-        ":pyyaml@6.0.3",
-        ":tqdm@multiple",
-        ":typer@0.20.0",
-        ":typing-extensions@4.16.0",
-    ]
-
-    native.alias(
-        name = "_wheel_huggingface-hub@1.8.0",
-        actual = "@pycross_lock_file_wheel_huggingface_hub_1.8.0_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "huggingface-hub@1.8.0",
-        deps = _huggingface_hub_1_8_0_deps,
-        wheel = ":_wheel_huggingface-hub@1.8.0",
-        testonly = "huggingface-hub" in _TESTONLY_DEPS,
-    )
-
     _huggingface_hub_1_33_0_deps = [
         ":click@8.5.0",
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
-        ":hf-xet@multiple",
+        ":hf-xet@1.6.0",
         ":httpx@0.27.2",
         ":packaging@25.0",
         ":pyyaml@6.0.3",
@@ -6600,66 +6547,77 @@ def targets():
     )
 
     _kernels_0_13_0_deps = [
-        ":huggingface-hub@multiple",
     ] + select({
         ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomli@2.0.1",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomli@2.0.1",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":tomlkit@0.15.1",
@@ -10633,7 +10591,7 @@ def targets():
     )
 
     _optimum_1_24_0_deps = [
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
         ":numpy@multiple",
         ":packaging@25.0",
         ":torch@multiple",
@@ -11196,7 +11154,7 @@ def targets():
 
     _peft_0_18_1_deps = [
         ":accelerate@1.15.0",
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
         ":numpy@multiple",
         ":packaging@25.0",
         ":psutil@7.0.0",
@@ -13419,7 +13377,7 @@ def targets():
     )
 
     _sentence_transformers_5_5_0_deps = [
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
         ":numpy@multiple",
         ":scikit-learn@1.7.2",
         ":scipy@multiple",
@@ -15225,7 +15183,7 @@ def targets():
     )
 
     _timm_1_0_16_deps = [
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
         ":pyyaml@6.0.3",
         ":safetensors@0.6.2",
         ":torch@multiple",
@@ -15312,7 +15270,7 @@ def targets():
     )
 
     _tokenizers_0_22_1_deps = [
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
     ]
 
     native.alias(
@@ -16664,11 +16622,11 @@ def targets():
     )
 
     _transformers_5_6_0_deps = [
-        ":huggingface-hub@multiple",
         ":numpy@multiple",
         ":tqdm@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":regex@2025.11.3",
@@ -16677,6 +16635,7 @@ def targets():
             ":typer@0.20.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":regex@2025.11.3",
@@ -16685,6 +16644,7 @@ def targets():
             ":typer@0.20.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":regex@2025.11.3",
@@ -16693,6 +16653,7 @@ def targets():
             ":typer@0.20.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":regex@2025.11.3",
@@ -16701,6 +16662,7 @@ def targets():
             ":typer@0.20.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":regex@2025.11.3",
@@ -16709,6 +16671,7 @@ def targets():
             ":typer@0.20.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
+            ":huggingface-hub@1.33.0",
             ":packaging@25.0",
             ":pyyaml@6.0.3",
             ":regex@2025.11.3",
@@ -16732,7 +16695,7 @@ def targets():
     )
 
     _transformers_5_12_1_deps = [
-        ":huggingface-hub@multiple",
+        ":huggingface-hub@1.33.0",
         ":numpy@multiple",
         ":packaging@25.0",
         ":pyyaml@6.0.3",
@@ -17341,7 +17304,6 @@ def targets():
         ":compressed-tensors@multiple",
         ":fastapi@multiple",
         ":flashinfer-python@multiple",
-        ":huggingface-hub@multiple",
         ":llguidance@multiple",
         ":mcp@multiple",
         ":numpy@multiple",
@@ -17372,6 +17334,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -17423,6 +17386,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -17474,6 +17438,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -17527,6 +17492,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -17580,6 +17546,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -17633,6 +17600,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -17686,6 +17654,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -17739,6 +17708,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -17792,6 +17762,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -17845,6 +17816,7 @@ def targets():
             ":einops@0.8.0",
             ":fastsafetensors@0.3.3",
             ":filelock@3.16.1",
+            ":huggingface-hub@1.33.0",
             ":ijson@3.4.0.post0",
             ":instanttensor@0.2.1",
             ":jsonschema@4.23.0",
@@ -23415,66 +23387,6 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/82/56/19c25105ff81731ca6d55a188b5de2aa99d7a2644c7aa9de1810d5d3b726/hf_xet-1.4.2-cp314-cp314t-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "41659966020d59eb9559c57de2cde8128b706a26a64c60f0531fa2318f409418",
-        downloaded_file_path = "hf_xet-1.4.2-cp314-cp314t-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/bf/e3/8933c073186849b5e06762aa89847991d913d10a95d1603eb7f2c3834086/hf_xet-1.4.2-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-        ],
-        sha256 = "5c588e21d80010119458dd5d02a69093f0d115d84e3467efe71ffb2c67c19146",
-        downloaded_file_path = "hf_xet-1.4.2-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/eb/01/f89ebba4e369b4ed699dcb60d3152753870996f41c6d22d3d7cac01310e1/hf_xet-1.4.2-cp314-cp314t-manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "a296744d771a8621ad1d50c098d7ab975d599800dae6d48528ba3944e5001ba0",
-        downloaded_file_path = "hf_xet-1.4.2-cp314-cp314t-manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/64/2e/af4475c32b4378b0e92a587adb1aa3ec53e3450fd3e5fe0372a874531c00/hf_xet-1.4.2-cp37-abi3-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "e9b38d876e94d4bdcf650778d6ebbaa791dd28de08db9736c43faff06ede1b5a",
-        downloaded_file_path = "hf_xet-1.4.2-cp37-abi3-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/3c/4c/781267da3188db679e601de18112021a5cb16506fe86b246e22c5401a9c4/hf_xet-1.4.2-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-        ],
-        sha256 = "77e8c180b7ef12d8a96739a4e1e558847002afe9ea63b6f6358b2271a8bdda1c",
-        downloaded_file_path = "hf_xet-1.4.2-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/68/47/d6cf4a39ecf6c7705f887a46f6ef5c8455b44ad9eb0d391aa7e8a2ff7fea/hf_xet-1.4.2-cp37-abi3-manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "c3b3c6a882016b94b6c210957502ff7877802d0dbda8ad142c8595db8b944271",
-        downloaded_file_path = "hf_xet-1.4.2-cp37-abi3-manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_hf_xet_1.6.0_cp314_cp314t_macosx_11_0_arm64",
         urls = [
             "https://files.pythonhosted.org/packages/bb/1e/c0ad437dd267a8e435bef594acf781bbc3874ff0b6435b4962d03ecf7cc4/hf_xet-1.6.0-cp314-cp314t-macosx_11_0_arm64.whl",
@@ -23771,16 +23683,6 @@ def repositories():
         ],
         sha256 = "04e434b06e100eddbce9a6e817d72693a7884b10a79bd67ab48080d5c07eb899",
         downloaded_file_path = "huggingface_hub-1.33.0-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_huggingface_hub_1.8.0_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/a9/ae/8a3a16ea4d202cb641b51d2681bdd3d482c1c592d7570b3fa264730829ce/huggingface_hub-1.8.0-py3-none-any.whl",
-        ],
-        sha256 = "d3eb5047bd4e33c987429de6020d4810d38a5bef95b3b40df9b17346b7f353f2",
-        downloaded_file_path = "huggingface_hub-1.8.0-py3-none-any.whl",
     )
 
     maybe(
