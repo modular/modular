@@ -141,7 +141,12 @@ from .utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
-from .vision_encoder_cache import SupportsVisionEncoding
+from .vision_encoder_cache import (
+    SupportsPooledVisionMetrics,
+    SupportsVisionEncoding,
+    VideoEncoderMetrics,
+    VisionEncoderMetrics,
+)
 
 __all__ = [
     "DecoderBatchProcessor",
@@ -813,6 +818,24 @@ class ModuleV3DecoderPipelineModel(
                 "implement VisionBatchProcessor"
             )
         return batching
+
+    def pop_vision_metrics(self) -> VisionEncoderMetrics | None:
+        """Returns and clears the batch processor's image encoder metrics."""
+        batching = self._batch_processor
+        if isinstance(batching, SupportsPooledVisionMetrics):
+            return batching.pop_vision_metrics()
+        return None
+
+    def pop_video_metrics(self) -> VideoEncoderMetrics | None:
+        """Returns and clears the batch processor's video encoder metrics.
+
+        The pipeline reads video metrics only from the pipeline model, and
+        a registered batch processor that encodes videos counts them.
+        """
+        batching = self._batch_processor
+        if isinstance(batching, SupportsPooledVisionMetrics):
+            return batching.pop_video_metrics()
+        return None
 
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
         """Compiles the graphs and binds the vision one to the batching.

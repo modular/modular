@@ -71,7 +71,11 @@ from max.pipelines.lib.role_contracts import (
     DecoderOutputs,
     VisionInputs,
 )
-from max.pipelines.lib.vision_encoder_cache import vision_encoding
+from max.pipelines.lib.vision_encoder_cache import (
+    SupportsPooledVisionMetrics,
+    VideoEncoderMetrics,
+    vision_encoding,
+)
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
 from max.pipelines.modeling.types import PipelineTask
 from max.tensor import Tensor, defaults
@@ -588,6 +592,31 @@ def test_a_pipeline_model_without_vision_encodes_no_images() -> None:
     delegating = NonCallableMock(spec=["vision_encoding"], vision_encoding=None)
     assert vision_encoding(delegating) is None
     assert vision_encoding(object()) is None
+
+
+class VideoCountingBatchProcessor(ToyVisionBatchProcessor):
+    def pop_vision_metrics(self) -> None:
+        return None
+
+    def pop_video_metrics(self) -> VideoEncoderMetrics:
+        return VideoEncoderMetrics(num_clips_total=3)
+
+
+def test_a_pipeline_model_reports_its_batch_processors_video_metrics() -> None:
+    cls = module_pipeline_model(
+        ToyConfig,
+        ((GraphRole.DECODER, VisionDecoder), (GraphRole.VISION, ToyVision)),
+        VideoCountingBatchProcessor,
+    )
+    model = cls.__new__(cls)
+    assert isinstance(model, SupportsPooledVisionMetrics)
+    model._batch_processor = NonCallableMock(spec=DecoderBatchProcessor)
+    assert model.pop_video_metrics() is None
+    assert model.pop_vision_metrics() is None
+    model._batch_processor = VideoCountingBatchProcessor.__new__(
+        VideoCountingBatchProcessor
+    )
+    assert model.pop_video_metrics() == VideoEncoderMetrics(num_clips_total=3)
 
 
 def test_a_registration_exposes_its_ep_dispatch_token_layout() -> None:
