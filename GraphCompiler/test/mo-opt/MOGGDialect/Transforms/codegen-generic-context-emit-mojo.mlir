@@ -5,7 +5,7 @@
 // RUN:   --mogg-outline-routines --mogg-emit-mojo -verify-each=false
 // RUN: FileCheck %s < %t/graph.mojo
 
-// A kernel taking `ctx: DeviceContext.Generic` and no `target` parameter is
+// A kernel taking `ctx: DeviceContext` and no `target` parameter is
 // handed a CPU-typed context when it runs on the CPU, instead of the default
 // accelerator's.
 // CHECK: def {{__[A-Za-z0-9_]+}}({{.*}}: OpaquePointer[MutAnyOrigin], {{.*}}: OpaquePointer[MutAnyOrigin], [[PC:.*]]: {{.*}}DeviceContext) raises:

@@ -3601,9 +3601,7 @@ struct MapLowerOnePlainOutput:
 @extensibility.register("map_lower_generic_context")
 struct MapLowerGenericContext:
     @staticmethod
-    def execute(
-        res: OutputTensor, a: InputTensor, ctx: DeviceContext.Generic
-    ) raises:
+    def execute(res: OutputTensor, a: InputTensor, ctx: DeviceContext) raises:
         comptime assert type_of(ctx).target.is_cpu()
 
 

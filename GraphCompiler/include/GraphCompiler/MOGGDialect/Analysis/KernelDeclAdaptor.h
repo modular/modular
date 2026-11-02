@@ -283,7 +283,7 @@ struct KernelDeclTileTensorAdaptor {
 
 struct KernelDeclContextPtrAdaptor {
   /// The context's target is a parameter of the signature, as in
-  /// `DeviceContext.Generic`, so the caller picks it by the static type of the
+  /// `DeviceContext`, so the caller picks it by the static type of the
   /// context it passes. Otherwise the context is the default accelerator's.
   bool genericTarget = false;
 

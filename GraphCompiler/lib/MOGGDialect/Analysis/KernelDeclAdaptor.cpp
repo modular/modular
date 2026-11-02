@@ -92,7 +92,7 @@ static KGEN::LIT::StructType getAsStructType(mlir::Type t) {
 }
 
 /// Whether any parameter value of `structType` refers to a parameter of the
-/// enclosing signature, e.g. the unbound target of `DeviceContext.Generic`.
+/// enclosing signature, e.g. the unbound target of `DeviceContext`.
 ///
 /// TODO(MSTDL-3265): Remove along with `genericTarget` once kernels no longer
 /// take a `target: StaticString` parameter, since every context is then generic

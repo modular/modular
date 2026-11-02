@@ -247,7 +247,7 @@ def _checked_call[
 ](
     err: _CString,
     *,
-    device_context: DeviceContext.Generic,
+    device_context: DeviceContext,
     location: SourceLocation,
 ) raises:
     # Use the source-level function name for the error message. This is purely
@@ -268,7 +268,7 @@ def _raise_call_error(
     err: _CString,
     *,
     func_name: StaticString,
-    device_context: DeviceContext.Generic,
+    device_context: DeviceContext,
     location: SourceLocation,
 ) raises:
     # `_checked_call` is inlined into every kernel launch instantiation and
@@ -2370,7 +2370,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     def __init__(
         out self,
         # FIXME(MSTDL-3258): DeviceContext target type erasure
-        ctx: DeviceContext.Generic,
+        ctx: DeviceContext,
     ) raises:
         """Retrieves the stream associated with the given device context.
 
@@ -3122,7 +3122,7 @@ struct DeviceFunction[
     ]
     """Compilation information for the function."""
 
-    var _context: DeviceContext.Generic[Self.target]
+    var _context: DeviceContext[Self.target]
     """The device context backing the function."""
 
     # ===-------------------------------------------------------------------===#
@@ -3133,7 +3133,7 @@ struct DeviceFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext.Generic[Self.target],
+        ctx: DeviceContext[Self.target],
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
         name: StaticString = "",
@@ -3876,7 +3876,7 @@ struct DeviceExternalFunction[
     var _handle: _DeviceFunctionPtr[mut=True]
     """Internal handle to the native device function object."""
 
-    var _context: DeviceContext.Generic[Self.target]
+    var _context: DeviceContext[Self.target]
     """The device context backing the function."""
 
     # ===-------------------------------------------------------------------===#
@@ -3904,7 +3904,7 @@ struct DeviceExternalFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext.Generic[Self.target],
+        ctx: DeviceContext[Self.target],
         info: CompiledFunctionInfo,
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
@@ -3934,7 +3934,7 @@ struct DeviceExternalFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext.Generic[Self.target],
+        ctx: DeviceContext[Self.target],
         *,
         var function_name: String,
         var asm: String,
@@ -4262,13 +4262,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
     # Aliases
     # ===-------------------------------------------------------------------===#
-
-    comptime Generic = DeviceContext[_]
-    """DeviceContext type with unbound compilation target parameter.
-
-    This is a tempoary type alias as DeviceContext transitions to being
-    parameterized by compilation target.
-    """
 
     # DeviceContext is only usable on hosts so `current()` will always be a CPU.
     comptime CPU = DeviceContext[CompilationTarget.current()]
@@ -6972,7 +6965,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def select_stream(
         self, stream_id: Int
-    ) raises -> DeviceContext.Generic[Self.target]:
+    ) raises -> DeviceContext[Self.target]:
         """Returns a view of this device context bound to the given stream.
 
         The returned context shares this context's full stream set, driver
@@ -7005,7 +6998,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         )
         # The runtime transferred ownership of the view's reference to us, so
         # the wrapper must own it (and release on destruction).
-        var view = DeviceContext.Generic[Self.target](result)
+        var view = DeviceContext[Self.target](result)
         view._owning = True
         return view^
 
@@ -7988,10 +7981,10 @@ struct _HostMappedBuffer[dtype: DType]:
 
 
 struct _DeviceContextScope[target: CompilationTarget]:
-    var _ctx: DeviceContext.Generic[Self.target]
+    var _ctx: DeviceContext[Self.target]
     var _handle: _DeviceContextScopePtr[mut=True]
 
-    def __init__(out self, ctx: DeviceContext.Generic[Self.target]):
+    def __init__(out self, ctx: DeviceContext[Self.target]):
         self._ctx = ctx
         self._handle = {}
 
@@ -8000,7 +7993,7 @@ struct _DeviceContextScope[target: CompilationTarget]:
         if self._handle:
             self._release()
 
-    def __enter__(mut self) raises -> DeviceContext.Generic[Self.target]:
+    def __enter__(mut self) raises -> DeviceContext[Self.target]:
         # Create a C++ DeviceContextScope
         var cpp_handle: _DeviceContextScopePtr[mut=True] = {}
 

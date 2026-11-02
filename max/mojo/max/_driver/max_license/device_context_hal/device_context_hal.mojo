@@ -448,13 +448,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime Generic = DeviceContext[_]
-    """DeviceContext type with unbound compilation target parameter.
-
-    This is a tempoary type alias as DeviceContext transitions to being
-    parameterized by compilation target.
-    """
-
     # DeviceContext is only usable on hosts so `current()` will always be a CPU.
     comptime CPU = DeviceContext[CompilationTarget.current()]
     """DeviceContext type for the current CPU target."""

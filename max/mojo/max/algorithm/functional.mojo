@@ -287,7 +287,7 @@ def _elementwise_impl[
     *,
     target: StaticString = "cpu",
     trace_description: StaticString,
-](func: FuncType, shape: Coord, context0: DeviceContext.Generic) raises:
+](func: FuncType, shape: Coord, context0: DeviceContext) raises:
     var context = context0.cast_if_cpu[target]()
 
     @inline(.always)

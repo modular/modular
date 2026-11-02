@@ -40,7 +40,7 @@ comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
 """Logger instance for operation tracing with INFO level and [OP] prefix."""
 
 
-def get_safe_task_id(ctx: DeviceContext.Generic) -> OptionalReg[Int]:
+def get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
     """Returns the task ID for the device behind a `DeviceContext`.
 
     Args:
