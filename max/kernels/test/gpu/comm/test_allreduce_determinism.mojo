@@ -68,7 +68,7 @@ from comm.sync import enable_p2p, init_signal_buffer
 from layout import Coord, Idx, TileTensor, row_major
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal, assert_true
-from std.utils.numerics import max_finite
+from std.utils.numerics import max_finite, nan
 
 # DeepEP reruns 20x; reruns inside one process are cheap.
 comptime NUM_RERUNS = 20
@@ -333,24 +333,71 @@ def _ranks_agree[
     length: Int,
     what: StaticString,
     run: Int,
-) -> Bool:
+) -> Optional[UInt64]:
+    """Returns rank 0's hash when every rank agrees, or `None` if one differs.
+
+    The hash comes back rather than a bare verdict so a caller comparing runs
+    reuses it instead of hashing the buffer a second time.
+    """
     var h0 = hash_output(host_out[0], length)
     for i in range(1, len(host_out)):
-        if hash_output(host_out[i], length) != h0:
-            print("CROSS-RANK DIVERGENCE in", what, "at run", run, "rank", i)
-            return False
+        var rank_hash = hash_output(host_out[i], length)
+        if rank_hash != h0:
+            print(
+                t"CROSS-RANK DIVERGENCE in {what} at run {run} rank {i} hash"
+                t" {rank_hash} != rank0 hash {h0}"
+            )
+            return None
+    return h0
+
+
+def _bit_stable[
+    dtype: DType
+](
+    host_out: List[MutPointer[Scalar[dtype], MutUntrackedOrigin]],
+    length: Int,
+    what: StaticString,
+    run: Int,
+    mut run0_hash: Optional[UInt64],
+) -> Bool:
+    """Checks one buffer across ranks and against its own run-0 hash.
+
+    Run 0 records `run0_hash` once its ranks agree, and every later run must
+    reproduce it bit for bit. A divergence names the buffer, the run and both
+    hashes, then returns `False` so the caller can check the rest of the run's
+    buffers before failing. A run-0 cross-rank failure leaves the reference
+    unset, and every later run then returns `False` without printing, so a
+    lost reference fails the test instead of quietly skipping the check.
+    """
+    var rank0_hash = _ranks_agree(host_out, length, what, run)
+    if not rank0_hash:
+        return False
+    if run == 0:
+        run0_hash = rank0_hash
+        return True
+    if not run0_hash:
+        return False
+    if rank0_hash.value() != run0_hash.value():
+        print(
+            t"RUN-TO-RUN DIVERGENCE in {what} at run {run} hash"
+            t" {rank0_hash.value()} != run0 hash {run0_hash.value()}"
+        )
+        return False
     return True
 
 
-def fused_rmsnorm_rank_agreement_test[
+def fused_rmsnorm_determinism_test[
     ngpus: Int, rows: Int, cols: Int
 ](list_of_ctx: List[DeviceContext]) raises -> None:
-    """Checks the fused allreduce+RMSNorm kernels give every rank the same bits.
+    """Checks the fused allreduce+RMSNorm kernels are bit-stable across runs.
 
     Covers `lamport_allreduce_rmsnorm` and `allreduce_rmsnorm` without
-    quantization. For the small shapes the sweep passes, the latter takes the
-    fused Lamport kernel on B200 and the warp-tiling kernel on MI355. Uses
-    fp32 with an order-sensitive first column in every row.
+    quantization, asserting per buffer that every rank agrees and that each
+    rerun reproduces run 0's hash. Every launch starts from a NaN-filled output
+    buffer, so a dropped write diverges instead of replaying the previous run's
+    bits. For the small shapes the sweep passes, the latter takes the fused
+    Lamport kernel on B200 and the warp-tiling kernel on MI355. Uses fp32 with
+    an order-sensitive first column in every row.
 
     Parameters:
         ngpus: Number of participating GPUs.
@@ -423,7 +470,14 @@ def fused_rmsnorm_rank_agreement_test[
     # Run both kernels before failing, so one run reports every divergence.
     var lamport_ok = True
     var fused_ok = True
+    var lamport_run0: Optional[UInt64] = None
+    var fused_run0: Optional[UInt64] = None
     for run in range(NUM_RERUNS):
+        # Poison the output before every launch below: a write a run drops would
+        # otherwise keep the previous run's bits, which equal run 0's, and the
+        # two kernels share `out_dev`, so one would fill the other's gaps.
+        for i in range(ngpus):
+            list_of_ctx[i].enqueue_memset(out_dev[i], nan[dtype]())
         group_start()
         comptime for i in range(ngpus):
             lamport_allreduce_rmsnorm[dtype, ngpus](
@@ -448,10 +502,13 @@ def fused_rmsnorm_rank_agreement_test[
             list_of_ctx[i].enqueue_copy(host_out[i], out_dev[i])
         for i in range(ngpus):
             list_of_ctx[i].synchronize()
-        lamport_ok = lamport_ok and _ranks_agree(
-            host_out, length, "lamport_allreduce_rmsnorm", run
+        var lamport_run_ok = _bit_stable(
+            host_out, length, "lamport_allreduce_rmsnorm", run, lamport_run0
         )
+        lamport_ok = lamport_ok and lamport_run_ok
 
+        for i in range(ngpus):
+            list_of_ctx[i].enqueue_memset(out_dev[i], nan[dtype]())
         group_start()
         comptime for i in range(ngpus):
             allreduce_rmsnorm(
@@ -470,12 +527,18 @@ def fused_rmsnorm_rank_agreement_test[
             list_of_ctx[i].enqueue_copy(host_out[i], out_dev[i])
         for i in range(ngpus):
             list_of_ctx[i].synchronize()
-        fused_ok = fused_ok and _ranks_agree(
-            host_out, length, "allreduce_rmsnorm", run
+        var fused_run_ok = _bit_stable(
+            host_out, length, "allreduce_rmsnorm", run, fused_run0
         )
+        fused_ok = fused_ok and fused_run_ok
 
-    assert_true(lamport_ok, "lamport_allreduce_rmsnorm ranks disagree")
-    assert_true(fused_ok, "allreduce_rmsnorm ranks disagree")
+    assert_true(
+        lamport_ok,
+        "lamport_allreduce_rmsnorm output differs across ranks or runs",
+    )
+    assert_true(
+        fused_ok, "allreduce_rmsnorm output differs across ranks or runs"
+    )
 
     h_in.unsafe_free()
     h_gamma.unsafe_free()
@@ -483,16 +546,18 @@ def fused_rmsnorm_rank_agreement_test[
         host_out[i].unsafe_free()
 
 
-def fused_fp8_residual_rank_agreement_test[
+def fused_fp8_residual_determinism_test[
     ngpus: Int, rows: Int, cols: Int
 ](list_of_ctx: List[DeviceContext]) raises -> None:
-    """Checks `allreduce_residual_rmsnorm` with FP8 output agrees across ranks.
+    """Checks `allreduce_residual_rmsnorm` FP8 output is bit-stable across runs.
 
     Small per-rank payloads take the fused warp-tiling kernel. Payloads past
     the split threshold run the plain `allreduce` with an add epilogue, then a
     separate RMSNorm + FP8 kernel, so the add order comes from the plain
-    allreduce. Compares the residual output, the FP8 output, and the per-row
-    scales bit for bit.
+    allreduce. Asserts per buffer that the residual output, the FP8 output and
+    the per-row scales agree across ranks and reproduce run 0's hash. Every
+    launch starts from NaN-filled outputs, so a dropped write diverges instead
+    of replaying the previous run's bits.
 
     Parameters:
         ngpus: Number of participating GPUs.
@@ -570,7 +635,16 @@ def fused_fp8_residual_rank_agreement_test[
     )
 
     var ok = True
+    var residual_run0: Optional[UInt64] = None
+    var out_run0: Optional[UInt64] = None
+    var scales_run0: Optional[UInt64] = None
     for run in range(NUM_RERUNS):
+        # NaN is outside every output's range, so a write this run drops can't
+        # masquerade as the previous run's identical bits.
+        for i in range(ngpus):
+            list_of_ctx[i].enqueue_memset(residual_out_dev[i], nan[in_dtype]())
+            list_of_ctx[i].enqueue_memset(out_dev[i], nan[out_dtype]())
+            list_of_ctx[i].enqueue_memset(scales_dev[i], nan[.float32]())
         group_start()
         comptime for i in range(ngpus):
             allreduce_residual_rmsnorm(
@@ -595,14 +669,18 @@ def fused_fp8_residual_rank_agreement_test[
         for i in range(ngpus):
             list_of_ctx[i].synchronize()
         # Check every buffer before failing, so one run reports each divergence.
-        var residual_ok = _ranks_agree(
-            host_residual_out, length, "fp8 residual_output", run
+        var residual_ok = _bit_stable(
+            host_residual_out, length, "fp8 residual_output", run, residual_run0
         )
-        var out_ok = _ranks_agree(host_out, length, "fp8 output", run)
-        var scales_ok = _ranks_agree(host_scales, rows, "fp8 scales", run)
+        var out_ok = _bit_stable(host_out, length, "fp8 output", run, out_run0)
+        var scales_ok = _bit_stable(
+            host_scales, rows, "fp8 scales", run, scales_run0
+        )
         ok = ok and residual_ok and out_ok and scales_ok
 
-    assert_true(ok, "allreduce_residual_rmsnorm fp8 ranks disagree")
+    assert_true(
+        ok, "allreduce_residual_rmsnorm fp8 output differs across ranks or runs"
+    )
 
     h_in.unsafe_free()
     h_residual.unsafe_free()
@@ -637,11 +715,11 @@ def run_determinism_sweep() raises -> None:
                 ctx, LEN_SMALL
             )
             comptime if d == 0:
-                fused_rmsnorm_rank_agreement_test[ngpus, 4, 4096](ctx)
+                fused_rmsnorm_determinism_test[ngpus, 4, 4096](ctx)
                 # At most 16 KiB per rank, below every split and 2-stage
                 # threshold, so this takes the warp-tiling kernel on both
                 # vendors; it never reaches Lamport because it quantizes.
-                fused_fp8_residual_rank_agreement_test[ngpus, 4, 4096](ctx)
+                fused_fp8_residual_determinism_test[ngpus, 4, 4096](ctx)
                 # The split path needs a per-rank payload at or above a
                 # threshold: on B200 80 KiB at 8 ranks (1.5 MiB below), where
                 # 128 and 192 rows at 4096 cols run the plain allreduce's
@@ -653,14 +731,10 @@ def run_determinism_sweep() raises -> None:
                 # ranks by construction, because one rank reduces each slice,
                 # and the plain sweep still covers it.
                 comptime if DeviceContext.target.is_amd_gpu():
-                    fused_fp8_residual_rank_agreement_test[ngpus, 2, 57344](ctx)
+                    fused_fp8_residual_determinism_test[ngpus, 2, 57344](ctx)
                 elif ngpus == 8:
-                    fused_fp8_residual_rank_agreement_test[ngpus, 128, 4096](
-                        ctx
-                    )
-                    fused_fp8_residual_rank_agreement_test[ngpus, 192, 4096](
-                        ctx
-                    )
+                    fused_fp8_residual_determinism_test[ngpus, 128, 4096](ctx)
+                    fused_fp8_residual_determinism_test[ngpus, 192, 4096](ctx)
 
 
 def main() raises:
