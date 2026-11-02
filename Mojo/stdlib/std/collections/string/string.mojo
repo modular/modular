@@ -2431,26 +2431,7 @@ def ord(s: StringSpan) raises -> Int:
         print(e)  # ord() expected a single codepoint, but got a string of 2 codepoints: 'ab'
     ```
     """
-    var byte_length = s.byte_length()
-    if byte_length == 0:
-        raise Error(
-            "ord() expected a single codepoint, but got an empty string"
-        )
-
-    # SAFETY: `StringSpan` is guaranteed to hold valid UTF-8, and we checked
-    # above that it is non-empty.
-    var codepoint, codepoint_length = Codepoint.unsafe_decode_utf8_codepoint(
-        s.as_bytes()
-    )
-    if codepoint_length != byte_length:
-        raise Error(
-            "ord() expected a single codepoint, but got a string of ",
-            s.count_codepoints(),
-            " codepoints: '",
-            s,
-            "'",
-        )
-    return Int(codepoint)
+    return Int(Codepoint.ord(s))
 
 
 def ord(s: StringLiteral[_]) -> Int:
@@ -2460,9 +2441,6 @@ def ord(s: StringLiteral[_]) -> Int:
     Given a string containing a single character `Codepoint`, return an integer
     representing the codepoint of that character. For example, `ord("a")`
     returns the integer `97`. This is the inverse of the `chr()` function.
-
-    This overload validates the literal at compile time and never raises, and
-    the result folds to a constant.
 
     Args:
         s: The input string, which must contain exactly one codepoint.
@@ -2481,16 +2459,7 @@ def ord(s: StringLiteral[_]) -> Int:
     comptime fire = ord("🔥")  # 128293, usable at compile time
     ```
     """
-    comptime literal = type_of(s)()
-    # TODO(MOCO-5221): Use a plain `comptime assert` once it is checked before
-    # the fold below. Until then the fold sits in a branch so bad input never
-    # reaches it.
-    comptime if literal.count_codepoints() == 1:
-        return comptime (Int(Codepoint(literal)))
-    else:
-        comptime assert (
-            False
-        ), "ord() expects a string literal containing exactly one character"
+    return Int(Codepoint.ord(s))
 
 
 # ===----------------------------------------------------------------------=== #

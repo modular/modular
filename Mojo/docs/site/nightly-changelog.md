@@ -92,13 +92,13 @@ This version is still a work in progress.
 
 - Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
 
-- `ord()` on a runtime string (`StringSpan`, `String`) now raises an `Error`
-  instead of aborting when the string is empty. It also raises when the
-  string holds more than one codepoint; previously it silently returned the
-  first codepoint unless assertions were enabled. Callers must now handle the
-  error with `try` or a `raises` function. `ord()` on a string literal is
-  unchanged: it never raises, and a literal that isn't exactly one codepoint
-  is a compile-time error.
+- `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
+  now raise an `Error` instead of aborting when the string is empty. They also
+  raise when the string holds more than one codepoint; previously they
+  silently returned the first codepoint unless assertions were enabled.
+  Callers must now handle the error with `try` or a `raises` function. On a
+  string literal, both never raise, and a literal that isn't exactly one
+  codepoint is a compile-time error.
 
   ```mojo
   var text = String("🔥")
