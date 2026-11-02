@@ -38,6 +38,7 @@ modular_py_library(
         "memory_planner.py",
         "model.py",
         "model_config.py",
+        "registration.py",
         "spec_adapters.py",
         "tokenizer.py",
         "weight_adapters.py",

@@ -81,7 +81,6 @@ from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizerFast
 
 
 def test_registered_runtime_is_text_only() -> None:
-    assert deepseekV41_modulev3_arch.pipeline_model is DeepseekV41Model
     assert deepseekV41_modulev3_arch.tokenizer is DeepseekV41Tokenizer
     assert issubclass(DeepseekV41Tokenizer, TextTokenizer)
     assert not deepseekV41_modulev3_arch.supports_device_graph_capture

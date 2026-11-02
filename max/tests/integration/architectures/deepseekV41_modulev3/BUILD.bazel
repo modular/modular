@@ -248,3 +248,24 @@ modular_py_test(
         requirement("transformers"),
     ],
 )
+
+modular_py_test(
+    name = "test_registration",
+    size = "small",
+    srcs = ["test_registration.py"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    deps = [
+        ":abi_contract",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)

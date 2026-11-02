@@ -89,6 +89,7 @@ from .inputs import DeepseekV41Inputs
 from .interface import V41Config, extra_input_names
 from .layers.attention import absolute_positions
 from .model_config import DeepseekV41Config
+from .registration import RegisteredDeepseekV41Inputs
 
 __all__ = [
     "ADAPTER",
@@ -776,7 +777,9 @@ def trailing_input_types(
 
 def batch_trailing_buffers(target_inputs: object) -> list[Buffer]:
     """Returns the extras the trunk's batch processor prepared."""
-    assert isinstance(target_inputs, DeepseekV41Inputs)
+    assert isinstance(
+        target_inputs, (DeepseekV41Inputs, RegisteredDeepseekV41Inputs)
+    )
     return list(target_inputs.extras)
 
 

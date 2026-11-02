@@ -164,6 +164,10 @@ class EngramLookbackBatchState:
             )
         return history
 
+    def release(self, request_id: RequestID) -> None:
+        """Drops a completed request's previous-batch history source."""
+        self._prev_rows.pop(request_id, None)
+
     def source(self, contexts: Sequence[TextContext]) -> np.ndarray:
         """Returns each row's source map: its history row, or -1.
 
