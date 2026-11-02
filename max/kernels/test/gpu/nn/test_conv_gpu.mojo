@@ -654,6 +654,205 @@ def test_conv2d_im2col_multi_tile[
         _ = output_dev^
 
 
+def test_conv2d_im2col_chain_lifetime[
+    input_layout: Layout,
+    filter_layout: Layout,
+    dtype: DType,
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    pad: IndexList[2],
+    chain_len: Int,
+    m_tile_byte_budget: Int = 256 * 1024 * 1024,
+    rtol: Float64 = 1e-2,
+    atol: Float64 = 1e-2,
+](ctx: DeviceContext) raises:
+    """A conv chain whose scratch is freed mid-flight must still produce exactly
+    the outputs of the same convs run one at a time.
+
+    `dispatch_im2col_matmul_conv2d` frees its im2col and filter-transpose
+    scratch right after the last launch, so the block goes back on the
+    context's free list while the GEMMs that read it are still queued. This
+    runs such a chain -- no drain between any two convs -- across two pooled
+    streams with its own input and filter slab per slot, and compares every
+    output against the same conv done alone and drained. A free that landed
+    ahead of its kernels shows up as a mismatch here.
+
+    What this cannot establish: which block the allocator hands to the next
+    conv. Reuse is stream-ordered, and Mojo's buffers expose no address to
+    assert against, while the caching allocator is free to split a larger block
+    or carve a fresh one, so an aliasing check would be speculative. The
+    allocator-level guarantees this change leans on -- gated migration to the
+    shared parent free list, and stream views that live as long as their base
+    context -- are argued from the allocator source in the PR, not from here.
+    """
+    print("test_conv2d_im2col_chain_lifetime: chain_len=", chain_len)
+    # Two slots per stream, and both streams must be exercised.
+    comptime assert (
+        chain_len == 4
+    ), "this test drives four slots, two per stream"
+    comptime N = Int(input_layout.shape[0])
+    comptime H = Int(input_layout.shape[1])
+    comptime W = Int(input_layout.shape[2])
+    comptime C = Int(input_layout.shape[3])
+
+    comptime R = Int(filter_layout.shape[0])
+    comptime S = Int(filter_layout.shape[1])
+    comptime F = Int(filter_layout.shape[3])
+
+    comptime pad_h = IndexList[2](pad[0], pad[0])
+    comptime pad_w = IndexList[2](pad[1], pad[1])
+
+    comptime H_out = (
+        H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1
+    ) // stride[0] + 1
+    comptime W_out = (
+        W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1
+    ) // stride[1] + 1
+    comptime out_layout = Layout.row_major(N, H_out, W_out, F)
+
+    var input_size = comptime (input_layout.size())
+    var filter_size = comptime (filter_layout.size())
+    var output_size = comptime (out_layout.size())
+
+    # One slab per operand: `rand` fills the whole slab, so slot `i` reads a
+    # different sub-range than slot `j`.
+    var input_host = ctx.enqueue_create_host_buffer[dtype](
+        chain_len * input_size
+    )
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](
+        chain_len * filter_size
+    )
+    var output_ref_host = ctx.enqueue_create_host_buffer[dtype](
+        chain_len * output_size
+    )
+    var output_chain_host = ctx.enqueue_create_host_buffer[dtype](
+        chain_len * output_size
+    )
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](chain_len * input_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](chain_len * filter_size)
+    var output_ref_dev = ctx.enqueue_create_buffer[dtype](
+        chain_len * output_size
+    )
+    var output_chain_dev = ctx.enqueue_create_buffer[dtype](
+        chain_len * output_size
+    )
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+    ctx.synchronize()
+
+    var handled = True
+
+    # Reference: one conv at a time, each followed by a device drain.
+    var slot = 0
+    while slot < chain_len:
+        var in_tt = TileTensor(
+            input_dev.unsafe_ptr().unsafe_offset(slot * input_size),
+            LTToTTLayout[input_layout](),
+        )
+        var filter_tt = TileTensor(
+            filter_dev.unsafe_ptr().unsafe_offset(slot * filter_size),
+            LTToTTLayout[filter_layout](),
+        )
+        var out_tt = TileTensor(
+            output_ref_dev.unsafe_ptr().unsafe_offset(slot * output_size),
+            LTToTTLayout[out_layout](),
+        )
+        handled = dispatch_im2col_matmul_conv2d[
+            m_tile_byte_budget=m_tile_byte_budget
+        ](in_tt, filter_tt, out_tt, stride, dilation, pad, 1, ctx)
+        ctx.synchronize()
+        slot += 1
+
+    # Chained, part 1: two convs back to back on a pooled stream, no drain
+    # between them or before part 2. A stream view owns its own free list, so
+    # these frees stay in that view's cache and are gated -- on this stream and
+    # on the base stream -- before they can reach the device-wide parent list.
+    _ = ctx.create_stream()
+    _ = ctx.create_stream()
+    var alt = ctx.select_stream(1)
+    slot = 0
+    while slot < 2:
+        var in_tt = TileTensor(
+            input_dev.unsafe_ptr().unsafe_offset(slot * input_size),
+            LTToTTLayout[input_layout](),
+        )
+        var filter_tt = TileTensor(
+            filter_dev.unsafe_ptr().unsafe_offset(slot * filter_size),
+            LTToTTLayout[filter_layout](),
+        )
+        var out_tt = TileTensor(
+            output_chain_dev.unsafe_ptr().unsafe_offset(slot * output_size),
+            LTToTTLayout[out_layout](),
+        )
+        handled = dispatch_im2col_matmul_conv2d[
+            m_tile_byte_budget=m_tile_byte_budget
+        ](in_tt, filter_tt, out_tt, stride, dilation, pad, 1, alt)
+        slot += 1
+    _ = alt^
+
+    # Part 2: the consumer runs on a second pooled stream whose free list
+    # starts empty, so its same-size scratch comes from the shared parent or a
+    # fresh carve. Nothing drains part 1's stream first, so part 1's kernels can
+    # still be running when part 2's land.
+    var alt2 = ctx.select_stream(2)
+    while slot < chain_len:
+        var in_tt = TileTensor(
+            input_dev.unsafe_ptr().unsafe_offset(slot * input_size),
+            LTToTTLayout[input_layout](),
+        )
+        var filter_tt = TileTensor(
+            filter_dev.unsafe_ptr().unsafe_offset(slot * filter_size),
+            LTToTTLayout[filter_layout](),
+        )
+        var out_tt = TileTensor(
+            output_chain_dev.unsafe_ptr().unsafe_offset(slot * output_size),
+            LTToTTLayout[out_layout](),
+        )
+        handled = dispatch_im2col_matmul_conv2d[
+            m_tile_byte_budget=m_tile_byte_budget
+        ](in_tt, filter_tt, out_tt, stride, dilation, pad, 1, alt2)
+        slot += 1
+    _ = alt2^
+
+    # Join both streams before reading their outputs.
+    var join1 = ctx.select_stream(1)
+    join1.synchronize()
+    _ = join1^
+    var join2 = ctx.select_stream(2)
+    join2.synchronize()
+    _ = join2^
+
+    if not handled:
+        print("SKIP: dispatcher declined this shape (likely 1x1 or K<16)")
+        _ = input_dev^
+        _ = filter_dev^
+        _ = output_ref_dev^
+        _ = output_chain_dev^
+        return
+
+    ctx.enqueue_copy(output_ref_host, output_ref_dev)
+    ctx.enqueue_copy(output_chain_host, output_chain_dev)
+    ctx.synchronize()
+
+    try:
+        for i in range(chain_len * output_size):
+            assert_almost_equal(
+                output_chain_host[i], output_ref_host[i], rtol=rtol, atol=atol
+            )
+        print("RESULT: PASS - chained outputs match isolated outputs")
+    except e:
+        print("RESULT: FAIL - ", String(e))
+        raise e^
+    finally:
+        _ = input_dev^
+        _ = filter_dev^
+        _ = output_ref_dev^
+        _ = output_chain_dev^
+
+
 def test_conv3d_1x1x1_matmul_direct[
     input_layout: Layout,
     filter_layout: Layout,
@@ -1182,6 +1381,40 @@ def main() raises:
             (1, 1),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=False,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Four convs enqueued back to back with no host drain between them
+        # must match the same convs run one at a time. The chain crosses two
+        # stream views, one of which is destroyed with its work possibly still
+        # queued, so a premature scratch free is observable here.
+        test_conv2d_im2col_chain_lifetime[
+            Layout.row_major(1, 16, 16, 96),
+            Layout.row_major(3, 3, 96, 96),
+            DType.bfloat16,
+            (1, 1),
+            (1, 1),
+            (1, 1),
+            chain_len=4,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Same chain, sized so the M-tile budget actually splits the work:
+        # M = 64*64 = 4096 rows at K = 864, and `_MIN_M_TILE` clamps the tile
+        # cap to 1024 rows, so a 32 KiB budget gives four tiles per conv. The
+        # im2col slab is then re-filled and re-read across tile boundaries
+        # inside one dispatch, on top of the cross-conv reuse.
+        test_conv2d_im2col_chain_lifetime[
+            Layout.row_major(1, 64, 64, 96),
+            Layout.row_major(3, 3, 96, 96),
+            DType.bfloat16,
+            (1, 1),
+            (1, 1),
+            (1, 1),
+            chain_len=4,
+            m_tile_byte_budget=32 * 1024,
             rtol=2e-2,
             atol=2e-2,
         ](ctx)

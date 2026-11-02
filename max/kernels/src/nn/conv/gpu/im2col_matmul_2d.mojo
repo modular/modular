@@ -475,9 +475,14 @@ def dispatch_im2col_matmul_conv2d[
 
         m_offset += m_count
 
-    # Synchronize so scratch stays alive until kernels finish.
-    # TODO: stream-callback lifetime management would allow pipelining.
-    ctx.synchronize()
+    # Freeing the scratch here does not free it early. The block goes back on
+    # this context's free list, and every kernel that reads it was enqueued
+    # earlier on this same stream, so any reuse for later work on the stream is
+    # ordered behind those reads; migration of a freed block to the device-wide
+    # parent free list (the only way another stream can see it) is gated on a
+    # device event recorded after this point. Synchronizing instead drains the
+    # queue once per conv, which stalls the host until the GEMMs retire and
+    # empties the queue between convs in a chain.
     _ = filter_nk_buf^
     _ = im2col_buf^
     return True
@@ -749,6 +754,8 @@ def dispatch_fused_im2col_conv2d_apple[
             c_type=output_type,
         ](c_tt, input, filter_nk, conv, ctx)
 
-    ctx.synchronize()
+    # See `dispatch_im2col_matmul_conv2d` for the lifetime argument. Metal
+    # command buffers retain the buffers they are bound against until they
+    # complete, so releasing ours here does not free the pages under the GPU.
     _ = filter_nk_buf^
     return True
