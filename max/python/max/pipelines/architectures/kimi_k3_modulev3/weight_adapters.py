@@ -16,17 +16,16 @@ The tree is the ModuleV3 registry's layout for the text tower
 (:class:`~.model.KimiK3Model`). Builds the
 ``dict[str, Weights] -> dict[str, WeightData]`` the registry loads from,
 applying the same shape transforms (fused qkv projection, fused qkv conv,
-fused gate/up, stacked experts, de-padded ``A_log``) that ``model.py``'s
+fused gate/up, de-padded ``A_log``) that ``model.py``'s
 ``load_kimi_k3_weights`` applies to a live module -- re-derived locally
 here rather than imported, to avoid a dependency on V2's package. Layer,
 KDA, and expert counts instead come from :class:`~.model_config.KimiK3Config`,
 the single source of truth for those.
 
-Loads MXFP4-packed routed experts now that ``moe_latent.py`` has a compute
-path for them (the AMD CDNA4 W4A8 arm). The packed bytes fuse and stack the
-same way as the dense case; only the E8M0 scales need relabeling, since
-safetensors has no such dtype. A checkpoint without packed experts still
-loads through the dense path unchanged.
+The routed experts load per expert, as zero-copy views of the checkpoint's
+own buffers: ``moe_latent.py`` stacks them in the graph, at model init.
+MXFP4-packed experts load the same way; only their E8M0 scales need
+relabeling, since safetensors has no such dtype.
 
 Under tensor parallelism each fused tensor is written interleaved per TP
 rank (:func:`interleave_for_tp`) rather than block-major. The loader splits
@@ -37,14 +36,16 @@ hold its share of every fused block.
 
 from __future__ import annotations
 
+import logging
 import os
-import tempfile
+import queue
+import threading
+import time
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
-from max.driver import Buffer
+from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
@@ -54,6 +55,8 @@ from transformers import AutoConfig
 
 from .model import KimiK3ModelConfig
 from .model_config import KimiK3Config
+
+logger = logging.getLogger("max.pipelines")
 
 _TEXT = "language_model.model"
 
@@ -245,14 +248,8 @@ def _fuse_qkv_proj(
                 f" {tuple(part.shape)}, but must match q_proj's"
                 f" {parts[0].dtype} and {tuple(parts[0].shape)}."
             )
-    rows = [_elements(part) for part in parts]
-    shape = (sum(r.shape[0] for r in rows), *rows[0].shape[1:])
-    out = _stack_output(shape, rows[0].dtype)
-    pairs = []
-    for p, src, dst in _interleaved_slices([r.shape[0] for r in rows], tp_size):
-        pairs.append((out[dst], rows[p][src]))
-    _copy_into(pairs)
-    return _rewrap(_settle(out), parts[0], name)
+    fused = interleave_for_tp([_elements(part) for part in parts], tp_size)
+    return _rewrap(fused, parts[0], name)
 
 
 def _fuse_qkv_conv_weight(
@@ -298,134 +295,64 @@ def _canonical_a_log(
     return _rewrap(broadcast, a_log, name)
 
 
-# Each expert copy is a memcpy plus a page fault per source page, and numpy
-# releases the GIL for both, so overlapping several copies in threads hides
-# that latency; bounded low since the win is concurrent faults, not cores.
-_STACK_WORKERS = min(16, os.cpu_count() or 8)
-
-# Above this, an expert stack is backed by a file instead of anonymous memory,
-# so its pages stay reclaimable under memory pressure.
-_SPILL_BYTES = int(os.environ.get("MAX_KIMI_K3_STACK_SPILL_BYTES", 4 << 30))
-_SPILL_DIR = os.environ.get("MAX_KIMI_K3_STACK_SPILL_DIR") or None
+# Measured over the full 1.56 TB checkpoint on 8x MI355X from a cold page
+# cache: 54 GB/s with 64 MiB reads, where the init's own 4 KiB mmap faults
+# reach about 1.4 GB/s. Doubling the workers adds nothing.
+_PREFETCH_WORKERS = 32
+_PREFETCH_CHUNK = 64 << 20
 
 
-def _stack_output(shape: tuple[int, ...], dtype: np.dtype) -> np.ndarray:
-    """Allocates an expert stack, spilling to a file past ``_SPILL_BYTES``.
+def prefetch_checkpoint(paths: Sequence[str | os.PathLike[str]]) -> int:
+    """Reads every byte of ``paths`` once, leaving them in the page cache.
 
-    The file is unlinked as soon as it is mapped: the mapping keeps the inode
-    alive, so the space is returned when the array is freed and nothing is
-    left behind if the process dies.
+    The weights reach the graph as views of the checkpoint's mapping, so the
+    init that copies them to the devices then reads memory rather than
+    faulting the files in a page at a time.
+
+    Args:
+        paths: The checkpoint files; symlinks (as in the Hugging Face cache)
+            are followed.
+
+    Returns:
+        The number of bytes read.
     """
-    nbytes = int(np.prod(shape)) * np.dtype(dtype).itemsize
-    if nbytes < _SPILL_BYTES:
-        return np.empty(shape, dtype=dtype)
+    files = [os.path.realpath(path) for path in paths]
+    jobs: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
+    for path in files:
+        for offset in range(0, os.path.getsize(path), _PREFETCH_CHUNK):
+            jobs.put((path, offset))
+    read_bytes = [0] * _PREFETCH_WORKERS
 
-    fd, path = tempfile.mkstemp(prefix="max-k3-expert-stack-", dir=_SPILL_DIR)
-    os.close(fd)
-    try:
-        out = np.memmap(path, dtype=dtype, mode="w+", shape=shape)
-    finally:
-        os.unlink(path)
-    return out
+    def read(worker: int) -> None:
+        buffer = bytearray(_PREFETCH_CHUNK)
+        while True:
+            try:
+                path, offset = jobs.get_nowait()
+            except queue.Empty:
+                return
+            with open(path, "rb", buffering=0) as f:
+                f.seek(offset)
+                read_bytes[worker] += f.readinto(buffer) or 0
 
-
-def _settle(out: np.ndarray) -> np.ndarray:
-    """Writes a spilled stack back, so its pages become reclaimable.
-
-    Spilling makes the bytes file-backed, but a freshly written shared mapping
-    is DIRTY, and dirty page cache is no more reclaimable than anonymous
-    memory -- so one ``msync`` per stack makes the pages clean and lets the
-    kernel drop them under pressure.
-    """
-    if isinstance(out, np.memmap):
-        out.flush()
-    return out
-
-
-def _copy_into(pairs: Sequence[tuple[np.ndarray, np.ndarray]]) -> None:
-    """Runs ``dst[...] = src`` for each pair, concurrently.
-
-    Every ``dst`` is a disjoint slice of one preallocated output, so the
-    writes do not race and the peak stays one output rather than two.
-    """
-    if len(pairs) < 2 or _STACK_WORKERS < 2:
-        for dst, src in pairs:
-            dst[...] = src
-        return
-
-    def one(pair: tuple[np.ndarray, np.ndarray]) -> None:
-        dst, src = pair
-        dst[...] = src
-
-    with ThreadPoolExecutor(max_workers=_STACK_WORKERS) as pool:
-        # list() rather than a bare map(): map is lazy, and an exception in a
-        # worker only surfaces when its result is consumed.
-        list(pool.map(one, pairs))
-
-
-def _stack_experts_arrays(parts: Sequence[np.ndarray]) -> np.ndarray:
-    """Stacks per-expert arrays into ``[E, *parts[0].shape]``.
-
-    ``np.stack`` allocates the same output and fills it serially; this fills
-    it through :func:`_copy_into` instead.
-    """
-    if not parts:
-        raise ValueError("_stack_experts_arrays needs at least one expert")
-    out = _stack_output((len(parts), *parts[0].shape), parts[0].dtype)
-    _copy_into([(out[e], p) for e, p in enumerate(parts)])
-    return _settle(out)
-
-
-def _stack_gate_up_arrays(
-    gate: Sequence[np.ndarray], up: Sequence[np.ndarray], tp_size: int
-) -> np.ndarray:
-    """Stacks per-expert gate and up into ``[E, gate_rows + up_rows, cols]``.
-
-    Each expert's rows are interleaved per TP rank, as
-    :func:`interleave_for_tp` lays them out. Writes each rank's gate and up
-    slices into a preallocated output instead of fusing every expert first
-    and stacking the list, which costs the same result at twice the peak
-    memory and serializes every expert's page faults.
-    """
-    if not gate:
-        raise ValueError("_stack_gate_up_arrays needs at least one expert")
-    moves = _interleaved_slices([gate[0].shape[0], up[0].shape[0]], tp_size)
-    out = _stack_output(
-        (len(gate), gate[0].shape[0] + up[0].shape[0], *gate[0].shape[1:]),
-        gate[0].dtype,
+    start = time.perf_counter()
+    # Daemon threads rather than an executor, whose workers interpreter exit
+    # would join: a process that stops early must not wait for the read.
+    workers = [
+        threading.Thread(target=read, args=(i,), daemon=True)
+        for i in range(_PREFETCH_WORKERS)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    total = sum(read_bytes)
+    logger.info(
+        "Kimi K3: prefetched %.1f GB of checkpoint into the page cache in"
+        " %.1f s",
+        total / 1e9,
+        time.perf_counter() - start,
     )
-    pairs: list[tuple[np.ndarray, np.ndarray]] = []
-    for e, parts in enumerate(zip(gate, up, strict=True)):
-        for p, src, dst in moves:
-            pairs.append((out[e, dst], parts[p][src]))
-    _copy_into(pairs)
-    return _settle(out)
-
-
-def _stack_expert_weights(
-    w1: list[WeightData],
-    w2: list[WeightData],
-    w3: list[WeightData],
-    name: str,
-    tp_size: int,
-) -> tuple[WeightData, WeightData]:
-    """Stacks per-expert checkpoint tensors into the two grouped tensors.
-
-    ``KimiK3LatentMoE.experts_gate_up_proj`` and ``experts_down_proj`` take
-    them. ``w1`` is gate, ``w3`` is up and ``w2`` is down: the checkpoint's own
-    numbering does not follow the data flow. The MXFP4 case's ``weight_scale``
-    tensors go through the same stacking, since whether the values are packed
-    or dense makes no difference to it -- so the scales land in the same
-    per-rank interleaved row order as the weights they scale.
-    """
-    gate_up = _stack_gate_up_arrays(
-        [_elements(g) for g in w1], [_elements(u) for u in w3], tp_size
-    )
-    down = _stack_experts_arrays([_elements(w) for w in w2])
-    return (
-        _rewrap(gate_up, w1[0], f"{name}.experts_gate_up_proj"),
-        _rewrap(down, w2[0], f"{name}.experts_down_proj"),
-    )
+    return total
 
 
 def _experts_are_packed(state_dict: dict[str, Weights], moe: str) -> bool:
@@ -469,6 +396,21 @@ def tp_degree(pipeline_config: Any) -> int:
     return len(pipeline_config.model.device_specs)
 
 
+def _uploads_weights(pipeline_config: Any) -> bool:
+    """Whether this load copies real checkpoint bytes to the devices.
+
+    A compile-only load (header-only weights, virtual devices) never reads
+    them, and a forced download has just written them through the page cache,
+    so neither gains from a prefetch.
+    """
+    model = pipeline_config.model
+    return not (
+        model.force_download
+        or model.header_only_weights
+        or is_virtual_device_mode()
+    )
+
+
 def convert_kimi_k3_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig,
@@ -477,9 +419,10 @@ def convert_kimi_k3_state_dict(
     """Converts a Kimi K3 checkpoint's text tower onto the module tree.
 
     The names it produces are :class:`~.model.KimiK3Model`'s own. Under TP,
-    every fused tensor (gate/up, routed-expert gate/up and its MXFP4 scales,
-    the KDA qkv projection, the KDA qkv conv) is interleaved per TP rank by
-    :func:`interleave_for_tp`.
+    every fused tensor (the dense and shared gate/up, the KDA qkv projection,
+    the KDA qkv conv) is interleaved per TP rank by :func:`interleave_for_tp`.
+    Each routed expert keeps the checkpoint's own ``w1``/``w2``/``w3`` names
+    and buffers.
 
     Args:
         **unused_kwargs: Accepted so every adapter shares one signature.
@@ -496,6 +439,14 @@ def convert_kimi_k3_state_dict(
         module directly, with no ``language_model`` wrapper attribute.
     """
     pipeline_config = unused_kwargs.get("pipeline_config")
+    if pipeline_config is not None and _uploads_weights(pipeline_config):
+        # Warms the page cache while the graph is built and compiled, so the
+        # init that copies these views to the devices reads memory.
+        threading.Thread(
+            target=prefetch_checkpoint,
+            args=(pipeline_config.model.resolved_weight_paths(),),
+            daemon=True,
+        ).start()
     quantization_encoding = (
         _select_quantization_encoding(
             pipeline_config.model, KimiK3Config.DEFAULT_ENCODING
@@ -606,62 +557,19 @@ def convert_kimi_k3_state_dict(
         out[f"{ffn_dst}.routed_expert_norm.weight"] = _wd(
             state_dict, f"{moe}.routed_expert_norm.weight"
         )
-        if _experts_are_packed(state_dict, moe):
-            packed1 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w1.{_PACKED}")
-                for e in range(num_experts)
-            ]
-            packed2 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w2.{_PACKED}")
-                for e in range(num_experts)
-            ]
-            packed3 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w3.{_PACKED}")
-                for e in range(num_experts)
-            ]
-            gate_up, down = _stack_expert_weights(
-                packed1, packed2, packed3, ffn_dst, tp_size
-            )
-            out[f"{ffn_dst}.experts_gate_up_proj"] = gate_up
-            out[f"{ffn_dst}.experts_down_proj"] = down
-
-            scale1 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w1.weight_scale")
-                for e in range(num_experts)
-            ]
-            scale2 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w2.weight_scale")
-                for e in range(num_experts)
-            ]
-            scale3 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w3.weight_scale")
-                for e in range(num_experts)
-            ]
-            gate_up_scale, down_scale = _stack_expert_weights(
-                scale1, scale2, scale3, f"{ffn_dst}_scale", tp_size
-            )
-            out[f"{ffn_dst}.experts_gate_up_proj_scale"] = _as_e8m0(
-                gate_up_scale, f"{ffn_dst}.experts_gate_up_proj_scale"
-            )
-            out[f"{ffn_dst}.experts_down_proj_scale"] = _as_e8m0(
-                down_scale, f"{ffn_dst}.experts_down_proj_scale"
-            )
-        else:
-            w1 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w1.weight")
-                for e in range(num_experts)
-            ]
-            w2 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w2.weight")
-                for e in range(num_experts)
-            ]
-            w3 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w3.weight")
-                for e in range(num_experts)
-            ]
-            gate_up, down = _stack_expert_weights(w1, w2, w3, ffn_dst, tp_size)
-            out[f"{ffn_dst}.experts_gate_up_proj"] = gate_up
-            out[f"{ffn_dst}.experts_down_proj"] = down
+        packed = _experts_are_packed(state_dict, moe)
+        for e in range(num_experts):
+            for w in ("w1", "w2", "w3"):
+                src_w = f"{moe}.experts.{e}.{w}"
+                dst_w = f"{ffn_dst}.experts.{e}.{w}"
+                if not packed:
+                    out[f"{dst_w}.weight"] = _wd(state_dict, f"{src_w}.weight")
+                    continue
+                out[f"{dst_w}.weight"] = _wd(state_dict, f"{src_w}.{_PACKED}")
+                out[f"{dst_w}.weight_scale"] = _as_e8m0(
+                    _wd(state_dict, f"{src_w}.weight_scale"),
+                    f"{dst_w}.weight_scale",
+                )
         out[f"{ffn_dst}.shared_experts.gate_up_proj.weight"] = _fuse_gate_up(
             _wd(state_dict, f"{moe}.shared_experts.gate_proj.weight"),
             _wd(state_dict, f"{moe}.shared_experts.up_proj.weight"),

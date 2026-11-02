@@ -30,6 +30,7 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 import pytest
+from _moe_test_utils import assign_experts
 from max.driver import Accelerator, Buffer, Device, accelerator_api
 from max.dtype import DType
 from max.nn.legacy.quant_config import QuantConfig
@@ -201,7 +202,6 @@ def _build(
     *,
     mxfp4: dict[str, npt.NDArray[np.uint8]] | None = None,
     decoded: dict[str, np.ndarray] | None = None,
-    device: Device,
 ) -> KimiK3LatentMoE:
     layer = KimiK3LatentMoE(
         hidden_size=_HIDDEN,
@@ -247,22 +247,27 @@ def _build(
     )
     layer.shared_experts.down_proj.weight = bf16(weights["shared_down_weight"])
     if mxfp4 is not None:
-        layer.experts_gate_up_proj = _packed_tensor(
-            mxfp4["gate_up"], DType.uint8, device
+        assign_experts(
+            layer,
+            mxfp4["gate_up"],
+            mxfp4["down"],
+            lambda a, device: _packed_tensor(a, DType.uint8, device),
         )
-        layer.experts_gate_up_proj_scale = _packed_tensor(
-            mxfp4["gate_up_scale"], DType.float8_e8m0fnu, device
-        )
-        layer.experts_down_proj = _packed_tensor(
-            mxfp4["down"], DType.uint8, device
-        )
-        layer.experts_down_proj_scale = _packed_tensor(
-            mxfp4["down_scale"], DType.float8_e8m0fnu, device
+        assign_experts(
+            layer,
+            mxfp4["gate_up_scale"],
+            mxfp4["down_scale"],
+            lambda a, device: _packed_tensor(a, DType.float8_e8m0fnu, device),
+            leaf="weight_scale",
         )
     else:
         assert decoded is not None
-        layer.experts_gate_up_proj = bf16(decoded["experts_gate_up_proj"])
-        layer.experts_down_proj = bf16(decoded["experts_down_proj"])
+        assign_experts(
+            layer,
+            decoded["experts_gate_up_proj"],
+            decoded["experts_down_proj"],
+            lambda a, device: bf16(a).to(device),
+        )
     return layer
 
 
@@ -292,7 +297,7 @@ def test_amd_w4a8_matches_dense_from_decoded_weights() -> None:
     with default_device(device):
         x_bf16 = Tensor(x_np, dtype=DType.float32).cast(DType.bfloat16)
 
-        dense_layer = _build(weights, decoded=decoded, device=device)
+        dense_layer = _build(weights, decoded=decoded)
         dense_out = (
             dense_layer(x_bf16)
             .cast(DType.float32)
@@ -300,7 +305,7 @@ def test_amd_w4a8_matches_dense_from_decoded_weights() -> None:
             .astype(np.float64)
         )
 
-        mxfp4_layer = _build(weights, mxfp4=mxfp4, device=device)
+        mxfp4_layer = _build(weights, mxfp4=mxfp4)
         mxfp4_out = (
             mxfp4_layer(x_bf16)
             .cast(DType.float32)

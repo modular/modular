@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _moe_test_utils import assign_experts
 from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
@@ -108,14 +109,13 @@ def _latent_moe_layer(
     layer.routed_expert_down_proj.weight = Tensor(down_proj_np).cast(dtype)
     layer.routed_expert_up_proj.weight = Tensor(up_proj_np).cast(dtype)
     layer.routed_expert_norm.weight = Tensor(norm_np).cast(dtype)
-    # The TP layer takes the per-rank interleave the weight adapter
-    # writes; with one rank it is the plain concatenation.
-    layer.experts_gate_up_proj = Tensor(
-        interleave_for_tp(
-            np.split(experts_gate_up_np, 2, axis=1), tp_size, axis=1
-        )
-    ).cast(dtype)
-    layer.experts_down_proj = Tensor(experts_down_np).cast(dtype)
+    # The experts load unfused; the layer gives each rank its share.
+    assign_experts(
+        layer,
+        experts_gate_up_np,
+        experts_down_np,
+        lambda a, device: Tensor(a, device=device).cast(dtype),
+    )
     layer.shared_experts.gate_up_proj.weight = Tensor(
         interleave_for_tp(np.split(shared_gate_up_np, 2), tp_size)
     ).cast(dtype)

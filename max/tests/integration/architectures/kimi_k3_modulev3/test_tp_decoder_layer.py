@@ -25,6 +25,7 @@ os.environ.setdefault("MODULAR_DEBUG", "source-tracebacks")
 
 import numpy as np
 import pytest
+from _moe_test_utils import assign_experts
 from max.driver import Accelerator
 from max.dtype import DType
 from max.pipelines.architectures.kimi_k3_modulev3.layers.decoder_layer import (
@@ -268,13 +269,12 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
             up_proj_np, dtype=DType.float32
         )
         ffn.routed_expert_norm.weight = Tensor(norm_np, dtype=DType.float32)
-        ffn.experts_gate_up_proj = Tensor(
-            interleave_for_tp(
-                np.split(experts_gate_up_np, 2, axis=1), tp_size, axis=1
-            ),
-            dtype=DType.float32,
+        assign_experts(
+            ffn,
+            experts_gate_up_np,
+            experts_down_np,
+            lambda a, device: Tensor(a, device=device),
         )
-        ffn.experts_down_proj = Tensor(experts_down_np, dtype=DType.float32)
         ffn.shared_experts.gate_up_proj.weight = Tensor(
             interleave_for_tp(np.split(shared_gate_up_np, 2), tp_size),
             dtype=DType.float32,

@@ -24,6 +24,7 @@ os.environ.setdefault("MODULAR_DEBUG", "source-tracebacks")
 
 import numpy as np
 import pytest
+from _moe_test_utils import assign_experts
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -169,12 +170,12 @@ def test_decoder_layer_mla_moe_single_device_matches_ep2() -> None:
         ffn.routed_expert_norm.weight = Tensor(
             norm_np, dtype=DType.float32
         ).cast(DType.bfloat16)
-        ffn.experts_gate_up_proj = Tensor(
-            experts_gate_up_np, dtype=DType.float32
-        ).cast(DType.bfloat16)
-        ffn.experts_down_proj = Tensor(
-            experts_down_np, dtype=DType.float32
-        ).cast(DType.bfloat16)
+        assign_experts(
+            ffn,
+            experts_gate_up_np,
+            experts_down_np,
+            lambda a, device: Tensor(a, device=device).cast(DType.bfloat16),
+        )
         ffn.shared_experts.gate_up_proj.weight = Tensor(
             shared_gate_up_np, dtype=DType.float32
         ).cast(DType.bfloat16)

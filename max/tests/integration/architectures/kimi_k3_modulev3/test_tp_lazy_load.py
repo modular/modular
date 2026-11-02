@@ -133,7 +133,7 @@ def _write_checkpoint(raw: dict[str, np.ndarray], path: Path) -> None:
     save_file(checkpoint, str(path))
 
 
-def _pipeline_config(num_devices: int) -> SimpleNamespace:
+def _pipeline_config(num_devices: int, checkpoint: Path) -> SimpleNamespace:
     """The fields of a float32, ``num_devices``-GPU TP ``PipelineConfig``
     the weight adapter reads."""
     return SimpleNamespace(
@@ -142,6 +142,9 @@ def _pipeline_config(num_devices: int) -> SimpleNamespace:
             _resolved_dtype_cast=(None, None),
             data_parallel_degree=1,
             device_specs=[None] * num_devices,
+            resolved_weight_paths=lambda: [checkpoint],
+            force_download=False,
+            header_only_weights=False,
         ),
         runtime=SimpleNamespace(ep_size=1),
     )
@@ -161,7 +164,7 @@ def _serve_logits(
     state_dict = convert_kimi_k3_state_dict(
         dict(weights.items()),
         _text_config(config),
-        pipeline_config=_pipeline_config(len(devices)),
+        pipeline_config=_pipeline_config(len(devices), checkpoint),
     )
     mesh = DeviceMesh(tuple(devices), (len(devices),), ("tp",))
     device_refs = [DeviceRef.from_device(d) for d in devices]

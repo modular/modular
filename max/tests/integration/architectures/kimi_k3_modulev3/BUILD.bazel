@@ -96,11 +96,18 @@ modular_py_test(
 modular_py_test(
     name = "weight_adapters_tests_cpu",
     srcs = ["test_weight_adapters.py"],
+    ignore_extra_deps = [
+        # The expert stacks realize eagerly, through the MO interpreter.
+        "//max/python/max/_interpreter_ops",
+    ],
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/support",
     ],
@@ -167,6 +174,7 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":moe_test_utils",
         requirement("numpy"),
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -189,6 +197,7 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":moe_test_utils",
         requirement("numpy"),
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -268,6 +277,19 @@ modular_eager_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_py_library(
+    name = "moe_test_utils",
+    testonly = True,
+    srcs = ["_moe_test_utils.py"],
+    imports = ["."],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -541,6 +563,7 @@ modular_eager_py_test(
     tags = ["gpu"],
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
+        ":moe_test_utils",
         requirement("numpy"),
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -605,6 +628,7 @@ modular_eager_py_test(
     tags = ["gpu"],
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
+        ":moe_test_utils",
         requirement("numpy"),
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -699,6 +723,7 @@ modular_eager_py_test(
     tags = ["gpu"],
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
+        ":moe_test_utils",
         requirement("numpy"),
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -723,6 +748,7 @@ modular_eager_py_test(
     tags = ["gpu"],
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
+        ":moe_test_utils",
         requirement("numpy"),
         "//max/python/max:tensor",
         "//max/python/max/driver",

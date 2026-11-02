@@ -14,35 +14,46 @@
 
 CPU-only: everything here is dict-to-dict conversion over real (small,
 synthetic) tensors, not graph construction. The shape transforms (fused qkv
-projection, fused qkv conv, fused gate/up, stacked experts, de-padded
-``A_log``) are checked numerically against ``model.py``'s own numpy helpers
--- the same transforms applied to the same raw arrays -- rather than against
-a hand-computed expectation, so the two implementations cannot silently
-drift apart.
+projection, fused qkv conv, fused gate/up, de-padded ``A_log``) are checked
+numerically against ``model.py``'s own numpy helpers -- the same transforms
+applied to the same raw arrays -- rather than against a hand-computed
+expectation, so the two implementations cannot silently drift apart. The
+routed experts load per expert, and the per-device stacks the graph builds
+from them are checked on a CPU mesh against :func:`interleave_for_tp`.
 """
 
 from __future__ import annotations
 
+import threading
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from max.driver import Buffer
+from max import functional as F
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.kimi_k3_modulev3 import model as km
 from max.pipelines.architectures.kimi_k3_modulev3 import (
     weight_adapters as wa,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
+    KimiK3LatentMoE,
+)
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
     convert_kimi_k3_state_dict,
     interleave_for_tp,
+    prefetch_checkpoint,
     tp_degree,
 )
 from max.support.math import ceildiv
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import DeviceMesh
 
 _HIDDEN_SIZE = 16
 _VOCAB_SIZE = 32
@@ -159,8 +170,7 @@ def _weight_u8(array: np.ndarray, name: str) -> Any:
 
     Mirrors the real checkpoint's MXFP4 ``weight_packed``/``weight_scale``
     storage: both ship as plain ``U8`` bytes (safetensors has no packed-FP4
-    or E8M0 dtype), reinterpreted downstream by `_stack_expert_weights` (for
-    `weight_packed`, unchanged) and `_as_e8m0` (for `weight_scale`).
+    or E8M0 dtype); `_as_e8m0` relabels `weight_scale`.
     """
     shape = tuple(int(d) for d in array.shape)
     weight_data = WeightData(
@@ -465,10 +475,13 @@ def test_key_set_matches_the_module_tree(
                 f"{ffn}.routed_expert_down_proj.weight",
                 f"{ffn}.routed_expert_up_proj.weight",
                 f"{ffn}.routed_expert_norm.weight",
-                f"{ffn}.experts_gate_up_proj",
-                f"{ffn}.experts_down_proj",
                 f"{ffn}.shared_experts.gate_up_proj.weight",
                 f"{ffn}.shared_experts.down_proj.weight",
+            }
+            expected |= {
+                f"{ffn}.experts.{e}.{w}.weight"
+                for e in range(_NUM_EXPERTS)
+                for w in ("w1", "w2", "w3")
             }
     assert set(converted) == expected
 
@@ -522,22 +535,6 @@ def test_fused_qkv_proj_interleaves_per_rank(tp_size: int) -> None:
                 shard[p * per_rank : (p + 1) * per_rank],
                 part[r * per_rank : (r + 1) * per_rank],
             )
-
-
-def test_fused_qkv_proj_spilled_output_is_byte_identical(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """With the spill threshold at zero the merged weight is file-backed
-    but holds the same bytes as the in-memory one."""
-    arrays = [_fp32((8, 5)) + 100 * i for i in range(3)]
-    q, k, v = (
-        WeightData.from_numpy(a, axis)
-        for a, axis in zip(arrays, ("q", "k", "v"), strict=True)
-    )
-    in_memory = _to_numpy(wa._fuse_qkv_proj(q, k, v, "qkv", 2))
-    monkeypatch.setattr(wa, "_SPILL_BYTES", 0)
-    spilled = _to_numpy(wa._fuse_qkv_proj(q, k, v, "qkv", 2))
-    np.testing.assert_array_equal(spilled, in_memory)
 
 
 def test_fused_qkv_proj_rejects_mismatched_parts() -> None:
@@ -625,37 +622,18 @@ def test_dt_bias_reshaped_to_heads_by_head_dim(
     )
 
 
-def test_stacked_experts_match_model_py(
+def test_routed_experts_are_the_checkpoints_own_buffers(
     checkpoint: dict[str, Any], converted: dict[str, WeightData]
 ) -> None:
+    """Each expert is renamed, not copied: ``w1`` is gate, ``w3`` is up and
+    ``w2`` is down, and the graph stacks them at init."""
     moe = f"{_TEXT}.layers.1.block_sparse_moe"
-    w1 = [
-        _to_numpy(checkpoint[f"{moe}.experts.{e}.w1.weight"].data())
-        for e in range(_NUM_EXPERTS)
-    ]
-    w2 = [
-        _to_numpy(checkpoint[f"{moe}.experts.{e}.w2.weight"].data())
-        for e in range(_NUM_EXPERTS)
-    ]
-    w3 = [
-        _to_numpy(checkpoint[f"{moe}.experts.{e}.w3.weight"].data())
-        for e in range(_NUM_EXPERTS)
-    ]
-    expected_gate_up, expected_down = km._stack_expert_weights(w1, w2, w3)
-    actual_gate_up = _to_numpy(converted["layers.1.ffn.experts_gate_up_proj"])
-    actual_down = _to_numpy(converted["layers.1.ffn.experts_down_proj"])
-    np.testing.assert_array_equal(actual_gate_up, expected_gate_up)
-    np.testing.assert_array_equal(actual_down, expected_down)
-    assert actual_gate_up.shape == (
-        _NUM_EXPERTS,
-        2 * _MOE_INTERMEDIATE_SIZE,
-        _ROUTED_EXPERT_HIDDEN_SIZE,
-    )
-    assert actual_down.shape == (
-        _NUM_EXPERTS,
-        _ROUTED_EXPERT_HIDDEN_SIZE,
-        _MOE_INTERMEDIATE_SIZE,
-    )
+    for e in range(_NUM_EXPERTS):
+        for w in ("w1", "w2", "w3"):
+            assert (
+                converted[f"layers.1.ffn.experts.{e}.{w}.weight"]
+                is checkpoint[f"{moe}.experts.{e}.{w}.weight"].data()
+            )
 
 
 def test_routed_entry_and_exit_are_not_swapped(
@@ -744,74 +722,30 @@ def test_loads_mxfp4_packed_experts(
     packed_checkpoint: dict[str, Any],
     packed_converted: dict[str, WeightData],
 ) -> None:
-    """Packed weights and their E8M0 scales load byte-identical and stacked.
-
-    The packed VALUES are not transformed, only stacked across experts and
-    fused gate-then-up -- same mechanism as the dense case -- so every byte
-    of the real checkpoint's per-expert tensors must reappear unchanged at
-    its stacked position.
-    """
+    """Packed weights load as the checkpoint's own buffers, and their scales
+    as zero-copy E8M0 views of the checkpoint's ``uint8`` bytes."""
     moe = f"{_TEXT}.layers.1.block_sparse_moe"
-    gate_up = _to_numpy_u8(
-        packed_converted["layers.1.ffn.experts_gate_up_proj"]
-    )
-    down = _to_numpy_u8(packed_converted["layers.1.ffn.experts_down_proj"])
-    gate_up_scale = _to_numpy_u8(
-        packed_converted["layers.1.ffn.experts_gate_up_proj_scale"]
-    )
-    down_scale = _to_numpy_u8(
-        packed_converted["layers.1.ffn.experts_down_proj_scale"]
-    )
-
-    gate_rows = _PACKED_MOE_INTERMEDIATE_SIZE
     for e in range(_NUM_EXPERTS):
-        w1 = _to_numpy_u8(
-            packed_checkpoint[f"{moe}.experts.{e}.w1.weight_packed"].data()
-        )
-        w3 = _to_numpy_u8(
-            packed_checkpoint[f"{moe}.experts.{e}.w3.weight_packed"].data()
-        )
-        w2 = _to_numpy_u8(
-            packed_checkpoint[f"{moe}.experts.{e}.w2.weight_packed"].data()
-        )
-        np.testing.assert_array_equal(gate_up[e, :gate_rows], w1)
-        np.testing.assert_array_equal(gate_up[e, gate_rows:], w3)
-        np.testing.assert_array_equal(down[e], w2)
-
-        w1_scale = _to_numpy_u8(
-            packed_checkpoint[f"{moe}.experts.{e}.w1.weight_scale"].data()
-        )
-        w3_scale = _to_numpy_u8(
-            packed_checkpoint[f"{moe}.experts.{e}.w3.weight_scale"].data()
-        )
-        w2_scale = _to_numpy_u8(
-            packed_checkpoint[f"{moe}.experts.{e}.w2.weight_scale"].data()
-        )
-        np.testing.assert_array_equal(gate_up_scale[e, :gate_rows], w1_scale)
-        np.testing.assert_array_equal(gate_up_scale[e, gate_rows:], w3_scale)
-        np.testing.assert_array_equal(down_scale[e], w2_scale)
-
-    assert gate_up.dtype == np.uint8
-    assert down.dtype == np.uint8
-    assert (
-        packed_converted["layers.1.ffn.experts_gate_up_proj"].dtype
-        == DType.uint8
-    )
-    assert (
-        packed_converted["layers.1.ffn.experts_gate_up_proj_scale"].dtype
-        == DType.float8_e8m0fnu
-    )
-    assert (
-        packed_converted["layers.1.ffn.experts_down_proj_scale"].dtype
-        == DType.float8_e8m0fnu
-    )
+        for w in ("w1", "w2", "w3"):
+            dst = f"layers.1.ffn.experts.{e}.{w}"
+            src = f"{moe}.experts.{e}.{w}"
+            assert (
+                packed_converted[f"{dst}.weight"]
+                is packed_checkpoint[f"{src}.weight_packed"].data()
+            )
+            scale = packed_converted[f"{dst}.weight_scale"]
+            assert scale.dtype == DType.float8_e8m0fnu
+            raw = _to_numpy_u8(packed_checkpoint[f"{src}.weight_scale"].data())
+            got = _to_numpy_u8(scale)
+            np.testing.assert_array_equal(got, raw)
+            assert np.shares_memory(got, raw)
 
 
 def test_dense_checkpoint_has_no_quantized_expert_keys(
     converted: dict[str, WeightData],
 ) -> None:
     """The existing dense (BF16) fixture never produces scale tensors."""
-    assert "layers.1.ffn.experts_gate_up_proj_scale" not in (converted)
+    assert not any(name.endswith(".weight_scale") for name in converted)
 
 
 @pytest.mark.parametrize(
@@ -845,53 +779,133 @@ def test_interleave_for_tp_rejects_a_non_divisible_width() -> None:
         interleave_for_tp([np.zeros((6, 2)), np.zeros((6, 2))], 4)
 
 
-@pytest.mark.parametrize("tp_size", [1, 2, 4])
-def test_stacked_gate_up_matches_interleave_for_tp(tp_size: int) -> None:
-    gate = [_fp32((8, 3)) for _ in range(_NUM_EXPERTS)]
-    up = [_fp32((8, 3)) for _ in range(_NUM_EXPERTS)]
-    stacked = wa._stack_gate_up_arrays(gate, up, tp_size)
-    for e in range(_NUM_EXPERTS):
-        np.testing.assert_array_equal(
-            stacked[e], interleave_for_tp([gate[e], up[e]], tp_size)
+def _cpu_mesh_moe(tp_size: int) -> KimiK3LatentMoE:
+    """A packed latent MoE block whose replicated weights sit on a CPU mesh."""
+    mesh = DeviceMesh((CPU(),) * tp_size, (tp_size,), ("tp",))
+    # The E8M0 zeros the experts start with would compile eagerly.
+    with F.lazy(), default_device(mesh):
+        return KimiK3LatentMoE(
+            hidden_size=_HIDDEN_SIZE,
+            latent_size=64,
+            moe_intermediate_size=128,
+            shared_intermediate_size=128,
+            num_experts=_NUM_EXPERTS,
+            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+            beta=4.0,
+            linear_beta=None,
+            rms_norm_eps=1e-5,
+            routed_scaling_factor=1.0,
+            num_expert_group=1,
+            topk_group=1,
+            moe_renormalize=True,
+            dtype=DType.bfloat16,
+            quant_config=QuantConfig.mxfp4(mlp_quantized_layers={0}),
         )
 
 
-def test_stacked_scales_follow_their_weights_rows() -> None:
-    """Packed weights and their E8M0 scales get the same row permutation.
+@pytest.mark.parametrize("tp_size", [1, 2, 4])
+def test_graph_expert_stacks_match_interleave_for_tp(tp_size: int) -> None:
+    """Each device's gate/up stack is its rank's slice of the
+    :func:`interleave_for_tp` layout the adapter used to write, and its down
+    stack is its slice of the FFN (K) axis, for weights and scales alike.
 
-    Each row of both tensors stores its own source tag (expert, block, row),
-    so the stacked tensors must agree tag for tag.
+    The host backend cannot compile E8M0, so random ``uint8`` codes stand in
+    for the scales: the stacking only moves bytes.
     """
-    rows, tp_size = 8, 2
+    layer = _cpu_mesh_moe(tp_size)
+    rng = np.random.default_rng(tp_size)
+    ref: dict[tuple[str, str], list[np.ndarray]] = {}
+    for expert in layer.experts:
+        for w in ("w1", "w2", "w3"):
+            projection = getattr(expert, w)
+            for leaf in ("weight", "weight_scale"):
+                shape = [int(d) for d in getattr(projection, leaf).shape]
+                codes = rng.integers(0, 256, shape, dtype=np.uint8)
+                setattr(projection, leaf, Tensor.from_dlpack(codes))
+                ref.setdefault((w, leaf), []).append(codes)
 
-    def tagged(block: int, cols: int) -> list[WeightData]:
-        return [
-            WeightData.from_numpy(
-                np.repeat(
-                    (e * 64 + block * 16 + np.arange(rows, dtype=np.uint8))[
-                        :, None
-                    ],
-                    cols,
-                    axis=1,
-                ),
-                f"w{block}.{e}",
-            )
-            for e in range(_NUM_EXPERTS)
-        ]
+    for leaf, suffix in (("weight", ""), ("weight_scale", "_scale")):
+        gate_up = np.stack(
+            [
+                interleave_for_tp([g, u], tp_size)
+                for g, u in zip(ref["w1", leaf], ref["w3", leaf], strict=True)
+            ]
+        )
+        down = np.stack(ref["w2", leaf])
+        got_gate_up = getattr(layer, f"experts_gate_up_proj{suffix}")
+        got_down = getattr(layer, f"experts_down_proj{suffix}")
+        for name, got, want, axis in (
+            ("gate_up", got_gate_up, gate_up, 1),
+            ("down", got_down, down, 2),
+        ):
+            shards = [shard.to_numpy() for shard in got.local_shards]
+            assert len(shards) == tp_size
+            for d, shard in enumerate(shards):
+                width = want.shape[axis] // tp_size
+                np.testing.assert_array_equal(
+                    shard,
+                    np.take(want, range(d * width, (d + 1) * width), axis),
+                    err_msg=f"{name}{suffix} on device {d}",
+                )
 
-    weight_gate_up, _ = wa._stack_expert_weights(
-        tagged(1, 4), tagged(2, 4), tagged(3, 4), "w", tp_size
+
+def test_prefetch_checkpoint_reads_every_file_through_symlinks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every byte is read once, in chunks, including a file a symlink names
+    (the Hugging Face cache's layout)."""
+    monkeypatch.setattr(wa, "_PREFETCH_CHUNK", 1000)
+    sizes = {"a.safetensors": 2500, "blob": 1000}
+    for name, size in sizes.items():
+        (tmp_path / name).write_bytes(bytes(size))
+    (tmp_path / "b.safetensors").symlink_to(tmp_path / "blob")
+    paths = [tmp_path / "a.safetensors", tmp_path / "b.safetensors"]
+    assert prefetch_checkpoint(paths) == sum(sizes.values())
+
+
+def test_prefetch_checkpoint_readers_do_not_hold_up_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its readers are daemon threads, so a process that stops early does
+    not wait for the read to finish."""
+    daemon: list[bool] = []
+
+    class Recording(threading.Thread):
+        def start(self) -> None:
+            daemon.append(self.daemon)
+            super().start()
+
+    monkeypatch.setattr(threading, "Thread", Recording)
+    (tmp_path / "a.safetensors").write_bytes(bytes(10))
+    prefetch_checkpoint([tmp_path / "a.safetensors"])
+    assert daemon and all(daemon)
+
+
+@pytest.mark.parametrize(
+    "force_download, header_only, virtual, uploads",
+    [
+        (False, False, False, True),
+        (True, False, False, False),
+        (False, True, False, False),
+        (False, False, True, False),
+    ],
+)
+def test_prefetch_only_when_weights_reach_the_devices(
+    monkeypatch: pytest.MonkeyPatch,
+    force_download: bool,
+    header_only: bool,
+    virtual: bool,
+    uploads: bool,
+) -> None:
+    """A compile-only load never reads the weights, and a forced download
+    has just written them through the page cache."""
+    monkeypatch.setattr(wa, "is_virtual_device_mode", lambda: virtual)
+    config = SimpleNamespace(
+        model=SimpleNamespace(
+            force_download=force_download, header_only_weights=header_only
+        )
     )
-    scale_gate_up, _ = wa._stack_expert_weights(
-        tagged(1, 1), tagged(2, 1), tagged(3, 1), "s", tp_size
-    )
-    weight_tags = _to_numpy_u8(weight_gate_up)[..., 0]
-    scale_tags = _to_numpy_u8(scale_gate_up)[..., 0]
-    np.testing.assert_array_equal(weight_tags, scale_tags)
-    # Rank 0's shard is gate rows 0-3 then up rows 0-3.
-    np.testing.assert_array_equal(
-        weight_tags[0, :rows], [16, 17, 18, 19, 48, 49, 50, 51]
-    )
+    assert wa._uploads_weights(config) is uploads
 
 
 def _pipeline_config(

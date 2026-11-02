@@ -72,6 +72,7 @@ never in the latent, and is added last.
 from __future__ import annotations
 
 from max import functional as F
+from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Linear, Module
@@ -79,6 +80,7 @@ from max.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
+    shard_and_stack,
 )
 from max.nn.common_layers.mesh_axis import EP, TP
 from max.nn.legacy.comm.ep import EPConfig
@@ -88,8 +90,10 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
 from max.support.math import ceildiv
-from max.tensor import Tensor
+from max.tensor import Tensor, default_device
+from max.tensor.realization_context import ensure_context
 from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -106,7 +110,7 @@ from .mlp import (
     tensor_parallel_dense_mlp,
 )
 from .moe_router import make_kimi_k3_moe_router
-from .tensor_parallel import check_divisible, shard_interleaved_blocks
+from .tensor_parallel import check_divisible
 
 # Scale-factor block width for MXFP4/MXFP8: one E8M0 scale per this many
 # elements along the contraction axis. Matches V2's ``_MXFP8_GROUP``.
@@ -211,6 +215,49 @@ def _amd_w4a8_grouped_matmul(
 amd_w4a8_grouped_matmul = F.functional(_amd_w4a8_grouped_matmul)
 
 
+class KimiK3ExpertProjection(Module[[], None]):
+    """One routed expert's ``[out, in]`` projection, as the checkpoint stores it.
+
+    MXFP4 packs two values per byte along the input (K) axis and carries one
+    E8M0 scale per 32 inputs.
+    """
+
+    def __init__(self, out_dim: int, in_dim: int, mxfp4: bool) -> None:
+        super().__init__()
+        if mxfp4:
+            self.weight = Tensor.zeros(
+                [out_dim, in_dim // 2], dtype=DType.uint8
+            )
+            self.weight_scale = Tensor.zeros(
+                [out_dim, ceildiv(in_dim, _SF_VECTOR_SIZE)],
+                dtype=DType.float8_e8m0fnu,
+            )
+        else:
+            self.weight = Tensor.zeros([out_dim, in_dim])
+
+
+class KimiK3Expert(Module[[], None]):
+    """One routed expert, named as the checkpoint names it.
+
+    ``w1`` is gate, ``w3`` is up and ``w2`` is down: the numbering does not
+    follow the data flow.
+    """
+
+    def __init__(
+        self, latent_size: int, moe_intermediate_size: int, mxfp4: bool
+    ) -> None:
+        super().__init__()
+        self.w1 = KimiK3ExpertProjection(
+            moe_intermediate_size, latent_size, mxfp4
+        )
+        self.w2 = KimiK3ExpertProjection(
+            latent_size, moe_intermediate_size, mxfp4
+        )
+        self.w3 = KimiK3ExpertProjection(
+            moe_intermediate_size, latent_size, mxfp4
+        )
+
+
 class KimiK3LatentMoE(Module[..., Tensor]):
     """One ``KimiSparseMoeBlock`` whose routed experts live in a latent.
 
@@ -313,42 +360,16 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         )
         self.routed_expert_norm = RMSNorm(latent_size, eps=rms_norm_eps)
 
-        if self.mxfp4:
-            # Packed along the INPUT (K) dim, two 4-bit values per byte, one
-            # E8M0 scale per 32 input elements. The output (N) dim is
-            # untouched, so the gate/up fusion is still a plain row
-            # concatenation -- matches V2's `experts_gate_up_proj` layout.
-            self.experts_gate_up_proj = Tensor.zeros(
-                [num_experts, 2 * moe_intermediate_size, latent_size // 2],
-                dtype=DType.uint8,
-            )
-            self.experts_gate_up_proj_scale = Tensor.zeros(
+        # Kept per expert, as the checkpoint stores them, so loading is a
+        # rename of the checkpoint's own buffers; the graph stacks them once,
+        # at model init. They stay on the host, so each device receives only
+        # the stack it runs (or its share of it), never a second copy.
+        with default_device(CPU()):
+            self.experts = ModuleList(
                 [
-                    num_experts,
-                    2 * moe_intermediate_size,
-                    ceildiv(latent_size, _SF_VECTOR_SIZE),
-                ],
-                dtype=DType.float8_e8m0fnu,
-            )
-            self.experts_down_proj = Tensor.zeros(
-                [num_experts, latent_size, moe_intermediate_size // 2],
-                dtype=DType.uint8,
-            )
-            self.experts_down_proj_scale = Tensor.zeros(
-                [
-                    num_experts,
-                    latent_size,
-                    ceildiv(moe_intermediate_size, _SF_VECTOR_SIZE),
-                ],
-                dtype=DType.float8_e8m0fnu,
-            )
-        else:
-            # Stacked on a leading expert axis for `grouped_matmul_ragged`.
-            self.experts_gate_up_proj = Tensor.zeros(
-                [num_experts, 2 * moe_intermediate_size, latent_size]
-            )
-            self.experts_down_proj = Tensor.zeros(
-                [num_experts, latent_size, moe_intermediate_size]
+                    KimiK3Expert(latent_size, moe_intermediate_size, self.mxfp4)
+                    for _ in range(num_experts)
+                ]
             )
 
         self.shared_experts = KimiK3DenseMLP(
@@ -357,6 +378,65 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             beta=beta,
             linear_beta=linear_beta,
         )
+
+    @property
+    def experts_gate_up_proj(self) -> Tensor:
+        """``[num_experts, 2 * moe_intermediate_size, K]`` gate-then-up weights."""
+        return self._stacked("weight", gate_up=True)
+
+    @property
+    def experts_gate_up_proj_scale(self) -> Tensor:
+        """The MXFP4 gate/up weights' E8M0 scales, in their row order."""
+        return self._stacked("weight_scale", gate_up=True)
+
+    @property
+    def experts_down_proj(self) -> Tensor:
+        """``[num_experts, latent_size, K]`` down weights."""
+        return self._stacked("weight", gate_up=False)
+
+    @property
+    def experts_down_proj_scale(self) -> Tensor:
+        """The MXFP4 down weights' E8M0 scales."""
+        return self._stacked("weight_scale", gate_up=False)
+
+    def _stacked(self, leaf: str, *, gate_up: bool) -> Tensor:
+        """Stacks every expert's ``leaf`` and places it on the layer's mesh.
+
+        Under tensor parallelism each device's gate/up holds, per expert, its
+        slice of the gate rows followed by its slice of the up rows (the
+        weight adapter's ``interleave_for_tp`` layout), and its down holds a
+        slice of the FFN (K) axis, so both split along the FFN width. Under
+        expert parallelism each device holds whole experts.
+        """
+        projections = ("w1", "w3") if gate_up else ("w2",)
+        parts = [
+            getattr(getattr(expert, w), leaf)
+            for expert in self.experts
+            for w in projections
+        ]
+        mesh = self.routed_expert_down_proj.weight.mesh
+        expert_parallel = EP in mesh.axis_names and mesh.axis_size(EP) > 1
+        if mesh.num_devices > 1 and not expert_parallel:
+            # Each device's share -- its [gate_r; up_r] rows, or its slice of
+            # the down's K axis -- comes straight out of the host's per-expert
+            # buffers, with no host or device temporary.
+            axis, spec = (
+                (0, (None, TP, None)) if gate_up else (-1, (None, None, TP))
+            )
+            with ensure_context():
+                shards = [
+                    shard.reshape([self.num_experts, -1, int(shard.shape[-1])])
+                    for shard in shard_and_stack(parts, mesh.devices, axis=axis)
+                ]
+                return Tensor.from_shard_values(
+                    shards, NamedMapping(mesh, spec)
+                )
+        stacked = F.stack(parts).reshape(
+            [self.num_experts, -1, int(parts[0].shape[-1])]
+        )
+        if expert_parallel:
+            return stacked.to(NamedMapping(mesh, (EP, None, None)))
+        return stacked.to(mesh.devices[0])
 
     def forward(
         self,
@@ -496,7 +576,7 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         combined = moe_finalize(
             expert_out, restore_token_order, topk_weight, latent.dtype
         )
-        mesh = self.experts_gate_up_proj.mesh
+        mesh = self.routed_expert_down_proj.weight.mesh
         sharded = TP in mesh.axis_names and mesh.axis_size(TP) > 1
         if sharded:
             # The norm rides the allreduce in one collective launch. The
@@ -603,21 +683,8 @@ def tensor_parallel_latent_moe(
             per_device_ffn=layer.moe_intermediate_size // tp_size,
             opt_in_env="MAX_KIMI_K3_AMD_W4A8",
         )
-    layer.experts_gate_up_proj = shard_interleaved_blocks(
-        layer.experts_gate_up_proj, mesh, num_blocks=2, axis=1
-    )
-    layer.experts_down_proj = layer.experts_down_proj.to(
-        NamedMapping(mesh, (None, None, TP))
-    )
-    if layer.mxfp4:
-        # Scales carry one entry per 32 INPUT elements, so they split on the
-        # same axis as the weight they scale.
-        layer.experts_gate_up_proj_scale = shard_interleaved_blocks(
-            layer.experts_gate_up_proj_scale, mesh, num_blocks=2, axis=1
-        )
-        layer.experts_down_proj_scale = layer.experts_down_proj_scale.to(
-            NamedMapping(mesh, (None, None, TP))
-        )
+    # The routed experts stay per-expert on the host; `_stacked` gives each
+    # device its share.
     tensor_parallel_dense_mlp(layer.shared_experts, mesh)
     return layer
 
@@ -646,9 +713,6 @@ def expert_parallel_latent_moe(
             f"Kimi K3 MoE: {layer.num_experts} experts must divide by the"
             f" expert-parallel degree {ep_size}"
         )
-    row_mapping = NamedMapping(mesh, (EP, None, None))
-    layer.experts_gate_up_proj = layer.experts_gate_up_proj.to(row_mapping)
-    layer.experts_down_proj = layer.experts_down_proj.to(row_mapping)
     return layer
 
 
