@@ -18,6 +18,8 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 
 #define DEBUG_TYPE "hlcf-canonicalize"
@@ -63,7 +65,7 @@ static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op,
 /// excluded.
 static void getIfBodyRegions(IfOp op, SmallVectorImpl<Region *> &bodies) {
   bodies.push_back(&op.getThenRegion());
-  for (unsigned i = 1, e = op.getElifRegions().size(); i < e; i += 2)
+  for (size_t i = 1, e = op.getElifRegions().size(); i < e; i += 2)
     bodies.push_back(&op.getElifRegions()[i]);
   bodies.push_back(&op.getElseRegion());
 }
@@ -126,6 +128,164 @@ static LogicalResult promoteElifArmToIf(IfOp op, PatternRewriter &rewriter,
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// Return the nested if whose results are forwarded by the final else arm.
+static IfOp getTailNestedIf(IfOp op) {
+  Block &elseBlock = op.getElseBlock();
+  auto yield = dyn_cast<YieldOp>(elseBlock.getTerminator());
+  if (!yield)
+    return {};
+
+  auto nested = dyn_cast_or_null<IfOp>(yield->getPrevNode());
+  if (!nested || !llvm::equal(yield.getOperands(), nested.getResults()))
+    return {};
+  return nested;
+}
+
+/// Pointer values can include scoped allocations whose lifetime markers require
+/// the allocation itself as their operand. Keep those values in their original
+/// lexical region rather than turning them into block arguments.
+static bool canFlattenBoundary(IfOp parent, IfOp nested) {
+  llvm::SetVector<Value> captures;
+  for (Region &region : nested->getRegions())
+    mlir::getUsedValuesDefinedAbove(region, captures);
+  return llvm::none_of(captures, [&](Value value) {
+    return value.getParentRegion() == &parent.getElseRegion() &&
+           isa<KGEN::PointerType>(value.getType());
+  });
+}
+
+/// Replace a trailing `else { ...; if ... }` chain with the equivalent elif
+/// regions. Besides reducing region depth, doing the whole outermost chain in
+/// one rewrite avoids repeatedly rebuilding progressively longer chains.
+struct FlattenNestedElseIf : public OpRewritePattern<IfOp> {
+  FlattenNestedElseIf(MLIRContext *ctx)
+      : OpRewritePattern(ctx, /*benefit=*/20) {}
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter &rewriter) const override {
+    if (auto parent = dyn_cast_or_null<IfOp>(op->getParentOp());
+        parent && getTailNestedIf(parent) == op &&
+        canFlattenBoundary(parent, op))
+      return failure();
+
+    SmallVector<IfOp> chain{op};
+    while (IfOp nested = getTailNestedIf(chain.back())) {
+      if (!canFlattenBoundary(chain.back(), nested))
+        break;
+      chain.push_back(nested);
+    }
+    if (chain.size() == 1)
+      return failure();
+
+    size_t numElifRegions = op.getElifRegions().size();
+    for (IfOp nested : llvm::drop_begin(chain))
+      numElifRegions += 2 + nested.getElifRegions().size();
+
+    auto flattened = IfOp::create(rewriter, op.getLoc(), op.getResultTypes(),
+                                  op.getCond(), numElifRegions);
+    size_t nextRegion = 0;
+    SmallVector<Region *> boundaryCondRegions;
+
+    rewriter.inlineRegionBefore(op.getThenRegion(), flattened.getThenRegion(),
+                                flattened.getThenRegion().begin());
+    for (Region &region : op.getElifRegions()) {
+      Region &dest = flattened.getElifRegions()[nextRegion++];
+      rewriter.inlineRegionBefore(region, dest, dest.begin());
+    }
+
+    for (IfOp nested : llvm::drop_begin(chain)) {
+      boundaryCondRegions.push_back(&flattened.getElifRegions()[nextRegion++]);
+      Region &thenDest = flattened.getElifRegions()[nextRegion++];
+      rewriter.inlineRegionBefore(nested.getThenRegion(), thenDest,
+                                  thenDest.begin());
+      for (Region &region : nested.getElifRegions()) {
+        Region &dest = flattened.getElifRegions()[nextRegion++];
+        rewriter.inlineRegionBefore(region, dest, dest.begin());
+      }
+    }
+    assert(nextRegion == numElifRegions);
+    rewriter.inlineRegionBefore(chain.back().getElseRegion(),
+                                flattened.getElseRegion(),
+                                flattened.getElseRegion().begin());
+
+    // Each old final else becomes an elif condition region. Strip its nested
+    // if after moving that if's regions, then move the remaining prefix.
+    for (auto [parent, nested, condRegion] :
+         llvm::reverse(llvm::zip(llvm::drop_end(chain), llvm::drop_begin(chain),
+                                 boundaryCondRegions))) {
+      auto yield = cast<YieldOp>(parent.getElseBlock().getTerminator());
+      rewriter.setInsertionPoint(nested);
+      IfElifCondYieldOp::create(rewriter, nested.getLoc(), nested.getCond(),
+                                ValueRange());
+      rewriter.eraseOp(yield);
+      rewriter.eraseOp(nested);
+      rewriter.inlineRegionBefore(parent.getElseRegion(), *condRegion,
+                                  condRegion->begin());
+    }
+
+    // Values computed in a condition region must be passed to both its then
+    // arm and its false successor. Process conditions in order so a value
+    // needed by a later arm is relayed through every intervening condition.
+    auto elifs = flattened.getElifRegions();
+    for (size_t condIdx = 0, e = elifs.size(); condIdx < e; condIdx += 2) {
+      Region &condRegion = elifs[condIdx];
+      Region &thenRegion = elifs[condIdx + 1];
+      Region &falseRegion =
+          condIdx + 2 < e ? elifs[condIdx + 2] : flattened.getElseRegion();
+
+      llvm::SetVector<Value> captures;
+      // Find condition values that are used by an arm reached after this
+      // condition. Those values must be carried across the conditional edge.
+      auto usedOutsideCondition = [&](Value value) {
+        return llvm::any_of(value.getUses(), [&](OpOperand &use) {
+          Region *useRegion = use.getOwner()->getParentRegion();
+          if (thenRegion.isAncestor(useRegion))
+            return true;
+          for (size_t i = condIdx + 2; i < e; ++i)
+            if (elifs[i].isAncestor(useRegion))
+              return true;
+          return flattened.getElseRegion().isAncestor(useRegion);
+        });
+      };
+      for (BlockArgument arg : condRegion.front().getArguments())
+        if (usedOutsideCondition(arg))
+          captures.insert(arg);
+      condRegion.walk([&](Operation *operation) {
+        for (Value result : operation->getResults())
+          if (usedOutsideCondition(result))
+            captures.insert(result);
+      });
+      if (captures.empty())
+        continue;
+
+      Block &thenBlock = thenRegion.front();
+      Block &falseBlock = falseRegion.front();
+      for (Value capture : captures) {
+        BlockArgument thenArg =
+            thenBlock.addArgument(capture.getType(), capture.getLoc());
+        BlockArgument falseArg =
+            falseBlock.addArgument(capture.getType(), capture.getLoc());
+        mlir::replaceAllUsesInRegionWith(capture, thenArg, thenRegion);
+        for (size_t i = condIdx + 2; i < e; ++i)
+          mlir::replaceAllUsesInRegionWith(capture, falseArg, elifs[i]);
+        mlir::replaceAllUsesInRegionWith(capture, falseArg,
+                                         flattened.getElseRegion());
+      }
+
+      auto yield = cast<IfElifCondYieldOp>(condRegion.front().getTerminator());
+      SmallVector<Value> carried(yield.getValues());
+      llvm::append_range(carried, captures);
+      rewriter.setInsertionPoint(yield);
+      IfElifCondYieldOp::create(rewriter, yield.getLoc(), yield.getCond(),
+                                carried);
+      rewriter.eraseOp(yield);
+    }
+
+    rewriter.replaceOp(op, flattened.getResults());
+    return success();
+  }
+};
+
 /// If every body arm has just a YieldOp and corresponding results agree,
 /// replace those results (and erase the if when all results fold away).
 ///
@@ -580,7 +740,8 @@ struct RemoveUnusedResults : public OpRewritePattern<IfOp> {
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                        MLIRContext *ctx) {
-  results.add<RemoveStaticCondition, HoistUnconditionalReturn<HLCF::ReturnOp>,
+  results.add<FlattenNestedElseIf, RemoveStaticCondition,
+              HoistUnconditionalReturn<HLCF::ReturnOp>,
               HoistUnconditionalReturn<HLCF::BreakOp>,
               HoistUnconditionalReturn<HLCF::ContinueOp>,
               HoistConditionalReturn, HoistYieldResults, RemoveUnusedResults>(
