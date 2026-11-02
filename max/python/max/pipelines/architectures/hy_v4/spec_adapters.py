@@ -51,6 +51,7 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated
 
 from .batch_processor import prefill_buffer_length
+from .decoder import HYV4Decoder
 from .hy_v4 import HYV4, HYV4TextModel
 from .mtp import HYV4MultiTokenPredictor
 
@@ -262,7 +263,7 @@ def verify(
 ) -> HYV4Target:
     """Returns the verify of a Hy4 module, on every device it spans."""
     del target_config, hidden_states, draft_config
-    assert isinstance(target, HYV4)
+    assert isinstance(target, (HYV4, HYV4Decoder))
     return HYV4Target(target.language_model)
 
 

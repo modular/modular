@@ -21,7 +21,7 @@ from max.dtype import DType
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.context import TextContext
-from max.pipelines.lib import ModuleV3PipelineModelWithKVCache, PipelineConfig
+from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -32,25 +32,7 @@ from typing_extensions import override
 
 from .batch_processor import HYV4BatchProcessor
 from .hy_v4 import HYV4
-from .model_config import HYV4Config
-
-
-def check_parallelism(pipeline_config: PipelineConfig, n_devices: int) -> None:
-    """Raises unless several devices run tensor-parallel attention.
-
-    The routed experts split over the devices either way: each device runs
-    its own on every token and the outputs are summed, with no expert
-    dispatch, so ``ep_size`` may be 1 or the device count.
-    """
-    dp_degree = pipeline_config.model.data_parallel_degree
-    ep_size = pipeline_config.runtime.ep_size
-    if n_devices > 1 and (dp_degree != 1 or ep_size not in (1, n_devices)):
-        raise ValueError(
-            f"Hy4 on {n_devices} devices runs tensor-parallel attention with"
-            " its experts split over the devices: it needs"
-            f" data_parallel_degree 1 and ep_size 1 or {n_devices}, got"
-            f" {dp_degree} and {ep_size}"
-        )
+from .model_config import HYV4Config, check_parallelism
 
 
 class HYV4Model(
