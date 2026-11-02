@@ -148,7 +148,7 @@ class Line:
 
     @property
     def is_class(self) -> bool:
-        """Is this line a class/struct/enum/trait/extension definition?"""
+        """Is this line a class/struct/enum/union/trait/extension definition?"""
         return bool(self) and (
             (
                 self.leaves[0].type == token.NAME
@@ -157,6 +157,7 @@ class Line:
             )
             or self.leaves[0].type == token.STRUCT
             or self.leaves[0].type == token.ENUM
+            or self.leaves[0].type == token.UNION
             or self.leaves[0].type == token.TRAIT
             or self.leaves[0].type == token.EXTENSION
         )

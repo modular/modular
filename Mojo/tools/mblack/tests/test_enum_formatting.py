@@ -13,7 +13,8 @@
 
 import pytest
 
-from tests.util import assert_mojo_format
+import mblack.parsing
+from tests.util import assert_mojo_format, mojo_format_str
 
 
 def test_enum_is_stable():
@@ -125,6 +126,7 @@ def test_enum_case_payload_splits_like_a_call():
 __enum Payloads:
     case long_payload_case_name(List[Int], Dict[String, Int], Optional[String], Int)
     case trailing_comma(Int, Bool,)
+    case one_trailing_comma(Int,)
     case multi_line(
         Int,
         Bool
@@ -140,10 +142,20 @@ __enum Payloads:
         Int,
         Bool,
     )
+    case one_trailing_comma(
+        Int,
+    )
     case multi_line(Int, Bool)
     case `def`
 """
     assert_mojo_format(source, expected)
+
+
+@pytest.mark.parametrize("kw", ["__enum", "__union"])
+@pytest.mark.parametrize("payload", ["x: Int", "Int, y=Int", "*Int"])
+def test_case_payload_is_positional_types_only(kw, payload):
+    with pytest.raises(mblack.parsing.InvalidInput):
+        mojo_format_str(f"{kw} E:\n    case c({payload})\n")
 
 
 @pytest.mark.parametrize("kw", ["struct", "__enum"])

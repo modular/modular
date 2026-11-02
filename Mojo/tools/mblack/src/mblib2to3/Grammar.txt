@@ -246,7 +246,7 @@ type_factor: ('+'|'-'|'~'|'==') type_factor | type_power
 type_power: [AWAIT] type_atom trailer* ['**' factor]
 type_atom: functype | generatortype | atom
 
-classdef: (STRUCT | ENUM) NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
+classdef: (STRUCT | ENUM | UNION) NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
 typeconvexpr: atom trailer* | functype | generatortype
 typeconv: (['*'|convention] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
@@ -342,7 +342,9 @@ guard: 'if' namedexpr_test
 patterns: pattern (',' pattern)* [',']
 pattern: (expr|star_expr) ['as' expr]
 
-# An `__enum` case. As a small_stmt it takes a doc string and `;` as a field
-# does; the compiler rejects it outside an `__enum`. "case" stays a soft
-# keyword: no expression statement starts with two names.
-enum_case_stmt: "case" NAME ['(' [arglist] ')']
+# An `__enum` or `__union` case. As a small_stmt it takes a doc string and `;`
+# as a field does; the compiler rejects it outside those declarations. "case"
+# stays a soft keyword: no expression statement starts with two names.
+enum_case_stmt: "case" NAME ['(' [enum_case_payload] ')']
+# Positional types only, as the compiler takes them: not `x: T`, `x=T` or `*T`.
+enum_case_payload: test (',' test)* [',']

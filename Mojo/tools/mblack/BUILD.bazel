@@ -64,9 +64,9 @@ _VALIDATE_EXCLUDE = [
     "tests/test_backtick_bracket_scan.py",
     # Keep the deprecated `__match` spelling parseable for source migration.
     "tests/test_match_formatting.py",
-    # Samples include `__enum` declarations the compiler rejects (e.g. a body
-    # of `pass`).
+    # Samples include `__enum` and `__union` declarations the compiler rejects.
     "tests/test_enum_formatting.py",
+    "tests/test_union_formatting.py",
 ]
 
 # Companion to `unit_tests` that compiles every sample with `mojo build`.
