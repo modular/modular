@@ -1001,12 +1001,15 @@ def make_linear_tuple() -> Tuple[SomeLinearType, SomeLinearType]:
 
 # CHECK-LABEL: lit.fn @"match_rvalue_tuple_var_binding
 # CHECK:          lit.ref.to_pointer
-# CHECK:          lit.ref.from_pointer {{.*}}end_uninit
+# CHECK:          [[X:%.*]] = lit.ref.from_pointer {{.*}}end_uninit
 # CHECK:          lit.ref.to_pointer
-# CHECK:          lit.ref.from_pointer {{.*}}end_uninit
+# CHECK:          [[UNBOUND:%.*]] = lit.ref.from_pointer {{.*}}end_uninit
 # CHECK:          lit.ownership.mark_destroyed
 # CHECK:          lit.var.decl "anonymous*" synth
-# CHECK:          lit.var.decl "x" var
+# CHECK-NOT:      lit.var.decl "x" var
+# CHECK:          {{.*}}@"__init__(move{{.*}}([[UNBOUND]]
+# CHECK:          lit.ownership.use [[X]]
+# CHECK:          {{.*}}@"consume{{.*}}([[X]])
 # CHECK-NOT:      lit.memcpy
 def match_rvalue_tuple_var_binding():
     match make_linear_tuple():
@@ -1024,11 +1027,8 @@ def match_rvalue_tuple_var_binding():
 # CHECK:           hlcf.match.complete
 # CHECK-NEXT:    }
 # CHECK-NEXT:    case {
-# CHECK-NEXT:      [[X:%.*]] = lit.var.decl "x" var
-# CHECK-NOT:       lit.memcpy
-# CHECK-NEXT:      {{.*}}@"__init__(move{{.*}}(%arg, [[X]])
-# CHECK-NEXT:      lit.ownership.use [[X]]
-# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[X]])
+# CHECK-NEXT:      lit.ownership.use %arg
+# CHECK-NEXT:      {{.*}}@"consume{{.*}}(%arg)
 def match_rvalue_var_binding(var arg: SomeLinearType, a: SomeLinearType):
     match arg^:
     case == a:
@@ -1059,10 +1059,8 @@ def match_rvalue_var_binding(var arg: SomeLinearType, a: SomeLinearType):
 # CHECK-NEXT:      [[PAYLOAD_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_PAYLOAD]]
 # CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[PAYLOAD_PTR]] end_uninit
 # CHECK-NEXT:      lit.ownership.mark_destroyed [[SUBJECT]]
-# CHECK-NEXT:      [[X:%.*]] = lit.var.decl "x" var
-# CHECK-NEXT:      {{.*}}@"__init__(move{{.*}}([[OWNED_PAYLOAD]], [[X]])
-# CHECK-NEXT:      lit.ownership.use [[X]]
-# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[X]])
+# CHECK-NEXT:      lit.ownership.use [[OWNED_PAYLOAD]]
+# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[OWNED_PAYLOAD]])
 # CHECK-NEXT:      hlcf.match.complete
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:      hlcf.yield

@@ -312,6 +312,13 @@ struct StmtParser : public ParserBase {
                  PatternMatchBuilder &matchBuilder,
                  PatternEmitState &emissionState, bool inMatchCase);
 
+  /// Materialize a pattern binding, reusing an existing declaration for
+  /// Or-patterns and otherwise leaving a name binding unresolved for
+  /// IREmitter::emitResult to install directly.
+  LogicalResult emitPatternBinding(IREmitter &emitter,
+                                   const PatternBoundName &binding,
+                                   CValue value);
+
   /// Emit a cluster of cases that share a leading pattern test. When
   /// `inMatchCase` is true, emission is already inside an `hlcf.match` case
   /// region; otherwise a fresh match (or equivalent CF) may be created.
@@ -446,6 +453,27 @@ bool StmtParser::isInModuleScope() const {
 void StmtParser::emitControlFlowNotInFunctionError(SMLoc loc,
                                                    StringRef stmtName) {
   emitError(loc) << "'" << stmtName << "' must be contained in a function";
+}
+
+LogicalResult StmtParser::emitPatternBinding(IREmitter &emitter,
+                                             const PatternBoundName &binding,
+                                             CValue value) {
+  DeclRefNode nameNode(binding.name);
+  ExprDest dest(EC_VarInitMatchBinding);
+  if (binding.declaration) {
+    ExprDest declDest(LValueInitializerType{value.getRValueType()},
+                      EC_VarInitMatchBinding);
+    declDest.setPatternDeclKind(binding.bindingKind);
+    LValue bindingLV = emitter.emitExprLValue(&nameNode, declDest);
+    if (!bindingLV)
+      return failure();
+    dest = ExprDest(bindingLV, EC_VarInitMatchBinding);
+  } else {
+    dest = ExprDest(&nameNode, EC_VarInitMatchBinding);
+    dest.setPatternDeclKind(binding.bindingKind);
+  }
+  return success(
+      static_cast<bool>(emitter.emitCResult(value, &nameNode, dest)));
 }
 
 /// Parse a suite, which is either a series of comma separated simple_stmt's on
@@ -1607,16 +1635,7 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
 
       IREmitter emitter = getEmitter();
       for (const PatternBoundName &binding : bindings) {
-        DeclRefNode nameNode(binding.name);
-        ExprDest declDest(LValueInitializerType{binding.value.getRValueType()},
-                          EC_VarInitMatchBinding);
-        declDest.setPatternDeclKind(binding.bindingKind);
-        LValue bindingLV = emitter.emitExprLValue(&nameNode, declDest);
-        if (!bindingLV)
-          return success();
-
-        ExprDest storeDest(bindingLV, EC_VarInitMatchBinding);
-        if (!emitter.emitCResult(binding.value, &nameNode, storeDest))
+        if (failed(emitPatternBinding(emitter, binding, binding.value)))
           return success();
       }
 
@@ -2539,14 +2558,6 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
       return failure();
     for (auto [bindingIndex, binding] : llvm::enumerate(bindings)) {
       DeclRefNode nameNode(binding.name);
-      ExprDest declDest(LValueInitializerType{binding.value.getRValueType()},
-                        EC_VarInitMatchBinding);
-      declDest.setPatternDeclKind(binding.bindingKind);
-      LValue bindingLV = emitter.emitExprLValue(&nameNode, declDest);
-      if (!bindingLV)
-        return failure();
-
-      ExprDest storeDest(bindingLV, EC_VarInitMatchBinding);
       CValue bindingValue =
           bindingValues.empty() ? binding.value : bindingValues[bindingIndex];
       if (!borrowVarBindings && binding.bindingKind == PatternDeclKind::kVar &&
@@ -2567,7 +2578,7 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
           return failure();
         bindingValue = bindingBVal;
       }
-      if (!emitter.emitCResult(bindingValue, &nameNode, storeDest))
+      if (failed(emitPatternBinding(emitter, binding, bindingValue)))
         return failure();
     }
     return success();
@@ -4095,15 +4106,6 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
                                                         bindingValues)))
         return failure();
       for (auto [bindingIndex, binding] : llvm::enumerate(bindings)) {
-        DeclRefNode nameNode(binding.name);
-        ExprDest declDest(LValueInitializerType{binding.value.getRValueType()},
-                          EC_VarInitMatchBinding);
-        declDest.setPatternDeclKind(binding.bindingKind);
-        LValue bindingLV = emitter.emitExprLValue(&nameNode, declDest);
-        if (!bindingLV)
-          return failure();
-
-        ExprDest storeDest(bindingLV, EC_VarInitMatchBinding);
         CValue bindingValue =
             bindingValues.empty() ? binding.value : bindingValues[bindingIndex];
         if (binding.bindingKind == PatternDeclKind::kVar &&
@@ -4114,7 +4116,7 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
           if (!bindingValue)
             return failure();
         }
-        if (!emitter.emitCResult(bindingValue, &nameNode, storeDest))
+        if (failed(emitPatternBinding(emitter, binding, bindingValue)))
           return failure();
       }
       return success();

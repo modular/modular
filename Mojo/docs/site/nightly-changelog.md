@@ -16,10 +16,10 @@ This version is still a work in progress.
 - `__exit__(self, error: E)` now additionally supports `var self` and
   `deinit self`, similar to the non-error `__exit__`.
 
-- You can transfer ownership of a payload from an rvalue enum/tuple subject with
-  a `var` case binding, enabling `case .Some(var value):` and
+- You can bind a non-`Movable` payload from an rvalue enum or tuple subject
+  with a `var` case binding, enabling `case .Some(var value):` and
   `case (var x, var y):` without copies. This allows `match` and `if case`
-  statements work more conveniently with linear types, and reduces copies in
+  statements to work with non-movable and linear types, and reduces copies in
   general.
 
 - Auto-parameterization now reaches `_` holes nested inside other parameterized

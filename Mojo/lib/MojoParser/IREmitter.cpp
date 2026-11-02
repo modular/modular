@@ -787,6 +787,27 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   // of value types we have.
   auto rvType = cValue.getRValueType();
 
+  // An owned pattern binding can reuse the input storage directly. Unlike an
+  // assignment, a pattern declaration has no existing destination to update.
+  // Bind the name to this reference before resolving the destination, which
+  // would otherwise create a VarDeclOp and require a move into it.
+  if (MRValue ownedValue = cValue.getIfMRValue();
+      ownedValue && dest.getPatternDeclKind() == PatternDeclKind::kVar) {
+    if (auto *name = dyn_cast_or_null<DeclRefNode>(dest.getLValueExprNode())) {
+      CValue refinedValue =
+          maybeEmitRefinementRebind({ownedValue, expr}, *this);
+      auto refinedOwnedValue = refinedValue.getIfMRValue();
+      assert(refinedOwnedValue && "Refinement must preserve an MRValue");
+
+      StringAttr nameAttr = StringAttr::get(getContext(), name->spelling);
+      ASTDecl &decl = getDeclResolver().addFullyResolvedDecl(
+          MLValue(refinedOwnedValue), nameAttr, name->getLoc(), &declScope);
+      shared.notifyListenerOnVariableDecl(decl, name->getLoc());
+      dest.representation = NullRepresentation();
+      return MBValue(refinedOwnedValue);
+    }
+  }
+
   // If there is a known type for the destination but the value disagrees, emit
   // an implicit conversion directly into the destination.  This keeps values in
   // registers and avoids a "convert + clone" pair for memory->memory
