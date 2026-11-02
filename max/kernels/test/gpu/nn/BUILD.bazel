@@ -114,6 +114,10 @@ _EXTRA_CONSTRAINTS = {
         "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_fused_dual_qk_rms_norm_rope_nvfp4_launch.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mla_fused_rope_rmsnorm_nvfp4.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -668,6 +672,7 @@ _GPU_MEMORY = {
     "test_flash_attention.mojo": "3",
     "test_flash_attention_amd.mojo": "4",
     "test_fused_dual_qk_rms_norm_rope_nvfp4.mojo": "3",
+    "test_fused_dual_qk_rms_norm_rope_nvfp4_launch.mojo": "3",
     "test_fused_qk_rms_norm_rope.mojo": "3",
     "test_fused_qk_rope_ragged.mojo": "3",
     "test_index_fp8.mojo": "3",

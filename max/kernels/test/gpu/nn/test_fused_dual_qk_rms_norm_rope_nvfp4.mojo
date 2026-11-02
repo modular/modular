@@ -34,6 +34,8 @@ from layout import (
 )
 from linalg.fp4_utils import NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE
 from nn.kv_cache import (
+    NVFP4_QK_LAUNCH_ROW,
+    NVFP4_QK_LAUNCH_WARP,
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged,
     fused_dual_qk_rms_norm_rope_ragged_paged,
 )
@@ -209,6 +211,7 @@ def run_nvfp4_dual[
     main_q_heads: Int,
     main_k_heads: Int,
     rope_dim: Int = 64,
+    launch: Int = NVFP4_QK_LAUNCH_ROW,
 ](
     ctx: DeviceContext,
     value_pad_rows: Int = 0,
@@ -222,7 +225,7 @@ def run_nvfp4_dual[
     group and a NaN group in one V row."""
     print(
         t"== run_nvfp4_dual"
-        t" main={main_q_heads}/{main_k_heads} rope_dim={rope_dim} pad={value_pad_rows}/{scale_pad_rows} separate_scales_lut={separate_scales_lut} nonfinite={nonfinite}"
+        t" main={main_q_heads}/{main_k_heads} rope_dim={rope_dim} launch={launch} pad={value_pad_rows}/{scale_pad_rows} separate_scales_lut={separate_scales_lut} nonfinite={nonfinite}"
     )
     seed(42)
     var prompt_lens: List[Int] = [17, 1, 31, 130, 3]
@@ -573,7 +576,10 @@ def run_nvfp4_dual[
         ctx,
     )
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
-        target="gpu", multiply_before_cast=True, interleaved=False
+        target="gpu",
+        multiply_before_cast=True,
+        interleaved=False,
+        launch=launch,
     ](
         main4_coll,
         index_coll,
@@ -648,7 +654,10 @@ def run_nvfp4_dual[
         row_major((total_length, Idx[index_q_heads], Idx[head_dim])),
     )
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
-        target="gpu", multiply_before_cast=True, interleaved=False
+        target="gpu",
+        multiply_before_cast=True,
+        interleaved=False,
+        launch=launch,
     ](
         main4_coll,
         idx4_coll,
@@ -1069,25 +1078,34 @@ def run_nvfp4_dual_empty(ctx: DeviceContext) raises:
     _ = qi_dev^
 
 
+def run_all[launch: Int](ctx: DeviceContext) raises:
+    # M3 at TP4: 16 Q heads over one KV head per device.
+    run_nvfp4_dual[main_q_heads=16, main_k_heads=1, launch=launch](ctx)
+    run_nvfp4_dual[main_q_heads=8, main_k_heads=2, launch=launch](ctx)
+    # TP1/TP2 layouts keep more KV heads per device.
+    run_nvfp4_dual[main_q_heads=16, main_k_heads=4, launch=launch](ctx)
+    # Head counts that do not pair up.
+    run_nvfp4_dual[main_q_heads=5, main_k_heads=3, launch=launch](ctx)
+    # Non-interleaved RoPE over the whole head.
+    run_nvfp4_dual[
+        main_q_heads=16, main_k_heads=1, rope_dim=128, launch=launch
+    ](ctx)
+    # Pool layouts: padded pages (independent value and scale strides),
+    # scales paged through their own table, and non-finite V values.
+    run_nvfp4_dual[main_q_heads=16, main_k_heads=1, launch=launch](
+        ctx,
+        value_pad_rows=32,
+        scale_pad_rows=16,
+        separate_scales_lut=True,
+        nonfinite=True,
+    )
+    run_nvfp4_dual[main_q_heads=8, main_k_heads=2, launch=launch](
+        ctx, value_pad_rows=16, scale_pad_rows=48, separate_scales_lut=True
+    )
+
+
 def main() raises:
     with DeviceContext() as ctx:
-        # M3 at TP4: 16 Q heads over one KV head per device.
-        run_nvfp4_dual[main_q_heads=16, main_k_heads=1](ctx)
-        run_nvfp4_dual[main_q_heads=8, main_k_heads=2](ctx)
-        # TP1/TP2 layouts keep more KV heads per device.
-        run_nvfp4_dual[main_q_heads=16, main_k_heads=4](ctx)
-        # Non-interleaved RoPE over the whole head.
-        run_nvfp4_dual[main_q_heads=16, main_k_heads=1, rope_dim=128](ctx)
-        # Pool layouts: padded pages (independent value and scale strides),
-        # scales paged through their own table, and non-finite V values.
-        run_nvfp4_dual[main_q_heads=16, main_k_heads=1](
-            ctx,
-            value_pad_rows=32,
-            scale_pad_rows=16,
-            separate_scales_lut=True,
-            nonfinite=True,
-        )
-        run_nvfp4_dual[main_q_heads=8, main_k_heads=2](
-            ctx, value_pad_rows=16, scale_pad_rows=48, separate_scales_lut=True
-        )
+        run_all[NVFP4_QK_LAUNCH_ROW](ctx)
+        run_all[NVFP4_QK_LAUNCH_WARP](ctx)
         run_nvfp4_dual_empty(ctx)
