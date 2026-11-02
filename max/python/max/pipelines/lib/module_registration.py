@@ -81,6 +81,8 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, Type
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
+from max.nn.legacy.comm.ep import EPInit
+from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
@@ -122,6 +124,7 @@ from .pipeline_parallel import (
 )
 from .registration_runtime import (
     BatchContextLengths,
+    ConstantInputs,
     DeploymentConfig,
     ExpertParallelDeploymentConfig,
     ExpertParallelExchange,
@@ -129,7 +132,9 @@ from .registration_runtime import (
     batch_context_length_types,
     ep_input_tree,
     initialize_ep_comm_buffers,
+    prepare_weights,
     role_weights,
+    uses_expert_parallel_exchange,
 )
 from .request_state import (
     RequestStateMixin,
@@ -274,10 +279,12 @@ def decoder_input_types(
     device_ref: DeviceRef,
     *,
     data_parallel_degree: int = 1,
-    vision: VisionInputs[TensorLayout] | None = None,
+    vision: VisionInputs[TensorLayout] | VisionInputs[TensorType] | None = None,
+    token_positions: TensorType | None = None,
     batch_context_lengths: Sequence[TensorType] | None = None,
     ep: object | None = None,
     lora: Sequence[TensorType] = (),
+    constants: object | None = None,
     state: Sequence[Any] = (),
     scratch: Sequence[BufferType] = (),
     input_layout: Sequence[str] | None = None,
@@ -297,12 +304,14 @@ def decoder_input_types(
         vision: The image embeddings' input types, when the graph is built
             with a ``VISION`` module. A graph built with them takes them on
             every batch, empty when the batch has no images.
+        token_positions: The absolute position of each ragged token.
         batch_context_lengths: Each replica's context-length input type,
             when the decoder reads them.
         ep: The expert-parallel input types, when serving with expert
             parallelism, in the layout of the config's
             :attr:`~max.pipelines.lib.registration_runtime.ExpertParallelDeploymentConfig.expert_parallel_inputs`.
         lora: The LoRA input types, when serving LoRA adapters.
+        constants: The checkpoint-backed deployment input types.
         state: The input types of the decoder's per-request state.
         scratch: The decoder's workspace buffer types.
         input_layout: The semantic fields in an existing graph's input
@@ -324,6 +333,8 @@ def decoder_input_types(
         (name, batch[_BATCH_FIELDS[name]]) for name in fields
     )
     types["kv"] = kv_params.get_symbolic_inputs()
+    if token_positions is not None:
+        types["token_positions"] = token_positions
     if vision is not None:
         types["vision"] = vision
     if batch_context_lengths is not None:
@@ -332,6 +343,8 @@ def decoder_input_types(
         types["ep"] = ep
     if lora:
         types["lora"] = tuple(lora)
+    if constants is not None:
+        types["constants"] = constants
     if state:
         types["state"] = tuple(state)
     if scratch:
@@ -394,6 +407,9 @@ class DecoderModelInputs(ModelInputs):
     return_n_logits: Buffer
     """How many logits per sequence to return."""
 
+    token_positions: Buffer | None = None
+    """Each ragged token's absolute sequence position, when declared."""
+
     host_input_row_offsets: Buffer | None = None
     """A CPU copy of :attr:`input_row_offsets`, under data parallelism."""
 
@@ -409,6 +425,9 @@ class DecoderModelInputs(ModelInputs):
 
     signal_buffers: tuple[Buffer, ...] = ()
     """The graph-API decoder's allreduce signal buffers, when required."""
+
+    constants: tree.Tree[Buffer] | None = None
+    """The checkpoint-backed inputs, retained across steps."""
 
     state: tuple[Buffer, ...] = ()
     """The decoder's per-request state inputs, when it declares any."""
@@ -434,6 +453,7 @@ class DecoderModelInputs(ModelInputs):
                 scatter_indices=tuple(self.vision_scatter_indices),
             ),
             input_row_offsets=self.input_row_offsets,
+            token_positions=self.token_positions,
             host_input_row_offsets=self.host_input_row_offsets,
             return_n_logits=self.return_n_logits,
             data_parallel_splits=self.data_parallel_splits,
@@ -446,6 +466,7 @@ class DecoderModelInputs(ModelInputs):
             ),
             ep=self.ep_inputs,
             lora=tuple(self.lora_buffers),
+            constants=self.constants,
             state=self.state,
             scratch=self.scratch,
             stage_boundary=self.stage_boundary,
@@ -495,6 +516,9 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
     ) -> None:
         """Binds the expert-parallel buffers each batch passes the graph."""
         self._ep_comm_initializer = initializer
+
+    constant_inputs: ConstantInputs | None = None
+    """The deployment's constant input trees, owned for its lifetime."""
 
     state_store: RequestStateStore | None = None
     """The decoder's per-request state store, which fills the batch's state
@@ -599,6 +623,27 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
             kv_cache_inputs=kv_cache_inputs,
             input_tree_def=self._input_tree_def,
         )
+        if self.input_tree is not None and "token_positions" in self.input_tree:
+            position_type = self.input_tree["token_positions"]
+            assert isinstance(position_type, TensorType)
+            positions = (
+                np.concatenate(
+                    [
+                        np.arange(
+                            ctx.tokens.current_position
+                            - ctx.tokens.active_length,
+                            ctx.tokens.current_position,
+                            dtype=position_type.dtype.to_numpy(),
+                        )
+                        for ctx in context_batch
+                    ]
+                )
+                if context_batch
+                else np.empty(0, dtype=position_type.dtype.to_numpy())
+            )
+            inputs.token_positions = Buffer.from_numpy(positions).to(
+                position_type.device.to_device()
+            )
         if data_parallel_degree > 1:
             inputs.host_input_row_offsets = Buffer.from_numpy(input_row_offsets)
             inputs.data_parallel_splits = Buffer.from_numpy(
@@ -614,6 +659,8 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
             inputs.lora_buffers = self.runtime.lora_manager.input_buffers(
                 context_batch, input_row_offsets, device
             )
+        if self.constant_inputs is not None:
+            inputs.constants = self.constant_inputs.buffers
         if self.state_store is not None:
             inputs.state = self.state_store.prepare(context_batch)
             inputs.request_ids = tuple(ctx.request_id for ctx in context_batch)
@@ -856,6 +903,17 @@ class ModuleV3DecoderPipelineModel(
             )
         return models
 
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Loads raw keys when config finalization precedes weight transforms."""
+        if getattr(
+            type(self).model_config_cls, "preserve_checkpoint_keys", False
+        ):
+            self._checkpoint = {
+                name: weight.data() for name, weight in self.weights.items()
+            }
+            return self._checkpoint
+        return super()._load_state_dict()
+
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         """Finalizes the config, then completes it with the deployment.
 
@@ -885,7 +943,7 @@ class ModuleV3DecoderPipelineModel(
             ep_use_allreduce=settings.ep_use_allreduce,
             max_batch_size=self.max_batch_size,
         )
-        if runtime.ep_size > 1:
+        if runtime.ep_size > 1 and uses_expert_parallel_exchange(config):
             if not isinstance(config, ExpertParallelDeploymentConfig):
                 raise ValueError(
                     f"{type(config).__qualname__} doesn't support expert "
@@ -906,8 +964,15 @@ class ModuleV3DecoderPipelineModel(
         assert isinstance(model_config, ExpertParallelDeploymentConfig)
         return ep_input_tree(model_config, self._runtime.ep)
 
-    def _decoder_vision_inputs(self) -> VisionInputs[TensorLayout] | None:
+    def _decoder_vision_inputs(
+        self, model_config: Any
+    ) -> VisionInputs[TensorLayout] | VisionInputs[TensorType] | None:
         """Returns the decoder's ``vision`` input types, with ``VISION``."""
+        declared_types = getattr(
+            type(self).decoder_cls, "vision_input_types", None
+        )
+        if declared_types is not None:
+            return declared_types(model_config, self._device_mesh())
         if self._vision_module is None:
             return None
         return decoder_vision_input_types(
@@ -929,7 +994,9 @@ class ModuleV3DecoderPipelineModel(
         )
         return construct_module(decoder_cls, model_config, self._device_mesh())
 
-    def _vision_graph_spec(self, model_config: Any) -> GraphSpec | None:
+    def _vision_graph_spec(
+        self, model_config: Any, checkpoint: Mapping[str, Any] | None = None
+    ) -> GraphSpec | None:
         """Constructs the ``VISION`` module, and returns its graph.
 
         Only the first pipeline stage embeds tokens, so only it encodes
@@ -938,6 +1005,10 @@ class ModuleV3DecoderPipelineModel(
         vision_cls = type(self).vision_cls
         stage = self.pipeline_config.model.pipeline_stage
         if vision_cls is None or (stage is not None and not stage.is_first):
+            return None
+        enabled = getattr(vision_cls, "is_enabled", None)
+        if enabled is not None and not enabled(model_config):
+            self._vision_module = None
             return None
         # A registered module takes its config, which type[Module] can't say.
         constructor: Any = vision_cls
@@ -951,7 +1022,11 @@ class ModuleV3DecoderPipelineModel(
             tuple(vision.input_types()),
             weights=_cast_to_parameter_dtypes(
                 vision,
-                role_weights(self._checkpoint, model_config, GraphRole.VISION),
+                role_weights(
+                    self._checkpoint if checkpoint is None else checkpoint,
+                    model_config,
+                    GraphRole.VISION,
+                ),
             ),
         )
 
@@ -986,13 +1061,27 @@ class ModuleV3DecoderPipelineModel(
             raise NotImplementedError(
                 "LoRA adapters can't be served under data parallelism yet"
             )
-        vision_spec = self._vision_graph_spec(model_config)
+        processor = self.batch_processor
+        if processor is not None:
+            processor.config = model_config
+        checkpoint = prepare_weights(self._checkpoint, model_config)
+        vision_spec = self._vision_graph_spec(model_config, checkpoint)
         state_dict = role_weights(
-            self._prepare_state_dict(self._checkpoint, model_config),
+            self._prepare_state_dict(checkpoint, model_config),
             model_config,
             GraphRole.DECODER,
         )
         self._init_distributed_runtime(model_config)
+        constant_provider = getattr(decoder_cls, "constant_inputs", None)
+        constants = (
+            constant_provider(model_config, devices=self.devices)
+            if constant_provider is not None
+            else None
+        )
+        if constants is not None:
+            assert isinstance(constants, ConstantInputs)
+            assert isinstance(processor, DecoderBatchProcessor)
+            processor.constant_inputs = constants
         self._state_store = bind_state_store(
             type(self).decoder_cls,
             model_config,
@@ -1023,7 +1112,16 @@ class ModuleV3DecoderPipelineModel(
             self.kv_params,
             self.device_refs[0],
             data_parallel_degree=self._data_parallel_degree,
-            vision=self._decoder_vision_inputs(),
+            vision=self._decoder_vision_inputs(model_config),
+            token_positions=(
+                TensorType(
+                    decoder_cls.token_position_dtype,
+                    ["total_seq_len"],
+                    device=self.device_refs[0],
+                )
+                if hasattr(decoder_cls, "token_position_dtype")
+                else None
+            ),
             batch_context_lengths=(
                 batch_context_length_types(self._data_parallel_degree)
                 if isinstance(model_config, DeploymentConfig)
@@ -1032,6 +1130,7 @@ class ModuleV3DecoderPipelineModel(
             ),
             ep=self._decoder_ep_inputs(model_config),
             lora=lora_types,
+            constants=constants.input_types if constants is not None else None,
             state=(
                 self._state_store.input_types()
                 if self._state_store is not None
@@ -1064,6 +1163,26 @@ class ModuleV3DecoderPipelineModel(
         specs: dict[str, GraphSpec] = {GraphRole.DECODER: spec}
         if vision_spec is not None:
             specs[GraphRole.VISION] = vision_spec
+        if (
+            isinstance(model_config, DeploymentConfig)
+            and model_config.export_ep_init
+            and self._runtime.ep is not None
+        ):
+            ep = self._runtime.ep
+            init = EPInit(
+                ep,
+                [
+                    _ep_counter_words(
+                        ep.n_experts,
+                        ep.n_gpus_per_node,
+                        ep.use_allreduce,
+                        ep.moe_dim,
+                    )
+                ],
+            )
+            specs[GraphRole.EP_INIT] = GraphSpec(
+                init, "ep_init", init.input_types(), weights={}
+            )
         return specs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
@@ -1128,7 +1247,10 @@ class RegisteredDecoderBuilder:
                 parallelism the decoder doesn't support.
         """
         decoder_cls = self.pipeline_model.decoder_cls
-        if consumes_vision(decoder_cls) or hasattr(decoder_cls, "state_store"):
+        state_requires_host = hasattr(
+            decoder_cls, "state_store"
+        ) and not getattr(decoder_cls, "composes_request_state", False)
+        if consumes_vision(decoder_cls) or state_requires_host:
             raise NotImplementedError(
                 f"{decoder_cls.__qualname__} reads image embeddings or keeps "
                 "per-request state, which a composed module doesn't pass it"
@@ -1136,8 +1258,12 @@ class RegisteredDecoderBuilder:
         assert context.kv_params is not None
         pipeline_config = context.pipeline_config
         config_cls: Any = self.pipeline_model.model_config_cls
-        state_dict = parse_state_dict_from_weights(
-            pipeline_config, context.weights, context.adapter
+        state_dict = (
+            {name: weight.data() for name, weight in context.weights.items()}
+            if getattr(config_cls, "preserve_checkpoint_keys", False)
+            else parse_state_dict_from_weights(
+                pipeline_config, context.weights, context.adapter
+            )
         )
         config: Any = finalize_config(
             dataclasses.replace(
@@ -1153,6 +1279,8 @@ class RegisteredDecoderBuilder:
                 return_hidden_states=context.return_hidden_states,
             ),
         )
+        if isinstance(config, DeploymentConfig):
+            config = config.apply_model_load_context(context)
         devices = [ref.to_device() for ref in context.kv_params.devices]
         data_parallel_degree = pipeline_config.model.data_parallel_degree
         _check_data_parallel(decoder_cls, data_parallel_degree, len(devices))
@@ -1166,7 +1294,7 @@ class RegisteredDecoderBuilder:
             ep_use_allreduce=settings.ep_use_allreduce,
             max_batch_size=context.memory_plan.planned_max_batch_size,
         )
-        if runtime.ep_size > 1:
+        if runtime.ep_size > 1 and uses_expert_parallel_exchange(config):
             if not isinstance(config, ExpertParallelDeploymentConfig):
                 raise ValueError(
                     f"{type(config).__qualname__} doesn't support expert "
@@ -1180,7 +1308,10 @@ class RegisteredDecoderBuilder:
         with F.lazy(), default_dtype(config.dtype):
             module = construct_module(decoder_cls, config, runtime.mesh)
         self._weights = _cast_to_parameter_dtypes(
-            module, role_weights(state_dict, config, GraphRole.DECODER)
+            module,
+            role_weights(
+                prepare_weights(state_dict, config), config, GraphRole.DECODER
+            ),
         )
         return module, config
 
@@ -1403,6 +1534,9 @@ def module_pipeline_model(
             "batch_processor_cls": batching or DecoderBatchProcessor,
             "lora_modulev3": bool(lora_targets(decoder_cls)),
             "lora_targets": lora_targets(decoder_cls),
+            "checkpoints_recurrent_state": bool(
+                getattr(decoder_cls, "checkpoints_recurrent_state", False)
+            ),
         },
     )
     assert issubclass(model, ModuleV3DecoderPipelineModel)

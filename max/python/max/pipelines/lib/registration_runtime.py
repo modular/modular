@@ -33,17 +33,22 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import ClassVar, Protocol, TypeVar
 
+from max import tree
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, TensorType
+from max.graph import BufferType, DeviceRef, TensorType
+from max.graph.weights import WeightData
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from max.pipelines.context import TextContext
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
 
+from .interfaces.pipeline_model import ModelLoadContext
+
 __all__ = [
     "BatchContextLengths",
+    "ConstantInputs",
     "DeploymentConfig",
     "ExpertParallelDeploymentConfig",
     "ExpertParallelExchange",
@@ -52,10 +57,28 @@ __all__ = [
     "batch_context_length_types",
     "ep_input_tree",
     "initialize_ep_comm_buffers",
+    "prepare_weights",
     "role_weights",
+    "uses_expert_parallel_exchange",
 ]
 
 _WeightT = TypeVar("_WeightT")
+
+
+@dataclass(frozen=True)
+class ConstantInputs:
+    """The declared graph types and lifetime-owned deployment buffers.
+
+    The buffers stay alive with the batch processor and are passed unchanged
+    every step. They are checkpoint-backed inputs, not mutable workspace.
+    """
+
+    input_types: tree.Tree[TensorType | BufferType]
+    buffers: tree.Tree[Buffer]
+
+    def __post_init__(self) -> None:
+        _, structure = tree.flatten(self.input_types)
+        structure.flatten_up_to(self.buffers)
 
 
 @dataclass(frozen=True)
@@ -129,6 +152,19 @@ class DeploymentConfig:
     takes every default.
     """
 
+    export_ep_init: ClassVar[bool] = False
+    """Whether artifacts include the exchange initialization graph."""
+
+    preserve_checkpoint_keys: ClassVar[bool] = False
+    """Whether finalization reads raw keys before :meth:`prepare_weights`
+    performs the architecture's declared weight transforms.
+    """
+
+    expert_parallel_communication: ClassVar[bool] = True
+    """Whether expert parallelism uses a runtime exchange. A config that
+    disables it validates local expert sharding in :meth:`apply_runtime`.
+    """
+
     takes_batch_context_lengths: ClassVar[bool] = False
     """Whether the decoder's graph takes
     :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.batch_context_lengths`,
@@ -140,6 +176,21 @@ class DeploymentConfig:
     :class:`~max.pipelines.lib.graph_specs.GraphRole`, when one checkpoint
     holds the weights of several roles. A role without one takes every
     weight (:func:`role_weights`)."""
+
+    def apply_model_load_context(self, context: ModelLoadContext) -> Self:
+        """Returns the config completed with composition-only settings."""
+        del context
+        return self
+
+    def prepare_weights(
+        self, state_dict: Mapping[str, WeightData]
+    ) -> dict[str, WeightData]:
+        """Returns checkpoint weights prepared for the registered modules.
+
+        Serving and composed decoders apply this before role prefixes and
+        parameter dtype conversion. The default preserves every weight.
+        """
+        return dict(state_dict)
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:
         """Returns the config completed with ``runtime``.
@@ -171,6 +222,23 @@ class ExpertParallelDeploymentConfig(DeploymentConfig, abc.ABC):
     @abc.abstractmethod
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
         """Sizes the expert-parallel buffers from the checkpoint's experts."""
+
+
+def uses_expert_parallel_exchange(config: object) -> bool:
+    """Returns whether expert sharding requires exchange initialization."""
+    return (
+        not isinstance(config, DeploymentConfig)
+        or config.expert_parallel_communication
+    )
+
+
+def prepare_weights(
+    state_dict: Mapping[str, WeightData], config: object
+) -> dict[str, WeightData]:
+    """Prepares a checkpoint before selecting registered role weights."""
+    if isinstance(config, DeploymentConfig):
+        return config.prepare_weights(state_dict)
+    return dict(state_dict)
 
 
 def role_weights(

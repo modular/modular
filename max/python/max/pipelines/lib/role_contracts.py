@@ -85,6 +85,9 @@ class DecoderInputs(Generic[TensorT, _SignalT]):
     input_row_offsets: TensorT
     """Each sequence's start in :attr:`tokens`, shape ``[batch_size + 1]``."""
 
+    token_positions: TensorT | None = None
+    """Each ragged token's absolute sequence position, when declared."""
+
     host_input_row_offsets: TensorT | None = None
     """A CPU copy of :attr:`input_row_offsets`, under data parallelism.
 
@@ -137,6 +140,9 @@ class DecoderInputs(Generic[TensorT, _SignalT]):
     The framework binds them into the decoder's LoRA layers before it calls
     the decoder, so a decoder doesn't read them.
     """
+
+    constants: Any = None
+    """The checkpoint-backed deployment inputs, held for the model lifetime."""
 
     state: tuple[Any, ...] | None = None
     """The decoder's per-request state, in the order its

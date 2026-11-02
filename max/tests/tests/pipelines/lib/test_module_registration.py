@@ -28,7 +28,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
-from max.graph.weights import WeightsFormat
+from max.graph.weights import WeightData, WeightsFormat
 from max.nn import Module
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
@@ -59,11 +59,13 @@ from max.pipelines.lib.pipeline_parallel import PipelinedModel, StageTraced
 from max.pipelines.lib.pipeline_stage import PipelineStage
 from max.pipelines.lib.registration_graph_api import registered_pipeline_model
 from max.pipelines.lib.registration_runtime import (
+    ConstantInputs,
     DeploymentConfig,
     ExpertParallelDeploymentConfig,
     ExpertParallelInputs,
     ModuleRuntime,
     ep_input_tree,
+    prepare_weights,
     role_weights,
 )
 from max.pipelines.lib.role_contracts import (
@@ -270,6 +272,7 @@ def test_decoder_inputs_take_the_canonical_order() -> None:
         "tokens",
         "vision",
         "input_row_offsets",
+        "token_positions",
         "host_input_row_offsets",
         "return_n_logits",
         "data_parallel_splits",
@@ -278,6 +281,7 @@ def test_decoder_inputs_take_the_canonical_order() -> None:
         "batch_context_lengths",
         "ep",
         "lora",
+        "constants",
         "state",
         "scratch",
         "stage_boundary",
@@ -1332,3 +1336,75 @@ def test_the_deployment_carries_the_planned_batch_size() -> None:
     assert config.runtime is not None
     assert config.runtime.max_batch_size == 7
     assert config.runtime.max_batch_total_tokens == 64
+
+
+def test_bound_token_positions_follow_each_context() -> None:
+    position_type = TensorType(
+        DType.uint32, ["total_seq_len"], device=DeviceRef.CPU()
+    )
+    types = decoder_input_types(
+        NonCallableMock(get_symbolic_inputs=lambda: (X,)),
+        DeviceRef.CPU(),
+        token_positions=position_type,
+    )
+    processor = _batch_processor(1)
+    processor.bind_input_tree(types)
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1, 2, position=5), _context(3, position=9)]],
+        kv_cache_inputs=NonCallableMock(spec=KVCacheInputsPerDevice),
+    )
+    assert inputs.token_positions is not None
+    np.testing.assert_array_equal(inputs.token_positions.to_numpy(), [3, 4, 8])
+    assert inputs.input_fields().token_positions is inputs.token_positions
+
+
+def test_constant_input_buffers_share_the_declared_tree() -> None:
+    buffer = Buffer.from_numpy(np.zeros(2, np.float32))
+    constants = ConstantInputs(
+        input_types={"table": (X,)}, buffers={"table": (buffer,)}
+    )
+    assert constants.buffers == {"table": (buffer,)}
+    with pytest.raises(ValueError):
+        ConstantInputs(
+            input_types={"table": (X,)}, buffers={"other": (buffer,)}
+        )
+
+
+def test_a_disabled_vision_role_is_not_constructed() -> None:
+    class DisabledVision(ToyVision):
+        @classmethod
+        def is_enabled(cls, config: ToyConfig) -> bool:
+            return False
+
+    cls = module_pipeline_model(
+        ToyConfig,
+        (
+            (GraphRole.DECODER, VisionDecoder),
+            (GraphRole.VISION, DisabledVision),
+        ),
+        ToyVisionBatchProcessor,
+    )
+    model: Any = cls.__new__(cls)
+    model.pipeline_config = SimpleNamespace(
+        model=SimpleNamespace(pipeline_stage=None)
+    )
+    assert model._vision_graph_spec(ToyConfig()) is None
+
+
+def test_checkpoint_preparation_precedes_role_prefixes() -> None:
+    class PreparedConfig(DeploymentConfig):
+        weight_prefixes = {GraphRole.DECODER: "decoder."}
+
+        def prepare_weights(
+            self, state_dict: Mapping[str, Any]
+        ) -> dict[str, Any]:
+            return {
+                "decoder." + name: value for name, value in state_dict.items()
+            }
+
+    config = PreparedConfig()
+    value = NonCallableMock(spec=WeightData)
+    prepared = prepare_weights({"weight": value}, config)
+    assert role_weights(prepared, config, GraphRole.DECODER) == {
+        "weight": value
+    }
