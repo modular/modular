@@ -2220,9 +2220,6 @@ struct Struct_moe_router_group_limited:
     @inline(.always)
     @staticmethod
     def execute[
-        scores_type: DType,
-        bias_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         n_groups: Int,
@@ -2230,21 +2227,38 @@ struct Struct_moe_router_group_limited:
         norm_weights: Bool,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
-        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_bias: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime scores_type = type_of(expert_scores).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(expert_scores).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(expert_scores), UnsafeFusedView)
+        var scores_view = unsafe_fused_view(expert_scores)
+        comptime assert conforms_to(type_of(scores_view), Loadable)
+
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
+        ](coords: Coord) {var scores_view} -> SIMD[scores_type, width]:
             comptime assert (
                 coords.rank == 2
             ), "the expert-scores lambda contract is rank 2"
-            return expert_scores._lambda_load[width=width](coords)
+            return rebind[SIMD[scores_type, width]](
+                scores_view.load[width=width](coords)
+            )
 
         router_group_limited[
             n_routed_experts,
@@ -2254,11 +2268,11 @@ struct Struct_moe_router_group_limited:
             norm_weights,
             target=target,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            expert_scores.runtime_layout(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor[scores_type](),
+            row_major(expert_scores.shape()),
             scores_input_fn,
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor().as_imm(),
             routed_scaling_factor,
             context,
         )
@@ -2402,9 +2416,6 @@ struct Struct_moe_single_group_router_eplb:
     @inline(.always)
     @staticmethod
     def execute[
-        scores_type: DType,
-        bias_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
@@ -2413,25 +2424,50 @@ struct Struct_moe_single_group_router_eplb:
         hash_decorrelate: Bool,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_indices_log: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
-        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
-        logcnt: InputTensor[dtype=.int32, rank=2, ...],
-        log2phy: InputTensor[dtype=.int32, rank=3, ...],
-        layer_idx: InputTensor[dtype=.int32, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_indices_log: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_bias: Some[Input & Tensor],
+        logcnt: Some[Input & Tensor],
+        log2phy: Some[Input & Tensor],
+        layer_idx: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_indices_log), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime assert conforms_to(type_of(logcnt), TileTensorable)
+        comptime assert conforms_to(type_of(log2phy), TileTensorable)
+        comptime assert conforms_to(type_of(layer_idx), TileTensorable)
+        comptime scores_type = type_of(expert_scores).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_indices_log).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(expert_scores).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
+        comptime assert type_of(logcnt).rank == 2
+        comptime assert type_of(log2phy).rank == 3
+        comptime assert type_of(layer_idx).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(expert_scores), UnsafeFusedView)
+        var scores_view = unsafe_fused_view(expert_scores)
+        comptime assert conforms_to(type_of(scores_view), Loadable)
+
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
+        ](coords: Coord) {var scores_view} -> SIMD[scores_type, width]:
             comptime assert (
                 coords.rank == 2
             ), "the expert-scores lambda contract is rank 2"
-            return expert_scores._lambda_load[width=width](coords)
+            return rebind[SIMD[scores_type, width]](
+                scores_view.load[width=width](coords)
+            )
 
         single_group_router_eplb[
             n_routed_experts,
@@ -2442,15 +2478,15 @@ struct Struct_moe_single_group_router_eplb:
             hash_decorrelate=hash_decorrelate,
             target=target,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_indices_log.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            expert_scores.runtime_layout(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_indices_log.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor[scores_type](),
+            row_major(expert_scores.shape()),
             scores_input_fn,
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
-            logcnt.to_tile_tensor[.int64]().as_imm(),
-            log2phy.to_tile_tensor[.int64]().as_imm(),
-            layer_idx.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor().as_imm(),
+            logcnt.to_tile_tensor[.int32]().as_imm(),
+            log2phy.to_tile_tensor[.int32]().as_imm(),
+            layer_idx.to_tile_tensor[.int32]().as_imm(),
             routed_scaling_factor,
             context,
         )
@@ -2464,29 +2500,43 @@ struct Struct_moe_single_group_router:
     @inline(.always)
     @staticmethod
     def execute[
-        scores_type: DType,
-        bias_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
-        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_bias: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime scores_type = type_of(expert_scores).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(expert_scores).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(expert_scores), UnsafeFusedView)
+        var scores_view = unsafe_fused_view(expert_scores)
+        comptime assert conforms_to(type_of(scores_view), Loadable)
+
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
+        ](coords: Coord) {var scores_view} -> SIMD[scores_type, width]:
             comptime assert (
                 coords.rank == 2
             ), "the expert-scores lambda contract is rank 2"
-            return expert_scores._lambda_load[width=width](coords)
+            return rebind[SIMD[scores_type, width]](
+                scores_view.load[width=width](coords)
+            )
 
         single_group_router[
             n_routed_experts,
@@ -2494,11 +2544,11 @@ struct Struct_moe_single_group_router:
             norm_weights=norm_weights,
             target=target,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            expert_scores.runtime_layout(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor[scores_type](),
+            row_major(expert_scores.shape()),
             scores_input_fn,
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor().as_imm(),
             routed_scaling_factor,
             context,
         )
@@ -2515,33 +2565,51 @@ struct Struct_moe_single_group_router_image_bias:
     @inline(.always)
     @staticmethod
     def execute[
-        scores_type: DType,
-        bias_type: DType,
-        ids_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
         image_token_id: Int,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
-        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
-        image_bias: InputTensor[dtype=bias_type, rank=1, ...],
-        token_ids: InputTensor[dtype=ids_type, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_bias: Some[Input & Tensor],
+        image_bias: Some[Input & Tensor],
+        token_ids: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime assert conforms_to(type_of(image_bias), TileTensorable)
+        comptime assert conforms_to(type_of(token_ids), TileTensorable)
+        comptime scores_type = type_of(expert_scores).dtype
+        comptime bias_type = type_of(expert_bias).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(expert_scores).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
+        comptime assert type_of(image_bias).rank == 1
+        comptime assert type_of(token_ids).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(expert_scores), UnsafeFusedView)
+        var scores_view = unsafe_fused_view(expert_scores)
+        comptime assert conforms_to(type_of(scores_view), Loadable)
+
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
+        ](coords: Coord) {var scores_view} -> SIMD[scores_type, width]:
             comptime assert (
                 coords.rank == 2
             ), "the expert-scores lambda contract is rank 2"
-            return expert_scores._lambda_load[width=width](coords)
+            return rebind[SIMD[scores_type, width]](
+                scores_view.load[width=width](coords)
+            )
 
         single_group_router[
             n_routed_experts,
@@ -2549,13 +2617,13 @@ struct Struct_moe_single_group_router_image_bias:
             norm_weights=norm_weights,
             target=target,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            expert_scores.runtime_layout(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor[scores_type](),
+            row_major(expert_scores.shape()),
             scores_input_fn,
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
-            image_bias.to_tile_tensor[.int64]().as_imm(),
-            token_ids.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor[bias_type]().as_imm(),
+            image_bias.to_tile_tensor[bias_type]().as_imm(),
+            token_ids.to_tile_tensor().as_imm(),
             Int64(image_token_id),
             routed_scaling_factor,
             context,
