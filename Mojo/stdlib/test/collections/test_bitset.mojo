@@ -223,7 +223,7 @@ def test_bitset_negative_index_set_does_not_corrupt_neighbor() raises:
 
     _assert_aborts(
         trigger,
-        contains="BitSet index out of bounds when set bit",
+        contains="index -1 is out of bounds, valid range is 0 to 127",
     )
     assert_false(
         first.test(127),
@@ -239,7 +239,7 @@ def test_bitset_negative_index_clear_aborts() raises:
 
     _assert_aborts(
         trigger,
-        contains="BitSet index out of bounds when clearing bit",
+        contains="index -1 is out of bounds, valid range is 0 to 127",
     )
 
 
@@ -251,7 +251,7 @@ def test_bitset_negative_index_toggle_aborts() raises:
 
     _assert_aborts(
         trigger,
-        contains="BitSet index out of bounds when toggling bit",
+        contains="index -1 is out of bounds, valid range is 0 to 127",
     )
 
 
@@ -263,7 +263,7 @@ def test_bitset_negative_index_test_aborts() raises:
 
     _assert_aborts(
         trigger,
-        contains="BitSet index out of bounds when testing bit",
+        contains="index -1 is out of bounds, valid range is 0 to 127",
     )
 
 
