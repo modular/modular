@@ -75,14 +75,6 @@ def max_flash_attention_with_sinks(
         devices=[DeviceRef.GPU()],
     )
 
-    prompt_lens = [
-        int(input_row_offsets[i + 1] - input_row_offsets[i])
-        for i in range(batch_size)
-    ]
-    kv_cache_inputs = paged_kv_cache_inputs(
-        kv_params, prompt_lens, total_num_pages=8
-    )
-
     # Define graph input types
     input_type = TensorType(
         DType.bfloat16,
@@ -141,7 +133,16 @@ def max_flash_attention_with_sinks(
         return g
 
     graph = build_graph()
+    # Compile before any device allocation, so compilation never needs the GPU.
     model = session.load(graph)
+
+    prompt_lens = [
+        int(input_row_offsets[i + 1] - input_row_offsets[i])
+        for i in range(batch_size)
+    ]
+    kv_cache_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=8
+    )
 
     # Convert inputs to MAX tensors
     q_tensor = Buffer.from_dlpack(query).to(device)
