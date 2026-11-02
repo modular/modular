@@ -175,9 +175,6 @@ from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
 from extensibility import (
-    _FusedOutputTensor as FusedOutputTensor,
-)
-from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 from extensibility import (
@@ -1726,19 +1723,33 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        dtype: DType,
-        freq_dtype: DType,
-        //,
         target: StaticString,
     ](
-        output: FusedOutputTensor[dtype=out_dtype, rank=3, ...],
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        output: Some[Output & Fused & StoreAccess],
+        x: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        start_pos: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(start_pos), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime out_dtype = type_of(output).dtype
+        comptime dtype = type_of(x).dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(x).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(start_pos).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # store on the GPU lane.
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
+
         @inline(.always)
         def description_fn() {imm} -> String:
             return String(";").join(
@@ -1761,16 +1772,18 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
         @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](idx: Coord, val: SIMD[dtype, width]) {var output} -> None:
-            output._lambda_store[width=width, element_alignment=alignment](
+        ](idx: Coord, val: SIMD[dtype, width]) {var output_view} -> None:
+            output_view.store[width=Int(width), element_alignment=alignment](
                 idx,
-                cast_saturating[out_dtype](val),
+                rebind[SIMD[type_of(output_view).dtype, Int(width)]](
+                    cast_saturating[out_dtype](val)
+                ),
             )
 
-        var x_tensor = x.to_tile_tensor[.int64]()
-        var row_offsets_tensor = input_row_offsets.to_tile_tensor[.int64]()
-        var start_tensor = start_pos.to_tile_tensor[.int64]()
-        var freqs_cis_tensor = freqs_cis.to_tile_tensor[.int64]()
+        var x_tensor = x.to_tile_tensor[dtype]()
+        var row_offsets_tensor = input_row_offsets.to_tile_tensor[.uint32]()
+        var start_tensor = start_pos.to_tile_tensor[.uint32]()
+        var freqs_cis_tensor = freqs_cis.to_tile_tensor()
         comptime assert row_offsets_tensor.flat_rank == 1
         comptime assert start_tensor.flat_rank == 1
         comptime assert freqs_cis_tensor.flat_rank == 2
@@ -1803,19 +1816,36 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        freq_dtype: DType,
-        //,
         target: StaticString,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=3, ...],
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        position_ids: InputTensor[dtype=.uint32, rank=2, ...],
+        output: Some[Output & Fused & StoreAccess],
+        x: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        start_pos: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        position_ids: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(start_pos), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(position_ids), TileTensorable)
+        comptime dtype = type_of(x).dtype
+        comptime assert type_of(output).dtype == dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(x).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(start_pos).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(position_ids).rank == 2
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # store on the GPU lane.
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
+
         @inline(.always)
         def description_fn() {imm} -> String:
             return String(";").join(
@@ -1838,17 +1868,17 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](idx: Coord, val: SIMD[dtype, width]) {var output} -> None:
-            output._lambda_store[width=width, element_alignment=alignment](
+        ](idx: Coord, val: SIMD[dtype, width]) {var output_view} -> None:
+            output_view.store[width=Int(width), element_alignment=alignment](
                 idx,
-                rebind[SIMD[dtype, width]](val),
+                rebind[SIMD[type_of(output_view).dtype, Int(width)]](val),
             )
 
-        var x_tensor = x.to_tile_tensor[.int64]()
-        var row_offsets_tensor = input_row_offsets.to_tile_tensor[.int64]()
-        var start_tensor = start_pos.to_tile_tensor[.int64]()
-        var freqs_cis_tensor = freqs_cis.to_tile_tensor[.int64]()
-        var position_ids_tensor = position_ids.to_tile_tensor[.int64]()
+        var x_tensor = x.to_tile_tensor[dtype]()
+        var row_offsets_tensor = input_row_offsets.to_tile_tensor[.uint32]()
+        var start_tensor = start_pos.to_tile_tensor[.uint32]()
+        var freqs_cis_tensor = freqs_cis.to_tile_tensor()
+        var position_ids_tensor = position_ids.to_tile_tensor[.uint32]()
         comptime assert row_offsets_tensor.flat_rank == 1
         comptime assert start_tensor.flat_rank == 1
         comptime assert freqs_cis_tensor.flat_rank == 2
