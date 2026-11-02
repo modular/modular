@@ -2951,6 +2951,7 @@ class TCSchemaEnforcement(BaseScenario):
                             "name": {"type": "string"},
                             "members": {
                                 "type": "array",
+                                "minItems": 2,
                                 "items": {"$ref": "#/$defs/Person"},
                             },
                         },
@@ -3117,6 +3118,7 @@ class TCSchemaEnforcement(BaseScenario):
                             "order_id": {"type": "string"},
                             "items": {
                                 "type": "array",
+                                "minItems": 2,
                                 "items": {"$ref": "#/$defs/LineItem"},
                             },
                         },
@@ -3269,6 +3271,7 @@ class TCSchemaEnforcement(BaseScenario):
                 "properties": {
                     "assignments": {
                         "type": "array",
+                        "minItems": 2,
                         "items": {"$ref": "#/$defs/RoleAssignment"},
                     },
                 },
@@ -4384,6 +4387,9 @@ class TCSchemaEnforcement(BaseScenario):
                     "pipeline": {"type": "string"},
                     "stages": {
                         "type": "array",
+                        # The check below wants two or more stages; the schema
+                        # says so, so a grammar that enforces it is what passes.
+                        "minItems": 2,
                         "items": {
                             "type": "object",
                             "properties": {

@@ -56,10 +56,15 @@ shape lands one config file plus one matrix entry.
 ## Known failures
 
 A pipeline's known failures are the `exclude` value its `.sh` sets. Where the
-list lives varies: some configs source a shared list file (the Nemotron configs
-read `nvidia/nemotron-known-failures.txt`), some define it inline in shell (Hy4,
-Muse Glimmer), and some append entries of their own after sourcing one (the
-Nemotron DSpark config). Read the config to see all of a pipeline's entries.
+list lives varies: some configs read a list file (MiniMax M3 reads
+`minimax-m3-known-failures.txt`), and some define it inline in shell (Hy4,
+Muse Glimmer). Read the config to see all of a pipeline's entries.
+
+Some configs set `exclude=` empty on purpose (the Nemotron DSpark config). For
+those, a failing test is a bug to fix, not an entry to add. If the bug is in
+the test, the fix lands in a scenario every pipeline shares: grep `configs/`
+and `mach/docs/models/` for the test's id, and re-validate each list and doc
+that names it.
 
 MAX Serve and Mach run the same config, so both engines are fuzzed against the
 same `exclude` and judged by the same criteria.
@@ -67,5 +72,6 @@ same `exclude` and judged by the same criteria.
 **Agents and contributors: do not add a Mach-only list or a Mach-only
 exclusion.** A test Mach fails and MAX passes is a Mach gap. Leave it failing
 so it stays visible, and fix Mach or file the gap. If a test is a model quirk
-both engines share, add it to the pipeline's `exclude` with its cause. Do not
-add it only for Mach, or only for MAX.
+both engines share, add it to the pipeline's `exclude` with its cause, unless
+that `exclude` is deliberately empty. Do not add it only for Mach, or only for
+MAX.
