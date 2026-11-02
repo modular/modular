@@ -46,7 +46,11 @@ from max.graph import (
     ops,
 )
 from max.nn import Module as ModuleV3
-from max.nn.legacy.kernels import topk_fused_sampling_with_dist
+from max.nn.legacy.kernels import (
+    _dspark_draft_sample,
+    _is_sm10x_gpu,
+    gumbel_argmax_from_probs,
+)
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.sampling.rejection_sampler import (
@@ -480,14 +484,48 @@ class ArgmaxDraftSampler(DraftSampler):
 
 
 class SampledDraftSampler(DraftSampler):
-    """Draws each position at its request's temperature, top-k and top-p.
+    """Draws each position from the tempered full softmax of its logits.
 
     Serves ``draft_proposal="sampled"``, keeping the distribution each draw
     came from, in target-vocab positions, for the verifier. The driver builds
     one per iteration from the per-row sampling parameters. Position ``i`` is
     keyed like sequential draft step ``i``, so no two positions of a request
     share a draw.
+
+    The draft proposal carries no top-k/top-p truncation: the request's
+    top-k and top-p shape the target's distribution the verifier builds, and
+    the verifier's rejection test is exact for any distribution the draft
+    really samples from. Keeping the draw and the stored ``q`` on one full
+    softmax is what stops them disagreeing. ``top_k`` and ``top_p`` stay on
+    the constructor because the driver builds one sampler per iteration from
+    the request's sampling parameters.
     """
+
+    @staticmethod
+    def _draw(
+        logits: TensorValue, *, seed: TensorValue, temperature: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        """Draws one token per row from the tempered full softmax.
+
+        Returns the drawn column index and the float32 distribution it was
+        drawn from: the full softmax of ``logits / max(temperature, 1e-6)``,
+        rows summing to one. The Gumbel noise is keyed by ``seed``, one key
+        per row, so a row's draw depends only on its own seed, never on its
+        slot among co-launched rows.
+
+        Args:
+            logits: ``[rows, width]`` logits over whatever columns the head
+                scored: the target vocabulary, a pruned one, a candidate
+                list.
+            seed: Per-row RNG keys, uint64 ``[rows]``.
+            temperature: Per-row temperature, float32 ``[rows]``.
+        """
+        tempered = logits.cast(DType.float32) / ops.max(
+            ops.unsqueeze(temperature, axis=-1),
+            ops.constant(1e-6, DType.float32, device=logits.device),
+        )
+        dist = ops.softmax(tempered).cast(DType.float32)
+        return gumbel_argmax_from_probs(dist, seed=seed), dist
 
     def __init__(
         self,
@@ -526,12 +564,10 @@ class SampledDraftSampler(DraftSampler):
         seeds = ops.stack(
             [_draft_step_seed(self._seed, i) for i in range(n)], axis=1
         ).reshape((-1,))
-        tokens, dist = topk_fused_sampling_with_dist(
+        tokens, dist = self._draw(
             logits.rebind([self._rows, n, vocab]).reshape((-1, vocab)),
-            top_k=per_position(self._top_k),
-            temperature=per_position(self._temperature),
-            top_p=per_position(self._top_p),
             seed=seeds,
+            temperature=per_position(self._temperature),
         )
         self._all_dists = dist.reshape((self._rows, n, vocab))
         return tokens.reshape((self._rows, n))
@@ -550,15 +586,57 @@ class SampledDraftSampler(DraftSampler):
         logits = as_graph_values(logits)
         if token_ids is not None:
             token_ids = as_graph_values(token_ids)
-        index, dist = topk_fused_sampling_with_dist(
+        index, dist = self._draw(
             logits.rebind([self._rows, logits.shape[1]]),
-            top_k=self._top_k,
-            temperature=self._temperature,
-            top_p=self._top_p,
             seed=_draft_step_seed(self._seed, position),
+            temperature=self._temperature,
         )
         if token_ids is not None:
             dist = _scatter_to_vocab(dist, token_ids, self._vocab_size)
+        self._next_dists.append(dist)
+        return index
+
+    def sample_biased(
+        self,
+        logits: TensorValue,
+        bias: TensorValue,
+        position: int,
+    ) -> TensorValue:
+        """Draws one position's token from the tempered softmax of logits+bias.
+
+        One fused kernel adds the bias, scales by the row's temperature, draws
+        the token by Gumbel-max and writes the distribution it drew from,
+        reading the head logits once. A caller whose head adds a per-position
+        bias in-graph uses this instead of :meth:`sample_next`, so the bias
+        and the draw share the logits' single read. The fused kernel needs an
+        SM100 GPU. Elsewhere the bias is added in the graph and the draw goes
+        through :meth:`sample_next`.
+
+        Args:
+            logits: ``[rows, vocab_size]`` head logits, bfloat16 or float32,
+                before the bias.
+            bias: ``[rows, vocab_size]`` per-position bias, float32.
+            position: The position in the block, from 0.
+
+        Returns:
+            The ``[rows]`` drawn column index.
+        """
+        assert self._all_dists is None
+        assert position == len(self._next_dists), (
+            "positions must be drawn in order"
+        )
+        logits = as_graph_values(logits)
+        bias = as_graph_values(bias)
+        if not _is_sm10x_gpu():
+            return self.sample_next(
+                ops.cast(logits, DType.float32) + bias, position
+            )
+        index, dist = _dspark_draft_sample(
+            logits.rebind([self._rows, logits.shape[1]]),
+            bias.rebind([self._rows, bias.shape[1]]),
+            temperature=self._temperature,
+            seed=_draft_step_seed(self._seed, position),
+        )
         self._next_dists.append(dist)
         return index
 

@@ -823,14 +823,23 @@ class _Verify:
 
 def _draft_sample(
     sampler: DraftSampler,
-) -> Callable[[TensorValue, int], TensorValue] | None:
-    """Adapts a draft sampler to the draft loop's per-position callback.
+) -> Callable[[TensorValue, TensorValue, int], TensorValue] | None:
+    """Adapts a draft sampler to the bias-aware draft callback.
 
-    ``None`` drafts greedily through the fused biased argmax.
+    A sampled proposal draws from the raw logits and the per-position bias in
+    one fused kernel, so the bias is handed over instead of added in the
+    graph. A greedy proposal drafts through ``argmax_with_bias``, which adds
+    the bias inside the kernel; any other sampler receives the biased logits.
     """
+    if isinstance(sampler, SampledDraftSampler):
+        return lambda logits, bias, position: sampler.sample_biased(
+            logits, bias, position
+        )
     if isinstance(sampler, ArgmaxDraftSampler):
         return None
-    return sampler.sample_next
+    return lambda logits, bias, position: sampler.sample_next(
+        ops.cast(logits, DType.float32) + bias, position
+    )
 
 
 class _DSparkProposer:

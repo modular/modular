@@ -114,7 +114,11 @@ from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
 from nn.argmaxmin_gpu import argmax_with_bias_gpu
 from nn.topk import gumbel_sampling_fused_gpu
-from nn.sampling import topk_topp_masked_probs, topk_topp_sampling_from_prob
+from nn.sampling import (
+    dspark_draft_sample_gpu,
+    topk_topp_masked_probs,
+    topk_topp_sampling_from_prob,
+)
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from state_space.gated_delta_conv1d import (
@@ -3301,6 +3305,49 @@ struct Struct_topk_topp_masked_probs:
             temperature=temperature.to_tile_tensor[.float32]()
             .as_unsafe_any_origin()
             .as_imm(),
+        )
+
+
+@extensibility.register("sampler.dspark_draft_sample")
+struct Struct_dspark_draft_sample:
+    """Registers the `sampler.dspark_draft_sample` graph op.
+
+    Draws one draft token per row by Gumbel-max over the tempered softmax of
+    `(logits + bias) / T` and returns that softmax as the distribution the
+    token was drawn from. The draft proposal is temperature-only by
+    construction: the request's top-k and top-p shape the target's
+    distribution, not the draft's, so the draw and the `q` the verifier reads
+    stay full-support and cannot disagree.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
+        out_dist: OutputTensor[dtype=.float32, rank=2, ...],
+        logits: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=.float32, rank=2, ...],
+        temperature: InputTensor[dtype=.float32, rank=1, ...],
+        seed: InputTensor[dtype=.uint64, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.dspark_draft_sample is GPU-only"
+        dspark_draft_sample_gpu(
+            ctx,
+            logits.to_tile_tensor[.int64](),
+            bias.to_tile_tensor[.int64](),
+            temperature.to_tile_tensor[.int64]()
+            .as_unsafe_any_origin()
+            .as_imm(),
+            seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
+            out_tokens.to_tile_tensor[.int64](),
+            out_dist.to_tile_tensor[.int64](),
         )
 
 

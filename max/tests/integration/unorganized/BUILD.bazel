@@ -622,6 +622,35 @@ modular_py_test(
     ],
 )
 
+# Does the fused DSpark draft sampler match a float64 oracle at ragged rows?
+modular_py_test(
+    name = "test-dspark-draft-sample",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_dspark_draft_sample_gpu.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    # The oracle replays the SM100 kernel's own noise.
+    gpu_constraints = select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
 # What does a shared key between the bonus and a draft proposal cost?
 modular_py_test(
     name = "test-bonus-draft-quantile-collision",

@@ -14155,6 +14155,76 @@ def topk_topp_masked_probs(
     )[0].tensor
 
 
+def _dspark_draft_sample(
+    logits: TensorValue,
+    bias: TensorValue,
+    *,
+    temperature: TensorValue,
+    seed: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    """Draws one draft token per row from the tempered softmax of logits+bias.
+
+    Adds the bias to the raw head logits, scales by the per-row temperature,
+    draws the token by Gumbel-max over the resulting full softmax, and
+    returns that softmax as the distribution the token was drawn from. The
+    draft proposal carries no top-k/top-p truncation: the request's sampling
+    parameters shape the target distribution the verifier builds, and the
+    verifier's rejection test is exact for any distribution the draft really
+    samples from.
+
+    SM100-only: each row combines over a thread-block cluster.
+
+    Args:
+        logits: Raw head logits ``[rows, vocab_size]``, bfloat16 or float32.
+        bias: The Markov bias ``[rows, vocab_size]``, float32.
+        temperature: Per-row temperature ``[rows]``, float32; non-positive
+            clamps to a small positive value.
+        seed: Per-row RNG seed ``[rows]``, uint64. The noise is keyed by the
+            seed and the element index, so a row draws the same token under
+            any batch or row split.
+
+    Returns:
+        ``(token_ids, distribution)``: int64 ``[rows]`` and float32
+        ``[rows, vocab_size]``.
+
+    Raises:
+        ValueError: If the logits or bias are not rank-2 on an SM100 GPU, or
+            a per-row parameter does not carry exactly one entry per row.
+    """
+    if logits.rank != 2 or bias.rank != 2:
+        raise ValueError(
+            "dspark_draft_sample requires rank-2 logits and bias, got "
+            f"{logits.rank} and {bias.rank}"
+        )
+    if logits.device == DeviceRef.CPU() or not _is_sm10x_gpu():
+        raise ValueError("dspark_draft_sample requires an SM100 GPU")
+
+    rows = logits.shape[0]
+    device = logits.device
+    if bias.shape[0] != rows or bias.shape[1] != logits.shape[1]:
+        raise ValueError(
+            "dspark_draft_sample requires bias to match the logits shape, "
+            f"got {bias.shape} and {logits.shape}"
+        )
+    for name, param in (("temperature", temperature), ("seed", seed)):
+        if param.rank != 1 or param.shape[0] != rows:
+            raise ValueError(
+                f"{name} must be rank-1 with shape [{rows}] to match the"
+                f" logits rows, got {param.shape}"
+            )
+
+    results = ops.custom(
+        "sampler.dspark_draft_sample",
+        device=device,
+        values=[logits, bias, temperature, seed],
+        out_types=[
+            TensorType(dtype=DType.int64, shape=[rows], device=device),
+            TensorType(dtype=DType.float32, shape=logits.shape, device=device),
+        ],
+    )
+    return results[0].tensor, results[1].tensor
+
+
 def keyed_uniform(seed: TensorValue) -> TensorValue:
     """Draws one uniform value in ``[0, 1)`` per row, keyed off that row's seed.
 

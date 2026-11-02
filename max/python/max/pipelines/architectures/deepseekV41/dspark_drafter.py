@@ -69,16 +69,19 @@ def drafter_layer_infos(config: DeepseekV41Config) -> list[LayerInfo]:
     return rows
 
 
-def _greedy(logits: TensorValue, step: int) -> TensorValue:
+def _greedy(logits: TensorValue, bias: TensorValue, step: int) -> TensorValue:
     del step
-    return ops.squeeze(ops.argmax(logits, axis=-1), axis=-1)
+    return ops.squeeze(
+        ops.argmax(ops.cast(logits, DType.float32) + bias, axis=-1), axis=-1
+    )
 
 
 def draft_block(
     logits: TensorValue,
     anchor_ids: TensorValue,
     markov_head: DSparkMarkovHead,
-    sampler: Callable[[TensorValue, int], TensorValue] | None = None,
+    sampler: Callable[[TensorValue, TensorValue, int], TensorValue]
+    | None = None,
 ) -> TensorValue:
     """Draws a block of draft tokens per request, one position at a time.
 
@@ -86,13 +89,16 @@ def draft_block(
     position ``i - 1`` (the anchor at position 0). A greedy draft on a GPU
     adds the bias inside :func:`argmax_with_bias`, which reads the logits in
     place and adds in float32, the index an argmax of the float32 sum takes.
+    The ``sampler`` callback receives the position's logits, the bias and the
+    position, so a sampler that can add the bias itself draws from both in
+    one pass; any other sampler receives their sum.
 
     Args:
         logits: ``[b, block_size, vocab]`` draft logits.
         anchor_ids: ``[b]`` int32, each block's first token.
         markov_head: The drafter's Markov head.
         sampler: Draws position ``i``'s ``[b]`` tokens from its
-            ``[b, vocab]`` float32 biased logits; greedy argmax when ``None``.
+            ``[b, vocab]`` logits and bias; greedy argmax when ``None``.
 
     Returns:
         ``[b, block_size]`` int32 draft ids.
@@ -106,7 +112,7 @@ def draft_block(
         if fused:
             token = argmax_with_bias(logits, bias, position=i)
         else:
-            token = sample(ops.cast(logits[:, i], DType.float32) + bias, i)
+            token = sample(logits[:, i], bias, i)
         current = ops.cast(token, DType.int32)
         drafted.append(current)
     return ops.stack(drafted, axis=1)
@@ -441,7 +447,8 @@ class DeepseekV41DSparkDrafter(Module):
         self,
         logits: TensorValue,
         anchor_ids: TensorValue,
-        sampler: Callable[[TensorValue, int], TensorValue] | None = None,
+        sampler: Callable[[TensorValue, TensorValue, int], TensorValue]
+        | None = None,
     ) -> TensorValue:
         """Draws ``block_size`` draft tokens per request (:func:`draft_block`).
 

@@ -245,4 +245,4 @@ def test_dp4_sampled_head_samples_on_one_device() -> None:
             )
         ]
         staged = module.trace(*inputs)
-    assert "sampler.fused_token_sampling_with_dist" in str(staged)
+    assert "sampler.gumbel_argmax_from_probs" in str(staged)

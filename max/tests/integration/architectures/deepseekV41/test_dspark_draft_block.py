@@ -53,9 +53,11 @@ class _Head(Module):
         raise NotImplementedError("a weight holder; trace with its members")
 
 
-def _sampled(logits: TensorValue, step: int) -> TensorValue:
+def _sampled(logits: TensorValue, bias: TensorValue, step: int) -> TensorValue:
     del step
-    return ops.squeeze(ops.argmax(logits, axis=-1), axis=-1)
+    return ops.squeeze(
+        ops.argmax(ops.cast(logits, DType.float32) + bias, axis=-1), axis=-1
+    )
 
 
 def _weights(vocab: int) -> dict[str, torch.Tensor]:
