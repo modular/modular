@@ -87,7 +87,7 @@ from max.gpu.host import Attribute
 comptime NUM_LANES = 128
 comptime NUM_COLS = 32
 comptime WIDE_COLS = 128
-comptime NUM_WARPS = NUM_LANES // DeviceContext.default_device_info.warp_size
+comptime NUM_WARPS = NUM_LANES // DeviceContext[].default_device_info.warp_size
 comptime NUM_ELEMENTS = NUM_LANES * NUM_COLS
 comptime WIDE_ELEMENTS = NUM_LANES * WIDE_COLS
 

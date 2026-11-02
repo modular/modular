@@ -55,7 +55,7 @@ def bench_pool_gpu[
     kernel: IndexList[kernel_rank],
     stride: IndexList[stride_rank],
     pad: Int,
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     """Benchmarks one pool shape.
 
     Parameters:
@@ -122,7 +122,7 @@ def bench_pool_gpu[
     }:
         @inline(.always)
         def kernel_launch(
-            ctx: DeviceContext,
+            ctx: DeviceContext[],
         ) raises {
             mut output,
             imm input,

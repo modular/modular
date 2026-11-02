@@ -87,7 +87,7 @@ def random_normal[
     var grid_block: Int
 
     comptime if target == "gpu":
-        comptime info = DeviceContext.default_device_info
+        comptime info = DeviceContext[].default_device_info
         comptime MAX_GRID = (
             info.sm_count * (info.threads_per_multiprocessor // BLOCK_SIZE)
         )

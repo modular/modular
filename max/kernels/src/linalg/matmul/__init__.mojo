@@ -58,7 +58,7 @@ def matmul[
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[address_space=.GENERIC, ...],
     b: TileTensor[address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Primary TileTensor matmul implementation. Routes GPU directly, delegates
     CPU path to cpu.matmul.
@@ -119,7 +119,7 @@ def matmul[
     a: TileTensor[address_space=.GENERIC, ...],
     b: TileTensor[address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Matmul that stores each output tile through `epilogue_fn`.
 
@@ -178,7 +178,7 @@ def matmul[
     a: TileTensor[address_space=.GENERIC, ...],
     b: TileTensor[address_space=.GENERIC, ...],
     compute_fn: ComputeFnType,
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Matmul that stores `compute_fn(idx, a @ b)` into `c`.
 
@@ -240,7 +240,7 @@ def _matmul_impl[
     b: TileTensor[address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContext.Optional,
 ) raises:
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"

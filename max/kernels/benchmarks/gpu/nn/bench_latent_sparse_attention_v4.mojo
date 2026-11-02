@@ -109,14 +109,14 @@ def _collection[
     )
 
 
-def _fill_randn(ctx: DeviceContext, buf: DeviceBuffer[bf16], n: Int) raises:
+def _fill_randn(ctx: DeviceContext[], buf: DeviceBuffer[bf16], n: Int) raises:
     with buf.map_to_host() as h:
         for i in range(n):
             h[i] = Float32(randn_float64()).cast[bf16]()
 
 
 def _paged_lut(
-    ctx: DeviceContext, batch: Int, pages_per_seq: Int
+    ctx: DeviceContext[], batch: Int, pages_per_seq: Int
 ) raises -> DeviceBuffer[DType.uint32]:
     # Pages mapped in reverse so consecutive keys are not physically adjacent.
     var total = batch * pages_per_seq
@@ -130,7 +130,7 @@ def _paged_lut(
 def run_shape[
     num_heads: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     batch: Int,
     pos: Int,
@@ -278,7 +278,7 @@ def run_shape[
 
     @inline(.always)
     def launch_slow(
-        launch_ctx: DeviceContext,
+        launch_ctx: DeviceContext[],
     ) raises {
         imm op_slow,
         imm qp,
@@ -319,7 +319,7 @@ def run_shape[
 
     @inline(.always)
     def launch_pbf16(
-        launch_ctx: DeviceContext,
+        launch_ctx: DeviceContext[],
     ) raises {
         imm op_pbf16,
         imm qp,
@@ -360,7 +360,7 @@ def run_shape[
 
     @inline(.always)
     def launch_fast(
-        launch_ctx: DeviceContext,
+        launch_ctx: DeviceContext[],
     ) raises {
         imm out_tt,
         imm q_tt,
@@ -377,7 +377,7 @@ def run_shape[
 
     @inline(.always)
     def launch_nosplit(
-        launch_ctx: DeviceContext,
+        launch_ctx: DeviceContext[],
     ) raises {
         imm out_nosplit_tt,
         imm q_tt,
@@ -474,7 +474,7 @@ def run_shape[
 
 def run_heads[
     num_heads: Int
-](ctx: DeviceContext, mut m: Bench, only: Int, base: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, only: Int, base: Int) raises:
     # The four census shapes of the feasibility bench, at c1, plus the two
     # compressed shapes at c8.
     # Window-only layer.

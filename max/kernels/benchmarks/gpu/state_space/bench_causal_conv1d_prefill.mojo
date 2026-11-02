@@ -129,7 +129,7 @@ def _gpu_order_reference[
 def _bench[
     dtype: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     batch: Int,
     channels: Int,
     seqlen: Int,
@@ -234,7 +234,7 @@ def _bench[
     ](output_d.unsafe_ptr(), (batch, channels, seqlen))
 
     def launch(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {
         imm input_arg,
         imm weights_arg,

@@ -108,7 +108,7 @@ def bench_bmm[
     transpose_b: Bool = False,
     lambda_fn: Optional[epilogue_func_type] = None,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     b: BType,
     m: MType,
@@ -176,7 +176,7 @@ def bench_bmm[
         mut bench: Bencher,
     ) {var a_device, var b_device, var c_device, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             comptime if use_vendor_blas:
                 comptime if ctx.target.is_amd_gpu():
                     var c_buffer = c_device.reshape(row_major(m, n))
@@ -297,7 +297,7 @@ def create_bmm_bench[
     use_vendor_blas: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     b: BType,
     m: MType,

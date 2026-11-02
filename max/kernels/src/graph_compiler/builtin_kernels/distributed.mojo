@@ -162,7 +162,7 @@ struct DistributedAllReduceSum:
         outputs: TensorTuple[*Outs],
         inputs: TensorTuple[*Ins],
         signal_buffers: TensorTuple[*Sigs],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         """Distributed allreduce operation implementation for sum reduction.
 
@@ -389,7 +389,7 @@ struct DistributedReduceScatterSum:
         outputs: TensorTuple[*Outs],
         inputs: TensorTuple[*Ins],
         signal_buffers: TensorTuple[*Sigs],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         """Distributed reduce-scatter operation implementation for sum reduction.
 
@@ -553,7 +553,7 @@ struct DistributedAllGather:
         outputs: TensorTuple[*Outs],
         inputs: TensorTuple[*Ins],
         signal_buffers: TensorTuple[*Sigs],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         """Distributed allgather operation implementation.
 
@@ -769,7 +769,7 @@ struct DistributedBroadcast:
         outputs: TensorTuple[*Outs],
         input: Some[Input & Tensor],
         signal_buffers: TensorTuple[*Sigs],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         """Execute distributed broadcast operation.
 
@@ -886,7 +886,7 @@ struct DistributedScatter:
         outputs: TensorTuple[*Outs],
         inputs: TensorTuple[*Ins],
         signal_buffers: TensorTuple[*Sigs],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         comptime ngpus = len(Sigs)
         comptime dtype = Ins[0].dtype
@@ -998,7 +998,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         residuals: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
         scales_ub: InputVariadicTensors[dtype=DType.float32, ...],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
@@ -1119,7 +1119,7 @@ struct DistributedAllReduceRMSNorm:
             dtype=DType.uint8, rank=1, ...
         ],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         """Fused allreduce sum + RMSNorm (bf16 in/out, no quantization).
 
@@ -1352,7 +1352,7 @@ struct DistributedReduceScatterRMSNorm:
         ],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
         residuals: InputVariadicTensors[dtype=dtype, rank=rank, ...],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         """Fused reduce-scatter sum + RMSNorm + residual add (bf16, no quant).
 
@@ -1633,7 +1633,7 @@ struct DistributedAllGatherRMSNorm:
             dtype=DType.uint8, rank=1, ...
         ],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         """Fused all-gather + RMSNorm (bf16 in/out, no quantization).
 
@@ -1871,7 +1871,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
             dtype=DType.uint8, rank=1, ...
         ],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         """Fused all-gather + RMSNorm that also emits an MXFP8 copy.
 
@@ -2184,7 +2184,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
             dtype=DType.uint8, rank=1, ...
         ],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         """Fused all-gather + RMSNorm that also emits a packed MXFP6 copy.
 

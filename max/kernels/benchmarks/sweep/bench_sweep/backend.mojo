@@ -22,15 +22,18 @@ overrides only what its target answers differently.
 
 from std.os import getenv
 from std.subprocess import run
+from std.sys import CompilationTarget
 
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceAttribute, DeviceContext, default_accelerator
 
 # Covers MI355's 256 MiB Infinity Cache twice over, which `L2_CACHE_SIZE` does
 # not report; also the fallback where the L2 size is unavailable.
 comptime _MIN_AUTO_EVICT_BYTES = 512 * 1024 * 1024
 
 
-def device_fill_supported(ctx: DeviceContext) raises -> Bool:
+def device_fill_supported[
+    target: CompilationTarget
+](ctx: DeviceContext[target]) raises -> Bool:
     """Returns whether the generators' fill kernels run on this target.
 
     The kernels are written for the APIs the library targets directly; any
@@ -43,7 +46,9 @@ def device_fill_supported(ctx: DeviceContext) raises -> Bool:
     return api == "cuda" or api == "hip" or api == "metal"
 
 
-def auto_evict_bytes(ctx: DeviceContext) raises -> Int:
+def auto_evict_bytes[
+    target: CompilationTarget
+](ctx: DeviceContext[target]) raises -> Int:
     """Returns the bytes a cold iteration must evict on a known target.
 
     Twice the reported L2, with a floor where the target reports none -- and
@@ -59,7 +64,7 @@ def auto_evict_bytes(ctx: DeviceContext) raises -> Int:
     return 2 * l2
 
 
-def auto_device_events(ctx: DeviceContext) raises -> Bool:
+def auto_device_events(ctx: DeviceContext[]) raises -> Bool:
     """Returns whether timing comes from device events on a known target."""
     var api = ctx.api()
     return api == "cuda" or api == "hip"
@@ -76,7 +81,7 @@ struct SweepBackend(Copyable, Movable):
     keeps that answer.
     """
 
-    var device_fill: def(DeviceContext) thin raises -> Bool
+    var device_fill: def(DeviceContext[]) thin raises -> Bool
     """Whether the generators' fill kernels run on the target.
 
     False fills on the host instead and copies, through the bit-exact CPU
@@ -84,17 +89,17 @@ struct SweepBackend(Copyable, Movable):
     `device_fill_supported`, so a backend's answer agrees with what its
     benchmark's fills do."""
 
-    var device_events: def(DeviceContext) thin raises -> Bool
+    var device_events: def(DeviceContext[]) thin raises -> Bool
     """Whether timing comes from device events rather than a host clock.
 
     Reported in the harness's first `SWEEPINFO` line, so a sweep measured on
     a host clock says so in its output."""
 
-    var evict_bytes: def(DeviceContext) thin raises -> Int
+    var evict_bytes: def(DeviceContext[]) thin raises -> Int
     """The bytes a cold iteration must evict: twice the cache the target
     reports, or the target's fallback where it reports none."""
 
-    var throttle_state: def(DeviceContext) thin raises -> String
+    var throttle_state: def(DeviceContext[]) thin raises -> String
     """`clear`, `active:<conditions>` or `unavailable:<reason>`; see
     `throttle_state`."""
 
@@ -105,11 +110,12 @@ struct SweepBackend(Copyable, Movable):
         Fill kernels and device events where they run, the reported cache
         twice over, and the management tools' throttle query.
         """
+        comptime target = default_accelerator()
         return Self(
-            device_fill_supported,
+            device_fill_supported[target],
             auto_device_events,
-            auto_evict_bytes,
-            throttle_state,
+            auto_evict_bytes[target],
+            throttle_state[target],
         )
 
 
@@ -129,7 +135,9 @@ def _visible_index(ctx: DeviceContext, env: StaticString) raises -> String:
     return String(entries[ordinal].strip())
 
 
-def throttle_state(ctx: DeviceContext) -> String:
+def throttle_state[
+    target: CompilationTarget
+](ctx: DeviceContext[target]) -> String:
     """Returns `clear`, `active:<conditions>` or `unavailable:<reason>`.
 
     Reads only hardware throttling (thermal, power brake, PROCHOT), the

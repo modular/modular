@@ -150,7 +150,7 @@ def test_combine[
     n_slots: Int,
     n_tokens_per_rank: Int,
     skewed: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime input_type = DType.bfloat16
     comptime n_local_experts = n_experts // n_ranks
     comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
@@ -592,7 +592,7 @@ def test_combine[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_combine(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_combine(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_combine_async(dev_id, cache_iter)
 
@@ -632,7 +632,9 @@ def test_combine[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_combine_wait(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_combine_wait(
+        ctx: DeviceContext[], cache_iter: Int
+    ) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_combine_async_wait(dev_id, cache_iter)
 
@@ -920,7 +922,7 @@ def main() raises:
             continue
 
         # Create GPU context.
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 

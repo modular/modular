@@ -116,7 +116,7 @@ def bench_grouped_block_scaled_gemm[
     scaling_kind: UMMAKind = UMMAKind.KIND_MXF8F6F4,
     sf_vector_size: Int = MXFP8_SF_VECTOR_SIZE,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     m: MType,
     n: NType,
@@ -349,7 +349,7 @@ def bench_grouped_block_scaled_gemm[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
                 max_groups=max_groups,

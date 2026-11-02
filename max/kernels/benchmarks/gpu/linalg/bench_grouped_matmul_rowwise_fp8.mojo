@@ -63,7 +63,7 @@ def bench_grouped_matmul_rowwise_fp8[
     num_experts: Int,
     expert_shape: IndexList[2],  # (N, K)
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -198,7 +198,7 @@ def bench_grouped_matmul_rowwise_fp8[
         var num_active_experts,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             grouped_matmul_rowwise_dynamic_scaled_fp8[
                 transpose_b=True, target="gpu"
             ](

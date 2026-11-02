@@ -167,7 +167,7 @@ def _topk_stage2_smem_bytes[
     bitonic network and then rounded up to whole warps, plus a value and two
     indices per sample-cache slot, rounded up to `WARP_SIZE` bytes.
     """
-    comptime warp_size = DeviceContext.default_device_info.warp_size
+    comptime warp_size = DeviceContext[].default_device_info.warp_size
     var num_elem_reduced = align_up(
         _topk_stage2_sort_len(num_blocks_per_input * max_k), warp_size
     )

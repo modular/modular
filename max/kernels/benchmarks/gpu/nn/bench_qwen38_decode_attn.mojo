@@ -109,7 +109,7 @@ def execute_kv_cache_ragged_flash_attention[
     cross_attention: Bool = False,
     sink: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     batch_size: Int,
     seq_len: Int,
@@ -386,7 +386,7 @@ def execute_kv_cache_ragged_flash_attention[
             imm,
         }:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext) raises {imm}:
+            def kernel_launch(ctx: DeviceContext[]) raises {imm}:
                 comptime if local_window_size > 0:
                     comptime assert (
                         not sink

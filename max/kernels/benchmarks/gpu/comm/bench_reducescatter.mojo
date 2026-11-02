@@ -85,7 +85,7 @@ def bench_reducescatter_2d[
     cache_busting: Bool,
 ](
     mut b: Bench,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     M: Int,
     D: Int,
     max_num_blocks: Optional[Int],
@@ -215,11 +215,11 @@ def bench_reducescatter_2d[
 
     @inline(.always)
     def bench_iter_2d(
-        mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut b: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_bufs, imm}:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
@@ -329,7 +329,7 @@ def bench_reducescatter[
     cache_busting: Bool,
 ](
     mut b: Bench,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     num_bytes: Int,
     max_num_blocks: Optional[Int],
     ragged: Bool,
@@ -434,11 +434,11 @@ def bench_reducescatter[
 
     @inline(.always)
     def bench_iter(
-        mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut b: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_bufs, imm}:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
@@ -522,7 +522,7 @@ def main() raises:
     )
 
     # Create GPU contexts
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 

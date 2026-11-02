@@ -152,7 +152,7 @@ def bench_conv2d[
     pad_h_static: Int = 1,
     pad_w_static: Int = 1,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     label: String,
     verify: Bool,
@@ -311,7 +311,7 @@ def bench_conv2d[
     comptime if resolved == "im2col":
 
         @inline(.always)
-        def im2col_kernel(ctx: DeviceContext) raises {imm}:
+        def im2col_kernel(ctx: DeviceContext[]) raises {imm}:
             # `chain` back-to-back convs with no host drain in between, which
             # is what a VAE forward looks like. The dispatcher must let the
             # host run ahead of the queue for these to overlap.
@@ -345,7 +345,7 @@ def bench_conv2d[
         )
 
         @inline(.always)
-        def cudnn_kernel(ctx: DeviceContext) raises {imm}:
+        def cudnn_kernel(ctx: DeviceContext[]) raises {imm}:
             conv_cudnn[dtype, dtype, dtype](
                 input_tt,
                 filter_fcrs_tt,
@@ -481,7 +481,7 @@ def bench_conv2d[
         )
 
         @inline(.always)
-        def amd_4wave_kernel(ctx: DeviceContext) raises {imm}:
+        def amd_4wave_kernel(ctx: DeviceContext[]) raises {imm}:
             amd_4wave_conv[
                 H=in_height,
                 W=in_width,
@@ -525,7 +525,7 @@ def bench_conv2d[
         var grid_dim_y = batch
 
         @inline(.always)
-        def naive_conv_kernel(ctx: DeviceContext) raises {imm}:
+        def naive_conv_kernel(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[naive_kernel](
                 input_tt,
                 filter_rscf_tt,

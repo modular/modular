@@ -188,7 +188,7 @@ def main() raises:
         print("This test requires exactly", N_RANKS, "GPUs; skipping.")
         return
 
-    var ctxs = List[DeviceContext]()
+    var ctxs = List[DeviceContext[]]()
     for i in range(N_RANKS):
         ctxs.append(DeviceContext(device_id=i))
 

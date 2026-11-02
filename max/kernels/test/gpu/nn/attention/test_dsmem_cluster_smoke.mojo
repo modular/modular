@@ -118,7 +118,7 @@ def run_dsmem_test[
     # `ExecutionConfigType` has no initializer, so rebind the
     # `ClusterLaunchConfig` it resolves to on this target.
     comptime if use_context_config_type:
-        var config = rebind[DeviceContext.ExecutionConfigType](
+        var config = rebind[DeviceContext[].ExecutionConfigType](
             ClusterLaunchConfig(
                 grid_dim=(P, 1, 1),
                 block_dim=(32, 1, 1),
@@ -163,7 +163,7 @@ def run_dsmem_test[
 
 def main() raises:
     comptime assert conforms_to(
-        DeviceContext.ExecutionConfigType, ClusterExecutionConfig
+        DeviceContext[].ExecutionConfigType, ClusterExecutionConfig
     ), "this target must support cluster launch"
     with DeviceContext() as ctx:
         run_dsmem_test[2](ctx)

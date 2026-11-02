@@ -44,7 +44,7 @@ def test[
 ](
     seq_len: Int,
     num_keys: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     is_benchmark: Bool = False,
     use_index_input: Bool = False,
     use_adversarial_softmax_input: Bool = False,
@@ -187,7 +187,7 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         comptime if mask_rank == 3:
             flash_attention(
@@ -308,7 +308,7 @@ def test[
 
 def test_context_encoding[
     batch_size: Int, depth: Int
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     # # fp32 arbitrary depth and num_heads, baseline impl.
     # test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
     # # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
@@ -461,7 +461,7 @@ def test_decoding[
     depth: Int,
     num_partitions: Optional[Int] = None,
     qkv_type: DType = .bfloat16,
-](ctx: DeviceContext, use_index_input: Bool) raises:
+](ctx: DeviceContext[], use_index_input: Bool) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     # BF16 token gen
     test[

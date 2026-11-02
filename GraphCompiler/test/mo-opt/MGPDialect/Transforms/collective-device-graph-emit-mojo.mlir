@@ -28,9 +28,12 @@
 // CHECK: {{.*}}DeviceGraphCache.make_key({{var[_0-9]+}})
 // CHECK: raise Error("unexpected device index in collective device graph key")
 
-// The per-device contexts are assembled into an Array[DeviceContext, 2].
-// CHECK: var {{[a-zA-Z_0-9]+}}: std.collections.Array[max.gpu.host.DeviceContext, 2]
-// CHECK: {{[a-zA-Z_0-9]+}} = [{{var[_0-9]+}}, {{var[_0-9]+}}]
+// The per-device contexts are narrowed to the default target and assembled into
+// an Array[DeviceContext[], 2].
+// CHECK: var [[CTX0:var[_0-9]+]] = {{.*}}.assert_default_target()
+// CHECK: var [[CTX1:var[_0-9]+]] = {{.*}}.assert_default_target()
+// CHECK: var {{[a-zA-Z_0-9]+}}: std.collections.Array[max.gpu.host.DeviceContext[], 2]
+// CHECK: {{[a-zA-Z_0-9]+}} = {{\[}}[[CTX0]], [[CTX1]]{{\]}}
 
 // The collective is built/reused through `DeviceGraph.create_collective`.
 // CHECK: [[ARRAY:var[_0-9]+]] = max.gpu.host.DeviceGraph.create_collective({{[a-zA-Z_0-9]+}}, [[BUILD]], [[KEY]], cache = {{var[_0-9]+}})

@@ -15,6 +15,7 @@
 from std.collections import Array, Optional
 from std.ffi import external_call
 from std.runtime._asyncrt import TaskGroup
+from std.sys.info import CompilationTarget
 
 from max.gpu.host import DeviceContext, DeviceContextArray
 from max.gpu.host import (
@@ -27,8 +28,9 @@ from max.runtime.asyncrt import task_id_for_device
 @inline(.always)
 def _launch_device_collective[
     num_devices: Int,
+    target: CompilationTarget,
     F: def[Int]() raises -> None,
-](func: F, var dev_ctxs: Array[DeviceContext, num_devices]) raises:
+](func: F, var dev_ctxs: Array[DeviceContext[target], num_devices]) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs.
 
     The tasks run concurrently, one per device affinity worker, because each
@@ -45,6 +47,7 @@ def _launch_device_collective[
 
     Parameters:
         num_devices: Number of devices participating in the collective.
+        target: Compilation target of the participating device contexts.
         F: Type of the per-device launch function.
 
     Args:
@@ -63,7 +66,7 @@ def _launch_device_collective[
     comptime for i in range(num_devices):
         worker_ids[i] = task_id_for_device(Int(dev_ctxs[i].device().id))
 
-    var gate = CollectiveGate(dev_ctxs[0], num_devices)
+    var gate = CollectiveGate(dev_ctxs[0].assert_default_target(), num_devices)
     var tg = TaskGroup()
     # The deferred dispatch adds tasks to the group it runs in. The group
     # outlives it, which the origin checker cannot see through the capture.
@@ -87,7 +90,7 @@ def _launch_device_collective[
             != 0
         )
         # Lets this worker's own loads through the gate its collective holds.
-        with CollectiveEnqueueScope(dev_ctxs[index]):
+        with CollectiveEnqueueScope(dev_ctxs[index].assert_default_target()):
             try:
                 func[index]()
             except e:
@@ -129,7 +132,7 @@ def _launch_device_collective[
 def _launch_device_collective[
     num_devices: Int,
     F: def[Int]() raises -> None,
-](func: F, var dev_ctxs: DeviceContextArray) raises:
+](func: F, var dev_ctxs: DeviceContextArray[_, _]) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs.
 
     `DeviceContextArray` overload. Forwards to the `Array` overload
@@ -148,9 +151,7 @@ def _launch_device_collective[
         dev_ctxs.length == num_devices
     ), "expected dev_ctxs to have the same number of elements as num_devices"
 
-    _launch_device_collective[num_devices](
+    _launch_device_collective[dev_ctxs.length](
         func,
-        rebind[Array[DeviceContext, num_devices]](
-            dev_ctxs.device_contexts
-        ).copy(),
+        dev_ctxs.device_contexts.copy(),
     )

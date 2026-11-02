@@ -110,7 +110,7 @@ struct CausalConv1D[activation: StaticString]:
                 Optional(ctx.assert_cpu_target()),
             )
         elif is_gpu[target]():
-            var gpu_ctx: DeviceContext = ctx
+            var gpu_ctx = ctx
             comptime kNThreads = 128
             comptime kNElts = 4
             match width:
@@ -410,7 +410,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 silu_activation,
             )
         elif is_gpu[target]():
-            var gpu_ctx: DeviceContext = ctx
+            var gpu_ctx = ctx
             enqueue_causal_conv1d_update_gpu[separate_state=True](
                 gpu_ctx,
                 batch_size,

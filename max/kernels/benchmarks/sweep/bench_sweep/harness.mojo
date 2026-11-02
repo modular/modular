@@ -211,7 +211,7 @@ struct MeasurePolicy(Copyable, Movable):
         return policy^
 
     def evict_bytes(
-        self, ctx: DeviceContext, backend: SweepBackend
+        self, ctx: DeviceContext[], backend: SweepBackend
     ) raises -> Int:
         """Returns the bytes a cold iteration must evict: `--l2_bytes` when
         set, otherwise the backend's answer for the target."""
@@ -258,9 +258,9 @@ struct Rotation(ImplicitlyCopyable, Movable):
 
 
 def _time_flushed[
-    LaunchFn: def(DeviceContext) raises -> None
+    LaunchFn: def(DeviceContext[]) raises -> None
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     launch: LaunchFn,
     flush: DeviceBuffer[DType.uint8],
     num_iters: Int,
@@ -321,7 +321,7 @@ struct SweepHarness(Movable):
         self.info = []
         self.records = []
 
-    def start(mut self, ctx: DeviceContext) raises:
+    def start(mut self, ctx: DeviceContext[]) raises:
         """Sizes the cache to evict, allocates a flush buffer under
         `--l2=flush`, and checks throttling.
 
@@ -353,7 +353,7 @@ struct SweepHarness(Movable):
         ctx.synchronize()
         self.timer.lap("harness_setup")
 
-    def stop(mut self, ctx: DeviceContext) raises:
+    def stop(mut self, ctx: DeviceContext[]) raises:
         """Frees the flush buffer and, under `--throttle_check=both`, checks
         throttling again, so a sweep that heated the device says so.
 
@@ -368,7 +368,7 @@ struct SweepHarness(Movable):
         self.timer.lap("harness_teardown")
 
     def _check_throttle(
-        mut self, ctx: DeviceContext, key: String, mut fields: Fields
+        mut self, ctx: DeviceContext[], key: String, mut fields: Fields
     ) raises:
         if self.policy.throttle_check == "off":
             return
@@ -396,8 +396,8 @@ struct SweepHarness(Movable):
         )
 
     def first_launch[
-        LaunchFn: def(DeviceContext) raises -> None
-    ](mut self, ctx: DeviceContext, launch: LaunchFn) raises:
+        LaunchFn: def(DeviceContext[]) raises -> None
+    ](mut self, ctx: DeviceContext[], launch: LaunchFn) raises:
         """Runs `launch` once and charges it, module load included, to
         `first_launch`."""
         self.timer.reset()
@@ -406,8 +406,8 @@ struct SweepHarness(Movable):
         self.timer.lap("first_launch")
 
     def first_launch[
-        LaunchFn: def(DeviceContext, Int) raises -> None
-    ](mut self, ctx: DeviceContext, launch: LaunchFn) raises:
+        LaunchFn: def(DeviceContext[], Int) raises -> None
+    ](mut self, ctx: DeviceContext[], launch: LaunchFn) raises:
         """Runs copy 0 of a rotating `launch` once; see the other overload."""
         self.timer.reset()
         launch(ctx, 0)
@@ -415,10 +415,10 @@ struct SweepHarness(Movable):
         self.timer.lap("first_launch")
 
     def bench[
-        LaunchFn: def(DeviceContext, Int) raises -> None
+        LaunchFn: def(DeviceContext[], Int) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         bench_id: BenchId,
         var fields: Fields,
@@ -434,11 +434,11 @@ struct SweepHarness(Movable):
         fields.add("copies", copies)
 
         @inline(.always)
-        def launch_copy(launch_ctx: DeviceContext, i: Int) raises {imm}:
+        def launch_copy(launch_ctx: DeviceContext[], i: Int) raises {imm}:
             launch(launch_ctx, i % copies)
 
         @inline(.always)
-        def launch_first(launch_ctx: DeviceContext) raises {imm}:
+        def launch_first(launch_ctx: DeviceContext[]) raises {imm}:
             launch(launch_ctx, 0)
 
         if self.policy.l2 == "flush" or copies == 0:
@@ -460,10 +460,10 @@ struct SweepHarness(Movable):
         self._record(fields, measures)
 
     def bench[
-        LaunchFn: def(DeviceContext) raises -> None
+        LaunchFn: def(DeviceContext[]) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         bench_id: BenchId,
         var fields: Fields,
@@ -480,7 +480,9 @@ struct SweepHarness(Movable):
             if self.policy.target_time_s > 0:
 
                 @inline(.always)
-                def launch_warm(launch_ctx: DeviceContext, i: Int) raises {imm}:
+                def launch_warm(
+                    launch_ctx: DeviceContext[], i: Int
+                ) raises {imm}:
                     _ = i
                     launch(launch_ctx)
 
@@ -500,10 +502,10 @@ struct SweepHarness(Movable):
         self._bench_flushed(ctx, launch, bench_id, fields^, measures)
 
     def _bench_target_time[
-        LaunchFn: def(DeviceContext, Int) raises -> None
+        LaunchFn: def(DeviceContext[], Int) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         bench_id: BenchId,
         var fields: Fields,
@@ -566,7 +568,7 @@ struct SweepHarness(Movable):
         self.timer.reset()
         self._record(fields, measures, calibrate_ns=cal_ns)
 
-    def _ensure_flush(mut self, ctx: DeviceContext) raises:
+    def _ensure_flush(mut self, ctx: DeviceContext[]) raises:
         """Allocates the flush buffer on first use."""
         if not self.flush:
             self.flush = ctx.enqueue_create_buffer[DType.uint8](
@@ -574,10 +576,10 @@ struct SweepHarness(Movable):
             )
 
     def _bench_flushed[
-        LaunchFn: def(DeviceContext) raises -> None
+        LaunchFn: def(DeviceContext[]) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         bench_id: BenchId,
         var fields: Fields,
@@ -639,10 +641,10 @@ struct SweepHarness(Movable):
         self.records.append(record^)
 
     def _flushed_iters[
-        LaunchFn: def(DeviceContext) raises -> None
+        LaunchFn: def(DeviceContext[]) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         flush: DeviceBuffer[DType.uint8],
     ) raises -> Int:

@@ -54,7 +54,7 @@ def test[
 ](
     seq_len: Int,
     num_keys: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     use_index_input: Bool = False,
 ) raises:
     print(
@@ -150,7 +150,7 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var q_device,
         var k_device,
@@ -284,7 +284,7 @@ def test_prefill[
     use_causal_mask: Bool = True,
     use_cache_offsets: Bool = False,
     output_type: DType = qkv_type,
-](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+](seq_len: Int, num_keys: Int, ctx: DeviceContext[],) raises:
     print(
         t"test_mla_prefill batch_size: {batch_size} seq_len:"
         t" {seq_len} num_keys: {num_keys} qkv_type: {qkv_type} k_rope_type:"
@@ -425,7 +425,7 @@ def test_prefill[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var q_device,
         var k_device,
@@ -641,7 +641,7 @@ def test_decoding[
     split_k: Bool,
     qkv_type: DType = .bfloat16,
     output_type: DType = qkv_type,
-](ctx: DeviceContext, use_index_input: Bool) raises:
+](ctx: DeviceContext[], use_index_input: Bool) raises:
     comptime if _is_sm10x_gpu(ctx.default_device_info):
         if batch_size <= 2:
             test[
@@ -860,7 +860,7 @@ def test_decoding_partial_head_group[
     split_k: Bool,
     qkv_type: DType = .bfloat16,
     output_type: DType = qkv_type,
-](ctx: DeviceContext, use_index_input: Bool) raises:
+](ctx: DeviceContext[], use_index_input: Bool) raises:
     """Covers head counts whose last head group is partial, with a
     full-multiple control at the same shape so a failure is attributable to
     the head count alone.
@@ -883,7 +883,7 @@ def test_decoding_k3_head_counts[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     """Kimi K3's per-device Q-head counts at TP2/TP4/TP8 -- 48, 24 and 12.
 
     K3 serves bf16 KV, and the only K3 head count measured so far (12, in
@@ -919,7 +919,7 @@ def test_mla_prefill[
     qkv_type: DType,
     k_rope_type: DType,
     output_type: DType = qkv_type,
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     test_prefill[
         qkv_type,
         k_rope_type,

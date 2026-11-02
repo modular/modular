@@ -42,12 +42,12 @@ struct CollectiveGate:
     Keep it alive until the fan-out has finished: the enqueues reference it.
     """
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
     var _remaining: Atomic[Int]
     var grant: _Chain
     """The pending grant when `try_acquire` returned False; empty otherwise."""
 
-    def __init__(out self, ctx: DeviceContext, num_enqueues: Int):
+    def __init__(out self, ctx: DeviceContext[], num_enqueues: Int):
         # Any participating context resolves the same gate: it belongs to the
         # backend's driver, which every device in the collective shares.
         self._ctx = ctx
@@ -105,9 +105,9 @@ struct CollectiveEnqueueScope:
     a per-device launch body never suspends.
     """
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
 
-    def __init__(out self, ctx: DeviceContext):
+    def __init__(out self, ctx: DeviceContext[]):
         self._ctx = ctx
 
     def __enter__(self):
@@ -131,9 +131,9 @@ struct KernelLoadScope:
     but does not wait.
     """
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
 
-    def __init__(out self, ctx: DeviceContext):
+    def __init__(out self, ctx: DeviceContext[]):
         self._ctx = ctx
 
     def __enter__(self):

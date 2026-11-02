@@ -71,7 +71,7 @@ def rms_norm[
     shape: Coord,
     axis_size: AxisSizeT,
     gamma: TileTensor[mut=False, dtype, ...],
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
@@ -226,7 +226,7 @@ def rms_norm_rope[
     gamma: TileTensor[mut=False, input_dtype, ...],
     epsilon: Scalar[input_dtype],
     weight_offset: Scalar[input_dtype],
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime accum = get_accum_type[input_dtype]()
     comptime assert accum.is_floating_point(), "rope requires fp accum"
@@ -433,7 +433,7 @@ def layer_norm[
     gamma: TileTensor[mut=False, dtype, ...],
     beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "layer_norm requires fp accum"
@@ -577,7 +577,7 @@ def layer_norm_rope_ragged[
     input_row_offsets: TileTensor[.uint32, ...],
     start_pos: TileTensor[.uint32, ...],
     freqs_cis: TileTensor[freq_dtype, ...],
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     # TODO(feras): non-interleaved RoPE needs the far-partner row-cache
     # lookup rms_norm_rope uses for its rotate-half, not yet implemented here.
@@ -994,7 +994,7 @@ def rms_norm_fused_residual_add[
     axis_size: AxisSizeT,
     gamma1: TileTensor[mut=False, dtype, ...],
     gamma2: TileTensor[mut=False, dtype, ...],
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
@@ -1206,7 +1206,7 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime accum = get_accum_type[in_dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"

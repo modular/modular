@@ -2275,7 +2275,7 @@ struct ShardWeights:
             rank=outputs.rank - 1,
             ...,
         ],
-        dev_ctxs_input: DeviceContextArray,
+        dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
         shard_and_stack[axis](outputs, inputs, dev_ctxs_input)
 

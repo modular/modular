@@ -265,7 +265,7 @@ struct ExternalCubinVecAdd:
         output: OutputTensor[rank=1, ...],
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises:
         comptime assert target == "gpu"
         var gpu_ctx = ctx

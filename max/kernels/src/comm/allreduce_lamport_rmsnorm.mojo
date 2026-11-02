@@ -352,8 +352,8 @@ def _allreduce_lamport_rmsnorm_kernel[
 
 
 comptime _SINGLE_BLOCK_SIZE = align_down(
-    DeviceContext.default_device_info.max_thread_block_size,
-    DeviceContext.default_device_info.warp_size,
+    DeviceContext[].default_device_info.max_thread_block_size,
+    DeviceContext[].default_device_info.warp_size,
 )
 comptime _CLUSTER_BLOCK_SIZE = 256
 comptime _MAX_CLUSTER_SIZE = 8
@@ -365,7 +365,7 @@ comptime _CLUSTER_MAX_BYTES = 512 * 1024
 
 @inline(.always)
 def _clusters_supported[ngpus: Int]() -> Bool:
-    comptime info = DeviceContext.default_device_info
+    comptime info = DeviceContext[].default_device_info
     return ngpus >= 8 and info.api == "cuda" and info.compute >= H100.compute
 
 

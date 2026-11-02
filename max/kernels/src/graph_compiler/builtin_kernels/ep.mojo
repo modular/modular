@@ -1776,7 +1776,7 @@ struct DistributedEPDispatchBlockScaledNV:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextArray,
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch.
 
@@ -1951,7 +1951,7 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextArray,
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch with dynamic
         global scales.
@@ -2111,7 +2111,7 @@ struct DistributedEPDispatchMXFP4:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextArray,
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism MXFP4 dispatch.
 
@@ -2266,7 +2266,7 @@ struct DistributedEPDispatch:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextArray,
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism BF16 dispatch.
 
@@ -2394,7 +2394,7 @@ struct DistributedEPDispatchFP8:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextArray,
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism FP8 dispatch.
 
@@ -2535,7 +2535,7 @@ struct DistributedEPCombine:
         recv_count_ptrs: TensorTuple[*RecvCountPtrs],
         router_weights: TensorTuple[*RouterWeights],
         atomic_counters: TensorTuple[*Counters],
-        dev_ctxs: DeviceContextArray,
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism combine with output fusion.
 

@@ -220,7 +220,7 @@ struct _block_Q4_0:
 
 def test_repack_Q4_0_for_sm8x[
     NType: CoordLike, KType: CoordLike, //
-](ctx: DeviceContext, n: NType, k: KType) raises:
+](ctx: DeviceContext[], n: NType, k: KType) raises:
     print("test repack_Q4_0_for_sm8x")
 
     def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
@@ -437,7 +437,7 @@ def test_quantized[
     use_ragged_epilogue: Bool = False,
     join_pdl_chain: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
-](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+](ctx: DeviceContext[], m: MType, n: NType, k: KType) raises:
     # quantization configs
     comptime group_size = 128
     comptime has_zero_point = False
@@ -562,7 +562,7 @@ def test_quantized[
         comptime nwarmup = 2
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {imm}:
+        def run_func(ctx: DeviceContext[]) raises {imm}:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
             ](

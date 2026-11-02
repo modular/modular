@@ -30,7 +30,7 @@ from nn.argsort import argsort
 
 def bench_argsort[
     dtype: DType
-](ctx: DeviceContext, mut m: Bench, N: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, N: Int) raises:
     # Allocate and fill host data with random values.
     var input_host_ptr = List(length=N, fill=Scalar[dtype](0))
     for i in range(N):
@@ -65,7 +65,7 @@ def bench_argsort[
         mut b: Bencher,
     ) raises {var device_input_tensor, var device_indices_tensor, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             argsort[ascending=True, target="gpu"](
                 device_indices_tensor, device_input_tensor, ctx
             )

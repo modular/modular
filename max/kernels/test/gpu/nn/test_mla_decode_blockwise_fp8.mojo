@@ -91,7 +91,7 @@ def run_test_blockwise_fp8[
     num_heads: Int,
     page_size: Int,
     quant_granularity: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[],) raises:
     comptime head_dim_gran = ceildiv(DEPTH, quant_granularity)
 
     var batch_size = len(cache_lengths)
@@ -605,7 +605,7 @@ def run_bench_blockwise_fp8[
     num_heads: Int,
     page_size: Int,
     quant_granularity: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[]) raises:
     comptime head_dim_gran = ceildiv(DEPTH, quant_granularity)
 
     var batch_size = len(cache_lengths)
@@ -846,7 +846,7 @@ def run_bench_blockwise_fp8[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var out_tt,
         var q_tt,
@@ -921,7 +921,7 @@ def run_bench_uniform[
     config_name: StringLiteral,
     count: Int,
     value: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Run blockwise FP8 benchmark with uniform cache lengths."""
     run_bench_blockwise_fp8[

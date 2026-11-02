@@ -1669,7 +1669,7 @@ def matmul_gpu_qint4[
     c_tt: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a_tt: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises where (a_type == .bfloat16 and c_type == .bfloat16):
     """Launches a GPU int4 quantized matrix multiplication for the given tile tensors.
 
@@ -1714,7 +1714,7 @@ def matmul_gpu_qint4[
     a_tt: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises where (a_type == .bfloat16 and c_type == .bfloat16):
     """Same as the plain overload, storing the output through `epilogue_fn`.
 
@@ -1764,7 +1764,7 @@ def matmul_gpu_qint4_impl[
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContext.Optional,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ) raises:
     """Dispatches a GPU int4 quantized matrix multiplication to the tuned kernel configuration for the runtime M dimension.
@@ -2299,7 +2299,7 @@ def gpu_qint4_repack_Q4_0[
 ](
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Launches the GPU kernel that repacks Q4_0 weights into the packed GEMM layout.
 
@@ -2361,7 +2361,7 @@ def gpu_qint4_repack_GPTQ[
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
     perm_idx: OptionalReg[_PermutationTensor] = None,
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Launches the GPU kernel that repacks GPTQ weights into the packed GEMM layout.
 

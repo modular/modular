@@ -59,7 +59,7 @@ from internal_utils import arg_parse
 
 def bench_1d1d_quantization[
     in_dtype: DType, cols: Int, use_async: Bool, is_fp4: Bool
-](ctx: DeviceContext, mut b: Bench, fn_name: String, rows: Int) raises:
+](ctx: DeviceContext[], mut b: Bench, fn_name: String, rows: Int) raises:
     comptime out_dtype = DType.uint8 if is_fp4 else DType.float8_e4m3fn
     comptime scales_dtype = NVFP4_SF_DTYPE if is_fp4 else MXFP8_SF_DTYPE
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE if is_fp4 else MXFP8_SF_VECTOR_SIZE
@@ -104,7 +104,7 @@ def bench_1d1d_quantization[
         mut b: Bencher,
     ) raises {var input_tensor, var output_tensor, var scales_tensor, imm,}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             # Run the quantization kernel
             comptime if use_async:
                 quantize_dynamic_scaled_fp4_async[
@@ -160,7 +160,7 @@ def bench_1d1d_quantization[
 
 def bench_grouped_quantization[
     in_dtype: DType, cols: Int, num_experts: Int, spread: Bool = True
-](ctx: DeviceContext, mut b: Bench, rows: Int) raises:
+](ctx: DeviceContext[], mut b: Bench, rows: Int) raises:
     """Times the grouped NVFP4 quantize across expert-occupancy shapes.
 
     Cost here tracks occupied scale tiles rather than rows, because a block
@@ -266,7 +266,7 @@ def bench_grouped_quantization[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             grouped_quantize_dynamic_scaled_fp4_async(
                 out_tensor,
                 scales_tensor,
@@ -335,7 +335,7 @@ def _bench_silu_mul_kernel[
 
 def bench_mx_amd_quantization[
     cols: Int, is_fp4: Bool
-](ctx: DeviceContext, mut b: Bench, rows: Int) raises:
+](ctx: DeviceContext[], mut b: Bench, rows: Int) raises:
     """Times the ungated AMD CDNA4 MX quantize: `[rows, cols]` bf16 in,
     nibble-packed MXFP4 or byte-per-element MXFP8 out."""
     comptime out_dtype = DType.uint8 if is_fp4 else DType.float8_e4m3fn
@@ -363,7 +363,7 @@ def bench_mx_amd_quantization[
         mut b: Bencher,
     ) raises {var input_tensor, var output_tensor, var scales_tensor, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             quantize_dynamic_block_scaled[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
                 output_tensor.as_unsafe_any_origin(),
                 scales_tensor.as_unsafe_any_origin(),
@@ -394,7 +394,7 @@ def bench_mx_amd_quantization[
 
 def bench_mx_amd_gated[
     gate_cols: Int, is_fp4: Bool, fused: Bool
-](ctx: DeviceContext, mut b: Bench, rows: Int) raises:
+](ctx: DeviceContext[], mut b: Bench, rows: Int) raises:
     """Times the gated MX quantize over a `[rows, 2 * gate_cols]` bf16
     `[gate | up]` tile.
 
@@ -442,7 +442,7 @@ def bench_mx_amd_gated[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             comptime if fused:
                 # The op the graph calls; on AMD it routes MXFP4 and MXFP8
                 # to the gated kernel.

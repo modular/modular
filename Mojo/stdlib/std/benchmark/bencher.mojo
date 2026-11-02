@@ -569,7 +569,7 @@ struct Bench(Writable):
     @inline(.always)
     def example(mut b: Bencher, shape: IndexList[2]) raises:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[example_kernel](
                 grid_dim=shape[0], block_dim=shape[1]
             )

@@ -36,7 +36,7 @@ from linalg.mxfp4_dequant import dequant_mxfp4
 
 def bench_dequant_stack[
     N: Int, K: Int, num_rows_total: Int, out_type: DType = .bfloat16
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
 
@@ -72,7 +72,7 @@ def bench_dequant_stack[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut b_out_tt, imm}:
         dequant_mxfp4(
             ctx,

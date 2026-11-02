@@ -101,7 +101,7 @@ def _shard_and_stack_multi_device[
         rank=outputs.rank - 1,
         ...,
     ],
-    dev_ctxs_input: DeviceContextArray,
+    dev_ctxs_input: DeviceContextArray[_, _],
 ) raises:
     """Multi-device implementation using H2D transfers.
 
@@ -259,7 +259,7 @@ def shard_and_stack[
         rank=outputs.rank - 1,
         ...,
     ],
-    dev_ctxs_input: DeviceContextArray,
+    dev_ctxs_input: DeviceContextArray[_, _],
 ) raises:
     """Shard weight tensors across multiple devices for tensor parallelism.
 

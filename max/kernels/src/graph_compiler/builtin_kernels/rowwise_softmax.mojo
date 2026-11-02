@@ -56,7 +56,7 @@ def softmax[
     axis_size: AxisSizeT,
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     # softmax's two dependent reduces (row max, then sum of `exp(x - max)`)
     # plus its final normalizing write are passed to the scaffolder as

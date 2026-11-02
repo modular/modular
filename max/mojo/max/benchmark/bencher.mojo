@@ -34,11 +34,11 @@ from max.algorithm import sync_parallelize
 
 @inline(.always)
 def bench_multicontext[
-    FuncType: def(mut Bencher, DeviceContext, Int) raises -> None,
+    FuncType: def(mut Bencher, DeviceContext[], Int) raises -> None,
 ](
     mut self_: Bench,
     func: FuncType,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     bench_id: BenchId,
     measures: List[ThroughputMeasure] = {},
 ) raises:
@@ -101,8 +101,8 @@ def bench_multicontext[
 
 
 def bencher_iter_custom[
-    FuncType: def(DeviceContext) raises -> None,
-](mut self_: Bencher, func: FuncType, ctx: DeviceContext):
+    FuncType: def(DeviceContext[]) raises -> None,
+](mut self_: Bencher, func: FuncType, ctx: DeviceContext[]):
     """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
 
     Parameters:
@@ -128,8 +128,8 @@ def bencher_iter_custom[
 
 
 def bencher_iter_custom[
-    FuncType: def(DeviceContext, Int) raises -> None,
-](mut self_: Bencher, func: FuncType, ctx: DeviceContext):
+    FuncType: def(DeviceContext[], Int) raises -> None,
+](mut self_: Bencher, func: FuncType, ctx: DeviceContext[]):
     """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
 
     Parameters:

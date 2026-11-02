@@ -31,7 +31,7 @@ from std.utils.index import Index
 
 comptime run_gemm_kernel_type = def(
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     a: TileTensor,
     b: TileTensor,
     c: TileTensor[mut=True, ...],
@@ -45,7 +45,7 @@ struct test_matmul[
     c_layout: Layout,
     enable_tc: Bool,
 ]:
-    var ctx: DeviceContext
+    var ctx: DeviceContext[]
     var M: Int
     var N: Int
     var K: Int
@@ -55,7 +55,7 @@ struct test_matmul[
     var c_device_buffer: DeviceBuffer[Self.dtype]
     var c_device_buffer_ref: DeviceBuffer[Self.dtype]
 
-    def __init__(out self, mut m: Bench, ctx: DeviceContext) raises:
+    def __init__(out self, mut m: Bench, ctx: DeviceContext[]) raises:
         self.ctx = ctx
         self.M = Self.a_layout.shape[0].value()
         self.N = Self.b_layout.shape[1].value()

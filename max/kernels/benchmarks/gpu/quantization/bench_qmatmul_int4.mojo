@@ -136,7 +136,7 @@ def _init_qint4_scales_gpu(
 
 def _init_qint4_packed[
     group_size: Int, K: Int, N: Int
-](b: CacheBustingBuffer[DType.uint8], ctx: DeviceContext) raises:
+](b: CacheBustingBuffer[DType.uint8], ctx: DeviceContext[]) raises:
     """Fills every cache-busting window with packed GPTQ weights and scales."""
     comptime weight_bytes = N * (K // 2)
     comptime scale_bytes = (K // group_size) * N * 2
@@ -160,7 +160,7 @@ def _init_qint4_packed[
 
 
 def _window_digest(
-    ctx: DeviceContext, c_device: DeviceBuffer[DType.bfloat16], size: Int
+    ctx: DeviceContext[], c_device: DeviceBuffer[DType.bfloat16], size: Int
 ) raises -> UInt32:
     """Folds the first `_DIGEST_PROBE` elements of `c_device` positionally.
 
@@ -197,7 +197,7 @@ def bench_qgemm[
     *,
     cache_busting: Bool,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     M: Int,
     init_type: InitializationType,
@@ -247,7 +247,7 @@ def bench_qgemm[
 
     @inline(.always)
     def launch_window(
-        ctx: DeviceContext, window: Int
+        ctx: DeviceContext[], window: Int
     ) raises {var cb_a, var cb_b, var cb_c, imm}:
         var a_tt = TileTensor(cb_a.offset_ptr(window), row_major(M, Idx[K]))
         var b_tt = TileTensor(
@@ -259,7 +259,7 @@ def bench_qgemm[
         )
 
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+    def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
         launch_window(ctx, iteration)
 
     # Window the isolated arm reads next. It advances per sample, so that arm
@@ -268,7 +268,7 @@ def bench_qgemm[
     var solo_window = 0
 
     @inline(.always)
-    def kernel_launch_solo(ctx: DeviceContext) raises {mut solo_window, imm}:
+    def kernel_launch_solo(ctx: DeviceContext[]) raises {mut solo_window, imm}:
         launch_window(ctx, solo_window)
         solo_window += 1
 
@@ -277,7 +277,7 @@ def bench_qgemm[
         bencher_iter_custom(b, kernel_launch, ctx)
 
     @inline(.always)
-    def launch_floor(c: DeviceContext) raises {var cb_b, imm}:
+    def launch_floor(c: DeviceContext[]) raises {var cb_b, imm}:
         c.enqueue_function[_init_qint4_weights_gpu](
             cb_b.offset_ptr(0), Int32(1), grid_dim=1, block_dim=32
         )

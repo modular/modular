@@ -153,7 +153,7 @@ def _decode[
     indices: MutPointer[Int32, MutAnyOrigin],
     logical: MutPointer[Int32, MutAnyOrigin],
     indices_stride: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     comptime scale = Float32(0.125)
     comptime if use_causal:
@@ -204,7 +204,7 @@ def run_nvfp4_vs_fp8[
     name: StringLiteral,
     cache_lens: List[Int],
     topk: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     q_max_seq_len: Int = 1,
     scale_block_base: Int = 0,
 ) raises:
@@ -664,7 +664,7 @@ def run_nvfp4_vs_fp8[
 
     comptime if perf_iters > 0:
 
-        def _launch_fp8(ctx: DeviceContext) raises {imm}:
+        def _launch_fp8(ctx: DeviceContext[]) raises {imm}:
             _decode[num_heads, use_causal](
                 kv_fp8,
                 out_fp8_tt,
@@ -677,7 +677,7 @@ def run_nvfp4_vs_fp8[
                 ctx,
             )
 
-        def _launch_fp4(ctx: DeviceContext) raises {imm}:
+        def _launch_fp4(ctx: DeviceContext[]) raises {imm}:
             _decode[num_heads, use_causal](
                 kv_fp4,
                 out_fp4_tt,

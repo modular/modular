@@ -50,9 +50,6 @@ static constexpr std::array<llvm::StringLiteral, 3> kMaxStableTensor = {
 static constexpr std::array<llvm::StringLiteral, 3> kMaxStableVariadicTensors =
     {kPackageExtensibility, kPackageStableTensor, kLeafStableVariadicTensors};
 
-static constexpr llvm::StringLiteral kLeafDeviceContextBase =
-    "DeviceContextBase";
-
 // Dict keys shared by `tensorArgContractToDict` (writer) and
 // `dictToTensorArgContract` (reader).
 static constexpr llvm::StringLiteral kRoleKey = "role";
@@ -389,10 +386,7 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
   // --- Device context ---
   // Use root+leaf matching because DeviceContext lives under max::gpu::host
   // (depth varies across package exports).
-  // `DeviceContext` is an alias of the target-parameterized
-  // `DeviceContextBase`, which is the name the struct type carries.
-  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContext) ||
-      symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContextBase)) {
+  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContext)) {
     KernelDeclContextPtrAdaptor adaptor;
     adaptor.genericTarget = hasSignatureParameterValue(structType);
     return adaptor;

@@ -167,7 +167,7 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
     comptime n_index = N_LOCAL * Self.n_ranks * Self.max_tokens
     comptime n_counters = EPLocalSyncCounters[Self.n_experts].allocation_size()
 
-    var ctxs: List[DeviceContext]
+    var ctxs: List[DeviceContext[]]
     var send: List[DeviceBuffer[.uint8]]
     var recv: List[DeviceBuffer[.uint8]]
     var recv_count: List[DeviceBuffer[.uint64]]
@@ -186,7 +186,7 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
     var p_recv: MutPointer[UInt64, MutUntrackedOrigin]
     var p_recv_count: MutPointer[UInt64, MutUntrackedOrigin]
 
-    def __init__(out self, ctxs: List[DeviceContext]) raises:
+    def __init__(out self, ctxs: List[DeviceContext[]]) raises:
         self.ctxs = ctxs.copy()
         self.send = []
         self.recv = []
@@ -302,7 +302,7 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
 
     def launch[
         min_tokens: Int
-    ](self, r: Int, n_tokens: Int, ctx: DeviceContext) raises:
+    ](self, r: Int, n_tokens: Int, ctx: DeviceContext[]) raises:
         var ptrs_layout = row_major[Self.n_ranks]()
         ep_fused_dispatch_kernel_api[
             Self.n_experts,
@@ -363,7 +363,7 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
 
         def per_rank(r: Int) raises {mut ns, imm}:
             @inline(.always)
-            def body(ctx: DeviceContext) raises {imm}:
+            def body(ctx: DeviceContext[]) raises {imm}:
                 self.launch[min_tokens](r, n_tokens[r], ctx)
 
             ns[r] = self.ctxs[r].execution_time(body, 1)
@@ -816,7 +816,7 @@ def sweep[
         )
 
 
-def run_all[n_ranks: Int](ctxs: List[DeviceContext]) raises:
+def run_all[n_ranks: Int](ctxs: List[DeviceContext[]]) raises:
     comptime big = 8168
     var small_case = DispatchCase[n_ranks, 512](ctxs)
     for n in [0, 1, 13, 509]:
@@ -843,7 +843,7 @@ def main() raises:
     var n = DeviceContext.number_of_devices()
     if n > 1 and not enable_p2p():
         raise Error("Cannot enable P2P Mem Access!")
-    var ctxs = List[DeviceContext]()
+    var ctxs = List[DeviceContext[]]()
     for i in range(n):
         ctxs.append(DeviceContext(device_id=i))
     if n == 1:

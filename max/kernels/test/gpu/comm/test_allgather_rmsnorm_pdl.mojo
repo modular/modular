@@ -224,7 +224,7 @@ def _enqueue_consumer(
         )
 
 
-def _warm_up(ctxs: List[DeviceContext]) raises:
+def _warm_up(ctxs: List[DeviceContext[]]) raises:
     """Loads every non-collective kernel while no collective is spinning.
     The all-gather loads in `_warm_up_all_gather`.
 
@@ -251,7 +251,7 @@ def _run_chain[
     num_rows: Int,
     rounds: Int,
     fat: Bool,
-    ctxs: List[DeviceContext],
+    ctxs: List[DeviceContext[]],
     mut ref_normed: List[List[Scalar[T]]],
     record_ref: Bool,
     sig_pred: Bool = False,
@@ -465,7 +465,7 @@ def _run_chain[
     _ = signal_buffers^
 
 
-def _warm_up_all_gather[ngpus: Int](ctxs: List[DeviceContext]) raises:
+def _warm_up_all_gather[ngpus: Int](ctxs: List[DeviceContext[]]) raises:
     """Loads the all-gather kernel at every PDL level before any variant runs.
 
     The signal-predecessor variant spins in a barrier on a peer whose launches
@@ -484,7 +484,7 @@ def _warm_up_all_gather[ngpus: Int](ctxs: List[DeviceContext]) raises:
     )
 
 
-def _run_ngpus[ngpus: Int](ctxs: List[DeviceContext]) raises:
+def _run_ngpus[ngpus: Int](ctxs: List[DeviceContext[]]) raises:
     _warm_up_all_gather[ngpus](ctxs)
     # M=1 leaves all but one rank with an empty shard; 40 is ragged across
     # every TP size; 128 is the top of the fused-path band.
@@ -523,7 +523,7 @@ def main() raises:
         print("P2P not enabled, skipping test.")
         return
 
-    var ctxs = List[DeviceContext]()
+    var ctxs = List[DeviceContext[]]()
     for i in range(num_devices):
         ctxs.append(DeviceContext(device_id=i))
     _warm_up(ctxs)

@@ -210,7 +210,7 @@ def main() raises:
 
         @inline(.always)
         def kernel_launch(
-            ctx: DeviceContext, iteration: Int
+            ctx: DeviceContext[], iteration: Int
         ) raises {
             mut cb_a,
             mut cb_b,

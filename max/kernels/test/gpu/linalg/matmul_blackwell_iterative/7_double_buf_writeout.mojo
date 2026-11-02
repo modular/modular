@@ -742,7 +742,7 @@ def blackwell_kernel_7[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
@@ -862,7 +862,7 @@ def test_blackwell_kernel_7[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     benchmark: Bool = False,
-](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+](ctx: DeviceContext[], m: MType, n: NType, k: KType) raises:
     var M = Int(m)
     var N = Int(n)
     var K = Int(k)
@@ -944,7 +944,7 @@ def test_blackwell_kernel_7[
         comptime num_warmup = 100
 
         @inline(.always)
-        def run_kernel(ctx: DeviceContext) raises {imm}:
+        def run_kernel(ctx: DeviceContext[]) raises {imm}:
             blackwell_kernel_7[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
@@ -1020,7 +1020,7 @@ def make_shapes_dict() -> (
     return dic^
 
 
-def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+def benchmark_blackwell_matmul(ctx: DeviceContext[]) raises:
     comptime a_type = DType.bfloat16
     comptime b_type = DType.bfloat16
     comptime c_type = DType.bfloat16

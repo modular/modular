@@ -95,7 +95,7 @@ struct _Filter(Copyable, Movable):
 
 
 def _bench(
-    batch_size: Int, valid_len: Int, filter: _Filter, ctx: DeviceContext
+    batch_size: Int, valid_len: Int, filter: _Filter, ctx: DeviceContext[]
 ) raises:
     comptime dtype = DType.float8_e4m3fn
     comptime out_dtype = DType.bfloat16
@@ -252,7 +252,7 @@ def _bench(
     var blocks_base = k_cache.blocks_raw_ptr()
 
     @inline(.always)
-    def gather_step(c: DeviceContext, s: Int) raises {imm}:
+    def gather_step(c: DeviceContext[], s: Int) raises {imm}:
         c.enqueue_function[
             _amd_sparse_mla_gather_kv_rows_and_lengths[
                 type_of(k_cache),
@@ -290,7 +290,7 @@ def _bench(
         )
 
     @inline(.always)
-    def rows_step(c: DeviceContext, s: Int, num_partitions: Int) raises {imm}:
+    def rows_step(c: DeviceContext[], s: Int, num_partitions: Int) raises {imm}:
         var k_rows = SparseRowsMHAOperand[
             row_width=K_CACHE_DIM, predicated=True
         ](
@@ -318,7 +318,7 @@ def _bench(
 
     @inline(.always)
     def inplace_step(
-        c: DeviceContext, s: Int, num_partitions: Int
+        c: DeviceContext[], s: Int, num_partitions: Int
     ) raises {imm}:
         var k_rows = SparseRowsMHAOperand[row_width=K_CACHE_DIM](
             KVCacheMHAOperand(k_cache),
@@ -343,7 +343,7 @@ def _bench(
         )
 
     @inline(.always)
-    def gather_all(c: DeviceContext) raises {imm}:
+    def gather_all(c: DeviceContext[]) raises {imm}:
         for s in range(num_sets):
             gather_step(c, s)
 
@@ -388,7 +388,7 @@ def _bench(
             max_ref = max(max_ref, abs(ref_v))
 
         @inline(.always)
-        def inplace_all(c: DeviceContext) raises {imm}:
+        def inplace_all(c: DeviceContext[]) raises {imm}:
             for s in range(num_sets):
                 if predicated:
                     rows_step(c, s, num_partitions)

@@ -101,7 +101,7 @@ def check[N: Int, K: Int]() raises -> Bool:
 
 
 def dispatch_m2048(
-    ctx: DeviceContext, c: Int, a: Int, a_scales: Int, b: Int, b_scales: Int
+    ctx: DeviceContext[], c: Int, a: Int, a_scales: Int, b: Int, b_scales: Int
 ) raises:
     """A default-configuration call at M = N = K = 2048; compiled only."""
     comptime F8 = Scalar[DType.float8_e4m3fn]

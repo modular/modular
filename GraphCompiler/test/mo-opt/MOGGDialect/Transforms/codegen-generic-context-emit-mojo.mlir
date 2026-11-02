@@ -16,12 +16,12 @@ mo.graph @cpu(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   mo.output %c : !mo.tensor<[2, 2], f32>
 }
 
-// A kernel with a concrete `ctx: DeviceContext` keeps receiving the stub's
-// context untouched.
+// A bare `ctx: DeviceContext` is generic over its target as well, so it is
+// handed a CPU-typed context too.
 // CHECK: def {{__[A-Za-z0-9_]+}}({{.*}}: OpaquePointer[MutAnyOrigin], {{.*}}: OpaquePointer[MutAnyOrigin], [[PC2:.*]]: {{.*}}DeviceContext) raises:
-// CHECK-NOT: assert_cpu_target
-// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute[target = "cpu"]({{.*}}, {{.*}}, [[PC2]])
-mo.graph @concrete(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
+// CHECK:   var [[CPU_CTX2:.*]] = [[PC2]].assert_cpu_target()
+// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute[target = "cpu"]({{.*}}, {{.*}}, [[CPU_CTX2]])
+mo.graph @bare(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %c = mo.custom [symbol = "map_lower_one_plain_output", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
   mo.output %c : !mo.tensor<[2, 2], f32>
 }

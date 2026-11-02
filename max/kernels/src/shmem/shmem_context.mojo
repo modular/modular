@@ -180,7 +180,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     ```
     """
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
     var _main_stream: DeviceStream
     var _priority_stream: DeviceStream
     var _begin_event: DeviceEvent
@@ -233,7 +233,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         )
         self._thread_per_gpu = False
 
-    def __init__(out self, ctx: DeviceContext) raises where Self.tcp == False:
+    def __init__(out self, ctx: DeviceContext[]) raises where Self.tcp == False:
         """Initializes a device context with SHMEM support, using one thread
         per GPU.
 
@@ -270,7 +270,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         node_id: Int = -1,
         total_nodes: Int = -1,
         gpus_per_node: Int = -1,
@@ -620,7 +620,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._ctx.synchronize()
 
     @inline(.always)
-    def get_device_context(self) -> DeviceContext:
+    def get_device_context(self) -> DeviceContext[]:
         """Returns the device context associated with this SHMEMContext.
 
         Returns:
@@ -631,7 +631,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     @staticmethod
     @inline(.always)
     def number_of_devices(
-        *, api: String = String(DeviceContext.default_device_info.api)
+        *, api: String = String(DeviceContext[].default_device_info.api)
     ) -> Int:
         """Returns the number of devices available that support the specified API.
 

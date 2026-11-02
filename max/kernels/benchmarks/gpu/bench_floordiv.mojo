@@ -121,7 +121,7 @@ def permute_kernel[
 @inline(.never)
 def bench_permute[
     idx_dtype: DType, A: Int, B: Int, C: Int, D: Int
-](mut b: Bench, ctx: DeviceContext) raises:
+](mut b: Bench, ctx: DeviceContext[]) raises:
     comptime dtype = DType.bfloat16
     comptime count = A * B * C * D
     var src_host = ctx.enqueue_create_host_buffer[dtype](count)
@@ -141,12 +141,12 @@ def bench_permute[
         dtype, idx_dtype, A, B, C, D, True
     ]
 
-    def launch_generic(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_generic(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[generic_kernel](
             dst, src, grid_dim=GRID_DIM, block_dim=BLOCK_DIM
         )
 
-    def launch_benjoffe(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_benjoffe(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[benjoffe_kernel](
             dst, src, grid_dim=GRID_DIM, block_dim=BLOCK_DIM
         )
@@ -195,7 +195,7 @@ def bench_permute[
 @inline(.never)
 def bench_divisor[
     dtype: DType, d: Scalar[dtype]
-](mut b: Bench, ctx: DeviceContext) raises:
+](mut b: Bench, ctx: DeviceContext[]) raises:
     comptime count = THREADS * CHAINS
     var src_host = ctx.enqueue_create_host_buffer[dtype](count)
     var out_host = ctx.enqueue_create_host_buffer[dtype](count)
@@ -211,12 +211,12 @@ def bench_divisor[
     comptime generic_kernel = floordiv_kernel[dtype, d, False]
     comptime benjoffe_kernel = floordiv_kernel[dtype, d, True]
 
-    def launch_generic(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_generic(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[generic_kernel](
             dst, src, grid_dim=GRID_DIM, block_dim=BLOCK_DIM
         )
 
-    def launch_benjoffe(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_benjoffe(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[benjoffe_kernel](
             dst, src, grid_dim=GRID_DIM, block_dim=BLOCK_DIM
         )
@@ -262,7 +262,7 @@ def bench_divisor[
     _ = ref_host^
 
 
-def bench_dtype[dtype: DType](mut b: Bench, ctx: DeviceContext) raises:
+def bench_dtype[dtype: DType](mut b: Bench, ctx: DeviceContext[]) raises:
     comptime for d in [3, 5, 7, 10, 13, 100, 86400, -3, -7, -10, -86400]:
         bench_divisor[dtype, Scalar[dtype](d)](b, ctx)
 

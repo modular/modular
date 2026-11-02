@@ -224,8 +224,8 @@ def _cold_load_onto_busy_device(ctx: DeviceContext, clock: _Clock):
 
 
 def _spin_and_release(
-    ctx0: DeviceContext,
-    ctx1: DeviceContext,
+    ctx0: DeviceContext[],
+    ctx1: DeviceContext[],
     flag: MutPointer[Int32, MutAnyOrigin],
     clock: _Clock,
 ) -> Optional[Error]:
@@ -285,7 +285,7 @@ def _assert_no_stall(clock: _Clock) raises:
     )
 
 
-def _run_round[call: Int](ctx0: DeviceContext, ctx1: DeviceContext) raises:
+def _run_round[call: Int](ctx0: DeviceContext[], ctx1: DeviceContext[]) raises:
     """Lands one blocking call from the starved lane in a fresh window.
 
     Parameters:

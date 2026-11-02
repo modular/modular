@@ -1163,7 +1163,7 @@ comptime _HSEL_SCAN_ITEMS: Int = 8
 comptime _HSEL_WARPS: Int = _PTOPK_BLOCK // WARP_SIZE
 comptime _HSEL_WARP_CAP: Int = 1024
 comptime _HSEL_CAND_CAP: Int = _HSEL_WARP_CAP * (
-    _PTOPK_BLOCK // DeviceContext.default_device_info.warp_size
+    _PTOPK_BLOCK // DeviceContext[].default_device_info.warp_size
 )
 comptime _HSEL_SMEM_BYTES: Int = _HSEL_CAND_CAP * size_of[Int32]()
 

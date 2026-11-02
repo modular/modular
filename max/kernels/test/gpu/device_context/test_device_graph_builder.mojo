@@ -128,7 +128,7 @@ struct Kernels:
         state[unsafe_offset=3] = state[unsafe_offset=2]
 
 
-def test_vec_add_kernel_node(ctx: DeviceContext) raises:
+def test_vec_add_kernel_node(ctx: DeviceContext[]) raises:
     print("Test capturing and replaying a vec_add kernel in a device graph.")
     comptime length = 1024
     comptime block_dim = 256
@@ -175,7 +175,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
             assert_equal(out_host[i], Float32(length))
 
 
-def test_parameterized_kernel_node(ctx: DeviceContext) raises:
+def test_parameterized_kernel_node(ctx: DeviceContext[]) raises:
     print("Test add_function compiling a kernel without compile_function.")
     comptime length = 1024
     comptime block_dim = 256
@@ -216,7 +216,7 @@ def test_parameterized_kernel_node(ctx: DeviceContext) raises:
             assert_equal(out_host[i], Float32(length))
 
 
-def test_scaled_kernel_node(ctx: DeviceContext) raises:
+def test_scaled_kernel_node(ctx: DeviceContext[]) raises:
     print("Test add_function compiling a thin kernel with a scale argument.")
     comptime length = 1024
     comptime block_dim = 256
@@ -259,7 +259,7 @@ def test_scaled_kernel_node(ctx: DeviceContext) raises:
             assert_equal(out_host[i], Float32(length) * scale)
 
 
-def test_closure_node(ctx: DeviceContext) raises:
+def test_closure_node(ctx: DeviceContext[]) raises:
     print("Test using a closure as a device graph node.")
     comptime length = 1024
     comptime block_dim = 256
@@ -308,7 +308,7 @@ def test_closure_node(ctx: DeviceContext) raises:
             assert_equal(out_host[i], Float32(length) * scale)
 
 
-def test_add_copy_to_device(ctx: DeviceContext) raises:
+def test_add_copy_to_device(ctx: DeviceContext[]) raises:
     print("Test capturing a host-to-device memcpy node.")
     comptime length = 1024
 
@@ -329,7 +329,7 @@ def test_add_copy_to_device(ctx: DeviceContext) raises:
             assert_equal(host_view[i], Float32(i) * 3.0)
 
 
-def test_add_copy_from_device(ctx: DeviceContext) raises:
+def test_add_copy_from_device(ctx: DeviceContext[]) raises:
     print("Test capturing a device-to-host memcpy node.")
     comptime length = 1024
 
@@ -354,7 +354,7 @@ def test_add_copy_from_device(ctx: DeviceContext) raises:
         assert_equal(host_dst[i], Float32(2 * i + 1))
 
 
-def test_add_copy_device_to_device(ctx: DeviceContext) raises:
+def test_add_copy_device_to_device(ctx: DeviceContext[]) raises:
     print("Test capturing a device-to-device memcpy node.")
     comptime length = 1024
 
@@ -377,7 +377,7 @@ def test_add_copy_device_to_device(ctx: DeviceContext) raises:
             assert_equal(dst_host[i], Float32(i * i))
 
 
-def test_add_memset(ctx: DeviceContext) raises:
+def test_add_memset(ctx: DeviceContext[]) raises:
     print("Test capturing memset nodes for 8/16/32/64-bit dtypes.")
     comptime length = 64
 
@@ -417,7 +417,7 @@ def test_add_memset(ctx: DeviceContext) raises:
             assert_equal(host_u64[i], UInt64(0x0101010101010101))
 
 
-def test_add_output(ctx: DeviceContext) raises:
+def test_add_output(ctx: DeviceContext[]) raises:
     print("Test registering a graph output alongside a kernel node.")
     comptime length = 1024
     comptime block_dim = 256
@@ -465,7 +465,7 @@ def test_add_output(ctx: DeviceContext) raises:
             assert_equal(out_host[i], Float32(length))
 
 
-def test_add_function_with_dependencies(ctx: DeviceContext) raises:
+def test_add_function_with_dependencies(ctx: DeviceContext[]) raises:
     print(
         "Test add_function with explicit dependencies for two independent"
         " kernel chains."
@@ -551,7 +551,7 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
             assert_equal(host_b[i], Float32(6))
 
 
-def test_add_memset_with_dependencies(ctx: DeviceContext) raises:
+def test_add_memset_with_dependencies(ctx: DeviceContext[]) raises:
     print(
         "Test add_memset with explicit dependencies for two independent"
         " memset chains."
@@ -586,7 +586,7 @@ def test_add_memset_with_dependencies(ctx: DeviceContext) raises:
             assert_equal(host_b[i], UInt8(0xCC))
 
 
-def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
+def test_add_copy_with_dependencies(ctx: DeviceContext[]) raises:
     print(
         "Test add_copy with explicit dependencies for two independent copy"
         " chains."
@@ -639,7 +639,7 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
     _ = buf_b^
 
 
-def test_region(ctx: DeviceContext) raises:
+def test_region(ctx: DeviceContext[]) raises:
     print(
         "Test region returns its last node, usable as a downstream node's"
         " sole dependency covering everything the scope added."
@@ -692,7 +692,7 @@ def test_region(ctx: DeviceContext) raises:
             assert_equal(host_c[i], UInt8(0xCC))
 
 
-def test_region_empty(ctx: DeviceContext) raises:
+def test_region_empty(ctx: DeviceContext[]) raises:
     print(
         "Test region still returns a usable node"
         " when the scope adds no nodes (empty node becomes a graph root)."
@@ -719,7 +719,7 @@ def test_region_empty(ctx: DeviceContext) raises:
             assert_equal(host[i], UInt8(0xEE))
 
 
-def test_region_with_dependencies(ctx: DeviceContext) raises:
+def test_region_with_dependencies(ctx: DeviceContext[]) raises:
     print(
         "Test region(dependencies=...) injects predecessors so"
         " a consumer scope runs after a producer scope (RAW on one buffer)."
@@ -774,7 +774,7 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
 
 
 def test_region_passthrough_dependencies(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     print(
         "Test region returns a node that still gates on"
@@ -833,7 +833,7 @@ def test_region_passthrough_dependencies(
             assert_equal(host[i], Float32(15))
 
 
-def test_region_node_structure(ctx: DeviceContext) raises:
+def test_region_node_structure(ctx: DeviceContext[]) raises:
     print(
         "Test region chains its nodes, returns the last one, and adds no"
         " join node."
@@ -893,7 +893,7 @@ def test_region_node_structure(ctx: DeviceContext) raises:
             assert_equal(host[i], UInt8(0x55))
 
 
-def test_region_chain_edges(ctx: DeviceContext) raises:
+def test_region_chain_edges(ctx: DeviceContext[]) raises:
     print(
         "Test the predecessor set a region hands each node: incoming"
         " predecessors for the first, the previous node for the rest."
@@ -959,7 +959,7 @@ def test_region_chain_edges(ctx: DeviceContext) raises:
             assert_equal(host[i], UInt8(0x03))
 
 
-def test_region_serializes_nodes(ctx: DeviceContext) raises:
+def test_region_serializes_nodes(ctx: DeviceContext[]) raises:
     print(
         "Test a region whose nodes have a RAW dependency on one buffer"
         " replays to the chained result."
@@ -1006,7 +1006,7 @@ def test_region_serializes_nodes(ctx: DeviceContext) raises:
             assert_equal(host[i], Float32(15))
 
 
-def test_region_chains_after_recording_context(ctx: DeviceContext) raises:
+def test_region_chains_after_recording_context(ctx: DeviceContext[]) raises:
     print(
         "Test a region's chain picks up nodes recorded through"
         " recording_context(), which the C++ builder adds directly."
@@ -1059,7 +1059,7 @@ def test_region_chains_after_recording_context(ctx: DeviceContext) raises:
             assert_equal(host[i], Float32(15))
 
 
-def test_as_context_kernel_chain(ctx: DeviceContext) raises:
+def test_as_context_kernel_chain(ctx: DeviceContext[]) raises:
     print(
         "Test recording a two-kernel chain through DeviceGraphBuilder"
         ".recording_context() using the ordinary enqueue_function API."
@@ -1115,7 +1115,7 @@ def test_as_context_kernel_chain(ctx: DeviceContext) raises:
 
 
 def _check_pdl_pair(
-    ctx: DeviceContext, pdl: Bool, recorded: Bool, mixed: Bool = False
+    ctx: DeviceContext[], pdl: Bool, recorded: Bool, mixed: Bool = False
 ) raises:
     var state = ctx.enqueue_create_buffer[.int32](4)
     var primary = ctx.compile_function[
@@ -1175,7 +1175,7 @@ def _check_pdl_pair(
             assert_equal(host[3], Int32(42))
 
 
-def test_pdl_programmatic_edge(ctx: DeviceContext) raises:
+def test_pdl_programmatic_edge(ctx: DeviceContext[]) raises:
     print(
         "Test that a PDL launch overlaps its kernel predecessor in a device"
         " graph and still waits for its writes."
@@ -1189,7 +1189,7 @@ def test_pdl_programmatic_edge(ctx: DeviceContext) raises:
     _check_pdl_pair(ctx, pdl=False, recorded=False)
 
 
-def test_create_buffer(ctx: DeviceContext) raises:
+def test_create_buffer(ctx: DeviceContext[]) raises:
     print("Test allocating graph-owned device and host buffers.")
     comptime length = 1024
 
@@ -1279,7 +1279,7 @@ struct _InPlaceBufferInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
         return Self(copy=self)
 
 
-def test_add_input(ctx: DeviceContext) raises:
+def test_add_input(ctx: DeviceContext[]) raises:
     print("Test add_input gives the graph a stable location to record against.")
     comptime length = 64
 
@@ -1310,7 +1310,7 @@ def test_add_input(ctx: DeviceContext) raises:
         assert_equal(host_dst[i], UInt8(0x7E))
 
 
-def test_add_in_place_input(ctx: DeviceContext) raises:
+def test_add_in_place_input(ctx: DeviceContext[]) raises:
     print("Test in-place inputs alias the caller's buffer with no stable twin.")
     comptime length = 64
 
@@ -1390,7 +1390,7 @@ struct _HostValueInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
         return Self(dst, self.size)
 
 
-def test_add_host_input(ctx: DeviceContext) raises:
+def test_add_host_input(ctx: DeviceContext[]) raises:
     print("Test host inputs get a stable host twin whose value bakes in.")
     comptime length = 64
 
@@ -1451,7 +1451,7 @@ def test_add_host_input(ctx: DeviceContext) raises:
         assert_equal(host_dst[i], UInt8(0x71))
 
 
-def test_host_input_key_bakes_contents(ctx: DeviceContext) raises:
+def test_host_input_key_bakes_contents(ctx: DeviceContext[]) raises:
     print("Test host-input cache keys separate by contents.")
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
@@ -1513,7 +1513,7 @@ def test_cache_key_separates_inputs() raises:
     )
 
 
-def test_cache_reuses_graph(ctx: DeviceContext) raises:
+def test_cache_reuses_graph(ctx: DeviceContext[]) raises:
     print("Test a cache hit returns the prior graph without rebuilding it.")
     comptime length = 64
 
@@ -1545,7 +1545,7 @@ def test_cache_reuses_graph(ctx: DeviceContext) raises:
             assert_equal(host[i], UInt8(0x5A))
 
 
-def test_cache_distinguishes_inputs(ctx: DeviceContext) raises:
+def test_cache_distinguishes_inputs(ctx: DeviceContext[]) raises:
     print("Test inputs writing different cache keys do not share a graph.")
     comptime length = 64
 
@@ -1571,7 +1571,7 @@ def test_cache_distinguishes_inputs(ctx: DeviceContext) raises:
     assert_equal(build_count, 2)
 
 
-def test_cache_without_cache_always_builds(ctx: DeviceContext) raises:
+def test_cache_without_cache_always_builds(ctx: DeviceContext[]) raises:
     print("Test omitting the cache rebuilds the graph on every call.")
     comptime length = 64
 
@@ -1589,7 +1589,7 @@ def test_cache_without_cache_always_builds(ctx: DeviceContext) raises:
     assert_equal(build_count, 2)
 
 
-def test_cache_lookup_and_add(ctx: DeviceContext) raises:
+def test_cache_lookup_and_add(ctx: DeviceContext[]) raises:
     print("Test DeviceGraphCache lookup/add semantics directly.")
     comptime length = 64
 
@@ -1621,7 +1621,7 @@ def test_cache_lookup_and_add(ctx: DeviceContext) raises:
     assert_false(Bool(cache.lookup("other")))
 
 
-def test_cache_shares_memory_pool(ctx: DeviceContext) raises:
+def test_cache_shares_memory_pool(ctx: DeviceContext[]) raises:
     print("Test cached graph creations share one memory pool per context.")
     comptime length = 64
 
@@ -1684,7 +1684,7 @@ def test_cache_shares_memory_pool(ctx: DeviceContext) raises:
             assert_equal(host[i], UInt8(0x22))
 
 
-def test_alloc_not_reissued_within_build(ctx: DeviceContext) raises:
+def test_alloc_not_reissued_within_build(ctx: DeviceContext[]) raises:
     print(
         "Test an allocation whose handle is dropped mid-build is not reissued"
         " to a later allocation within the same recording."
@@ -1719,7 +1719,7 @@ def test_alloc_not_reissued_within_build(ctx: DeviceContext) raises:
     _ = graph^
 
 
-def test_create_collective_two_graphs(ctx: DeviceContext) raises:
+def test_create_collective_two_graphs(ctx: DeviceContext[]) raises:
     print(
         "Test DeviceGraph.create_collective building and replaying two"
         " device graphs through the parametric-index interface."
@@ -1779,7 +1779,7 @@ def test_create_collective_two_graphs(ctx: DeviceContext) raises:
             return "collective_scaled_vec_add"
 
     var cache = DeviceGraphCache()
-    var ctxs: Array[DeviceContext, 2] = [ctx, ctx]
+    var ctxs: Array[DeviceContext[], 2] = [ctx, ctx]
     var graphs = DeviceGraph.create_collective(
         ctxs,
         build_for,
@@ -1798,7 +1798,7 @@ def test_create_collective_two_graphs(ctx: DeviceContext) raises:
             assert_equal(host[i], Float32(length) * scale)
 
 
-def test_create_collective_stable_slots(ctx: DeviceContext) raises:
+def test_create_collective_stable_slots(ctx: DeviceContext[]) raises:
     print(
         t"Test DeviceGraph.create_collective installs one cache-owned stable"
         t" slot table on every builder, shared across the collective's graphs"
@@ -1843,7 +1843,7 @@ def test_create_collective_stable_slots(ctx: DeviceContext) raises:
         return String(t"collective_stable_slots_{n}_variant")
 
     var cache = DeviceGraphCache()
-    var ctxs: Array[DeviceContext, 2] = [ctx, ctx]
+    var ctxs: Array[DeviceContext[], 2] = [ctx, ctx]
     var graphs = DeviceGraph.create_collective(
         ctxs,
         build_for,
@@ -1898,7 +1898,7 @@ def test_create_collective_stable_slots(ctx: DeviceContext) raises:
         assert_equal(host[0], Float32(2.0))
 
 
-comptime TestFunc = def(DeviceContext) thin raises -> None
+comptime TestFunc = def(DeviceContext[]) thin raises -> None
 comptime TestFuncNoArgs = def() thin raises -> None
 
 

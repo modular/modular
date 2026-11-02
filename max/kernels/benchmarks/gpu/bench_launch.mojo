@@ -43,11 +43,11 @@ def small_kernel(ptr: MutPointer[UInt64, MutAnyOrigin]):
     _ = ptr[]
 
 
-def bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
+def bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext[]) raises:
     @inline(.always)
     def bench_empty_launch(mut b: Bencher) raises {imm}:
         @inline(.always)
-        def launch(ctx: DeviceContext) raises {imm}:
+        def launch(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[empty_kernel](
                 grid_dim=Dim(1), block_dim=Dim(1)
             )
@@ -58,7 +58,7 @@ def bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
 
 
 def bench_empty_launch_many_params_caller(
-    mut m: Bench, ctx: DeviceContext
+    mut m: Bench, ctx: DeviceContext[]
 ) raises:
     comptime func_alias = empty_kernel_many_params[
         Layout([1, 2], [3, 3]),
@@ -86,7 +86,7 @@ def bench_empty_launch_many_params_caller(
     )
 
 
-def bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
+def bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext[]) raises:
     var size = 1
     var buf = ctx.create_buffer_sync[.uint64](size)
 

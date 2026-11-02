@@ -64,7 +64,7 @@ def allreduce_test[
     *,
     use_multimem: Bool,
     use_custom_epilogue: Bool = False,
-](list_of_ctx: List[DeviceContext], length: Int) raises:
+](list_of_ctx: List[DeviceContext[]], length: Int) raises:
     # Using multimem with zero length raises CUDA_ERROR_INVALID_VALUE
     # when setting up the buffers.
     if use_multimem and length == 0:
@@ -310,7 +310,7 @@ def allreduce_naive_test() raises -> None:
     comptime length = 8 * 1024
 
     # Create contexts for two devices
-    var ctxs = List[DeviceContext]()
+    var ctxs = List[DeviceContext[]]()
     for i in range(ngpus):
         ctxs.append(DeviceContext(device_id=i))
 
@@ -416,7 +416,7 @@ def run_allreduce_sweep[use_multimem: Bool]() raises:
             continue
 
         # Create GPU context.
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 

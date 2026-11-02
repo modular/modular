@@ -597,7 +597,7 @@ def _fused_qkv_matmul_kv_cache_ragged[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
-    var cuda_ctx: Optional[DeviceContext] = None
+    var cuda_ctx: Optional[DeviceContext[context.target]] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = None
@@ -663,7 +663,7 @@ def _fused_qkv_matmul_kv_cache_ragged_bias[
         bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
         context: The call context pointer, passed by the graph compiler.
     """
-    var cuda_ctx: Optional[DeviceContext] = None
+    var cuda_ctx: Optional[DeviceContext[context.target]] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
@@ -745,7 +745,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
         bias: Optional bias in projection order: Q, K for MLA, or Q, K, V
             otherwise.
     """
-    var cuda_ctx: Optional[DeviceContext] = None
+    var cuda_ctx: Optional[DeviceContext[context.target]] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = None
@@ -828,7 +828,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale_float4[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
-    var cuda_ctx: Optional[DeviceContext] = None
+    var cuda_ctx: Optional[DeviceContext[context.target]] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = None
@@ -951,7 +951,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
 ) raises:
     """Performs a fused QKV matmul on ragged tensors. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -1060,7 +1060,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     v_cache: cache_t,
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     bias: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
 ) raises:
     """Performs a fused QKV matmul on ragged tensors. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -1181,7 +1181,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
     bias: OptionalReg[
         TileTensor[
             output_dtype,
@@ -1461,7 +1461,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
 ) raises:
     """Performs a fused QKV matmul on ragged tensors. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -1893,7 +1893,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     iq_dim: Int,
     q_output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     iq_output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
 ) raises:
     """Dual-cache fused QKV + index matmul on ragged tensors.
 
@@ -2216,7 +2216,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged[
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
     var index_k_cache = index_kv_collection.get_key_cache(layer_idx_cast)
 
-    var cuda_ctx: Optional[DeviceContext] = None
+    var cuda_ctx: Optional[DeviceContext[context.target]] = None
     comptime if is_gpu[target]():
         cuda_ctx = context
 
@@ -2253,7 +2253,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     index_k_cache: index_cache_t,
     iq_dim: Int,
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
 ) raises:
     """Dual-cache fused QKV + index matmul on ragged tensors (BF16, non-scaled).
 
@@ -2428,7 +2428,7 @@ def _matmul_common[
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
     epilogue_fn: EpilogueFnType,
 ) raises:
     var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
@@ -2474,7 +2474,7 @@ def _qmatmul_common[
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
     epilogue_fn: EpilogueFnType,
 ) raises:
     comptime assert is_gpu[target](), "GPTQ quantization only works on GPU."
@@ -2843,7 +2843,7 @@ def _matmul_kv_cache_ragged[
             for the given layer from kv_collection.
         context: Pointer containing the runtime context for the target device.
     """
-    var cuda_ctx: Optional[DeviceContext] = None
+    var cuda_ctx: Optional[DeviceContext[context.target]] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
@@ -2884,7 +2884,7 @@ def _matmul_kv_cache_ragged_impl[
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     k_cache: cache_t,
     v_cache: cache_t,
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContext.Optional,
 ) raises:
     """Helper for performing matmul with custom KVCacheT dtypes.
 
@@ -3052,7 +3052,7 @@ def _matmul_k_cache_ragged[
             for the given layer from kv_collection.
         context: Pointer containing the runtime context for the target device.
     """
-    var cuda_ctx: Optional[DeviceContext] = None
+    var cuda_ctx: Optional[DeviceContext[context.target]] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
 
@@ -3082,7 +3082,7 @@ def _matmul_k_cache_ragged_impl[
     ],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     k_cache: cache_t,
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContext.Optional,
 ) raises:
     """Helper for performing matmul with custom KVCacheT dtypes.
 

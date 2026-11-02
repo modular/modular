@@ -65,7 +65,7 @@ from std.memory import (
 # by the create/release protocol across the ABI (Mojo allocates, the C++
 # shim's refcounted wrapper releases), not by Mojo's origin tracking.
 
-comptime _DeviceContextBoxPtr = Pointer[DeviceContext, MutUntrackedOrigin]
+comptime _DeviceContextBoxPtr = Pointer[DeviceContext[], MutUntrackedOrigin]
 # Buffer handles are layout-punned: `_MmapBox` and `_PinnedBox` keep a
 # `DeviceBuffer[DType.uint8]` as their leading field, so every buffer handle
 # reads as a pointer to that view; the release entries bitcast back to the
@@ -152,7 +152,7 @@ def MojoHAL_DeviceContext_create(
         var ctx = DeviceContext(
             Int(device_id), api=String(unsafe_from_utf8_ptr=api)
         )
-        var boxed = alloc(Layout[DeviceContext].single())
+        var boxed = alloc(Layout[DeviceContext[]].single())
         boxed.unsafe_ptr().unsafe_write(ctx^)
         out_ctx[] = boxed^.unsafe_leak()
         return None
@@ -166,7 +166,7 @@ def MojoHAL_DeviceContext_copy(
     ctx: _DeviceContextBoxPtr,
 ) abi("C"):
     # The copy shares `ctx`'s HAL context and default stream.
-    var boxed = alloc(Layout[DeviceContext].single())
+    var boxed = alloc(Layout[DeviceContext[]].single())
     boxed.unsafe_ptr().unsafe_write(ctx[])
     out_ctx[] = boxed^.unsafe_leak()
 
@@ -177,7 +177,7 @@ def MojoHAL_DeviceContext_release(ctx: _DeviceContextBoxPtr) abi("C"):
     boxed.unsafe_deinit_pointee()
     dealloc(
         ThinAllocation(unsafe_owned_ptr=boxed).unsafe_with_layout(
-            Layout[DeviceContext].single()
+            Layout[DeviceContext[]].single()
         )
     )
 
@@ -730,7 +730,7 @@ def MojoHAL_DeviceContext_withStream(
     # `DeviceContext::selectStream` view on the C++ side.
     var view = ctx[]
     view._stream = stream[]._hal_stream()
-    var boxed = alloc(Layout[DeviceContext].single())
+    var boxed = alloc(Layout[DeviceContext[]].single())
     boxed.unsafe_ptr().unsafe_write(view^)
     out_ctx[] = boxed^.unsafe_leak()
     return None
@@ -952,7 +952,7 @@ def MojoHAL_DeviceContext_getDLPackStream(
 # (mirrors M::Driver::CompletionFlag over the legacy backend).
 @fieldwise_init
 struct _CompletionFlagBox(Movable):
-    var ctx: DeviceContext
+    var ctx: DeviceContext[]
     var buffer: _HALRawBuffer
     var host_ptr: _RawMemoryPtr
     var device_addr: UInt64

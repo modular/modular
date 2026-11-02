@@ -106,7 +106,7 @@ struct DSACache(Movable):
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         footprint: Footprint,
         layout: PageLayout,
         on_host: Bool,
@@ -161,7 +161,7 @@ struct Workspace(Movable):
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         max_tokens: Int,
         max_batch: Int,
         max_heads: Int,
@@ -240,7 +240,7 @@ def _name[
 def run_config[
     h: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut sh: SweepHarness,
     mut cache: DSACache,
     mut ws: Workspace,
@@ -440,7 +440,7 @@ def run_config[
 
     @inline(.always)
     def launch_indexer(
-        launch_ctx: DeviceContext, copy: Int
+        launch_ctx: DeviceContext[], copy: Int
     ) raises {mut index_out, imm}:
         var paged_remap = PagedKVRemap[PAGE_SIZE](
             index_phys,
@@ -471,7 +471,7 @@ def run_config[
 
     @inline(.always)
     def launch_mla(
-        launch_ctx: DeviceContext, copy: Int
+        launch_ctx: DeviceContext[], copy: Int
     ) raises {mut out_tt, imm}:
         comptime if COMPILE_DECODE:
             if is_decode:
@@ -520,7 +520,7 @@ def run_config[
         raise Error("seq_len ", seq_len, " was not compiled in")
 
     @inline(.always)
-    def launch_block(launch_ctx: DeviceContext, copy: Int) raises {imm}:
+    def launch_block(launch_ctx: DeviceContext[], copy: Int) raises {imm}:
         launch_indexer(launch_ctx, copy)
         launch_mla(launch_ctx, copy)
 

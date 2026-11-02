@@ -64,7 +64,7 @@ comptime poison_bytes = 227 * 1024
 comptime poison_elems = poison_bytes // size_of[dtype]()
 comptime poison_threads = 1024
 # Several times the SM count, so every SM takes at least one block.
-comptime poison_blocks = 4 * DeviceContext.default_device_info.sm_count
+comptime poison_blocks = 4 * DeviceContext[].default_device_info.sm_count
 comptime reps = 10
 
 

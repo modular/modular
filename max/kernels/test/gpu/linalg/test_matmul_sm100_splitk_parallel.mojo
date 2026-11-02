@@ -358,7 +358,7 @@ def test_past_last_slot[
     # Contexts past the last counter slot run on per-call buffers whose
     # counters are cleared in stream order. The contexts stay alive together:
     # a context created where a destroyed one lived takes over its slot.
-    var contexts = List[DeviceContext]()
+    var contexts = List[DeviceContext[]]()
     for _ in range(SPLITK_COUNTER_SLOTS + 1):
         contexts.append(DeviceContext())
     var fallback = 0

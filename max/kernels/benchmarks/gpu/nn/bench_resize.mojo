@@ -52,7 +52,7 @@ def bench_resize_gpu[
     op: StaticString,
     in_shape: IndexList[in_rank],
     out_shape: IndexList[out_rank],
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     comptime assert in_rank == out_rank, "input and output ranks must match"
 
     var input_size = in_shape.flattened_length()
@@ -69,7 +69,7 @@ def bench_resize_gpu[
     @inline(.always)
     def bench_fn(mut b: Bencher) raises {mut output, imm input, imm ctx}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {mut output, imm input}:
+        def kernel_launch(ctx: DeviceContext[]) raises {mut output, imm input}:
             comptime if op == "nearest":
                 resize_nearest_neighbor[
                     CoordinateTransformationMode.HalfPixel,

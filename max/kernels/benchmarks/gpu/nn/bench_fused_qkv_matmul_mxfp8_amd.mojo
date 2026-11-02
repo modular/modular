@@ -162,7 +162,7 @@ comptime ik_off = iq_off + iq_dim
 def bench_shape[
     HAS_INDEXER: Bool
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     prompt_lens: List[Int],
     regime: String,
@@ -334,7 +334,7 @@ def bench_shape[
     # ============ FUSED: one GEMM, scatter from the epilogue ============
     @inline(.always)
     def fused_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {
         mut cb_hs,
         mut cb_w,
@@ -437,7 +437,7 @@ def bench_shape[
     # ============ UNFUSED: one dense GEMM per output band ============
     @inline(.always)
     def unfused_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {
         mut cb_hs,
         mut cb_w,

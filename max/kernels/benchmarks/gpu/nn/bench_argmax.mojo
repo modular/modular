@@ -37,7 +37,7 @@ from nn.topk import topk_gpu
 
 def bench_argmax[
     dtype: DType, out_idx_type: DType
-](ctx: DeviceContext, mut m: Bench, batch: Int, num_elements: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, batch: Int, num_elements: Int) raises:
     var in_host = ctx.enqueue_create_host_buffer[dtype](batch * num_elements)
     ctx.synchronize()
     for i in range(batch * num_elements):
@@ -59,7 +59,7 @@ def bench_argmax[
     @inline(.always)
     def bench_topk_k1(mut b: Bencher) raises {imm}:
         @inline(.always)
-        def launch(ctx: DeviceContext) raises {imm}:
+        def launch(ctx: DeviceContext[]) raises {imm}:
             topk_gpu[sampling=False, largest=True](
                 ctx, 1, in_tensor, vals_tensor, out_tensor
             )
@@ -76,7 +76,7 @@ def bench_argmax[
 
     @inline(.always)
     def launch_rowwise(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {mut out_tensor, imm}:
         @inline(.always)
         def input_fn[

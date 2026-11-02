@@ -63,7 +63,7 @@ def bench_decode[
     batch_size: Int,
     num_partitions: Int,
     mode: String,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -105,7 +105,7 @@ def bench_decode[
         mut b: Bencher,
     ) {var cb_q, var cb_k, var cb_o, var scalar_args_tt, imm,}:
         @inline(.always)
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def _kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major(batch_size, seq_len, Idx[num_heads], Idx[depth]),
@@ -178,7 +178,7 @@ def bench_prefill[
     seq_len: Int,
     num_keys: Int,
     batch_size: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -263,7 +263,7 @@ def bench_prefill[
         imm,
     }:
         @inline(.always)
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def _kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major(batch_size * seq_len, Idx[num_heads], Idx[depth]),
@@ -349,7 +349,7 @@ def bench_prefill_sparse[
     q_tmem_depth: Int = 384,
     page_size: Int = 128,
     cache_busting: Bool = True,
-](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext) raises:
+](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext[]) raises:
     var scale = Float32(1.0) / sqrt(Float32(192.0))
     comptime kv_num_heads = 1
     comptime num_layers = 1
@@ -492,7 +492,7 @@ def bench_prefill_sparse[
         imm,
     }:
         @inline(.always)
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def _kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var q_tt = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major((s_q, Idx[num_heads], Idx[qk_depth])),

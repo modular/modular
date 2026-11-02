@@ -642,7 +642,11 @@ def launch[
     dtype_size: Int = 0,
     name: StaticString = "rowwise",
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
-](body: Body, shape: Coord, ctx: Optional[DeviceContext] = None) raises:
+](
+    body: Body,
+    shape: Coord,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
+) raises:
     """Top-level scaffolder. `num_phases` picks reduce-shaped
     (`num_phases == 1`, output collapses the reduced axis, terminal
     `emit`) vs. normalize-shaped (`num_phases > 1`, output keeps the

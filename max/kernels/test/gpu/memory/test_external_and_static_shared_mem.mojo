@@ -87,7 +87,7 @@ def large_dynamic_smem_kernel(data: MutPointer[Float32, MutUntrackedOrigin]):
 
 def test_external_shared_mem_above_default_limit(ctx: DeviceContext) raises:
     # Before sm_70, no NVIDIA block can opt in above 48 KB of shared memory.
-    comptime info = DeviceContext.default_device_info
+    comptime info = DeviceContext[].default_device_info
     comptime if (
         info.shared_memory_per_multiprocessor <= LARGE_SMEM_BYTES
         or (info.api == "cuda" and info.compute < 7.0)

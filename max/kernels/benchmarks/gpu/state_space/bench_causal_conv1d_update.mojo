@@ -42,7 +42,7 @@ def _median(times: List[Float64]) -> Float64:
 def _bench[
     dtype: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     batch: Int,
     channels: Int,
     seqlen: Int,
@@ -123,7 +123,7 @@ def _bench[
     var bias_tt = TileTensor(bias_d, row_major(channels))
 
     def launch_baseline(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {
         imm input_tt,
         imm output_tt,
@@ -154,7 +154,7 @@ def _bench[
         )
 
     def launch_candidate(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {
         imm input_tt,
         imm candidate_tt,

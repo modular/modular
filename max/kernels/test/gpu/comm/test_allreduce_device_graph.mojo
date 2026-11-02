@@ -68,7 +68,7 @@ def _source_of(
 def _check_outputs[
     ngpus: Int
 ](
-    ctxs: Array[DeviceContext, ngpus],
+    ctxs: Array[DeviceContext[], ngpus],
     out_dev: List[DeviceBuffer[dtype]],
     length: Int,
     expected: Float32,
@@ -88,7 +88,7 @@ def _check_outputs[
 
 def device_graph_allreduce_test[
     ngpus: Int, length: Int
-](ctxs: Array[DeviceContext, ngpus]) raises:
+](ctxs: Array[DeviceContext[], ngpus]) raises:
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var in_dev_alt = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -237,11 +237,11 @@ def main() raises:
         if DeviceContext.number_of_devices() < ngpus:
             continue
 
-        var ctx_list = List[DeviceContext](capacity=ngpus)
+        var ctx_list = List[DeviceContext[]](capacity=ngpus)
         for i in range(ngpus):
             ctx_list.append(DeviceContext(device_id=i))
-        var ctxs = Array[DeviceContext, ngpus](
-            fill_with=lambda (i: Int) {ref} -> DeviceContext: ctx_list[i]
+        var ctxs = Array[DeviceContext[], ngpus](
+            fill_with=lambda (i: Int) {ref} -> DeviceContext[]: ctx_list[i]
         )
 
         comptime for length_idx in range(len(test_lengths)):

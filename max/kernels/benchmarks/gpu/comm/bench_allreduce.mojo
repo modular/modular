@@ -74,7 +74,7 @@ def bench_reduce[
     use_vendor_ccl: Bool = False,
 ](
     mut b: Bench,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     num_bytes: Int,
     max_num_blocks: Optional[Int],
     ragged: Bool,
@@ -226,11 +226,11 @@ def bench_reduce[
 
     @inline(.always)
     def bench_iter(
-        mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut b: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_tensors, imm}:
             comptime if not use_multimem:
                 comptime for i in range(ngpus):
@@ -387,7 +387,7 @@ def main() raises:
     assert_true(num_bytes % size_of[dtype]() == 0)
 
     # Create GPU context.
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 

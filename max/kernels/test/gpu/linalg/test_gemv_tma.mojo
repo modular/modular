@@ -211,7 +211,7 @@ def gemv_tma[
     M: Int,
     N: Int,
     K: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # TODO: Tune further.
     comptime THREAD_NUM = 1024
@@ -282,7 +282,7 @@ def test_gemv_tma[
     //,
     dtype: DType,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     m: MType,
     n: NType,
     k: KType,
@@ -343,7 +343,7 @@ def test_gemv_tma[
         comptime num_warmup = 10
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {imm}:
+        def run_func(ctx: DeviceContext[]) raises {imm}:
             gemv_tma(
                 c_device,
                 c_tt,

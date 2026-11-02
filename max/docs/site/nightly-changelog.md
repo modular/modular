@@ -344,7 +344,16 @@ This version is still a work in progress.
   block, dynamic shared memory) or `ClusterLaunchConfig` (plus thread block
   clusters) from `max.gpu.host` as its first argument. A cluster launch on a
   GPU without clusters fails to compile; generic code checks
-  `conforms_to(DeviceContext.ExecutionConfigType, ClusterExecutionConfig)`.
+  `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
+
+- A bare `DeviceContext` is now an unbound parameterized type, not a concrete
+  type.
+
+  Code written expecting a concrete `DeviceContext` can change to
+  `DeviceContext[]` to bind the default parameter values.
+
+  Prefer to accept generic `DeviceContext` as input instead of restricting an
+  implementation to the default parameter values.
 
 ## Tools
 

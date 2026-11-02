@@ -60,7 +60,7 @@ def bench_stencil_avg_pool[
     pool_window_h: Int,
     pool_window_w: Int,
     num_channels: Int,
-](ctx: DeviceContext, mut m: Bench) raises:
+](ctx: DeviceContext[], mut m: Bench) raises:
     comptime rank = 4
     comptime dilation = 1
     comptime stencil_rank = 2
@@ -178,7 +178,7 @@ def bench_stencil_avg_pool[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {imm}:
         comptime stencil_axis = IndexList[stencil_rank](1, 2)
         stencil_gpu[
@@ -323,7 +323,7 @@ def bench_stencil_max_pool[
     pool_window_h: Int,
     pool_window_w: Int,
     num_channels: Int,
-](ctx: DeviceContext, mut m: Bench) raises:
+](ctx: DeviceContext[], mut m: Bench) raises:
     comptime rank = 4
     comptime dilation = 1
     comptime stencil_rank = 2
@@ -440,7 +440,7 @@ def bench_stencil_max_pool[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {imm}:
         comptime stencil_axis = IndexList[stencil_rank](1, 2)
         stencil_gpu[
@@ -582,7 +582,7 @@ def bench_stencil_avg_pool_padded[
     pool_window_w: Int,
     pad_h: Int,
     pad_w: Int,
-](ctx: DeviceContext, mut m: Bench) raises:
+](ctx: DeviceContext[], mut m: Bench) raises:
     comptime rank = 4
     comptime stencil_rank = 2
     comptime simd_width = 1
@@ -687,7 +687,7 @@ def bench_stencil_avg_pool_padded[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {imm}:
         comptime stencil_axis = IndexList[stencil_rank](1, 2)
         stencil_gpu[

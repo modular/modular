@@ -25,7 +25,8 @@
 // CHECK:   var [[PLAYOUT:.*]] = layout.row_major([[PSHAPE]])
 // CHECK:   var [[PIN:.*]] = {{.*}}mogg_tensor_init[DType.float32, 2, False, extensibility.IO.Input, {{[0-9]+}}]({{.*}}.unsafe_bitcast[NoneType](), [[PLAYOUT]])
 // CHECK:   var [[POUT:.*]] = {{.*}}mogg_tensor_init[DType.float32, 2, True, extensibility.IO.Output, {{[0-9]+}}]({{.*}}.unsafe_bitcast[NoneType](), {{.*}})
-// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute[target = "cpu"]([[POUT]], [[PIN]], [[PC]])
+// CHECK:   var [[CPU_CTX:.*]] = [[PC]].assert_cpu_target()
+// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute[target = "cpu"]([[POUT]], [[PIN]], [[CPU_CTX]])
 
 mo.graph @plain(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %c = mo.custom [symbol = "map_lower_one_plain_output", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>

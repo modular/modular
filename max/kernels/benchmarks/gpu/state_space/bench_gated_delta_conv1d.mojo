@@ -219,7 +219,7 @@ def gated_delta_conv1d_sequential_reference[
 
 
 def _bench(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     seq_lengths: List[Int],
     conv_dim: Int,
     compare_legacy: Bool = False,
@@ -324,7 +324,7 @@ def _bench(
     ]()
 
     def launch_new(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {
         imm compiled_new,
         imm tokens_per_block,
@@ -361,7 +361,7 @@ def _bench(
         )
 
     def launch_old(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {
         imm compiled_old,
         imm qkv_tt,

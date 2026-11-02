@@ -2399,7 +2399,7 @@ def mha_prefill_v2_ragged[
     cross_attention: Bool = False,
     sink: Bool = False,
     compile_options: StaticString = (
-        DeviceContext.target.default_compile_options()
+        DeviceContext[].target.default_compile_options()
     ),
 ](
     q_ptr: ImmPointer[Scalar[qkv_dtype], ImmutAnyOrigin],
@@ -2519,7 +2519,7 @@ def mha_prefill_v2[
     config: MhaConfigV2,
     sink: Bool = False,
     compile_options: StaticString = (
-        DeviceContext.target.default_compile_options()
+        DeviceContext[].target.default_compile_options()
     ),
 ](
     q: TileTensor[mut=False, ...],

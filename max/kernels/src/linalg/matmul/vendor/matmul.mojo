@@ -32,8 +32,8 @@ def _epilogue_simd_size[c_type: DType]() -> Int:
     # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
     # arch support 32B load/store to global memory, see KERN-2037.
     comptime use_32b_simd = (
-        DeviceContext.target.is_nvidia_gpu()
-        and DeviceContext.default_device_info.compute >= B200.compute
+        DeviceContext[].target.is_nvidia_gpu()
+        and DeviceContext[].default_device_info.compute >= B200.compute
     )
     return 32 // size_of[c_type]() if use_32b_simd else (
         simd_width_of[c_type, target=get_gpu_target()]()

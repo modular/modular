@@ -275,7 +275,7 @@ def _index_tensor_impl[
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime assert (
         data.flat_rank >= 2 and indices.flat_rank >= 2

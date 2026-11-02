@@ -1303,7 +1303,7 @@ def batched_matmul[
     a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
     b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
     *,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """TileTensor primary implementation of `batched_matmul`.
 
@@ -1361,7 +1361,7 @@ def batched_matmul[
     b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
     *,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Same as the plain overload, storing the output through `epilogue_fn`.
 
@@ -1424,7 +1424,7 @@ def batched_matmul[
     b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
     compute_fn: ComputeFnType,
     *,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Same as the plain overload, storing `compute_fn(idx, value)` into
     `c_buf`.
@@ -1490,7 +1490,7 @@ def _batched_matmul[
     b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
 ) raises:
     comptime assert not (
         has_epilogue_fn and has_compute_fn

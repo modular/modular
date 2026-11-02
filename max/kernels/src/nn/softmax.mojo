@@ -1056,7 +1056,7 @@ def softmax_inline[
     shape: Coord,
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Dispatches softmax (or logsoftmax) to the CPU or GPU target.
 

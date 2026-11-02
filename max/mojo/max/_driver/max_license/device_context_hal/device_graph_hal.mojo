@@ -85,9 +85,9 @@ struct DeviceGraph(ImplicitlyCopyable):
 struct DeviceGraphBuilder(Movable):
     """Unsupported: the HAL DeviceContext has no device-graph support."""
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
 
-    def context(self) -> DeviceContext:
+    def context(self) -> DeviceContext[]:
         """Returns the device context this builder records against.
 
         Returns:
@@ -95,7 +95,7 @@ struct DeviceGraphBuilder(Movable):
         """
         return self._ctx
 
-    def recording_context(self) raises -> DeviceContext:
+    def recording_context(self) raises -> DeviceContext[]:
         """Unsupported: returns a `DeviceContext` that records into this builder.
 
         Returns:

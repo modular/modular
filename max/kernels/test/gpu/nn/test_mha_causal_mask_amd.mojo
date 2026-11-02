@@ -60,7 +60,7 @@ def test[
 ](
     seq_len: Int,
     num_keys: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     is_benchmark: Bool = False,
 ) raises:
     print("test_mha_causal_mask")
@@ -167,7 +167,7 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var q_device,
         var k_device,
@@ -284,7 +284,7 @@ def test[
 comptime USE_FP8 = get_defined_bool["USE_FP8", False]()
 
 
-def test_helper[depth: Int](ctx: DeviceContext) raises:
+def test_helper[depth: Int](ctx: DeviceContext[]) raises:
     comptime dtype = DType.float8_e4m3fn if USE_FP8 else DType.bfloat16
     test[dtype, depth=depth, num_heads=1](128, 128, ctx)
     test[dtype, depth=depth, num_heads=1](384, 384, ctx)

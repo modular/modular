@@ -88,7 +88,7 @@ def _source_of(
 def _check_outputs[
     ngpus: Int
 ](
-    ctxs: Array[DeviceContext, ngpus],
+    ctxs: Array[DeviceContext[], ngpus],
     out_dev: List[DeviceBuffer[dtype]],
     length: Int,
     expected: Float32,
@@ -145,7 +145,7 @@ def bundled_allreduce_build_graph_test[
     in_specs: StaticTensorSpecList[dtype=dtype, rank=1, ...],
     sig_specs: StaticTensorSpecList[dtype=DType.uint8, rank=1, ...],
     signal_bytes: Int,
-](ctxs: Array[DeviceContext, ngpus]) raises:
+](ctxs: Array[DeviceContext[], ngpus]) raises:
     comptime in_spec = get_row_major_tensor_spec_static[dtype, 1, length]()
 
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -285,7 +285,7 @@ def bundled_allreduce_build_graph_test[
     _ = stable_devices^
 
 
-def _run[ngpus: Int, length: Int](ctxs: Array[DeviceContext, ngpus]) raises:
+def _run[ngpus: Int, length: Int](ctxs: Array[DeviceContext[], ngpus]) raises:
     """Builds the static spec lists (one identical spec per peer, spelled the
     way the graph compiler emits them) for the supported peer counts."""
     comptime in_spec = get_row_major_tensor_spec_static[dtype, 1, length]()

@@ -36,7 +36,7 @@ def bench_gather_sum_gpu[
     multi_hot: Int,
     table_size: Int,
     embedding_dim: Int,
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     var input_device = ctx.enqueue_create_buffer[dtype](
         table_size * embedding_dim
     )
@@ -64,7 +64,7 @@ def bench_gather_sum_gpu[
     ) raises {mut output, imm input, imm indices, imm ctx}:
         @inline(.always)
         def kernel_launch(
-            ctx: DeviceContext,
+            ctx: DeviceContext[],
         ) raises {mut output, imm input, imm indices,}:
             gather_sum[target="gpu"](output, input, indices, ctx)
 

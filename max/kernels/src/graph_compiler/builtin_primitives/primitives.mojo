@@ -496,7 +496,7 @@ def unpack_state_ctx(
 @inline(.never)
 def unpack_device_ctx(
     async_ref: AnyAsyncValueRef,
-) -> DeviceContext:
+) -> DeviceContext[]:
     var ptr = external_call[
         "MGP_RT_UnpackDeviceContext",
         _DeviceContextPtr[mut=True],

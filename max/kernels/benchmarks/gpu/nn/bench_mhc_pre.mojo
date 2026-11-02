@@ -42,7 +42,9 @@ from std.benchmark import (
 
 def bench_mhc_pre[
     fn_dtype: DType, hidden: Int, has_norm: Bool
-](ctx: DeviceContext, mut m: Bench, num_rows: Int, force_k_splits: Int) raises:
+](
+    ctx: DeviceContext[], mut m: Bench, num_rows: Int, force_k_splits: Int
+) raises:
     comptime hc = 4
     comptime mix_width = 2 * hc + hc * hc
     comptime sinkhorn_iters = 20
@@ -108,7 +110,7 @@ def bench_mhc_pre[
     ctx.enqueue_copy(scale_d, scale_h)
 
     def launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {
         mut cb_streams,
         mut cb_fn,

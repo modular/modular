@@ -150,7 +150,7 @@ struct IndexCache(Movable):
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         footprint: Footprint,
         layout: PageLayout,
         on_host: Bool,
@@ -185,7 +185,7 @@ struct Workspace(Movable):
     var lut: DeviceBuffer[DType.uint32]
 
     def __init__(
-        out self, ctx: DeviceContext, footprint: Footprint, on_host: Bool
+        out self, ctx: DeviceContext[], footprint: Footprint, on_host: Bool
     ) raises:
         var tokens = footprint["tokens"]
         self.q = ctx.enqueue_create_buffer[fp8](tokens * NUM_HEADS * DEPTH)
@@ -269,7 +269,7 @@ def _run_name[
 def run_config[
     scores_dtype: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut h: SweepHarness,
     mut cache: IndexCache,
     mut ws: Workspace,
@@ -391,7 +391,7 @@ def run_config[
 
             @inline(.always)
             def kernel_launch(
-                launch_ctx: DeviceContext, copy: Int
+                launch_ctx: DeviceContext[], copy: Int
             ) raises {mut o_tile, imm}:
                 var k_collection = collection_at(copy)
                 var lut_ptr = lut_base.unsafe_offset(copy * view_entries)

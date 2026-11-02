@@ -2710,7 +2710,7 @@ struct VariadicDeviceContext:
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
-        dev_ctxs: DeviceContextArray,
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         for i in range(len(dev_ctxs)):
             print("dev_ctxs[", i, "].id() =", dev_ctxs[i].device().id)

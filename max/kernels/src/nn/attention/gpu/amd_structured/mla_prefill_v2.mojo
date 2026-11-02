@@ -2235,7 +2235,7 @@ def mla_prefill_v2_ragged[
     //,
     config: MlaConfigV2,
     compile_options: StaticString = (
-        DeviceContext.target.default_compile_options()
+        DeviceContext[].target.default_compile_options()
     ),
 ](
     q_ptr: ImmPointer[Scalar[qkv_dtype], ImmutAnyOrigin],

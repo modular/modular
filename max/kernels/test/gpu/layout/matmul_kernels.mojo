@@ -52,18 +52,18 @@ comptime NRUN = 1
 
 
 def time_kernel[
-    FuncType: def(DeviceContext) raises -> None
+    FuncType: def(DeviceContext[]) raises -> None
 ](
     mut m: Bench,
     func: FuncType,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     size: Int,
     kernel_name: String,
 ) raises:
     @inline(.always)
     def bench_func(mut m: Bencher) {imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             func(ctx)
 
         bencher_iter_custom(m, kernel_launch, ctx)
@@ -79,7 +79,7 @@ def run_cublas[
     dtype: DType, enable_tc: Bool = False
 ](
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     M: Int,
     N: Int,
     K: Int,
@@ -95,7 +95,7 @@ def run_cublas[
 
         def bench_func(mut m: Bencher) {imm}:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext) raises {imm}:
+            def kernel_launch(ctx: DeviceContext[]) raises {imm}:
                 vendor_blas.matmul[use_tf32=enable_tc](
                     ctx,
                     c_device_ref,
@@ -207,7 +207,7 @@ def run_gemm_kernel_1[
     BN: Int,
 ](
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     a: TileTensor,
     b: TileTensor,
     c: TileTensor[mut=True, ...],
@@ -231,7 +231,7 @@ def run_gemm_kernel_1[
     ]
 
     @inline(.always)
-    def run_func(ctx: DeviceContext) raises {imm}:
+    def run_func(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[func](
             a.as_imm(),
             b.as_imm(),
@@ -330,7 +330,7 @@ def run_gemm_kernel_2[
     BN: Int,
 ](
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     a: TileTensor,
     b: TileTensor,
     c: TileTensor[mut=True, ...],
@@ -354,7 +354,7 @@ def run_gemm_kernel_2[
     ]
 
     @inline(.always)
-    def run_func(ctx: DeviceContext) raises {imm}:
+    def run_func(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm(),
             b.as_imm(),
@@ -481,7 +481,7 @@ def run_gemm_kernel_3[
     BK: Int,
 ](
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     a: TileTensor,
     b: TileTensor,
     c: TileTensor[mut=True, ...],
@@ -507,7 +507,7 @@ def run_gemm_kernel_3[
     ]
 
     @inline(.always)
-    def run_func(ctx: DeviceContext) raises {imm}:
+    def run_func(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm(),
             b.as_imm(),
@@ -650,7 +650,7 @@ def run_gemm_kernel_4[
     TM: Int,
 ](
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     a: TileTensor,
     b: TileTensor,
     c: TileTensor[mut=True, ...],
@@ -678,7 +678,7 @@ def run_gemm_kernel_4[
     ]
 
     @inline(.always)
-    def run_func(ctx: DeviceContext) raises {imm}:
+    def run_func(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm(),
             b.as_imm(),
@@ -826,7 +826,7 @@ def run_gemm_kernel_5[
     TN: Int,
 ](
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     a: TileTensor,
     b: TileTensor,
     c: TileTensor[mut=True, ...],
@@ -856,7 +856,7 @@ def run_gemm_kernel_5[
     ]
 
     @inline(.always)
-    def run_func(ctx: DeviceContext) raises {imm}:
+    def run_func(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm(),
             b.as_imm(),
@@ -1017,7 +1017,7 @@ def run_gemm_kernel_6[
     TN: Int,
 ](
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     a: TileTensor,
     b: TileTensor,
     c: TileTensor[mut=True, ...],
@@ -1046,7 +1046,7 @@ def run_gemm_kernel_6[
     ]
 
     @inline(.always)
-    def run_func(ctx: DeviceContext) raises {imm}:
+    def run_func(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm(),
             b.as_imm(),
@@ -1236,7 +1236,7 @@ def run_gemm_kernel_tc[
     MMA_K: Int,
 ](
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     a: TileTensor,
     b: TileTensor,
     c: TileTensor[mut=True, ...],
@@ -1267,7 +1267,7 @@ def run_gemm_kernel_tc[
     ]
 
     @inline(.always)
-    def run_func(ctx: DeviceContext) raises {imm}:
+    def run_func(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm(),
             b.as_imm(),

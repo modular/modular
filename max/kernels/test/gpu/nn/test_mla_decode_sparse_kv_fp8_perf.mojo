@@ -100,7 +100,7 @@ def bench_sparse_kv_fp8[
     name: StringLiteral,
     batch_size: Int,
     cache_len: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     topk: Int,
     q_max_seq_len: Int = 1,
     warmup_iters: Int = 5,
@@ -269,7 +269,7 @@ def bench_sparse_kv_fp8[
 
     var indices_stride = topk
 
-    def _launch(ctx: DeviceContext) raises {imm}:
+    def _launch(ctx: DeviceContext[]) raises {imm}:
         flare_mla_decoding[
             rank=3,
             config=MHAConfig[q_type](num_heads, Q_DEPTH),

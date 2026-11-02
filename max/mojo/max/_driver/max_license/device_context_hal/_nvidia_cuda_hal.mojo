@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """CUDA native-handle accessors for the HAL `DeviceContext`."""
 
-from .device_context_hal import DeviceContext, DeviceFunction, DeviceStream
+from .device_context_hal import DeviceContext, DeviceFunction, DeviceStreamBase
 from std.memory.unsafe_pointer import unsafe_cast
 
 
@@ -47,7 +47,7 @@ def CUDA(ctx: DeviceContext) raises -> CUcontext:
 
 
 @inline(.always)
-def CUDA(stream: DeviceStream) raises -> CUstream:
+def CUDA(stream: DeviceStreamBase) raises -> CUstream:
     """Returns the `CUstream` backing a HAL stream.
 
     The HAL queue reports its backend stream through the `"native_handle"`

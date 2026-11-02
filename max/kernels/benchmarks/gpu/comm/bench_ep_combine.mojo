@@ -213,7 +213,7 @@ def bench_combine[
     n_ranks: Int,
     n_slots: Int,
     n_tokens_per_rank: Int,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime input_type = DType.bfloat16
     comptime n_local_experts = n_experts // n_ranks
     comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
@@ -854,7 +854,7 @@ def bench_combine[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_combine(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_combine(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_combine_async(dev_id, cache_iter)
 
@@ -894,7 +894,9 @@ def bench_combine[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_combine_wait(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_combine_wait(
+        ctx: DeviceContext[], cache_iter: Int
+    ) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_combine_async_wait(dev_id, cache_iter)
 
@@ -951,7 +953,7 @@ def bench_combine[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_e2e_split(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_e2e_split(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_e2e(dev_id, cache_iter + 1)
 
@@ -1002,7 +1004,7 @@ def bench_combine[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_e2e_fused(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_e2e_fused(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_fused_combine(dev_id, cache_iter + 1)
 
@@ -1046,7 +1048,7 @@ def bench_combine[
 
 def bench_all_dtypes[
     n_ranks: Int, n_tokens_per_rank: Int, n_slots: Int
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Runs combine at one shape.
 
     Only BF16: combine moves the experts\' outputs, which the dispatch setup
@@ -1086,7 +1088,7 @@ def main() raises:
         print("This benchmark requires exactly 8 GPUs; skipping.")
         return
 
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(n_ranks):
         ctx.append(DeviceContext(device_id=i))
 

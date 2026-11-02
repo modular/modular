@@ -562,7 +562,7 @@ def allgather[
     outputs: Array[
         TileTensor[mut=True, dtype, out_layout, out_origin], ngpus * ngpus
     ],
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
 ) raises:
     """Performs an allgather across all GPUs via the vendor CCL library.
 

@@ -123,7 +123,7 @@ def _launch_scorer[
     batch_size: Int,
     seq_len: Int,
     max_num_keys: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     chunk_begin: Int = 0,
 ) raises:
     var k_cache = k_collection.get_key_cache(0)
@@ -248,7 +248,7 @@ def execute_fp8_index_prefill[
     out_dtype: DType = DType.float32,
     kpool: Int = 1,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     batch_size: Int,
     seq_len: Int,
@@ -510,7 +510,7 @@ def execute_fp8_index_prefill[
     ctx.enqueue_memset(o_device, unwritten_score)
 
     @inline(.always)
-    def kernel_launch(launch_ctx: DeviceContext) raises {mut o_device, imm}:
+    def kernel_launch(launch_ctx: DeviceContext[]) raises {mut o_device, imm}:
         for chunk_begin in range(0, total_seq_len, rows_per_chunk):
             var chunk_rows = min(rows_per_chunk, total_seq_len - chunk_begin)
             var o_tile = TileTensor(

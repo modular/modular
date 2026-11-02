@@ -76,7 +76,7 @@ def run_test_paged_variable[
 ](
     name: StringLiteral,
     cache_lengths: List[Int],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     num_partitions: Optional[Int] = None,
 ) raises:
     var batch_size = len(cache_lengths)
@@ -496,7 +496,7 @@ def run_test_paged_variable_multiq[
     name: StringLiteral,
     cache_lengths: List[Int],
     q_max_seq_len: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Test MLA decode with paged KV cache, variable cache lengths, AND
     q_max_seq_len > 1 (multiple query tokens per batch entry).
@@ -914,7 +914,7 @@ def run_test_paged_variable_ragged_q[
     name: StringLiteral,
     cache_lengths: List[Int],
     seq_lens: List[Int],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Test MLA decode with paged KV cache AND truly variable per-batch Q
     sequence lengths (ragged Q).
@@ -1368,7 +1368,7 @@ def run_bench_paged_variable[
     q_type: DType,
     kv_type: DType,
     num_heads: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[],) raises:
     var batch_size = len(cache_lengths)
     print(
         t"bench: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
@@ -1562,7 +1562,7 @@ def run_bench_paged_variable[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var out_tt,
         var q_tt,
@@ -1626,7 +1626,7 @@ def run_test_paged_variable_native_fp8[
 ](
     name: StringLiteral,
     cache_lengths: List[Int],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     num_partitions: Optional[Int] = None,
 ) raises:
     """Test native FP8 MLA decode through the paged path.
@@ -2065,7 +2065,7 @@ def run_test_paged_variable_ragged_q_native_fp8[
     cache_lengths: List[Int],
     seq_lens: List[Int],
     mask: mask_t,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Native FP8 (Q=FP8, KV=FP8, output=BF16) MLA decode through the paged KV
     cache with per-batch variable Q sequence lengths (ragged Q).
@@ -2501,7 +2501,7 @@ def run_test_paged_variable_ragged_q_native_fp8[
 
 def run_bench_paged_variable_native_fp8[
     num_heads: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[],) raises:
     """Benchmark the native FP8 paged path (no numerical verification)."""
     comptime q_type = DType.float8_e4m3fn
     comptime kv_type = DType.float8_e4m3fn
@@ -2704,7 +2704,7 @@ def run_bench_paged_variable_native_fp8[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var out_tt,
         var q_tt,
@@ -2774,7 +2774,7 @@ def make_uniform(count: Int, value: Int) -> List[Int]:
 
 def run_both_kv_types[
     num_heads: Int
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[]) raises:
     """Run correctness test for both bf16 and fp8 KV types."""
     run_test_paged_variable[.bfloat16, DType.bfloat16, num_heads](
         name + "_bf16", cache_lengths, ctx
@@ -2786,14 +2786,14 @@ def run_both_kv_types[
 
 def run_uniform_both[
     num_heads: Int
-](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
+](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext[]) raises:
     """Run correctness test with uniform cache lengths for both KV types."""
     run_both_kv_types[num_heads](name, make_uniform(count, value), ctx)
 
 
 def run_bench_both_kv_types[
     num_heads: Int
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[]) raises:
     """Run benchmark for both bf16 and fp8 KV types."""
     run_bench_paged_variable[.bfloat16, DType.bfloat16, num_heads](
         name + "_bf16", cache_lengths, ctx
@@ -2805,7 +2805,7 @@ def run_bench_both_kv_types[
 
 def run_bench_uniform_both[
     num_heads: Int
-](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
+](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext[]) raises:
     """Run benchmark with uniform cache lengths for both KV types."""
     run_bench_both_kv_types[num_heads](name, make_uniform(count, value), ctx)
 
@@ -2816,7 +2816,7 @@ def run_multiq_both_kv_types[
     name: StringLiteral,
     cache_lengths: List[Int],
     q_max_seq_len: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Run multi-Q correctness test for both bf16 and fp8 KV types."""
     run_test_paged_variable_multiq[.bfloat16, DType.bfloat16, num_heads](
@@ -2834,7 +2834,7 @@ def run_multiq_uniform_both[
     count: Int,
     value: Int,
     q_max_seq_len: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Run multi-Q test with uniform cache lengths for both KV types."""
     run_multiq_both_kv_types[num_heads](
@@ -2848,7 +2848,7 @@ def run_ragged_q_both_kv_types[
     name: StringLiteral,
     cache_lengths: List[Int],
     seq_lens: List[Int],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Run ragged-Q correctness test for both bf16 and fp8 KV types."""
     run_test_paged_variable_ragged_q[.bfloat16, DType.bfloat16, num_heads](
@@ -2861,7 +2861,7 @@ def run_ragged_q_both_kv_types[
 
 def run_all_three_kv_types[
     num_heads: Int
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[]) raises:
     """Run correctness test for bf16, fp8 (converter), and native fp8."""
     run_both_kv_types[num_heads](name, cache_lengths, ctx)
     run_test_paged_variable_native_fp8[num_heads](
@@ -2871,7 +2871,7 @@ def run_all_three_kv_types[
 
 def run_uniform_all_three[
     num_heads: Int
-](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
+](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext[]) raises:
     """Run correctness test with uniform cache lengths for all three KV types.
     """
     run_all_three_kv_types[num_heads](name, make_uniform(count, value), ctx)
@@ -2879,7 +2879,7 @@ def run_uniform_all_three[
 
 def run_bench_all_three_kv_types[
     num_heads: Int
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[]) raises:
     """Run benchmark for bf16, fp8 (converter), and native fp8."""
     run_bench_both_kv_types[num_heads](name, cache_lengths, ctx)
     run_bench_paged_variable_native_fp8[num_heads](
@@ -2889,7 +2889,7 @@ def run_bench_all_three_kv_types[
 
 def run_bench_uniform_all_three[
     num_heads: Int
-](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
+](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext[]) raises:
     """Run benchmark with uniform cache lengths for all three KV types."""
     run_bench_all_three_kv_types[num_heads](
         name, make_uniform(count, value), ctx

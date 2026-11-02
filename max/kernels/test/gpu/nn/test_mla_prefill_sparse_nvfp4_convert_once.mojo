@@ -152,7 +152,7 @@ def run_case[
     name: StringLiteral,
     cache_lens: List[Int],
     seq_lens: List[Int],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     *,
     valid_topk: Int = -1,
     with_sink: Bool = False,
@@ -394,7 +394,7 @@ def run_case[
     )
     comptime scale = Float32(1.0) / 13.856406
 
-    def _launch_ref(ctx: DeviceContext) raises {imm}:
+    def _launch_ref(ctx: DeviceContext[]) raises {imm}:
         mla_prefill_sparse_qkv_fp8[
             config=config,
             group=num_heads,
@@ -412,7 +412,7 @@ def run_case[
             ctx,
         )
 
-    def _launch_once(ctx: DeviceContext) raises {imm}:
+    def _launch_once(ctx: DeviceContext[]) raises {imm}:
         mla_prefill_sparse_nvfp4_via_fp8[
             config=config, group=num_heads, q_depth=QK_DEPTH
         ](

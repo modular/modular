@@ -2423,16 +2423,25 @@ LogicalResult TupleCreateOp::emitMojo(EmitMojoState &state) {
     return success();
   }
 
-  // Contexts pack into a `DeviceContextArray[N]` instead, via its variadic
-  // constructor -- the per-device contexts of a distributed kernel. Mirrors the
-  // `AsTupleOp::emitMojo` context branch.
+  // Contexts pack into a `DeviceContextArray[N, _]` instead, via its variadic
+  // constructor -- the per-device contexts of a distributed kernel. The `_`
+  // infers the `target` parameter from the first context so contexts with a
+  // non-default target are accepted. Each stub context is generic over its own
+  // `target`, so the rest are rebound to the first's type for the variadic
+  // constructor to unify them. Mirrors the `AsTupleOp::emitMojo` context
+  // branch.
   if (isa<MOGG::ContextType>(getElements().front().getType())) {
-    MojoValue deviceContextArrayConstructor = MojoValue(
-        kStructDeviceContextArray)[{
-        MojoValue(kParameterLength).equal(std::to_string(inputValues.size()))}];
+    MojoValue deviceContextArrayConstructor =
+        MojoValue(kStructDeviceContextArray)[{MojoValue(inputValues.size()),
+                                              MojoValue("_")}];
+    MojoValue firstContextType =
+        MojoValue("type_of")({}, {inputValues.front()});
+    SmallVector<MojoValue> contexts = {inputValues.front()};
+    for (const MojoValue &ctx : llvm::drop_begin(inputValues))
+      contexts.push_back(ctx.rebind(firstContextType));
     state.setMojoValueFor(
         getTuple(),
-        state.builder.var(deviceContextArrayConstructor({}, inputValues)));
+        state.builder.var(deviceContextArrayConstructor({}, contexts)));
     return success();
   }
 

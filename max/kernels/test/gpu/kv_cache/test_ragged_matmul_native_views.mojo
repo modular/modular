@@ -28,7 +28,7 @@ def _project[
     hidden: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     output: TileTensor[mut=True, dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     @inline(.always)
     def write_output[
@@ -85,7 +85,6 @@ def _check_projection[
             TileTensor(hidden_host.as_imm().unsafe_ptr(), hidden_layout),
             TileTensor(weight_host.as_imm().unsafe_ptr(), weight_layout),
             output_host,
-            None,
         )
     else:
         hidden.to_device()

@@ -4354,7 +4354,7 @@ def _sparse_decode_indices[
     var indices = _sparse_indices_ptr[indices_stride](
         sparse_indices, num_tokens
     )
-    comptime if DeviceContext.target.is_amd_gpu() and not physical_indices:
+    comptime if ctx.target.is_amd_gpu() and not physical_indices:
         return _sparse_gather_indices[
             target, page_size, indices_stride, cache_dtype
         ](
@@ -4372,7 +4372,7 @@ def _sparse_decode_indices[
 def _sparse_decode_physical[physical_indices: Bool]() -> Bool:
     """Returns whether the indices from `_sparse_decode_indices` are physical.
     """
-    return physical_indices or DeviceContext.target.is_amd_gpu()
+    return physical_indices or DeviceContext[].target.is_amd_gpu()
 
 
 @inline(.always)
@@ -4427,7 +4427,7 @@ def _amd_sparse_decode_partitions(
     it equals the launched split. SM100 caps the split by the top-k mask
     itself, which a count would override, so it gets none.
     """
-    comptime if DeviceContext.target.is_amd_gpu():
+    comptime if ctx.target.is_amd_gpu():
         return amd_sparse_mla_inplace_decode_num_partitions(
             batch_size,
             indices_stride,

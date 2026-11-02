@@ -325,7 +325,7 @@ def run_mamba2_ssd[
     ngroups: Int,
     max_slots: Int,
     seq_lengths: IndexList,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     rtol: Float64 = 0.02,
     row_pad: Int = 0,
     atol_frac: Float64 = 0.0,
@@ -1099,7 +1099,7 @@ def test_mamba2_ssd_dstate_split_chunk_boundaries() raises:
 
 def _channel_blocked_decode_shapes[
     update_flags: Bool
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     """Verify/replay rows 1 to 8 (one masked staged chunk) and a decode."""
     run_mamba2_ssd[
         .bfloat16,

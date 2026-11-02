@@ -177,9 +177,9 @@ struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
     """
 
     var _handle: _DeviceGraphMemoryPoolPtr[mut=True]
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
 
-    def __init__(out self, ctx: DeviceContext):
+    def __init__(out self, ctx: DeviceContext[]):
         """Creates a fresh pool bound to the context's device.
 
         Args:
@@ -357,7 +357,7 @@ struct DeviceGraphCache(Movable):
         inputs: VariadicPack[
             origin=origin, element_trait=DeviceGraphInput, False, *Ts
         ],
-        ctx: Optional[DeviceContext] = None,
+        ctx: DeviceContext.Optional = DeviceContext.NoneValue,
     ) -> String:
         var key = Self._closure_key(build)
 
@@ -413,7 +413,7 @@ struct DeviceGraphCache(Movable):
 
     @doc_hidden
     def get_or_create_pool(
-        mut self, ctx: DeviceContext
+        mut self, ctx: DeviceContext[]
     ) -> DeviceGraphMemoryPool:
         """Returns the shared memory pool for a device context, creating it on
         first use.
@@ -447,7 +447,7 @@ struct DeviceGraphCache(Movable):
     ](
         mut self,
         key: String,
-        ctxs: Array[DeviceContext, N],
+        ctxs: Array[DeviceContext[], N],
         devices: List[Int],
     ) raises -> List[StableAddr]:
         """Returns the stable address slots of a collective, allocating them on
@@ -704,7 +704,7 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
     @staticmethod
     def replay_collective[
         N: Int
-    ](graphs: Array[DeviceGraph, N], ctxs: Array[DeviceContext, N],) raises:
+    ](graphs: Array[DeviceGraph, N], ctxs: Array[DeviceContext[], N],) raises:
         """Replays the graphs of a collective, publishing their stable
         addresses first.
 
@@ -777,7 +777,7 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         N: Int,
         //,
     ](
-        ctxs: Array[DeviceContext, N],
+        ctxs: Array[DeviceContext[], N],
         build_for: Some[def[n: Int](mut DeviceGraphBuilder[_]) raises],
         key_for: Some[def[n: Int]() raises -> String],
         cache: Pointer[mut=True, DeviceGraphCache, _],
@@ -841,7 +841,7 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         with DeviceContext() as ctx:
             var f0 = ctx.compile_function[kernel_a]()
             var f1 = ctx.compile_function[kernel_b]()
-            var contexts: Array[DeviceContext, 2] = [ctx, ctx]
+            var contexts: Array[DeviceContext[], 2] = [ctx, ctx]
             var cache = DeviceGraphCache()
 
             def build_for[n: Int](mut b: DeviceGraphBuilder[_]) raises {imm}:
@@ -975,7 +975,7 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
             ctx.synchronize()
         ```
         """
-        var ctxs: Array[DeviceContext, 1] = [ctx]
+        var ctxs: Array[DeviceContext[], 1] = [ctx.assert_default_target()]
 
         def collective_key[n: Int]() {imm} -> String:
             comptime assert n == 0
@@ -1064,18 +1064,20 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
                 _DeviceContextPtr[mut=True],
             ](
                 Pointer(to=result),
-                ctx._handle,
+                ctx.assert_default_target()._handle,
             )
         )
         var arena: Int = 0
-        var builder = DeviceGraphBuilder[origin_of(arena)](result, ctx)
+        var builder = DeviceGraphBuilder[origin_of(arena)](
+            result, ctx.assert_default_target()
+        )
         build(builder)
 
         return builder^.instantiate()
 
     @staticmethod
     def _create(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
         pool: DeviceGraphMemoryPool,
     ) raises -> DeviceGraph:
@@ -1169,7 +1171,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     var _handle: _DeviceGraphBuilderPtr[mut=True]
     """Handle to the underlying ref-counted driver builder."""
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
     """The backing device context used to create the builder."""
 
     var _implicit_deps: List[Self.Node]
@@ -1207,7 +1209,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     lifetimes through all the APIs properly, after which memory will be kept
     live for all users."""
 
-    var _recording_ctx: DeviceContext
+    var _recording_ctx: DeviceContext[]
     """The one recording context this builder hands out. The emitted kernel
     wrappers request a context per kernel, but builds are sequential and only
     one is ever live, so `recording_context()` reseats this context's chain
@@ -1217,7 +1219,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     def __init__(
         out self,
         handle: _DeviceGraphBuilderPtr[mut=True],
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises:
         self._handle = handle
         self._ctx = ctx
@@ -1255,7 +1257,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         self._stable = slots^
 
     @inline(.always)
-    def context(self) -> DeviceContext:
+    def context(self) -> DeviceContext[]:
         """Returns the device context this builder records against.
 
         Unlike the `context()` accessors on buffer types, this is a non-raising
@@ -1268,7 +1270,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         return self._ctx
 
     @inline(.never)
-    def recording_context(self) raises -> DeviceContext:
+    def recording_context(self) raises -> DeviceContext[]:
         """Returns a `DeviceContext` view that records into this builder.
 
         Operations enqueued through the returned context (kernel launches,
@@ -1753,7 +1755,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         dependencies = self._merge_implicit(dependencies^)
 
-        comptime launch_target = DeviceContext.target
+        comptime launch_target = DeviceContext[].target
 
         var gpu_kernel = DeviceFunction[
             FuncType.__call__,
@@ -1857,7 +1859,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         dependencies = self._merge_implicit(dependencies^)
 
-        comptime launch_target = DeviceContext.target
+        comptime launch_target = DeviceContext[].target
 
         var gpu_kernel = DeviceFunction[
             FuncType.__call__,

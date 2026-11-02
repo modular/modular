@@ -1497,7 +1497,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                     a,
                     b,
                     scale_compute_lambda_fn_tensor,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx),
                 )
             else:
                 matmul[
@@ -1509,7 +1509,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                     a,
                     b,
                     scale_compute_lambda_fn,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx),
                 )
 
         else:
@@ -1587,7 +1587,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                         a,
                         b,
                         scaled_output_fn_tensor,
-                        Optional[DeviceContext](ctx),
+                        Optional(ctx),
                     )
                 else:
                     matmul[
@@ -1599,7 +1599,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                         a,
                         b,
                         scaled_output_fn,
-                        Optional[DeviceContext](ctx),
+                        Optional(ctx),
                     )
             else:
                 var N_rt = Int(b.dim[b_row_axis]())
@@ -1621,7 +1621,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                         a,
                         b,
                         scaled_output_fn_tensor,
-                        Optional[DeviceContext](ctx),
+                        Optional(ctx),
                     )
                 else:
                     matmul[
@@ -1633,7 +1633,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                         a,
                         b,
                         scaled_output_fn,
-                        Optional[DeviceContext](ctx),
+                        Optional(ctx),
                     )
 
     elif (

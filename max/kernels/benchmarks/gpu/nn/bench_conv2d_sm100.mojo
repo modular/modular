@@ -78,7 +78,7 @@ def bench_conv2d[
     filter_w: Int,
     pad_h: Int,
     pad_w: Int,
-](ctx: DeviceContext, num_iters: Int = 100, warmup_iters: Int = 10) raises:
+](ctx: DeviceContext[], num_iters: Int = 100, warmup_iters: Int = 10) raises:
     """Benchmark SM100 conv2d vs cuDNN using proper GPU timing.
 
     Both SM100 and cuDNN timings include the full conv2d operation.
@@ -288,7 +288,7 @@ def bench_all_configs[
     filter_w: Int,
     pad_h: Int,
     pad_w: Int,
-](ctx: DeviceContext, num_iters: Int = 100, warmup_iters: Int = 10) raises:
+](ctx: DeviceContext[], num_iters: Int = 100, warmup_iters: Int = 10) raises:
     """Benchmark 1-SM vs 2-SM vs cuDNN."""
 
     comptime out_height = in_height + 2 * pad_h - filter_h + 1
@@ -499,7 +499,7 @@ def bench_residual[
     filter_w: Int,
     pad_h: Int,
     pad_w: Int,
-](ctx: DeviceContext, num_iters: Int = 100, warmup_iters: Int = 10) raises:
+](ctx: DeviceContext[], num_iters: Int = 100, warmup_iters: Int = 10) raises:
     """Benchmark conv2d vs conv2d+residual (fused) to measure fusion overhead.
     """
 

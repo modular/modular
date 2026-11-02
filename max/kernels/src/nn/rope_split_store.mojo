@@ -23,6 +23,7 @@ from std.collections import OptionalReg
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
 from std.math import gcd
+from std.os import abort
 from std.sys import align_of
 from std.sys.info import CompilationTarget, simd_width_of
 
@@ -72,7 +73,7 @@ def _rope_split_store_ragged_impl[
     v_cache: OptionalReg[cache_t],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
     get_freq_pos: FuncType,
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
 ) raises:
     """Read flat QKV buffer, apply RoPE to Q and K, store K/V to cache.
 
@@ -326,10 +327,17 @@ def _rope_split_store_ragged_impl[
         head_size % kernel_simd_width == 0
     ), "head_size must be divisible by simd_width"
 
-    var device_ctx = context.value() if context else DeviceContext(api="cpu")
-    elementwise[simd_width=kernel_simd_width, target=target](
-        rope_split_store_fn, launch_shape, device_ctx
-    )
+    if case .Some(device_ctx) = context:
+        elementwise[simd_width=kernel_simd_width, target=target](
+            rope_split_store_fn, launch_shape, device_ctx
+        )
+    else:
+        comptime if is_cpu[target]():
+            elementwise[simd_width=kernel_simd_width, target=target](
+                rope_split_store_fn, launch_shape, DeviceContext.cpu()
+            )
+        else:
+            abort("rope_split_store on a GPU target requires a DeviceContext")
 
 
 # ===-----------------------------------------------------------------------===#
@@ -359,7 +367,7 @@ def _rope_split_store_ragged[
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
 ) raises:
     """Read flat QKV buffer, apply rope to Q and K, store K/V to cache.
 
@@ -433,7 +441,7 @@ def rope_split_store_paged_ragged[
         q_output: Output buffer for roped Q [total_seq_len, q_dim].
         ctx: DeviceContext for GPU.
     """
-    var cuda_ctx: Optional[DeviceContext] = None
+    var cuda_ctx: Optional[DeviceContext[ctx.target]] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = kv_collection.get_value_cache(
@@ -484,7 +492,7 @@ def _rope_split_store_ragged_with_position_ids[
     v_cache: OptionalReg[cache_t],
     position_ids: TileTensor[mut=False, .uint32, PositionIdsLayoutType, ...],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext.Optional,
 ) raises:
     """Read flat QKV buffer, apply rope (with explicit position IDs) to Q and K,
     store K/V to cache.
@@ -608,7 +616,7 @@ def rope_split_store_paged_ragged_with_position_ids[
         q_output: Output buffer for roped Q [total_seq_len, q_dim].
         ctx: DeviceContext for GPU.
     """
-    var cuda_ctx: Optional[DeviceContext] = None
+    var cuda_ctx: Optional[DeviceContext[ctx.target]] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = kv_collection.get_value_cache(

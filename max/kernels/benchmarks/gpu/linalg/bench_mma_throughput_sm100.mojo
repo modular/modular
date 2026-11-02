@@ -560,7 +560,7 @@ def main() raises:
         ]
 
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {mut sink, imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {mut sink, imm}:
             ctx.enqueue_function[kernel](
                 a_tma_op,
                 b_tma_op,

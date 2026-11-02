@@ -5850,7 +5850,7 @@ struct Sleep:
                 "Sleep duration must be non-negative. Found: ", duration_sec
             )
 
-        if is_gpu[target]():
+        comptime if is_gpu[target]():
 
             @__name("sleep")
             def sleep_kernel(duration_sec: Float64):

@@ -24,7 +24,7 @@ def test_iter_custom_device_context_closure() raises:
     var count = 0
 
     @inline(.always)
-    def launch(ctx: DeviceContext) raises {mut count, imm}:
+    def launch(ctx: DeviceContext[]) raises {mut count, imm}:
         _ = ctx
         count += 1
 
@@ -42,7 +42,7 @@ def test_iter_custom_device_context_iteration_closure() raises:
 
     @inline(.always)
     def launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut iteration_sum, imm}:
         _ = ctx
         iteration_sum += iteration

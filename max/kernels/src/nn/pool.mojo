@@ -1281,7 +1281,7 @@ def avg_pool[
     paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Dispatches the average pooling operation to the CPU or GPU backend based on the target.
 
@@ -1337,7 +1337,7 @@ def max_pool[
     paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Dispatches the max pooling operation to the CPU or GPU backend based on the target.
 

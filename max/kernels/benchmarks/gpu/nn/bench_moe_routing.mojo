@@ -35,7 +35,7 @@ def bench_single_group_router_eplb[
     max_replicas: Int,
     num_layers: Int,
     hash_decorrelate: Bool,
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     comptime dtype = DType.float32
     comptime num_log = n_routed_experts
     var scores_h = List(
@@ -115,7 +115,7 @@ def bench_single_group_router_eplb[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             single_group_router_eplb[
                 scores_type=dtype,
                 bias_type=dtype,
@@ -176,7 +176,7 @@ def bench_single_group_router_eplb[
 
 def bench_moe_create_indices[
     num_tokens: Int, num_experts: Int
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     var topk_h = ctx.enqueue_create_host_buffer[.uint32](num_tokens)
     for i in range(num_tokens):
         topk_h[i] = UInt32(i % num_experts)
@@ -218,7 +218,7 @@ def bench_moe_create_indices[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             moe_create_indices[input_type=DType.uint32, target="gpu"](
                 token_expert_order,
                 expert_start_indices,
@@ -256,7 +256,7 @@ def bench_router_group_limited[
     n_experts_per_tok: Int,
     n_groups: Int,
     topk_group: Int,
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     comptime dtype = DType.float32
 
     var scores_h = List(
@@ -307,7 +307,7 @@ def bench_router_group_limited[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             router_group_limited[
                 scores_type=dtype,
                 bias_type=dtype,
@@ -357,7 +357,7 @@ def bench_single_group_router[
     num_tokens: Int,
     n_routed_experts: Int,
     n_experts_per_tok: Int,
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     comptime dtype = DType.float32
 
     var scores_h = List(
@@ -405,7 +405,7 @@ def bench_single_group_router[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             single_group_router[
                 scores_type=dtype,
                 bias_type=dtype,
@@ -456,7 +456,7 @@ def bench_eplb_remap[
     max_replicas: Int,
     num_layers: Int,
     hash_decorrelate: Bool,
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     # Host buffers ---------------------------------------------------------
     var router_h = List(length=num_tokens * K, fill=Int32(0))
     var logcnt_h = List(length=num_layers * num_log, fill=Int32(0))
@@ -514,7 +514,7 @@ def bench_eplb_remap[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             eplb_remap[
                 num_log=num_log,
                 max_replicas=max_replicas,

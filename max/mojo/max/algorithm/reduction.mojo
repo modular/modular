@@ -183,7 +183,7 @@ def _reduce_generator[
     input_0_fn: InputFnType,
     output_0_fn: OutputFnType,
     reduce_function: ReduceFnType,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Reduce the given tensor using the given reduction function. The
     num_reductions parameter enables callers to execute fused reductions. The
@@ -267,7 +267,7 @@ def _reduce_generator[
     input_0_fn: InputFnType,
     output_0_fn: OutputFnType,
     reduce_function: ReduceFnType,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Reduce the given tensor using the given reduction function.
 

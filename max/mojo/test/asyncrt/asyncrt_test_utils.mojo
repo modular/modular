@@ -27,9 +27,9 @@ def api() -> String:
     return "default"
 
 
-def create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
+def create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext[]:
     # Create an instance of the DeviceContext
-    var test_ctx: DeviceContext
+    var test_ctx: DeviceContext[]
 
     comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         print("Using DeviceContext: V2 - " + api())

@@ -87,7 +87,7 @@ struct Workspace(Movable):
     var row_offsets: DeviceBuffer[DType.uint32]
 
     def __init__(
-        out self, ctx: DeviceContext, footprint: Footprint, on_host: Bool
+        out self, ctx: DeviceContext[], footprint: Footprint, on_host: Bool
     ) raises:
         var q_elems = footprint["tokens"] * NUM_HEADS * Q_DEPTH
         self.q_fp8 = ctx.enqueue_create_buffer[fp8](q_elems)
@@ -155,7 +155,7 @@ def touched_bytes(
 def run_config[
     q_dtype: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut h: SweepHarness,
     mut table: PageTable[PAGE_SIZE],
     mut latent: PagedBlocks[fp8],
@@ -220,7 +220,7 @@ def run_config[
     blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
 
     def cache_at(
-        launch_ctx: DeviceContext, copy: Int
+        launch_ctx: DeviceContext[], copy: Int
     ) raises {mut latent, imm} -> Collection.CacheType:
         var lut = table.copy_lut(launch_ctx, copy, batch_size, pages)
         var kv_collection = Collection(
@@ -266,7 +266,7 @@ def run_config[
 
     @inline(.always)
     def kernel_launch(
-        launch_ctx: DeviceContext, copy: Int
+        launch_ctx: DeviceContext[], copy: Int
     ) raises {mut out_tt, imm}:
         flare_mla_decoding[
             rank=3,

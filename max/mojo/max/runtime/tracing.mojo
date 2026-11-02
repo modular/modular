@@ -52,7 +52,7 @@ def get_safe_task_id(ctx: DeviceContext.Generic) -> OptionalReg[Int]:
     return OptionalReg(Int(ctx.device().id))
 
 
-def get_safe_task_id(ctx: Optional[DeviceContext]) -> OptionalReg[Int]:
+def get_safe_task_id(ctx: DeviceContext.Optional) -> OptionalReg[Int]:
     """Safely extract task_id from an optional `DeviceContext`, returning
     `None` if the context is absent or invalid.
 

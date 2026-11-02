@@ -958,7 +958,7 @@ def blackwell_kernel_8[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
@@ -1123,7 +1123,7 @@ def test_blackwell_kernel_8[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     if not benchmark:
         print(
             t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
@@ -1182,7 +1182,7 @@ def test_blackwell_kernel_8[
         comptime num_warmup = 100
 
         @inline(.always)
-        def run_kernel(ctx: DeviceContext) raises {mut c, imm}:
+        def run_kernel(ctx: DeviceContext[]) raises {mut c, imm}:
             blackwell_kernel_8[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
@@ -1265,7 +1265,7 @@ def make_dic_of_shapes() -> (
     return dic^
 
 
-def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+def benchmark_blackwell_matmul(ctx: DeviceContext[]) raises:
     comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
         print("Benchmarking blackwell_matmul_tma_umma_kernel")
         print("============================================")

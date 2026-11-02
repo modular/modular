@@ -44,7 +44,7 @@ comptime itype = DType.int64
 @inline(.never)
 def run_row_scatter[
     dtype: DType, rows: Int, cols: Int, num_idx: Int
-](mut m: Bench, ctx: DeviceContext) raises:
+](mut m: Bench, ctx: DeviceContext[]) raises:
     var data_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
     var out_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
     var upd_dev = ctx.enqueue_create_buffer[dtype](num_idx * cols)
@@ -68,7 +68,7 @@ def run_row_scatter[
         mut b: Bencher,
     ) raises {var data_tt, var out_tt, var upd_tt, var idx_tt, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             scatter_nd_generator[target="gpu"](
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )
@@ -101,7 +101,7 @@ def run_row_scatter[
 @inline(.never)
 def run_elem_scatter[
     dtype: DType, rows: Int, cols: Int, num_idx: Int
-](mut m: Bench, ctx: DeviceContext) raises:
+](mut m: Bench, ctx: DeviceContext[]) raises:
     var data_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
     var out_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
     var upd_dev = ctx.enqueue_create_buffer[dtype](num_idx)
@@ -125,7 +125,7 @@ def run_elem_scatter[
         mut b: Bencher,
     ) raises {var data_tt, var out_tt, var upd_tt, var idx_tt, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             scatter_nd_generator[target="gpu"](
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )

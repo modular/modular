@@ -26,7 +26,6 @@ from ._overlay import (
     DeviceBuffer,
     DeviceContext,
     DeviceContextArray,
-    DeviceContextBase,
     DeviceContextList,
     DeviceEvent,
     DeviceExternalFunction,

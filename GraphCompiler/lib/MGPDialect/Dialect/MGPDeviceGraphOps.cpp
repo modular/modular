@@ -1777,16 +1777,26 @@ DeviceGraphCollectiveCreateOp::emitMojo(MOGG::EmitMojoState &state) {
 
   unsigned numGraphs = getGraphs().size();
 
-  MojoValue contextsArrayType =
-      makeMojoArrayType(kStructDeviceContext, numGraphs);
+  // `create_collective` takes `Array[DeviceContext[], N]`, so the element type
+  // binds the default target explicitly: a bare `DeviceContext` is generic over
+  // its target, which is not a concrete `Array` element type.
+  // TODO(DRIV-655): Use a generic element type once `create_collective` takes
+  // generic targets.
+  MojoValue contextsArrayType = makeMojoArrayType(
+      llvm::formatv("{}[]", kStructDeviceContext).str(), numGraphs);
   MojoValue graphsArrayType = makeMojoArrayType(kStructDeviceGraph, numGraphs);
 
   MojoValue graphsArray;
   if (Value cache = getCache()) {
     MojoValue keyFor = emitCollectiveKeyForClosure(state, *this);
 
-    SmallVector<MojoValue> deviceContextValues =
-        state.getMojoValuesFor(getDeviceContexts());
+    // Each context arrives generic over its own target, so narrow it to the
+    // default target the array's element type names.
+    // TODO(DRIV-655): Drop this once `create_collective` takes generic targets.
+    SmallVector<MojoValue> deviceContextValues;
+    for (const MojoValue &ctx : state.getMojoValuesFor(getDeviceContexts()))
+      deviceContextValues.push_back(
+          state.builder.var(ctx.get(kFnAssertDefaultTarget)({}, {})));
     MojoValue contextsArray = state.builder.varDecl(contextsArrayType);
     state.builder.assign(contextsArray,
                          state.builder.listLiteral(deviceContextValues));

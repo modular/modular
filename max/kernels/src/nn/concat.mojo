@@ -1280,7 +1280,7 @@ def _fused_concat_cpu[
     input_shapes: StaticTuple[DynamicCoord[.int, rank], size],
     input_fn: InputFnType,
     output_0_fn: OutputFnType,
-    ctx: Optional[DeviceContext],
+    ctx: Optional[DeviceContext.CPU],
 ) raises:
     var offset = 0
 
@@ -1303,7 +1303,7 @@ def _fused_concat_cpu[
             )
 
         # TODO: we can use simd_width > 0 if all inputs are aligned.
-        var device_ctx = ctx.value() if ctx else DeviceContext(api="cpu")
+        var device_ctx = ctx.value() if ctx else DeviceContext.cpu()
         elementwise[
             1,
             _trace_description="concat_fused",
@@ -1960,7 +1960,7 @@ def fused_concat[
                 input_shapes,
                 input_fn,
                 output_0_fn,
-                Optional[DeviceContext](ctx),
+                Optional(ctx.assert_cpu_target()),
             )
         else:
             return _fused_concat_gpu[rank, dtype](

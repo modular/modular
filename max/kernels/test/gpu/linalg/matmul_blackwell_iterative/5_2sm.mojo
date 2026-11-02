@@ -452,7 +452,7 @@ def blackwell_kernel_5[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
@@ -539,7 +539,7 @@ def test_blackwell_kernel_5[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     print(
         "mma_"
         + "s"
@@ -617,7 +617,7 @@ def test_blackwell_kernel_5[
         comptime num_warmup = 20
 
         @inline(.always)
-        def run_kernel(ctx: DeviceContext) raises {mut c, imm}:
+        def run_kernel(ctx: DeviceContext[]) raises {mut c, imm}:
             blackwell_kernel_5[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
@@ -694,7 +694,7 @@ def make_dic_of_shapes() -> (
     return dic^
 
 
-def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+def benchmark_blackwell_matmul(ctx: DeviceContext[]) raises:
     comptime a_type = DType.bfloat16
     comptime b_type = DType.bfloat16
     comptime c_type = DType.bfloat16

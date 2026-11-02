@@ -846,7 +846,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         return self._host_ptr
 
-    def context(self) raises -> DeviceContext:
+    def context(self) raises -> DeviceContext[]:
         """Returns the device context associated with this buffer.
 
         This method retrieves the device context that owns this buffer and is
@@ -2163,7 +2163,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         return DevicePointer[Self.dtype, origin_of(self)](self)
 
-    def context(self) raises -> DeviceContext:
+    def context(self) raises -> DeviceContext[]:
         """Returns the device context associated with this buffer.
 
         This method retrieves the device context that owns this buffer and is
@@ -3551,7 +3551,7 @@ struct DeviceFunction[
             _enqueue_packed_checked(
                 ctx,
                 func_handle=self._handle,
-                device_context=self._context.assert_default_target(),
+                device_context=self._context,
                 func_name=func_name,
                 dense_args_addrs=dense_args.addrs.unsafe_ptr(),
                 dense_args_sizes=Optional(dense_args.sizes.unsafe_ptr()),
@@ -3747,7 +3747,7 @@ struct DeviceFunction[
             _enqueue_packed_checked(
                 ctx,
                 func_handle=self._handle,
-                device_context=self._context.assert_default_target(),
+                device_context=self._context,
                 func_name=func_name,
                 dense_args_addrs=dense_args_addrs.unsafe_ptr(),
                 dense_args_sizes=Optional[
@@ -4213,15 +4213,7 @@ struct DeviceClosureFunction[
     """The plugin's compiled kernel."""
 
 
-comptime DeviceContext = DeviceContextBase[]
-"""Temporary type alias as DeviceContext transitions to being
-parameterized by compilation target.
-
-See `DeviceContextBase` for additional documentation.
-"""
-
-
-struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
+struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer
 ):
     """Represents a single stream of execution on a particular accelerator
@@ -4271,7 +4263,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime Generic = DeviceContextBase[_]
+    comptime Generic = DeviceContext[_]
     """DeviceContext type with unbound compilation target parameter.
 
     This is a tempoary type alias as DeviceContext transitions to being
@@ -4279,8 +4271,47 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     """
 
     # DeviceContext is only usable on hosts so `current()` will always be a CPU.
-    comptime CPU = DeviceContextBase[CompilationTarget.current()]
+    comptime CPU = DeviceContext[CompilationTarget.current()]
     """DeviceContext type for the current CPU target."""
+
+    comptime Optional[
+        target: CompilationTarget = default_accelerator()
+    ] = Optional[DeviceContext[target]]
+    """Convenience type alias for an `Optional[DeviceContext[_]]` type parameter.
+
+    This associated type worksaround Mojo's missing support for nested
+    auto-parameterization. Mojo does not currently support argument types like:
+
+    ```mojo
+    ctx: Optional[DeviceContext[_]],
+    ```
+
+    because `_` unbound parameters can only be used in the top-level type of a
+    argument type annotation.
+
+    However, using this alias, auto-parameterization works:
+
+    ```mojo
+    ctx: DeviceContext.Optional,
+
+    # equivalent, also works:
+    ctx: DeviceContext.Optional,
+    ```
+
+    This alias may be removed once Mojo supports nested auto-parameterization.
+    """
+
+    comptime NoneValue = Optional[DeviceContext[]]()
+    """Convenience helper for constructing a default value for
+    `DeviceContext.Optional` parameters. This guides type inference to a default
+    value for the `target` parameter when the default argument value is used.
+
+    Intended to be used like:
+
+    ```mojo
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
+    ```
+    """
 
     comptime default_device_info = get_gpu_info[Self.target._arch()]()
     """`GPUInfo` object for the default accelerator."""
@@ -4294,7 +4325,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     supports.
 
     Generic code checks for a capability with `conforms_to`, for example
-    `conforms_to(DeviceContext.ExecutionConfigType, ClusterExecutionConfig)`.
+    `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -4470,7 +4501,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         target_str: StaticString
     ](
         var self,
-        out result: DeviceContextBase[
+        out result: DeviceContext[
             CompilationTarget[
                 _mlir_value=(
                     CompilationTarget.current()._mlir_value if target_str
@@ -4489,17 +4520,18 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             A DeviceContext with a target parameter matching the provided device
             label.
         """
-        # Assert that this is only called on `ctx: DeviceContext` concrete /
-        # default accelerator instances for the time being.
-        var _ = self.assert_default_target()
         comptime if target_str == "cpu":
             # Defensive sanity check, since we make this assumption in the
-            # result type.
+            # result type. `assert_cpu_target` checks at runtime, so this also
+            # accepts a context that already has the CPU target.
             comptime assert CompilationTarget.current().is_cpu()
 
             var self_cpu = self.assert_cpu_target()
             return rebind_var[type_of(result)](self_cpu^)
         else:
+            # Assert that this is only called on `ctx: DeviceContext` concrete
+            # / default accelerator instances for the time being.
+            var _ = self.assert_default_target()
             return rebind_var[type_of(result)](self^)
 
     @inline(.always)
@@ -4530,7 +4562,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     #    context.map(DeviceContext.assert_cpu_target)
     @staticmethod
     def _map_assert_cpu_target(
-        ctx: Optional[DeviceContext],
+        ctx: DeviceContext.Optional,
     ) -> Optional[DeviceContext.CPU]:
         var cpu_ctx = Optional[DeviceContext.CPU]()
         if ctx:
@@ -4539,7 +4571,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
     # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
     @inline(.always)
-    def assert_default_target(self) -> DeviceContext:
+    def assert_default_target(self) -> DeviceContext[]:
         """Temporary function to assert and cast this DeviceContext to the
         default target.
 
@@ -4556,10 +4588,11 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         comptime assert Self.target._eq_triple_and_arch[
             default_accelerator()
         ](), String(
-            t"using DeviceContext with non-default target is not supported fro"
-            t"m: {call_location()}"
+            t"using DeviceContext with non-default target"
+            t" ({StaticString(self.target.__triple())}) is not supported from:"
+            t" {call_location()}"
         )
-        return rebind[DeviceContext](self)
+        return rebind[DeviceContext[]](self)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -4785,7 +4818,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return DeviceBuffer[dtype](self.assert_default_target(), size)
+        return DeviceBuffer[dtype](self, size)
 
     def create_buffer_sync[
         dtype: DType
@@ -4804,7 +4837,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        var result = DeviceBuffer[dtype](self.assert_default_target(), size)
+        var result = DeviceBuffer[dtype](self, size)
         self.synchronize()
         return result
 
@@ -4854,7 +4887,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        return HostBuffer[dtype](self.assert_default_target(), size)
+        return HostBuffer[dtype](self, size)
 
     @inline(.always)
     def wrap_host_memory[
@@ -5268,7 +5301,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         comptime plugin = MaxPluginForTarget[type_of(f).target]
         comptime if plugin._handles_enqueue_function:
             plugin.enqueue_function_fn(
-                rebind[DeviceContextBase[plugin.hooks_target]](self),
+                rebind[DeviceContext[plugin.hooks_target]](self),
                 f,
                 *args,
                 grid_dim=grid_dim,
@@ -5442,7 +5475,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 HostArgs.length == 0
             ), "host_args is not supported on this target"
             plugin.enqueue_function_fn(
-                rebind[DeviceContextBase[plugin.hooks_target]](self),
+                rebind[DeviceContext[plugin.hooks_target]](self),
                 gpu_kernel,
                 *encoded_args,
                 grid_dim=grid_dim,
@@ -5912,7 +5945,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         ```text
         from max.gpu.host import DeviceContext
 
-        def gpu_operation(ctx: DeviceContext) raises -> None:
+        def gpu_operation(ctx: DeviceContext[]) raises -> None:
             # Perform some GPU operation using ctx
             pass
 
@@ -6094,7 +6127,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         ```text
         from max.gpu.host import DeviceContext
 
-        def benchmark_kernel(ctx: DeviceContext, i: Int) raises -> None:
+        def benchmark_kernel(ctx: DeviceContext[], i: Int) raises -> None:
             # Perform GPU operations using ctx, potentially varying by iteration
             pass
 
@@ -6300,7 +6333,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             pointer: Pointer[Scalar[dtype], _]
         ) {imm} -> DeviceBuffer[dtype]:
             return DeviceBuffer[dtype](
-                self.assert_default_target(),
+                self,
                 pointer,
                 size,
                 owning=False,
@@ -6721,7 +6754,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     @doc_hidden
     @inline(.always)
     def stream(self) raises -> DeviceStream:
-        return DeviceStream(self.assert_default_target())
+        return DeviceStream(self)
 
     @inline(.always)
     def create_event(self) raises -> DeviceEvent:
@@ -7440,7 +7473,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
     ```
     """
 
-    var _ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
+    var _ctx: Pointer[DeviceContext[Self.target], Self.origin]
 
     var id: Int64
     """The ID of this device among the devices of its API, as passed to the
@@ -7448,7 +7481,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
 
     @doc_hidden
     def __init__(
-        out self, ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
+        out self, ctx: Pointer[DeviceContext[Self.target], Self.origin]
     ):
         self._ctx = ctx
         # int64_t AsyncRT_DeviceContext_id(const DeviceContext *ctx)
@@ -7621,7 +7654,10 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         return result
 
 
-struct DeviceContextArray[length: Int](Copyable, Sized):
+struct DeviceContextArray[
+    length: Int,
+    target: CompilationTarget = default_accelerator(),
+](Copyable, Sized):
     """A fixed-size collection of `DeviceContext` values.
 
     Used by multi-device custom-op `execute` methods to receive one
@@ -7633,6 +7669,7 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
 
     Parameters:
         length: The number of `DeviceContext` values in the collection.
+        target: The target compilation accelerator.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -7651,7 +7688,7 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var device_contexts: Array[DeviceContext, Self.length]
+    var device_contexts: Array[DeviceContext[Self.target], Self.length]
     """The underlying storage for the per-device contexts."""
 
     # ===-------------------------------------------------------------------===#
@@ -7664,18 +7701,21 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
         Raises:
             If creating any device context fails.
         """
-        var scratch = Array[Optional[DeviceContext], Self.length]()
+        var scratch = Array[Optional[DeviceContext[Self.target]], Self.length]()
 
         for i in range(Self.length):
-            scratch[i] = DeviceContext(device_id=i)
+            scratch[i] = DeviceContext[Self.target](device_id=i)
 
-        self.device_contexts = Array[DeviceContext, Self.length](
-            fill_with=lambda (i: Int) {ref} -> DeviceContext: scratch[i].take()
+        self.device_contexts = Array[DeviceContext[Self.target], Self.length](
+            fill_with=lambda (i: Int) {ref} -> DeviceContext[
+                Self.target
+            ]: scratch[i].take()
         )
 
     @inline(.always)
     def __init__(
-        out self, var device_contexts: Array[DeviceContext, Self.length]
+        out self,
+        var device_contexts: Array[DeviceContext[Self.target], Self.length],
     ):
         """Initialize from an `Array` of `DeviceContext` values.
 
@@ -7688,8 +7728,8 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
     def __init__[
         *, __literal_size__: Int
     ](
-        out self: DeviceContextArray[__literal_size__],
-        var *device_contexts: DeviceContext,
+        out self: DeviceContextArray[__literal_size__, Self.target],
+        var *device_contexts: DeviceContext[Self.target],
         __list_literal__: NoneType = None,
     ):
         """Initialize from a variadic sequence of `DeviceContext` values.
@@ -7724,7 +7764,7 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    def __getitem_param__[index: Int](self) -> DeviceContext:
+    def __getitem_param__[index: Int](self) -> DeviceContext[Self.target]:
         """Access a `DeviceContext` at a compile-time known index.
 
         Parameters:
@@ -7735,7 +7775,7 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
         """
         return self.device_contexts[index]
 
-    def __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext:
+    def __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext[Self.target]:
         """Access a `DeviceContext` using a runtime index value.
 
         Parameters:
@@ -7767,7 +7807,7 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
 
     def filter_gpu_contexts[
         num_gpu_devices: Int
-    ](self) raises -> Array[DeviceContext, num_gpu_devices]:
+    ](self) raises -> Array[DeviceContext[Self.target], num_gpu_devices]:
         """Filters CPU contexts out and returns the GPU contexts in order.
 
         Some kernels receive a `DeviceContextArray` that mixes GPU contexts
@@ -7802,15 +7842,15 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
         # with uninitialized slots in scope (e.g. on an early raise). The
         # `unsafe_assume_initialized=` constructor then moves every slot
         # into a fully-initialized `Array[DeviceContext]`.
-        var staging = Array[MaybeUninit[DeviceContext], num_gpu_devices](
-            uninitialized=True
-        )
+        var staging = Array[
+            MaybeUninit[DeviceContext[Self.target]], num_gpu_devices
+        ](uninitialized=True)
         var dev_idx = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
                 staging[dev_idx].unsafe_write(DeviceContext(copy=self[i]))
                 dev_idx += 1
-        return Array[DeviceContext, num_gpu_devices](
+        return Array[DeviceContext[Self.target], num_gpu_devices](
             unsafe_assume_initialized=staging^
         )
 
@@ -7844,7 +7884,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     @doc_hidden
     def __init__(
         out self,
-        var contexts: List[DeviceContext],
+        var contexts: List[DeviceContext[]],
         size: Int,
     ) raises:
         comptime elem_size = size_of[Self.dtype]()
@@ -7921,12 +7961,12 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
 
 struct _HostMappedBuffer[dtype: DType]:
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
     var _dev_buf: DeviceBuffer[Self.dtype]
     var _cpu_buf: HostBuffer[Self.dtype]
 
     def __init__(
-        out self, ctx: DeviceContext, buf: DeviceBuffer[Self.dtype]
+        out self, ctx: DeviceContext[], buf: DeviceBuffer[Self.dtype]
     ) raises:
         var cpu_buf = ctx.enqueue_create_host_buffer[Self.dtype](len(buf))
         self._ctx = ctx
