@@ -27,6 +27,9 @@ A registered module class can also set:
   (:func:`lora_targets`);
 - ``supports_data_parallel``, when it runs one replica per device
   (:func:`supports_data_parallel`);
+- ``supports_multi_device_replicas``, when each of its data-parallel
+  replicas may also span several devices
+  (:func:`supports_multi_device_replicas`);
 - ``consumes_vision``, when it reads
   :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.vision`
   (:func:`consumes_vision`);
@@ -250,6 +253,16 @@ def supports_data_parallel(module_cls: type[Module[..., Any]]) -> bool:
     and runs one replica per device of its mesh's ``dp`` axis.
     """
     return bool(getattr(module_cls, "supports_data_parallel", False))
+
+
+def supports_multi_device_replicas(module_cls: type[Module[..., Any]]) -> bool:
+    """Returns whether a registered decoder's replicas may span devices.
+
+    A decoder that sets ``supports_multi_device_replicas`` as well as
+    ``supports_data_parallel`` serves fewer replicas than devices, each on
+    an equal share of them: it is constructed on a ``dp`` by ``tp`` mesh.
+    """
+    return bool(getattr(module_cls, "supports_multi_device_replicas", False))
 
 
 def consumes_vision(module_cls: type[Module[..., Any]]) -> bool:
@@ -769,7 +782,8 @@ def _check_data_parallel(
 
     Raises:
         ValueError: If data parallelism is on and the decoder doesn't
-            support it, or doesn't give each device its own replica.
+            support it, or the replicas don't split the devices evenly into
+            shares the decoder supports.
     """
     if data_parallel_degree <= 1:
         return
@@ -777,11 +791,36 @@ def _check_data_parallel(
         raise ValueError(
             f"{decoder_cls.__qualname__} doesn't support data parallelism"
         )
-    if data_parallel_degree != num_devices:
+    if data_parallel_degree != num_devices and not (
+        supports_multi_device_replicas(decoder_cls)
+        and num_devices % data_parallel_degree == 0
+    ):
         raise ValueError(
             f"data parallelism needs one replica per device, got "
             f"{data_parallel_degree} replicas over {num_devices} devices"
         )
+
+
+def _decoder_mesh(
+    decoder_cls: type[Module[..., Any]],
+    devices: Sequence[Device],
+    data_parallel_degree: int,
+) -> DeviceMesh:
+    """Returns the mesh a registered decoder is constructed on.
+
+    It splits each replica's share of the devices along a ``tp`` axis when
+    the decoder's replicas span several devices.
+    """
+    replicas, count = data_parallel_degree, len(devices)
+    if (
+        1 < replicas < count
+        and count % replicas == 0
+        and supports_multi_device_replicas(decoder_cls)
+    ):
+        return DeviceMesh(
+            tuple(devices), (replicas, count // replicas), (DP, TP)
+        )
+    return device_mesh(devices, replicas)
 
 
 class _ModulePipelineModelMeta(ABCMeta):
@@ -845,7 +884,9 @@ class ModuleV3DecoderPipelineModel(
 
     def _device_mesh(self) -> DeviceMesh:
         """Returns the mesh the modules are constructed on."""
-        return device_mesh(self.devices, self._data_parallel_degree)
+        return _decoder_mesh(
+            type(self).decoder_cls, self.devices, self._data_parallel_degree
+        )
 
     @property
     def vision_encoding(self) -> VisionBatchProcessor | None:
@@ -986,7 +1027,8 @@ class ModuleV3DecoderPipelineModel(
 
         Raises:
             ValueError: If data parallelism is on and the decoder doesn't
-                support it, or doesn't give each device its own replica.
+                support it, or the replicas don't split the devices evenly
+                into shares the decoder supports.
         """
         decoder_cls = type(self).decoder_cls
         _check_data_parallel(
@@ -1286,7 +1328,7 @@ class RegisteredDecoderBuilder:
         _check_data_parallel(decoder_cls, data_parallel_degree, len(devices))
         settings = pipeline_config.runtime
         runtime = ModuleRuntime(
-            mesh=device_mesh(devices, data_parallel_degree),
+            mesh=_decoder_mesh(decoder_cls, devices, data_parallel_degree),
             data_parallel_degree=data_parallel_degree,
             max_batch_input_tokens=settings.max_batch_input_tokens,
             max_batch_total_tokens=context.max_batch_total_tokens,

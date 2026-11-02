@@ -53,6 +53,7 @@ from max.pipelines.lib.module_registration import (
     lora_targets,
     module_pipeline_model,
     supports_data_parallel,
+    supports_multi_device_replicas,
     supports_pipeline_stages,
 )
 from max.pipelines.lib.pipeline_parallel import PipelinedModel, StageTraced
@@ -647,6 +648,53 @@ def test_the_batch_processor_needs_a_batch_per_replica() -> None:
             [[_context(1)]],
             kv_cache_inputs=NonCallableMock(spec=KVCacheInputsPerDevice),
         )
+
+
+class DataParallelDecoder(PlainDecoder):
+    supports_data_parallel: ClassVar[bool] = True
+
+
+class SharedReplicaDecoder(DataParallelDecoder):
+    supports_multi_device_replicas: ClassVar[bool] = True
+
+
+def _data_parallel_model(
+    decoder: type[Module[..., Any]], replicas: int, devices: int
+) -> Any:
+    cls = module_pipeline_model(
+        ToyConfig, ((GraphRole.DECODER, decoder),), None
+    )
+    model = cls.__new__(cls)
+    pipeline_config: Any = SimpleNamespace(
+        model=SimpleNamespace(
+            data_parallel_degree=replicas, pipeline_stage=None
+        )
+    )
+    model.pipeline_config = pipeline_config
+    model.devices = [CPU()] * devices
+    return model
+
+
+def test_replicas_span_devices_only_where_the_decoder_supports_it() -> None:
+    assert supports_multi_device_replicas(SharedReplicaDecoder)
+    assert not supports_multi_device_replicas(DataParallelDecoder)
+    with pytest.raises(ValueError, match="one replica per device"):
+        _data_parallel_model(DataParallelDecoder, 2, 4)._instantiate_module(
+            ToyConfig()
+        )
+    with pytest.raises(ValueError, match="one replica per device"):
+        _data_parallel_model(SharedReplicaDecoder, 2, 3)._instantiate_module(
+            ToyConfig()
+        )
+    shared = _data_parallel_model(SharedReplicaDecoder, 2, 4)
+    assert isinstance(shared._instantiate_module(ToyConfig()), Module)
+    mesh = shared._device_mesh()
+    assert mesh.mesh_shape == (2, 2)
+    assert mesh.axis_names == ("dp", "tp")
+    # One replica per device keeps the one-axis mesh.
+    assert _data_parallel_model(
+        SharedReplicaDecoder, 4, 4
+    )._device_mesh().mesh_shape == (4,)
 
 
 def test_graph_name_defaults_to_the_class_name() -> None:
