@@ -1048,29 +1048,17 @@ class ModuleV3DecoderPipelineModel(
         stage = self.pipeline_config.model.pipeline_stage
         if vision_cls is None or (stage is not None and not stage.is_first):
             return None
-        enabled = getattr(vision_cls, "is_enabled", None)
-        if enabled is not None and not enabled(model_config):
+        if not _vision_enabled(vision_cls, model_config):
             self._vision_module = None
             return None
-        # A registered module takes its config, which type[Module] can't say.
-        constructor: Any = vision_cls
-        with F.lazy():
-            vision = constructor(model_config)
-            vision.to(self.devices[0])
-        self._vision_module = vision
-        return GraphSpec(
-            vision,
-            graph_name(vision_cls),
-            tuple(vision.input_types()),
-            weights=_cast_to_parameter_dtypes(
-                vision,
-                role_weights(
-                    self._checkpoint if checkpoint is None else checkpoint,
-                    model_config,
-                    GraphRole.VISION,
-                ),
-            ),
+        spec = _vision_spec(
+            vision_cls,
+            model_config,
+            self._checkpoint if checkpoint is None else checkpoint,
+            self.devices[0],
         )
+        self._vision_module = spec.module
+        return spec
 
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
         """Returns the decoder graph, and the vision graph when registered.
@@ -1258,13 +1246,48 @@ class ModuleV3DecoderPipelineModel(
         return self._to_model_outputs(outputs)
 
 
+def _vision_enabled(
+    vision_cls: type[Module[..., Any]], model_config: object
+) -> bool:
+    """Returns whether a registered ``VISION`` module serves ``model_config``.
+
+    It does unless its ``is_enabled`` turns it off.
+    """
+    enabled = getattr(vision_cls, "is_enabled", None)
+    return enabled is None or bool(enabled(model_config))
+
+
+def _vision_spec(
+    vision_cls: type[Module[..., Any]],
+    model_config: Any,
+    checkpoint: Mapping[str, Any],
+    device: Device,
+) -> GraphSpec:
+    """Returns a registered ``VISION`` module's graph, built on ``device``."""
+    # A registered module takes its config, which type[Module] can't say.
+    constructor: Any = vision_cls
+    with F.lazy():
+        vision = constructor(model_config)
+        vision.to(device)
+    return GraphSpec(
+        vision,
+        graph_name(vision_cls),
+        tuple(vision.input_types()),
+        weights=_cast_to_parameter_dtypes(
+            vision, role_weights(checkpoint, model_config, GraphRole.VISION)
+        ),
+    )
+
+
 @dataclass
 class RegisteredDecoderBuilder:
     """Constructs a registered ``DECODER`` for a caller that composes modules.
 
     A speculative pairing builds its target this way and compiles it beside
     its draft as one module, so the decoder holds no weights: it compiles
-    with those :meth:`checkpoint_weights` returns.
+    with those :meth:`checkpoint_weights` returns. The caller passes the
+    decoder its image embeddings, which the registration's ``VISION``
+    module, built by :meth:`build_vision`, encodes.
     """
 
     pipeline_model: type[ModuleV3DecoderPipelineModel]
@@ -1282,9 +1305,8 @@ class RegisteredDecoderBuilder:
         modules.
 
         Raises:
-            NotImplementedError: If the decoder reads image embeddings or
-                keeps per-request state, which a composed module doesn't
-                pass it.
+            NotImplementedError: If the decoder keeps per-request state,
+                which a composed module doesn't pass it.
             ValueError: If the deployment asks for expert or data
                 parallelism the decoder doesn't support.
         """
@@ -1292,21 +1314,15 @@ class RegisteredDecoderBuilder:
         state_requires_host = hasattr(
             decoder_cls, "state_store"
         ) and not getattr(decoder_cls, "composes_request_state", False)
-        if consumes_vision(decoder_cls) or state_requires_host:
+        if state_requires_host:
             raise NotImplementedError(
-                f"{decoder_cls.__qualname__} reads image embeddings or keeps "
-                "per-request state, which a composed module doesn't pass it"
+                f"{decoder_cls.__qualname__} keeps per-request state, which "
+                "a composed module doesn't pass it"
             )
         assert context.kv_params is not None
         pipeline_config = context.pipeline_config
         config_cls: Any = self.pipeline_model.model_config_cls
-        state_dict = (
-            {name: weight.data() for name, weight in context.weights.items()}
-            if getattr(config_cls, "preserve_checkpoint_keys", False)
-            else parse_state_dict_from_weights(
-                pipeline_config, context.weights, context.adapter
-            )
-        )
+        state_dict = self._state_dict(context)
         config: Any = finalize_config(
             dataclasses.replace(
                 config_cls.initialize(
@@ -1357,6 +1373,24 @@ class RegisteredDecoderBuilder:
         )
         return module, config
 
+    def build_vision(
+        self, context: ModelLoadContext, config: object, device: Device
+    ) -> GraphSpec | None:
+        """Constructs the registration's ``VISION`` module on ``device``.
+
+        It is built as serving builds it, from ``config``, the one
+        :meth:`build_module` returned, and the checkpoint ``context`` names.
+
+        Returns:
+            The ``VISION`` graph, or ``None`` when the registration has no
+            ``VISION`` module or its ``is_enabled`` turns it off.
+        """
+        vision_cls = self.pipeline_model.vision_cls
+        if vision_cls is None or not _vision_enabled(vision_cls, config):
+            return None
+        checkpoint = prepare_weights(self._state_dict(context), config)
+        return _vision_spec(vision_cls, config, checkpoint, device)
+
     def checkpoint_weights(
         self, context: ModelLoadContext, config: object
     ) -> dict[str, Any]:
@@ -1368,6 +1402,20 @@ class RegisteredDecoderBuilder:
         del context, config
         weights, self._weights = self._weights, {}
         return weights
+
+    def _state_dict(self, context: ModelLoadContext) -> dict[str, Any]:
+        """Returns the checkpoint ``context`` names, as serving loads it."""
+        if getattr(
+            self.pipeline_model.model_config_cls,
+            "preserve_checkpoint_keys",
+            False,
+        ):
+            return {
+                name: weight.data() for name, weight in context.weights.items()
+            }
+        return parse_state_dict_from_weights(
+            context.pipeline_config, context.weights, context.adapter
+        )
 
 
 def bind_decoder_scratch(

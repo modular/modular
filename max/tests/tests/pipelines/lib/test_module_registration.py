@@ -993,14 +993,89 @@ def test_a_composed_decoder_takes_no_expert_parallelism_unasked(
     assert config.runtime is not None and config.runtime.ep is None
 
 
-@pytest.mark.parametrize("decoder", [VisionDecoder, StatefulDecoder])
-def test_a_composed_decoder_refuses_inputs_it_would_not_get(
-    decoder: type[Module[..., Any]],
-) -> None:
-    model: Any = SimpleNamespace(decoder_cls=decoder)
+def test_a_composed_decoder_refuses_state_it_would_not_get() -> None:
+    model: Any = SimpleNamespace(decoder_cls=StatefulDecoder)
     with pytest.raises(NotImplementedError, match="composed module"):
         RegisteredDecoderBuilder(model).build_module(
             _target_context([], ep_size=1)
+        )
+
+
+@dataclass(frozen=True)
+class VisionTargetConfig(TargetConfig):
+    weight_prefixes: ClassVar[Mapping[str, str]] = {
+        GraphRole.DECODER: "decoder.",
+        GraphRole.VISION: "vision.",
+    }
+
+
+class VisionMeshDecoder(MeshDecoder):
+    consumes_vision: ClassVar[bool] = True
+
+
+class ScaleVision(Module[[Tensor], Tensor]):
+    graph_name: ClassVar[str] = "toy_vision"
+
+    def __init__(self, config: VisionTargetConfig) -> None:
+        super().__init__()
+        self.scale = Scale()
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        return (X,)
+
+    def forward(self, pixels: Tensor) -> Tensor:
+        return self.scale(pixels)
+
+
+class DisabledVision(ScaleVision):
+    @classmethod
+    def is_enabled(cls, config: VisionTargetConfig) -> bool:
+        return False
+
+
+@pytest.mark.parametrize(
+    ("vision", "builds"),
+    [(ScaleVision, True), (DisabledVision, False), (None, False)],
+)
+def test_a_composed_decoder_builds_its_registered_vision_graph(
+    monkeypatch: pytest.MonkeyPatch,
+    vision: type[ScaleVision] | None,
+    builds: bool,
+) -> None:
+    """A speculative pairing builds the target's VISION module beside it,
+    from the config and checkpoint the decoder is built from."""
+    vision_weight = np.full(2, 3, dtype=np.float32)
+    monkeypatch.setattr(
+        "max.pipelines.lib.module_registration.parse_state_dict_from_weights",
+        lambda *args, **kwargs: {
+            "decoder.scale.weight": np.zeros(2, dtype=np.float32),
+            "vision.scale.weight": vision_weight,
+        },
+    )
+    modules: tuple[tuple[str, type[Module[..., Any]]], ...] = (
+        (GraphRole.DECODER, VisionMeshDecoder if vision else MeshDecoder),
+    )
+    if vision is not None:
+        modules += ((GraphRole.VISION, vision),)
+    model = module_pipeline_model(
+        VisionTargetConfig,
+        modules,
+        ToyVisionBatchProcessor if vision is not None else None,
+    )
+    context = _target_context([], ep_size=1)
+    builder = RegisteredDecoderBuilder(model)
+    decoder, config = builder.build_module(context)
+    assert isinstance(decoder, MeshDecoder)
+    spec = builder.build_vision(context, config, CPU())
+    assert (spec is not None) is builds
+    if spec is not None:
+        assert isinstance(spec.module, ScaleVision)
+        assert spec.name == "toy_vision"
+        assert tuple(spec.input_types) == (X,)
+        assert spec.weights is not None
+        assert list(spec.weights) == ["scale.weight"]
+        np.testing.assert_array_equal(
+            np.from_dlpack(spec.weights["scale.weight"]), vision_weight
         )
 
 

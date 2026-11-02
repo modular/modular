@@ -100,7 +100,7 @@ from max.tensor.realization_context import current_realization_context
 from transformers import AutoConfig
 
 from ..arch_lookup import ARCH_LOOKUP, SupportedArchitecture
-from ..graph_specs import GraphRole, graph_callable
+from ..graph_specs import GraphRole, compile_and_init_graphs, graph_callable
 from ..interfaces.arch_config import ArchConfigWithVisionCache
 from ..interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -290,13 +290,17 @@ def _takes_images(
 ) -> bool:
     """Returns whether a pairing takes images.
 
-    It does when its target's own pipeline model builds a vision graph and
-    its draft takes images too.
+    It does when its target builds a vision graph, as its own pipeline
+    model's or as its registration's ``VISION`` module, and its draft takes
+    images too.
     """
-    return (
-        "build_vision_graph" in vars(target.pipeline_model)
-        and InputModality.IMAGE in draft.input_modalities
+    model = target.pipeline_model
+    builds_vision = (
+        model.vision_cls is not None
+        if model is not None and issubclass(model, ModuleV3DecoderPipelineModel)
+        else "build_vision_graph" in vars(model)
     )
+    return builds_vision and InputModality.IMAGE in draft.input_modalities
 
 
 def _batching(arch: SupportedArchitecture) -> type[Any]:
@@ -1024,12 +1028,18 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             target, draft
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
 
+    @property
+    def _target_prepares_inputs(self) -> bool:
+        """Whether the target's batching prepares the batches' inputs."""
+        spec = self.spec_config.input_spec
+        assert spec is not None, "the graph has not been built"
+        return spec.distributed or self._prepares_batches
+
     @cached_property
     def _target_batching(self) -> Any:
-        """The target's batching, where it prepares any of the batches."""
+        """The target's batching, where it prepares or encodes any batches."""
         config = self.spec_config
-        assert config.input_spec is not None, "the graph has not been built"
-        if not (config.input_spec.distributed or self._prepares_batches):
+        if not (self._target_prepares_inputs or self._takes_images):
             return None
         batching = _batching(self._pairing.target)(config.target, self.runtime)
         if isinstance(batching, ReplayBatching):
@@ -1049,13 +1059,16 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             bind(initializer)
 
     def bind_vision_encoder(
-        self, vision_model: Model, session: InferenceSession
+        self,
+        vision_model: Model | CompiledCallable[Any, Any],
+        session: InferenceSession,
     ) -> None:
         """Hands the compiled vision graph to the target's batching.
 
-        A batching that encodes with the target's whole config, as Kimi
-        K2.5's does, gets it too: the pairing keeps only the finalized
-        language config, which has no vision half.
+        A registered target's batching takes the compiled callable, as it
+        does serving alone. A batching that encodes with the target's whole
+        config, as Kimi K2.5's does, gets it too: the pairing keeps only the
+        finalized language config, which has no vision half.
         """
         bind_config = getattr(self._target_batching, "bind_model_config", None)
         if bind_config is not None:
@@ -1104,7 +1117,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
                 " encodes no images. Drop --speculative-method to serve"
                 " images."
             )
-        if self._target_batching is None:
+        if not self._target_prepares_inputs:
             inputs = super().prepare_initial_token_inputs(
                 replica_batches, kv_cache_inputs, return_n_logits
             )
@@ -1169,7 +1182,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             tokens=target.tokens,
             input_row_offsets=target.input_row_offsets,
             return_n_logits=target.return_n_logits,
-            signal_buffers=list(target.signal_buffers),
+            signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=target.kv_cache_inputs,
             seed=self._next_seed(self.runtime.devices[0]),
             structured_output=spec.enable_structured_output,
@@ -1222,14 +1235,11 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             context_lengths = self._context_lengths.update(
                 list(replica_batches) * (devices // len(replica_batches))
             )
-        # A ModuleV3 target's batching holds no signal buffers, which its
-        # module's trace appends itself.
-        signals = getattr(target, "signal_buffers", self.runtime.signal_buffers)
         return _Inputs(
             tokens=target.tokens,
             input_row_offsets=target.input_row_offsets,
             return_n_logits=target.return_n_logits,
-            signal_buffers=list(signals),
+            signal_buffers=list(self.runtime.signal_buffers),
             host_input_row_offsets=host_offsets,
             data_parallel_splits=splits,
             batch_context_lengths=list(context_lengths),
@@ -2298,8 +2308,12 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
         model = super().load_model(session)
         if self.pipeline_config.model.pipeline_stage is not None:
             return model
-        target = _pipeline_model(self.pairing.target)
         context = ModelLoadContext.from_pipeline_model(self)
+        builder = _module_builder(self.pairing.target)
+        if isinstance(builder, RegisteredDecoderBuilder):
+            self._load_registered_vision(builder, context, session)
+            return model
+        target = _pipeline_model(self.pairing.target)
         with CompilationTimer("vision model") as timer:
             graph, weights_registry = target.build_vision_graph(context)
             timer.mark_build_complete()
@@ -2324,6 +2338,36 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
             }
         self._batching.bind_vision_encoder(self.vision_model, session)
         return model
+
+    def _load_registered_vision(
+        self,
+        builder: RegisteredDecoderBuilder,
+        context: ModelLoadContext,
+        session: InferenceSession,
+    ) -> None:
+        """Compiles a registered target's ``VISION`` module.
+
+        It compiles as it does when the target serves alone, and its
+        callable binds to the target's batching. A target whose ``VISION``
+        module is turned off encodes no images, and its batching refuses
+        them.
+        """
+        with CompilationTimer("vision model"):
+            spec = builder.build_vision(
+                context,
+                self.arch_config_as(SpecDecodeArchConfig).target,
+                self.devices[0],
+            )
+            if spec is None:
+                return
+            roles = compile_and_init_graphs(session, {GraphRole.VISION: spec})
+        vision = roles[GraphRole.VISION]
+        self.vision_model = vision.engine_model
+        self.compiled_modules = {
+            **self.compiled_modules,
+            GraphRole.VISION: vision,
+        }
+        self._batching.bind_vision_encoder(vision, session)
 
 
 class _SpecDecodeVisionCachePipelineModel(_SpecDecodeVisionPipelineModel):
@@ -2430,15 +2474,36 @@ def _share_target_slots(modules: _Modules) -> None:
             continue
         if getattr(draft, slot, None) is None:
             continue
-        if getattr(target, slot, None) is None:
+        found = _target_slot(target, slot)
+        if found is None:
             continue
-        setattr(draft, slot, getattr(target, slot))
-        prefix = f"target.{slot}."
+        path, module = found
+        setattr(draft, slot, module)
+        prefix = f"target.{path}."
         modules.weights.update(
-            (f"draft.{name.removeprefix('target.')}", value)
+            (f"draft.{slot}.{name.removeprefix(prefix)}", value)
             for name, value in list(modules.weights.items())
             if name.startswith(prefix)
         )
+
+
+def _target_slot(target: Any, slot: str) -> tuple[str, Any] | None:
+    """Returns the target's module for ``slot``, and its path.
+
+    That is the target's own attribute, or else its one descendant of that
+    name, as a registered decoder that wraps its language model holds it.
+    """
+    # TODO(kathywu): Replace the descendant search with a shared-slot
+    # contract the registered decoder declares.
+    if hasattr(target, slot):
+        module = getattr(target, slot)
+        return None if module is None else (slot, module)
+    found = [
+        (path, module)
+        for path, module in target.descendants
+        if path.rpartition(".")[2] == slot
+    ]
+    return found[0] if len(found) == 1 else None
 
 
 class _SpecDecodeModule(ModuleV3[..., tuple[Tensor, ...]]):
