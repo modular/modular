@@ -370,9 +370,11 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
 }
 
 void M::MO::buildMoggPipeline(mlir::OpPassManager &pm,
-                              const MoggPipelineOptions &) {
+                              const MoggPipelineOptions &opts) {
   pm.addPass(MOGG::createLegalizeRowwiseKernels());
   pm.addPass(MOGG::createConformCallOperands());
+  if (opts.enableGraphBlobs)
+    pm.addPass(MOGG::createFormGraphBlobs());
   pm.addPass(MOGG::createOutlineRoutines());
   pm.addPass(MOGG::createWrapFuncsWithTrace());
 
@@ -536,6 +538,7 @@ static void gcPipelineImpl(mlir::OpPassManager &pm,
   mapOpts.fuseMutableLoadStore = opts.fuseMutableLoadStore;
 
   MoggPipelineOptions moggOpts;
+  moggOpts.enableGraphBlobs = opts.enableGraphBlobs;
 
   MGP::MOGGToMGPOptions moToPrimOpts;
   moToPrimOpts.minimumCpuAlignment = opts.minimumCpuAlignment;

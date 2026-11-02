@@ -3645,6 +3645,25 @@ struct MapLowerDeclarative:
         pass
 
 
+# A declarative kernel with two inputs, so that a graph blob's member can read
+# both an earlier member's result and a tensor from outside the blob.
+@extensibility.register("map_lower_declarative_binary")
+struct MapLowerDeclarativeBinary:
+    @staticmethod
+    def execute_configuration(
+        res: Some[Tensor], a: Some[Tensor], b: Some[Tensor]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(4))
+
+    @staticmethod
+    def execute_device(
+        res: Some[Output & TileTensorable],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
+    ):
+        pass
+
+
 # A signature-only in-place kernel with a mutable destination and a plain
 # (non-fused) immutable input, mirroring `InplaceMemcpy`. Used to check that
 # `FuseMutableLoads` fusing a `mo.mutable.load` into the immutable `src` operand

@@ -207,6 +207,26 @@ def OutlineAsyncRoutines: Pass<"mogg-outline-async-routines", "ModuleOp"> {
   let dependentDialects = ["MGP::MGPDialect", "MOGG::MOGGDialect"];
 }
 
+def FormGraphBlobs
+    : Pass<"mogg-form-graph-blobs", "mlir::ModuleOp"> {
+  let summary = "Fuse sequences of declarative routines into graph blobs.";
+  let description = [{
+    Replaces each sequence of declarative `mogg.routine`s with one routine
+    whose body is a `mogg.graph_blob` holding theirs, so the sequence launches
+    as one device kernel. A routine joins the sequence before it when it reads
+    the sequence's last routine, nothing else reads that routine's results,
+    and both run on one device. The fused routine has every member's operands
+    from outside the sequence and every member's results. Device graphs are
+    left alone. Runs before `OutlineRoutines`, which outlines the fused
+    routine.
+  }];
+
+  let dependentDialects = [
+    "M::MO::MODialect",
+    "M::MOGG::MOGGDialect",
+  ];
+}
+
 def OutlineRoutines
     : Pass<"mogg-outline-routines", "mlir::ModuleOp"> {
   let summary = "Outline each `mogg.routine` body into a `mogg.func`.";

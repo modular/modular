@@ -61,6 +61,11 @@ struct GCPipelineOptions : public mlir::PassPipelineOptions<GCPipelineOptions> {
       llvm::cl::desc("Emit ranges for regions carrying no profile scope."
                      " Useful for visualizing compiler output."),
       llvm::cl::init(false)};
+  Option<bool> enableGraphBlobs{
+      *this, "enable-graph-blobs",
+      llvm::cl::desc("Launch sequences of declarative kernels as one "
+                     "device kernel each."),
+      llvm::cl::init(false)};
   // In-process `gc-pipeline-pre-jit`, for callers that want only the emitted
   // Mojo (see `ir-output-dir`).
   Option<bool> preJit{
@@ -416,7 +421,13 @@ struct MapPipelineOptions
 
 /// Options for `mogg-pipeline`.
 struct MoggPipelineOptions
-    : public mlir::PassPipelineOptions<MoggPipelineOptions> {};
+    : public mlir::PassPipelineOptions<MoggPipelineOptions> {
+  Option<bool> enableGraphBlobs{
+      *this, "enable-graph-blobs",
+      llvm::cl::desc("Launch sequences of declarative kernels as one "
+                     "device kernel each."),
+      llvm::cl::init(false)};
+};
 
 /// Options for `mgp-pipeline`.
 struct MgpPipelineOptions

@@ -1096,6 +1096,18 @@ def MOGG_RoutineOp : MOGG_LowerableOp<"routine", [
     /// Returns the last entry of `outputs` if it is a chain, else null.
     ::mlir::Value getOutputChain();
 
+    /// The body's entry-block arguments, grouped by what they stand for.
+    struct BodyArgs {
+      /// One per input.
+      ::mlir::Block::BlockArgListType inputs;
+      /// One per tensor-like output, so none for a chain.
+      ::mlir::Block::BlockArgListType outputs;
+      ::mlir::Block::BlockArgListType dims;
+      /// One, or one per device for a distributed kernel.
+      ::mlir::Block::BlockArgListType contexts;
+    };
+    BodyArgs getBodyArgs();
+
     /// Lowers to a `mogg.routine.async` and registers its outputs;
     /// returns null on error. `mo.parallel` calls it per launch to collect
     /// regions it fuses into one async region.
@@ -1419,6 +1431,12 @@ def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
   let regions = (region SizedRegion<1>:$body);
   let assemblyFormat = "$body attr-dict";
   let hasRegionVerifier = 1;
+  // `bodyBuilder` fills the body with the builder's insertion point in it.
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins "::llvm::function_ref<void(::mlir::OpBuilder &, "
+                   "::mlir::Location)>":$bodyBuilder)>
+  ];
 }
 
 def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [

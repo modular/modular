@@ -715,6 +715,23 @@ Value RoutineOp::getOutputChain() {
   return isa<MO::ChainType>(last.getType()) ? last : Value();
 }
 
+// The layout `verify` checks: a handle per input and tensor-like output, then
+// the dims, then the contexts.
+RoutineOp::BodyArgs RoutineOp::getBodyArgs() {
+  Block::BlockArgListType args = getBody().front().getArguments();
+  size_t numInputs = getInputs().size();
+  size_t numOutputs = llvm::count_if(getOutputs().getTypes(), [](Type type) {
+    return static_cast<bool>(MO::dynCastFromTensorLike(type));
+  });
+  Block::BlockArgListType rest = args.drop_front(numInputs + numOutputs);
+  size_t numDims =
+      llvm::find_if_not(
+          rest, [](BlockArgument arg) { return isa<DimType>(arg.getType()); }) -
+      rest.begin();
+  return {args.take_front(numInputs), args.slice(numInputs, numOutputs),
+          rest.take_front(numDims), rest.drop_front(numDims)};
+}
+
 // Lowers a `mogg.routine` into a `mogg.routine.async` around its
 // already-outlined stub: materialize the region operands (input buffers, new
 // output buffers, dims, device context), unpack + cast each async block arg to
@@ -2201,6 +2218,13 @@ LogicalResult CallExecuteDeviceOp::emitMojo(EmitMojoState &state) {
 //===----------------------------------------------------------------------===//
 // GraphBlobOp
 //===----------------------------------------------------------------------===//
+
+void GraphBlobOp::build(OpBuilder &builder, OperationState &state,
+                        function_ref<void(OpBuilder &, Location)> bodyBuilder) {
+  OpBuilder::InsertionGuard guard(builder);
+  builder.createBlock(state.addRegion());
+  bodyBuilder(builder, state.location);
+}
 
 bool GraphBlobOp::isThrows() { return true; }
 

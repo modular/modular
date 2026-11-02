@@ -218,6 +218,9 @@ void MOFContext::overrideLoweringOptions(
     if (configOr->getValueAsBool("max-debug.pre-jit", false))
       gcPipelineOptions.preJit = true;
 
+    if (configOr->getValueAsBool("max-debug.graph-blobs", false))
+      gcPipelineOptions.enableGraphBlobs = true;
+
     // mo-opt's flag doesn't reach the in-process Python compile path.
     StringRef timingOutDir =
         configOr->getValue("max-debug.mlir-timing-out-dir");
