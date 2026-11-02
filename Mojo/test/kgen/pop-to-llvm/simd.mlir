@@ -610,4 +610,65 @@ kgen.func @floordiv_const(%x : !kgen.scalar<si32>, %v : !kgen.simd<2, index>) ->
   hlcf.return %0, %1, %2, %3, %4, %5, %6, %7, %8 : !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.simd<2, index>, !kgen.scalar<si32>, !kgen.simd<2, index>
 }
 
+// A runtime divisor that is uniform uses a multiply-high as well. The
+// multiplier is computed from a `fdiv`, which is speculatable, so LLVM can
+// hoist it out of a loop even when the division is under a branch.
+// CHECK-LABEL: @floordiv_runtime
+kgen.func @floordiv_runtime(
+  %x : !kgen.scalar<si32>, %d : !kgen.scalar<si32>,
+  %v : !kgen.simd<2, si32>, %w : !kgen.simd<2, si32>
+) -> (
+  !kgen.scalar<si32>, !kgen.simd<2, si32>, !kgen.simd<2, si32>
+) {
+  // CHECK-DAG: [[X:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: [[D:%.*]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK: "llvm.intr.ctlz"
+  // CHECK: llvm.fdiv {{.*}} : f64
+  // CHECK: llvm.fptoui {{.*}} : f64 to i64
+  // CHECK: llvm.mul {{.*}} : i64
+  // CHECK: llvm.lshr {{.*}} : i64
+  // CHECK: llvm.trunc {{.*}} : i64 to i32
+  // CHECK: llvm.lshr {{.*}} : i32
+  // CHECK: llvm.select
+  // CHECK-NOT: llvm.sdiv
+  %0 = pop.floordiv %x, %d : !kgen.scalar<si32>
+
+  // A splat of a runtime scalar takes the same path.
+  %s = pop.simd.splat %d : !kgen.simd<2, si32>
+  // CHECK: llvm.fdiv {{.*}} : vector<2xf64>
+  // CHECK: llvm.mul {{.*}} : vector<2xi64>
+  // CHECK: llvm.lshr {{.*}} : vector<2xi64>
+  // CHECK: llvm.select
+  %1 = pop.floordiv %v, %s : !kgen.simd<2, si32>
+
+  // A lane-varying divisor would need one multiplier per lane, so it keeps the
+  // generic sequence.
+  // CHECK: llvm.sdiv {{.*}} : vector<2xi32>
+  %2 = pop.floordiv %v, %w : !kgen.simd<2, si32>
+
+  hlcf.return %0, %1, %2 : !kgen.scalar<si32>, !kgen.simd<2, si32>, !kgen.simd<2, si32>
+}
+
+// Narrower elements widen to the 32-bit lanes the multiply uses and truncate
+// back; the multiplier and shift constants are truncated to those lanes too.
+// CHECK-LABEL: @floordiv_runtime_narrow
+kgen.func @floordiv_runtime_narrow(
+  %x : !kgen.scalar<si16>, %d : !kgen.scalar<si16>,
+  %y : !kgen.scalar<si8>, %e : !kgen.scalar<si8>
+) -> (!kgen.scalar<si16>, !kgen.scalar<si8>) {
+  // CHECK-DAG: [[X16:%.*]] = builtin.unrealized_conversion_cast %arg0 : !kgen.scalar<si16> to i16
+  // CHECK-DAG: [[X8:%.*]] = builtin.unrealized_conversion_cast %arg2 : !kgen.scalar<si8> to i8
+  // CHECK: llvm.sext [[X16]] : i16 to i32
+  // CHECK: llvm.trunc {{.*}} : i32 to i16
+  // CHECK-NOT: llvm.sdiv
+  %0 = pop.floordiv %x, %d : !kgen.scalar<si16>
+
+  // CHECK: llvm.sext [[X8]] : i8 to i32
+  // CHECK: llvm.trunc {{.*}} : i32 to i8
+  // CHECK-NOT: llvm.sdiv
+  %1 = pop.floordiv %y, %e : !kgen.scalar<si8>
+
+  hlcf.return %0, %1 : !kgen.scalar<si16>, !kgen.scalar<si8>
+}
+
 }

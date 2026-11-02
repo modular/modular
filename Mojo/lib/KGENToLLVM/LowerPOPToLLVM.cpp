@@ -33,6 +33,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Dominance.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/Attributes.h"
@@ -278,6 +279,185 @@ static Value emitFloorDivByConstant(OpBuilder &rewriter, Location loc,
         LLVM::AShrOp::create(rewriter, loc, type, result,
                              getConstant(APInt(width, magic.shift - width)));
   return result;
+}
+
+/// Emits `floor(lhs / d)` for a runtime, uniform divisor `d` with
+/// `|d| <= 2^31`, using the same multiply-high shape the constant path uses,
+/// with the magic constants computed at run time:
+///
+///   A   = |d|                       ; 0 < A <= 2^31
+///   s   = 31 + bitwidth(A - 1)      ; 2^s >= A * 2^31
+///   c   = ceil(2^s / A)             ; the 33-bit multiplier of div32.h,
+///                                   ; up to one more from the estimate
+///   u   = |x|
+///   sel = sign(x) != sign(d)        ; the quotient is negated
+///   b   = sel & (u != 0)            ; floor or ceiling of |x| / A
+///   t   = u - b
+///   q   = A is a power of two ? t >> log2(A) : mulhi_u32(t, c) >> (s - 32)
+///   q  += b
+///   q   = sel ? -q : q
+///
+/// `c` is derived from a `fdiv` and one integer fixup rather than a `udiv`,
+/// because `fdiv` is speculatable and `udiv` is not: LLVM hoists the whole
+/// constant computation out of a loop even when the division sits under a
+/// branch. `|x|` is taken before the division so the dividend never needs a
+/// 33rd bit, and the product stays in 32-bit lanes so `mulhi` maps to a vector
+/// multiply-high and the sequence vectorizes. See
+/// https://github.com/lemire/fastmod for the truncating form and
+/// https://www.benjoffe.com/fast-floordiv for the rounding direction.
+static Value emitFloorDivByRuntimeDivisor(OpBuilder &rewriter, Location loc,
+                                          Type type, Value lhs, Value rhs,
+                                          unsigned width) {
+  MLIRContext *ctx = rewriter.getContext();
+  Type elementType = type;
+  Type workType = IntegerType::get(ctx, 32);
+  Type wideType = IntegerType::get(ctx, 64);
+  Type floatType = Float64Type::get(ctx);
+  if (auto vecType = dyn_cast<VectorType>(type)) {
+    workType = vecType.clone(cast<IntegerType>(workType));
+    wideType = vecType.clone(cast<IntegerType>(wideType));
+    floatType = vecType.clone(cast<FloatType>(floatType));
+  }
+
+  auto getIntConstant = [&](Type ty, const APInt &value) {
+    return createIntConstant(rewriter, loc, ty, value);
+  };
+  auto zero = getIntConstant(wideType, APInt(64, 0));
+  auto constWide = [&](int64_t v) {
+    return getIntConstant(wideType, APInt(64, v));
+  };
+
+  // A = |d|, as a 64-bit magnitude.
+  Value signMask = LLVM::AShrOp::create(
+      rewriter, loc, elementType, rhs,
+      getIntConstant(elementType, APInt(width, width - 1)));
+  Value magnitude = LLVM::SubOp::create(
+      rewriter, loc, elementType,
+      LLVM::XOrOp::create(rewriter, loc, elementType, rhs, signMask), signMask);
+  Value absDivisor = LLVM::ZExtOp::create(rewriter, loc, wideType, magnitude);
+  Value absDivisorMinusOne =
+      LLVM::SubOp::create(rewriter, loc, wideType, absDivisor, constWide(1));
+
+  Value isPow2 =
+      LLVM::ICmpOp::create(rewriter, loc, LLVM::ICmpPredicate::eq,
+                           LLVM::AndOp::create(rewriter, loc, wideType,
+                                               absDivisor, absDivisorMinusOne),
+                           zero);
+
+  // s = 95 - ctlz(A - 1), which is 31 + bitwidth(A - 1); ctlz(0) is 64, so
+  // A == 1 gives s = 31.
+  Value leadingZeros = LLVM::CountLeadingZerosOp::create(
+      rewriter, loc, wideType, absDivisorMinusOne, /*is_zero_poison=*/false);
+  Value shift =
+      LLVM::SubOp::create(rewriter, loc, wideType, constWide(95), leadingZeros);
+  Value multiplyShift = LLVM::SubOp::create(
+      rewriter, loc, wideType,
+      LLVM::UMaxOp::create(rewriter, loc, wideType, shift, constWide(32)),
+      constWide(32));
+  Value twoToShift =
+      LLVM::ShlOp::create(rewriter, loc, wideType, constWide(1), shift);
+
+  // c = trunc(2^s / absDivisor) + 1, corrected by one integer fixup. The double
+  // quotient is within 2^-21 of the exact value, so the estimate lands in
+  // [ceil(2^s / absDivisor), ceil(2^s / absDivisor) + 1]: the fixup only rules
+  // out the lower end, and both ends stay inside the multiplier interval, whose
+  // slack is 2^22 times the estimate's error.
+  Value quotient = LLVM::FDivOp::create(
+      rewriter, loc, floatType,
+      LLVM::UIToFPOp::create(rewriter, loc, floatType, twoToShift),
+      LLVM::UIToFPOp::create(rewriter, loc, floatType, absDivisor));
+  Value estimate = LLVM::AddOp::create(
+      rewriter, loc, wideType,
+      LLVM::FPToUIOp::create(rewriter, loc, wideType, quotient), constWide(1));
+  Value tooSmall = LLVM::ICmpOp::create(
+      rewriter, loc, LLVM::ICmpPredicate::ult,
+      LLVM::MulOp::create(rewriter, loc, wideType, estimate, absDivisor),
+      twoToShift);
+  Value multiplier = LLVM::AddOp::create(
+      rewriter, loc, wideType, estimate,
+      LLVM::ZExtOp::create(rewriter, loc, wideType, tooSmall));
+
+  Value trailingZeros = LLVM::CountTrailingZerosOp::create(
+      rewriter, loc, wideType, absDivisor, /*is_zero_poison=*/false);
+  Value multiplier32 =
+      LLVM::TruncOp::create(rewriter, loc, workType, multiplier);
+  Value multiplyShift32 =
+      LLVM::TruncOp::create(rewriter, loc, workType, multiplyShift);
+  Value trailingZeros32 =
+      LLVM::TruncOp::create(rewriter, loc, workType, trailingZeros);
+
+  // The per-element work stays in 32-bit lanes so the multiply-high remains a
+  // vector operation. Narrower elements are widened to those lanes.
+  auto widen = [&](Value value) -> Value {
+    return width < 32 ? LLVM::SExtOp::create(rewriter, loc, workType, value)
+                      : value;
+  };
+  Value x = widen(lhs);
+  Value d = widen(rhs);
+  auto constWork = [&](int64_t v) {
+    return getIntConstant(workType, APInt(32, v));
+  };
+
+  // sel = sign(x) != sign(d); u = |x|; b = sel & (u != 0); t = u - b.
+  Value signDiff = LLVM::AShrOp::create(
+      rewriter, loc, workType,
+      LLVM::XOrOp::create(rewriter, loc, workType, x, d), constWork(31));
+  Value negatedX =
+      LLVM::AShrOp::create(rewriter, loc, workType, x, constWork(31));
+  Value u = LLVM::SubOp::create(
+      rewriter, loc, workType,
+      LLVM::XOrOp::create(rewriter, loc, workType, x, negatedX), negatedX);
+  Value nonZero = LLVM::ZExtOp::create(
+      rewriter, loc, workType,
+      LLVM::ICmpOp::create(rewriter, loc, LLVM::ICmpPredicate::ne, u,
+                           constWork(0)));
+  Value roundUp =
+      LLVM::AndOp::create(rewriter, loc, workType, signDiff, nonZero);
+  Value dividend = LLVM::SubOp::create(rewriter, loc, workType, u, roundUp);
+
+  // mulhi_u32(dividend, c) >> (s - 32)
+  Value product = LLVM::MulOp::create(
+      rewriter, loc, wideType,
+      LLVM::ZExtOp::create(rewriter, loc, wideType, dividend),
+      LLVM::ZExtOp::create(rewriter, loc, wideType, multiplier32));
+  Value productHigh = LLVM::TruncOp::create(
+      rewriter, loc, workType,
+      LLVM::LShrOp::create(rewriter, loc, wideType, product, constWide(32)));
+  Value multiply = LLVM::LShrOp::create(rewriter, loc, workType, productHigh,
+                                        multiplyShift32);
+
+  // Powers of two (including |d| == 1) take an exact shift.
+  Value pow2Shift =
+      LLVM::LShrOp::create(rewriter, loc, workType, dividend, trailingZeros32);
+  Value magnitudeQuotient = LLVM::SelectOp::create(rewriter, loc, workType,
+                                                   isPow2, pow2Shift, multiply);
+  Value rounded =
+      LLVM::AddOp::create(rewriter, loc, workType, magnitudeQuotient, roundUp);
+  Value result = LLVM::SubOp::create(
+      rewriter, loc, workType,
+      LLVM::XOrOp::create(rewriter, loc, workType, rounded, signDiff),
+      signDiff);
+  return width < 32 ? LLVM::TruncOp::create(rewriter, loc, elementType, result)
+                    : result;
+}
+
+/// Returns true when `op`'s divisor is a runtime value that is uniform across
+/// the operation: a scalar, or a splat of a scalar. A lane-varying divisor
+/// would need a multiplier per lane, which costs more than the division.
+static bool
+isUniformRuntimeDivisor(FloorDivOp op, Value loweredDivisor,
+                        const llvm::DenseSet<Value> &uniformVectors) {
+  if (op.getType().isScalar())
+    return true;
+  // The operands are lowered before the op, so the splat is recognized through
+  // the value its lowering produced, possibly behind a materialization cast.
+  while (auto cast =
+             loweredDivisor.getDefiningOp<mlir::UnrealizedConversionCastOp>())
+    loweredDivisor = cast.getOperand(0);
+  // The splat may not have been lowered yet, in which case the operand still
+  // names the original value.
+  return uniformVectors.contains(loweredDivisor) ||
+         loweredDivisor.getDefiningOp<SIMDSplatOp>() != nullptr;
 }
 
 /// Generate the LLVM IR to materialize an alloca with the given LLVM type and
@@ -565,6 +745,9 @@ private:
   POPLoweringBuilder *builder = nullptr;
   DenseMap<Value, Value> loweredValues;
   SmallVector<Value> loweredOperands;
+  /// Values produced by lowering a `pop.simd.splat`, i.e. vector splats of one
+  /// scalar. A runtime divisor drawn from this set needs one multiplier.
+  llvm::DenseSet<Value> uniformVectors;
 };
 } // namespace
 
@@ -920,8 +1103,9 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPSIMDSplat(SIMDSplatOp op) {
                                         builder->getI32IntegerAttr(0));
   Value vector = LLVM::InsertElementOp::create(*builder, op.getLoc(), undef,
                                                adaptor.getScalar(), zero);
-  builder->replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
+  auto splat = builder->replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
       op, vector, undef, SmallVector<int32_t>(size, 0));
+  uniformVectors.insert(splat.getResult());
   return success();
 }
 
@@ -1042,14 +1226,32 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPFloorDiv(FloorDivOp op) {
                               targetLowering->supportsI128());
   if (intType && intType.getWidth() >= 8 && intType.getWidth() <= 64 &&
       llvm::isPowerOf2_32(intType.getWidth()) && canWiden) {
-    if (std::optional<APInt> divisor =
-            getSplatConstantDivisor(op, adaptor.getRhs(), intType.getWidth())) {
+    std::optional<APInt> divisor =
+        getSplatConstantDivisor(op, adaptor.getRhs(), intType.getWidth());
+    if (divisor) {
       if (std::optional<FloorDivMagic> magic = computeFloorDivMagic(*divisor)) {
         builder->replaceOp(op,
                            emitFloorDivByConstant(*builder, loc, type,
                                                   adaptor.getLhs(), *magic));
         return success();
       }
+    } else if (intType.getWidth() <= 32 &&
+               (!targetLowering || targetLowering->isHostTarget()) &&
+               isUniformRuntimeDivisor(op, adaptor.getRhs(), uniformVectors)) {
+      // A runtime divisor that is uniform across the operation takes the
+      // multiply-high path too. Like the sequence it replaces, it leaves
+      // d == 0 and INT_MIN / -1 undefined, but they produce a wrapped or
+      // poison result instead of a trap. The product stays 64-bit, so the only
+      // width limit is the 33-bit dividend the round-up bias needs; 64-bit
+      // dividends would need a 128-bit multiplier and a 192-bit product, so
+      // they keep the generic sequence. It is host-only: the multiplier comes
+      // from an `f64` reciprocal, which Metal cannot compile, and on the GPU
+      // the extra live values push Moka's KDA and top-k kernels into spilling
+      // at their per-thread register budget.
+      builder->replaceOp(op, emitFloorDivByRuntimeDivisor(
+                                 *builder, loc, type, adaptor.getLhs(),
+                                 adaptor.getRhs(), intType.getWidth()));
+      return success();
     }
   }
 
@@ -1773,6 +1975,7 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPPointerToIndex(PointerToIndexOp op) {
 void LowerPOPToLLVMPass::runOnOperation() {
   loweredValues.clear();
   loweredOperands.clear();
+  uniformVectors.clear();
   builder = nullptr;
   typeConverter.reset();
   targetLowering = nullptr;

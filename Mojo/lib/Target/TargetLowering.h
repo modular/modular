@@ -313,6 +313,12 @@ public:
     return false;
   }
 
+  /// Returns whether this target is the host CPU rather than an accelerator.
+  /// Lowerings that trade register pressure for fewer instructions consult
+  /// this and stay on the host, where the register file is not the constraint
+  /// an accelerator's per-thread budget is.
+  bool isHostTarget() const { return isBaseTarget(); }
+
   /// Returns whether this target's code generator can compile arithmetic on
   /// 128-bit integers. Lowerings that would widen an operation past the
   /// target's native widths (e.g. the 2W-bit product in floor division by a
