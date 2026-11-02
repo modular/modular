@@ -62,6 +62,21 @@ from max.gpu.host import DeviceContext, DeviceGraphBuilder
 from .kernels import _check_signal_buffer_size, _partitioned_scratch_requirement
 
 
+def _signal_pointers[
+    num_devices: Int
+](
+    signal_buffers: MutableInputVariadicTensors[dtype=DType.uint8, rank=1, ...]
+) -> Array[Pointer[Signal, MutAnyOrigin], num_devices]:
+    comptime assert num_devices == signal_buffers.size
+    return Array[_, num_devices](
+        fill_with_unrolled=lambda [i: Int]() -> Pointer[Signal, MutAnyOrigin]: (
+            signal_buffers[i]
+            ._ptr.unsafe_bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
+    )
+
+
 @extensibility.register("mo.bundled.allreduce.sum")
 struct BundledAllReduceSum:
     """Registers the `mo.bundled.allreduce.sum` graph op with the graph compiler.
@@ -102,15 +117,7 @@ struct BundledAllReduceSum:
         )
 
         var out_layout = output.runtime_layout()
-        var rank_sigs = Array[_, num_devices](
-            fill_with_unrolled=lambda [i: Int]() -> Pointer[
-                Signal, MutAnyOrigin
-            ]: (
-                signal_buffers[i]
-                ._ptr.unsafe_bitcast[Signal]()
-                .as_unsafe_any_origin()
-            )
-        )
+        var rank_sigs = _signal_pointers[num_devices](signal_buffers)
 
         @inline(.always)
         def output_lambda[
@@ -259,15 +266,7 @@ struct BundledBroadcast:
             signal_buffers[0].size(), scratch_buffer_size_bytes
         )
 
-        var rank_sigs = Array[_, num_devices](
-            fill_with_unrolled=lambda [i: Int]() -> Pointer[
-                Signal, MutAnyOrigin
-            ]: (
-                signal_buffers[i]
-                ._ptr.unsafe_bitcast[Signal]()
-                .as_unsafe_any_origin()
-            )
-        )
+        var rank_sigs = _signal_pointers[num_devices](signal_buffers)
         var out_buf = TileTensor[mut=True](
             output.to_tile_tensor[.int64]().make_dynamic[.int64]()._storage,
             in_buf.layout,
@@ -392,15 +391,7 @@ struct BundledAllGather:
         ), "expected one output and one signal buffer per peer"
         _check_signal_buffer_size(signal_buffers[0].size(), 0)
 
-        var rank_sigs = Array[_, num_devices](
-            fill_with_unrolled=lambda [i: Int]() -> Pointer[
-                Signal, MutAnyOrigin
-            ]: (
-                signal_buffers[i]
-                ._ptr.unsafe_bitcast[Signal]()
-                .as_unsafe_any_origin()
-            )
-        )
+        var rank_sigs = _signal_pointers[num_devices](signal_buffers)
 
         # The kernel takes every device's outputs, laid out
         # `[device * num_devices + source]`, but a full-world gather writes
@@ -597,15 +588,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[_, num_devices](
-            fill_with_unrolled=lambda [i: Int]() -> Pointer[
-                Signal, MutAnyOrigin
-            ]: (
-                signal_buffers[i]
-                ._ptr.unsafe_bitcast[Signal]()
-                .as_unsafe_any_origin()
-            )
-        )
+        var rank_sigs = _signal_pointers[num_devices](signal_buffers)
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
