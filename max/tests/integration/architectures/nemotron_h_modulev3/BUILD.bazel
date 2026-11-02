@@ -22,7 +22,15 @@ modular_py_library(
 
 modular_py_test(
     name = "tests",
-    srcs = glob(["test_*.py"]),
+    srcs = glob(
+        ["test_*.py"],
+        # The replica check needs two or four GPUs at once, and the IR check
+        # compiles on virtual devices, which is a per-process setting.
+        exclude = [
+            "test_local_routing_ir.py",
+            "test_local_routing_replica_gpu.py",
+        ],
+    ),
     # The layout tests each compile and run their weight preparation on the
     # CPU.
     per_test_shard_count = {
@@ -40,6 +48,136 @@ modular_py_test(
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/weights",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "nemotron_h_replica_probe",
+    testonly = True,
+    srcs = ["replica_probe.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# The allreduce form the router's soundness rests on, read out of the dump a
+# compile writes after MO PatternFusion. Both graphs compile at the replica
+# trace's width on virtual devices, so the check needs no GPU.
+modular_py_test(
+    name = "nemotron_h_local_routing_ir",
+    size = "large",
+    srcs = ["test_local_routing_ir.py"],
+    # The checks read the IR dump a compile writes, which a cache hit skips.
+    env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
+    imports = ["."],
+    # One test per shard, so the two compiles run at once and the fused-router
+    # trace, which compiles nothing, doesn't wait behind one.
+    shard_count = 3,
+    # The checks target virtual devices, so the host CPU doesn't matter.
+    tags = [
+        "skip-ci-asan",
+        "skip-ci-m7g",
+        "skip-ci-ubsan",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":nemotron_h_replica_probe",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# The router-input replica check, on four B200s: a reduction has an order to
+# rotate only above two ranks, and the check exists to show the ranks agree
+# anyway.
+modular_py_test(
+    name = "nemotron_h_local_routing_replica_gpu",
+    size = "large",
+    # A production-width compile and 28 steps outlast the large-size limit.
+    timeout = "eternal",
+    srcs = ["test_local_routing_replica_gpu.py"],
+    env = {"NEMOTRON_H_REPLICA_TP": "4"},
+    # Set from a measurement: this trace peaks at 1.25 GiB in use per device.
+    # The rules cap the manager at this request less 0.6 GB.
+    exec_properties = {"test.resources:gpu-memory": "3"},
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    precompile_device_count = 4,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":nemotron_h_replica_probe",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+    ],
+)
+
+# The replica check's step and compare path on the two GPUs a remote B200
+# executor exposes, so the harness runs before a four-GPU box does.
+# Postsubmit: at TP2 the order check is vacuous, so the smoke run keeps the
+# step path working rather than proving the invariant.
+modular_py_test(
+    name = "nemotron_h_local_routing_replica_smoke_gpu",
+    size = "large",
+    timeout = "eternal",
+    srcs = ["test_local_routing_replica_gpu.py"],
+    env = {"NEMOTRON_H_REPLICA_TP": "2"},
+    # Set from a measurement: this arm's trace peaks at 1.5 GiB in use per
+    # device. The rules cap the manager at this request less 0.6 GB.
+    exec_properties = {"test.resources:gpu-memory": "3"},
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    precompile_device_count = 2,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    deps = [
+        ":nemotron_h_replica_probe",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+        requirement("ml-dtypes"),
         requirement("numpy"),
     ],
 )

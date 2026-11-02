@@ -266,6 +266,9 @@ def _trace_on_devices(
     return broadcast, len(allreduces), peer_copies
 
 
+# The router's fused gate GEMV and top-k, the third of its three variants, is
+# not traced here: the op refuses a CPU mesh. `test_local_routing_ir` covers it
+# on virtual GPU devices, where it builds.
 @pytest.mark.parametrize("n", [2, 4, 8])
 def test_inputs_reach_the_other_devices_by_collective(
     monkeypatch: pytest.MonkeyPatch, n: int
@@ -274,12 +277,12 @@ def test_inputs_reach_the_other_devices_by_collective(
 
     A peer copy of the inputs makes one device's stream wait on another's,
     which invalidates the capture, so the tokens and row offsets reach the
-    other devices through the broadcast collective. Past two devices, so do
-    the MoE layer's expert ids and weights, which device 0 picks.
+    other devices through the broadcast collective, and nothing else does:
+    every device routes its own bit-identical replica of the router input, so
+    the MoE layer's expert ids and weights cost no broadcast at any width.
     """
     broadcast, _, _ = _trace_on_devices(monkeypatch, n, WIDE)
-    routing = [DType.int32, DType.float32] if n > 2 else []
-    assert broadcast == [DType.int64, DType.uint32, *routing]
+    assert broadcast == [DType.int64, DType.uint32]
 
 
 @pytest.mark.parametrize("n", [2, 4, 8])

@@ -274,29 +274,21 @@ class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
         """Scores each token's experts and returns the routing weights."""
-        mesh = x.mesh
-        if mesh.num_devices <= 2:
-            # Every device routes its own replica of the tokens. The replicas
-            # come out of an allreduce, and a two-way sum is the same in
-            # either order, so both devices pick the same experts without a
-            # collective.
-            return self._route(x, self.weight, self.e_score_correction_bias)
-        # TODO(ssenecal): this rationale no longer holds. The allreduce kernels
-        # add peers in global rank order, so a wider replica is bit-identical
-        # too. NemotronH should take MiMo-V2's route_on_every_device gate, or
-        # say why it keeps the broadcast.
-        # A wider allreduce sums in a different order on each device, so a
-        # replica can differ in its last bit and break a near tie the other
-        # way. Device 0 routes for every device.
-        experts, weights = self._route(
-            x.local_shards[0],
-            self.weight.local_shards[0],
-            self.e_score_correction_bias.local_shards[0],
-        )
-        return (
-            F.distributed_broadcast(experts, mesh),
-            F.distributed_broadcast(weights, mesh),
-        )
+        # Every device routes its own replica of the router input. Each
+        # reduction feeding it gives every rank the same bits: the
+        # `comm/allreduce.mojo` kernels add peers in global rank order, and
+        # vendor CCL reduces each element once and forwards it. So no device
+        # can break a near tie differently. `test_allreduce_determinism`
+        # checks the rank order at 4 and 8 ranks only on a 4- or 8-GPU host,
+        # which CI does not run, so a new allreduce path must keep it.
+        # The router is deterministic too: every gate variant reduces its
+        # split in a fixed order with no atomic accumulation, and top-k ties
+        # go to the lower expert id, so equal router inputs give equal
+        # expert ids on every device.
+        # Nemotron-H has no mode that shards the router input: its experts
+        # split by channel over one tensor-parallel axis, and it rejects data
+        # parallelism.
+        return self._route(x, self.weight, self.e_score_correction_bias)
 
     def _route(
         self, x: Tensor, weight: Tensor, bias: Tensor
