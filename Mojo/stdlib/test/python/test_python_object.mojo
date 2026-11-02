@@ -235,8 +235,8 @@ def test_len() raises:
 
 
 def test_is() raises:
-    var x = PythonObject(500)
-    var y = PythonObject(500)
+    var x = PythonObject(1500)
+    var y = PythonObject(1500)
     assert_false(x is y)
     assert_true(x is not y)
 
@@ -344,7 +344,7 @@ def test_dict() raises:
     ref cpy = Python().cpython()
 
     # large integer so it's RC'd
-    var n = PythonObject(1000)
+    var n = PythonObject(1500)
     var d = Python.dict(num=n)
 
     var _pos: Py_ssize_t = 0
@@ -957,8 +957,12 @@ def test_python_object_string() raises:
     var p = Python()
     _ = p.eval("class A:\n  def __str__(self): pass")
     var a = p.evaluate("A()")
-    with assert_raises(contains="__str__ returned non-string"):
-        _ = String(py=a)
+    if p.cpython().version.minor >= 15:
+        with assert_raises(contains="__str__() must return a str"):
+            _ = String(py=a)
+    else:
+        with assert_raises(contains="__str__ returned non-string"):
+            _ = String(py=a)
 
 
 def test_python_object_write_repr_to() raises:

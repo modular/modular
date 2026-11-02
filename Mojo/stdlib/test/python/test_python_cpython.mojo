@@ -46,7 +46,7 @@ def _test_very_high_level_api(cpy: CPython) raises:
 
 def _test_reference_counting_api(cpy: CPython) raises:
     # this is the smallest integer that's GC'd by the Python interpreter
-    var n = cpy.PyLong_FromSsize_t(257)
+    var n = cpy.PyLong_FromSsize_t(1025)
     assert_equal(cpy._Py_REFCNT(n), 1)
 
     cpy.Py_IncRef(n)

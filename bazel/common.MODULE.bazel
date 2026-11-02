@@ -140,6 +140,8 @@ single_version_override(
         # TODO (SDLC-2681): figure out why this is breaking our code.
         # reverts https://github.com/bazel-contrib/rules_python/pull/3242
         "//bazel/public-patches:rules_python_revert.patch",
+        # TODO: Remove when we bump enough
+        "//bazel/public-patches:rules_python_315.patch",
     ],
     version = "1.8.5",
 )
@@ -150,7 +152,7 @@ single_version_override(
     patches = [
         # https://github.com/jvolkman/rules_pycross/pull/219
         "//bazel/public-patches:rules_pycross_exports.patch",
-        # TODO: Remove when 3.8 is no longer pulled in transitively
+        # TODO: Remove when 3.8 is no longer pulled in transitively. We also use this to add 3.15.
         "//bazel/public-patches:rules_pycross_versions.patch",
     ],
 )
@@ -205,6 +207,7 @@ PYTHON_VERSIONS = [
     "3_12",
     "3_13",
     "3_14",
+    "3_15",
 ]
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")

@@ -170,6 +170,11 @@ build --per_file_copt=external/.*nixl_upstream.*@-fexceptions,-frtti,-fvisibilit
 build --host_per_file_copt=external/jemalloc.*@-fexceptions,-Wno-incompatible-pointer-types-discards-qualifiers,-Wno-string-conversion
 build --per_file_copt=external/jemalloc.*@-fexceptions,-Wno-incompatible-pointer-types-discards-qualifiers,-Wno-string-conversion
 
+# When compiling for CPython 3.15, silence a warning about an uninitialized field. That field is private and gets
+# zero-initialized anyways.
+build --host_per_file_copt=external/grpc.*/src/python/grpcio/grpc/_cython/cygrpc.cpp@-Wno-missing-field-initializers
+build --per_file_copt=external/grpc.*/src/python/grpcio/grpc/_cython/cygrpc.cpp@-Wno-missing-field-initializers
+
 # Enable mypy running on python builds
 build --aspects=//bazel/pip:mypy.bzl%mypy_aspect
 build --output_groups=+mypy

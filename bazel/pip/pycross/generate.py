@@ -66,6 +66,9 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         # Split based on Python versions
         "numpy",
         "scipy",
+        "pandas",
+        "pyarrow",
+        "rpds-py",
         # Unresolvable conflicts between dependency groups.
         # Only add these here if they are not globally
         # resolvable in `override-dependencies` (i.e. we
