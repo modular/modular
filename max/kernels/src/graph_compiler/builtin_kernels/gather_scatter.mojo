@@ -80,7 +80,6 @@ from extensibility import (
     InputVariadicTensors,
     LoadAccess,
     Loadable,
-    ManagedTensorSlice,
     MutableInput,
     Output,
     OutputTensor,
@@ -96,15 +95,6 @@ from extensibility import (
 from builtin_primitives.primitives import (
     _dense_row_major_anchor_stride,
     view_copy_impl,
-)
-from extensibility import (
-    _FusedInputTensor as FusedInputTensor,
-)
-from extensibility import (
-    _FusedOutputTensor as FusedOutputTensor,
-)
-from extensibility import (
-    _MutableInputTensor as MutableInputTensor,
 )
 from std.logger import Logger
 
@@ -1403,7 +1393,9 @@ struct BroadcastTo:
     #
     # Sometimes with a call to the below shape function.
     @staticmethod
-    def execute(input: InputTensor, shape: InputTensor) raises:
+    def execute(
+        input: Some[Input & Tensor], shape: Some[Input & Tensor]
+    ) raises:
         raise Error("Should never be called!")
 
     @staticmethod
@@ -1468,13 +1460,13 @@ struct BroadcastShape:
     @inline(.always)
     @staticmethod
     def broadcast_shape_impl(
-        out_buf: ManagedTensorSlice[rank=1, ...],
-        lhs_buf: ManagedTensorSlice[rank=1, ...],
-        rhs_buf: ManagedTensorSlice[rank=1, ...],
+        out_buf: TileTensor[mut=True, ...],
+        lhs_buf: TileTensor[mut=False, ...],
+        rhs_buf: TileTensor[mut=False, ...],
     ):
         # Ensure lhs is always the smaller shape
-        var lhs_rank = lhs_buf.size()
-        var rhs_rank = rhs_buf.size()
+        var lhs_rank = Int(lhs_buf.dim(0))
+        var rhs_rank = Int(rhs_buf.dim(0))
         assert lhs_rank <= rhs_rank, "lhs shape must be the smaller one"
 
         # lhs_buf =      [l0, l1, ...]
@@ -1482,23 +1474,33 @@ struct BroadcastShape:
         # out_buf = [..., o0, o1, ...]
         var size_diff = rhs_rank - lhs_rank
         for i in range(size_diff):
-            out_buf[i] = rhs_buf[i].cast[out_buf.dtype]()
+            out_buf.store[width=1](
+                Coord(i), rhs_buf.load[width=1](Coord(i)).cast[out_buf.dtype]()
+            )
 
         for lhs_idx in range(lhs_rank):
             var rhs_idx = lhs_idx + size_diff
-            var lhs_dim = Int(lhs_buf[lhs_idx])
-            var rhs_dim = Int(rhs_buf[rhs_idx])
+            var lhs_val = lhs_buf.load[width=1](Coord(lhs_idx))
+            var rhs_val = rhs_buf.load[width=1](Coord(rhs_idx))
+            var lhs_dim = Int(lhs_val)
+            var rhs_dim = Int(rhs_val)
             if lhs_dim == rhs_dim:
-                out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_buf.dtype]()
+                out_buf.store[width=1](
+                    Coord(rhs_idx), rhs_val.cast[out_buf.dtype]()
+                )
 
             elif lhs_dim != 1 and rhs_dim != 1:
                 assert rhs_dim == 1, "one of the differing dimensions must be 1"
 
             elif lhs_dim != 1:
-                out_buf[rhs_idx] = lhs_buf[lhs_idx].cast[out_buf.dtype]()
+                out_buf.store[width=1](
+                    Coord(rhs_idx), lhs_val.cast[out_buf.dtype]()
+                )
 
             elif rhs_dim != 1:
-                out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_buf.dtype]()
+                out_buf.store[width=1](
+                    Coord(rhs_idx), rhs_val.cast[out_buf.dtype]()
+                )
 
     # The `execute` method should never be used in the graph compiler.
     # We expect `mo.broadcast_to` to always simplify to `mo.static.broadcast_to`
@@ -1506,17 +1508,24 @@ struct BroadcastShape:
     # Sometimes with a call to the below shape function.
     @staticmethod
     def execute(
-        out_buf: OutputTensor[rank=1, ...],
-        lhs_buf: InputTensor[rank=1, ...],
-        rhs_buf: InputTensor[rank=1, ...],
+        out_buf: Some[Output & Tensor],
+        lhs_buf: Some[Input & Tensor],
+        rhs_buf: Some[Input & Tensor],
     ):
-        var lhs_size = lhs_buf.size()
-        var rhs_size = rhs_buf.size()
+        comptime assert conforms_to(type_of(out_buf), TileTensorable)
+        comptime assert conforms_to(type_of(lhs_buf), TileTensorable)
+        comptime assert conforms_to(type_of(rhs_buf), TileTensorable)
+        comptime assert type_of(out_buf).rank == 1
+        comptime assert type_of(lhs_buf).rank == 1
+        comptime assert type_of(rhs_buf).rank == 1
+        var out_tt = out_buf.to_tile_tensor()
+        var lhs_tt = lhs_buf.to_tile_tensor()
+        var rhs_tt = rhs_buf.to_tile_tensor()
+        var lhs_size = Int(lhs_tt.dim(0))
+        var rhs_size = Int(rhs_tt.dim(0))
         if lhs_size > rhs_size:
-            return BroadcastShape.broadcast_shape_impl(
-                out_buf, rhs_buf, lhs_buf
-            )
-        return BroadcastShape.broadcast_shape_impl(out_buf, lhs_buf, rhs_buf)
+            return BroadcastShape.broadcast_shape_impl(out_tt, rhs_tt, lhs_tt)
+        return BroadcastShape.broadcast_shape_impl(out_tt, lhs_tt, rhs_tt)
 
 
 @extensibility.register_shape_function("mo.broadcast_shape")
@@ -1692,7 +1701,9 @@ struct Reshape:
     #
     # Sometimes with a call to the below shape function.
     @staticmethod
-    def execute(input: InputTensor, shape: InputTensor) raises:
+    def execute(
+        input: Some[Input & Tensor], shape: Some[Input & Tensor]
+    ) raises:
         raise Error("Should never be called!")
 
 
@@ -2023,8 +2034,8 @@ struct MutableStore(ElementwiseUnaryOp):
         target: StaticString,
         _trace_name: StaticString,
     ](
-        buffer: MutableInputTensor,
-        tensor: FusedInputTensor,
+        buffer: Some[MutableInput & Tensor],
+        tensor: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
         # TODO: Remove the execute method (GEX-2453).
@@ -2122,48 +2133,75 @@ struct Gather:
         _trace_name: StaticString,
         axis: Int,
     ](
-        output: FusedOutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, ...],
-        indices: FusedInputTensor,
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
+        indices: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
+        comptime dtype = type_of(output).dtype
+        comptime indices_type = type_of(indices).dtype
+        comptime input_rank = type_of(input).rank
+        comptime indices_rank = type_of(indices).rank
+        comptime output_rank = type_of(output).rank
+        comptime assert type_of(input).dtype == dtype
+
+        # Project each host proxy to its access-enabled view so the closures
+        # can load and store on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+        comptime assert conforms_to(type_of(indices), UnsafeFusedView)
+        var indices_view = unsafe_fused_view(indices)
+        comptime assert conforms_to(type_of(indices_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
+
         @inline(.always)
         def input_fn[
             width: Int, element_alignment: Int
-        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
-            return input._lambda_load[
-                width=width, element_alignment=element_alignment
-            ](coords)
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=element_alignment](
+                    coords
+                )
+            )
 
         @inline(.always)
         def indices_fn[
             width: Int
-        ](coords: Coord) {var indices} -> SIMD[indices.dtype, width]:
-            return indices._fused_load[width=width](coords)
+        ](coords: Coord) {var indices_view} -> SIMD[indices_type, width]:
+            return rebind[SIMD[indices_type, width]](
+                indices_view.load[width=width](coords)
+            )
 
         @inline(.always)
         def output_fn[
             width: SIMDLength, element_alignment: Int
-        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
-            output._lambda_store[
-                width=width, element_alignment=element_alignment
-            ](
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=element_alignment](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         gather[
-            input_rank=input.rank,
-            indices_rank=indices.rank,
-            output_rank=output.rank,
-            dtype=output.dtype,
-            indices_type=indices.dtype,
+            input_rank=input_rank,
+            indices_rank=indices_rank,
+            output_rank=output_rank,
+            dtype=dtype,
+            indices_type=indices_type,
             target=target,
         ](
-            Axis(axis, input.rank),
-            Coord(input.shape()),
-            Coord(indices.shape()),
-            Coord(output.shape()),
+            Axis(axis, input_rank),
+            rebind[DynamicCoord[.int64, input_rank]](
+                input.shape().make_dynamic[.int64]()
+            ),
+            rebind[DynamicCoord[.int64, indices_rank]](
+                indices.shape().make_dynamic[.int64]()
+            ),
+            rebind[DynamicCoord[.int64, output_rank]](
+                output.shape().make_dynamic[.int64]()
+            ),
             input_fn=input_fn,
             indices_fn=indices_fn,
             output_fn=output_fn,
@@ -2380,37 +2418,46 @@ struct Split:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
+        Outs: TypeList[Trait=Output & Tensor, ...],
+        //,
         target: StaticString,
         _trace_name: StaticString,
         axis: Int,
     ](
-        output: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        split_sizes: InputTensor[rank=1, ...],
+        output: TensorTuple[*Outs],
+        input: Some[Input & Tensor],
+        split_sizes: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(split_sizes).rank == 1
+        comptime for i in range(len(Outs)):
+            comptime assert Outs[i].dtype == dtype, "unexpected output dtype"
+            comptime assert Outs[i].rank == rank, "unexpected output rank"
+
         comptime shape_types = DynamicCoord[.int64, rank].element_types
         # Use Scalar for strides as well since make_dynamic produces all
         # runtime strides.
         comptime stride_types = DynamicCoord[.int64, rank].element_types
 
-        check_axis_in_range[output.rank](axis)
+        check_axis_in_range[rank](axis)
 
         comptime normalized_axis = axis + rank if axis < 0 else axis
 
         var output_bufs = StaticTuple[
             TileTensor[
-                output.dtype,
+                dtype,
                 TileLayout[shape_types=shape_types, stride_types=stride_types],
                 MutUntrackedOrigin,
             ],
-            output.size,
+            len(Outs),
         ]()
 
-        comptime for i in range(output.size):
-            var output_tt = output[i].to_tile_tensor[.int64]()
+        comptime for i in range(len(Outs)):
+            comptime assert conforms_to(type_of(output[i]), TileTensorable)
+            var output_tt = output[i].to_tile_tensor[dtype]()
             output_bufs[i] = rebind[output_bufs.element_type](
                 TileTensor(
                     output_tt.unsafe_ptr(),
@@ -2424,7 +2471,7 @@ struct Split:
             trace_description=_trace_name,
             axis=normalized_axis,
         ](
-            input.to_tile_tensor[.int64](),
+            input.to_tile_tensor[dtype](),
             output_bufs,
             ctx,
         )
@@ -2437,8 +2484,8 @@ struct SplitOutputShapeHelper:
 
     @staticmethod
     def execute(
-        input_buf: InputTensor,
-        split_sizes_buf: InputTensor,
+        input_buf: Some[Input & Tensor],
+        split_sizes_buf: Some[Input & Tensor],
         split_axis: Scalar,
         output_idx: Scalar,
     ) raises:
