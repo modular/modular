@@ -9,7 +9,11 @@ package(default_visibility = [
 # Tests outside this package check their vision layouts against this snapshot.
 exports_files(
     ["testdata/vision_metadata.json"],
-    visibility = ["//mach/crates/multimodal:__pkg__"],
+    visibility = [
+        "//mach/crates/multimodal:__pkg__",
+        "//orchestrator/crates/orchestrator:__pkg__",
+        "//orchestrator/crates/orchestrator-engine:__pkg__",
+    ],
 )
 
 # Skip only in macOS CI, so the tests still run on a developer's Mac.
