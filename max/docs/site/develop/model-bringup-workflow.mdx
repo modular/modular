@@ -19,8 +19,8 @@ model](/develop/serve-custom-model-architectures/) with hardware-optimized
 kernels, production batching, KV cache management, and multi-GPU distribution.
 
 Writing a custom architecture means choosing a reference
-implementation, adapting its configuration and weights, and extending its
-modules where your model differs.
+implementation, copying the parts your model needs into a new package, and
+adapting its configuration and weights.
 
 :::note
 
@@ -29,6 +29,16 @@ focuses on transformer-based text generation models, as they share common,
 established implementation patterns in MAX.
 
 :::
+
+Keep a model directory self-contained: it imports its own files and the shared
+MAX libraries (`max.nn`, `max.graph`, `max.pipelines.lib`,
+`max.pipelines.kv_cache`, `max.serve`), and no other model. A model that
+imports from another model breaks when that model changes; a self-contained one
+is deleted by removing its directory and its registry entry.
+
+A symbol several models need belongs in the shared libraries: move it there and
+let every model import it from the library. Code that only this model needs
+stays in the package.
 
 ## Architecture directory structure
 
@@ -71,10 +81,9 @@ Each file serves a distinct role:
   [input preparation for a batch processor](/develop/pipelines/#delegate-input-preparation-to-a-batch-processor).
 - `model_config.py`: translates Hugging Face `config.json` fields into a typed
   configuration object that your modules read when MAX builds them.
-- `model.py`: the pipeline model class registered in `arch.py`. It subclasses
-  [`ModuleV3PipelineModelWithKVCache`](/api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/),
-  or the reference architecture's pipeline model when you build on one, and
-  overrides the parts that differ.
+- `model.py`: the pipeline model class registered in `arch.py`. Start from the
+  [ModuleV3 pipeline model base][m3-base] or a copy of the reference
+  architecture's pipeline model, and override the parts that differ.
 - `{model_name}.py`: defines the root module and the transformer stack. Most
   models with unique sub-layers, an encoder, or a structure that differs from
   the generic transformer require this file.
@@ -188,16 +197,17 @@ implementation.
 
 Most large language models are variations on a small set of transformer
 blueprints. The attention mechanism, normalization placement, and residual
-structure in your model usually match an existing reference.
-Starting from the closest one means you inherit its modules, KV cache wiring,
-and kernel choices for everything you share.
+structure in your model usually match an existing reference. Copying the
+closest one brings its modules, KV cache wiring, and kernel choices into your
+package, and the copy keeps no import edge back to the model it came from.
 
 Your implementation files define only what differs. `model_config.py` bridges
 the Hugging Face config fields to MAX's representation. `weight_adapters.py`
-remaps checkpoint keys to match MAX's naming. `model.py` subclasses the
-reference pipeline model, and `arch.py` registers the quantization encodings
-your checkpoint supports. If your model's structure is identical to a reference
-and only those surface details differ, those files are all you need.
+remaps checkpoint keys to match MAX's naming. `model.py` holds a copy of the
+reference pipeline model adapted to your model, and `arch.py` registers the
+quantization encodings your checkpoint supports. If your model's structure is
+identical to a reference and only those surface details differ, those files are
+all you need.
 
 Choose a reference by its structural features:
 
@@ -535,31 +545,33 @@ cache, and `flash_attention_ragged()` reads them back. MAX manages the paged
 memory behind the cache, using the settings in
 [`KVCacheConfig`](/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/).
 
-## Override model components
+## Reuse model components
 
-A `model.py` that subclasses the reference pipeline model overrides only the
-components that differ. Hugging Face model implementations follow the same
-pattern: in the `transformers` library, many model classes subclass a family
-base and override only what changed.
+Copy the closest model's classes into your package and adapt the copy. Record
+the model and commit each copied file came from in a comment at the top of the
+file.
 
-### Subclass the reference model
+Hugging Face follows the same pattern: many model classes in `transformers`
+subclass a family base and override only what changed. Adapt the copy the same
+way.
 
-`model.py` imports and subclasses the reference pipeline model. Override only
-the class attributes or methods that differ from the reference. The
-`llama3_modulev3` pipeline model exposes `config_class`, `norm_method`, and
-`attention_bias` as class attributes. For example, a model that matches Llama
-3 except for bias on the attention projections needs a single class
-attribute:
+### Adapt the copied pipeline model
+
+Your `model.py` holds a copy of the reference pipeline model. Override only the
+class attributes or methods that differ. The Llama 3 pipeline model exposes
+`config_class`, `norm_method`, and `attention_bias` as class attributes. For
+example, a model that matches Llama 3 except for bias on the attention
+projections needs a single class attribute:
 
 ```python title="model.py"
-from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
+from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 
 
-class YourModel(Llama3Model):
+class YourModel(ModuleV3PipelineModelWithKVCache):
     attention_bias: bool = True
 ```
 
-The subclass inherits `_create_model_config()`, `_instantiate_module()`, and
+The copied file defines `_create_model_config()`, `_instantiate_module()`, and
 the compile step from the reference architecture. Each new parameter needs a
 checkpoint entry, or `compile()` raises a `KeyError`. `compile()` leaves out a
 checkpoint key with no parameter and raises no error, so compare your adapter's
@@ -787,6 +799,15 @@ ARCHITECTURES = [your_model_arch]
 assert ARCHITECTURES[0].name == "YourModelForCausalLM"
 -->
 
+The `ARCHITECTURES` list is what MAX reads from a package you load with
+`--custom-architectures`: that flag imports the module and registers every entry
+it finds. A package that ships inside the repository also needs a `_LazyArch`
+entry in
+`max/python/max/pipelines/architectures/__init__.py` and an entry in
+`max/python/max/pipelines/architectures/all_arches.bzl`. `register_all_models()`
+registers the `lazy_architectures` entries lazily, and `ALL_ARCHITECTURES` fills
+the `deps` of the entrypoints and test targets.
+
 Most packages expose a single architecture, but you can list more than one
 when:
 
@@ -822,3 +843,5 @@ full benchmark with the
 [`eval-model`](https://github.com/modular/skills/blob/main/eval-model/SKILL.md)
 skill. It runs standard datasets against the served model and compares the
 scores against the original model.
+
+[m3-base]: /api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/

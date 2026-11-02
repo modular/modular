@@ -174,41 +174,48 @@ The agent first checks whether MAX already registers the model's
 Otherwise, the agent reads the model's `config.json`, checkpoint metadata, and
 model card, and scans for hard blockers such as custom CUDA kernels. It runs
 `list_native_archs.py` to list the reference architectures your installed MAX
-ships, then selects the closest one as a donor template (such as
-`llama3_modulev3` or `olmo3`). It compares the donor's modules with the
-Hugging Face modeling code and presents a written plan listing the chosen
-donor and a delta list, one row per difference between the donor and the target.
+ships, then picks the closest one to copy (such as `llama3_modulev3` or
+`olmo3`). It compares that architecture's modules with the Hugging Face
+modeling code and presents a written plan naming the architecture it will copy
+and a delta list, one row per difference between the copy and the target.
 
 Review the plan before authorizing the agent to write code. Confirm that it
-chose the correct donor and identified every unique layer property described in
-the model's paper or Hugging Face model card.
+chose the right architecture to copy and identified every unique layer property
+described in the model's paper or Hugging Face model card.
 
 ### Implement
 
 After you approve the plan, the agent runs
-`scaffold.py --start-from <donor>` to write a skeleton package that subclasses
-the donor:
+`scaffold.py --start-from <arch>` to write a starting package:
 
-- `model_config.py`: a subclass of the donor's config class, with a hook for
-  the Hugging Face fields the donor doesn't read.
-- `model.py`: a subclass of the donor's pipeline model that builds your root
-  module and places it on the donor's device or device mesh. It inherits the
-  donor's batch processor.
-- `weight_adapters.py`: an adapter that delegates to the donor's renames.
-- `{model_name}.py`: a subclass of the donor's root module.
-- `arch.py`: a registration that carries the donor's memory planner.
+- `model_config.py`: the config class, plus the Hugging Face fields the copied
+  architecture doesn't read.
+- `model.py`: the pipeline model, building your root module and placing it on
+  the device or device mesh.
+- `weight_adapters.py`: an adapter that delegates to the copied renames.
+- `{model_name}.py`: your root module.
+- `arch.py`: a registration that carries the copied memory planner.
 
-For a vision-language donor, the agent passes `--full-copy`, which copies
-every donor file and renames its classes.
+`--full-copy` copies every file and renames its classes, which a port needs
+when its module tree differs from every architecture MAX ships, as with Gemma 3
+and Llama 4.
 
-The skeleton still runs the donor's computation. The agent then implements
-each row of the delta list as `max.nn` modules, maps the
-remaining config fields, and rewrites the weight adapter for your checkpoint.
+The scaffold's default mode writes subclasses, so the package starts out
+importing the architecture you chose. Copy the files those imports name into
+your package and import them locally: a shipped model directory imports its own
+files and the shared MAX libraries, and no other model. Where several models
+need the same symbol, the skill moves it into the shared libraries. The
+`self_contained.py` check lists every import that still leaves the package, and
+the skill does not report the implementation complete while any remain.
+
+The package still runs the copied model's computation until the agent
+implements each row of the delta list as `max.nn` modules, maps the remaining
+config fields, and rewrites the weight adapter for your checkpoint.
 
 Make sure the agent updates the copied docstrings and comments so they describe
-your model. Donor files copied with `--full-copy` or by hand keep the donor's
-text until someone rewrites it. The skill requires an audit of that text
-before it reports the implementation as complete.
+your model. A copied file keeps the original text until someone rewrites it.
+The skill requires an audit of that text before it reports the implementation
+as complete.
 
 ### Verify and validate
 
