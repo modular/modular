@@ -101,22 +101,14 @@ from quantization.qmatmul_k import (
 from extensibility import (
     Fused,
     Input,
-    InputTensor,
     LoadAccess,
     Loadable,
     Output,
-    OutputTensor,
     Tensor,
     TileTensorable,
     UnsafeFusedView,
     get_kernel_simd_width,
     unsafe_fused_view,
-)
-from extensibility import (
-    _FusedInputTensor as FusedInputTensor,
-)
-from extensibility import (
-    _MutableInputTensor as MutableInputTensor,
 )
 from std.logger import Logger
 
@@ -137,38 +129,55 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 
     @staticmethod
     def execute[
-        input_dtype: DType,
-        output_dtype: DType,
-        scale_dtype: DType,
-        rank: Int,
         target: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
     ](
-        output: OutputTensor[dtype=output_dtype, rank=rank, ...],
-        scales: OutputTensor[dtype=scale_dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime input_dtype = type_of(input).dtype
+        comptime output_dtype = type_of(output).dtype
+        comptime scale_dtype = type_of(scales).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(scales).rank == rank
+        comptime assert type_of(gamma).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
-        var out_t = output.to_tile_tensor[.int64]()
+        var out_t = output.to_tile_tensor[output_dtype]()
 
         # The scale output holds one value per input row, laid out
         # [1, rows]. View it as rank-1 and index it by row number.
-        var in_shape = input.shape_coord()
-        var rows = Int(in_shape.product()) // Int(in_shape[rank - 1])
-        var scale_t = scales.to_tile_tensor[.int64]().reshape(row_major(rows))
+        var in_shape = input.shape()
+        var rows = Int(in_shape.product()) // Int(in_shape[rank - 1].value())
+        var scale_t = scales.to_tile_tensor[scale_dtype]().reshape(
+            row_major(rows)
+        )
 
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input_dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var input_view} -> SIMD[input_dtype, width]:
+            return rebind[SIMD[input_dtype, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
             )
 
         @inline(.always)
@@ -183,11 +192,11 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         ) {var scale_t, var in_shape}:
             var row = 0
             comptime for i in range(rank - 1):
-                row = row * Int(in_shape[i]) + Int(coords[i])
+                row = row * Int(in_shape[i].value()) + Int(coords[i])
             scale_t.store[width=1, alignment=1](Coord(row), val)
 
         # Static row width (when known) enables the register-cached row path.
-        comptime cols = Int(input.static_spec.shape_tuple[rank - 1])
+        comptime cols = type_of(input)._shape_types[rank - 1].static_value
 
         comptime if cols != UNKNOWN_VALUE:
             rms_norm_fused_quantize_dynamic_scaled_fp8[
@@ -196,9 +205,9 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 input_fn,
                 output_fn,
                 scale_fn,
-                input.shape_coord(),
+                in_shape,
                 ComptimeInt[cols](),
-                gamma.to_tile_tensor[.int64](),
+                gamma.to_tile_tensor[input_dtype](),
                 epsilon.cast[input_dtype](),
                 weight_offset.cast[input_dtype](),
                 scale_ub,
@@ -211,9 +220,9 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 input_fn,
                 output_fn,
                 scale_fn,
-                input.shape_coord(),
-                Int(input.shape_coord()[rank - 1]),
-                gamma.to_tile_tensor[.int64](),
+                in_shape,
+                Int(in_shape[rank - 1].value()),
+                gamma.to_tile_tensor[input_dtype](),
                 epsilon.cast[input_dtype](),
                 weight_offset.cast[input_dtype](),
                 scale_ub,
@@ -1283,25 +1292,35 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        scales_type: DType,
-        in_dtype: DType,
-        row_indices_dtype: DType,
-        //,
-        scales_rank: Int,
         row_index_divisor: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
-        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
-        sf_tensor: InputTensor[dtype=.float32, rank=1, ...],
-        row_indices: InputTensor[dtype=row_indices_dtype, rank=1, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        row_offsets: Some[Input & Tensor],
+        scales_offsets: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        sf_tensor: Some[Input & Tensor],
+        row_indices: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(sf_tensor), TileTensorable)
+        comptime assert conforms_to(type_of(row_indices), TileTensorable)
+        comptime row_indices_dtype = type_of(row_indices).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+        comptime assert type_of(scales_offsets).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(sf_tensor).rank == 1
+        comptime assert type_of(row_indices).rank == 1
         comptime assert is_gpu[
             target
         ](), "grouped quantize dynamic block scaled only supports GPUs"
@@ -1310,17 +1329,15 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
             row_indices_dtype=row_indices_dtype,
             row_index_divisor=row_index_divisor,
         ](
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            row_offsets.to_tile_tensor[.int64](),
-            scales_offsets.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            sf_tensor.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
+            row_offsets.to_tile_tensor[.uint32](),
+            scales_offsets.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            sf_tensor.to_tile_tensor[.float32](),
             context,
-            row_indices.to_tile_tensor[.int64]()
-            .as_unsafe_any_origin()
-            .as_imm(),
+            row_indices.to_tile_tensor().as_unsafe_any_origin().as_imm(),
         )
 
 
