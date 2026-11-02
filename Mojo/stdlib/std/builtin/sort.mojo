@@ -489,17 +489,39 @@ def sort[
     *,
     stable: Bool = False,
 ](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
-    """Sort a span in-place.
-    The function doesn't return anything, the span is updated in-place.
+    """Sorts a span in place using a custom comparison function.
+
+    The comparison function defines the sort order. It receives two elements,
+    `a` and `b`, and returns `True` if `a` should come before `b` in the sorted
+    result, otherwise it returns `False`.
 
     Parameters:
-        T: Type of the underlying data.
-        origin: Origin of span.
-        stable: Whether the sort should be stable.
+        T: The element type of the span.
+        origin: The origin of the span.
+        stable: Whether to preserve the relative order of equal elements
+            (defaults to `False`, elements that compare as equal can end
+            up in a different relative order than they started in).
 
     Args:
-        span: The span to be sorted.
-        cmp_fn: The comparison function.
+        span: The span to sort. You can directly pass a `List` or `Array`,
+            because they implicitly convert to a `Span`.
+        cmp_fn: The comparison function. The function receives two elements,
+            `a` and `b`, and must return `True` if `a` should come before `b` in
+            the sorted result, otherwise it must return `False`. It must return
+            `False` even when the two elements are equal, so it behaves like a
+            strict "less than" comparison.
+
+    For example, this sorts integers in descending order:
+
+    ```mojo
+    var numbers = [3, 1, 4, 1, 5]
+
+    def descending(a: Int, b: Int) -> Bool:
+        return a > b
+
+    sort(numbers, descending)
+    print(numbers)  # [5, 4, 3, 1, 1]
+    ```
     """
 
     _sort[stable=stable](span, cmp_fn)
@@ -512,15 +534,32 @@ def sort[
     *,
     stable: Bool = False,
 ](span: Span[T, origin]):
-    """Sort a span of comparable elements in-place.
+    """Sorts a span of comparable elements in place in ascending order.
+
+    Elements are ordered using the `<` operator, so the smallest element ends
+    up first. For example, integers sort from lowest to highest and strings
+    sort in lexicographic order. To sort in a different order, use the
+    overload that takes a comparison function, `sort(span, cmp_fn)`.
 
     Parameters:
-        T: The order comparable collection element type.
-        origin: Origin of span.
-        stable: Whether the sort should be stable.
+        T: The element type of the span. Must conform to `Copyable` and
+            `Comparable`.
+        origin: The origin of the span.
+        stable: Whether to preserve the relative order of equal elements
+            (defaults to `False`, elements that compare as equal can end
+            up in a different relative order than they started in).
 
     Args:
-        span: The span to be sorted.
+        span: The span to sort. You can directly pass a `List` or `Array`,
+          because they implicitly convert to a `Span`.
+
+    For example:
+
+    ```mojo
+    var numbers = [3, 1, 4, 1, 5]
+    sort(numbers)
+    print(numbers)  # [1, 1, 3, 4, 5]
+    ```
     """
 
     def _cmp_fn(a: T, b: T) -> Bool:
