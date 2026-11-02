@@ -1332,7 +1332,7 @@ struct PackConvFilterShape:
 
     @inline(.always)
     @staticmethod
-    def execute(filter_buf: InputTensor) raises:
+    def execute(filter_buf: Some[Input & Tensor]) raises:
         raise Error("Only meant to be used for shape function!")
 
 
