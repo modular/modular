@@ -1870,10 +1870,11 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(epilogue_load_tma_op, `nvvm.grid_constant`)
     @__name(
         StaticString(Self.config.get_kernel_name())
-        + StaticString("_compute_fn")
+        + StaticString("_compute_fn" if has_compute_fn else "")
     )
     def run_with_compute_fn[
-        ComputeFnType: ElementwiseComputeFn
+        ComputeFnType: ElementwiseComputeFn,
+        has_compute_fn: Bool = True,
     ](
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -1895,10 +1896,12 @@ struct BlackwellMatmulSM100Kernel[
         """Kernel entry point for SM100 matmul with a compute epilogue value.
 
         Same as `run`, with `compute_fn` applied to each output value before
-        the store.
+        the store. With `has_compute_fn=False` it matches `run` and ignores
+        `compute_fn`, so one `enqueue_function` call site can launch either.
 
         Parameters:
             ComputeFnType: Type of the compute epilogue closure.
+            has_compute_fn: Whether to apply `compute_fn`.
 
         Args:
             a_tma_op: 3D TMA descriptor for the A input matrix.
@@ -1916,10 +1919,10 @@ struct BlackwellMatmulSM100Kernel[
             my_rank_dev: Rank index of this GPU for multi-GPU reduce-scatter.
             compute_fn: Element-wise epilogue applied to each output value.
         """
-        comptime assert (
-            not Self.config.use_tma_epilogue_load
+        comptime assert not (
+            has_compute_fn and Self.config.use_tma_epilogue_load
         ), "use_tma_epilogue_load is mutually exclusive with a compute epilogue"
-        Self._run_impl[has_epilogue_fn=False, has_compute_fn=True](
+        Self._run_impl[has_epilogue_fn=False, has_compute_fn=has_compute_fn](
             a_tma_op,
             b_tma_op,
             c_tma_ops,
