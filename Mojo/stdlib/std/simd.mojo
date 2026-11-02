@@ -1003,21 +1003,29 @@ struct SIMD[dtype: DType, length: SIMDLength](
     def __init__(out self, value: FloatLiteral, /):
         """Initializes the SIMD vector with a float literal.
 
-        The value is splatted across all the elements of the SIMD
-        vector.
+        The value is splatted across all the elements of the SIMD vector.
 
         For floating point dtypes this behaves the same as the implicit
         constructor. For integral dtypes the literal is converted at compile
-        time, truncating towards zero like `FloatLiteral.__int__()` (e.g.
-        `Int(4.5) == 4` and `Int(-3.7) == -3`), and values outside the range
-        of the dtype wrap, matching the runtime `SIMD.cast` behavior (e.g.
-        `UInt(-3.7)` equals `UInt(Float64(-3.7))`).
+        time. Finite values truncate toward zero and then wrap to the target
+        dtype. NaN and positive or negative infinity convert to zero. These
+        compile-time rules differ from runtime floating-point-to-integer casts
+        for non-finite and out-of-range values.
 
         This constructor is intentionally explicit for integral dtypes: float
         literals do not implicitly convert to integral SIMD types.
 
         Args:
             value: The input value.
+
+        Constraints:
+            The SIMD dtype must be floating point or integral.
+
+        Examples:
+
+        ```mojo
+        var value = Int8(-7.9)  # -7
+        ```
         """
         _simd_construction_checks[Self.dtype, Self.length]()
         comptime if Self.dtype.is_floating_point():
@@ -1032,16 +1040,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
             comptime assert (
                 Self.dtype.is_integral()
             ), "the SIMD type must be floating point or integral"
-            self._mlir_value = __mlir_attr[
-                `#pop.int_literal_convert<`,
-                __mlir_attr[
-                    `#pop<float_to_int_literal<`,
-                    value.value,
-                    `>> : !pop.int_literal`,
-                ],
-                `> : `,
-                Self._mlir_type,
-            ]
+            self = Self(value.__int_literal__())
 
     @staticmethod
     def __init__[
