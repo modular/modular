@@ -2682,7 +2682,8 @@ LogicalResult ArgNonzeroOp::verify() {
 
 template <typename Op>
 static LogicalResult
-verifyWithRankedInput(Op *op, int64_t axis, int64_t resDim, TensorType inputTy,
+verifyWithRankedInput(Op *op, int64_t axis, bool isReductionAxis,
+                      int64_t resDim, TensorType inputTy,
                       size_t &dynamicOutDims, size_t &reducedDims) {
   auto inDim = inputTy.getShape().getIntDim(axis);
   if (mlir::ShapedType::isDynamic(resDim) ||
@@ -2696,6 +2697,9 @@ verifyWithRankedInput(Op *op, int64_t axis, int64_t resDim, TensorType inputTy,
           "mo.reduce.arg_max: output dimensions must match input "
           "dimensions, except at the reduction axis where the "
           "output dimension must be 1");
+    ++reducedDims;
+  } else if (isReductionAxis && resDim == 1) {
+    // Reducing an axis of length 1 keeps the shape.
     ++reducedDims;
   }
   return success();
@@ -2746,8 +2750,8 @@ static LogicalResult argVerify(Op *op) {
       // below does it, which handles the dynamic cases as well.
 
       if (inputTy.hasRank()) {
-        if (failed(verifyWithRankedInput(op, axis, resDim, inputTy,
-                                         dynamicOutDims, reducedDims)))
+        if (failed(verifyWithRankedInput(op, axis, axis == optAxis, resDim,
+                                         inputTy, dynamicOutDims, reducedDims)))
           return failure();
       } else {
         verifyWithUnrankedInput(axis, resDim, dynamicOutDims, reducedDims);

@@ -277,10 +277,6 @@ MOSH_ShapeType         # ShapeType
 
 # --- rmo (GraphCompiler/RMODialect/**.td) ---
 LegalizeRMOOps                 # LegalizeRMOOps
-MO_MOArgMaxOp                  # MoReduceArgMaxOp
-MO_MOArgMinOp                  # MoReduceArgMinOp
-MO_MOReduceMaxOp               # MoReduceMaxOp
-MO_MOReduceMinOp               # MoReduceMinOp
 RMODialect                     # required: module docstring for rmo.cpp
 RMO_AddOp                      # AddOp
 RMO_AndOp                      # AndOp
@@ -331,8 +327,6 @@ RMO_MOPowOp                    # MoPowOp; declares output params; graph.py reach
 RMO_MORandomNormalOp           # MoRandomNormalOp
 RMO_MORandomUniformOp          # MoRandomUniformOp
 RMO_MORangeOp                  # MoRangeOp
-RMO_MOReduceAddOp              # MoReduceAddOp
-RMO_MOReduceMulOp              # MoReduceMulOp
 RMO_MOReshapeOp                # MoReshapeOp; declares output params; graph.py reaches it structurally
 RMO_MOResizeBicubicOp          # MoResizeBicubicOp
 RMO_MOResizeLinearOp           # MoResizeLinearOp

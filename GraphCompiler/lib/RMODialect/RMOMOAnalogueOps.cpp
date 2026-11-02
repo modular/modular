@@ -144,26 +144,6 @@ void MOBroadcastShapeOp::inferMOTypesImpl(
   moOutputParamDecls.push_back({});
 }
 
-// The MO op has no `axis`; its result type names the reduced dimension.
-static void inferMOTypesShapeReduceImpl(
-    MO::GraphOp graphOp, TensorValue input, int64_t axis,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls) {
-  moOperandTypes.push_back(input.getType());
-  moInputParamDecls.push_back({});
-  if (!requireRmoResults(graphOp, rmoResults, "reduce"))
-    return;
-  // The verifier keeps `axis` in range.
-  TensorType inputTy = input.getType();
-  auto resultTy = cast<TensorType>((*rmoResults)[0].getType());
-  int64_t dim = axis < 0 ? axis + inputTy.getRank() : axis;
-  moResultTypes.push_back(
-      inputTy.cloneWithNewDim(dim, 1).cloneWith(resultTy.getDtype()));
-  moOutputParamDecls.push_back({});
-}
-
 void MOReshapeOp::inferMOTypesImpl(
     MLIRContext *context, MO::GraphOp graphOp, Adaptor operands,
     std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
@@ -222,89 +202,6 @@ void MOCastOp::build(OpBuilder &odsBuilder, OperationState &odsState,
                      TensorValue input, DType dtype) {
   build(odsBuilder, odsState, input.getType().cloneWith(dtype), input);
 }
-
-static void inferMOTypesReduceImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls,
-    bool returnIndices) {
-  // `axis` is an attribute, so it contributes no MO operand.
-  moOperandTypes.push_back(input.getType());
-  moInputParamDecls.push_back({});
-
-  if (!requireRmoResults(graphOp, rmoResults,
-                         returnIndices ? "arg_reduce" : "reduce"))
-    return;
-  moResultTypes.push_back(cast<TensorType>((*rmoResults)[0].getType()));
-  moOutputParamDecls.push_back({});
-}
-
-#define DEFINE_REDUCE_INFER_MO_TYPES(ClassName, ReturnIndices)                 \
-  void ClassName::inferMOTypesImpl(                                            \
-      MLIRContext *context, MO::GraphOp graphOp, Adaptor operands,             \
-      std::optional<ValueRange> rmoResults,                                    \
-      SmallVectorImpl<Type> &moOperandTypes,                                   \
-      SmallVectorImpl<Type> &moResultTypes,                                    \
-      SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,    \
-      SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls) { \
-    inferMOTypesReduceImpl(context, graphOp,                                   \
-                           cast<TensorValue>(operands.getInput()), rmoResults, \
-                           moOperandTypes, moResultTypes, moInputParamDecls,   \
-                           moOutputParamDecls, ReturnIndices);                 \
-  }
-
-DEFINE_REDUCE_INFER_MO_TYPES(MOReduceMulOp, false)
-DEFINE_REDUCE_INFER_MO_TYPES(MOArgMinOp, true)
-DEFINE_REDUCE_INFER_MO_TYPES(MOArgMaxOp, true)
-#undef DEFINE_REDUCE_INFER_MO_TYPES
-
-#define DEFINE_SHAPE_REDUCE_INFER_MO_TYPES(ClassName)                          \
-  void ClassName::inferMOTypesImpl(                                            \
-      MLIRContext *context, MO::GraphOp graphOp, Adaptor operands,             \
-      std::optional<ValueRange> rmoResults,                                    \
-      SmallVectorImpl<Type> &moOperandTypes,                                   \
-      SmallVectorImpl<Type> &moResultTypes,                                    \
-      SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,    \
-      SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls) { \
-    inferMOTypesShapeReduceImpl(                                               \
-        graphOp, cast<TensorValue>(operands.getInput()),                       \
-        operands.getAxisAttr().getInt(), rmoResults, moOperandTypes,           \
-        moResultTypes, moInputParamDecls, moOutputParamDecls);                 \
-  }
-
-// `axis` is in `[-rank, rank)` of a ranked input.
-static LogicalResult verifyReductionAxis(Operation *op, TensorValue input,
-                                         int64_t axis) {
-  TensorType inputTy = input.getType();
-  if (!inputTy.hasRank())
-    return op->emitOpError("requires a ranked input");
-  int64_t rank = inputTy.getRank();
-  if (axis < -rank || axis >= rank)
-    return op->emitOpError()
-           << "axis must be in [-" << rank << ", " << rank << "), got " << axis;
-  return success();
-}
-
-#define DEFINE_REDUCTION_VERIFIER(ClassName)                                   \
-  LogicalResult ClassName::verify() {                                          \
-    return verifyReductionAxis(*this, cast<TensorValue>(getInput()),           \
-                               getAxisAttr().getInt());                        \
-  }
-
-DEFINE_REDUCTION_VERIFIER(MOReduceMulOp)
-DEFINE_REDUCTION_VERIFIER(MOReduceAddOp)
-DEFINE_REDUCTION_VERIFIER(MOReduceMinOp)
-DEFINE_REDUCTION_VERIFIER(MOReduceMaxOp)
-DEFINE_REDUCTION_VERIFIER(MOArgMaxOp)
-DEFINE_REDUCTION_VERIFIER(MOArgMinOp)
-#undef DEFINE_REDUCTION_VERIFIER
-
-DEFINE_SHAPE_REDUCE_INFER_MO_TYPES(MOReduceAddOp)
-DEFINE_SHAPE_REDUCE_INFER_MO_TYPES(MOReduceMinOp)
-DEFINE_SHAPE_REDUCE_INFER_MO_TYPES(MOReduceMaxOp)
-#undef DEFINE_SHAPE_REDUCE_INFER_MO_TYPES
 
 void RMO::inferMOTypesScatterImpl(
     MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
