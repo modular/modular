@@ -26,7 +26,7 @@ import numpy as np
 import pytest
 from max import _core, _eager_policy, engine
 from max import functional as F
-from max._core.dialects import mo, rmo
+from max._core.dialects import mo
 from max._interpreter_ops import (
     data_movement_gc,
     elementwise_binary_gc,
@@ -9957,25 +9957,6 @@ class TestLazyGCModelCompilation:
         # handed to load_all as an uncompilable graph.
         with pytest.raises(KeyError, match="Unsupported unary op/device/dtype"):
             unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.int32)
-
-    def test_unary_model_canonicalizes_rmo_alias(self) -> None:
-        """An rmo (Mo-prefixed) unary op resolves like its mo form.
-
-        Canonicalizing the op name keys ``rmo.MoExpOp`` to the same cache
-        entry as ``mo.ExpOp``; without it a supported op misses and raises
-        KeyError (see gc_compile.canonical_op_name).
-        """
-        rmo_exp = rmo.MoExpOp
-        cpu = CPU()
-        u = unary_elementwise_gc
-        assert u._graph_name(rmo_exp, cpu, DType.float32) == u._graph_name(
-            mo.ExpOp, cpu, DType.float32
-        )
-        assert u._is_supported(rmo_exp, cpu, DType.float32)
-        # Resolves to the same cached model rather than raising KeyError.
-        assert u.unary_model(rmo_exp, cpu, DType.float32) is u.unary_model(
-            mo.ExpOp, cpu, DType.float32
-        )
 
     # MXF-510: a residual precompile-mode cache miss used to raise KeyError.
     @pytest.mark.parametrize(

@@ -13,7 +13,7 @@ attributes {argument_names = ["buffer0", "rhs", "start", "stop", "step"], result
 
   %res = rmo.mo.slice(%vbuf, %start, %stop, %step) : (!tt, !st, !st, !st) -> !stt
   %res2 = rmo.mo.add(%res, %rhs) : (!stt, !stt) -> !stt
-  %slice = rmo.mo.negative(%res2) : (!stt) -> !stt
+  %slice = mo.negative(%res2) : !stt
 
   rmo.mo.mutable.store.slice(%buf, %slice, %start, %stop, %step, %ch1) : (!bt, !stt, !st, !st, !st, !c) -> !c
 

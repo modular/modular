@@ -56,22 +56,6 @@ void inferMOTypesScatterImpl(
     SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
     SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls);
 
-/// inferMoTypesImpl for all elementwise-unary-like ops
-void inferMOTypesElemwiseUnaryImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls);
-
-/// inferMoTypesImpl for all unary-like ops where output has an explicit type.
-void inferMOTypesUnaryExplicitOutputTypeImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls);
-
 /// inferMoTypesImpl for TopK-like ops
 void inferMOTypesTopKImpl(
     MLIRContext *context, MO::GraphOp graphOp, TensorValue input, TensorValue k,

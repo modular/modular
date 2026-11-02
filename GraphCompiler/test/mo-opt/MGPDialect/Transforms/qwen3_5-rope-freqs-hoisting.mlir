@@ -46,7 +46,7 @@ module {
     %embed_dev, %embed_chain = rmo.mo.transfer[%chain0] %embed_sliced : !mo.tensor<[248320, 4096], bf16> to <"gpu", 0>
     %ge_zero = rmo.greater_equal(%arg0, %c0_si64) : (!mo.tensor<[total_seq_len], si64, gpu:0>, !mo.tensor<[], si64, gpu:0>) -> !mo.tensor<[total_seq_len], bool, gpu:0>
     %ge_vocab = rmo.greater_equal(%arg0, %vocab_size) : (!mo.tensor<[total_seq_len], si64, gpu:0>, !mo.tensor<[], si64, gpu:0>) -> !mo.tensor<[total_seq_len], bool, gpu:0>
-    %lt_vocab = rmo.mo.not(%ge_vocab) : (!mo.tensor<[total_seq_len], bool, gpu:0>) -> !mo.tensor<[total_seq_len], bool, gpu:0>
+    %lt_vocab = mo.not(%ge_vocab) : !mo.tensor<[total_seq_len], bool, gpu:0>
     %in_vocab = rmo.and(%ge_zero, %lt_vocab) : (!mo.tensor<[total_seq_len], bool, gpu:0>, !mo.tensor<[total_seq_len], bool, gpu:0>) -> !mo.tensor<[total_seq_len], bool, gpu:0>
     %ids_shifted = rmo.sub(%arg0, %c0_si64) : (!mo.tensor<[total_seq_len], si64, gpu:0>, !mo.tensor<[], si64, gpu:0>) -> !mo.tensor<[total_seq_len], si64, gpu:0>
     %ids_masked = rmo.mul(%ids_shifted, %in_vocab) : (!mo.tensor<[total_seq_len], si64, gpu:0>, !mo.tensor<[total_seq_len], bool, gpu:0>) -> !mo.tensor<[total_seq_len], si64, gpu:0>
@@ -66,8 +66,8 @@ module {
     %positions_col = rmo.reshape(%positions) [newShape = #mosh<ape[16, 1]> : !mosh.ape] : (!mo.tensor<[16], f32>) -> !mo.tensor<[16, 1], f32>
     %inv_freq_row = rmo.reshape(%inv_freq_f32) [newShape = #mosh<ape[1, 32]> : !mosh.ape] : (!mo.tensor<[32], f32>) -> !mo.tensor<[1, 32], f32>
     %freqs_outer = rmo.mul(%positions_col, %inv_freq_row) : (!mo.tensor<[16, 1], f32>, !mo.tensor<[1, 32], f32>) -> !mo.tensor<[16, 32], f32>
-    %cos = rmo.mo.cos(%freqs_outer) : (!mo.tensor<[16, 32], f32>) -> !mo.tensor<[16, 32], f32>
-    %sin = rmo.mo.sin(%freqs_outer) : (!mo.tensor<[16, 32], f32>) -> !mo.tensor<[16, 32], f32>
+    %cos = mo.cos(%freqs_outer) : !mo.tensor<[16, 32], f32>
+    %sin = mo.sin(%freqs_outer) : !mo.tensor<[16, 32], f32>
     %cos_e = rmo.reshape(%cos) [newShape = #mosh<ape[16, 32, 1]> : !mosh.ape] : (!mo.tensor<[16, 32], f32>) -> !mo.tensor<[16, 32, 1], f32>
     %sin_e = rmo.reshape(%sin) [newShape = #mosh<ape[16, 32, 1]> : !mosh.ape] : (!mo.tensor<[16, 32], f32>) -> !mo.tensor<[16, 32, 1], f32>
     %cos_sin = rmo.concat(%cos_e, %sin_e) [axis = -1] : (!mo.tensor<[16, 32, 1], f32>, !mo.tensor<[16, 32, 1], f32>) -> !mo.tensor<[16, 32, 2], f32>
@@ -78,7 +78,7 @@ module {
     mo.output %full#0 : !hidden
   } {counter = 4 : i64}
   mo.graph @qwen3_5_linear_attention_block<total_seq_len, max_slots, batch_size, input_row_offsets_len, return_n_logits, total_num_pages, replica_0_batch_size, replica_0_max_num_pages, replica_0_steps_remaining, vision_merged_seq_len, total_image_tokens>(%arg0: !hidden, %arg1: !conv_state, %arg2: !recurrent_state, %arg3: !mo.tensor<[batch_size], ui32, gpu:0>, %arg4: !mo.tensor<[input_row_offsets_len], ui32, gpu:0>, %arg5: !chain, %arg6: !chain) -> (!hidden, !chain, !chain) isSubgraph attributes {_kernel_library_paths = [], argument_names = ["input0", "input1", "input2", "input3", "input4"], result_names = ["output0", "output1", "output2"]} {
-    %gate = rmo.mo.silu(%arg0) : (!hidden) -> !hidden
+    %gate = mo.silu(%arg0) : !hidden
     %out = rmo.add(%arg0, %gate) : (!hidden, !hidden) -> !hidden
     mo.output %out, %arg5, %arg6 : !hidden, !chain, !chain
   } {counter = 144 : i64}

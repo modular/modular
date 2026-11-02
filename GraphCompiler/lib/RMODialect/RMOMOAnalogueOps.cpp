@@ -351,37 +351,6 @@ void RMO::inferMOTypesScatterImpl(
   moInputParamDecls.push_back({});
 }
 
-void RMO::inferMOTypesElemwiseUnaryImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls) {
-
-  auto inputTy = cast<MO::TensorType>(input.getType());
-
-  moOperandTypes.push_back(inputTy);
-  moInputParamDecls.push_back({});
-
-  moResultTypes.push_back(inputTy);
-  moOutputParamDecls.push_back({});
-}
-
-void RMO::inferMOTypesUnaryExplicitOutputTypeImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls) {
-  moOperandTypes.push_back(input.getType());
-  moInputParamDecls.push_back({});
-
-  if (!requireRmoResults(graphOp, rmoResults, "unary_explicit_output"))
-    return;
-  moResultTypes.push_back(cast<TensorType>((*rmoResults)[0].getType()));
-  moOutputParamDecls.push_back({});
-}
-
 static void inferConvMOTypesImpl(
     MLIRContext *context, MO::GraphOp graphOp, TensorValue input,
     TensorValue filter, TensorValue strides, TensorValue dilations,

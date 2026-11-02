@@ -68,7 +68,7 @@ def canonical_op_name(
     """Canonical ``mo`` op-name for an mo- or rmo-dialect *op_type*.
 
     The ops library emits ``rmo`` ops; most share the ``mo`` name (``AddOp``)
-    but some prefix ``Mo`` (``rmo.MoExpOp`` vs ``mo.ExpOp``). Strip a leading
+    but some prefix ``Mo`` (``rmo.MoTileOp`` vs ``mo.TileOp``). Strip a leading
     ``Mo`` when that yields a *known_names* entry, reusing the ``mo`` sweep's
     cache entry; unknown names pass through.
     """
