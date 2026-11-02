@@ -48,6 +48,7 @@ from max.nn.legacy.transformer import (
 )
 from max.pipelines.speculative.block_driver import (
     Accepted,
+    ArgmaxDraftSampler,
     BlockBatch,
     DraftSampler,
     SampledDraftSampler,
@@ -820,6 +821,18 @@ class _Verify:
         )
 
 
+def _draft_sample(
+    sampler: DraftSampler,
+) -> Callable[[TensorValue, int], TensorValue] | None:
+    """Adapts a draft sampler to the draft loop's per-position callback.
+
+    ``None`` drafts greedily through the fused biased argmax.
+    """
+    if isinstance(sampler, ArgmaxDraftSampler):
+        return None
+    return sampler.sample_next
+
+
 class _DSparkProposer:
     """Drafts a block of tokens with the DSpark stages.
 
@@ -977,12 +990,11 @@ class _DSparkProposer:
         logits = lead.logits(
             block_hs, self._verify.replicas(batch)[0].head.weight
         )
-        sample: Callable[[TensorValue, int], TensorValue] = (
-            lambda step_logits, position: sampler.sample_next(
-                step_logits, position
-            )
+        drafts = lead.draft(
+            logits,
+            accepted.next_tokens,
+            sampler=_draft_sample(sampler),
         )
-        drafts, _ = lead.draft(logits, accepted.next_tokens, sampler=sample)
         return ops.cast(drafts, accepted.next_tokens.dtype)
 
     def _replica_head(
@@ -1037,8 +1049,8 @@ class _DSparkProposer:
             stage.draft(
                 stage.logits(hs, trunk.head.weight),
                 anchors,
-                sampler=local.sample_next,
-            )[0]
+                sampler=_draft_sample(local),
+            )
             for stage, trunk, hs, anchors, local in zip(
                 self.stages(batch),
                 self._verify.replicas(batch),

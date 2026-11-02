@@ -530,6 +530,27 @@ modular_py_test(
     ],
 )
 
+# Guards the DSpark draft loop's fused greedy argmax and its Markov bias.
+modular_py_test(
+    name = "test_dspark_draft_block",
+    srcs = ["test_dspark_draft_block.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("torch"),
+    ],
+)
+
 # Manual A/B of the compressor's bf16 projection and the CSA2 index list at
 # the model's rows. See the docstring of bench_prefill_glue.py; run it under the
 # nsys wrapper for kernel time per arm.
