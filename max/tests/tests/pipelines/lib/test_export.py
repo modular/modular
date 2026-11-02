@@ -348,6 +348,7 @@ def test_checkpoint_format_spec_is_picked_per_checkpoint() -> None:
         "lfm3",
         "mimo_v2",
         "muse_glimmer",
+        "nemotron_h_modulev3",
         "qwen3_5",
     ],
 )

@@ -12,15 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 """Registers Nemotron-H with the ModuleV3 registry."""
 
+from pathlib import Path
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
-# Nemotron-3's chat template is the Qwen3.5 one: an implicit ``<think>`` open
-# and Qwen3-Coder XML tool calls. Importing the parser modules registers the
-# parsers named below.
+# Nemotron-3.5-Lightning's chat template is the Qwen3.5 one, an implicit
+# ``<think>`` open and Qwen3-Coder XML tool calls, except at the reasoning
+# close: it writes ``</think>\n`` before a call and ``</think>`` before an
+# answer, where Qwen3.5 writes ``</think>\n\n`` (Nemotron-3-Nano's writes
+# ``\n</think>\n``). That close is why it has its own FormatSpec document.
+# Importing the parser modules registers the parsers named below.
 from ..qwen3_5.reasoning import (
     Qwen3_5ReasoningParser,  # noqa: F401
 )
@@ -31,6 +37,26 @@ from .memory_planner import NemotronHMemoryPlanner
 from .model import NemotronHModel
 from .model_config import NemotronHConfig
 from .weight_adapters import convert_nemotron_h_state_dict
+
+
+def nemotron_format_spec(repo: HuggingFaceRepo) -> Path | None:
+    """Returns the FormatSpec document of a Nemotron-H checkpoint.
+
+    Args:
+        repo: The checkpoint.
+
+    Returns:
+        Nemotron-3.5-Lightning's document, or ``None`` for the other
+        Nemotron-H checkpoints. Nemotron-3-Nano's template puts a newline on
+        both sides of ``</think>`` before any content, which Lightning's
+        document does not describe.
+    """
+    return (
+        Path(__file__).parent / "formatspec.json"
+        if "nemotron-3.5-lightning" in repo.repo_id.lower()
+        else None
+    )
+
 
 nemotron_h_modulev3_arch = SupportedArchitecture(
     name="NemotronHForCausalLM_ModuleV3",
@@ -57,4 +83,5 @@ nemotron_h_modulev3_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     reasoning_parser="qwen3_5",
     tool_parser="qwen3_5",
+    format_spec=nemotron_format_spec,
 )
