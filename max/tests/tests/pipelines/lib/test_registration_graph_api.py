@@ -17,9 +17,9 @@ from __future__ import annotations
 import pickle
 from collections import OrderedDict
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import NonCallableMock
 
 import numpy as np
@@ -28,12 +28,25 @@ from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, TensorType, TensorValue, Weight
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    TensorType,
+    TensorValue,
+    Weight,
+)
 from max.graph.weights import WeightsFormat
-from max.nn.legacy.graph_groups import RaggedBatch, TPSignals
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.graph_groups import (
+    BatchContext,
+    EPPayload,
+    RaggedBatch,
+    TPSignals,
+)
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
@@ -52,6 +65,12 @@ from max.pipelines.lib.registration_graph_api import (
     graph_name,
     registered_pipeline_model,
     supports_data_parallel,
+)
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelDeploymentConfig,
+    ExpertParallelInputs,
+    ModuleRuntime,
+    initialize_ep_comm_buffers,
 )
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.pipelines.modeling.types import PipelineTask
@@ -297,7 +316,9 @@ def _context(*tokens: int) -> TextContext:
     active = np.array(tokens, dtype=np.int64)
     return NonCallableMock(
         spec=TextContext,
-        tokens=SimpleNamespace(active=active, active_length=len(active)),
+        tokens=SimpleNamespace(
+            active=active, active_length=len(active), current_position=3
+        ),
     )
 
 
@@ -306,10 +327,12 @@ def _batch_processor(
     signal_buffers: list[Buffer],
     data_parallel_degree: int = 1,
 ) -> GraphApiDecoderBatchProcessor:
+    pipeline_config = NonCallableMock()
+    pipeline_config.model.kv_cache.kv_cache_page_size = 4
     processor = GraphApiDecoderBatchProcessor(
         ToyConfig(),
         BatchProcessorRuntime(
-            pipeline_config=NonCallableMock(),
+            pipeline_config=pipeline_config,
             devices=[CPU(), CPU()],
             return_logits=ReturnLogits.LAST_TOKEN,
             max_batch_size=4,
@@ -483,3 +506,209 @@ def test_a_malformed_registration_fails(
 ) -> None:
     with pytest.raises(error, match=match):
         graph_api_pipeline_model(ToyConfig, tuple(modules.items()), None)
+
+
+class _HostEPInputs(ExpertParallelInputs):
+    def input_tree(self, ep: EPConfig) -> object:
+        return EPPayload(
+            atomic_counters=(BufferType(DType.int32, [1], device=CPU_REF),),
+            send_buf_ptrs=(X,),
+        )
+
+
+@dataclass(frozen=True)
+class _DeploymentConfig(ToyConfig, ExpertParallelDeploymentConfig):
+    takes_batch_context_lengths: ClassVar[bool] = True
+    ep_dispatch_token_layout: ClassVar[str | None] = "tp_sharded"
+    expert_parallel_inputs: ClassVar[ExpertParallelInputs] = _HostEPInputs()
+    runtime: ModuleRuntime | None = None
+    events: list[str] = field(default_factory=list, compare=False)
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        assert self.finalized
+        self.events.append("size_exchange")
+        return NonCallableMock(spec=EPConfig, node_id=-1)
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        self.events.append("apply_runtime")
+        return replace(self, runtime=runtime)
+
+
+class _DeploymentDecoder(ToyDecoder):
+    def __init__(self, config: _DeploymentConfig) -> None:
+        assert config.finalized and config.runtime is not None
+        config.events.append("construct_module")
+        super().__init__(config)
+
+
+def _deployment_model(config: ToyConfig, *, ep_size: int) -> Any:
+    cls = graph_api_pipeline_model(
+        type(config), ((GraphRole.DECODER, _DeploymentDecoder),), None
+    )
+    model: Any = cls.__new__(cls)
+    model.pipeline_config = SimpleNamespace(
+        model=SimpleNamespace(
+            data_parallel_degree=1, huggingface_config=object()
+        ),
+        runtime=SimpleNamespace(
+            max_batch_input_tokens=8, ep_size=ep_size, ep_use_allreduce=False
+        ),
+    )
+    model.arch_config = config
+    model.return_logits = ReturnLogits.LAST_TOKEN
+    model.return_hidden_states = ReturnHiddenStates.NONE
+    model.memory_plan = SimpleNamespace(planned_max_batch_total_tokens=32)
+    model.devices = [CPU(), CPU()]
+    model.device_refs = [CPU_REF, CPU_REF]
+    model.max_batch_size = 4
+    model.kv_params = _kv_params()
+    model._batch_processor = None
+    model._session = NonCallableMock(spec=InferenceSession)
+    return model
+
+
+def test_deployment_is_completed_before_constructing_the_decoder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _DeploymentConfig()
+    model = _deployment_model(config, ep_size=2)
+    exchange = NonCallableMock()
+
+    def initialize(
+        config: _DeploymentConfig, runtime: ModuleRuntime, session: object
+    ) -> tuple[ModuleRuntime, object]:
+        assert config.finalized
+        assert session is model._session
+        ep = config.expert_parallel_config(runtime)
+        config.events.append("initialize_exchange")
+        ep.node_id = 7
+        return replace(runtime, ep=ep), exchange
+
+    monkeypatch.setattr(
+        "max.pipelines.lib.registration_graph_api.initialize_ep_comm_buffers",
+        initialize,
+    )
+    finalized = model._create_model_config(
+        {"scale.weight": np.ones(2, np.float32)}
+    )
+    assert finalized.runtime.ep.node_id == 7
+    assert finalized.runtime.max_batch_total_tokens == 32
+    assert finalized.runtime.max_batch_size == 4
+    assert finalized.runtime.mesh.devices == (CPU(), CPU())
+    spec = model.graph_specs(finalized)[GraphRole.DECODER]
+    assert config.events == [
+        "size_exchange",
+        "initialize_exchange",
+        "apply_runtime",
+        "construct_module",
+    ]
+    assert model.ep_comm_initializer is exchange
+    assert list(spec.input_types) == [
+        "batch",
+        "signals",
+        "kv",
+        "batch_context_lengths",
+        "ep",
+    ]
+    assert isinstance(spec.input_types["batch_context_lengths"], BatchContext)
+    assert isinstance(spec.input_types["ep"], EPPayload)
+    assert type(model).ep_dispatch_token_layout == "tp_sharded"
+
+
+def test_a_plain_config_cannot_silently_ignore_expert_parallelism() -> None:
+    model = _deployment_model(ToyConfig(), ep_size=2)
+    with pytest.raises(ValueError, match="doesn't support expert parallelism"):
+        model._create_model_config({})
+
+
+def test_deployment_without_ep_does_not_initialize_an_exchange(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _DeploymentConfig()
+    model = _deployment_model(config, ep_size=1)
+
+    def unexpected(*args: object) -> None:
+        raise AssertionError("non-EP deployment initialized an exchange")
+
+    monkeypatch.setattr(
+        "max.pipelines.lib.registration_graph_api.initialize_ep_comm_buffers",
+        unexpected,
+    )
+    finalized = model._create_model_config({})
+    assert finalized.runtime is not None
+    assert finalized.runtime.ep is None
+    assert config.events == ["apply_runtime"]
+
+
+def test_virtual_ep_deployment_sizes_without_allocating_buffers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = replace(_DeploymentConfig(), finalized=True)
+    model = _deployment_model(config, ep_size=1)
+    finalized = model._create_model_config({})
+    runtime = replace(finalized.runtime, ep_size=2)
+    monkeypatch.setattr(
+        "max.pipelines.lib.registration_runtime.is_virtual_device_mode",
+        lambda: True,
+    )
+
+    def unexpected(*args: object) -> None:
+        raise AssertionError("virtual deployment allocated an EP initializer")
+
+    monkeypatch.setattr(
+        "max.pipelines.lib.registration_runtime.EPCommInitializer", unexpected
+    )
+    initialized, exchange = initialize_ep_comm_buffers(
+        config, runtime, model._session
+    )
+    assert initialized.ep is not None
+    assert exchange is None
+    assert config.events == ["apply_runtime", "size_exchange"]
+
+
+def test_batch_processor_passes_the_ep_exchange_and_context_lengths() -> None:
+    kv = NonCallableMock(spec=KVCacheInputsPerDevice)
+    counter = Buffer.zeros((1,), dtype=DType.int32)
+    ep_types = EPPayload(
+        atomic_counters=(BufferType(DType.int32, [1], device=CPU_REF),)
+    )
+    types = graph_api_decoder_input_types(
+        _kv_params(), [CPU_REF], batch_context_lengths=(X,), ep=ep_types
+    )
+    processor = _batch_processor(types, [])
+    processor.bind_ep_comm_initializer(
+        NonCallableMock(model_inputs=lambda: [counter])
+    )
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1, 2)]], kv_cache_inputs=kv
+    )
+    assert inputs.batch_context_lengths is not None
+    assert inputs.batch_context_lengths[0].to_numpy()[0] == 4
+    assert inputs.ep_inputs == (counter,)
+    assert inputs.buffers[-2:] == (*inputs.batch_context_lengths, counter)
+    assert processor.get_symbolic_inputs(
+        kv_params=_kv_params(), device_refs=[CPU_REF]
+    ) == tree.leaves(processor.input_tree)
+
+
+class _ExchangeDecoder(ToyDecoder):
+    def __call__(
+        self, inputs: DecoderInputs[TensorValue]
+    ) -> DecoderOutputs[TensorValue]:
+        assert inputs.batch_context_lengths is not None
+        assert isinstance(inputs.batch_context_lengths[0], TensorValue)
+        assert isinstance(inputs.ep, EPPayload)
+        assert isinstance(inputs.ep["atomic_counters"][0], BufferValue)
+        assert isinstance(inputs.ep["send_buf_ptrs"][0], TensorValue)
+        return super().__call__(inputs)
+
+
+def test_graph_unflattens_ep_buffers_and_host_tensors_by_their_types() -> None:
+    ep_types = _HostEPInputs().input_tree(NonCallableMock(spec=EPConfig))
+    types = OrderedDict(_types())
+    types["batch_context_lengths"] = BatchContext(context_lengths=(X,))
+    types["ep"] = ep_types
+    graph = _DecoderGraph(_ExchangeDecoder(ToyConfig()), types).trace(
+        *tree.leaves(types)
+    )
+    assert len(graph.inputs) == len(tree.leaves(types))

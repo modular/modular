@@ -72,6 +72,7 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.legacy.graph_groups import BatchContext
 from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.layer import Module as GraphApiModule
@@ -105,10 +106,20 @@ from .module_registration import (
     DecoderBatchProcessor,
     DecoderModelInputs,
     bind_state_store,
+    device_mesh,
     finalize_config,
     module_pipeline_model,
 )
 from .registration_encoder import encoder_pipeline_model
+from .registration_runtime import (
+    DeploymentConfig,
+    ExpertParallelDeploymentConfig,
+    ExpertParallelExchange,
+    ModuleRuntime,
+    batch_context_length_types,
+    ep_input_tree,
+    initialize_ep_comm_buffers,
+)
 from .request_state import (
     RequestStateGroup,
     RequestStateMixin,
@@ -222,11 +233,6 @@ def _takes_signals(
     )
 
 
-_DecoderInputTypes = (
-    tree.Tree[Type[Any]] | KVCacheInputs[TensorType, BufferType]
-)
-
-
 def graph_api_decoder_input_types(
     kv_params: KVCacheParamInterface,
     device_refs: Sequence[DeviceRef],
@@ -234,15 +240,18 @@ def graph_api_decoder_input_types(
     signals: bool = False,
     data_parallel_degree: int = 1,
     data_parallel_batch: Sequence[str] = _DATA_PARALLEL_BATCH,
+    batch_context_lengths: Sequence[TensorType] | None = None,
+    ep: object | None = None,
     state: Sequence[Any] = (),
-) -> OrderedDict[str, _DecoderInputTypes]:
+) -> OrderedDict[str, object]:
     """Returns a graph-API ``DECODER`` graph's input types.
 
     A serving engine places a named decoder input by the kind of the group
     that holds it, so the inputs sit in kinded groups: ``batch`` (tokens, row
     offsets, the logit count and, under data parallelism, each replica's
-    first sequence), then ``signals``, then ``kv``, then ``state``. Their
-    leaves are the graph's inputs, in the canonical order of
+    first sequence), then ``signals`` and ``kv``, followed by any context
+    lengths, expert-parallel exchange and per-request state. Their leaves
+    are the graph's inputs, in the canonical order of
     :class:`~max.pipelines.lib.role_contracts.DecoderInputs`. The row offsets
     are one input on the first device, as for a ModuleV3 decoder; a decoder
     that needs them on every device copies them inside its graph.
@@ -261,6 +270,9 @@ def graph_api_decoder_input_types(
             default the canonical ones, ending with
             ``data_parallel_splits``; a graph that predates the contract may
             also take ``host_input_row_offsets`` or another order.
+        batch_context_lengths: The host context-length types, when the
+            decoder uses them to size its kernels.
+        ep: The expert-parallel exchange's input tree, when enabled.
         state: The input types of the decoder's per-request state.
     """
     fields = [
@@ -269,7 +281,7 @@ def graph_api_decoder_input_types(
             data_parallel_batch if data_parallel_degree > 1 else _BATCH
         )
     ]
-    types: OrderedDict[str, _DecoderInputTypes] = OrderedDict(
+    types: OrderedDict[str, object] = OrderedDict(
         batch=ragged_batch_inputs(
             device_refs[0],
             fields,
@@ -279,6 +291,12 @@ def graph_api_decoder_input_types(
     if signals:
         types["signals"] = signal_inputs(list(device_refs))
     types["kv"] = kv_params.get_symbolic_inputs()
+    if batch_context_lengths is not None:
+        types["batch_context_lengths"] = BatchContext(
+            context_lengths=tuple(batch_context_lengths)
+        )
+    if ep is not None:
+        types["ep"] = ep
     if state:
         types["state"] = RequestStateGroup(state=tuple(state))
     return types
@@ -493,7 +511,14 @@ class GraphApiDecoderModelInputs(DecoderModelInputs):
         fields = self.input_fields()
         structure = self.input_tree_def
         if structure is None:
-            order = (*self.batch_fields, "signals", "kv", "state")
+            order = (
+                *self.batch_fields,
+                "signals",
+                "kv",
+                "batch_context_lengths",
+                "ep",
+                "state",
+            )
             _, structure = tree.flatten(
                 OrderedDict(
                     (name, getattr(fields, name))
@@ -560,6 +585,8 @@ class GraphApiDecoderBatchProcessor(DecoderBatchProcessor):
             signal_buffers=signals,
             batch_fields=tuple(_BATCH_FIELDS[name] for name in batch),
             kv_cache_inputs=inputs.kv_cache_inputs,
+            batch_context_lengths=inputs.batch_context_lengths,
+            ep_inputs=inputs.ep_inputs,
             state=inputs.state,
             request_ids=inputs.request_ids,
             input_tree_def=inputs.input_tree_def,
@@ -596,7 +623,8 @@ class GraphApiDecoderPipelineModel(
 
     :func:`graph_api_pipeline_model` subclasses it for each registration.
     The decoder is constructed as ``decoder_cls(config)`` from the finalized
-    config, which holds the devices it runs on.
+    config, completed with the deployment and expert-parallel runtime before
+    construction.
     """
 
     decoder_cls: ClassVar[type[GraphApiModule]]
@@ -607,6 +635,9 @@ class GraphApiDecoderPipelineModel(
     )
 
     _state_store: RequestStateStore | None = None
+    _runtime: ModuleRuntime
+    _session: InferenceSession
+    ep_comm_initializer: ExpertParallelExchange | None = None
 
     def __init__(
         self,
@@ -665,10 +696,15 @@ class GraphApiDecoderPipelineModel(
     def _hf_config_for_weights(self) -> AutoConfig | None:
         return self.huggingface_config
 
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the graphs with the session used to initialize EP first."""
+        self._session = session
+        return super().load_graphs(session)
+
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         # graph_specs loads these into the decoder it constructs.
         self._checkpoint = state_dict
-        return finalize_config(
+        config = finalize_config(
             self.arch_config,
             self.huggingface_config,
             state_dict,
@@ -677,6 +713,31 @@ class GraphApiDecoderPipelineModel(
                 return_hidden_states=self.return_hidden_states,
             ),
         )
+        settings = self.pipeline_config.runtime
+        runtime = ModuleRuntime(
+            mesh=device_mesh(
+                self.devices, self.pipeline_config.model.data_parallel_degree
+            ),
+            data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
+            max_batch_input_tokens=settings.max_batch_input_tokens,
+            max_batch_total_tokens=self.planned_max_batch_total_tokens,
+            ep_size=settings.ep_size,
+            ep_use_allreduce=settings.ep_use_allreduce,
+            max_batch_size=self.max_batch_size,
+        )
+        if runtime.ep_size > 1:
+            if not isinstance(config, ExpertParallelDeploymentConfig):
+                raise ValueError(
+                    f"{type(config).__qualname__} doesn't support expert "
+                    "parallelism"
+                )
+            runtime, self.ep_comm_initializer = initialize_ep_comm_buffers(
+                config, runtime, self._session
+            )
+        self._runtime = runtime
+        if isinstance(config, DeploymentConfig):
+            return config.apply_runtime(runtime)
+        return config
 
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
         """Returns the decoder graph, with the checkpoint loaded into it."""
@@ -707,6 +768,20 @@ class GraphApiDecoderPipelineModel(
                         decoder_cls,
                         "data_parallel_batch_inputs",
                         _DATA_PARALLEL_BATCH,
+                    ),
+                    batch_context_lengths=(
+                        batch_context_length_types(data_parallel_degree)
+                        if isinstance(model_config, DeploymentConfig)
+                        and model_config.takes_batch_context_lengths
+                        else None
+                    ),
+                    ep=(
+                        ep_input_tree(model_config, self._runtime.ep)
+                        if isinstance(
+                            model_config, ExpertParallelDeploymentConfig
+                        )
+                        and self._runtime.ep is not None
+                        else None
                     ),
                     state=(
                         self._state_store.input_types()
@@ -801,7 +876,16 @@ def graph_api_pipeline_model(
     if hasattr(decoder_cls, "state_store"):
         bases = (RequestStateMixin, *bases)
     name = f"{decoder_cls.__name__}PipelineModel"
+    layout = (
+        config.ep_dispatch_token_layout
+        if issubclass(config, ExpertParallelDeploymentConfig)
+        else None
+    )
+    exporter_attrs = (
+        {} if layout is None else {"ep_dispatch_token_layout": layout}
+    )
     namespace: dict[str, Any] = {
+        **exporter_attrs,
         "__module__": __name__,
         "__qualname__": name,
         "_registration": registration,
