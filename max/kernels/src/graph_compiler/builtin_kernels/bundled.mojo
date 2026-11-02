@@ -91,13 +91,14 @@ struct BundledAllReduceSum:
         in_origin: Origin,
         in_engine: TensorEngine,
         //,
+        group_size: Int,
+        peer_rank: Optional[Int],
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         in_tensors: Array[
             TileTensor[dtype, in_layout, in_origin, Engine=in_engine],
             num_devices,
         ],
-        input_size: Int,
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -107,11 +108,22 @@ struct BundledAllReduceSum:
             "expected allreduce inputs and signal buffers to have"
             " the same number of elements"
         )
+        comptime assert (
+            group_size >= 1 and num_devices % group_size == 0
+        ), "group_size must evenly divide the number of devices"
 
-        # allreduce 2-stage uses size/ngpus scratch space
+        # The peer arrays are indexed by global rank. Without an explicit
+        # rank, the device id stands in for it, which is right only when the
+        # world is devices 0..N-1 in order; under recording the context
+        # reports the builder's device.
+        var my_rank = peer_rank.or_else(Int(ctx.device().id))
+        var group_start = (my_rank // group_size) * group_size
+
+        # allreduce 2-stage uses size/ngpus scratch space, per group; sibling
+        # groups may differ in shape, so size it from this group's input.
         var scratch_buffer_size_bytes = _partitioned_scratch_requirement[
-            num_devices, dtype
-        ](input_size)
+            group_size, dtype
+        ](in_tensors[group_start].num_elements())
         _check_signal_buffer_size(
             signal_buffers[0].size(), scratch_buffer_size_bytes
         )
@@ -131,12 +143,13 @@ struct BundledAllReduceSum:
                 rebind[SIMD[dtype, _width]](val),
             )
 
-        allreduce[ngpus=num_devices](
+        allreduce[ngpus=num_devices, group_size=group_size](
             in_tensors,
             out_layout,
             output_lambda,
             rank_sigs,
             ctx,
+            my_rank=my_rank,
         )
 
     @staticmethod
@@ -145,6 +158,8 @@ struct BundledAllReduceSum:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        group_size: Int = 0,
+        peer_rank: Optional[Int] = None,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -164,14 +179,21 @@ struct BundledAllReduceSum:
             rank: Number of dimensions in the input and output tensors.
             target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
+            group_size: Number of contiguous devices per independent
+                allreduce group; 0 means one full-world group.
+            peer_rank: THIS GPU's index in the world, so in `inputs` and
+                `signal_buffers`; `None` takes it from the device id.
 
         Args:
             output: Output tensor for THIS GPU.
-            inputs: Input tensors from ALL participating GPUs.
-            signal_buffers: Signal buffers for ALL participating GPUs.
+            inputs: Input tensors from ALL GPUs in the world.
+            signal_buffers: Signal buffers for ALL GPUs in the world.
             ctx: Device context for THIS GPU.
         """
         comptime num_devices = inputs.size
+        comptime effective_group_size = (
+            num_devices if group_size == 0 else group_size
+        )
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[.int64]().as_imm()
         )
@@ -182,7 +204,9 @@ struct BundledAllReduceSum:
                 inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
-        Self._launch(output, in_tensors, inputs[0].size(), signal_buffers, ctx)
+        Self._launch[group_size=effective_group_size, peer_rank=peer_rank](
+            output, in_tensors, signal_buffers, ctx
+        )
 
     @staticmethod
     def build_graph[
@@ -190,6 +214,8 @@ struct BundledAllReduceSum:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        group_size: Int = 0,
+        peer_rank: Optional[Int] = None,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         inputs: StableInputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -209,21 +235,24 @@ struct BundledAllReduceSum:
             rank: Number of dimensions in the input and output tensors.
             target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
+            group_size: Number of contiguous devices per independent
+                allreduce group; 0 means one full-world group.
+            peer_rank: THIS GPU's index in the world, so in `inputs` and
+                `signal_buffers`; `None` takes it from the device id.
 
         Args:
             output: Output tensor for THIS GPU.
-            inputs: Slot-backed input tensors from ALL participating GPUs.
-            signal_buffers: Signal buffers for ALL participating GPUs.
+            inputs: Slot-backed input tensors from ALL GPUs in the world.
+            signal_buffers: Signal buffers for ALL GPUs in the world.
             builder: Device graph builder for THIS GPU.
         """
-        var in_tensors = inputs.to_tile_tensor()
-
-        # The recording context reports the builder's backing device id, so
-        # the rank resolves exactly as it does under `execute`.
-        Self._launch(
+        comptime num_devices = inputs.size
+        comptime effective_group_size = (
+            num_devices if group_size == 0 else group_size
+        )
+        Self._launch[group_size=effective_group_size, peer_rank=peer_rank](
             output,
-            in_tensors,
-            inputs[0].size(),
+            inputs.to_tile_tensor(),
             signal_buffers,
             builder.recording_context(),
         )
@@ -249,6 +278,7 @@ struct BundledBroadcast:
         in_engine: TensorEngine,
         //,
         root: Int,
+        peer_rank: Optional[Int],
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         in_buf: TileTensor[dtype, in_layout, in_origin, Engine=in_engine],
@@ -272,10 +302,13 @@ struct BundledBroadcast:
             in_buf.layout,
         )
 
-        # The signal buffers are indexed by device id, which is the rank the
-        # context reports; under recording it reports the builder's device.
+        # The signal buffers are indexed by global rank. Without an explicit
+        # rank, the device id stands in for it, which is right only when the
+        # world is devices 0..N-1 in order; under recording the context
+        # reports the builder's device.
+        var my_rank = peer_rank.or_else(Int(ctx.device().id))
         broadcast[num_devices](
-            in_buf, out_buf, rank_sigs, ctx, root, rank=Int(ctx.device().id)
+            in_buf, out_buf, rank_sigs, ctx, root, rank=my_rank
         )
 
     @staticmethod
@@ -285,6 +318,7 @@ struct BundledBroadcast:
         root: Int,
         target: StaticString,
         _trace_name: StaticString,
+        peer_rank: Optional[Int] = None,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -301,6 +335,7 @@ struct BundledBroadcast:
             root: Index of the root device in the signal buffer list.
             target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
+            peer_rank: THIS GPU's index in the signal buffer list; `None` takes it from the device id.
 
         Args:
             output: Output tensor for THIS GPU.
@@ -308,7 +343,7 @@ struct BundledBroadcast:
             signal_buffers: Signal buffers for ALL participating GPUs.
             ctx: Device context for THIS GPU.
         """
-        Self._launch[root=root](
+        Self._launch[root=root, peer_rank=peer_rank](
             output,
             input.to_tile_tensor[.int64](),
             input.size(),
@@ -323,6 +358,7 @@ struct BundledBroadcast:
         root: Int,
         target: StaticString,
         _trace_name: StaticString,
+        peer_rank: Optional[Int] = None,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: StableInputTensor[dtype=dtype, rank=rank, ...],
@@ -339,6 +375,7 @@ struct BundledBroadcast:
             root: Index of the root device in the signal buffer list.
             target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
+            peer_rank: THIS GPU's index in the signal buffer list; `None` takes it from the device id.
 
         Args:
             output: Output tensor for THIS GPU.
@@ -346,7 +383,7 @@ struct BundledBroadcast:
             signal_buffers: Signal buffers for ALL participating GPUs.
             builder: Device graph builder for THIS GPU.
         """
-        Self._launch[root=root](
+        Self._launch[root=root, peer_rank=peer_rank](
             output,
             input.to_tile_tensor(),
             input.size(),
@@ -375,6 +412,7 @@ struct BundledAllGather:
         in_origin: Origin,
         in_engine: TensorEngine,
         //,
+        peer_rank: Optional[Int],
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         in_tensors: Array[
@@ -412,10 +450,13 @@ struct BundledAllGather:
                     row_major(outputs[i].size()),
                 )
 
-        # The signal buffers are indexed by device id, which is the rank the
-        # context reports; under recording it reports the builder's device.
+        # The peer arrays are indexed by global rank. Without an explicit
+        # rank, the device id stands in for it, which is right only when the
+        # world is devices 0..N-1 in order; under recording the context
+        # reports the builder's device.
+        var my_rank = peer_rank.or_else(Int(ctx.device().id))
         allgather[ngpus=num_devices](
-            in_tensors, out_tensors, rank_sigs, ctx, Int(ctx.device().id)
+            in_tensors, out_tensors, rank_sigs, ctx, my_rank
         )
 
     @staticmethod
@@ -424,6 +465,7 @@ struct BundledAllGather:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        peer_rank: Optional[Int] = None,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -439,6 +481,8 @@ struct BundledAllGather:
             rank: Number of dimensions in the input and output tensors.
             target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
+            peer_rank: THIS GPU's index in `inputs` and `signal_buffers`;
+                `None` takes it from the device id.
 
         Args:
             outputs: THIS GPU's gathered pieces, one per peer in peer order.
@@ -456,7 +500,9 @@ struct BundledAllGather:
                 inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
-        Self._launch(outputs, in_tensors, signal_buffers, ctx)
+        Self._launch[peer_rank=peer_rank](
+            outputs, in_tensors, signal_buffers, ctx
+        )
 
     @staticmethod
     def build_graph[
@@ -464,6 +510,7 @@ struct BundledAllGather:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        peer_rank: Optional[Int] = None,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: StableInputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -479,6 +526,8 @@ struct BundledAllGather:
             rank: Number of dimensions in the input and output tensors.
             target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
+            peer_rank: THIS GPU's index in `inputs` and `signal_buffers`;
+                `None` takes it from the device id.
 
         Args:
             outputs: THIS GPU's gathered pieces, one per peer in peer order.
@@ -486,7 +535,7 @@ struct BundledAllGather:
             signal_buffers: Signal buffers for ALL participating GPUs.
             builder: Device graph builder for THIS GPU.
         """
-        Self._launch(
+        Self._launch[peer_rank=peer_rank](
             outputs,
             inputs.to_tile_tensor(),
             signal_buffers,

@@ -5090,9 +5090,17 @@ def MO_BundledAllReduceSumOp : MO_TensorOp<"bundled.allreduce.sum", [
 ]> {
   let summary = "Per-device allreduce sum, for use inside mo.parallel.";
   let description = [{
-    Per-device allreduce sum inside `mo.parallel`. Takes N peer tensors (from
-    `mo.bundled.expand`), N signal buffers captured from graph scope (chain
-    guarded by the parent's `buffers(...)` clause), and a chain.
+    Per-device allreduce sum inside `mo.parallel`, or in a device graph.
+    Takes the tensors of all N devices in the world (from `mo.bundled.expand`,
+    or through stable slots in a device graph), their N signal buffers
+    (captured from graph scope, chain guarded by the parent's `buffers(...)`
+    clause), and a chain.
+
+    A nonzero `group_size` splits the world into contiguous independent
+    groups, as on `mo.distributed.allreduce.sum`; this device reduces only
+    with the peers in its own group, and shapes need only match within a
+    group. `peer_rank` is this device's index in the world, so in `inputs`
+    and `signalBuffers`.
 
     Example:
     ```mlir
@@ -5111,18 +5119,22 @@ def MO_BundledAllReduceSumOp : MO_TensorOp<"bundled.allreduce.sum", [
     }
     ```
   }];
+  let hasVerifier = 1;
   let hasFolder = 1;
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
     Variadic<MO_Buffer>:$signalBuffers,
-    MO_Chain:$inChain
+    MO_Chain:$inChain,
+    DefaultValuedAttr<I64Attr, "0">:$group_size,
+    OptionalAttr<I64Attr>:$peer_rank
   );
   let results = (outs
     MO_Tensor:$output,
     MO_Chain:$outChain
   );
   let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` functional-type(operands, results)
+    `(` operands `)` prop-dict attr-dict `:`
+    functional-type(operands, results)
   }];
 }
 
@@ -5143,7 +5155,9 @@ def MO_BundledBroadcastOp : MO_TensorOp<"bundled.broadcast", [
     this device's output. Every copy, the root's included, reads `input`,
     which the device-graph lowering routes through a stable address slot.
     `root` is the root's index in the signal buffer list, which holds one
-    buffer per device.
+    buffer per device. `peer_rank` is this device's index in that list;
+    without it the kernel takes the rank from the physical device id, which
+    is right only when the devices are 0..N-1 in order.
   }];
   let hasVerifier = 1;
   let hasFolder = 1;
@@ -5151,14 +5165,15 @@ def MO_BundledBroadcastOp : MO_TensorOp<"bundled.broadcast", [
     MO_Tensor:$input,
     Variadic<MO_Buffer>:$signalBuffers,
     MO_Chain:$inChain,
-    DefaultValuedAttr<I64Attr, "0">:$root
+    DefaultValuedAttr<I64Attr, "0">:$root,
+    OptionalAttr<I64Attr>:$peer_rank
   );
   let results = (outs
     MO_Tensor:$output,
     MO_Chain:$outChain
   );
   let assemblyFormat = [{
-    `(` operands `)` (` ` `[` `root` `=` $root^ `]`)? attr-dict `:`
+    `(` operands `)` prop-dict attr-dict `:`
     functional-type(operands, results)
   }];
 }
@@ -5183,21 +5198,26 @@ def MO_BundledAllGatherOp : MO_TensorOp<"bundled.allgather", [
     device, and produces this device's gathered pieces, one per peer in peer
     order, each with the peer's shape on this device. A grouped allgather
     routes part of a shard through a paired group's buffers, which a device
-    graph cannot express, so `group_size` has no per-device form.
+    graph cannot express, so `group_size` has no per-device form. `peer_rank`
+    is this device's index in `inputs` and `signalBuffers`; without it the
+    kernel takes the rank from the physical device id, which is right only
+    when the devices are 0..N-1 in order.
   }];
   let hasVerifier = 1;
   let hasFolder = 1;
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
     Variadic<MO_Buffer>:$signalBuffers,
-    MO_Chain:$inChain
+    MO_Chain:$inChain,
+    OptionalAttr<I64Attr>:$peer_rank
   );
   let results = (outs
     Variadic<MO_Tensor>:$outputs,
     MO_Chain:$outChain
   );
   let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` functional-type(operands, results)
+    `(` operands `)` prop-dict attr-dict `:`
+    functional-type(operands, results)
   }];
 }
 

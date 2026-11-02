@@ -74,3 +74,125 @@ mo.graph @parallel(
      -> (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>)
   mo.output %u0, %ar#1 : !mo.tensor<[3], f32, gpu:0>, !mo.chain
 }
+
+// -----
+
+// A grouped copy with an explicit rank, the form mo-mark-stable-tensors
+// produces for a grouped `mo.distributed.allreduce.sum`: every copy takes the
+// whole world, and sibling groups may differ in shape.
+mo.graph @grouped_with_rank(
+    %a: !mo.tensor<[3], f32, gpu:0>, %b: !mo.tensor<[3], f32, gpu:1>,
+    %c: !mo.tensor<[5], f32, gpu:2>, %d: !mo.tensor<[5], f32, gpu:3>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>,
+    %sig2: !mo.buffer<[1], ui8, gpu:2>, %sig3: !mo.buffer<[1], ui8, gpu:3>
+) -> (!mo.tensor<[5], f32, gpu:2>, !mo.chain)
+    attributes {isDeviceGraph} {
+  %ch = mo.chain.create()
+  %out, %och = mo.bundled.allreduce.sum(%a, %b, %c, %d, %sig0, %sig1, %sig2, %sig3, %ch) <group_size = 2, peer_rank = 2>
+      : (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>, !mo.tensor<[5], f32, gpu:2>, !mo.tensor<[5], f32, gpu:3>,
+         !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.buffer<[1], ui8, gpu:2>, !mo.buffer<[1], ui8, gpu:3>, !mo.chain)
+     -> (!mo.tensor<[5], f32, gpu:2>, !mo.chain)
+  mo.output %out, %och : !mo.tensor<[5], f32, gpu:2>, !mo.chain
+}
+
+// -----
+
+mo.graph @group_size_does_not_divide(
+    %a: !mo.tensor<[3], f32, gpu:0>, %b: !mo.tensor<[3], f32, gpu:1>,
+    %c: !mo.tensor<[3], f32, gpu:2>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>,
+    %sig2: !mo.buffer<[1], ui8, gpu:2>
+) -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+    attributes {isDeviceGraph} {
+  %ch = mo.chain.create()
+  // expected-error @below {{group_size must evenly divide the number of inputs (3), but got 2}}
+  %out, %och = mo.bundled.allreduce.sum(%a, %b, %c, %sig0, %sig1, %sig2, %ch) <group_size = 2>
+      : (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>, !mo.tensor<[3], f32, gpu:2>,
+         !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.buffer<[1], ui8, gpu:2>, !mo.chain)
+     -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+  mo.output %out, %och : !mo.tensor<[3], f32, gpu:0>, !mo.chain
+}
+
+// -----
+
+// Shapes must agree within a group; here the two members of group 0 differ.
+mo.graph @group_shape_mismatch(
+    %a: !mo.tensor<[3], f32, gpu:0>, %b: !mo.tensor<[4], f32, gpu:1>,
+    %c: !mo.tensor<[5], f32, gpu:2>, %d: !mo.tensor<[5], f32, gpu:3>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>,
+    %sig2: !mo.buffer<[1], ui8, gpu:2>, %sig3: !mo.buffer<[1], ui8, gpu:3>
+) -> (!mo.tensor<[5], f32, gpu:2>, !mo.chain)
+    attributes {isDeviceGraph} {
+  %ch = mo.chain.create()
+  // expected-error @below {{all inputs in each allreduce group must have the same shape}}
+  %out, %och = mo.bundled.allreduce.sum(%a, %b, %c, %d, %sig0, %sig1, %sig2, %sig3, %ch) <group_size = 2, peer_rank = 2>
+      : (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[4], f32, gpu:1>, !mo.tensor<[5], f32, gpu:2>, !mo.tensor<[5], f32, gpu:3>,
+         !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.buffer<[1], ui8, gpu:2>, !mo.buffer<[1], ui8, gpu:3>, !mo.chain)
+     -> (!mo.tensor<[5], f32, gpu:2>, !mo.chain)
+  mo.output %out, %och : !mo.tensor<[5], f32, gpu:2>, !mo.chain
+}
+
+// -----
+
+mo.graph @peer_rank_out_of_range(
+    %a: !mo.tensor<[3], f32, gpu:0>, %b: !mo.tensor<[3], f32, gpu:1>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>
+) -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+    attributes {isDeviceGraph} {
+  %ch = mo.chain.create()
+  // expected-error @below {{peer_rank 2 out of range for 2 devices}}
+  %out, %och = mo.bundled.allreduce.sum(%a, %b, %sig0, %sig1, %ch) <peer_rank = 2>
+      : (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>,
+         !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
+     -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+  mo.output %out, %och : !mo.tensor<[3], f32, gpu:0>, !mo.chain
+}
+
+// -----
+
+// `peer_rank` indexes the signal buffers, so it must name this device's.
+mo.graph @peer_rank_wrong_device(
+    %a: !mo.tensor<[3], f32, gpu:0>, %b: !mo.tensor<[3], f32, gpu:1>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>
+) -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+    attributes {isDeviceGraph} {
+  %ch = mo.chain.create()
+  // expected-error @below {{peer_rank 1 names the signal buffer on #M.device_ref<"gpu", 1>, but the op runs on #M.device_ref<"gpu", 0>}}
+  %out, %och = mo.bundled.allreduce.sum(%a, %b, %sig0, %sig1, %ch) <peer_rank = 1>
+      : (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>,
+         !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
+     -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+  mo.output %out, %och : !mo.tensor<[3], f32, gpu:0>, !mo.chain
+}
+
+// -----
+
+// The same rank check applies to the other bundled collectives.
+mo.graph @broadcast_peer_rank_wrong_device(
+    %a: !mo.tensor<[3], f32, gpu:1>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>
+) -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+    attributes {isDeviceGraph} {
+  %ch = mo.chain.create()
+  // expected-error @below {{peer_rank 1 names the signal buffer on #M.device_ref<"gpu", 1>, but the op runs on #M.device_ref<"gpu", 0>}}
+  %out, %och = mo.bundled.broadcast(%a, %sig0, %sig1, %ch) <root = 1, peer_rank = 1>
+      : (!mo.tensor<[3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
+     -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+  mo.output %out, %och : !mo.tensor<[3], f32, gpu:0>, !mo.chain
+}
+
+// -----
+
+mo.graph @allgather_peer_rank_out_of_range(
+    %a: !mo.tensor<[3], f32, gpu:0>, %b: !mo.tensor<[3], f32, gpu:1>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>
+) -> (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:0>, !mo.chain)
+    attributes {isDeviceGraph} {
+  %ch = mo.chain.create()
+  // expected-error @below {{peer_rank -1 out of range for 2 devices}}
+  %o0, %o1, %och = mo.bundled.allgather(%a, %b, %sig0, %sig1, %ch) <peer_rank = -1>
+      : (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>,
+         !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
+     -> (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:0>, !mo.chain)
+  mo.output %o0, %o1, %och : !mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:0>, !mo.chain
+}

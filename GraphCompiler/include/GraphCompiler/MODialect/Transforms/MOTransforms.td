@@ -461,6 +461,9 @@ def MarkStableTensorsPass : Pass<"mo-mark-stable-tensors", "GraphOp"> {
     through `mo.stable.create`, so the operand type carries the `stable` bit
     that kernel-stub setup and emission key off.
 
+    Beforehand, every distributed collective with a per-device form is
+    expanded into one bundled op per participating device
+
     Graphs without the `isDeviceGraph` attribute are no-ops.
   }];
 }

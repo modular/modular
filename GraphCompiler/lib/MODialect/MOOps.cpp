@@ -3825,8 +3825,86 @@ LogicalResult BundledExpandOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// Bundled collectives
+//===----------------------------------------------------------------------===//
+
+/// Checks a bundled collective's `peer_rank` against its world. Absent, the
+/// kernel takes the rank from the device id; set, it must name the signal
+/// buffer on this op's device.
+static LogicalResult verifyPeerRank(Operation *op,
+                                    std::optional<int64_t> peerRank,
+                                    ValueRange signalBuffers,
+                                    DeviceRefAttr device) {
+  if (!peerRank)
+    return success();
+  int64_t numDevices = signalBuffers.size();
+  if (*peerRank < 0 || *peerRank >= numDevices)
+    return op->emitOpError(llvm::formatv(
+        "peer_rank {0} out of range for {1} devices", *peerRank, numDevices));
+  auto peerDevice =
+      cast<BufferType>(signalBuffers[*peerRank].getType()).getDeviceRef();
+  if (device && peerDevice && device != peerDevice)
+    return op->emitOpError(llvm::formatv(
+        "peer_rank {0} names the signal buffer on {1}, but the op runs on {2}",
+        *peerRank, peerDevice, device));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // BundledAllReduceSumOp
 //===----------------------------------------------------------------------===//
+
+LogicalResult BundledAllReduceSumOp::verify() {
+  auto inputs = getInputs();
+  if (inputs.empty())
+    return emitOpError("requires at least one input");
+
+  // Zero (the attribute default) means all devices form one group.
+  int64_t numDevices = inputs.size();
+  int64_t groupSize = getGroupSize();
+  if (groupSize < 0)
+    return emitOpError("group_size must be non-negative");
+  if (groupSize == 0)
+    groupSize = numDevices;
+  if (numDevices % groupSize != 0)
+    return emitOpError(llvm::formatv(
+        "group_size must evenly divide the number of inputs ({0}), but got {1}",
+        numDevices, groupSize));
+
+  auto outputType = cast<TensorType>(getOutput().getType());
+  if (failed(verifyPeerRank(getOperation(), getPeerRank(), getSignalBuffers(),
+                            outputType.getDeviceRef())))
+    return failure();
+
+  // Groups may differ in shape (e.g. per-DP-replica row counts), so shapes
+  // are checked within a group and element types across the world.
+  auto firstType = cast<TensorType>(inputs[0].getType());
+  for (Value input : inputs.drop_front())
+    if (cast<TensorType>(input.getType()).getElementType() !=
+        firstType.getElementType())
+      return emitOpError("all inputs must have the same element type");
+  for (int64_t groupStart = 0; groupStart < numDevices;
+       groupStart += groupSize) {
+    auto groupType = cast<TensorType>(inputs[groupStart].getType());
+    for (int64_t i = groupStart + 1, e = groupStart + groupSize; i < e; ++i)
+      if (cast<TensorType>(inputs[i].getType()).getShape() !=
+          groupType.getShape())
+        return emitOpError(
+            "all inputs in each allreduce group must have the same shape");
+  }
+
+  if (outputType.getElementType() != firstType.getElementType())
+    return emitOpError("the output must have the inputs' element type");
+  if (std::optional<int64_t> peerRank = getPeerRank()) {
+    auto peerType = cast<TensorType>(inputs[*peerRank].getType());
+    if (outputType.getShape() != peerType.getShape())
+      return emitOpError(llvm::formatv(
+          "the output must have the same shape as input {0}, this device's "
+          "own input",
+          *peerRank));
+  }
+  return success();
+}
 
 void BundledAllReduceSumOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
@@ -3865,7 +3943,8 @@ LogicalResult BundledBroadcastOp::verify() {
     return emitError("the output must have the same shape as the input");
   if (outputType.getElementType() != inputType.getElementType())
     return emitError("the output must have the same element type as the input");
-  return success();
+  return verifyPeerRank(getOperation(), getPeerRank(), signalBuffers,
+                        outputType.getDeviceRef());
 }
 
 void BundledBroadcastOp::getEffects(
@@ -3890,6 +3969,9 @@ LogicalResult BundledAllGatherOp::verify() {
         inputs.size(), outputs.size()));
 
   auto device = cast<TensorType>(outputs[0].getType()).getDeviceRef();
+  if (failed(verifyPeerRank(getOperation(), getPeerRank(), getSignalBuffers(),
+                            device)))
+    return failure();
   for (auto [i, pair] : llvm::enumerate(llvm::zip(inputs, outputs))) {
     auto [input, output] = pair;
     auto inputType = cast<TensorType>(input.getType());

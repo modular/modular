@@ -3245,6 +3245,10 @@ private:
   Value scaleUbValue;
 
   bool matchAll() {
+    // The fused op has no grouping or explicit rank, so avoid fusing.
+    if (allReduceOp.getGroupSize() != 0 || allReduceOp.getPeerRank())
+      return false;
+
     // 1. The seed must sit inside an mo.parallel body.
     parallelOp = allReduceOp->getParentOfType<MO::ParallelOp>();
     if (!parallelOp)
