@@ -1268,7 +1268,7 @@ def main() raises:
         # the device budget, and the first K past it, which the clamp must
         # reduce by one partition. Both launch with the budget as the stage-2
         # ceiling and must match the CPU reference.
-        var budget = _topk_stage2_smem_budget(ctx)
+        var budget = _topk_stage2_smem_budget[dtype](ctx)
         var k_edge = 1
         while (
             _topk_stage2_smem_bytes[dtype](

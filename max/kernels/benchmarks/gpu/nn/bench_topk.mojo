@@ -23,12 +23,22 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.gpu.host import DeviceContext, default_accelerator
+from max.gpu.host import DeviceContext, FuncAttribute, default_accelerator
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from std.collections import OptionalReg
 from internal_utils import arg_parse
 
 from layout import Coord, Idx, TileTensor, row_major
 
-from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
+from nn.topk import (
+    _top_k_cpu,
+    _topk_gpu,
+    _topk_stage2,
+    _topk_stage2_smem_budget,
+    _topk_stage2_smem_bytes,
+    _topk_topp_sampling_fi,
+    topk_gpu,
+)
 from nn.sampling import topk_topp_masked_probs, topk_topp_sampling_from_prob
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
@@ -281,6 +291,119 @@ def bench_topk_batched[
     _ = topk_idxs_ptr^
     _ = topk_vals_ptr^
     _ = in_buffer_ptr^
+
+
+def bench_topk_stage2[
+    dtype: DType, out_idx_type: DType
+](ctx: DeviceContext, mut m: Bench, test_case: TestCase) raises:
+    """Benchmarks `_topk_stage2` alone, on stage-1-shaped candidate buffers.
+
+    The entries above time stage 1, stage 2 and both launches together. This one
+    launches the merge kernel by itself, which is what a change to the candidate
+    ordering moves, so the two arms separate the kernel's own cost from the
+    stage-1 scan it is paired with.
+
+    The candidates are filled the way stage 1 leaves them: `num_blocks_per_input`
+    runs of `K` non-increasing values per row.
+    """
+    comptime sampling = test_case.sampling
+    comptime largest = test_case.largest
+    var batch_size = test_case.batch_size
+    var K = test_case.K
+    var block_size = test_case.block_size
+    var num_blocks_per_input = test_case.num_blocks_per_input
+    if not num_blocks_per_input:
+        num_blocks_per_input = min(ceildiv(test_case.N, block_size), 8)
+    var num_cand = num_blocks_per_input * K
+
+    var local_vals_host = List(
+        length=batch_size * num_cand, fill=Scalar[dtype](0)
+    )
+    var local_idxs_host = List(
+        length=batch_size * num_cand, fill=Scalar[out_idx_type](0)
+    )
+    for b in range(batch_size):
+        for block in range(num_blocks_per_input):
+            for i in range(K):
+                var at = (b * num_blocks_per_input + block) * K + i
+                # Each block's run is non-increasing, as stage 1 emits it.
+                local_vals_host[at] = Scalar[dtype](
+                    Float32(1_000_000 - (block * K + i))
+                )
+                local_idxs_host[at] = Scalar[out_idx_type](block * K + i)
+
+    var local_vals_buf = ctx.enqueue_create_buffer[dtype](batch_size * num_cand)
+    var local_idxs_buf = ctx.enqueue_create_buffer[out_idx_type](
+        batch_size * num_cand
+    )
+    ctx.enqueue_copy(local_vals_buf, local_vals_host)
+    ctx.enqueue_copy(local_idxs_buf, local_idxs_host)
+
+    var out_len = 1 if sampling else K
+    var out_vals_buf = ctx.enqueue_create_buffer[dtype](batch_size * K)
+    var out_idxs_buf = ctx.enqueue_create_buffer[out_idx_type](
+        batch_size * out_len
+    )
+
+    var smem_bytes = _topk_stage2_smem_bytes[dtype](K, num_blocks_per_input)
+    var func_attr = OptionalReg[FuncAttribute]()
+    comptime if ctx.target.is_nvidia_gpu():
+        func_attr = FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(max(_topk_stage2_smem_budget[dtype](ctx), smem_bytes))
+        )
+    ctx.synchronize()
+
+    @inline(.always)
+    def bench_func(mut b: Bencher) raises {imm}:
+        @inline(.always)
+        def kernel_launch(dctx: DeviceContext) raises {imm}:
+            comptime kernel = _topk_stage2[
+                dtype, out_idx_type, sampling, largest
+            ]
+            dctx.enqueue_function[kernel](
+                Optional[ImmPointer[Int64, ImmutAnyOrigin]](),
+                Int32(K),
+                Int32(num_blocks_per_input),
+                local_vals_buf,
+                local_idxs_buf,
+                out_vals_buf,
+                out_idxs_buf,
+                Optional[ImmPointer[Float32, ImmutAnyOrigin]](),
+                Optional[ImmPointer[Float32, ImmutAnyOrigin]](),
+                Optional[ImmPointer[Float32, ImmutAnyOrigin]](),
+                Optional[ImmPointer[UInt64, ImmutAnyOrigin]](),
+                Optional[MutPointer[Int8, MutAnyOrigin]](),
+                grid_dim=batch_size,
+                block_dim=block_size,
+                shared_mem_bytes=smem_bytes,
+                func_attribute=func_attr,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            )
+
+        bencher_iter_custom(b, kernel_launch, ctx)
+
+    m.bench_function(
+        bench_func,
+        BenchId(
+            String(
+                "bench-topk-stage2",
+                "/N=",
+                test_case.N,
+                "/K=",
+                K,
+                "/batch_size=",
+                batch_size,
+                "/dispatch=3",
+            )
+        ),
+    )
+
+    _ = local_vals_host^
+    _ = local_idxs_host^
+    _ = local_vals_buf^
+    _ = local_idxs_buf^
+    _ = out_vals_buf^
+    _ = out_idxs_buf^
 
 
 def bench_topk_multi_rank[
@@ -999,12 +1122,19 @@ def main() raises:
                 m.dump_report()
                 return
 
-        comptime if use_fi:
-            bench_topk_fi[dtype, out_idx_type](ctx, m, test_case, fill_fn_name)
+        if dispatch == 3:
+            # Stage 2 by itself: the end-to-end entries above time it together
+            # with stage 1 and both launches.
+            bench_topk_stage2[dtype, out_idx_type](ctx, m, test_case)
         else:
-            bench_topk_batched[dtype, out_idx_type, rank](
-                ctx, m, test_case, fill_fn_name, dispatch=dispatch
-            )
+            comptime if use_fi:
+                bench_topk_fi[dtype, out_idx_type](
+                    ctx, m, test_case, fill_fn_name
+                )
+            else:
+                bench_topk_batched[dtype, out_idx_type, rank](
+                    ctx, m, test_case, fill_fn_name, dispatch=dispatch
+                )
 
     m.dump_report()
 
