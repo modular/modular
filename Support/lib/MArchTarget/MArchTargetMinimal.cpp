@@ -289,7 +289,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
 
     // Check for an AArch64 arch.
   } else if (AArch64::parseArch(march)) {
-    triple.setArchName(march);
+    triple.setArch(Triple::aarch64, triple.getSubArch());
     opts->CPU = "generic";
     getAArch64ArchFeaturesFromMarch(marchAsWritten, opts->FeaturesAsWritten);
 
