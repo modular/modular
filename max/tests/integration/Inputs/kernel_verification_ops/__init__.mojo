@@ -265,12 +265,12 @@ struct ExternalCubinVecAdd:
         output: OutputTensor[rank=1, ...],
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContext[],
+        ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
         var gpu_ctx = ctx
 
-        var external_func: DeviceExternalFunction[]
+        var external_func: DeviceExternalFunction[target=type_of(ctx).target]
         with open(getenv("CUBIN_PATH"), "r") as file:
             var cubin_data = file.read_bytes()
 
