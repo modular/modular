@@ -61,13 +61,14 @@ from std.collections.string.string import _calc_initial_buffer_size_int32
 from std.os import abort
 
 
-from std.utils.coord import Coord
+from std.utils.coord import Coord, CoordLike
 
 from .int_tuple import (
     UNKNOWN_VALUE,
     IntTuple,
     abs,
     compact_order,
+    coord_to_int_tuple,
     crd2idx,
     flatten,
     idx2crd,
@@ -736,6 +737,24 @@ struct Layout(
             The linear memory index corresponding to the given coordinates.
         """
         return crd2idx(idx, self.shape, self.stride)
+
+    @inline(.nodebug)
+    def __call__[
+        element_types: TypeList[Trait=CoordLike, ...],
+        //,
+    ](self, idx: Coord[*element_types]) -> Int:
+        """Maps `Coord` logical coordinates to a linear memory index.
+
+        Parameters:
+            element_types: The element types of the coordinate.
+
+        Args:
+            idx: The logical coordinates to map.
+
+        Returns:
+            The linear memory index corresponding to the given coordinates.
+        """
+        return self.__call__(coord_to_int_tuple(idx))
 
     @inline(.nodebug)
     def append(mut self, item: Layout):

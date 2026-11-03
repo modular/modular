@@ -41,11 +41,12 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
 )
 from max.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
 from layout import (
+    Coord,
     Idx,
-    IntTuple,
     Layout,
     TensorEngine,
     TileTensor,
+    coord,
     row_major,
 )
 from layout.tensor_core_async import (
@@ -1047,7 +1048,7 @@ struct SM100TensorAccumulator[
             # Offset both A and B operands by k_offset.
             # B (smem) offset: move by k_offset rows of the descriptor.
             comptime b_byte_offset = (
-                Self.b_layout(IntTuple(0, k_offset)) * Self.operand_size
+                Self.b_layout(coord[0, k_offset]) * Self.operand_size
             )
             var scale: UInt32
 
@@ -1099,7 +1100,7 @@ struct SM100TensorAccumulator[
             else:
                 # A (smem) offset: move by k_offset rows of the descriptor.
                 comptime a_byte_offset = (
-                    Self.a_layout(IntTuple(0, k_offset)) * Self.operand_size
+                    Self.a_layout(coord[0, k_offset]) * Self.operand_size
                 )
                 var a_ = rebind[MMASmemDescriptorPair](a) + UInt32(
                     a_byte_offset
@@ -1387,9 +1388,7 @@ def _build_mma[
             # Absolute first block initializes the accumulator from c_scale ($3).
             mma += "setp.ne.b32 %ps, $3, 0;\n"
         else:
-            var b_offset = (
-                layout_b(IntTuple(0, mma_k * jj)) * operand_size
-            ) >> 4
+            var b_offset = (layout_b(Coord(0, mma_k * jj)) * operand_size) >> 4
             if a_tmem:
                 var a_offset = a_stride * jj
                 mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
@@ -1399,7 +1398,7 @@ def _build_mma[
             elif partial:
                 # SS-partial interleaving: A descriptor, then B descriptor.
                 var a_offset = (
-                    layout_a(IntTuple(0, mma_k * jj)) * operand_size
+                    layout_a(Coord(0, mma_k * jj)) * operand_size
                 ) >> 4
                 mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
                 mma += "mov.b64 %rda, {%ra, $8};\n"
@@ -1408,7 +1407,7 @@ def _build_mma[
             else:
                 # SS-full interleaving: both `add`s first, then both `mov`s.
                 var a_offset = (
-                    layout_a(IntTuple(0, mma_k * jj)) * operand_size
+                    layout_a(Coord(0, mma_k * jj)) * operand_size
                 ) >> 4
                 mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
                 mma += String("add.s32 %rb, $4, ", b_offset, ";\n")

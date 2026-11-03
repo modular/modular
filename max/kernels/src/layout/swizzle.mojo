@@ -39,8 +39,9 @@ from std.math.uutils import udivmod
 from std.bit import log2_floor
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
-from .int_tuple import flatten, IntTuple
+from .int_tuple import flatten, IntTuple, coord_to_int_tuple
 from .layout import Layout
+from .coord import Coord, CoordLike
 
 # ===-----------------------------------------------------------------------===#
 # Motivation of thread swizzling                                               #
@@ -568,6 +569,24 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         """
         var offset_val = Self.offset.or_else(0)
         return self.layout_b(offset_val + self.layout_a(idx))
+
+    @inline(.always)
+    def __call__[
+        element_types: TypeList[Trait=CoordLike, ...],
+        //,
+    ](self, idx: Coord[*element_types]) -> Int:
+        """Apply composed layout to a `Coord` index.
+
+        Parameters:
+            element_types: The element types of the coordinate.
+
+        Args:
+            idx: The coordinate to transform.
+
+        Returns:
+            The transformed index.
+        """
+        return self.__call__(coord_to_int_tuple(idx))
 
     @inline(.always)
     def __call__(self, idx: IntTuple, offset_val: Int) -> Int:
