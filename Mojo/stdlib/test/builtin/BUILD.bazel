@@ -82,6 +82,10 @@ _EXTRA_DEPS = {
     "test_device_passable.mojo": ["//max:max_mojo"],
 }
 
+_MANUAL_TESTS = [
+    "test_bool.mojo",  # MODELS-1704: slow in CI
+]
+
 [
     mojo_filecheck_test(
         name = src + ".test",
@@ -110,6 +114,7 @@ _EXTRA_DEPS = {
             "full",
         ],
         data = _DATA + [src],  # NOTE: some tests attempt to read their source files
+        tags = ["manual"] if src in _MANUAL_TESTS else [],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",
