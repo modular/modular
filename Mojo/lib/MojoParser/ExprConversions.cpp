@@ -1724,7 +1724,7 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
 
   // Otherwise, create a new type value whose witness table is provided by the
   // wrapper stub.
-  ASTType boundWrapper = wrapperDecl->getOp().bindReference({typeValue});
+  ASTType boundWrapper = wrapperDecl->getOp().legacyBindReference({typeValue});
   return TypeParamAttr::get(boundWrapper, mlirType, trait);
 }
 

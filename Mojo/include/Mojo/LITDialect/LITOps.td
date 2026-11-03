@@ -546,7 +546,14 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     ArrayAttr getSelectedAnnotations(int64_t fieldIndex);
 
     /// Get a bound reference to the struct type.
-    StructType bindReference(ArrayRef<TypedAttr> paramValues = {});
+    /// FIXME: this function is the major source of unbound attr in struct type,
+    /// which will be removed soonish.
+    StructType legacyBindReference(ArrayRef<TypedAttr> paramValues = {});
+
+    /// Get a type expression after binding the parameter value to the struct
+    /// decl.
+    TypedAttr bindReference(ParameterEvaluationContext *evalCtx,
+                            ArrayRef<TypedAttr> paramValues = {});
 
     /// Get whether this struct is compiler generated.
     bool isSynthetic();

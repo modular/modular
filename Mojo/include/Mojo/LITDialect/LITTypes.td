@@ -226,6 +226,8 @@ def LIT_StructType : LITType<"Struct", "struct", [
     // make sure the canonical field is set right when the elements are changed.
     AttrBuilder<(ins "SymbolAttr":$name,
                      "ArrayRef<TypedAttr>":$paramValues,
+                     // TODO(MOCO-3542), we probably won't be needing the signature here after fully migration.
+                     // the signature should be imposed on the generator itself.
                      "TypeSignatureType":$signature,
                      "StructType":$canonical)>
   ];

@@ -623,7 +623,7 @@ static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
   }
 
   // Bind the IntLiteral[value] parameter.
-  type = litStruct.bindReference({value});
+  type = litStruct.legacyBindReference({value});
 
   // Create an instance of IntLiteral[val]()
   return emitter.emitConstructorCall(
@@ -1479,7 +1479,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
 
   // If this is a type declaration, return it as a type.
   if (auto *structDecl = dyn_cast<StructASTDecl>(decl))
-    return emitter.emitCResult(structDecl->getOp().bindReference(), expr, dest);
+    return emitter.emitCResult(structDecl->getOp().legacyBindReference(), expr,
+                               dest);
   if (auto *traitDecl = dyn_cast<TraitASTDecl>(decl))
     return emitter.emitCResult(traitDecl->getOp().getCanonicalTrait(), expr,
                                dest);

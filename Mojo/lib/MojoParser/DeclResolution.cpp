@@ -3934,7 +3934,7 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
   }
 
   // Compute the struct's self type.
-  setSelfType(StructASTDecl::computeSelfType(structOp));
+  setSelfType(computeSelfType());
 
   // Structs are memory-only unless they opt-in to being passed in registers.
   structOp.setConvention(TypeConvention::MemoryOnly);
@@ -5293,12 +5293,11 @@ LogicalResult ExtensionASTDecl::resolveSignature(Lexer &lexer) {
     return failure();
   }
 
-  StructDeclOp structDeclOp = structAstDecl->getOp();
   SymbolRefAttr targetStructAttr = structAstDecl->getSymbolRef();
   extensionDeclOp.setTargetStructAttr(targetStructAttr);
 
   // Extension methods use the target struct's self type.
-  setSelfType(StructASTDecl::computeSelfType(structDeclOp));
+  setSelfType(structAstDecl->computeSelfType());
 
   // Use the parent scope to resolve the traits in the conformance list.
   // TODO(MOCO-522): This might need to change once we have parametric traits,

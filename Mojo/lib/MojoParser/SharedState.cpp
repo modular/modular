@@ -1042,7 +1042,7 @@ ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
 static ASTType typeForResolvedTypeDecl(SharedState &state, ASTDecl *decl,
                                        SMLoc loc) {
   if (auto *structDecl = dyn_cast_if_present<StructASTDecl>(decl))
-    return structDecl->getOp().bindReference();
+    return structDecl->getOp().legacyBindReference();
   if (auto *aliasDecl = dyn_cast<AliasASTDecl>(decl)) {
     if (failed(state.declResolver->resolveBody(*decl, loc)))
       return state.getTypeCheckErrorType();
@@ -1543,7 +1543,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               auto *structDecl = dyn_cast<StructASTDecl>(&structAstDecl);
               assert(structDecl && "extension target is not a struct");
               cast<ExtensionASTDecl>(decl).setSelfType(
-                  StructASTDecl::computeSelfType(structDecl->getOp()));
+                  structDecl->computeSelfType());
               return success();
             })
             .Case([&](ImportOp) {
@@ -1698,7 +1698,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           .Case([&](StructDeclOp op) {
             auto &structDecl =
                 cast<StructASTDecl>(addDeclForOp(op, op.getSymNameAttr()));
-            structDecl.setSelfType(StructASTDecl::computeSelfType(op));
+            structDecl.setSelfType(structDecl.computeSelfType());
             SmallVector<ASTDecl *> paramDecls;
             for (auto [paramIndex, param] : llvm::enumerate(op.getParams())) {
               // Add the parameters as accessible member decls. Make sure

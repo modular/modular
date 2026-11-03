@@ -599,7 +599,7 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
 
   if (auto declRef = dyn_cast<StructType>(firstLevelType)) {
     auto unboundType =
-        cast<StructASTDecl>(getDecl(shared))->getOp().bindReference();
+        cast<StructASTDecl>(getDecl(shared))->getOp().legacyBindReference();
     // Wrap it back to the original meta type.
     if (isa<StructMetaType>(*this))
       return StructMetaType::get(unboundType);
@@ -1224,7 +1224,7 @@ ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
     if (anyBound)
       return cast<StructASTDecl>(getDecl(shared))
           ->getOp()
-          .bindReference(newParams);
+          .legacyBindReference(newParams);
   }
 
   // Otherwise return it with all parameters replaced.

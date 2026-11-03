@@ -24,6 +24,7 @@
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/DocString.h"
+#include "Mojo/lib/MojoParser/ParserEvaluationContext.h"
 #include "Mojo/lib/MojoParser/Traits.h"
 #include "MojoUtils.h"
 #include "llvm/ADT/STLExtras.h"
@@ -62,7 +63,7 @@ ASTType ASTDecl::getToolingType() {
   if (auto *functionTypeDecl = dyn_cast<FunctionTypeASTDecl>(this))
     return functionTypeDecl->getSignature();
   if (auto *structDecl = dyn_cast<StructASTDecl>(this))
-    return StructASTDecl::computeSelfType(structDecl->getOp());
+    return structDecl->computeSelfType();
   if (auto *traitDecl = dyn_cast<TraitASTDecl>(this))
     return TraitASTDecl::computeSelfType(traitDecl->getOp());
   return {};
@@ -1101,8 +1102,8 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
   return getFullyResolvedSymbolRef(op);
 }
 
-/// Given an MLIR op for a struct declaration, return the self type.
-Type StructASTDecl::computeSelfType(StructDeclOp structOp) {
+Type StructASTDecl::computeSelfType() const {
+  StructDeclOp structOp = getOp();
   SmallVector<TypedAttr> parameters;
   for (auto decl : structOp.getParams()) {
     // We're using the parameter from the type declaration scope in the
@@ -1112,7 +1113,11 @@ Type StructASTDecl::computeSelfType(StructDeclOp structOp) {
 
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
-  return structOp.bindReference(parameters);
+  return structOp.legacyBindReference(parameters);
+
+  // FIXME: seems not working due to some auto parameterization issue.
+  // return structOp.bindReference(getShared().getEvaluationContext(),
+  // parameters);
 }
 
 Type TraitASTDecl::computeSelfType(TraitDeclOp traitOp) {

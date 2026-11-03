@@ -1523,7 +1523,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
         TypeParamAttr::get(type, NonStructTypeType::get(shared.getContext()));
 
     // Need to update the type itself to the wrapper type.
-    type = structDecl->getOp().bindReference({typeValue});
+    type = structDecl->getOp().legacyBindReference({typeValue});
   }
 
   if (type.doesConformTo(trait, shared, callerAssumptions).isFalse()) {

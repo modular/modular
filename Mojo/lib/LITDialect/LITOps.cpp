@@ -1273,7 +1273,8 @@ bool StructDeclOp::isSynthetic() { return getSynthetic(); }
 
 ArrayRef<ParamDeclAttr> StructDeclOp::getInputParams() { return getParams(); }
 
-LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
+LIT::StructType
+StructDeclOp::legacyBindReference(ArrayRef<TypedAttr> paramValues) {
   SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
   TypeSignatureType sig = getSignature();
 
@@ -1292,6 +1293,34 @@ LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   // Compute the resultant signature.
   auto newSig = sig.bind(paramValues);
   return LIT::StructType::get(symbol, paramValues, newSig);
+}
+
+TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
+                                      ArrayRef<TypedAttr> paramValues) {
+  TypeSignatureType sig = getSignature();
+  // create a list of forwarded parameter
+  SmallVector<TypedAttr> forwardParams;
+  for (auto [idx, t] : llvm::enumerate(sig.getParamTypes()))
+    forwardParams.push_back(ParamIndexRefAttr::get(0, idx, t));
+
+  // TODO: we don't need sig in struct type under the generator representation.
+  auto newSig = paramValues.empty() ? sig : sig.bind(paramValues);
+  auto st = LIT::StructType::get(getFullyResolvedSymbolRef(*this),
+                                 forwardParams, newSig);
+
+  auto genBody = TypeParamAttr::get(st, StructMetaType::get(st));
+  // A simple type without parameters.
+  if (forwardParams.empty())
+    return genBody;
+
+  auto typeExpr =
+      GeneratorAttr::get(sig.getParamTypes(), genBody, sig.getParamListAttrs());
+  if (paramValues.empty())
+    return typeExpr;
+
+  // TODO: maybe worth a cache here?
+  return BindParamsAttr::get(typeExpr.getContext(), typeExpr, paramValues,
+                             evalCtx);
 }
 
 std::optional<size_t> StructDeclOp::findFieldIndex(StringRef name) {
