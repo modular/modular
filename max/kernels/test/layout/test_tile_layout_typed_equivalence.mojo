@@ -108,6 +108,52 @@ def _check_all_shapes[dtype: DType]() raises:
     _check_all_swizzles[dtype, 256, 128]()
 
 
+# Scale-factor atom extents: 32 MN lanes by 16 K elements. `_copy_sf_to_tmem_tt`
+# indexes the SF SMEM tile at (mn_atom * 32, k_atom * 16).
+comptime _SF_ATOM_MN = 32
+comptime _SF_ATOM_K = 16
+
+
+def _assert_sf_offsets[
+    BM: Int,
+    BK: Int,
+    SF_SCALE_SIZE: Int,
+    legacy: Layout,
+]() raises:
+    """Compares the typed and legacy SF offset at every atom coordinate.
+
+    Parameters:
+        BM: Size of the M dimension in the tile.
+        BK: Size of the K dimension in the tile.
+        SF_SCALE_SIZE: Number of elements in a scale factor vector.
+        legacy: The legacy scale-factor `Layout` for this configuration.
+    """
+    comptime for i in range(BM // 128):
+        comptime for k in range(BK // (4 * SF_SCALE_SIZE)):
+            comptime expected = legacy(
+                IntTuple(i * _SF_ATOM_MN, k * _SF_ATOM_K)
+            )
+            comptime actual = Int(
+                tile_sf_layout_k_major_typed[BM, BK, SF_SCALE_SIZE](
+                    coord[i * _SF_ATOM_MN, k * _SF_ATOM_K]
+                )
+            )
+            assert_equal(
+                actual,
+                expected,
+                String(
+                    "SF offset divergence at atom (",
+                    i,
+                    ", ",
+                    k,
+                    ") for BM=",
+                    BM,
+                    " BK=",
+                    BK,
+                ),
+            )
+
+
 def _check_sf[BM: Int, BK: Int, SF_SCALE_SIZE: Int]() raises:
     """Compares the scale-factor layout for one tile configuration.
 
@@ -120,6 +166,12 @@ def _check_sf[BM: Int, BK: Int, SF_SCALE_SIZE: Int]() raises:
         String(tile_sf_layout_k_major_typed[BM, BK, SF_SCALE_SIZE].to_layout()),
         String(tile_sf_layout_k_major[BM, BK, SF_SCALE_SIZE]()),
     )
+    _assert_sf_offsets[
+        BM,
+        BK,
+        SF_SCALE_SIZE,
+        tile_sf_layout_k_major[BM, BK, SF_SCALE_SIZE](),
+    ]()
 
 
 def _assert_k_major_offsets[

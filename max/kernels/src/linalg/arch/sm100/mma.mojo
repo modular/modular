@@ -21,8 +21,8 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import IntTuple, Layout, TileTensor, coord
-from layout.tile_layout import TensorLayout, _types_to_int_tuple
+from layout import Layout, TileTensor, coord
+from layout.tile_layout import Layout as TileLayout, TensorLayout
 from layout.tensor_core_async import (
     _CM_ROW_BYTES,
     tile_to_descriptor,
@@ -730,16 +730,15 @@ struct MmaOpSM100_BlockScaled_SS[
             sf_smem: Scale factor tile in shared memory.
             sf_tmem: TMEM column address for scale factors.
         """
-        comptime sf_smem_layout = Layout(
-            _types_to_int_tuple[SFLayoutType._shape_types](),
-            _types_to_int_tuple[SFLayoutType._stride_types](),
-        )
+        comptime sf_smem_layout = TileLayout[
+            SFLayoutType._shape_types, SFLayoutType._stride_types
+        ]()
 
         comptime for i in range(TILE_MN // SF_MN_GROUP_SIZE):
-            comptime idx = IntTuple(
+            comptime idx = coord[
                 i * SF_ATOM_M[0], tile_k_idx * SF_ATOM_M[1] * SF_ATOM_K
-            )
-            comptime sf_offset = sf_smem_layout(idx) * size_of[sf_dtype]()
+            ]
+            comptime sf_offset = Int(sf_smem_layout(idx)) * size_of[sf_dtype]()
             var sf_tmem_addr = (
                 sf_tmem
                 + UInt32(i * (SF_MN_GROUP_SIZE // 32))
