@@ -35,7 +35,11 @@ from comm.allreduce_residual_rmsnorm import (
     _dispatch_ar_norm,
     allreduce_residual_rmsnorm,
 )
-from comm.allgather_rmsnorm import _dispatch_ag_norm, _dispatch_ag_norm_quant
+from comm.allgather_rmsnorm import (
+    _dispatch_ag_norm,
+    _dispatch_ag_norm_quant,
+    allgather_rmsnorm,
+)
 from linalg.block_scaled_quantization import (
     quantize_mx_amd,
     quantize_mxfp8_lane_group,
@@ -61,6 +65,7 @@ from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, row_major
 from layout.int_tuple import UNKNOWN_VALUE
@@ -1783,6 +1788,8 @@ struct DistributedAllGatherRMSNorm:
         epsilon: Float32,
         weight_offset: Float32,
         group_size: Int = 0,
+        gather_axis: Int = 0,
+        round_offset_gamma: Bool = False,
     ](
         outputs_normed: TensorTuple[*Normed],
         outputs_residual: TensorTuple[*Residuals],
@@ -1813,6 +1820,9 @@ struct DistributedAllGatherRMSNorm:
                 number of devices. Equal to `num_devices` for a full-world
                 collective. The builder always sets it; the `0` attribute
                 default is not a usable value.
+            gather_axis: 0 to gather row shards, 1 column shards.
+            round_offset_gamma: Whether `gamma + weight_offset` is rounded to
+                `dtype` before the f32 multiply.
 
         Args:
             outputs_normed: Per-device normed output (the group's gathered
@@ -1888,6 +1898,56 @@ struct DistributedAllGatherRMSNorm:
                 inputs[i].to_tile_tensor[dtype]().make_dynamic[.int64]()
             )
         _check_uniform_cols[op="allgather_rms_norm"](inputs)
+
+        # The two-launch fallback below gathers rows and folds the offset in
+        # f32, so these modes always fuse.
+        comptime if gather_axis == 1 or round_offset_gamma:
+
+            @inline(.always)
+            def launch_fused[
+                index: Int
+            ]() raises {
+                imm in_tensors,
+                imm rank_sigs,
+                imm dev_ctxs_input,
+                imm gammas,
+                imm outputs_normed,
+                imm outputs_residual,
+            }:
+                comptime assert conforms_to(
+                    type_of(outputs_normed[index]), TileTensorable
+                )
+                comptime assert conforms_to(
+                    type_of(outputs_residual[index]), TileTensorable
+                )
+                comptime assert conforms_to(
+                    type_of(gammas[index]), TileTensorable
+                )
+                # The same PDL level the row-gather dispatch takes.
+                comptime pdl_level = (
+                    PDLLevel.ON if num_devices == 2 else PDLLevel.OFF
+                )
+                allgather_rmsnorm[
+                    group_size=group_size,
+                    pdl_level=pdl_level,
+                    gather_cols=gather_axis == 1,
+                    round_offset_gamma=round_offset_gamma,
+                ](
+                    in_tensors,
+                    outputs_normed[index].to_tile_tensor[dtype](),
+                    outputs_residual[index].to_tile_tensor[dtype](),
+                    gammas[index].to_tile_tensor[dtype](),
+                    epsilon,
+                    weight_offset.cast[dtype](),
+                    rank_sigs,
+                    dev_ctxs_input[index],
+                    index,
+                )
+
+            _launch_device_collective[num_devices](
+                launch_fused, dev_ctxs_input.copy()
+            )
+            return
 
         # `allgather`'s world-view output array holds every device's own
         # `group_size` output windows. Every slot has to name a real window,
