@@ -15,11 +15,11 @@ reduces correctly on shapes that pick the GPU split-K tier."""
 
 from algorithm import rowwise
 from algorithm.reduce_op import ReduceOp
-from algorithm.rowwise_types import RowCoord
 from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from std.sys import size_of
 from std.testing import TestSuite, assert_equal, assert_true
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index
 
 comptime dtype = DType.float32
@@ -84,8 +84,8 @@ def _check(rows: Int, cols: Int) raises:
             @inline(.always)
             def load[
                 width: Int, alignment: Int
-            ](idx: RowCoord[rank]) {var x} -> SIMD[dtype, width]:
-                return x.load[width=width](idx.coord)
+            ](idx: DynamicCoord[DType.int, rank]) {var x} -> SIMD[dtype, width]:
+                return x.load[width=width](idx)
 
             var row = rowwise.Row[
                 params, dtype, dtype, 1, rank, is_cached=False
@@ -94,7 +94,9 @@ def _check(rows: Int, cols: Int) raises:
             @inline(.always)
             def ident[
                 w: Int
-            ](tile: SIMD[dtype, w], idx: RowCoord[rank]) {} -> SIMD[dtype, w]:
+            ](
+                tile: SIMD[dtype, w], idx: DynamicCoord[DType.int, rank]
+            ) {} -> SIMD[dtype, w]:
                 return tile
 
             var acc = row.reduce[BigSum[dtype, params.simd_width]](
@@ -102,8 +104,8 @@ def _check(rows: Int, cols: Int) raises:
             ).acc
 
             @inline(.always)
-            def write(oc: RowCoord[rank]) {var acc, var out_ptr}:
-                out_ptr.unsafe_store(Int(oc.coord[0]), acc[0])
+            def write(oc: DynamicCoord[DType.int, rank]) {var acc, var out_ptr}:
+                out_ptr.unsafe_store(Int(oc[0]), acc[0])
 
             row.emit(write)
 

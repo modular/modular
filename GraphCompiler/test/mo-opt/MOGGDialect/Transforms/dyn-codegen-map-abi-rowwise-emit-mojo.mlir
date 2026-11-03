@@ -8,7 +8,7 @@
 // CHECK-NEXT:    var [[SQ:.*]] = builtin_kernels.elementwise.Mul.elementwise[{{.*}}](tile, tile)
 // CHECK-NEXT:    return [[SQ]]
 // CHECK:       def {{write_+[0-9]+}}(oc: {{.*}}) {var}:
-// CHECK-NEXT:    var [[B:.*]] = managed_tensor_slice.simd_load_from_tensor_pointer[{{.*}}simd_width = params.emit_tile_width{{.*}}oc.coord
+// CHECK-NEXT:    var [[B:.*]] = managed_tensor_slice.simd_load_from_tensor_pointer[{{.*}}simd_width = params.emit_tile_width{{.*}}(oc)
 // CHECK-NEXT:    var [[Y:.*]] = builtin_kernels.elementwise.Add.elementwise[{{.*}}]({{.*}}.acc.slice[params.emit_tile_width](), [[B]])
 // CHECK-NEXT:    managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}[[Y]]))
 mo.graph @sumOfSquaresPlusBias<M, N>(%x: !mo.tensor<[M, N], f32>, %b: !mo.tensor<[M, 1], f32>) -> !mo.tensor<[M, 1], f32> {

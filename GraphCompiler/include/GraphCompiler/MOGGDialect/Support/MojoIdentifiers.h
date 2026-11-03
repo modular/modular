@@ -378,8 +378,9 @@ constexpr llvm::StringLiteral kStructRowwiseContextParams =
     "algorithm.rowwise_types.ContextParams";
 constexpr llvm::StringLiteral kStructRowwiseContext =
     "algorithm.rowwise_types.Context";
-constexpr llvm::StringLiteral kStructRowwiseRowCoord =
-    "algorithm.rowwise_types.RowCoord";
+/// Fully qualified because `std.utils` does not re-export `coord`.
+constexpr llvm::StringLiteral kAliasDynamicCoord =
+    "std.utils.coord.DynamicCoord";
 /// Package-private, so qualified with `_asyncrt`.
 constexpr llvm::StringLiteral kFnCreateTask =
     "std.runtime._asyncrt.create_task";

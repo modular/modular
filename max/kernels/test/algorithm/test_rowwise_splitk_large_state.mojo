@@ -15,10 +15,10 @@ reduces correctly on shapes that pick the split-axis tier."""
 
 from algorithm import rowwise
 from algorithm.reduce_op import ReduceOp
-from algorithm.rowwise_types import RowCoord
 from layout import Coord
 from std.sys import size_of
 from std.testing import TestSuite, assert_equal, assert_true
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index
 
 comptime dtype = DType.float32
@@ -78,8 +78,10 @@ def _row_sums(rows: Int, cols: Int) raises -> List[Scalar[dtype]]:
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var x_ptr, var cols} -> SIMD[dtype, width]:
-            var i = Int(idx.coord[0]) * cols + Int(idx.coord[1])
+        ](idx: DynamicCoord[DType.int, rank]) {var x_ptr, var cols} -> SIMD[
+            dtype, width
+        ]:
+            var i = Int(idx[0]) * cols + Int(idx[1])
             return x_ptr.unsafe_offset(i).unsafe_load[width=width]()
 
         var row = rowwise.Row[params, dtype, dtype, 1, rank, is_cached=False](
@@ -89,14 +91,16 @@ def _row_sums(rows: Int, cols: Int) raises -> List[Scalar[dtype]]:
         @inline(.always)
         def ident[
             w: Int
-        ](tile: SIMD[dtype, w], idx: RowCoord[rank]) {} -> SIMD[dtype, w]:
+        ](tile: SIMD[dtype, w], idx: DynamicCoord[DType.int, rank]) {} -> SIMD[
+            dtype, w
+        ]:
             return tile
 
         var acc = row.reduce[BigSum[dtype, params.simd_width]](ident, load).acc
 
         @inline(.always)
-        def write(oc: RowCoord[rank]) {var acc, var out_ptr}:
-            out_ptr.unsafe_offset(Int(oc.coord[0])).unsafe_store(acc[0])
+        def write(oc: DynamicCoord[DType.int, rank]) {var acc, var out_ptr}:
+            out_ptr.unsafe_offset(Int(oc[0])).unsafe_store(acc[0])
 
         row.emit(write)
 

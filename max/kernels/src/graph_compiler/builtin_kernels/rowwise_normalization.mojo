@@ -21,12 +21,13 @@ from std.sys.info import align_of
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, CoordLike, TileTensor
+from std.utils.coord import DynamicCoord
 from std.utils.numerics import get_accum_type
 from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 from algorithm import rowwise
 from algorithm.rowwise import strided_load
-from algorithm.rowwise_types import RowCoord
+from algorithm.rowwise_types import at_axis
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.rope import _rope
 
@@ -98,8 +99,10 @@ def rms_norm[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
             params, accum, dtype, reduce_dim, row_rank, is_cached=True
@@ -109,9 +112,9 @@ def rms_norm[
         @inline(.always)
         def square[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]
+        ) {} -> SIMD[accum, width]:
             var tile_accum = tile.cast[accum]()
             return tile_accum * tile_accum
 
@@ -135,14 +138,14 @@ def rms_norm[
         @inline(.always)
         def write[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
+        ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
             var gamma,
             var inv_rms,
             var output_fn,
             var ctx_p,
         }:
             comptime alignment = ctx_p.element_alignment[dtype, width]()
-            var col = Int(idx.coord[reduce_dim])
+            var col = Int(idx[reduce_dim])
             var g_raw = strided_load[width, g_stride, alignment=alignment](
                 gamma.ptr_at_offset(Coord(col))
             )
@@ -156,13 +159,13 @@ def rms_norm[
                     weight_offset.cast[accum]()
                 )
                 var result = (normed * gamma_with_offset).cast[dtype]()
-                output_fn[width, alignment](idx.coord, result)
+                output_fn[width, alignment](idx, result)
             else:
                 var gamma_with_offset = g_raw + comptime (
                     weight_offset.cast[dtype]()
                 )
                 var result = normed.cast[dtype]() * gamma_with_offset
-                output_fn[width, alignment](idx.coord, result)
+                output_fn[width, alignment](idx, result)
 
         # `gamma`/`inv_rms`/`output_fn` ride into `elementwise`.
         row.elementwise(write, load)
@@ -252,12 +255,12 @@ def rms_norm_residual_add[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[row_rank]) {
+        ](idx: DynamicCoord[DType.int, row_rank]) {
             var input_fn, var residual_input_fn
         } -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord) + residual_input_fn[
+            return input_fn[width, alignment](idx) + residual_input_fn[
                 width, alignment
-            ](idx.coord)
+            ](idx)
 
         var row = rowwise.Row[
             params, accum, dtype, reduce_dim, row_rank, is_cached=True
@@ -266,9 +269,9 @@ def rms_norm_residual_add[
         @inline(.always)
         def square[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]
+        ) {} -> SIMD[accum, width]:
             var tile_accum = tile.cast[accum]()
             return tile_accum * tile_accum
 
@@ -284,7 +287,7 @@ def rms_norm_residual_add[
         @inline(.always)
         def write[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
+        ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
             var gamma,
             var inv_rms,
             var output_fn,
@@ -292,8 +295,8 @@ def rms_norm_residual_add[
             var ctx_p,
         }:
             comptime alignment = ctx_p.element_alignment[dtype, width]()
-            var col = Int(idx.coord[reduce_dim])
-            output_residual_fn[width, alignment](idx.coord, tile)
+            var col = Int(idx[reduce_dim])
+            output_residual_fn[width, alignment](idx, tile)
             var g_raw = strided_load[width, g_stride, alignment=alignment](
                 gamma.ptr_at_offset(Coord(col))
             )
@@ -304,13 +307,13 @@ def rms_norm_residual_add[
                     weight_offset.cast[dtype]().cast[accum]()
                 )
                 var result = (normed * gamma_with_offset).cast[dtype]()
-                output_fn[width, alignment](idx.coord, result)
+                output_fn[width, alignment](idx, result)
             else:
                 var gamma_with_offset = g_raw + comptime (
                     weight_offset.cast[dtype]()
                 )
                 var result = normed.cast[dtype]() * gamma_with_offset
-                output_fn[width, alignment](idx.coord, result)
+                output_fn[width, alignment](idx, result)
 
         row.elementwise(write, load)
 
@@ -422,8 +425,10 @@ def rms_norm_rope[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[input_dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
+            input_dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
             params, accum, input_dtype, reduce_dim, row_rank, is_cached=True
@@ -433,9 +438,10 @@ def rms_norm_rope[
         @inline(.always)
         def square[
             width: Int
-        ](tile: SIMD[input_dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            tile: SIMD[input_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {} -> SIMD[accum, width]:
             var tile_accum = tile.cast[accum]()
             return tile_accum * tile_accum
 
@@ -463,13 +469,18 @@ def rms_norm_rope[
         @inline(.always)
         def normed_tile[
             width: Int
-        ](tile: SIMD[input_dtype, width], idx: RowCoord[row_rank]) {
+        ](
+            tile: SIMD[input_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {
             var gamma,
             var inv_rms,
             var woff,
             var weight_offset,
-        } -> SIMD[output_dtype, width]:
-            var col = Int(idx.coord[reduce_dim])
+        } -> SIMD[
+            output_dtype, width
+        ]:
+            var col = Int(idx[reduce_dim])
             var g_raw = strided_load[
                 width, g_stride, alignment=align_of[SIMD[input_dtype, width]]()
             ](gamma.ptr_at_offset(Coord(col)))
@@ -494,7 +505,10 @@ def rms_norm_rope[
         @inline(.always)
         def write[
             width: Int
-        ](nc: SIMD[output_dtype, width], idx: RowCoord[row_rank]) {
+        ](
+            nc: SIMD[output_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {
             var normed,
             var load,
             var normed_tile,
@@ -505,34 +519,34 @@ def rms_norm_rope[
             var ctx_p,
         }:
             comptime alignment = ctx_p.element_alignment[input_dtype, width]()
-            var col = Int(idx.coord[reduce_dim])
+            var col = Int(idx[reduce_dim])
             var normed_c = nc.cast[accum]()
 
             # Rotate-half partner: concat(-x2, x1). A W-aligned tile sits
             # wholly in one half, so the sign is uniform. The partner's normed
             # value is read straight from the staged shmem row.
-            var partner: RowCoord[row_rank]
+            var partner: DynamicCoord[DType.int, row_rank]
             var sign: Scalar[accum]
             if col < half:
-                partner = idx.at_axis[reduce_dim](col + half)
+                partner = at_axis[reduce_dim](idx, col + half)
                 sign = Scalar[accum](-1)
             else:
-                partner = idx.at_axis[reduce_dim](col - half)
+                partner = at_axis[reduce_dim](idx, col - half)
                 sign = Scalar[accum](1)
             var rotated = (
                 sign
                 * normed.load[width](partner, load, normed_tile).cast[accum]()
             )
 
-            var cos_c = cos_fn[width, alignment](idx.coord).cast[accum]()
-            var sin_c = sin_fn[width, alignment](idx.coord).cast[accum]()
+            var cos_c = cos_fn[width, alignment](idx).cast[accum]()
+            var sin_c = sin_fn[width, alignment](idx).cast[accum]()
             var out = normed_c * cos_c + rotated * sin_c
             comptime output_alignment = ctx_p.element_alignment[
                 output_dtype, width
             ]()
             var result = out.cast[output_dtype]()
             output_fn[width, output_alignment](
-                idx.coord,
+                idx,
                 result,
             )
 
@@ -610,8 +624,10 @@ def layer_norm[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
             params, accum, dtype, reduce_dim, row_rank, is_cached=True
@@ -621,9 +637,9 @@ def layer_norm[
         @inline(.always)
         def cast_to_accum[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]
+        ) {} -> SIMD[accum, width]:
             return tile.cast[accum]()
 
         # Stats held W-wide (one value broadcast to every lane, or one per
@@ -646,7 +662,7 @@ def layer_norm[
         @inline(.always)
         def write[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
+        ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
             var mean,
             var inv,
             var gamma,
@@ -655,7 +671,7 @@ def layer_norm[
             var ctx_p,
         }:
             comptime alignment = ctx_p.element_alignment[dtype, width]()
-            var col = Int(idx.coord[reduce_dim])
+            var col = Int(idx[reduce_dim])
             var gamma_val = strided_load[width, g_stride, alignment=alignment](
                 gamma.ptr_at_offset(Coord(col))
             ).cast[accum]()
@@ -666,7 +682,7 @@ def layer_norm[
                 width
             ]() * gamma_val + beta_val
             var result = out.cast[dtype]()
-            output_fn[width, alignment](idx.coord, result)
+            output_fn[width, alignment](idx, result)
 
         # `write` crosses into `elementwise` as a value arg; `mean`/`inv`/
         # `gamma`/`beta`/`output_fn` ride the value via its capture list.
@@ -764,8 +780,10 @@ def layer_norm_rope_ragged[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[input_dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
+            input_dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
             params, accum, input_dtype, reduce_dim, row_rank, is_cached=True
@@ -774,9 +792,10 @@ def layer_norm_rope_ragged[
         @inline(.always)
         def cast_to_accum[
             width: Int
-        ](tile: SIMD[input_dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            tile: SIMD[input_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {} -> SIMD[accum, width]:
             return tile.cast[accum]()
 
         var stats = row.reduce[Welford[accum, params.simd_width]](
@@ -804,14 +823,19 @@ def layer_norm_rope_ragged[
         @inline(.always)
         def normalize[
             width: Int
-        ](tile: SIMD[input_dtype, width], idx: RowCoord[row_rank]) {
+        ](
+            tile: SIMD[input_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {
             var gamma,
             var beta,
             var mean,
             var inv,
-        } -> SIMD[output_dtype, width]:
+        } -> SIMD[
+            output_dtype, width
+        ]:
             comptime alignment = align_of[SIMD[input_dtype, width]]()
-            var col = Int(idx.coord[reduce_dim])
+            var col = Int(idx[reduce_dim])
             var gamma_val = strided_load[width, g_stride, alignment=alignment](
                 gamma.ptr_at_offset(Coord(col))
             ).cast[accum]()
@@ -837,7 +861,10 @@ def layer_norm_rope_ragged[
         @inline(.always)
         def write[
             width: Int
-        ](nc: SIMD[output_dtype, width], idx: RowCoord[row_rank]) {
+        ](
+            nc: SIMD[output_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {
             var normed,
             var load,
             var normalize,
@@ -847,15 +874,15 @@ def layer_norm_rope_ragged[
             var ctx_p,
         }:
             comptime alignment = ctx_p.element_alignment[output_dtype, width]()
-            var col = Int(idx.coord[reduce_dim])
+            var col = Int(idx[reduce_dim])
             var result: SIMD[output_dtype, width]
             if col < rope_dim:
                 comptime if width == 1:
                     var pair_base = (col // 2) * 2
                     var im_c = pair_base + 1
                     var is_re = col == pair_base
-                    var partner_idx = idx.at_axis[reduce_dim](
-                        im_c if is_re else pair_base
+                    var partner_idx = at_axis[reduce_dim](
+                        idx, im_c if is_re else pair_base
                     )
                     var partner = normed.load[1](
                         partner_idx,
@@ -896,7 +923,7 @@ def layer_norm_rope_ragged[
             else:
                 result = nc
             output_fn[width, alignment](
-                idx.coord,
+                idx,
                 result,
             )
 
@@ -969,8 +996,10 @@ def row_mean_of_squares[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[in_dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
+            in_dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         # Prepare Row: this is a true reduction (no fuse-eligible cache), so
         # the axis size is always the dynamic form.
@@ -982,9 +1011,10 @@ def row_mean_of_squares[
         @inline(.always)
         def square[
             width: Int
-        ](tile: SIMD[in_dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            tile: SIMD[in_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {} -> SIMD[accum, width]:
             var tile_accum = tile.cast[accum]()
             return tile_accum * tile_accum
 
@@ -998,10 +1028,10 @@ def row_mean_of_squares[
         # Emit: one value per row, at `oc` (reduced axis pinned to 0).
         @inline(.always)
         def write(
-            oc: RowCoord[row_rank],
+            oc: DynamicCoord[DType.int, row_rank],
         ) {var mean_sq, var output_fn}:
             output_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 mean_sq.slice[params.emit_tile_width]().cast[out_dtype](),
             )
 
@@ -1168,8 +1198,10 @@ def rms_norm_fused_residual_add[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[row_rank]) {var input_0_fn} -> SIMD[dtype, width]:
-            return input_0_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_0_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_0_fn[width, alignment](idx)
 
         var row = rowwise.Row[
             params, accum, dtype, reduce_dim, row_rank, is_cached=True
@@ -1182,9 +1214,9 @@ def rms_norm_fused_residual_add[
         @inline(.always)
         def square[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]
+        ) {} -> SIMD[accum, width]:
             var tile_accum = tile.cast[accum]()
             return tile_accum * tile_accum
 
@@ -1204,7 +1236,7 @@ def rms_norm_fused_residual_add[
         @inline(.always)
         def intermediate[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
+        ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
             var gamma1,
             var inv_rms1,
             var input_1_fn,
@@ -1212,12 +1244,12 @@ def rms_norm_fused_residual_add[
             var ctx_p,
         } -> SIMD[dtype, width]:
             comptime alignment = ctx_p.element_alignment[dtype, width]()
-            var col = Int(idx.coord[reduce_dim])
+            var col = Int(idx[reduce_dim])
             var gamma1_val = strided_load[width, g_stride, alignment=alignment](
                 gamma1.ptr_at_offset(Coord(col))
             )
             var normed = tile.cast[accum]() * inv_rms1.slice[width]()
-            var residual = input_1_fn[width, alignment](idx.coord)
+            var residual = input_1_fn[width, alignment](idx)
 
             var inter: SIMD[dtype, width]
             comptime if multiply_before_cast:
@@ -1231,7 +1263,7 @@ def rms_norm_fused_residual_add[
                 )
                 inter = normed.cast[dtype]() * gamma1_with_offset + residual
             output_residual_fn[width, alignment](
-                idx.coord,
+                idx,
                 inter,
             )
             return inter
@@ -1241,9 +1273,10 @@ def rms_norm_fused_residual_add[
         @inline(.always)
         def square_intermediate[
             width: Int
-        ](staged_tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            staged_tile: SIMD[dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {} -> SIMD[accum, width]:
             var staged_accum = staged_tile.cast[accum]()
             return staged_accum * staged_accum
 
@@ -1262,14 +1295,17 @@ def rms_norm_fused_residual_add[
         @inline(.always)
         def write[
             width: Int
-        ](staged_tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
+        ](
+            staged_tile: SIMD[dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {
             var inv_rms2,
             var gamma2,
             var output_0_fn,
             var ctx_p,
         }:
             comptime alignment = ctx_p.element_alignment[dtype, width]()
-            var col = Int(idx.coord[reduce_dim])
+            var col = Int(idx[reduce_dim])
             var gamma2_val = strided_load[width, g_stride, alignment=alignment](
                 gamma2.ptr_at_offset(Coord(col))
             )
@@ -1281,7 +1317,7 @@ def rms_norm_fused_residual_add[
                 )
                 var result = (normed * gamma2_with_offset).cast[dtype]()
                 output_0_fn[width, alignment](
-                    idx.coord,
+                    idx,
                     result,
                 )
             else:
@@ -1290,7 +1326,7 @@ def rms_norm_fused_residual_add[
                 )
                 var result = normed.cast[dtype]() * gamma2_with_offset
                 output_0_fn[width, alignment](
-                    idx.coord,
+                    idx,
                     result,
                 )
 
@@ -1384,8 +1420,10 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[in_dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
+            in_dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
             params, accum, in_dtype, reduce_dim, row_rank, is_cached=True
@@ -1414,9 +1452,10 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         @inline(.always)
         def square[
             width: Int
-        ](tile: SIMD[in_dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            tile: SIMD[in_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {} -> SIMD[accum, width]:
             var tile_accum = tile.cast[accum]()
             return tile_accum * tile_accum
 
@@ -1433,14 +1472,13 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         @inline(.always)
         def abs_gamma_x[
             width: Int
-        ](tile: SIMD[in_dtype, width], idx: RowCoord[row_rank]) {
-            var gamma, var weight_offset
-        } -> SIMD[accum, width]:
+        ](
+            tile: SIMD[in_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {var gamma, var weight_offset} -> SIMD[accum, width]:
             return abs(
                 tile.cast[accum]()
-                * gamma_load[width](
-                    gamma, Int(idx.coord[reduce_dim]), weight_offset
-                )
+                * gamma_load[width](gamma, Int(idx[reduce_dim]), weight_offset)
             )
 
         # `gamma`/`weight_offset` ride `abs_gamma_x`'s captures into `reduce`;
@@ -1459,10 +1497,10 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         # pinned to 0).
         @inline(.always)
         def write_scale(
-            oc: RowCoord[row_rank],
+            oc: DynamicCoord[DType.int, row_rank],
         ) {var scale_factor, var scale_fn}:
             scale_fn(
-                oc.coord,
+                oc,
                 scale_factor,
             )
 
@@ -1473,7 +1511,10 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         @inline(.always)
         def write[
             width: Int
-        ](tile: SIMD[in_dtype, width], idx: RowCoord[row_rank]) {
+        ](
+            tile: SIMD[in_dtype, width],
+            idx: DynamicCoord[DType.int, row_rank],
+        ) {
             var gamma,
             var weight_offset,
             var inv_rms,
@@ -1483,13 +1524,11 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         }:
             var normed = (
                 tile.cast[accum]() * inv_rms.slice[width]()
-            ) * gamma_load[width](
-                gamma, Int(idx.coord[reduce_dim]), weight_offset
-            )
+            ) * gamma_load[width](gamma, Int(idx[reduce_dim]), weight_offset)
             var out_fp8 = fp8_quantize[out_dtype](normed, scale_recip)
             comptime alignment = ctx_p.element_alignment[out_dtype, width]()
             output_fn[width, alignment](
-                idx.coord,
+                idx,
                 out_fp8,
             )
 

@@ -3616,7 +3616,8 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
         MojoValue params("params");
         MojoValue rank =
             state.builder.comptime(MojoValue("row_coords").get("rank"));
-        MojoValue rowCoord = MojoValue(kStructRowwiseRowCoord)[rank];
+        MojoValue rowCoord = MojoValue(kAliasDynamicCoord)[{
+            MojoValue(kStructDType).get(kEnumDTypeInt), rank}];
 
         // (2) def load[width, alignment](idx) -> SIMD[dtype, width]:
         MojoValue load = state.builder.lambda(
@@ -3629,8 +3630,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
             [&](const FunctionBody &fb) {
               state.builder.returnsValue(simdLoadFromCapture(
                   {primary.ptr, primary.shape, primary.strides, primary.spec},
-                  fb.parameters[0], fb.parameters[1],
-                  MojoValue("idx").get("coord")));
+                  fb.parameters[0], fb.parameters[1], MojoValue("idx")));
             });
 
         // (3) var row = Row[params, accum, dtype, axis, rank, is_cached](...)
@@ -3673,7 +3673,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
                     state, {&state.builder, fb.parameters[0], MojoValue(1)});
                 EmitMojoState::ValueScope scope(state);
                 state.setMojoValueFor(foldBody.getArgument(0),
-                                      MojoValue("idx").get("coord"));
+                                      MojoValue("idx"));
                 for (Operation *op : outerOpsReadBy(fold, body))
                   lowerOne(*op);
                 for (Operation &op : foldBody.without_terminator()) {
@@ -3719,7 +3719,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
               EmitMojoState::LambdaInfosGuard guard(
                   state, {&state.builder, emitWidth, MojoValue(1)});
               EmitMojoState::ValueScope scope(state);
-              state.setMojoValueFor(args.back(), MojoValue("oc").get("coord"));
+              state.setMojoValueFor(args.back(), MojoValue("oc"));
               for (Operation &op : body) {
                 if (isa<RowwiseReduceOp>(op))
                   continue;

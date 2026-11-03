@@ -29,7 +29,6 @@ from .rowwise_reductions import (
     reduce_min_and_max,
     reduce_product,
 )
-from algorithm.rowwise_types import RowCoord
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
@@ -1474,15 +1473,13 @@ struct ReduceMinAndMax:
             ](coords)
 
         # The op packs both reductions into one `[..., 2, ...]` output tensor:
-        # min at slot 0, max at slot 1 of the reduced axis. A `Coord`'s
-        # elements are immutable and typed per position, so the retarget goes
-        # through `RowCoord`, whose axis element is dynamic and writable.
+        # min at slot 0, max at slot 1 of the reduced axis.
         @inline(.always)
         def output_min_fn[
             width: SIMDLength
         ](coords: Coord, val: SIMD[dtype, width]) {var output_tile}:
             output_tile.store[width=width, alignment=align_of[dtype]()](
-                RowCoord[rank](coords).at_axis[norm_axis](0).coord,
+                coords.replace[norm_axis](Int(0)),
                 rebind[SIMD[output_tile.dtype, width]](val),
             )
 
@@ -1491,7 +1488,7 @@ struct ReduceMinAndMax:
             width: SIMDLength
         ](coords: Coord, val: SIMD[dtype, width]) {var output_tile}:
             output_tile.store[width=width, alignment=align_of[dtype]()](
-                RowCoord[rank](coords).at_axis[norm_axis](1).coord,
+                coords.replace[norm_axis](Int(1)),
                 rebind[SIMD[output_tile.dtype, width]](val),
             )
 

@@ -19,10 +19,9 @@ single reduce phase plus a per-row `emit` — and runs on both CPU and GPU.
 """
 
 from max.gpu.host import DeviceContext
-from std.utils.coord import Coord
+from std.utils.coord import Coord, DynamicCoord
 
 from algorithm import rowwise
-from algorithm.rowwise_types import RowCoord
 from .monoids import (
     ArgMax,
     ArgMin,
@@ -102,8 +101,10 @@ def reduce_product[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -115,9 +116,9 @@ def reduce_product[
         @inline(.always)
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
-            dtype, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, rank]
+        ) {} -> SIMD[dtype, width]:
             return tile
 
         var acc = row.reduce[ReduceProduct[dtype, params.simd_width]](
@@ -126,9 +127,9 @@ def reduce_product[
 
         # Emit: per-row output — the reduced scalar.
         @inline(.always)
-        def write(oc: RowCoord[rank]) {var acc, var output_fn}:
+        def write(oc: DynamicCoord[DType.int, rank]) {var acc, var output_fn}:
             output_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 acc.slice[params.emit_tile_width](),
             )
 
@@ -194,8 +195,10 @@ def reduce_argmin[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -207,9 +210,9 @@ def reduce_argmin[
         @inline(.always)
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
-            dtype, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, rank]
+        ) {} -> SIMD[dtype, width]:
             return tile
 
         var indices = row.reduce[ArgMin[dtype, params.simd_width]](
@@ -218,9 +221,11 @@ def reduce_argmin[
 
         # Emit: per-row output — the winning index.
         @inline(.always)
-        def write(oc: RowCoord[rank]) {var indices, var output_fn}:
+        def write(
+            oc: DynamicCoord[DType.int, rank]
+        ) {var indices, var output_fn}:
             output_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 _in_range_indices(indices.slice[params.emit_tile_width]()),
             )
 
@@ -277,8 +282,10 @@ def reduce_argmax[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -290,9 +297,9 @@ def reduce_argmax[
         @inline(.always)
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
-            dtype, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, rank]
+        ) {} -> SIMD[dtype, width]:
             return tile
 
         var indices = row.reduce[ArgMax[dtype, params.simd_width]](
@@ -301,9 +308,11 @@ def reduce_argmax[
 
         # Emit: per-row output — the winning index.
         @inline(.always)
-        def write(oc: RowCoord[rank]) {var indices, var output_fn}:
+        def write(
+            oc: DynamicCoord[DType.int, rank]
+        ) {var indices, var output_fn}:
             output_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 _in_range_indices(indices.slice[params.emit_tile_width]()),
             )
 
@@ -372,8 +381,10 @@ def reduce_min_and_max[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -385,9 +396,9 @@ def reduce_min_and_max[
         @inline(.always)
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
-            dtype, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, rank]
+        ) {} -> SIMD[dtype, width]:
             return tile
 
         var stats = row.reduce[MinMax[dtype, params.simd_width]](val, load)
@@ -397,14 +408,14 @@ def reduce_min_and_max[
         # Emit: per-row output — both the min and the max.
         @inline(.always)
         def write(
-            oc: RowCoord[rank],
+            oc: DynamicCoord[DType.int, rank],
         ) {var mn, var mx, var output_min_fn, var output_max_fn,}:
             output_min_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 mn.slice[params.emit_tile_width](),
             )
             output_max_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 mx.slice[params.emit_tile_width](),
             )
 
