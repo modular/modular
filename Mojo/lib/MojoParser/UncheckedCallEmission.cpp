@@ -1390,12 +1390,11 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
   // local references. When an access to "x.y" happens we'll see both "x" and
   // "x.y" here.
   for (const auto &[origin, info] : originAccesses) {
+    assert(!isa<UnboundAttr>(origin)); // should not see any unbound origin
     // Static origins and subfields are ignorable.  Fields will have their bases
     // included.
     if (isa<StaticOriginAttr, OriginFieldAttr, ComptimeOriginAttr,
-            InteriorOriginAttr, OriginSubtreeAttr>(origin) ||
-        // FIXME: Why are we getting UnboundAttr's here?
-        isa<UnboundAttr>(origin))
+            InteriorOriginAttr, OriginSubtreeAttr>(origin))
       continue;
 
     // Scan up our decl hierarchy to see if this parameter is defined on a
