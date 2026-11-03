@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import null
+from std.ffi import _null
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
@@ -41,26 +41,26 @@ def write_if_present(ptr: Optional[MutPointer[Int, _]]):
 
 
 def test_null_into_origin_inferring_params() raises:
-    assert_false(take_mut(null[Int]))
-    assert_false(take_imm(null[Int]))
-    assert_false(take_unbound(null[Int]))
-    assert_false(take_opaque(null[NoneType]))
+    assert_false(take_mut(_null[Int]))
+    assert_false(take_imm(_null[Int]))
+    assert_false(take_unbound(_null[Int]))
+    assert_false(take_opaque(_null[NoneType]))
 
 
 def test_null_with_explicit_origin() raises:
-    assert_false(take_imm(null[Int, ImmUntrackedOrigin]))
-    assert_false(take_unbound(null[Int, ImmUntrackedOrigin]))
+    assert_false(take_imm(_null[Int, ImmUntrackedOrigin]))
+    assert_false(take_unbound(_null[Int, ImmUntrackedOrigin]))
 
 
 def test_null_with_dependent_pointee_type() raises:
-    assert_false(take_generic(null[Float64]))
+    assert_false(take_generic(_null[Float64]))
 
 
 def test_null_and_real_pointer_share_param() raises:
     var x = 5
     write_if_present(Pointer(to=x))
     assert_equal(x, 42)
-    write_if_present(null[Int])
+    write_if_present(_null[Int])
     assert_equal(x, 42)
 
 

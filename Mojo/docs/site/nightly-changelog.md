@@ -98,18 +98,6 @@ This version is still a work in progress.
 
 ## Library changes
 
-- Added `null` to `std.memory`, an empty `Optional[Pointer[T, origin]]` whose
-  origin defaults to untracked. Unlike `None`, it can be passed to parameters
-  that infer the pointer's origin:
-
-  ```mojo
-  from std.memory import null
-
-  def maybe_write(ptr: Optional[MutPointer[Int, _]]): ...
-
-  maybe_write(null[Int])
-  ```
-
 - An optional mutable pointer now implicitly converts to an optional
   immutable pointer, as `Pointer` does.
 
