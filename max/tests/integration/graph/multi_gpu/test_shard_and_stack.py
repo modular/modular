@@ -69,6 +69,14 @@ def reference_shard_and_stack(
         ([128, 256], 2, 0),  # 2D, split axis 0
         ([64, 128, 256], 3, 1),  # 3D, split axis 1
         ([64, 128, 256], 2, 2),  # 3D, split axis 2
+        # Last axis via negative index, odd sizes: the device slice is strided
+        # with 5 * 7 = 35 outer rows.
+        ([5, 7, 24], 3, -1),
+        # Middle axis, odd sizes: 5 outer rows, 7 inner elements.
+        ([5, 12, 7], 3, 1),
+        # Large enough that the staged upload splits into multiple batches of
+        # inputs per device (each input's shard is 16 MiB at tp_degree 2).
+        ([4096, 2048], 3, 1),
     ],
 )
 def test_shard_and_stack_to_multiple_gpus(
@@ -139,9 +147,9 @@ def test_shard_and_stack_to_multiple_gpus(
         zip(results, expected_outputs, strict=True)
     ):
         assert isinstance(result, Buffer)
-        np.testing.assert_array_almost_equal(
+        # The op only moves bytes, so require an exact match.
+        np.testing.assert_array_equal(
             result.to_numpy(),
             expected,
-            decimal=5,
             err_msg=f"Mismatch for multi-GPU axis={axis}, tp_index={tp_index}",
         )
