@@ -87,6 +87,7 @@ modular_py_test(
             "test_dual_qk_fp8_kv_store_gpu.py",
             "test_msa_nvfp4_kv_gpu.py",
             "test_msa_mixed_split_gpu.py",
+            "test_mha_mixed_split_gpu.py",
             "test_chunked_staging_region_gpu.py",
             "test_kv_cache_buffer_pinned_gpu.py",
             "test_split_head_dims_attention_gpu.py",
@@ -330,6 +331,33 @@ modular_py_test(
         "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Mixed-step split of ragged MHA: bit-exact against the parts.
+modular_py_test(
+    name = "test_mha_mixed_split_gpu",
+    srcs = [
+        "test_mha_mixed_split_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/_kv_cache_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/tests/integration/test_common:graph_utils",
         requirement("numpy"),
         requirement("torch"),
     ],

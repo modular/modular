@@ -14,13 +14,23 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pytest
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.legacy.kernels import _MSA_SPLIT_ARGS_SIZE, _msa_split_args_value
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+)
 from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _Inputs,
+)
 from max.pipelines.modeling.types import RequestID
 from max.pipelines.speculative._mixed_step_split import (
     fill_mixed_step_split,
@@ -204,9 +214,14 @@ def test_fill_writes_each_replicas_record_on_its_devices() -> None:
         assert buffer.to_numpy().tolist() == [0] * _MSA_SPLIT_ARGS_SIZE
 
 
-def _decode_graph_spec() -> tuple[SpecDecodeInputTypeSpec, MHAKVCacheParams]:
+def _decode_graph_spec(
+    *, on_kv_leaves: bool = False
+) -> tuple[SpecDecodeInputTypeSpec, MHAKVCacheParams]:
     spec = SpecDecodeInputTypeSpec(
-        devices=[DeviceRef.CPU()], distributed=False, mixed_step_split=True
+        devices=[DeviceRef.CPU()],
+        distributed=False,
+        mixed_step_split=True,
+        mixed_step_split_on_kv_leaves=on_kv_leaves,
     )
     kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
@@ -234,6 +249,140 @@ def test_the_records_decode_after_a_models_trailing_group() -> None:
         assert [v.type for v in decoded.mixed_step_split] == list(
             _mixed_step_split_input_types(spec)
         )
+
+
+def test_the_records_ride_on_the_target_kv_leaves_only() -> None:
+    spec, kv_params = _decode_graph_spec(on_kv_leaves=True)
+    unified = MultiKVCacheParams.from_params(
+        {"target": kv_params, "draft": kv_params}
+    )
+    input_types = [
+        *build_spec_decode_input_types(spec, kv_params=unified),
+        *_mixed_step_split_input_types(spec),
+    ]
+    with Graph("decode", input_types=input_types) as graph:
+        decoded = decode_spec_decode_input_values(
+            graph.inputs, spec, kv_params=unified
+        )
+        (target,) = decoded.kv("target")
+        (draft,) = decoded.kv("draft")
+        assert target.mixed_step_split is decoded.mixed_step_split[0]
+        assert draft.mixed_step_split is None
+
+
+def test_declared_records_leave_the_kv_leaves_bare_without_the_opt_in() -> None:
+    """A target that reads the records itself must keep its unsplit ops."""
+    spec, kv_params = _decode_graph_spec()
+    unified = MultiKVCacheParams.from_params(
+        {"target": kv_params, "draft": kv_params}
+    )
+    for params in (kv_params, unified):
+        input_types = [
+            *build_spec_decode_input_types(spec, kv_params=params),
+            *_mixed_step_split_input_types(spec),
+        ]
+        with Graph("decode", input_types=input_types) as graph:
+            decoded = decode_spec_decode_input_values(
+                graph.inputs, spec, kv_params=params
+            )
+            assert len(decoded.mixed_step_split) == 1
+            paths = [("target",), ("draft",)] if params is unified else [()]
+            leaves = [leaf for path in paths for leaf in decoded.kv(*path)]
+            assert leaves
+            assert all(leaf.mixed_step_split is None for leaf in leaves)
+
+
+@pytest.mark.parametrize("records", [False, True], ids=["off", "on"])
+@pytest.mark.parametrize(
+    "distributed, traced, signal_index",
+    [
+        (False, False, None),
+        (True, False, None),
+        (False, True, None),
+        (True, True, None),
+        (False, True, 2),
+        (True, True, 4),
+    ],
+    ids=[
+        "plain",
+        "distributed",
+        "traced",
+        "distributed_traced",
+        "traced_signals_placed",
+        "distributed_traced_signals_placed",
+    ],
+)
+def test_the_batch_packs_the_records_where_the_graph_declares_them(
+    distributed: bool, traced: bool, signal_index: int | None, records: bool
+) -> None:
+    """The records follow the trailing and replay inputs; a traced graph's
+    signal buffers keep their own place."""
+    devices = [DeviceRef.CPU()]
+    spec = SpecDecodeInputTypeSpec(
+        devices=devices,
+        distributed=distributed,
+        include_signal_buffers=True,
+        trace_owns_signal_buffers=traced,
+        signal_buffer_index=signal_index,
+        mixed_step_split=records,
+    )
+    _, kv_params = _decode_graph_spec()
+    own = TensorType(DType.int64, [3], device=DeviceRef.CPU())
+    replay = TensorType(DType.int64, [2], device=DeviceRef.CPU())
+    declared = [
+        *build_spec_decode_input_types(spec, kv_params=kv_params),
+        own,
+        replay,
+        *_mixed_step_split_input_types(spec),
+    ]
+
+    def buffer() -> Buffer:
+        return Buffer.zeros(shape=[1], dtype=DType.int64)
+
+    signals = [buffer() for _ in devices]
+    split = mixed_step_split_buffers(len(devices)) if records else []
+    inputs = _Inputs(
+        tokens=buffer(),
+        input_row_offsets=buffer(),
+        return_n_logits=buffer(),
+        signal_buffers=signals,
+        host_input_row_offsets=buffer(),
+        data_parallel_splits=buffer(),
+        batch_context_lengths=[buffer() for _ in devices],
+        kv_cache_inputs=cast(
+            "KVCacheInputs[Buffer, Buffer]",
+            {"kv": [buffer() for _ in kv_params.flattened_kv_inputs()]},
+        ),
+        trailing=[buffer()],
+        replay_trailing=[buffer()],
+        draft_tokens=buffer(),
+        seed=buffer(),
+        temperature=buffer(),
+        top_k=buffer(),
+        max_k=buffer(),
+        top_p=buffer(),
+        min_top_p=buffer(),
+        mixed_step_split=split,
+        spec=spec,
+    )
+
+    packed = inputs.buffers
+    placed = signals if traced else []
+    assert len(packed) == len(declared) + len(placed)
+    at = len(declared) if signal_index is None else signal_index
+    assert all(
+        got is want
+        for got, want in zip(packed[at : at + len(placed)], placed, strict=True)
+    )
+    first_record = len(declared) - len(split)
+    if at <= first_record:
+        first_record += len(placed)
+    assert all(
+        got is want
+        for got, want in zip(
+            packed[first_record : first_record + len(split)], split, strict=True
+        )
+    )
 
 
 def test_a_graph_without_its_records_is_refused_at_decode() -> None:

@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import Any, Generic, overload
 
@@ -113,6 +113,12 @@ class SpecDecodeInputTypeSpec:
     every other input, a model's own trailing group included, so an export
     without them keeps every other slot. See
     :mod:`~max.pipelines.speculative._mixed_step_split`."""
+    mixed_step_split_on_kv_leaves: bool = False
+    """Decode each device's record onto the target's KV leaves, where a ragged
+    MHA call picks the split op from it. Set only for a target whose attention
+    reads the records through its KV collection; any other target that
+    declares them reads them from :attr:`SpecDecodeGraphInputs.mixed_step_split`
+    and keeps bare KV leaves. Requires :attr:`mixed_step_split`."""
 
 
 def _mixed_step_split_input_types(
@@ -680,6 +686,8 @@ def decode_spec_decode_input_values(
         )
     trailing = rest[: len(rest) - num_records]
     mixed_step_split = [value.tensor for value in rest[len(trailing) :]]
+    if mixed_step_split and spec.mixed_step_split_on_kv_leaves:
+        kv_tree = _attach_mixed_step_split(kv_tree, mixed_step_split, devices)
     # A leftover means the signature declared a group this decode misses,
     # which positional decoding cannot detect on its own.
     if trailing and not allow_trailing:
@@ -720,6 +728,36 @@ def decode_spec_decode_input_values(
         trailing=trailing,
         mixed_step_split=mixed_step_split,
     )
+
+
+def _attach_mixed_step_split(
+    kv_tree: Any,
+    records: Sequence[TensorValue],
+    devices: Sequence[DeviceRef],
+) -> Any:
+    """Returns ``kv_tree`` with its device's split record on each target leaf.
+
+    A tree with a ``target`` child gets them on that child only. A tree
+    without one is the target's alone, and a draft that shares that leaf reads
+    the record too, so only a draft whose calls ignore it may share the leaf.
+    """
+
+    def attach(
+        leaf: KVCacheInputsPerDevice[TensorValue, BufferValue],
+    ) -> KVCacheInputsPerDevice[TensorValue, BufferValue]:
+        device = leaf.kv_blocks.device
+        return replace(
+            leaf, mixed_step_split=records[list(devices).index(device)]
+        )
+
+    if not isinstance(kv_tree, Mapping) or "target" not in kv_tree:
+        return tree.map(attach, kv_tree, leaf=KVCacheInputsPerDevice)
+    return {
+        **kv_tree,
+        "target": tree.map(
+            attach, kv_tree["target"], leaf=KVCacheInputsPerDevice
+        ),
+    }
 
 
 class SpecDecodeGraphSignature:

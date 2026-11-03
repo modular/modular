@@ -4975,6 +4975,11 @@ def flash_attention_ragged(
     For a cache whose key and value head dims differ, ``input`` is
     ``head_dim`` wide and the output is ``v_head_dim`` wide.
 
+    When ``kv_collection`` carries a mixed-step split record and the call has
+    no ``rel_logits``, ``sink_weights`` or split head dims, this selects
+    ``mo.mha.ragged.paged.mixed_step_split``; every other call keeps
+    ``mo.mha.ragged.paged``.
+
     Args:
         kv_params: KVCacheParams object containing key-value cache parameters.
         input: TensorValue representing the input tensor with shape
@@ -5051,6 +5056,13 @@ def flash_attention_ragged(
         raise ValueError(
             "Expected attention_dispatch_metadata in kv_collection"
         )
+    # The split op has no rel-logits, sink or split-head-dim variant yet;
+    # those calls keep the unsplit op.
+    mixed_step_split = (
+        kv_collection.mixed_step_split
+        if rel_logits is None and sink_weights is None and v_head_dim is None
+        else None
+    )
 
     if sink_weights is not None:
         _check_rank(1, sink_weights=sink_weights)
@@ -5106,6 +5118,8 @@ def flash_attention_ragged(
         op_name = "mo.mha.ragged.paged"
         if sink_weights is not None:
             op_name = "mo.mha.ragged.paged.sink_weights"
+        elif mixed_step_split is not None:
+            op_name = "mo.mha.ragged.paged.mixed_step_split"
         if v_head_dim is not None:
             parameters["v_head_dim"] = v_head_dim
 
@@ -5122,6 +5136,8 @@ def flash_attention_ragged(
     elif sink_weights is not None:
         values.append(sink_weights)
     values.append(dispatch_metadata.tensor)
+    if mixed_step_split is not None:
+        values.append(mixed_step_split)
 
     return ops.inplace_custom(
         op_name,

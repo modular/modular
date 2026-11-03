@@ -317,6 +317,25 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_mixed_step_split_graph",
+    srcs = ["test_mixed_step_split_graph.py"],
+    # Building the model constructs `Allreduce`, which needs real accelerators.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_state_row_per_layer",
     srcs = ["test_state_row_per_layer.py"],
     # Building the model constructs `Allreduce`, which instantiates real

@@ -92,6 +92,10 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     """Set when each cache row packs a key and a value of different widths.
     The blocks alone cannot say so: one plane also means an MLA cache. An op
     that does not read this layout must refuse the cache."""
+    mixed_step_split: _Tensor | None = None
+    """This device's mixed-step split record (CPU ``uint32[7]``), set on a
+    target leaf of a spec graph that declares the records; an attention op
+    that can split reads it. Never a graph input of its own."""
 
     def __post_init__(self) -> None:
         def verify_rank1_int64_tensor(name: str, t: _Tensor | None) -> None:

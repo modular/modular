@@ -26,7 +26,8 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 
 from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
-from layout import Coord
+from layout import Coord, Idx
+from layout.tile_tensor import row_major as tt_row_major
 from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from kv_cache.paged_sparse_kv_index_remap import (
@@ -75,6 +76,14 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_inplace_decode_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask, SegmentMask
+from nn.attention.mixed_step_split import (
+    MIXED_STEP_DECODE_WIDTH,
+    MixedSplit,
+    is_packed,
+    paged_cache_rows,
+    read_mixed_split,
+    rebase_row_offsets,
+)
 from nn.attention.mha_utils import dispatch_mask, maybe_null_pointer
 from nn.attention.gpu.mla_graph import (
     mla_prefill_branch_fp8,
@@ -3493,6 +3502,185 @@ struct Struct_mha_ragged_paged_scalar_args:
             mha_decode_dispatch_metadata.to_tile_tensor[.int64](),
             context,
         )
+
+
+@extensibility.register("mo.mha.ragged.paged.mixed_step_split")
+struct Struct_mha_ragged_paged_mixed_step_split:
+    """Registers `mo.mha.ragged.paged.mixed_step_split`: `mo.mha.ragged.paged`
+    plus a mixed-step split record (`nn.attention.mixed_step_split`).
+
+    A valid record runs the decode rows and the prompt rows of one replica
+    batch as two views, each on its own route, into the one output. Zeros,
+    an invalid record, a strided operand or a non-NVIDIA target keep the
+    single launch of `mo.mha.ragged.paged`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        q_dtype: DType,
+        out_dtype: DType,
+        kv_dtype: DType,
+        //,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
+        mixed_step_split: InputTensor[dtype=.uint32, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime if is_gpu[target]() and context.target.is_nvidia_gpu():
+            var max_q_len = Int(max_prompt_length[0])
+            if max_q_len > MIXED_STEP_DECODE_WIDTH:
+                if case .Some(split) = read_mixed_split(
+                    mixed_step_split.to_tile_tensor(),
+                    Int(input_row_offsets.dim_size[0]()) - 1,
+                    Int(q.dim_size[0]()),
+                    max_q_len,
+                    Int(max_cache_length[0]),
+                ):
+                    if (
+                        is_packed(q.to_tile_tensor())
+                        and is_packed(output.to_tile_tensor())
+                        and is_packed(input_row_offsets.to_tile_tensor())
+                        and is_packed(cache_lengths.to_tile_tensor())
+                        and is_packed(kv_lookup_table.to_tile_tensor())
+                        and is_packed(mixed_step_split.to_tile_tensor())
+                    ):
+                        _mha_ragged_mixed_step_split[
+                            target=target,
+                            mask_str=mask_str,
+                            local_window_size=local_window_size,
+                        ](
+                            output,
+                            q,
+                            input_row_offsets,
+                            kv_blocks,
+                            page_stride,
+                            cache_lengths,
+                            kv_lookup_table,
+                            mixed_step_split,
+                            layer_idx,
+                            scale,
+                            split,
+                            context,
+                        )
+                        return
+
+        _execute_mha_ragged_paged_scalar_args[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            output.to_tile_tensor(),
+            q.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+            layer_idx,
+            scale,
+            mha_decode_dispatch_metadata.to_tile_tensor[.int64](),
+            context,
+        )
+
+
+def _mha_ragged_mixed_step_split[
+    q_dtype: DType,
+    out_dtype: DType,
+    kv_dtype: DType,
+    //,
+    *,
+    target: StaticString,
+    mask_str: StaticString,
+    local_window_size: Int,
+](
+    output: OutputTensor[dtype=out_dtype, rank=3, ...],
+    q: InputTensor[dtype=q_dtype, rank=3, ...],
+    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+    kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+    page_stride: InputTensor[dtype=.int64, rank=1, ...],
+    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+    mixed_step_split: InputTensor[dtype=.uint32, rank=1, ...],
+    layer_idx: UInt32,
+    scale: Float32,
+    split: MixedSplit,
+    context: DeviceContext,
+) raises:
+    """Runs ragged MHA on the head view, then on the tail view, into the
+    one `output`.
+
+    `q` and `output` are `[tokens, heads, depth]`, so a view is a pointer
+    offset at any head count. The split-K combine covers every `q` row it
+    gets, so each view gets its own rows and batch-local offsets.
+    """
+    comptime num_heads = Int(q.static_spec.shape_tuple[1])
+    comptime depth = Int(q.static_spec.shape_tuple[2])
+    comptime kv_heads = Int(kv_blocks.static_spec.shape_tuple[4])
+    comptime row_width = num_heads * depth
+    var batch = Int(input_row_offsets.dim_size[0]()) - 1
+    comptime for view_idx in range(2):
+        comptime in_tail = view_idx == 1
+        var view = split.tail if in_tail else split.head
+        var row_offsets = input_row_offsets.unsafe_ptr()
+        var rebased: Optional[DeviceBuffer[.uint32]] = None
+        comptime if in_tail:
+            rebased = rebase_row_offsets[with_cache_offsets=False](
+                row_offsets, row_offsets, batch, view, context
+            )
+            row_offsets = (
+                rebased.value().unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+            )
+        var cache = paged_cache_rows(
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor(),
+            cache_lengths.to_tile_tensor(),
+            kv_lookup_table.to_tile_tensor(),
+            mixed_step_split.to_tile_tensor(),
+            view.first_row,
+            view.rows,
+            view.lengths_slot,
+        )
+        generic_flash_attention_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+            output_dtype=out_dtype,
+        ](
+            TileTensor(
+                q.unsafe_ptr().unsafe_offset(view.first_token * row_width),
+                tt_row_major(view.tokens, Idx[num_heads], Idx[depth]),
+            ).as_imm(),
+            TileTensor(row_offsets, tt_row_major(view.rows + 1)).as_imm(),
+            cache,
+            layer_idx,
+            scale,
+            TileTensor(
+                output.unsafe_ptr().unsafe_offset(view.first_token * row_width),
+                tt_row_major(view.tokens, Idx[num_heads], Idx[depth]),
+            ),
+            context,
+            MHADecodeDispatchMetadata.from_runtime_values[
+                num_heads, num_heads // kv_heads
+            ](view.rows, view.max_q_len, view.max_cache_len, context),
+        )
+        _ = rebased^
 
 
 @extensibility.register("mo.mha.ragged.paged.sink_weights")

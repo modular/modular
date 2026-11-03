@@ -656,6 +656,7 @@ class SequentialDriver(
         ep_input_types: Sequence[TensorType | BufferType] = (),
         trailing_input_types: Sequence[TensorType | BufferType] = (),
         reads_mixed_step_split: bool = False,
+        mixed_step_split_on_kv_leaves: bool = False,
     ) -> None:
         super().__init__()
         self._verify = verify
@@ -678,6 +679,11 @@ class SequentialDriver(
             ),
             # Only a target whose ops read the records declares them.
             mixed_step_split=reads_mixed_step_split
+            and speculative_config is not None
+            and speculative_config.mixed_step_split_inputs,
+            # A target that reads them through its KV collection opts in.
+            mixed_step_split_on_kv_leaves=mixed_step_split_on_kv_leaves
+            and reads_mixed_step_split
             and speculative_config is not None
             and speculative_config.mixed_step_split_inputs,
         )

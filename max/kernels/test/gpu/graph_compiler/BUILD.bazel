@@ -22,5 +22,32 @@ package(default_visibility = ["//max:consumers"])
             "@mojo//:std",
         ],
     )
-    for src in glob(["**/*.mojo"])
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = ["test_mha_mixed_split_strided.mojo"],
+    )
 ]
+
+# The split runs on B200 only: other targets keep the single launch.
+mojo_test(
+    name = "test_mha_mixed_split_strided.mojo.test",
+    size = "large",
+    srcs = ["test_mha_mixed_split_strided.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:extensibility",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)

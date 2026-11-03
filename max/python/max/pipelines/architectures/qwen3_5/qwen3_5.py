@@ -193,6 +193,7 @@ class Qwen3_5FullAttentionBlock(Module):
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
         freq_row_ids: list[TensorValue] | None = None,
+        mixed_step_split: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
         """Runs the block over its sharded hidden states."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
@@ -212,10 +213,13 @@ class Qwen3_5FullAttentionBlock(Module):
                         attention_dispatch_metadata=(
                             attention_dispatch_metadata[i]
                         ),
+                        mixed_step_split=(
+                            mixed_step_split[i] if mixed_step_split else None
+                        ),
                     ),
                     freqs_cis[i],
                     input_row_offsets[i],
-                    None if freq_row_ids is None else freq_row_ids[i],
+                    freq_row_ids[i] if freq_row_ids else None,
                 )
                 for i, shard in enumerate(self.self_attn_shards)
             ],
@@ -656,9 +660,13 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                     ],
                     freqs_cis,
                     row_offsets,
+                    [] if freq_row_ids is None else freq_row_ids,
+                    [
+                        kv.mixed_step_split
+                        for kv in kv_collections
+                        if kv.mixed_step_split is not None
+                    ],
                 ]
-                if freq_row_ids is not None:
-                    full_attn_inputs.append(freq_row_ids)
                 return full_attn_inputs
             # All linear layers share one compiled subgraph, whose body is
             # built from the first of them. Only the arguments vary per call,
