@@ -21,7 +21,12 @@ from std.collections.string.string_span import (
 )
 from std.sys.info import size_of, simd_width_of
 
-from std.testing import assert_equal, assert_false, assert_true
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 from std.testing import TestSuite
 from test_utils import check_niches
 
@@ -1357,6 +1362,50 @@ def test_string_span_niche() raises:
 
     var none = Optional[StaticString](None)
     assert_false(none)
+
+
+def test_static_string_as_c_string_span() raises:
+    var hello: StaticString = "Hello World"
+    var c_str = hello.as_c_string_span()
+    assert_equal(len(c_str), 11)
+    assert_true(c_str.as_bytes() == hello.as_bytes())
+    # A suffix of a literal is followed by the literal's terminator.
+    assert_equal(len(hello[byte=6:].as_c_string_span()), 5)
+
+
+def test_static_string_as_c_string_span_empty() raises:
+    # A default `StaticString` has no memory to point at.
+    assert_equal(len(StaticString().as_c_string_span()), 0)
+    var hello: StaticString = "Hello"
+    # An empty slice isn't followed by a terminator, but is still empty.
+    assert_equal(len(hello[byte=2:2].as_c_string_span()), 0)
+    assert_equal(len(StaticString("").as_c_string_span()), 0)
+
+
+def test_static_string_as_c_string_span_not_terminated() raises:
+    var hello: StaticString = "Hello World"
+    # C would see "Hello World", reading past the end of the slice.
+    with assert_raises(contains="not nul-terminated"):
+        _ = hello[byte=0:5].as_c_string_span()
+    with assert_raises(contains="not nul-terminated"):
+        _ = hello[byte=1:10].as_c_string_span()
+
+
+def test_static_string_as_c_string_span_interior_nul() raises:
+    var cases: List[StaticString] = [
+        "Hello\x00World",  # The repro from issue #7450.
+        "\x00",  # Only a nul byte.
+        "\x00abc",  # At the start.
+        "abc\x00",  # At the end, before the terminator.
+        "a\x00\x00b",  # Repeated.
+    ]
+    for s in cases:
+        with assert_raises(contains="interior nul byte"):
+            _ = s.as_c_string_span()
+
+    # A suffix that starts after the nul byte is valid.
+    var after: StaticString = "ab\x00cd"
+    assert_equal(len(after[byte=3:].as_c_string_span()), 2)
 
 
 def main() raises:

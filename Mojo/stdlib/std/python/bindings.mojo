@@ -310,6 +310,9 @@ struct PythonModuleBuilder:
     var type_builders: List[PythonTypeBuilder]
     """List of type builders for types that will be exposed in the module."""
 
+    var _def_error: Optional[Error]
+    """The first error from declaring a function, raised by `finalize()`."""
+
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
@@ -334,6 +337,7 @@ struct PythonModuleBuilder:
         self.module = module
         self.functions = []
         self.type_builders = []
+        self._def_error = None
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -374,7 +378,14 @@ struct PythonModuleBuilder:
             docstring: The docstring for the function in the module.
         """
 
-        self.functions.append(PyMethodDef.function(func, func_name, docstring))
+        try:
+            self.functions.append(
+                PyMethodDef.function(func, func_name, docstring)
+            )
+        except e:
+            # Declaring can't raise, so `finalize()` raises this instead.
+            if not self._def_error:
+                self._def_error = e^
 
     def def_py_c_function(
         mut self,
@@ -392,7 +403,14 @@ struct PythonModuleBuilder:
             docstring: The docstring for the function in the module.
         """
 
-        self.functions.append(PyMethodDef.function(func, func_name, docstring))
+        try:
+            self.functions.append(
+                PyMethodDef.function(func, func_name, docstring)
+            )
+        except e:
+            # Declaring can't raise, so `finalize()` raises this instead.
+            if not self._def_error:
+                self._def_error = e^
 
     def def_py_c_function(
         mut self,
@@ -410,7 +428,14 @@ struct PythonModuleBuilder:
             docstring: The docstring for the function in the module.
         """
 
-        self.functions.append(PyMethodDef.function(func, func_name, docstring))
+        try:
+            self.functions.append(
+                PyMethodDef.function(func, func_name, docstring)
+            )
+        except e:
+            # Declaring can't raise, so `finalize()` raises this instead.
+            if not self._def_error:
+                self._def_error = e^
 
     def def_py_function[
         func: PyFunctionRaising
@@ -529,9 +554,12 @@ struct PythonModuleBuilder:
             The finalized Python module containing all registered functions and types.
 
         Raises:
-            If the module creation fails or if we fail to add any of the
+            If the module creation fails, if a declared function's name or
+            docstring can't be passed to C, or if we fail to add any of the
             declared functions or types to the module.
         """
+        if self._def_error:
+            raise self._def_error.take()
 
         var functions = self.functions^
         self.functions = List[PyMethodDef]()
@@ -580,6 +608,9 @@ struct PythonTypeBuilder(Copyable):
     var methods: List[PyMethodDef]
     """List of method definitions that will be exposed on the Python type."""
 
+    var _def_error: Optional[Error]
+    """The first error from declaring a method, raised by `finalize()`."""
+
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
@@ -598,6 +629,7 @@ struct PythonTypeBuilder(Copyable):
         self.basicsize = basicsize
         self._slots = {}
         self.methods = []
+        self._def_error = None
 
     @staticmethod
     def bind[T: Deinitable](type_name: StaticString) -> PythonTypeBuilder:
@@ -645,7 +677,8 @@ struct PythonTypeBuilder(Copyable):
                 module using the name specified during builder construction.
 
         Raises:
-            If the type object creation fails (see `finalize()` for details) or
+            If the type object creation fails (see `finalize()` for details),
+            if a declared method's name or docstring can't be passed to C, or
             if adding the type to the module fails, typically due to name
             conflicts or module state issues.
 
@@ -656,6 +689,9 @@ struct PythonTypeBuilder(Copyable):
             further operations, use the parameterless `finalize()` method
             instead and manually add it to the module.
         """
+        if self._def_error:
+            raise self._def_error.take()
+
         ref cpython = Python().cpython()
 
         if self.methods:
@@ -815,9 +851,16 @@ struct PythonTypeBuilder(Copyable):
         Returns:
             The builder with the method binding declared.
         """
-        self.methods.append(
-            PyMethodDef.function[static_method](method, method_name, docstring)
-        )
+        try:
+            self.methods.append(
+                PyMethodDef.function[static_method](
+                    method, method_name, docstring
+                )
+            )
+        except e:
+            # Declaring can't raise, so `finalize()` raises this instead.
+            if not self._def_error:
+                self._def_error = e^
         return self
 
     def def_py_c_method[
@@ -847,9 +890,16 @@ struct PythonTypeBuilder(Copyable):
             The builder with the method binding declared.
         """
 
-        self.methods.append(
-            PyMethodDef.function[static_method](method, method_name, docstring)
-        )
+        try:
+            self.methods.append(
+                PyMethodDef.function[static_method](
+                    method, method_name, docstring
+                )
+            )
+        except e:
+            # Declaring can't raise, so `finalize()` raises this instead.
+            if not self._def_error:
+                self._def_error = e^
         return self
 
     def def_py_c_method[
@@ -877,9 +927,16 @@ struct PythonTypeBuilder(Copyable):
             The builder with the method binding declared.
         """
 
-        self.methods.append(
-            PyMethodDef.function[static_method](method, method_name, docstring)
-        )
+        try:
+            self.methods.append(
+                PyMethodDef.function[static_method](
+                    method, method_name, docstring
+                )
+            )
+        except e:
+            # Declaring can't raise, so `finalize()` raises this instead.
+            if not self._def_error:
+                self._def_error = e^
         return self
 
     def def_py_method[
@@ -1186,11 +1243,13 @@ def _set_python_error(
             `ExceptionType.Exception`.
     """
     ref cpython = Python().cpython()
-    var error_message = String(e)
+    # C would cut the message short at a nul byte, so escape any instead.
+    var error_message = String(e).replace("\0", "\\x00")
     var error_type = cpython.get_error_global(exc_type.global_name)
     cpython.PyErr_SetString(
         error_type,
-        error_message.as_c_string_span().ptr(),
+        # Safety: the nul bytes are escaped above.
+        error_message._as_c_string_span_unchecked().ptr(),
     )
 
 

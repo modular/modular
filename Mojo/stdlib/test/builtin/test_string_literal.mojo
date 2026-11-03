@@ -254,6 +254,32 @@ def test_iter() raises:
         i += 1
 
 
+def test_as_c_string_span() raises:
+    # Checked at compile time, so these don't need `try`.
+    def lengths() -> Tuple[Int, Int, Int]:
+        return (
+            len("".as_c_string_span()),
+            len("Hello World".as_c_string_span()),
+            # Longer than a SIMD vector, which the check doesn't use at
+            # compile time.
+            len(
+                (
+                    "Lorem ipsum dolor sit amet, consectetur adipiscing elit,"
+                    " sed do eiusmod tempor incididunt ut labore et dolore"
+                    " magna aliqua."
+                ).as_c_string_span()
+            ),
+        )
+
+    var empty, hello, long = lengths()
+    assert_equal(empty, 0)
+    assert_equal(hello, 11)
+    assert_equal(long, 123)
+    # The comptime-known format strings `printf` passes to C take this path.
+    comptime fmt = "%d/%d"
+    assert_equal(len(StringLiteral._from[fmt]().as_c_string_span()), 5)
+
+
 def test_layout() raises:
     # Test empty StringLiteral contents
     var empty = "".ptr()

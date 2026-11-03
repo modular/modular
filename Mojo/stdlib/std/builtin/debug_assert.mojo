@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std._plugin import CurrentPlugin
+from std.ffi import c_char, CStringSpan
 from std.format._utils import _FixedWriteBuffer
 from std.io.io import _printf
 from std.os import abort
@@ -567,7 +568,13 @@ def _debug_assert_msg(
             return
 
         _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
-            loc.file_name().as_c_string_span(),
+            # Safety: the compiler sets the file name from a whole string
+            # literal, so it is nul-terminated. Asserting must not raise.
+            CStringSpan(
+                unsafe_from_ptr=loc.file_name()
+                .unsafe_ptr()
+                .unsafe_bitcast[c_char]()
+            ),
             loc.line(),
             loc.column(),
             message,

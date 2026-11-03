@@ -1671,7 +1671,8 @@ def mogg_async_error_value(
     var handle = external_call[
         "MGP_RT_AsyncRT_CreateAsync_Error", _AsyncValuePtr[mut=True]
     ](
-        error_message.as_c_string_span(),
+        # The runtime reads `byte_length()` bytes, not up to a nul byte.
+        error_message._as_c_string_span_unchecked(),
         error_message.byte_length(),
     )
     return AnyAsyncValueRef(handle=handle)

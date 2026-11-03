@@ -43,6 +43,7 @@ from std.math import align_down
 from std.os import PathLike, abort
 from std.sys import simd_width_of
 from std.ffi import c_char, CStringSpan
+from std.ffi.cstring import _validate_bytes
 from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
@@ -1054,11 +1055,15 @@ struct StringSpan[origin: ImmOrigin](
     @inline(.always)
     def as_c_string_slice(
         self: StaticString,
-    ) -> CStringSpan[ImmStaticOrigin]:
+    ) raises -> CStringSpan[ImmStaticOrigin]:
         """Return a CStringSpan for this StaticString.
 
         Returns:
             A c-compatible CStringSpan.
+
+        Raises:
+            An error if the string contains a nul byte, or isn't followed by
+            a nul terminator.
         """
         return self.as_c_string_span()
 
@@ -1066,12 +1071,48 @@ struct StringSpan[origin: ImmOrigin](
     @inline(.always)
     def as_c_string_span(
         self: StaticString,
-    ) -> CStringSpan[ImmStaticOrigin]:
-        """Return a CStringSpan for this StaticString.
+    ) raises -> CStringSpan[ImmStaticOrigin]:
+        """Returns a `CStringSpan` for this `StaticString`.
+
+        A `StaticString` can't be extended, so the byte just past its end must
+        already be a nul terminator. That holds for a whole string literal,
+        but not for most slices of one. To pass a slice to C, copy it into a
+        `String` and call `String.as_c_string_span()`.
+
+        C reads a string up to its first nul byte, so a string that contains a
+        nul byte can't be passed to C without silently losing the bytes after
+        it. This method raises instead.
 
         Returns:
             A c-compatible CStringSpan.
+
+        Raises:
+            An error if the string contains a nul byte, or isn't followed by
+            a nul terminator.
+
+        Example:
+
+        ```mojo
+        from std.testing import assert_equal, assert_raises
+
+        var hello: StaticString = "Hello World"
+        assert_equal(len(hello.as_c_string_span()), 11)
+
+        # The byte after "Hello" is " ", not a nul terminator.
+        with assert_raises(contains="not nul-terminated"):
+            _ = hello[byte=0:5].as_c_string_span()
+        ```
         """
+        # An empty string may have a null pointer, so don't read through it.
+        if not self:
+            return "".as_c_string_span()
+        # Validate the bytes plus the byte just past the end, which must be
+        # the nul terminator.
+        var c_str = Span(
+            unsafe_ptr=self.unsafe_ptr(), length=self.byte_length() + 1
+        )
+        _validate_bytes(c_str)
+        # Safety: the bytes are validated above.
         return {unsafe_from_ptr = self.unsafe_ptr().unsafe_bitcast[c_char]()}
 
     @inline(.always)

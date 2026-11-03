@@ -427,6 +427,10 @@ The source string must be mutable because `as_c_string_span()` may append
 a terminating zero byte. It may also move the string's buffer, so call it
 once and reuse the result.
 
+A Mojo string can contain a zero byte, but C reads a string only up to its
+first one, so it would silently see just the bytes before it. Instead,
+`as_c_string_span()` raises an error if the string contains a zero byte.
+
 ### Convert a C string to a Mojo string
 
 Use `String(unsafe_from_utf8_ptr=...)` to copy a null-terminated C string
@@ -469,7 +473,8 @@ String literals can be passed to C APIs that expect a null-terminated
 ```
 
 Mojo performs the conversion at compile time and embeds the null-terminated
-string in the compiled program.
+string in the compiled program. A literal that contains a zero byte fails to
+compile, so this call doesn't raise.
 
 ## Memory management
 

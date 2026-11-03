@@ -44,6 +44,30 @@ def test_init_from_invalid_byte_span() raises:
         _ = CStringSpan([Byte(1), Byte(0), Byte(2)])
 
 
+def test_init_nul_positions() raises:
+    # A nul byte first, with the terminator last, is an interior nul byte.
+    with assert_raises(contains="interior nul byte"):
+        _ = CStringSpan(String("\0mojo\0"))
+    with assert_raises(contains="interior nul byte"):
+        _ = CStringSpan(String("mo\0\0jo\0"))
+    with assert_raises(contains="interior nul byte"):
+        _ = CStringSpan(String("mojo\0\0"))
+    # Just the terminator is the empty C string.
+    assert_equal(len(CStringSpan(String("\0"))), 0)
+
+
+def test_init_long_span() raises:
+    # Long spans are scanned with SIMD; check around the vector boundaries.
+    var bytes = List[Byte](length=200, fill=Byte(ord("a")))
+    bytes[199] = 0
+    assert_equal(len(CStringSpan(Span(bytes))), 199)
+    for i in range(199):
+        bytes[i] = 0
+        with assert_raises(contains="interior nul byte"):
+            _ = CStringSpan(Span(bytes))
+        bytes[i] = Byte(ord("a"))
+
+
 def test_c_string_span_from_ptr() raises:
     var string = String("mojo!\0")
     var ptr = string.as_bytes().unsafe_ptr().unsafe_bitcast[c_char]()

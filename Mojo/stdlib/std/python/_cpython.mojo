@@ -360,7 +360,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         func: Variant[PyCFunction, PyCFunctionWithKeywords],
         func_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> Self:
+    ) raises -> Self:
         """Create a PyMethodDef for a function.
 
         Parameters:
@@ -371,6 +371,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             func: The function to wrap.
             func_name: The name of the function.
             docstring: The docstring for the function.
+
+        Raises:
+            An error if `func_name` or `docstring` contains a nul byte, or
+            isn't followed by a nul terminator.
         """
         # TODO(MSTDL-896):
         #   Support a way to get the name of the function from its parameter
@@ -390,7 +394,8 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             func_name.as_c_string_span(),
             func_ptr,
             flags,
-            docstring.as_c_string_span(),
+            # An empty docstring is a NULL `ml_doc`, which Python shows as None.
+            Optional(docstring.as_c_string_span()) if docstring else None,
         )
 
     @staticmethod
@@ -400,7 +405,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         func: PyCFunctionFast,
         func_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> Self:
+    ) raises -> Self:
         """Create a PyMethodDef for a `PyCFunctionFast` registered with
         `METH_FASTCALL`.
 
@@ -412,13 +417,18 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             func: The fastcall function to wrap.
             func_name: The name of the function.
             docstring: The docstring for the function.
+
+        Raises:
+            An error if `func_name` or `docstring` contains a nul byte, or
+            isn't followed by a nul terminator.
         """
         var flags = c_int(METH_FASTCALL | (METH_STATIC if static_method else 0))
         return PyMethodDef(
             func_name.as_c_string_span(),
             _fn_ptr_as_opaque(func),
             flags,
-            docstring.as_c_string_span(),
+            # An empty docstring is a NULL `ml_doc`, which Python shows as None.
+            Optional(docstring.as_c_string_span()) if docstring else None,
         )
 
 
@@ -731,7 +741,7 @@ struct PyModuleDef(Movable, Writable):
     """A function to call during deallocation of the module object,
     or `NULL` if not needed."""
 
-    def __init__(out self, name: StaticString):
+    def __init__(out self, name: StaticString) raises:
         self.base = {}
         self.name = name.as_c_string_span()
         self.docstring = {}
@@ -2111,9 +2121,13 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
         """
-        return self._PyRun_SimpleString(
-            command.as_c_string_span().ptr().as_unsafe_any_origin()
-        )
+        try:
+            return self._PyRun_SimpleString(
+                command.as_c_string_span().ptr().as_unsafe_any_origin()
+            )
+        except:
+            # Like an exception in `command`, this leaves none set.
+            return -1
 
     def PyRun_String(
         self,
@@ -2130,12 +2144,16 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
         """
-        return self._PyRun_String(
-            str.as_c_string_span().ptr().as_unsafe_any_origin(),
-            start,
-            globals,
-            locals,
-        )
+        try:
+            return self._PyRun_String(
+                str.as_c_string_span().ptr().as_unsafe_any_origin(),
+                start,
+                globals,
+                locals,
+            )
+        except:
+            self._set_embedded_nul_error()
+            return PyObjectPtr()
 
     def Py_CompileString(
         self,
@@ -2151,11 +2169,15 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
         """
-        return self._Py_CompileString(
-            str.as_c_string_span().ptr().as_unsafe_any_origin(),
-            filename.as_c_string_span().ptr().as_unsafe_any_origin(),
-            start,
-        )
+        try:
+            return self._Py_CompileString(
+                str.as_c_string_span().ptr().as_unsafe_any_origin(),
+                filename.as_c_string_span().ptr().as_unsafe_any_origin(),
+                start,
+            )
+        except:
+            self._set_embedded_nul_error()
+            return PyObjectPtr()
 
     def PyEval_EvalCode(
         self,
@@ -2272,6 +2294,15 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
         """
         self._PyErr_SetString(type, unsafe_cast[origin=ImmutAnyOrigin](message))
+
+    def _set_embedded_nul_error(self):
+        """Sets the `ValueError` CPython raises for a `const char*` argument
+        that contains a nul byte, which C can't represent.
+        """
+        self.PyErr_SetString(
+            self.get_error_global("PyExc_ValueError"),
+            "embedded null character".as_c_string_span().ptr(),
+        )
 
     def PyErr_SetNone(self, type: PyObjectPtr):
         """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
@@ -2445,9 +2476,13 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
         """
-        return self._PyImport_ImportModule(
-            name.as_c_string_span().ptr().as_unsafe_any_origin()
-        )
+        try:
+            return self._PyImport_ImportModule(
+                name.as_c_string_span().ptr().as_unsafe_any_origin()
+            )
+        except:
+            self._set_embedded_nul_error()
+            return PyObjectPtr()
 
     def PyImport_AddModule(self, var name: String) -> PyObjectPtr:
         """Return the module object corresponding to a module name.
@@ -2457,9 +2492,13 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
         """
-        return self._PyImport_AddModule(
-            name.as_c_string_span().ptr().as_unsafe_any_origin()
-        )
+        try:
+            return self._PyImport_AddModule(
+                name.as_c_string_span().ptr().as_unsafe_any_origin()
+            )
+        except:
+            self._set_embedded_nul_error()
+            return PyObjectPtr()
 
     # ===-------------------------------------------------------------------===#
     # Abstract Objects Layer
@@ -2479,9 +2518,13 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString
         """
-        return self._PyObject_HasAttrString(
-            obj, name.as_c_string_span().ptr().as_unsafe_any_origin()
-        )
+        try:
+            return self._PyObject_HasAttrString(
+                obj, name.as_c_string_span().ptr().as_unsafe_any_origin()
+            )
+        except:
+            # Like CPython, report a missing attribute rather than an error.
+            return 0
 
     def PyObject_GetAttrString(
         self, obj: PyObjectPtr, var name: String
@@ -2493,9 +2536,13 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
         """
-        return self._PyObject_GetAttrString(
-            obj, name.as_c_string_span().ptr().as_unsafe_any_origin()
-        )
+        try:
+            return self._PyObject_GetAttrString(
+                obj, name.as_c_string_span().ptr().as_unsafe_any_origin()
+            )
+        except:
+            self._set_embedded_nul_error()
+            return PyObjectPtr()
 
     def PyObject_SetAttrString(
         self, obj: PyObjectPtr, var name: String, value: PyObjectPtr
@@ -2506,11 +2553,15 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString
         """
-        return self._PyObject_SetAttrString(
-            obj,
-            name.as_c_string_span().ptr().as_unsafe_any_origin(),
-            value,
-        )
+        try:
+            return self._PyObject_SetAttrString(
+                obj,
+                name.as_c_string_span().ptr().as_unsafe_any_origin(),
+                value,
+            )
+        except:
+            self._set_embedded_nul_error()
+            return -1
 
     def PyObject_Str(self, obj: PyObjectPtr) -> PyObjectPtr:
         """Compute a string representation of object `obj`.
@@ -3638,8 +3689,14 @@ struct CPython(Defaultable, Movable):
 
         # NOTE: See https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
         # for what we want to do here.
+        var module_def: PyModuleDef
+        try:
+            module_def = PyModuleDef(name)
+        except:
+            self._set_embedded_nul_error()
+            return PyObjectPtr()
         var module_def_ptr = alloc(Layout[PyModuleDef].single()).unsafe_leak()
-        module_def_ptr.unsafe_write(PyModuleDef(name))
+        module_def_ptr.unsafe_write(module_def^)
 
         # TODO: set gil stuff
         # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
@@ -3731,11 +3788,15 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New
         """
-        return self._PyCapsule_New(
-            pointer,
-            name.as_c_string_span().ptr().as_unsafe_any_origin(),
-            destructor,
-        )
+        try:
+            return self._PyCapsule_New(
+                pointer,
+                name.as_c_string_span().ptr().as_unsafe_any_origin(),
+                destructor,
+            )
+        except:
+            self._set_embedded_nul_error()
+            return PyObjectPtr()
 
     def PyCapsule_GetPointer(
         self,
@@ -3769,13 +3830,17 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_IsValid
         """
-        return (
-            self._PyCapsule_IsValid(
-                capsule,
-                name.as_c_string_span().ptr().as_unsafe_any_origin(),
+        try:
+            return (
+                self._PyCapsule_IsValid(
+                    capsule,
+                    name.as_c_string_span().ptr().as_unsafe_any_origin(),
+                )
+                != 0
             )
-            != 0
-        )
+        except:
+            # No capsule's name contains a nul byte.
+            return False
 
     # ===-------------------------------------------------------------------===#
     # Memory Management

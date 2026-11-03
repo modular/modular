@@ -22,6 +22,7 @@ from std.collections.string.string_span import (
     GraphemeSliceIter,
     StaticString,
     _get_kgen_string,
+    _memchr,
 )
 from std.os import PathLike
 from std.ffi import c_char, CStringSpan
@@ -369,12 +370,40 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     def as_c_string_span(
         self,
     ) -> CStringSpan[ImmStaticOrigin]:
-        """Return a `CStringSpan` to the underlying memory of the string.
+        """Returns a `CStringSpan` to the underlying memory of the string.
+
+        C reads a string up to its first nul byte, so a literal that contains
+        a nul byte can't be passed to C without silently losing the bytes
+        after it. The literal is known at compile time, so this is checked at
+        compile time and the method doesn't raise.
+
+        Constraints:
+            The string literal must not contain a nul byte.
 
         Returns:
             The `CStringSpan` of the string.
+
+        Example:
+
+        ```mojo
+        from std.ffi import c_size_t, external_call
+        from std.testing import assert_equal
+
+        var length = external_call["strlen", c_size_t](
+            "Mojo".as_c_string_span()
+        )
+        assert_equal(length, 4)
+
+        # Fails to compile: the literal contains a nul byte.
+        # _ = "Hello\\x00World".as_c_string_span()
+        ```
         """
-        # Safety: StringLiteral is guaranteed to be nul-terminated.
+        comptime assert not _memchr(Self().as_bytes(), Byte(0)), (
+            "a string literal passed to C must not contain a nul byte, because"
+            " C would only see the bytes before it"
+        )
+        # Safety: StringLiteral is guaranteed to be nul-terminated, and is
+        # checked above to contain no other nul byte.
         return CStringSpan(unsafe_from_ptr=self.ptr().unsafe_bitcast[c_char]())
 
     @deprecated(use=as_c_string_span)

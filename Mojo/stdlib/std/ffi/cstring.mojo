@@ -13,7 +13,7 @@
 """Implements C string interoperability utilities."""
 
 from std.ffi import c_char
-from std.collections.string.string_span import _unsafe_strlen
+from std.collections.string.string_span import _memchr, _unsafe_strlen
 from std.memory import MaybeUninit
 from std.sys import size_of
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
@@ -21,12 +21,20 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 @inline(.always)
 def _validate_bytes(slice: Span[Byte, _]) raises:
-    var length = Int(_unsafe_strlen(slice.unsafe_ptr(), Int(len(slice))))
-    if length == len(slice) - 1:
-        return
-    elif length == 0 or length == len(slice):
+    """Checks that `slice` holds exactly one nul byte, as its last byte.
+
+    Args:
+        slice: The bytes to check, including the expected nul terminator.
+
+    Raises:
+        An error if the slice has no nul byte, or has a nul byte before its
+        last byte.
+    """
+    # The first nul must be the last byte; `_memchr` scans with SIMD.
+    var nul = _memchr(slice.as_imm(), Byte(0))
+    if not nul:
         raise Error("CStringSpan is not nul-terminated")
-    else:
+    if nul.unsafe_value() != slice.unsafe_ptr().unsafe_offset(len(slice) - 1):
         raise Error("CStringSpan has interior nul byte")
 
 

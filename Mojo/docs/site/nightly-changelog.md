@@ -98,6 +98,20 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `String.as_c_string_span()` and `StaticString.as_c_string_span()` now raise
+  if the string contains a nul byte. C reads a string only up to its first nul
+  byte, so it silently saw just the bytes before one: `"Hello\x00World"`
+  reached C as `"Hello"`. `StaticString.as_c_string_span()` also raises if the
+  string isn't followed by a nul terminator, as with most slices of a literal,
+  which previously let C read past the end of the slice. Copy a slice into a
+  `String` to pass it to C. `StringLiteral.as_c_string_span()` checks for nul
+  bytes at compile time and still doesn't raise. Functions that wrap these
+  report a nul byte the way they report other invalid names: for example,
+  `os.getenv()` returns its default, `os.setenv()` returns `False`, and the
+  CPython API wrappers set a `ValueError`. Python module and type builders
+  raise the error from `finalize()`.
+  ([#7450](https://github.com/modular/modular/issues/7450))
+
 - Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
 
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
