@@ -37,12 +37,18 @@ from comm.allreduce import allreduce
 from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
 from comm.broadcast import broadcast
 from extensibility import (
+    Input,
     InputTensor,
     InputVariadicTensors,
+    MutableInput,
+    Output,
     OutputTensor,
     OutputVariadicTensors,
     StableInputTensor,
     StableInputVariadicTensors,
+    Tensor,
+    TensorTuple,
+    TileTensorable,
 )
 from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
@@ -59,7 +65,11 @@ from layout import (
 )
 from max.gpu.host import DeviceContext, DeviceGraphBuilder
 
-from .kernels import _check_signal_buffer_size, _partitioned_scratch_requirement
+from .kernels import (
+    _check_signal_buffer_size,
+    _check_tensor_tuple,
+    _partitioned_scratch_requirement,
+)
 
 
 def _signal_pointers[
@@ -550,25 +560,22 @@ struct BundledAllReduceAddRMSNormQuantFP8:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        output_type: DType,
-        scales_type: DType,
-        rank: Int,
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        Sigs: TypeList[Trait=MutableInput & Tensor, ...],
+        //,
         target: StaticString,
         _trace_name: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
     ](
-        output: OutputTensor[dtype=output_type, rank=rank, ...],
-        out_scale: OutputTensor[dtype=scales_type, rank=rank, ...],
-        out_residual: OutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
-        signal_buffers: MutableInputVariadicTensors[
-            dtype=DType.uint8, rank=1, ...
-        ],
-        residual: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        scale_ub: InputTensor[dtype=DType.float32, ...],
+        output: Some[Output & Tensor],
+        out_scale: Some[Output & Tensor],
+        out_residual: Some[Output & Tensor],
+        inputs: TensorTuple[*Ins],
+        signal_buffers: TensorTuple[*Sigs],
+        residual: Some[Input & Tensor],
+        gamma: Some[Input & Tensor],
+        scale_ub: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Per-device fused allreduce.sum + add + rms_norm + fp8 quantize.
@@ -580,10 +587,8 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         from within `_launch_device_collective`, but for a single device.
 
         Parameters:
-            dtype: Element type of the input and residual tensors.
-            output_type: Element type of the quantized output tensor.
-            scales_type: Element type of the per-token scale tensor.
-            rank: Number of dimensions in the input and output tensors.
+            Ins: The element types of `inputs` (inferred).
+            Sigs: The element types of `signal_buffers` (inferred).
             target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
             epsilon: RMSNorm epsilon scalar.
@@ -600,16 +605,31 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             scale_ub: Quantization scale upper bound scalar (host).
             ctx: Device context for THIS GPU.
         """
-        comptime num_devices = inputs.size
-        comptime assert signal_buffers.size == num_devices, (
+        comptime num_devices = len(Ins)
+        comptime dtype = Ins[0].dtype
+        comptime output_type = type_of(output).dtype
+        comptime scales_type = type_of(out_scale).dtype
+        comptime rank = Ins[0].rank
+        comptime assert len(Sigs) == num_devices, (
             "expected allreduce inputs and signal buffers to have"
             " the same number of elements"
         )
+        _check_tensor_tuple[num_devices, dtype, rank, *Ins]()
+        _check_tensor_tuple[num_devices, .uint8, 1, *Sigs]()
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(out_scale).rank == rank
+        comptime assert type_of(out_residual).dtype == dtype
+        comptime assert type_of(out_residual).rank == rank
+        comptime assert type_of(residual).dtype == dtype
+        comptime assert type_of(residual).rank == rank
+        comptime assert type_of(gamma).dtype == dtype
+        comptime assert type_of(gamma).rank == 1
+        comptime assert type_of(scale_ub).dtype == DType.float32
 
         # Logic copied from kernel host code
-        var in_num_elems = inputs[0].size()
-        comptime last_dim_idx = type_of(inputs[0]).rank - 1
-        var cols = inputs[0].dim_size[last_dim_idx]()
+        var in_num_elems = Int(inputs[0].shape().product())
+        comptime last_dim_idx = rank - 1
+        var cols = Int(inputs[0].shape()[last_dim_idx].value())
         var rows = in_num_elems // cols
         var rows_per_rank = ceildiv(rows, num_devices)
 
@@ -630,30 +650,55 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             output_size_bytes + scales_size_bytes + residual_size_bytes
         )
         _check_signal_buffer_size(
-            signal_buffers[0].size(), scratch_buffer_size_bytes
+            Int(signal_buffers[0].shape().product()),
+            scratch_buffer_size_bytes,
         )
 
+        comptime assert conforms_to(type_of(inputs[0]), TileTensorable)
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_imm()
+            inputs[0].to_tile_tensor[dtype]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = _signal_pointers[num_devices](signal_buffers)
 
-        comptime for i in range(num_devices):
-            in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_imm()
+        # A collective addresses the signal buffers through flat pointers; a
+        # non-pointer storage policy aborts here at run time.
+        def rank_sig[
+            i: Int
+        ]() {imm signal_buffers} -> Pointer[Signal, MutAnyOrigin]:
+            comptime assert conforms_to(
+                type_of(signal_buffers[i]), TileTensorable
+            )
+            return (
+                signal_buffers[i]
+                .to_tile_tensor()
+                .ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
 
+        var rank_sigs = Array[_, num_devices](fill_with_unrolled=rank_sig)
+
+        comptime for i in range(num_devices):
+            comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[dtype]().as_imm()
+            )
+
+        comptime assert conforms_to(type_of(residual), TileTensorable)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(out_residual), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime assert conforms_to(type_of(scale_ub), TileTensorable)
+        comptime assert conforms_to(type_of(out_scale), TileTensorable)
         allreduce_residual_rmsnorm(
             in_tensors,
-            residual.to_tile_tensor[.int64]().as_imm(),
-            output.to_tile_tensor[.int64](),
-            out_residual.to_tile_tensor[.int64](),
-            gamma.to_tile_tensor[.int64](),
+            residual.to_tile_tensor[dtype]().as_imm(),
+            output.to_tile_tensor[output_type](),
+            out_residual.to_tile_tensor[dtype](),
+            gamma.to_tile_tensor[dtype](),
             epsilon,
             weight_offset.cast[dtype](),
-            scale_ub.unsafe_ptr()[],
-            out_scale.to_tile_tensor[.int64](),
+            scale_ub.to_tile_tensor[DType.float32]().ptr[],
+            out_scale.to_tile_tensor[scales_type](),
             rank_sigs,
             ctx,
         )
