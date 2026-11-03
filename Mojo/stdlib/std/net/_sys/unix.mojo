@@ -25,7 +25,7 @@ from std.ffi import (
 from std.io import FileDescriptor, IOError, RawFileDescriptor
 from std.io._syscall import check
 from std.sys import size_of
-from std.sys._libc import FcntlCommands, FcntlFDFlags, close, fcntl
+from std.sys._libc import FcntlCommands, FcntlFDFlags, close, fcntl, time_t
 from std.sys.info import CompilationTarget, platform_map, platform_type_map
 
 from .inet import SockaddrIn, SockaddrIn6
@@ -234,8 +234,6 @@ comptime F_SETFL: c_int = 4
 # Socket option values
 # ===----------------------------------------------------------------------=== #
 
-comptime time_t = c_long
-"""C `time_t`: a time in whole seconds."""
 comptime suseconds_t = Scalar[
     platform_map[
         T=DType, "suseconds_t", linux=c_long.dtype, macos=DType.int32

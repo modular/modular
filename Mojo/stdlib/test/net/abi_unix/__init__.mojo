@@ -89,7 +89,6 @@ from std.net._sys.unix import (
     sockaddr_un,
     socklen_t,
     suseconds_t,
-    time_t,
     timeval,
 )
 from std.sys._libc import FcntlCommands
@@ -123,7 +122,6 @@ comptime CABI_TYPEDEFS = TypeList.of[
     AbiTypedef["in_port_t", in_port_t],
     AbiTypedef["in_addr_t", in_addr_t],
     AbiTypedef["socklen_t", socklen_t],
-    AbiTypedef["time_t", time_t],
     AbiTypedef["suseconds_t", suseconds_t],
 ]()
 """The type aliases to check."""

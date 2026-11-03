@@ -20,6 +20,7 @@ functionality in the rest of the Mojo standard library.
 from std.ffi import (
     c_char,
     c_int,
+    c_long,
     c_size_t,
     c_pid_t,
     external_call,
@@ -389,3 +390,30 @@ def realpath(
         A pointer to the resolved path.
     """
     return external_call["realpath", type_of(result)](path, resolved_path)
+
+
+# ===-----------------------------------------------------------------------===#
+# stdint.h — pointer-sized integers
+# ===-----------------------------------------------------------------------===#
+
+comptime uintptr_t = UInt
+"""C `uintptr_t`: an unsigned integer as wide as a pointer."""
+
+comptime intptr_t = Int
+"""C `intptr_t`: a signed integer as wide as a pointer."""
+
+
+# ===-----------------------------------------------------------------------===#
+# time.h — times
+# ===-----------------------------------------------------------------------===#
+
+comptime time_t = c_long
+"""C `time_t`: a time in whole seconds."""
+
+
+@fieldwise_init
+struct timespec(TrivialRegisterPassable, Writable):
+    """C `struct timespec`: a time in seconds and nanoseconds."""
+
+    var tv_sec: time_t
+    var tv_nsec: c_long

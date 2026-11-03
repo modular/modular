@@ -1,6 +1,20 @@
 load("//bazel:api.bzl", "lit_tests", "modular_versioned_expand_template", "mojo_filecheck_test", "mojo_test")
+load("//Mojo/stdlib/test:cabi_test.bzl", "mojo_cabi_test")
 
 package(default_visibility = ["//visibility:private"])
+
+mojo_cabi_test(
+    name = "abi_unix",
+    platforms = [
+        "linux",
+        "macos",
+    ],
+)
+
+mojo_cabi_test(
+    name = "abi_macos",
+    platforms = ["macos"],
+)
 
 _FILECHECK_TESTS = [
     "test_exit_1.mojo",
@@ -15,6 +29,7 @@ _LIT_TESTS = [
 
 _PLATFORM_CONSTRAINTS = {
     "test_aarch64_target.mojo": ["@platforms//os:macos"],  # TODO (17471): Not all aarch64 have neon, so we need to guard against that, for now just require Apple Silicon.
+    "test_kqueue_macos.mojo": ["@platforms//os:macos"],
     "test_linux_target.mojo": ["@platforms//os:linux"],
     "test_macos_target.mojo": ["@platforms//os:macos"],
     # TODO(MSTDL-1965): Fix this ASAN issue.
