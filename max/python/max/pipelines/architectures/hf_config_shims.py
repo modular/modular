@@ -357,6 +357,20 @@ except ValueError:
     pass
 
 
+class BeamHFConfig(LagunaHFConfig):
+    """Local config class for Beam models (``model_type: beam``).
+
+    The pinned transformers predates Beam. Like Laguna, Beam keys its
+    ``rope_parameters`` by attention type (``None`` for the NoPE
+    full-attention layers), so it reuses Laguna's handling of those keys.
+    """
+
+    model_type = "beam"
+
+
+AutoConfig.register("beam", BeamHFConfig, exist_ok=True)
+
+
 class _MiMoV2HFConfig(PretrainedConfig):
     """Local config class for MiMo-V2 (``model_type: mimo_v2``).
 

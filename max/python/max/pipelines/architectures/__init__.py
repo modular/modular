@@ -80,6 +80,9 @@ def register_all_models() -> None:
     from . import hf_config_shims as hf_config_shims
 
     lazy_architectures = [
+        _LazyArch(
+            "BeamForCausalLM_ModuleV3", ".beam_modulev3", "beam_modulev3_arch"
+        ),
         _LazyArch("BertModel", ".bert", "bert_arch"),
         _LazyArch("D1Model", ".d1", "d1_arch"),
         _LazyArch("DeepseekV2ForCausalLM", ".deepseekV2", "deepseekV2_arch"),
