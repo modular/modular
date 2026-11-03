@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Provides the `hex` and `bin` functions.
+"""Provides the `bin`, `hex`, and `oct` functions.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -27,23 +27,25 @@ comptime _DEFAULT_DIGIT_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 
 def bin(num: Scalar, /, *, prefix: StaticString = "0b") -> String:
-    """Return the binary string representation an integral value.
+    """Returns the binary string representation of an integer.
 
-    ```mojo
-    print(bin(123))
-    print(bin(-123))
-    ```
-    ```plaintext
-    '0b1111011'
-    '-0b1111011'
-    ```
+    The string is prefixed with `"0b"` by default. Negative values start
+    with a minus sign, like `-0b1111011`.
 
     Args:
-        num: An integral scalar value.
-        prefix: The prefix of the formatted int.
+        num: The integer value to format.
+        prefix: The prefix prepended to the digits (defaults to `"0b"`).
 
     Returns:
-        The binary string representation of num.
+        The binary string representation of the integer.
+
+    For example:
+
+    ```mojo
+    print(bin(123))  # 0b1111011
+    print(bin(-123))  # -0b1111011
+    print(bin(123, prefix=""))  # 1111011
+    ```
     """
     return _format_int[radix=2](num, prefix=prefix)
 
@@ -51,30 +53,36 @@ def bin(num: Scalar, /, *, prefix: StaticString = "0b") -> String:
 # Need this until we have constraints to stop the compiler from matching this
 # directly to bin[dtype: DType](num: Scalar[dtype]).
 def bin(b: Scalar[.bool], /, *, prefix: StaticString = "0b") -> String:
-    """Returns the binary representation of a scalar bool.
+    """Returns the binary string representation of a bool value.
+
+    The bool is formatted as an integer, so the result is `0b0` or `0b1`
+    with the default prefix.
 
     Args:
-        b: A scalar bool value.
-        prefix: The prefix of the formatted int.
+        b: The bool value to format.
+        prefix: The prefix prepended to the digits (defaults to `"0b"`).
 
     Returns:
-        The binary string representation of b.
+        The binary string representation of the bool.
     """
     return bin(b.cast[.int8](), prefix=prefix)
 
 
 def bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
-    """Returns the binary representation of an indexer type.
+    """Returns the binary string representation of a value.
+
+    The value is converted to `Int` and formatted in base 2, prefixed with
+    `"0b"` by default.
 
     Parameters:
-        T: The Intable type.
+        T: The type of the value. Must conform to `Intable`.
 
     Args:
-        num: An indexer value.
-        prefix: The prefix of the formatted int.
+        num: The value to format.
+        prefix: The prefix prepended to the digits (defaults to `"0b"`).
 
     Returns:
-        The binary string representation of num.
+        The binary string representation of the value.
     """
     return bin(Int(Int(num)), prefix=prefix)
 
@@ -85,58 +93,60 @@ def bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
 
 
 def hex(value: Scalar, /, *, prefix: StaticString = "0x") -> String:
-    """Returns the hex string representation of the given integer.
+    """Returns the hexadecimal string representation of an integer.
 
-    The hexadecimal representation is a base-16 encoding of the integer value.
-
-    The returned string will be prefixed with "0x" to indicate that the
-    subsequent digits are hex.
+    The string is prefixed with `"0x"` by default and uses lowercase digits.
+    Negative values start with a minus sign, like `-0xff`.
 
     Args:
         value: The integer value to format.
-        prefix: The prefix of the formatted int.
+        prefix: The prefix prepended to the digits (defaults to `"0x"`).
 
     Returns:
-        A string containing the hex representation of the given integer.
+        A string containing the hexadecimal representation of the value.
+
+    For example:
+
+    ```mojo
+    print(hex(255))  # 0xff
+    print(hex(-255))  # -0xff
+    print(hex(255, prefix=""))  # ff
+    ```
     """
     return _format_int[radix=16](value, prefix=prefix)
 
 
 def hex[T: Intable, //](value: T, /, *, prefix: StaticString = "0x") -> String:
-    """Returns the hex string representation of the given integer.
+    """Returns the hexadecimal string representation of a value.
 
-    The hexadecimal representation is a base-16 encoding of the integer value.
-
-    The returned string will be prefixed with "0x" to indicate that the
-    subsequent digits are hex.
+    The value is converted to `Int` and formatted in base 16, prefixed with
+    `"0x"` by default.
 
     Parameters:
-        T: The indexer type to represent in hexadecimal.
+        T: The type of the value. Must conform to `Intable`.
 
     Args:
-        value: The integer value to format.
-        prefix: The prefix of the formatted int.
+        value: The value to format.
+        prefix: The prefix prepended to the digits (defaults to `"0x"`).
 
     Returns:
-        A string containing the hex representation of the given integer.
+        A string containing the hexadecimal representation of the value.
     """
     return hex(Int(Int(value)), prefix=prefix)
 
 
 def hex(value: Scalar[.bool], /, *, prefix: StaticString = "0x") -> String:
-    """Returns the hex string representation of the given scalar bool.
+    """Returns the hexadecimal string representation of a bool value.
 
-    The hexadecimal representation is a base-16 encoding of the bool.
-
-    The returned string will be prefixed with "0x" to indicate that the
-    subsequent digits are hex.
+    The bool is formatted as an integer, so the result is `0x0` or `0x1`
+    with the default prefix.
 
     Args:
         value: The bool value to format.
-        prefix: The prefix of the formatted int.
+        prefix: The prefix prepended to the digits (defaults to `"0x"`).
 
     Returns:
-        A string containing the hex representation of the given bool.
+        A string containing the hexadecimal representation of the bool.
     """
     return hex(value.cast[.int8](), prefix=prefix)
 
@@ -147,58 +157,60 @@ def hex(value: Scalar[.bool], /, *, prefix: StaticString = "0x") -> String:
 
 
 def oct(value: Scalar, /, *, prefix: StaticString = "0o") -> String:
-    """Returns the octal string representation of the given integer.
+    """Returns the octal string representation of an integer.
 
-    The octal representation is a base-8 encoding of the integer value.
-
-    The returned string will be prefixed with "0o" to indicate that the
-    subsequent digits are octal.
+    The string is prefixed with `"0o"` by default. Negative values start
+    with a minus sign, like `-0o173`.
 
     Args:
         value: The integer value to format.
-        prefix: The prefix of the formatted int.
+        prefix: The prefix prepended to the digits (defaults to `"0o"`).
 
     Returns:
-        A string containing the octal representation of the given integer.
+        A string containing the octal representation of the value.
+
+    For example:
+
+    ```mojo
+    print(oct(64))  # 0o100
+    print(oct(-123))  # -0o173
+    print(oct(64, prefix=""))  # 100
+    ```
     """
     return _format_int[radix=8](value, prefix=prefix)
 
 
 def oct[T: Intable, //](value: T, /, *, prefix: StaticString = "0o") -> String:
-    """Returns the octal string representation of the given integer.
+    """Returns the octal string representation of a value.
 
-    The octal representation is a base-8 encoding of the integer value.
-
-    The returned string will be prefixed with "0o" to indicate that the
-    subsequent digits are octal.
+    The value is converted to `Int` and formatted in base 8, prefixed with
+    `"0o"` by default.
 
     Parameters:
-        T: The intable type to represent in octal.
+        T: The type of the value. Must conform to `Intable`.
 
     Args:
-        value: The integer value to format.
-        prefix: The prefix of the formatted int.
+        value: The value to format.
+        prefix: The prefix prepended to the digits (defaults to `"0o"`).
 
     Returns:
-        A string containing the octal representation of the given integer.
+        A string containing the octal representation of the value.
     """
     return oct(Int(Int(value)), prefix=prefix)
 
 
 def oct(value: Scalar[.bool], /, *, prefix: StaticString = "0o") -> String:
-    """Returns the octal string representation of the given scalar bool.
+    """Returns the octal string representation of a bool value.
 
-    The octal representation is a base-8 encoding of the bool.
-
-    The returned string will be prefixed with "0o" to indicate that the
-    subsequent digits are octal.
+    The bool is formatted as an integer, so the result is `0o0` or `0o1`
+    with the default prefix.
 
     Args:
         value: The bool value to format.
-        prefix: The prefix of the formatted int.
+        prefix: The prefix prepended to the digits (defaults to `"0o"`).
 
     Returns:
-        A string containing the octal representation of the given bool.
+        A string containing the octal representation of the bool.
     """
     return oct(value.cast[.int8](), prefix=prefix)
 

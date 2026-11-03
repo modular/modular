@@ -65,10 +65,10 @@ trait Sized:
     """
 
     def __len__(self) -> Int:
-        """Get the length of the type.
+        """Returns the length of the conforming type.
 
         Returns:
-            The length of the type.
+            The length of the value.
         """
         ...
 
@@ -119,13 +119,13 @@ trait SizedRaising:
     """
 
     def __len__(self) raises -> Int:
-        """Get the length of the type.
+        """Returns the length of the conforming type, or raises if it can't.
 
         Returns:
-            The length of the type.
+            The length of the value.
 
         Raises:
-            If the length cannot be computed.
+            Error: If the length can't be determined.
         """
         ...
 
@@ -150,34 +150,73 @@ def len(value: StringSlice) -> Int:
 
 @inline(.always)
 def len[T: Sized](value: T) -> Int:
-    """Get the length of a value.
+    """Returns the number of elements in a value.
+
+    The length comes from the value's `__len__()` method, so any type that
+    conforms to `Sized` works here, including `List`, `Array`, `Span`,
+    `Dict`, and `Tuple`.
+
+    `len()` isn't available for `String`, because a UTF-8 string has no single
+    length: it could mean the number of bytes, code points, or user-visible
+    characters. Use `s.byte_length()` or `len(s.bytes())` for bytes,
+    `len(s.codepoints())` for code points, or `len(s.graphemes())` for
+    grapheme clusters.
 
     Parameters:
-        T: The Sized type.
+        T: The type of the value. Must conform to `Sized`.
 
     Args:
-        value: The object to get the length of.
+        value: The value to measure.
 
     Returns:
-        The length of the object.
+        The number of elements in the value.
+
+    For example, this gets the length of an array:
+
+    ```mojo
+    var numbers = [10, 20, 30]
+    print(len(numbers))  # 3
+    ```
     """
     return value.__len__()
 
 
 @inline(.always)
 def len[T: SizedRaising](value: T) raises -> Int:
-    """Get the length of a value.
+    """Returns the number of elements in a value whose length can fail.
+
+    This overload is for types that conform to `SizedRaising`, where the
+    `__len__()` method can raise because the length can't always be
+    determined, such as `PythonObject`. Types that conform to `Sized` use the
+    non-raising overload instead.
 
     Parameters:
-        T: The Sized type.
+        T: The type of the value. Must conform to `SizedRaising`.
 
     Args:
-        value: The object to get the length of.
+        value: The value to measure.
 
     Returns:
-        The length of the object.
+        The number of elements in the value.
 
     Raises:
-        If the length cannot be computed.
+        Error: If the value's `__len__()` method raises.
+
+    For example, this type raises from `__len__()` when the count is negative:
+
+    ```mojo
+    @fieldwise_init
+    struct Countdown(SizedRaising):
+        var remaining: Int
+
+        def __len__(self) raises -> Int:
+            if self.remaining < 0:
+                raise Error("Length is negative")
+            return self.remaining
+
+    def main() raises:
+        var countdown = Countdown(3)
+        print(len(countdown))  # 3
+    ```
     """
     return value.__len__()

@@ -534,16 +534,27 @@ def any[
     IterableType.IteratorType[origin_of(iterable)].Element,
     Boolable & Deinitable,
 ):
-    """Checks if **all** elements in the list are truthy.
+    """Checks whether any element in the iterable is truthy.
+
+    Checks elements in order and stops at the first truthy element. An empty
+    iterable returns `False`.
 
     Parameters:
-        IterableType: The type of the iterable containing `Boolable` items.
+        IterableType: The type of the iterable. Its elements must conform to
+            `Boolable` and `Deinitable`.
 
     Args:
         iterable: The iterable to check.
 
     Returns:
-        `True` if **any** element in the list is truthy, `False` otherwise.
+        `True` if any element is truthy, `False` otherwise.
+
+    For example:
+
+    ```mojo
+    print(any([0, 0, 5]))  # True
+    print(any([0, 0, 0]))  # False
+    ```
     """
 
     for var item0 in iterable:
@@ -554,14 +565,20 @@ def any[
 
 
 def any(value: SIMD) -> Bool:
-    """Checks if **any** element in the simd vector is truthy.
+    """Checks whether any element in the SIMD vector is truthy.
 
     Args:
-        value: The simd vector to check.
+        value: The SIMD vector to check.
 
     Returns:
-        `True` if **any** element in the simd vector is truthy, `False`
-        otherwise.
+        `True` if any element is truthy, `False` otherwise.
+
+    For example:
+
+    ```mojo
+    var flags = SIMD[.bool, 4](True, False, False, False)
+    print(any(flags))  # True
+    ```
     """
     return value.cast[.bool]().reduce_or()
 
@@ -577,16 +594,27 @@ def all[
     IterableType.IteratorType[origin_of(iterable)].Element,
     Boolable & Deinitable,
 ):
-    """Checks if **all** elements in the list are truthy.
+    """Checks whether all elements in the iterable are truthy.
+
+    Checks elements in order and stops at the first falsy element. An empty
+    iterable returns `True`.
 
     Parameters:
-        IterableType: The type of the iterable containing `Boolable` items.
+        IterableType: The type of the iterable. Its elements must conform to
+            `Boolable` and `Deinitable`.
 
     Args:
         iterable: The iterable to check.
 
     Returns:
-        `True` if **all** elements in the iterable are truthy, `False` otherwise.
+        `True` if all elements are truthy, `False` otherwise.
+
+    For example:
+
+    ```mojo
+    print(all([1, 2, 3]))  # True
+    print(all([1, 0, 3]))  # False
+    ```
     """
     for var item0 in iterable:
         var item = item0^
@@ -596,13 +624,19 @@ def all[
 
 
 def all(value: SIMD) -> Bool:
-    """Checks if **all** elements in the simd vector are truthy.
+    """Checks whether all elements in the SIMD vector are truthy.
 
     Args:
-        value: The simd vector to check.
+        value: The SIMD vector to check.
 
     Returns:
-        `True` if **all** elements in the simd vector are truthy, `False`
-        otherwise.
+        `True` if all elements are truthy, `False` otherwise.
+
+    For example:
+
+    ```mojo
+    var flags = SIMD[.bool, 4](True, True, True, False)
+    print(all(flags))  # False
+    ```
     """
     return value.cast[.bool]().reduce_and()
