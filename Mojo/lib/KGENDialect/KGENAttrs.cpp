@@ -172,9 +172,7 @@ EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 //===----------------------------------------------------------------------===//
 
 bool QuoteAttr::isConstant() const {
-  // Should we consider enclosed index ref constant within quoted attr? probably
-  // does not matter.
-  return ParameterAttr::isSimpleConstant(getQuotedParam());
+  return !EscapingReferenceFinder::check(*this);
 }
 
 //===----------------------------------------------------------------------===//
