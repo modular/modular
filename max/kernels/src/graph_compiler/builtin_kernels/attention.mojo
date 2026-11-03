@@ -92,6 +92,7 @@ from nn.attention.gpu.mla_graph import (
     mla_graph_takes_decode_branch,
     mla_prefill_decode_graph_fp8,
     mla_prefill_decode_graph_bf16,
+    mla_store_ragged_paged,
 )
 from nn.attention.gpu.mla_index_fp8 import (
     BlockSplitTopk,
@@ -5618,6 +5619,109 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
                 kv_input_fn,
                 context,
                 num_partitions_in=num_partitions_proj,
+            )
+
+
+@extensibility.register("mo.mla.store.ragged.paged")
+struct Struct_mla_store_ragged_paged:
+    """Registers the `mo.mla.store.ragged.paged` graph op with the graph
+    compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        epsilon: Float32,
+        context: DeviceContext,
+    ) raises:
+        """Stores raw MLA latent rows into the paged cache, normed and roped.
+
+        The store half of `mo.mla.graph.prefill.decode.paged` without the
+        attention: each row of `kv` -- a request's `token_idx`-th row, found
+        via `input_row_offsets` -- is RMSNormed on its first `kv_lora_rank`
+        elements against `kv_norm_gamma`, roped on its trailing rope slice at
+        its absolute position `cache_length + token_idx` through `freqs_cis`,
+        cast to the cache dtype, and written to `kv_blocks`. Rows a
+        speculative drafter stores but never queries need this; the attention
+        op always attends every query row, so it cannot stand in for the
+        store.
+
+        Args:
+            kv: Raw (un-normalized) latent rows, `[total_seq_len,
+                kv_lora_rank + qk_rope_head_dim]`, bfloat16.
+            input_row_offsets: Row offsets per request, `[batch + 1]`.
+            freqs_cis: Interleaved RoPE table, `[max_position,
+                qk_rope_head_dim]`; row `cache_length + token_idx` ropes a row.
+            kv_norm_gamma: RMSNorm gamma, `[kv_lora_rank]`.
+            kv_blocks: The paged cache's blocks, `[pages, 1, layers,
+                page_size, 1, kv_lora_rank + qk_rope_head_dim]`.
+            page_stride: Page-to-page distance in elements; -1 when packed.
+            cache_lengths: Cached tokens per request, `[batch]`.
+            kv_lookup_table: Page lookup table, `[batch, pages_per_seq]`.
+            max_prompt_length: The batch's max prompt length, `[1]`.
+            max_cache_length: The batch's max cache length, `[1]`.
+            layer_idx: Layer of the cache to write.
+            epsilon: RMSNorm epsilon.
+            context: Device context for GPU execution.
+        """
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.store.ragged.paged is only supported on GPU"
+        comptime cache_head_size = Int(kv_blocks.static_spec.shape_tuple[5])
+        comptime kv_norm_dim = Int(kv_norm_gamma.static_spec.shape_tuple[0])
+        comptime assert (
+            Int(kv.static_spec.shape_tuple[1]) == cache_head_size
+        ), "kv's width must equal the MLA cache's head size"
+        comptime assert (
+            cache_head_size > kv_norm_dim
+        ), "the store op needs a rope slice: a cache row wider than kv_norm_dim"
+
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+
+        @inline(.always)
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.store.ragged.paged",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_store_ragged_paged(
+                Int(kv.dim_size(0)),
+                input_row_offsets.to_tile_tensor[.int64](),
+                freqs_cis.to_tile_tensor[.int64](),
+                kv_norm_gamma.to_tile_tensor[.int64](),
+                kv_collection,
+                layer_idx,
+                epsilon,
+                kv_input_fn,
+                context,
             )
 
 

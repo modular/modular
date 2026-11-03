@@ -62,6 +62,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/kimik2_5",
     "//max/python/max/pipelines/architectures/kimik2_5_modulev3",
     "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
     "//max/python/max/pipelines/architectures/laguna",
     "//max/python/max/pipelines/architectures/laguna_modulev3",
     "//max/python/max/pipelines/architectures/lfm2",

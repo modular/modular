@@ -134,6 +134,7 @@ from max.pipelines.kv_cache.paged_kv_cache._common import (
     cache_valid_length_for_context,
     prompt_tokens_for_context,
 )
+from max.pipelines.lib.request_state import RequestStateMixin
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsPooledVisionMetrics,
     VisionEncoderCache,
@@ -197,7 +198,10 @@ from max.pipelines.sampling import (
     request_row_seed,
 )
 
-from ..graph_capture import ServeGraphCaptureRunner
+from ..graph_capture import (
+    ServeGraphCaptureRunner,
+    debug_verify_replay_refusal,
+)
 from ..graph_specs import GraphRole
 from ..interfaces import (
     ModelInputs,
@@ -2632,6 +2636,15 @@ class OverlapTextGenerationPipeline(
             sampling_buffers = self._build_spec_decode_sampling_buffers(
                 warmup_flat_batch
             )
+            # Capture freezes these two host launch args at their warmup
+            # value, so pin the permissive universal that is correct for
+            # every batch a captured graph replays.
+            sampling_buffers.max_k = Buffer.from_numpy(
+                np.array(-1, dtype=np.int64)
+            )
+            sampling_buffers.min_top_p = Buffer.from_numpy(
+                np.array(1.0, dtype=np.float32)
+            )
             model_inputs.temperature = sampling_buffers.temperature
             model_inputs.top_k = sampling_buffers.top_k
             model_inputs.max_k = sampling_buffers.max_k
@@ -2687,8 +2700,35 @@ class OverlapTextGenerationPipeline(
                 for context in replica:
                     self._kv_manager.release(context)
 
+    def _refuse_debug_verify_over_recurrent_state(self) -> None:
+        """Raises when launch-trace verification would corrupt this model.
+
+        The flag is debug-only and the corruption it causes is silent --
+        garbage tokens with a passing launch-trace check -- so it is refused
+        here, at capture construction, rather than at the first replay. Two
+        signals cover every capture-capable arch that advances state in
+        place: a recurrent leaf in the KV-params tree, and the request-state
+        store a registered decoder keeps outside it, which the tree cannot
+        see. A bound store is refused even if it updates from graph outputs
+        rather than in place: over-refusing a debug flag is cheap, a silent
+        double advance is not.
+        """
+        if not self._pipeline_config.debug_verify_replay:
+            return
+        holds_request_state = (
+            isinstance(self._pipeline_model, RequestStateMixin)
+            and self._pipeline_model.holds_request_state
+        )
+        refusal = debug_verify_replay_refusal(
+            self._kv_manager.params,
+            holds_request_state=holds_request_state,
+        )
+        if refusal is not None:
+            raise ValueError(refusal)
+
     def warmup_graph_capture(self) -> None:
         """Initializes and runs overlap device graph capture warmup."""
+        self._refuse_debug_verify_over_recurrent_state()
         if not isinstance(self._pipeline_model, _SupportsModelCapture):
             raise RuntimeError(
                 "Device graph capture is enabled but pipeline model does not "
@@ -3280,25 +3320,10 @@ class OverlapTextGenerationPipeline(
                 vision_result,
             )
 
-        if debug_verify_replay_enabled:
-            # Reuse non-KV buffers from replay inputs and only swap the
-            # runtime-shaped KV inputs used for debug verification.
-            debug_verify_model_inputs = copy.copy(model_inputs)
-            debug_verify_model_inputs.update(
-                kv_cache_inputs=self._kv_manager.runtime_inputs(inputs.batches)
-            )
-
         if not isinstance(model_inputs, _HasRaggedTokens):
             raise RuntimeError(
                 "OverlapTextGenerationPipeline requires model inputs with a "
                 "Buffer `tokens` field."
-            )
-        if debug_verify_model_inputs is not None and not isinstance(
-            debug_verify_model_inputs, _HasRaggedTokens
-        ):
-            raise RuntimeError(
-                "OverlapTextGenerationPipeline requires debug-verify model "
-                "inputs with a Buffer `tokens` field."
             )
 
         # Wrap the model inputs when speculative decoding is enabled.
@@ -3340,8 +3365,6 @@ class OverlapTextGenerationPipeline(
                     draft_tokens_np=draft_tokens_np,
                 )
             )
-            if debug_verify_model_inputs is not None:
-                debug_verify_model_inputs.tokens = model_inputs.tokens
         # Compute speculative bitmasks here, as late as possible before graph
         # replay, so that all model-input preparation above can overlap with
         # the CUDA host callback computing the bitmask on the driver thread.
@@ -3373,6 +3396,17 @@ class OverlapTextGenerationPipeline(
                 draft_tokens_np=draft_tokens_np,
                 num_draft_tokens_to_verify=num_draft_tokens_to_verify,
                 realized_draft_tokens_host=realized_draft_tokens_host,
+            )
+
+        if debug_verify_replay_enabled:
+            # The debug copy must be taken after every step input is assigned
+            # (draft tokens, sampling buffers, realized tokens, bitmasks) so
+            # the eager verification run sees the same inputs the replay
+            # reads. Reuse those buffers and only swap in the runtime-shaped
+            # KV inputs, whose dispatch scalars the captured graph froze.
+            debug_verify_model_inputs = copy.copy(model_inputs)
+            debug_verify_model_inputs.update(
+                kv_cache_inputs=self._kv_manager.runtime_inputs(inputs.batches)
             )
 
         # Execute the model and get next tokens.

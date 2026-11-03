@@ -712,9 +712,10 @@ def compute_mla_dispatch_scalars_runtime(
     """Binds a runtime Q-head count to a comptime dispatch instantiation.
 
     Every count here is one the kernel is measured correct at; 12, 24 and 48
-    are Kimi K3 at TP8/TP4/TP2. The list is not exhaustive — a count the kernel
-    supports but that no model asks for yet is left out rather than paying its
-    instantiation, so add an arm when a model needs one.
+    are Kimi K3 at TP8/TP4/TP2, and 96 is K3 whole at TP1. The list is not
+    exhaustive — a count the kernel supports but that no model asks for yet is
+    left out rather than paying its instantiation, so add an arm when a model
+    needs one.
     """
     if num_heads == 8:
         return _dispatch_scalars_for_heads[8](
@@ -766,6 +767,14 @@ def compute_mla_dispatch_scalars_runtime(
         )
     if num_heads == 64:
         return _dispatch_scalars_for_heads[64](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            is_fp8_kv,
+            sm_count,
+        )
+    if num_heads == 96:
+        return _dispatch_scalars_for_heads[96](
             batch_size,
             max_cache_valid_length,
             q_max_seq_len,

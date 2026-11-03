@@ -99,6 +99,7 @@ __all__ = [
     "SampledDraftSampler",
     "block_dispatch_metadata",
     "block_kv_with_dispatch",
+    "block_mla_dispatch_metadata",
     "local_row_offsets",
 ]
 
@@ -120,8 +121,17 @@ def block_dispatch_metadata(meta: TensorValue | None, k: int) -> TensorValue:
 
     Returns:
         The rebuilt dispatch metadata buffer.
+
+    Raises:
+        AssertionError: If ``meta`` is not an MHA leaf's 4-int buffer.
     """
     assert meta is not None
+    assert meta.shape[0] == 4, (
+        "MHA dispatch metadata holds four host ints [batch_size, "
+        "q_max_seq_len, num_partitions, max_cache_valid_length]; got a "
+        f"{meta.shape[0]!r}-wide buffer. An MLA leaf's three device ints are "
+        "rebuilt by block_mla_dispatch_metadata."
+    )
     cpu = DeviceRef.CPU()
     return ops.concat(
         [
@@ -134,14 +144,80 @@ def block_dispatch_metadata(meta: TensorValue | None, k: int) -> TensorValue:
     )
 
 
+def block_mla_dispatch_metadata(
+    meta: TensorValue | None, k: int
+) -> TensorValue:
+    """Rebuilds the MLA dispatch metadata at the draft block's query width.
+
+    The 3-int device buffer is ``[batch_size, max_prompt_length,
+    num_partitions]``. Like the MHA one, the leaf's own metadata carries the
+    *verify* query width; the block rewrites it to its own width so no
+    consumer of the buffer sees the verify's. (On AMD the decode fold's query
+    bound comes from the collection's ``max_prompt_length`` input, which
+    :func:`block_kv_with_dispatch` also pins to the block width.)
+    ``num_partitions`` is passed through as fetched rather than zeroed: AMD
+    dense MLA sizes its split from the batch and cache length, not the query
+    width, so the fetched count is the block's too. Elsewhere (SM100, AMD
+    sparse) the count was sized for the verify width, which only makes the
+    split suboptimal, never wrong.
+
+    Args:
+        meta: The leaf's verify-width dispatch metadata buffer.
+        k: The draft block width (anchor slot plus drafted tokens).
+
+    Returns:
+        The rebuilt dispatch metadata buffer.
+
+    Raises:
+        AssertionError: If ``meta`` is not an MLA leaf's 3-int buffer.
+    """
+    assert meta is not None
+    assert meta.shape[0] == 3, (
+        "MLA dispatch metadata holds three device ints [batch_size, "
+        "max_prompt_length, num_partitions]; got a "
+        f"{meta.shape[0]!r}-wide buffer. An MHA leaf's four host ints are "
+        "rebuilt by block_dispatch_metadata."
+    )
+    return ops.concat(
+        [
+            meta[0:1],
+            ops.constant(k, DType.int64, device=meta.device).reshape((1,)),
+            meta[2:3],
+        ],
+        axis=0,
+    )
+
+
+def _block_kv_dispatch_metadata(
+    meta: TensorValue | None, k: int
+) -> TensorValue:
+    """Rebuilds the dispatch metadata whichever leaf packed ``meta``.
+
+    The metadata's static width names its leaf: four ints are the MHA
+    kernel's host buffer, three the MLA kernel's device one. Each builder
+    then refuses the other leaf's buffer, so a mis-routed cache fails at
+    graph build instead of slicing past its metadata's end.
+    """
+    assert meta is not None
+    if meta.shape[0] == 3:
+        return block_mla_dispatch_metadata(meta, k)
+    return block_dispatch_metadata(meta, k)
+
+
 def block_kv_with_dispatch(
     block_kv: list[PagedCacheValues], k: int
 ) -> list[PagedCacheValues]:
-    """The block caches with the dispatch buffer rebuilt at width ``k``."""
+    """The block caches with the dispatch buffer rebuilt at width ``k``.
+
+    The builder is picked per leaf: an MHA leaf packs four host ints, an MLA
+    leaf three on-device ones. The block width also becomes the caches'
+    ``max_prompt_length`` for both leaf kinds alike, since the kernel router
+    reads the query width off that input.
+    """
     return [
         replace(
             kv,
-            attention_dispatch_metadata=block_dispatch_metadata(
+            attention_dispatch_metadata=_block_kv_dispatch_metadata(
                 kv.attention_dispatch_metadata, k
             ),
             max_prompt_length=ops.constant(

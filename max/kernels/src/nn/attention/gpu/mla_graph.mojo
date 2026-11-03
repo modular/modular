@@ -437,7 +437,9 @@ def fused_rope_rmsnorm_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
-@__name(t"fused_rope_rmsnorm_quantization_{dtype}_{out_rope_dtype}")
+@__name(
+    t"fused_rope_rmsnorm_quantization_{dtype}_{out_rope_dtype}_{store_only}"
+)
 def fused_rope_rmsnorm_quantization_kernel[
     dtype: DType,
     freq_dtype: DType,
@@ -452,6 +454,7 @@ def fused_rope_rmsnorm_quantization_kernel[
     n_rope_blocks: Int,
     n_rms_blocks: Int,
     out_rope_dtype: DType,
+    store_only: Bool,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
@@ -515,6 +518,7 @@ def fused_rope_rmsnorm_quantization_kernel[
         n_rope_blocks: Number of blocks allocated for RoPE computation.
         n_rms_blocks: Number of blocks allocated for RMSNorm computation.
         out_rope_dtype: Data type of the RoPE output.
+        store_only: Skip the query projection when storing cache rows.
         KVInputFnType: Type of the closure that loads the KV latent values.
         QRopeOutputEngine: Storage engine backing the `q_rope_output` tile.
         QRopeEngine: Storage engine backing the `q_rope` tile.
@@ -555,7 +559,7 @@ def fused_rope_rmsnorm_quantization_kernel[
         >= 1
     )
 
-    comptime num_q_heads = q_rope.static_shape[1]
+    comptime num_q_heads = 0 if store_only else q_rope.static_shape[1]
     comptime rope_dim = q_rope.static_shape[2]
     comptime kv_norm_dim = gamma.static_shape[0]
     comptime cache_dtype = cache_t.dtype
@@ -703,6 +707,7 @@ def mla_fused_rope_rmsnorm_quantization[
     & RegisterPassable
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
     //,
+    store_only: Bool = False,
 ](
     q_rope_output: TileTensor[mut=True, out_rope_dtype, ...],
     q_rope: TileTensor[mut=False, dtype, ...],
@@ -730,6 +735,7 @@ def mla_fused_rope_rmsnorm_quantization[
         out_rope_dtype: Data type of the RoPE output values.
         KVInputFnType: Type of the closure that loads the KV latent values
             (inferred).
+        store_only: Skip the query projection when storing cache rows.
 
     Args:
         q_rope_output: Output tensor for RoPE-applied query projections.
@@ -750,7 +756,7 @@ def mla_fused_rope_rmsnorm_quantization[
     """
     comptime hw_info = ctx.default_device_info
     comptime sm_count = hw_info.sm_count
-    comptime num_q_heads = q_rope.static_shape[1]
+    comptime num_q_heads = 0 if store_only else q_rope.static_shape[1]
     comptime num_k_heads = 1  # Fixed to 1 for MLA.
     comptime rope_dim = q_rope.static_shape[2]
     comptime kv_norm_dim = gamma.static_shape[0]
@@ -806,6 +812,7 @@ def mla_fused_rope_rmsnorm_quantization[
         n_rope_blocks,
         n_rms_blocks,
         out_rope_dtype,
+        store_only,
         KVInputFnType=KVInputFnType,
         QRopeOutputEngine=q_rope_output.Engine,
         QRopeEngine=q_rope.Engine,
@@ -826,6 +833,103 @@ def mla_fused_rope_rmsnorm_quantization[
         grid_dim=(n_rope_blocks + n_rms_blocks, num_workers, 1),
         block_dim=block_size,
         attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
+def mla_store_ragged_paged[
+    freq_dtype: DType,
+    gamma_dtype: DType,
+    collection_t: KVCollectionT,
+    KVInputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    //,
+](
+    num_tokens: Int,
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
+    gamma: TileTensor[mut=False, gamma_dtype, ...],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    epsilon: Float32,
+    kv_input_fn: KVInputFnType,
+    ctx: DeviceContext,
+) raises:
+    """Stores raw MLA latent rows into the paged cache, normed and roped.
+
+    The store half of `mla_prefill_decode_graph_bf16` without the attention:
+    the fused RoPE + RMSNorm + quantization kernel runs over every row the
+    caller supplies through `kv_input_fn`, RMSNorming the first `kv_norm_dim`
+    elements against `gamma`, roping the trailing rope slice at each row's
+    absolute position `cache_length + token_idx`, and writing the row to the
+    cache in the cache dtype. Rows a drafter stores but never queries need
+    this path; the attention graph always attends every query row, so it
+    cannot stand in for the store.
+
+    Parameters:
+        freq_dtype: Data type of frequency cosine/sine values.
+        gamma_dtype: Data type of RMSNorm gamma weights.
+        collection_t: Type of the KV cache collection (inferred).
+        KVInputFnType: Type of the closure that loads the KV latent values
+            (inferred).
+
+    Args:
+        num_tokens: Total rows to store; the caller's row count.
+        input_row_offsets: Row offsets indicating request boundaries.
+            Shape: [num_batches + 1].
+        freqs_cis: Precomputed interleaved RoPE frequency values. Shape:
+            [max_seq_len, rope_dim]; row `cache_length + token_idx` ropes a
+            row.
+        gamma: RMSNorm gamma weights. Shape: [kv_norm_dim].
+        kv_collection: Paged KV cache collection.
+        layer_idx: Index of the current transformer layer.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        kv_input_fn: Closure that loads the raw KV latent values. Shape:
+            [num_tokens, cache_head_dim], where cache_head_dim = kv_norm_dim
+            + rope_dim. It runs on the device, so it must copy what it
+            captures.
+        ctx: Device context for kernel execution.
+    """
+    comptime kv_params = collection_t.kv_params
+    comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
+    comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
+    comptime cache_row_elems = _mla_cache_row_elems[
+        kv_params, collection_t.dtype
+    ]()
+    comptime kv_norm_dim = gamma.static_shape[0]
+    comptime rope_dim = cache_row_elems - kv_norm_dim
+    comptime assert (
+        rope_dim > 0
+    ), "the store op needs a rope slice: a cache row wider than kv_norm_dim"
+    comptime assert (
+        freqs_cis.static_shape[1] == rope_dim
+    ), "freqs_cis's width must equal the cache row's rope slice"
+
+    # A step can legitimately store no rows, and a zero-width grid is a
+    # launch error.
+    if num_tokens == 0:
+        return
+
+    # The store-only specialization uses the query tile for its row count
+    # and rope width, but never reads or writes its storage.
+    var q_rope_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+        num_tokens * rope_dim
+    )
+    var q_rope = TileTensor(
+        q_rope_buf, row_major(num_tokens, Idx[1], Idx[rope_dim])
+    )
+
+    mla_fused_rope_rmsnorm_quantization[store_only=True](
+        q_rope,
+        q_rope.as_unsafe_any_origin(),  # hack aliasing.
+        input_row_offsets,
+        freqs_cis,
+        gamma,
+        kv_collection,
+        layer_idx,
+        epsilon,
+        kv_input_fn,
+        ctx,
     )
 
 

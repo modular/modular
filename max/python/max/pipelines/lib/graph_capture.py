@@ -45,7 +45,12 @@ import numpy as np
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer, batch_inplace_copy
 from max.engine import Model
-from max.nn.legacy.kv_cache import BatchCharacteristics, KVCacheParamInterface
+from max.nn.legacy.kv_cache import (
+    BatchCharacteristics,
+    CacheLeafParamInterface,
+    KVCacheParamInterface,
+    recurrent_leaves,
+)
 from max.nn.legacy.kv_cache.utils import AttnKeyInterface, MultiAttnKey
 from max.profiler import traced
 from max.tensor.compilation import CompiledCallable
@@ -222,6 +227,52 @@ def _engine_model_and_signal_buffers(
 def _pack_model_graph_key(key: AttnKeyInterface) -> int:
     """Maps a capture key to a uint64 for the C++ capture layer."""
     return hash(key) & 0xFFFFFFFFFFFFFFFF
+
+
+def debug_verify_replay_refusal(
+    kv_params: CacheLeafParamInterface,
+    *,
+    holds_request_state: bool = False,
+) -> str | None:
+    """Returns why launch-trace verification must not run over this model.
+
+    ``debug_verify_replay`` executes the step eagerly on the live buffers
+    and then replays the captured graph over the same ones, so state an op
+    advances in place -- the pools a recurrent/state-space leaf owns, or a
+    registered decoder's request-state store held outside the KV cache
+    (refused whether its pools update in place or from graph outputs,
+    since the runner cannot tell which) -- moves
+    twice per verified replay and every request after the first decodes
+    from corrupt state. Attention pages only append idempotently, so an
+    attention-only model returns ``None`` and verifies safely.
+
+    The runner sees only the KV-params tree, so a store outside it is the
+    pipeline's signal to pass: ``_refuse_debug_verify_over_recurrent_state``
+    reads it off the pipeline model.
+    """
+    states = recurrent_leaves(kv_params)
+    if not states and not holds_request_state:
+        return None
+    sites: list[str] = []
+    if states:
+        leaf_ids = sorted(
+            {region.leaf_id for state in states for region in state.regions}
+        )
+        sites.append(
+            f"in-place recurrent state (leaves: {', '.join(leaf_ids)})"
+        )
+    if holds_request_state:
+        sites.append("in-place request state held outside the KV cache")
+    return (
+        "debug_verify_replay is unsupported for a model that advances "
+        f"{' and '.join(sites)}. "
+        "Launch-trace verification executes the step eagerly on the live "
+        "state buffers and then replays it, so state a step advances in "
+        "place advances twice and corrupts every request decoded after "
+        "the first. Attention-only models append idempotently and stay "
+        "verifiable. Unset debug_verify_replay to run this model under "
+        "device graph capture."
+    )
 
 
 class ServeGraphCaptureRunner:
@@ -555,6 +606,11 @@ class ServeGraphCaptureRunner:
         already carry dispatch metadata prepared for the aligned characteristics
         (via ``runtime_inputs(batch_characteristics=...)``); this method only
         copies the inputs into the captured replay buffers and replays.
+
+        Raises:
+            ValueError: If ``debug_verify_replay`` is set and this cache holds
+                in-place recurrent state, which the eager verification run
+                would advance twice per replay.
         """
         input_buffers = model_inputs.buffers
         replay_graph_key = self._records.get(batch_characteristics)
@@ -563,6 +619,11 @@ class ServeGraphCaptureRunner:
                 f"No captured device graph for {batch_characteristics}. "
                 f"Available keys are {list(self._records.keys())}."
             )
+
+        if debug_verify_replay:
+            refusal = debug_verify_replay_refusal(self._kv_params)
+            if refusal is not None:
+                raise ValueError(refusal)
 
         packed_model_graph_key = _pack_model_graph_key(replay_graph_key)
         captured_inputs, outputs = self.graph_entries[replay_graph_key]

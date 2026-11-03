@@ -1239,3 +1239,27 @@ class MuseSparkHFConfig(_MuseGlimmerSubHFConfig):
 
 AutoConfig.register("muse_spark", MuseSparkHFConfig, exist_ok=True)
 AutoConfig.register("muse_spark_text", _MuseSparkTextHFConfig, exist_ok=True)
+
+
+class _K3DSparkHFConfig(PretrainedConfig):
+    """The Kimi K3 DSpark drafter's config (``model_type: k3_dspark``).
+
+    The drafter's model type, which no transformers release ships. The
+    drafter is only ever a ``--draft-model``, so the config is read for its
+    fields alone; the architecture module (``kimi_k3_modulev3.dspark``) is
+    imported lazily, after this config has already loaded.
+    """
+
+    model_type = "k3_dspark"
+
+    def __init__(
+        self, max_position_embeddings: int = 262144, **kwargs: Any
+    ) -> None:
+        self.max_position_embeddings = max_position_embeddings
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+
+
+AutoConfig.register("k3_dspark", _K3DSparkHFConfig, exist_ok=True)

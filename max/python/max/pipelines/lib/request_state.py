@@ -211,6 +211,17 @@ class RequestStateMixin:
 
     _state_store: RequestStateStore | None = None
 
+    @property
+    def holds_request_state(self) -> bool:
+        """Whether a decoder's state store is bound to this model.
+
+        A bound store hands the graph per-request buffers that the step
+        advances in place, so a caller that must not execute a step twice
+        over the same state -- launch-trace verification -- refuses while
+        this is ``True``.
+        """
+        return self._state_store is not None
+
     def release(self, request_id: RequestID) -> None:
         """Frees the state a finished request held."""
         if self._state_store is not None:

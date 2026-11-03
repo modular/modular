@@ -298,6 +298,11 @@ def register_all_models() -> None:
             ".kimi_k3_modulev3",
             "kimi_k3_modulev3_arch",
         ),
+        _LazyArch(
+            "K3DSparkModel",
+            ".kimi_k3_modulev3.dspark",
+            "k3_dspark_draft_arch",
+        ),
         _LazyArch("LagunaForCausalLM", ".laguna", "laguna_arch"),
         _LazyArch(
             "LagunaForCausalLM_ModuleV3",

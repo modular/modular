@@ -6681,6 +6681,101 @@ def flare_mla_decompress_k_cache(
 
 
 @_rejects_split_head_dims
+def store_mla_latent_ragged(
+    kv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_norm_gamma: TensorValue,
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    epsilon: float,
+) -> None:
+    """Stores raw MLA latent rows into the paged cache, normed and roped.
+
+    The store half of :func:`mla_prefill_decode_graph` without the attention:
+    each row of ``kv`` -- a request's ``token_idx``-th row, found via
+    ``input_row_offsets`` -- is RMSNormed on its first ``kv_norm_gamma``-wide
+    latent slice, roped on its trailing rope slice at its absolute position
+    ``cache_length + token_idx``, cast to the cache dtype, and written to
+    layer ``layer_idx`` of the cache. A speculative drafter's context rows
+    are stored but never queried, and the attention op always attends every
+    query row, so they need this op.
+
+    Args:
+        kv: Raw (un-normalized) latent rows, ``[total_seq_len, kv_lora_rank +
+            qk_rope_head_dim]``, bfloat16.
+        input_row_offsets: Row offsets for the batch.
+        freqs_cis: Interleaved RoPE table, ``[max_position,
+            qk_rope_head_dim]``; row ``cache_length + token_idx`` ropes a row.
+        kv_norm_gamma: RMSNorm gamma, ``[kv_lora_rank]``.
+        kv_params: KV cache parameters.
+        kv_collection: Paged KV cache values.
+        layer_idx: Layer index (uint32).
+        epsilon: RMSNorm epsilon.
+    """
+    if kv.rank != 2:
+        raise ValueError(f"expected kv of rank 2 but got {kv.rank}")
+
+    if kv.dtype != DType.bfloat16:
+        raise ValueError(f"expected kv to have dtype bfloat16, got {kv.dtype}")
+
+    if kv.shape[1] != kv_params.head_dim:
+        raise ValueError(
+            f"expected kv to have width {kv_params.head_dim}, got {kv.shape[1]}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected uint32 input_row_offsets but got"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if kv_norm_gamma.rank != 1:
+        raise ValueError(
+            f"expected kv_norm_gamma of rank 1 but got {kv_norm_gamma.rank}"
+        )
+
+    if freqs_cis.rank != 2:
+        raise ValueError(
+            f"expected freqs_cis of rank 2 but got {freqs_cis.rank}"
+        )
+
+    if kv_norm_gamma.shape[0] + freqs_cis.shape[1] != kv_params.head_dim:
+        raise ValueError(
+            f"expected kv_norm_gamma width {kv_norm_gamma.shape[0]} plus"
+            f" freqs_cis width {freqs_cis.shape[1]} to equal the cache head"
+            f" size {kv_params.head_dim}"
+        )
+
+    if kv_collection.kv_scales is not None:
+        raise ValueError(
+            "store_mla_latent_ragged writes an unscaled latent; a scaled KV"
+            " cache is not supported."
+        )
+
+    assert kv_params.page_size is not None
+    _reject_nvfp4_mla_kv_cache(kv_params, "mo.mla.store.ragged.paged")
+
+    ops.inplace_custom(
+        "mo.mla.store.ragged.paged",
+        device=kv.device,
+        values=[
+            kv,
+            input_row_offsets,
+            freqs_cis,
+            kv_norm_gamma,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+            ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+    )
+
+
+@_rejects_split_head_dims
 def cross_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,

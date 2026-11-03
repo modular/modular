@@ -1101,6 +1101,7 @@ def _target_context(started: list[EPConfig], *, ep_size: int) -> Any:
         huggingface_config=_HF_CONFIG,
         return_logits=ReturnLogits.VARIABLE,
         return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+        target_layer_ids=(3, 7),
         start_ep=started.append,
     )
 
@@ -1128,6 +1129,7 @@ def test_a_composed_decoder_completes_its_config_as_serving_does(
     assert config.outputs == ModelOutputConfig(
         return_logits=ReturnLogits.VARIABLE,
         return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+        target_layer_ids=(3, 7),
     )
     # Expert parallelism starts through the caller, which shares it.
     assert started == [_EP]

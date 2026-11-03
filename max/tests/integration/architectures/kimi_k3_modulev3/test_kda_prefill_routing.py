@@ -131,6 +131,10 @@ def _recurrence_mlir(
             *tensors,
             gate_mode=gate_mode,
             out_type=io_type,
+            # The plain build's arm: the pin only matters under
+            # speculation, and the routing under test is the same either
+            # way.
+            pin_fma=False,
         )
         graph.output(TensorValue(out))
     return str(graph)

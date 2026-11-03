@@ -1497,6 +1497,7 @@ class RegisteredDecoderBuilder:
             ModelOutputConfig(
                 return_logits=context.return_logits,
                 return_hidden_states=context.return_hidden_states,
+                target_layer_ids=context.target_layer_ids or None,
             ),
         )
         if isinstance(config, DeploymentConfig):
