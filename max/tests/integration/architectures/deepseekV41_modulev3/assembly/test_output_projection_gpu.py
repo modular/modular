@@ -14,16 +14,33 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 import numpy as np
 import pytest
 from max import functional as F
-from max.driver import Accelerator, Buffer, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType
+from max.engine import InferenceSession
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    Type,
+)
 from max.nn import Module
+from max.nn.legacy.kernels import (
+    rms_norm_quantize_mxfp8_q_kv,
+    rope_quantize_dynamic_block_scaled,
+)
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.pipelines.architectures.deepseekV41.layers.csa2 import (
+    WindowStore,
+    norm_quantize_q_store_kv,
+    store_window_kv,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
     build_kv_params,
@@ -42,6 +59,9 @@ from max.pipelines.architectures.deepseekV41_modulev3.layers.block import (
 from max.pipelines.architectures.deepseekV41_modulev3.layers.mhc import (
     mhc_identity_writeback,
 )
+from max.pipelines.architectures.deepseekV41_modulev3.layers.mxfp8_linear import (
+    Mxfp8Rows,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.layers.norm import RMSNorm
 from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
     RopeParams,
@@ -53,11 +73,15 @@ from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
 )
 from max.pipelines.lib import KVCacheConfig
 from max.tensor import Tensor, default_device
+from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
 from runtime_config import text_config
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
-class _AttentionOutput(Module[..., object]):
+
+class _AttentionOutput(Module[_P, _R]):
     """An attention block built for its output projection alone."""
 
     def __init__(self, mesh: DeviceMesh) -> None:
@@ -75,6 +99,7 @@ class _AttentionOutput(Module[..., object]):
             KVCacheConfig(kv_cache_page_size=128),
             [DeviceRef.GPU(i) for i in range(mesh.num_devices)],
         )
+        self.kv_params = kv
         config = DeepseekV41Config(
             dtype=DType.bfloat16,
             kv_params=kv,
@@ -91,7 +116,7 @@ class _AttentionOutput(Module[..., object]):
         )
 
 
-class _Projection(_AttentionOutput):
+class _Projection(_AttentionOutput[[Tensor], Tensor]):
     def forward(self, values: Tensor) -> Tensor:
         values = F.distributed_broadcast(values, self.mesh)
         values = values.to(DeviceMapping(self.mesh, (Sharded(1),)))
@@ -99,7 +124,9 @@ class _Projection(_AttentionOutput):
         return output.local_shards[0].cast(DType.float32)
 
 
-class _FoldedProjection(_AttentionOutput):
+class _FoldedProjection(
+    _AttentionOutput[[Tensor, Tensor], tuple[Tensor, Tensor]]
+):
     """The projection twice: rotation folded into ``wo_a``'s quantize, and
     rotated first by the chain."""
 
@@ -131,7 +158,7 @@ def _mesh(degree: int) -> DeviceMesh:
 
 
 def _weights(
-    module: Module[..., object], dense_woa: bool = False
+    module: Module[_P, _R], dense_woa: bool = False
 ) -> dict[str, Buffer]:
     weights: dict[str, Buffer] = {}
     for name, parameter in module.parameters:
@@ -178,7 +205,7 @@ def _weights(
 @pytest.fixture(scope="module", params=[1, 2], ids=["tp1", "tp2"])
 def projection(
     request: pytest.FixtureRequest,
-) -> tuple[Callable[..., Any], int]:
+) -> tuple[CompiledCallable[[Tensor], Tensor], int]:
     degree = int(request.param)
     with F.lazy():
         module = _Projection(_mesh(degree))
@@ -190,7 +217,9 @@ def projection(
 
 
 @pytest.fixture(scope="module", params=[1, 2], ids=["tp1", "tp2"])
-def folded_projection(request: pytest.FixtureRequest) -> Callable[..., Any]:
+def folded_projection(
+    request: pytest.FixtureRequest,
+) -> CompiledCallable[[Tensor, Tensor], tuple[Tensor, Tensor]]:
     with F.lazy():
         module = _FoldedProjection(_mesh(int(request.param)))
     return module.compile(
@@ -202,7 +231,7 @@ def folded_projection(request: pytest.FixtureRequest) -> Callable[..., Any]:
 
 @pytest.mark.parametrize("rows", [1, 17])
 def test_output_projection_tp(
-    projection: tuple[Callable[..., Any], int], rows: int
+    projection: tuple[CompiledCallable[[Tensor], Tensor], int], rows: int
 ) -> None:
     run, _ = projection
     cols = np.arange(64 * 512)
@@ -230,7 +259,10 @@ def test_output_projection_tp(
 
 @pytest.mark.parametrize("rows", [1, 17])
 def test_folded_inverse_rope_matches_rotate_first(
-    folded_projection: Callable[..., Any], rows: int
+    folded_projection: CompiledCallable[
+        [Tensor, Tensor], tuple[Tensor, Tensor]
+    ],
+    rows: int,
 ) -> None:
     """The rope-quantize fold reads what the chain's rotated rows quantize to."""
     rng = np.random.default_rng(rows)
@@ -253,12 +285,187 @@ def test_folded_inverse_rope_matches_rotate_first(
     np.testing.assert_array_equal(folded.to_numpy(), chain.to_numpy())
 
 
+class _QuantizedProjection(
+    _AttentionOutput[[Tensor, Tensor], tuple[Tensor, Tensor]]
+):
+    """The folded projection twice: the rotation folded into ``wo_a``'s own
+    quantize, and ``wo_a`` fed the rows a producer quantized and rotated."""
+
+    def forward(self, values: Tensor, cos_sin: Tensor) -> tuple[Tensor, Tensor]:
+        values = F.distributed_broadcast(values, self.mesh)
+        cos_sin = F.distributed_broadcast(cos_sin, self.mesh)
+        values = values.to(DeviceMapping(self.mesh, (Sharded(1),)))
+        folded = self.attn._output_projection(values, (cos_sin, 512))
+        codes, scales = _rotate_back_and_quantize(
+            values.reshape([values.shape[0], 64 * 512]), cos_sin
+        )
+        quantized = self.attn._project_grouped(
+            self.attn.wo_a.forward_quantized(Mxfp8Rows(codes, scales))
+        )
+        return (
+            folded.local_shards[0].cast(DType.float32),
+            quantized.local_shards[0].cast(DType.float32),
+        )
+
+
+def _rope_quantize_inverse(
+    x: TensorValue, cos_sin: TensorValue
+) -> tuple[TensorValue, TensorValue]:
+    return rope_quantize_dynamic_block_scaled(
+        x,
+        cos_sin,
+        512,
+        inverse=True,
+        sf_vector_size=32,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.float8_e4m3fn,
+    )
+
+
+_rotate_back_and_quantize = F.functional(_rope_quantize_inverse)
+
+
+@pytest.fixture(scope="module")
+def quantized_projection() -> CompiledCallable[
+    [Tensor, Tensor], tuple[Tensor, Tensor]
+]:
+    with F.lazy():
+        module = _QuantizedProjection(_mesh(1))
+    return module.compile(
+        TensorType(DType.bfloat16, ["rows", 64, 512], DeviceRef.GPU(0)),
+        TensorType(DType.float32, ["rows", 32, 2], DeviceRef.GPU(0)),
+        weights=_weights(module, dense_woa=True),
+    )
+
+
+@pytest.mark.parametrize("rows", [1, 17])
+def test_quantized_wo_a_matches_the_folded_launch(
+    quantized_projection: CompiledCallable[
+        [Tensor, Tensor], tuple[Tensor, Tensor]
+    ],
+    rows: int,
+) -> None:
+    rng = np.random.default_rng(rows)
+    values = rng.standard_normal((rows, 64, 512)).astype(np.float32)
+    values_bf16 = _buffer(
+        (values.view(np.uint32) >> 16).astype(np.uint16), DType.bfloat16
+    )
+    inv_freqs = V41RotaryEmbedding(
+        RopeParams(64, 32.0, 1.0, 4096), 10000.0, 1.0
+    ).inv_freqs()
+    angles = np.outer(np.arange(rows, dtype=np.float32) * 97, inv_freqs)
+    cos_sin = np.stack([np.cos(angles), np.sin(angles)], axis=-1)
+    folded, quantized = quantized_projection(
+        Tensor.from_dlpack(values_bf16).to(Accelerator(0)),
+        Tensor.from_dlpack(
+            _buffer(cos_sin.astype(np.float32), DType.float32)
+        ).to(Accelerator(0)),
+    )
+    assert np.any(folded.to_numpy() != 0)
+    np.testing.assert_array_equal(folded.to_numpy(), quantized.to_numpy())
+
+
+def _norm_store_graph(cache_shape: tuple[int, ...], fused: bool) -> Graph:
+    rows, q_cols, kv_cols = 5, 256, 512
+    gpu, cpu = DeviceRef.GPU(0), DeviceRef.CPU()
+    types: list[Type[Any]] = [
+        TensorType(DType.bfloat16, [rows, q_cols + kv_cols], gpu),
+        TensorType(DType.bfloat16, [q_cols], gpu),
+        TensorType(DType.bfloat16, [kv_cols], gpu),
+        TensorType(DType.int64, [rows], gpu),
+        TensorType(DType.float32, [4096, 64], gpu),
+        TensorType(DType.int64, [rows], gpu),
+        TensorType(DType.int64, [1], cpu),
+        BufferType(DType.uint8, list(cache_shape), gpu),
+    ]
+    with Graph(f"norm_store_{fused}", input_types=types) as graph:
+        x, q_weight, kv_weight, positions, rope, slots, stride = (
+            value.tensor for value in graph.inputs[:7]
+        )
+        cache = graph.inputs[7].buffer
+        if fused:
+            q, scales = norm_quantize_q_store_kv(
+                x,
+                q_weight,
+                kv_weight,
+                1e-6,
+                q_cols,
+                WindowStore(cache, positions, rope, slots, stride),
+            )
+        else:
+            q, scales, kv = rms_norm_quantize_mxfp8_q_kv(
+                x, q_weight, kv_weight, 1e-6, q_cols
+            )
+            store_window_kv(
+                cache, kv, positions, rope, slots, block_stride=stride
+            )
+        graph.output(q, scales)
+    return graph
+
+
+def test_fused_q_norm_quantize_and_kv_store_matches_separate_ops() -> None:
+    gpu = Accelerator(0)
+    with F.lazy():
+        module: _AttentionOutput[[Tensor], Tensor] = _AttentionOutput(
+            DeviceMesh((gpu,), (1,), ("tp",))
+        )
+    child = module.kv_params.children["swa"]
+    assert isinstance(child, KVCacheParams)
+    cache_shape = (1, *(int(dim) for dim in child.shape_per_block))
+    session = InferenceSession(devices=[CPU(), gpu])
+    fused = session.load(_norm_store_graph(cache_shape, fused=True))
+    reference = session.load(_norm_store_graph(cache_shape, fused=False))
+    rng = np.random.default_rng(912)
+    rows, q_cols, kv_cols = 5, 256, 512
+
+    def bf16_buffer(values: np.ndarray) -> Buffer:
+        bits = (values.view(np.uint32) >> 16).astype(np.uint16)
+        return Buffer.from_numpy(bits).view(DType.bfloat16)
+
+    x = rng.normal(size=(rows, q_cols + kv_cols)).astype(np.float32)
+    q_weight = rng.uniform(0.8, 1.2, size=q_cols).astype(np.float32)
+    kv_weight = rng.uniform(0.8, 1.2, size=kv_cols).astype(np.float32)
+    positions = np.arange(rows, dtype=np.int64)
+    slots = np.array([0, 1, 2, -1, -1], np.int64)
+    inv_freqs = V41RotaryEmbedding(
+        RopeParams(64, 32.0, 1.0, 4096), 10000.0, 1.0
+    ).inv_freqs()
+    angles = np.outer(np.arange(4096, dtype=np.float32), inv_freqs)
+    rope = np.concatenate([np.cos(angles), np.sin(angles)], axis=-1)
+    initial_cache = np.zeros(cache_shape, np.uint8)
+    stride = np.array([-1], np.int64)
+
+    def run(model: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        block = Buffer.from_numpy(initial_cache.copy()).to(gpu)
+        q, scales = model.execute(
+            bf16_buffer(x).to(gpu),
+            bf16_buffer(q_weight).to(gpu),
+            bf16_buffer(kv_weight).to(gpu),
+            Buffer.from_numpy(positions).to(gpu),
+            Buffer.from_numpy(rope).to(gpu),
+            Buffer.from_numpy(slots).to(gpu),
+            Buffer.from_numpy(stride),
+            block,
+        )
+        return (
+            q.to(CPU()).view(DType.uint8).to_numpy(),
+            scales.to(CPU()).view(DType.uint8).to_numpy(),
+            block.to(CPU()).to_numpy(),
+        )
+
+    q_fused, scales_fused, cache_fused = run(fused)
+    q_reference, scales_reference, cache_reference = run(reference)
+    np.testing.assert_array_equal(q_fused, q_reference)
+    np.testing.assert_array_equal(scales_fused, scales_reference)
+    np.testing.assert_array_equal(cache_fused, cache_reference)
+
+
 class _PassFFN(Module[..., Tensor]):
     """The boundary's feed-forward stand-in: passes its rows through.
 
     Takes the same arguments the real feed-forward's forward does, the EP
-    communication buffers and the host row count among them, and ignores
-    every one but the rows.
+    communication buffers, the host row count and the mHC step's quantized
+    rows among them, and ignores every one but the rows.
     """
 
     def forward(
@@ -267,8 +474,9 @@ class _PassFFN(Module[..., Tensor]):
         mask: Tensor,
         comm_buffers: object = None,
         total_rows: Tensor | None = None,
+        x_rows: object = None,
     ) -> Tensor:
-        del mask, comm_buffers, total_rows
+        del mask, comm_buffers, total_rows, x_rows
         return x
 
 
@@ -276,7 +484,7 @@ class _PassFFN(Module[..., Tensor]):
 _BOUNDARY_HIDDEN = 1024
 
 
-class _Boundary(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
+class _Boundary(Module[[Tensor], tuple[Tensor, Tensor, Tensor, Tensor]]):
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         super().__init__()
         layer = object.__new__(DecoderLayer)
@@ -290,7 +498,9 @@ class _Boundary(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
             [_BOUNDARY_HIDDEN], 2.0, dtype=DType.bfloat16, device=Accelerator(0)
         )
         monkeypatch.setattr(layer, "ffn", _PassFFN(), raising=False)
-        monkeypatch.setattr(layer, "_attention", lambda x, site: (x, []))
+        monkeypatch.setattr(
+            layer, "_attention", lambda x, site, x_rows=None: (x, [])
+        )
         for role in ("attn", "ffn"):
             setattr(
                 layer,
@@ -309,7 +519,7 @@ class _Boundary(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
             )
         self.layer = layer
 
-    def forward(self, stream: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def forward(self, stream: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         total = stream.shape[0]
         pre = F.broadcast_to(
             F.constant(
@@ -329,17 +539,18 @@ class _Boundary(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
             zero,
             F.shape_to_tensor([total]).cast(DType.int32),
         )
-        mixed, pre, result, _, _, _ = self.layer(
+        mixed, pre, result, _, _, entry, _ = self.layer(
             stream, pre, y, post, comb, rows, zero, zero, zero, [], [], []
         )
-        return mixed, pre, result
+        return mixed, pre, result, entry
 
 
 def test_compiled_decoder_boundary_normalizes_ffn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with default_device(Accelerator(0)):
-        module = _Boundary(monkeypatch)
+        with F.lazy():
+            module = _Boundary(monkeypatch)
     run = module.compile(
         TensorType(
             DType.bfloat16, ["rows", 4, _BOUNDARY_HIDDEN], DeviceRef.GPU(0)
@@ -353,7 +564,13 @@ def test_compiled_decoder_boundary_normalizes_ffn(
     bits = values.view(np.uint32)
     bits = ((bits + 0x7FFF + ((bits >> 16) & 1)) >> 16).astype(np.uint16)
     inputs = Tensor.from_dlpack(Buffer.from_numpy(bits).view(DType.bfloat16))
-    mixed, pre, result = run(inputs.to(Accelerator(0)))
+    mixed, pre, result, entry = run(inputs.to(Accelerator(0)))
+    # The stream entering the layer is the first fused step's own output,
+    # which the DSpark tap reads: here the identity write-back, so the input.
+    np.testing.assert_array_equal(
+        entry.cast(DType.float32).to_numpy(),
+        (bits.astype(np.uint32) << 16).view(np.float32),
+    )
     stream = mixed.cast(DType.float32).to_numpy()
     collapse = np.sum(stream * pre.to_numpy()[:, :, None], axis=1)
     bits = collapse.astype(np.float32).view(np.uint32)

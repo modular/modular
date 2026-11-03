@@ -42,9 +42,11 @@ and score at their own ratio rather than fall through the published
 three names. ``kind`` is cross-checked against the same facts at
 construction, so no layout reaches ``forward`` half-derived.
 
-Selections are **entry (group) ids**, ascending, ``-1``-padded, ``[T,
-index_topk]`` int32 -- the one contract every consumer reads. The
-attention maps them to leaf slots exactly once
+Selections are **entry (group) ids**, unordered, ``-1``-padded, ``[T,
+index_topk]`` int32 -- the one contract every consumer reads. They stay
+in selection order, as in V2's indexer: the CSA2 index list maps each id
+to a slot on its own and the attention masks per key, so no consumer
+reads the order. The attention maps them to leaf slots exactly once
 (:meth:`~.attention.Attention._index_list`); no second ratio
 conversion happens anywhere.
 
@@ -75,7 +77,6 @@ from max.tensor.sharding import DeviceMesh
 from ...deepseekV41.layers.csa2 import store_compressed_kv
 from ..layer_resolver import LayerInfo
 from .attention import RaggedRows, _leaf_slots_op, position_rope_table
-from .candidate_pool import position_order
 from .index_ops import (
     indexer_k_store,
     indexer_q_rope_quant,
@@ -83,7 +84,7 @@ from .index_ops import (
     indexer_select_block_topk,
     indexer_select_masked,
 )
-from .mxfp8_linear import MXFP8Linear
+from .mxfp8_linear import MXFP8Linear, Mxfp8Rows
 from .norm import RMSNorm
 from .rope import RopeParams, rope_for_layer
 
@@ -368,7 +369,7 @@ class Indexer(Module[..., tuple[Tensor, Tensor | None]]):
     def forward(
         self,
         x: Tensor,
-        qr: Tensor,
+        qr: Tensor | Mxfp8Rows,
         latent: Tensor | None,
         latent_valid: Tensor | None,
         rows: RaggedRows,
@@ -384,7 +385,8 @@ class Indexer(Module[..., tuple[Tensor, Tensor | None]]):
         Args:
             x: ``[T, hidden]`` bf16 block input.
             qr: ``[T, q_lora_rank]`` the attention's shared low-rank
-                query (``q_norm(wq_a(x))``), not recomputed here.
+                query (``q_norm(wq_a(x))``), not recomputed here; as
+                MXFP8 rows when the attention's norm already quantized it.
             latent: ``[T, head_dim]`` bf16 pre-RoPE compressor latents
                 (owners only; ``None`` at reindex layers, which own no
                 compressor and store nothing).
@@ -410,7 +412,7 @@ class Indexer(Module[..., tuple[Tensor, Tensor | None]]):
 
         Returns:
             ``(comp_indices, pool)``: ``[T, index_topk]`` int32 entry
-            ids, ascending, ``-1`` padded; ``pool`` is the candidate
+            ids, unordered, ``-1`` padded; ``pool`` is the candidate
             source's kept blocks (block ids, ``-1`` padded), ``None``
             elsewhere.
         """
@@ -418,7 +420,10 @@ class Indexer(Module[..., tuple[Tensor, Tensor | None]]):
         positions = rows.positions
         if rope_table is None:
             rope_table = position_rope_table(
-                self.rope.inv_freqs(), self.max_position, t, x
+                self.rope.inv_freqs(),
+                self.max_position,
+                self.config.max_batch_rows,
+                x,
             )
 
         # --- Stores, in the pinned order: the compressed record first,
@@ -466,7 +471,12 @@ class Indexer(Module[..., tuple[Tensor, Tensor | None]]):
         # entries, and the cluster top-k selects from the transient
         # scores.
         top_k = min(self.index_topk, self.cap)
-        q = F.reshape(self.wq_b(qr), [t, self.n_heads * self.head_dim])
+        q = F.reshape(
+            self.wq_b(qr)
+            if isinstance(qr, Tensor)
+            else self.wq_b.forward_quantized(qr),
+            [t, self.n_heads * self.head_dim],
+        )
         # bf16 matmul exactly as the reference's bf16 ``weights_proj``
         # does; the fp32 promotion and both scale factors happen inside
         # the quantize op's weight scale.
@@ -537,4 +547,4 @@ class Indexer(Module[..., tuple[Tensor, Tensor | None]]):
                 ],
                 axis=-1,
             )
-        return position_order(comp_indices), out_pool
+        return comp_indices, out_pool

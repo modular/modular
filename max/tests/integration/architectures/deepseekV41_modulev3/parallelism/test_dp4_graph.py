@@ -357,6 +357,27 @@ def test_dp4_ep4_off_graph_takes_no_replay_input(staged_dp4_ep4: str) -> None:
     assert "engram_lookback_history" not in staged_dp4_ep4
 
 
+def test_dp4_ep4_graph_uses_the_v2_writeback_and_unordered_picks(
+    staged_dp4_ep4: str,
+) -> None:
+    census = Counter(re.findall(r"\b(?:mo|mogg|mgp)\.[\w.]+", staged_dp4_ep4))
+    assert census["mo.mhc.post"] == 3 * _DP
+    assert census["mo.top_k.per_row"] == 0
+    assert census["mo.log1p"] == 0, "the router scores with V2's log form"
+
+
+def test_dp4_ep4_attention_writes_wo_as_mxfp8_rows(staged_dp4_ep4: str) -> None:
+    names = set(
+        re.findall(
+            r"\bmo\.csa2\.(?:attention|prefill|decode)[\w.]*",
+            staged_dp4_ep4,
+        )
+    )
+    assert names, "no CSA2 attention in the staged graph"
+    for name in sorted(names):
+        assert ".mxfp8" in name, f"{name} does not write wo_a's MXFP8 rows"
+
+
 def test_dp4_ep4_replay_graph_stages_with_the_designed_collectives() -> None:
     """The kept-row graph adds its split and no collective of its own."""
     text = _stage_dp4_ep4(replay=True)
@@ -402,3 +423,28 @@ def test_dp4_ep4_graph_compiles() -> None:
         staged = module.trace(*inputs)
         session = InferenceSession(devices=[Accelerator(i) for i in range(_DP)])
         session.compile_reusing_mefs(staged.graph)
+
+
+def test_dp4_ep4_graph_fuses_the_query_norms_quantize_and_window_store(
+    staged_dp4_ep4: str,
+) -> None:
+    kernels = Counter(re.findall(r"mo\.csa\.[\w.]+", staged_dp4_ep4))
+    layers = _dp_text_config().num_hidden_layers
+    assert kernels["mo.csa.rms_norm_quantize_q_store_kv"] == layers * _DP
+    assert kernels["mo.csa.window_kv_store"] == 0
+
+
+def test_dp4_ep4_graph_rotates_the_query_in_the_attention(
+    staged_dp4_ep4: str,
+) -> None:
+    ops = Counter(re.findall(r"\bmo\.[\w.]+", staged_dp4_ep4))
+    layers = _dp_text_config().num_hidden_layers
+    attention = {
+        name: count
+        for name, count in ops.items()
+        if name.startswith("mo.csa2.attention")
+    }
+    assert ops["mo.matmul.mxfp8.rope_tail"] == 0
+    assert attention
+    assert all(name.endswith(".rope_q") for name in attention), attention
+    assert sum(attention.values()) == layers * _DP

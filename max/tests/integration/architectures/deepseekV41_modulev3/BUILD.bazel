@@ -220,9 +220,11 @@ modular_py_test(
     name = "test_memory_planner",
     srcs = ["test_memory_planner.py"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/kv_cache",

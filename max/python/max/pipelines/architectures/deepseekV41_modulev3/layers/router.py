@@ -37,17 +37,18 @@ _IMAGE_ID = 1
 _route_op = F.functional(moe_router_image_bias)
 
 
-def _sqrt_softplus(logits: Tensor) -> Tensor:
-    """``sqrt(softplus(logits))`` in fp32, stable for very negative logits.
+def gate_logits(x: Tensor, weight: Tensor) -> Tensor:
+    """Compute gate logits with float32 accumulation and input-dtype operands."""
+    if weight.dtype != x.dtype:
+        weight = weight.cast(x.dtype)
+    return F.matmul(x, weight.T, out_dtype=DType.float32)
 
-    ``log(1+exp(x))`` rounds to 0 in fp32 for ``x <= -16.64`` and ``exp``
-    overflows above ~20; ``max(x,0)+log1p(exp(-|x|))`` is exact everywhere
-    and matches the reference's linear branch above 20. A NaN logit does
-    not survive ``max``/``abs`` here, so the caller restores it.
-    """
+
+def _sqrt_softplus(logits: Tensor) -> Tensor:
+    """Square root of softplus, without exponentiating positive logits; the `log` form differs from `log1p` by up to about 3e-4, so near-ties may select differently."""
     zero = F.constant(0.0, dtype=DType.float32, device=logits.mesh)
-    softplus = F.elementwise_max(logits, zero) + F.log1p(
-        F.exp(F.abs(logits) * -1.0)
+    softplus = F.elementwise_max(logits, zero) + F.log(
+        F.exp(F.abs(logits) * -1.0) + 1.0
     )
     return F.sqrt(softplus)
 
@@ -176,7 +177,7 @@ class Router(Module[[Tensor, Tensor | None], tuple[Tensor, Tensor]]):
             ``routed_scaling_factor``. NaN scores never win a slot, so ids
             are always in ``[0, num_experts)``.
         """
-        logits = x.cast(DType.float32) @ self.weight.cast(DType.float32).T
+        logits = gate_logits(x, self.weight)
         return route_logits(
             logits,
             self.bias,

@@ -10,27 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The DP4 DSpark context store and sampled head build on virtual devices.
-
-Under data parallelism the verify payload (taps, row offsets, positions)
-and the sliding-window leaf are per-rank tensors whose row dims differ per
-shard. The drafter's context store has to run per rank over those shards,
-as the trunk's attention does; a mesh-level store hands the per-shard batch
-dim to the range ops and fails at graph build, which a DP4/EP4 export hit.
-The sampled draft head has to hand the driver's single-device sampler one
-device's logits, not the mesh's. The graphs are only staged, never
-executed.
-"""
+"""Graph-construction coverage for DP4 DSpark fusion paths."""
 
 from __future__ import annotations
 
 import dataclasses
+import re
+from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any, cast
 
-from dspark_test_support import _full_hf, _small_config, _text
+from dspark_test_support import (
+    _full_hf,
+    _real_config,
+    _small_config,
+    _text,
+)
 from max import functional as F
 from max import tree
 from max.driver import (
@@ -42,6 +39,7 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
 from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
     DSparkDrafter,
@@ -60,6 +58,8 @@ from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
 from max.pipelines.architectures.deepseekV41_modulev3.spec_adapters import (
     WINDOW_LEAF,
     DSparkDeepseekV41Proposer,
+    block_row_positions,
+    window_starts,
 )
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.speculative.block_driver import SampledDraftSampler
@@ -246,3 +246,63 @@ def test_dp4_sampled_head_samples_on_one_device() -> None:
         ]
         staged = module.trace(*inputs)
     assert "sampler.gumbel_argmax_from_probs" in str(staged)
+
+
+class _StageBlock(Module[..., Tensor]):
+    """The proposer's block forward, with the embed supplied as an input."""
+
+    def __init__(
+        self, drafter: DSparkDrafter, kv_params: MultiKVCacheParams
+    ) -> None:
+        super().__init__()
+        self.drafter = drafter
+        self.kv_params = kv_params
+
+    def forward(self, *inputs: Tensor) -> Tensor:
+        ids, hidden, offsets = inputs[:3]
+        upstream = self.kv_params.unflatten_kv_inputs(
+            iter(x._graph_value for x in inputs[3:])
+        )
+        swa = PagedCacheValues.from_upstream(
+            tree.leaves(upstream[WINDOW_LEAF], leaf=KVCacheInputsPerDevice),
+            DeviceMapping.replicated(self.drafter.mesh),
+        )
+        positions = block_row_positions(
+            offsets, swa.cache_lengths, ids.shape[0]
+        )
+        windows = self.drafter.windows(swa, window_starts(swa))
+        return self.drafter.forward_block(
+            ids, positions, windows, embed=lambda _: hidden
+        )
+
+
+def test_stages_lower_to_the_graph_api_models_fused_kernels() -> None:
+    config = _real_config()
+    stages = config.num_dspark_layers
+    with _virtual_devices(1):
+        device = Accelerator(0)
+        ref = DeviceRef.from_device(device)
+        mesh = DeviceMesh((device,), (1,), ("tp",))
+        kv_params = build_kv_params(
+            V41Config.from_hf(_full_hf()),
+            KVCacheConfig(kv_cache_page_size=PAGE_SIZE),
+            [ref],
+        )
+        with F.lazy(), default_device(mesh), default_dtype(DType.bfloat16):
+            drafter = DSparkDrafter(
+                config, mesh, rope=RopeParams.from_text_config(_text())
+            )
+            module = _StageBlock(drafter, kv_params)
+        inputs: list[TensorType | BufferType] = [
+            TensorType(DType.int32, ["block_rows"], ref),
+            TensorType(DType.bfloat16, ["block_rows", config.hidden_size], ref),
+            TensorType(DType.uint32, ["block_offsets"], ref),
+            *kv_params.flattened_kv_inputs(),
+        ]
+        staged = str(module.trace(*inputs))
+    kernels = Counter(re.findall(r"\bmo\.[\w.]+", staged))
+    assert kernels["mo.csa.rms_norm_quantize_q_store_kv"] == stages
+    assert kernels["mo.csa.window_kv_store"] == 0
+    assert kernels["mo.matmul.mxfp8.rope_tail"] == stages
+    assert kernels["mo.moe.create.indices.with.slots"] == stages
+    assert kernels["mo.moe.create.indices"] == 0

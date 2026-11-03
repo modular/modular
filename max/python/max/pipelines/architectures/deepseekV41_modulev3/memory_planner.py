@@ -38,6 +38,7 @@ from .model import build_ep_config
 from .model_config import (
     DeepseekV41Config,
     dspark_expert_counts,
+    forward_rows,
     num_dspark_stages,
 )
 
@@ -128,19 +129,6 @@ def prefill_arena_bytes(config: V41Config, rows: int) -> int:
         + _ARENA_BYTES_PER_TOKEN_PER_LAYER * config.num_hidden_layers
     )
     return rows * per_token
-
-
-def forward_rows(runtime: Any, max_length: int) -> int:
-    """Query rows of the widest forward ``runtime`` can schedule.
-
-    Without chunked prefill the batch token budget is a soft limit: the
-    scheduler admits a whole request that overshoots what is left of it
-    (BUDGET_REACHED in token_budget.py), so a batch can reach the budget
-    less one token plus one prompt of max_length.
-    """
-    return runtime.max_num_input_tokens or (
-        runtime.max_batch_input_tokens - 1 + max_length
-    )
 
 
 def _dp_ep_config(pipeline_config: Any, text: Any) -> EPConfig | None:
@@ -380,9 +368,8 @@ def dspark_parameters(
     """The drafter's parameters: ``(per stage, once)``.
 
     Layouts follow the checkpoint and ``weight_adapters``: dense MXFP8
-    projections keep compact 32x32-block scales, the four
-    ``_DSPARK_HOST_DEQUANT`` projections load as bf16, and the routed
-    experts are MXFP4 with an E8M0 per 32 elements. Under tensor
+    projections (the attention's included) keep compact 32x32-block scales
+    and the routed experts are MXFP4 with an E8M0 per 32 elements. Under tensor
     parallelism ``layers/dspark.py`` splits ``attn_sink``, ``wq_b``,
     ``wo_a`` and ``wo_b`` and ``layers/moe.py`` the shared expert; the
     rest replicates, the routed experts included
@@ -409,19 +396,13 @@ def dspark_parameters(
     def mxfp8(name: str, n: int, k: int, split: bool) -> DSparkParameter:
         return plain(name, _mxfp8_bytes(n, k), split)
 
-    def dequantized(name: str, n: int, k: int, split: bool) -> DSparkParameter:
-        return DSparkParameter(name, _mxfp8_bytes(n, k), 2 * n * k, split)
-
     stage = [
         plain("attn.attn_sink", heads * 4, split=True),
         plain("attn.q_norm", q_lora * 2),
         plain("attn.kv_norm", head_dim * 2),
-        dequantized("attn.wq_a", q_lora, hidden, split=False),
-        dequantized("attn.wq_b", heads * head_dim, q_lora, split=True),
-        dequantized("attn.wkv", head_dim, hidden, split=False),
-        dequantized(
-            "attn.wo_a", o_rows, heads * head_dim // o_groups, split=True
-        ),
+        mxfp8("attn.wqa_wkv", q_lora + head_dim, hidden, split=False),
+        mxfp8("attn.wq_b", heads * head_dim, q_lora, split=True),
+        mxfp8("attn.wo_a", o_rows, heads * head_dim // o_groups, split=True),
         mxfp8("attn.wo_b", hidden, o_rows, split=True),
         plain("attn_norm", hidden * 2),
         plain("ffn_norm", hidden * 2),

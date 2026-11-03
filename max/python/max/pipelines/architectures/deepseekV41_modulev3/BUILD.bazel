@@ -20,7 +20,6 @@ modular_py_library(
         "layers/__init__.py",
         "layers/attention.py",
         "layers/block.py",
-        "layers/candidate_pool.py",
         "layers/compressor.py",
         "layers/dspark.py",
         "layers/dspark_moe.py",
@@ -44,6 +43,7 @@ modular_py_library(
         "weight_adapters.py",
     ],
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/engine",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",

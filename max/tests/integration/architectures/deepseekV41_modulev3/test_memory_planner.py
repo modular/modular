@@ -33,15 +33,18 @@ from __future__ import annotations
 
 import json
 import struct
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, Mock
 
 import numpy as np
 import pytest
-from max.driver import Device
+from max import functional as F
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.legacy.kv_cache import spec_decode_cache_slack
 from max.pipelines.architectures.deepseekV41.memory_planner import (
     _SCALE_TILE_BYTES,
     _SCALE_TILE_ROWS,
@@ -52,6 +55,16 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
     build_kv_params,
 )
+from max.pipelines.architectures.deepseekV41_modulev3.layer_resolver import (
+    resolve,
+)
+from max.pipelines.architectures.deepseekV41_modulev3.layers.attention import (
+    Attention,
+    position_rope_table,
+)
+from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
+    RopeParams,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.memory_planner import (
     DeepseekV41MemoryPlanner,
     engram_table_bytes,
@@ -61,11 +74,17 @@ from max.pipelines.architectures.deepseekV41_modulev3.model import (
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
+    dispatch_rows,
+    forward_row_bound,
+    forward_rows,
+    position_capacity,
 )
 from max.pipelines.kv_cache import kv_cache_memory_size
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.memory_estimation import MemoryEstimator
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh
 from runtime_config import text_config
 
 _HF_CONFIG = {"text_config": vars(text_config())}
@@ -335,6 +354,89 @@ def test_dspark_ep_budget_counts_the_draft_rows() -> None:
     ) > planner.forward_scratch_bytes_per_device(plain)
 
 
+def test_rope_table_covers_the_widest_forward() -> None:
+    max_length = 256
+    dspark = _with_dspark(
+        _pipeline_config(dp=4, ep_size=4, n_devices=4, max_input_tokens=None),
+        max_batch_size=8,
+    )
+    assert forward_row_bound(dspark, max_length) == 767 + 8 * 5
+    assert forward_row_bound(dspark, max_length) > forward_rows(
+        dspark.runtime, max_length
+    )
+
+    wide = _pipeline_config(dp=4, ep_size=4, n_devices=4, max_input_tokens=1024)
+    assert forward_row_bound(wide, max_length) == 1024
+    assert dispatch_rows(wide) == 512
+
+    unbounded = _with_dspark(
+        _pipeline_config(dp=4, ep_size=4, n_devices=4, max_input_tokens=None),
+        max_batch_size=None,
+    )
+    with pytest.raises(ValueError, match="needs max_batch_size"):
+        forward_row_bound(unbounded, max_length)
+    with pytest.raises(ValueError, match="needs max_batch_size"):
+        dispatch_rows(unbounded)
+
+
+def test_the_rope_table_covers_the_speculative_slack() -> None:
+    max_length = 256
+    narrow = _with_dspark(
+        _pipeline_config(dp=1, ep_size=1, n_devices=1, max_input_tokens=1),
+        max_batch_size=1,
+    )
+    assert forward_row_bound(narrow, max_length) == 1 + 5
+
+    kv = build_kv_params(
+        V41Config.from_hf(_HF_CONFIG),
+        KVCacheConfig(kv_cache_page_size=_PAGE_SIZE),
+        [DeviceRef.CPU()],
+        speculative_method="dspark",
+        num_draft_tokens=5,
+    )
+    rows = forward_row_bound(narrow, max_length)
+    drafting = replace(_arch_config(), kv_params=kv, max_batch_rows=rows)
+    slack = spec_decode_cache_slack(kv)
+    # Three overlapping draft blocks, a block slot, and FUTURE_TOKEN.
+    assert slack == 3 * 5 + 1 + 1
+    assert position_capacity(drafting) == drafting.max_seq_len + slack
+
+    # Check the table bounds on the attention layer itself.
+    with F.lazy():
+        attn = Attention(
+            drafting,
+            resolve(drafting)[0],
+            DeviceMesh((CPU(),), (1,), ("tp",)),
+            rope=RopeParams(64, 32.0, 1.0, 4096),
+        )
+    assert attn.max_rows == rows
+    assert attn.max_position + attn.max_rows == max_length + slack + rows
+    table = position_rope_table(
+        attn.rope.inv_freqs(),
+        attn.max_position,
+        attn.max_rows,
+        Tensor.zeros([1], dtype=DType.float32, device=CPU()),
+    )
+    last_legal = max_length + slack + rows - 1
+    assert table.shape == [last_legal + 1, 64]
+    np.testing.assert_allclose(
+        table[last_legal].to_numpy(),
+        np.concatenate(
+            [
+                np.cos(last_legal * attn.rope.inv_freqs()),
+                np.sin(last_legal * attn.rope.inv_freqs()),
+            ]
+        ),
+        rtol=1e-6,
+        atol=1e-6,
+    )
+
+
+def test_arch_config_without_a_row_bound_takes_one_prompt() -> None:
+    config = _arch_config()
+    assert config.max_batch_rows == config.max_seq_len == 256
+
+
 def test_dspark_ep_needs_max_batch_size() -> None:
     """Without ``max_batch_size`` the draft rows are unbounded."""
     config = _with_dspark(
@@ -345,12 +447,6 @@ def test_dspark_ep_needs_max_batch_size() -> None:
 
 
 def test_unwired_shapes_add_no_ep_reserve() -> None:
-    """Only the wired ``dp == ep_size == n_devices`` shape carries EP buffers.
-
-    Every other shape the model refuses before load, or serves without
-    EP, must reserve none: the sidecar falls back to the forward
-    scratch alone.
-    """
     planner = _planner()
     scratch = planner.forward_scratch_bytes_per_device(
         _pipeline_config(dp=4, ep_size=1, n_devices=4)

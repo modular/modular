@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """The DSpark drafter's MoE: its own gate, grouped MXFP4 experts, shared expert.
 
-The drafter routes with its own expert counts -- 128 experts, 3 per token --
-so its gate is this module rather than the trunk's router, which is fixed at
-the trunk's 384/6 geometry. The gate math itself is the reference's
-``noaux_tc`` scoring, shared with the trunk's router.
+The drafter has 128 experts and top-3, so its gate is independent of the
+trunk's router; it shares the reference's ``noaux_tc`` scoring.
 
 The routed experts keep the reference's grouped MXFP4 path: weights are
 ``[E, N, K/2]`` uint8 with E8M0 scales per 32 (OCP MXFP4), activations
@@ -40,16 +38,22 @@ Sources: ``dspark_moe.py`` of the V2 port (activation quant 42-81, experts
 
 from __future__ import annotations
 
+import numpy as np
 from max import functional as F
+from max._core.dialects import kgen
 from max.driver import CPU
 from max.dtype import DType
+from max.graph import AlgebraicDim, TensorValue
 from max.nn import Module
 from max.nn.common_layers.quant_ops import (
     block_scales_interleave,
     grouped_matmul_block_scaled,
     grouped_quantize_dynamic_block_scaled,
 )
-from max.nn.legacy.kernels import moe_create_indices as _moe_create_indices
+from max.nn.legacy.kernels import (
+    moe_create_indices_with_slots as _moe_create_indices_with_slots,
+)
+from max.nn.legacy.quant_config import ceildiv
 from max.tensor import Tensor
 from max.tensor.sharding import (
     AxisAssignment,
@@ -62,30 +66,44 @@ from max.tensor.sharding import (
 
 from ..model_config import DeepseekV41Config
 from .moe import SharedExpert
-from .router import route_logits
+from .router import gate_logits, route_logits
 
 __all__ = ["DSparkMoE"]
 
 
-def _moe_create_indices_rule(
-    lhs: TensorLayout,
-    num_local_experts: int,
-    *,
-    needs_scales_offset: bool = False,
-) -> list[AxisAssignment]:
-    """Returns the rows for ``moe_create_indices``.
+# A-scale tile height used by the scale-slot row bound.
+_SF_ROWS = 128
 
-    Replicated ids give whole-batch positions; sharded ids give local ones.
-    """
-    # Over a shard of the batch the outputs mix per-token and per-expert
-    # extents that no one global tensor spans, so the row forgets instead.
+
+def _create_indices_with_slots(
+    topk_ids: TensorValue,
+    slot_weights: TensorValue,
+    num_groups: int,
+    slot_stride: int,
+) -> tuple[TensorValue, ...]:
+    return _moe_create_indices_with_slots(
+        topk_ids,
+        slot_weights,
+        num_groups,
+        slot_stride=slot_stride,
+        scale_rows=_SF_ROWS
+        * (
+            ceildiv(topk_ids.shape[0], _SF_ROWS)
+            + AlgebraicDim.apply(kgen.POC.min, num_groups, topk_ids.shape[0])
+        ),
+    )
+
+
+def _create_indices_with_slots_rule(
+    topk_ids: TensorLayout,
+    slot_weights: TensorLayout,
+    num_groups: int,
+    slot_stride: int,
+) -> list[AxisAssignment]:
+    # Output extents mix global token and expert-local sizes.
     return [
-        AxisAssignment(
-            (Replicated(),), (Replicated(),) * (6 if needs_scales_offset else 5)
-        ),
-        AxisAssignment(
-            (Sharded(0),), (Unknown(),) * (6 if needs_scales_offset else 5)
-        ),
+        AxisAssignment((Replicated(), Replicated()), (Replicated(),) * 9),
+        AxisAssignment((Sharded(0), Sharded(0)), (Unknown(),) * 9),
     ]
 
 
@@ -93,15 +111,12 @@ def _moe_create_indices_rule(
 # raw one reads ``TensorValue.device`` off its operands, which raises on a
 # tensor distributed over a mesh, and carries no sharding rule for the
 # planner.
-moe_create_indices = F.functional(
-    _moe_create_indices, rule=_moe_create_indices_rule
+moe_create_indices_with_slots = F.functional(
+    _create_indices_with_slots, rule=_create_indices_with_slots_rule
 )
 
 # One E8M0 scale per 32 elements: MXFP8 activations, MXFP4 weights.
 _ACTIVATION_QUANT_GROUP = 32
-# The grouped kernel reads each expert's activation scales from 128-row
-# tiles; the scale offsets below place each group's first tile.
-_SF_ROWS = 128
 
 
 class DSparkGate(Module[[Tensor], tuple[Tensor, Tensor]]):
@@ -126,18 +141,8 @@ class DSparkGate(Module[[Tensor], tuple[Tensor, Tensor]]):
         self.bias = Tensor.zeros([n_experts], dtype=DType.float32)
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
-        """Routes each token to its top-k experts.
-
-        The widened bf16 gate GEMM, then the trunk router's scoring and
-        selection kernel (:func:`~.router.route_logits`).
-
-        Args:
-            x: ``[T, hidden]`` hidden states.
-
-        Returns:
-            ``(weights, indices)``: ``[T, k]`` float32 and ``[T, k]`` int32.
-        """
-        logits = x.cast(DType.float32) @ self.weight.cast(DType.float32).T
+        """Route tokens to their top-k experts."""
+        logits = gate_logits(x, self.weight)
         ids, weights = route_logits(
             logits, self.bias, self.num_experts_per_tok, self.route_scale
         )
@@ -185,6 +190,11 @@ class _PackedExpertWeights(Module[[], None]):
         )
 
 
+def _ones(n: int, mesh: DeviceMesh) -> Tensor:
+    # Keep this host scalar in the graph; ``F.full`` adds a broadcast launch.
+    return F.constant(np.ones(n, np.float32), DType.float32, device=mesh)
+
+
 def _activation_quantize(
     x: Tensor,
     row_offsets: Tensor,
@@ -207,9 +217,7 @@ def _activation_quantize(
         ``(quantized, a_scales)``: ``float8_e4m3fn[total_tokens, K]`` and
         scales in the layout ``grouped_matmul_block_scaled`` takes.
     """
-    sf_tensor = F.full(
-        expert_ids.shape, 1.0, dtype=DType.float32, device=x.mesh
-    )
+    sf_tensor = _ones(int(expert_ids.shape[0]), x.mesh)
     return grouped_quantize_dynamic_block_scaled(
         x.cast(DType.bfloat16),
         row_offsets=row_offsets,
@@ -268,9 +276,7 @@ class DSparkRoutedExperts(Module[[Tensor, Tensor, Tensor], Tensor]):
         quantized, a_scales = _activation_quantize(
             x, a_offsets, scale_offsets, expert_ids
         )
-        ones = F.full(
-            [self.num_experts], 1.0, dtype=DType.float32, device=x.mesh
-        )
+        ones = _ones(self.num_experts, x.mesh)
         # Host-side usage stats: the kernel only reads the active-expert
         # count here; the max-tokens slot is an estimate the row count
         # bounds. Both are host values.
@@ -308,74 +314,44 @@ class DSparkRoutedExperts(Module[[Tensor, Tensor, Tensor], Tensor]):
         before the down projection, as in the reference.
         """
         gate, up = F.split(gate_up, [self.inter, self.inter], axis=1)
-        gate = gate.cast(DType.float32)
-        up = up.cast(DType.float32)
         if self.swiglu_limit > 0:
+            # Clamp before widening; otherwise the compiler materializes a separate cast.
             limit = float(self.swiglu_limit)
             # Asymmetric on purpose: the reference clamps ``up`` on both
             # sides but ``gate`` only from above.
-            low = F.constant(-limit, dtype=DType.float32, device=up.mesh)
-            high = F.constant(limit, dtype=DType.float32, device=up.mesh)
+            low = F.constant(-limit, dtype=gate_up.dtype, device=up.mesh)
+            high = F.constant(limit, dtype=gate_up.dtype, device=up.mesh)
             up = F.min(F.max(up, low), high)
             gate = F.min(gate, high)
-        h = F.silu(gate) * up
+        h = F.silu(gate.cast(DType.float32)) * up.cast(DType.float32)
         h = h * slot_weight.unsqueeze(-1)
         return self._grouped(
             self.down_proj, h, a_offsets, scale_offsets, expert_ids
         )
 
     def forward(self, x: Tensor, weights: Tensor, indices: Tensor) -> Tensor:
-        """Sums each token's ``k`` expert outputs, in float32.
-
-        Args:
-            x: ``[T, hidden]`` tokens.
-            weights: ``[T, k]`` float32 routing weights.
-            indices: ``[T, k]`` int32 expert ids.
-
-        Returns:
-            ``[T, hidden]`` float32, the per-token sum over its experts.
-        """
+        """Sum each token's selected expert outputs in float32."""
         tokens = x.shape[0]
         slots = tokens * self.topk
-        groups = self.num_experts + 1
 
-        order, start, restore, expert_ids, _usage = moe_create_indices(
-            F.reshape(indices, [slots]), groups
+        # The grouped kernel expects int32 expert ids and row indices.
+        (
+            _order,
+            a_offsets,
+            restore,
+            expert_ids,
+            _usage,
+            scale_offsets,
+            slot_token,
+            slot_weight,
+            _scale_slot,
+        ) = moe_create_indices_with_slots(
+            F.reshape(indices, [slots]),
+            F.reshape(weights, [slots]).cast(DType.float32),
+            self.num_experts,
+            self.topk,
         )
-        # The route metadata is uint32 all the way through -- the kernel's
-        # own ragged dtype -- so the offset arithmetic stays unsigned; only
-        # the gather and permutation indices narrow to int32, the dtype
-        # ``F.gather`` indexes with.
-        order = order.cast(DType.int32)
-
-        # Group g's scales occupy the tiles [aligned_start[g],
-        # aligned_start[g + 1]) / 128: the exclusive prefix sum of the group
-        # sizes rounded up to 128. The kernel finds that first tile as
-        # start[g] // 128 plus the group's scale offset.
-        counts = start[1 : groups + 1] - start[0:groups]
-        aligned_counts = (counts + (_SF_ROWS - 1)) // _SF_ROWS * _SF_ROWS
-        aligned_start = F.concat(
-            [
-                F.constant(0, dtype=DType.uint32, device=counts.mesh).reshape(
-                    [1]
-                ),
-                F.cumsum(aligned_counts, axis=0),
-            ],
-            axis=0,
-        )
-        scale_offsets = (
-            aligned_start[0:groups] // _SF_ROWS - start[0:groups] // _SF_ROWS
-        )
-
-        a_offsets = start[0 : self.num_experts + 1]
-        scale_offsets = scale_offsets[0 : self.num_experts]
-        expert_ids = expert_ids[0 : self.num_experts]
-
-        slot_token = order // self.topk
         x_sorted = F.gather(x, slot_token, axis=0)
-        slot_weight = F.gather(F.reshape(weights, [slots]), order, axis=0).cast(
-            DType.float32
-        )
 
         gate_up = self._grouped(
             self.gate_up_proj, x_sorted, a_offsets, scale_offsets, expert_ids
@@ -385,9 +361,7 @@ class DSparkRoutedExperts(Module[[Tensor, Tensor, Tensor], Tensor]):
         )
         # ``restore`` puts each token's ``k`` slot rows back in token order;
         # the padded rows are never picked.
-        out = F.gather(down, restore.cast(DType.int32), axis=0).cast(
-            DType.float32
-        )
+        out = F.gather(down, restore, axis=0).cast(DType.float32)
         out = F.reshape(out, [tokens, self.topk, self.hidden])
         return F.squeeze(F.sum(out, axis=1), axis=1)
 
@@ -441,13 +415,12 @@ class DSparkMoE(Module[[Tensor], Tensor]):
         real slots back) and the shared expert, so the surviving rows'
         values are unchanged and the slice drops it.
         """
-        padded = F.concat(
-            [
-                x,
-                F.zeros([1, x.shape[1]], dtype=x.dtype, device=x.mapping),
-            ],
-            axis=0,
-        )
+        zero_row = F.constant(
+            np.zeros([1, int(x.shape[1])], np.float32),
+            DType.float32,
+            device=x.mapping,
+        ).cast(x.dtype)
+        padded = F.concat([x, zero_row], axis=0)
         weights, indices = self.gate(padded)
         routed = self.experts(padded, weights, indices)
         y = self.shared_experts(padded).cast(DType.float32) + routed

@@ -78,7 +78,7 @@ from .layers.engram_token_map import (
     check_map_digest,
     compressed_token_map_array,
 )
-from .model_config import DeepseekV41Config
+from .model_config import DeepseekV41Config, dispatch_rows
 from .weight_adapters import AdapterResult, EngramTable, engram_embed_tables
 
 logger = logging.getLogger("max.pipelines")
@@ -251,25 +251,13 @@ def build_ep_config(
 
     Raises:
         ValueError: If DSpark is on without ``max_batch_size``, which
-            bounds the draft rows the dispatch buffers must also hold.
+            bounds the draft rows the dispatch buffers must also hold
+            (:func:`..model_config.draft_rows` refuses it on every path).
     """
     runtime = pipeline_config.runtime
     ep_size = runtime.ep_size
     dp = pipeline_config.model.data_parallel_degree
-    rows = runtime.max_batch_input_tokens
-    speculative = pipeline_config.speculative
-    if speculative is not None and speculative.speculative_method == "dspark":
-        # Verification runs each request's drafts beside its active tokens,
-        # and the scheduler's token budget counts only the active tokens.
-        if runtime.max_batch_size is None:
-            raise ValueError(
-                "DeepSeek-V4.1 DSpark with expert parallelism needs "
-                "max_batch_size, which bounds the draft rows a verification "
-                "step adds to max_batch_input_tokens"
-            )
-        rows += runtime.max_batch_size * (
-            speculative.num_speculative_tokens or 0
-        )
+    rows = dispatch_rows(pipeline_config)
     n_layers = int(text.num_hidden_layers)
     # The routed experts' storage quantization, which the dispatch
     # token format and the fused SwiGLU kernel read: modelopt NVFP4

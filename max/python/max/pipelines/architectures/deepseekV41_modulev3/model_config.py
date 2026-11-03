@@ -32,10 +32,14 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
+import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.kv_cache import (
+    KVCacheParamInterface,
+    spec_decode_cache_slack,
+)
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -119,6 +123,51 @@ def dspark_draft_width(
     return block_size
 
 
+def forward_rows(runtime: Any, max_length: int) -> int:
+    """Return the widest query batch allowed by the runtime token budget."""
+    # Soft budgeting without chunked prefill permits max_length - 1 extra rows.
+    return runtime.max_num_input_tokens or (
+        runtime.max_batch_input_tokens - 1 + max_length
+    )
+
+
+def draft_rows(pipeline_config: PipelineConfig) -> int:
+    """Return DSpark's extra rows; require ``max_batch_size`` when enabled."""
+    speculative = pipeline_config.speculative
+    if speculative is None or speculative.speculative_method != "dspark":
+        return 0
+    max_batch_size = pipeline_config.runtime.max_batch_size
+    if max_batch_size is None:
+        raise ValueError(
+            "DeepSeek-V4.1 DSpark needs max_batch_size, which bounds the "
+            "draft rows a verification step adds to the forward's rows"
+        )
+    return max_batch_size * (speculative.num_speculative_tokens or 0)
+
+
+def dispatch_rows(pipeline_config: PipelineConfig) -> int:
+    """Return input rows plus DSpark drafts.
+
+    Raises:
+        ValueError: If DSpark is enabled without ``max_batch_size``.
+    """
+    return pipeline_config.runtime.max_batch_input_tokens + draft_rows(
+        pipeline_config
+    )
+
+
+def position_capacity(config: DeepseekV41Config) -> int:
+    """Return ``max_seq_len`` plus the KV pool's speculative slack."""
+    return config.max_seq_len + spec_decode_cache_slack(config.kv_params)
+
+
+def forward_row_bound(pipeline_config: PipelineConfig, max_length: int) -> int:
+    """Return the maximum forward rows, including DSpark drafts."""
+    return forward_rows(pipeline_config.runtime, max_length) + draft_rows(
+        pipeline_config
+    )
+
+
 @dataclass(kw_only=True)
 class DeepseekV41Config(ArchConfigWithKVCache):
     """Configuration for DeepSeek-V4.1-Flash models (ModuleV3).
@@ -144,6 +193,12 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     data_parallel_degree: int = 1
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    max_batch_rows: int = 0
+    """The most token rows one forward carries, DSpark drafts included.
+
+    Sizes the RoPE tables' padding tail (:func:`forward_row_bound`); ``0``
+    takes ``max_seq_len``, one whole prompt.
+    """
     # Core dimensions (``text_config``).
     vocab_size: int = 129280
     hidden_size: int = 5120
@@ -239,6 +294,15 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     rope_theta: float = 10000.0
     rope_scaling: dict[str, Any] | None = None
     compress_rope_theta: float = 160000.0
+
+    def __post_init__(self) -> None:
+        self.max_batch_rows = self.max_batch_rows or self.max_seq_len
+        if self.swiglu_limit > 0 and (
+            np.float32(self.swiglu_limit).view(np.uint32) & 0xFFFF
+        ):
+            raise ValueError(
+                f"swiglu_limit {self.swiglu_limit} is not exact in bfloat16"
+            )
 
     def get_kv_params(self) -> KVCacheParamInterface:
         """The KV cache parameters for this config."""
@@ -468,5 +532,6 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             max_seq_len=max_seq_len,
             quantization_encoding=quantization_encoding,
             data_parallel_degree=model_config.data_parallel_degree,
+            max_batch_rows=forward_row_bound(pipeline_config, max_seq_len),
             **cls.resolve_text_fields(text_config),
         )

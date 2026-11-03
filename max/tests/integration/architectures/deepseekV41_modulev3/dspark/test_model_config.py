@@ -141,6 +141,13 @@ def test_checkpoint_config_resolves_every_dspark_field() -> None:
     )
 
 
+def test_swiglu_limit_is_validated_when_config_is_built() -> None:
+    fields = vars(_hf().text_config)
+    _resolved(SimpleNamespace(**{**fields, "swiglu_limit": 10.0}))
+    with pytest.raises(ValueError, match="not exact in bfloat16"):
+        _resolved(SimpleNamespace(**{**fields, "swiglu_limit": 10.1}))
+
+
 def _shim_hf(block_size: int = BLOCK) -> hf_config_shims.DeepseekV41HFConfig:
     """The real HF shim, built from the published checkpoint mapping."""
     return hf_config_shims.DeepseekV41HFConfig(
@@ -233,14 +240,6 @@ def _census_stored_bytes(prefix: str, dropped: tuple[str, ...]) -> int:
 
 
 def test_dspark_parameters_match_the_checkpoint_layout() -> None:
-    """The stored bytes are the checkpoint's own, tensor for tensor.
-
-    The census counts every ``mtp.*`` tensor of the published checkpoint;
-    less ``gate.bias_vl`` and the confidence head, which the loader drops,
-    it is exactly the drafter's stored total. The attention scales are
-    one E8M0 per 32x32 block: ``wq_a`` is 1280 x 5120 e4m3 codes plus a
-    40 x 160 scale.
-    """
     text = SimpleNamespace(**_text_mapping())
     stage, once = dspark_parameters(text)
     stored = 3 * sum(p.stored for p in stage) + sum(p.stored for p in once)
@@ -248,30 +247,18 @@ def test_dspark_parameters_match_the_checkpoint_layout() -> None:
     assert stored == _census_stored_bytes(
         "mtp.", ("gate.bias_vl", "confidence_head")
     )
-    wq_a = next(p for p in stage if p.name == "attn.wq_a")
-    assert (wq_a.stored, wq_a.resident) == (6_553_600 + 6_400, 13_107_200)
+    wqa_wkv = next(p for p in stage if p.name == "attn.wqa_wkv")
+    assert (wqa_wkv.stored, wqa_wkv.resident) == (1792 * 5120 + 56 * 160,) * 2
 
 
 def test_dspark_planner_counts_the_drafters_per_device_weights() -> None:
-    """Every replica and every bf16 widening, per mesh shape.
-
-    Over the published checkpoint at four devices, tensor parallelism
-    replicates the routed experts, ``wq_a``, ``wkv``, ``main_proj``, the
-    Markov head and the small leaves, and splits the rest; data
-    parallelism replicates everything, the shared expert included.
-    """
     text = SimpleNamespace(**_text_mapping())
-    assert dspark_extra_weight_bytes(text, 4, False) == 22_758_036_120
-    assert dspark_extra_weight_bytes(text, 4, True) == 24_813_664_920
-    # One device: only the four projections' bf16 growth.
-    assert dspark_extra_weight_bytes(text, 1, False) == 253_769_472
+    assert dspark_extra_weight_bytes(text, 4, False) == 22_421_771_928
+    assert dspark_extra_weight_bytes(text, 4, True) == 23_798_587_032
+    assert dspark_extra_weight_bytes(text, 1, False) == 0
     stage, _ = dspark_parameters(text)
-    widened = {"attn.wq_a", "attn.wq_b", "attn.wkv", "attn.wo_a"}
-    assert 253_769_472 == 3 * sum(
-        p.resident - p.stored for p in stage if p.name in widened
-    )
     replicated_under_tp = {p.name for p in stage if not p.split}
-    assert {"attn.wq_a", "attn.wkv", "ffn.experts"} <= replicated_under_tp
+    assert {"attn.wqa_wkv", "ffn.experts"} <= replicated_under_tp
     assert "ffn.shared_experts.w1" not in replicated_under_tp
 
 

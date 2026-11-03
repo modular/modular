@@ -35,7 +35,7 @@ from max.tensor.sharding import DeviceMapping, DeviceMesh, Partial
 from max.tensor.sharding.action import PerShard
 
 from . import nvfp4_ops
-from .mxfp8_linear import MXFP8Linear
+from .mxfp8_linear import MXFP8Linear, Mxfp8Rows
 
 
 class _NVFP4Linear(Module[[Tensor], Tensor]):
@@ -463,9 +463,18 @@ class StackedSharedExpert(Module[[Tensor], Tensor]):
             return self.partial(x).cast(DType.bfloat16)
         return F.allreduce_sum(self.partial(x))
 
-    def partial(self, x: Tensor) -> Tensor:
-        """Returns each rank's unreduced float32 shared output (``Partial``)."""
-        partial = self.w2.forward_swiglu(self.w13(x), self.swiglu_limit)
+    def partial(self, x: Tensor, x_rows: Mxfp8Rows | None = None) -> Tensor:
+        """Returns each rank's unreduced float32 shared output (``Partial``).
+
+        ``x_rows``, when the caller has ``x`` already quantized, feeds the
+        ``w13`` GEMM in place of its own quantize.
+        """
+        gate_up = (
+            self.w13(x)
+            if x_rows is None
+            else self.w13.forward_quantized(x_rows)
+        )
+        partial = self.w2.forward_swiglu(gate_up, self.swiglu_limit)
         # The generic cast cannot carry Partial and would reduce in bf16.
         partial = F.call_on_mesh(
             F.cast, partial.mesh, out_specs=partial.mapping
