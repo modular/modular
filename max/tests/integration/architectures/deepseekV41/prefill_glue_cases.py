@@ -114,10 +114,10 @@ def compressor_model(
     module.load_state_dict(
         {
             "compressor.norm.weight": compressor_norm_weight(),
-            **{
-                name: (w if bf16 else w.to(torch.float32)).contiguous()
-                for name, w in weights.items()
-            },
+            # The weight adapter fuses rows ``[wkv; wgate]``.
+            "compressor.proj.weight": torch.cat(
+                [w if bf16 else w.to(torch.float32) for w in weights.values()]
+            ).contiguous(),
         }
     )
 

@@ -90,8 +90,8 @@ class DeepseekV41Compressor(Module):
         compress_ratio: One for plain normalization, or two for gated pairs.
         eps: RMSNorm epsilon from the model configuration.
         hidden_size: Model hidden size. Given together with ``device``, the
-            module owns the ``wkv``/``wgate`` projections (:meth:`project`);
-            omit both to supply ``raw`` directly.
+            module owns the ``wkv`` projection, fused with ``wgate`` at ratio
+            two (:meth:`project`); omit both to supply ``raw`` directly.
         device: Device of the projection weights; paired with
             ``hidden_size``.
         head_dim: Latent width; the pooling ops support only 512.
@@ -135,9 +135,11 @@ class DeepseekV41Compressor(Module):
         self.norm = RMSNorm(head_dim, DType.float32, eps)
         if hidden_size is not None:
             assert device is not None
-            self.wkv = Linear(hidden_size, head_dim, weight_dtype, device)
-            if compress_ratio == 2:
-                self.wgate = Linear(hidden_size, head_dim, weight_dtype, device)
+            # Rows ``[wkv; wgate]``, the order of ``raw``, so one matmul
+            # projects both.
+            self.proj = Linear(
+                hidden_size, head_dim * compress_ratio, weight_dtype, device
+            )
 
     def project(self, h: TensorValue) -> TensorValue:
         """Projects hidden states into this compressor's ``raw`` input.
@@ -153,14 +155,12 @@ class DeepseekV41Compressor(Module):
             ``[..., head_dim * compress_ratio]`` float32, the ``raw`` input
             of :meth:`__call__`.
         """
-        weights = [self.wkv.weight]
-        if self.compress_ratio == 2:
-            weights.append(self.wgate.weight)
-        h = ops.cast(h, weights[0].dtype)
-        raws = [
-            linear(h, w.to(h.device), out_dtype=DType.float32) for w in weights
-        ]
-        return raws[0] if len(raws) == 1 else ops.concat(raws, axis=-1)
+        weight = self.proj.weight
+        return linear(
+            ops.cast(h, weight.dtype),
+            weight.to(h.device),
+            out_dtype=DType.float32,
+        )
 
     def __call__(
         self,
