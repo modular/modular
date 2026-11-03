@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Tests the fused mHC steps at the sublayers that used to run unfused.
 
-The first sublayer's identical embedding copies (``first_streams``) and an
-Engram layer's gated copies (``_replace_copies``) are held as a pending
-identity write-back, so the next sublayer runs the fused step. It must leave
+The first sublayer's identical embedding copies (``first_streams``, what the
+trunk and the DSpark drafter build) and an Engram layer's gated copies
+(``_replace_copies``) are held as a pending identity write-back, so the next
+sublayer runs the fused step. It must leave
 the copies unchanged and give the gates the unfused ``_hc_pre`` gives, up to
 the fused step's TF32 projection. Both paths' normalized inputs must round
 the float64 RMSNorm of the carried collapse once. The write-back before the
@@ -287,7 +288,7 @@ def model(session: InferenceSession, device: DeviceRef) -> Model:
     return _build(session, device, None)
 
 
-@pytest.mark.parametrize("t", [1, 6, 7, 48, 144, 577, 1031, 8168])
+@pytest.mark.parametrize("t", [1, 5, 6, 7, 40, 48, 144, 577, 1031, 8168])
 def test_fused_entries_match_unfused(
     model: Model, accel: Accelerator, t: int
 ) -> None:

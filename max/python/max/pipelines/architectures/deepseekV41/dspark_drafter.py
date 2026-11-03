@@ -31,11 +31,10 @@ from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm
 from typing_extensions import Self
 
-from ..deepseekV4.layers import expand_copies
 from .deepseekV41 import (
     DeepseekV41Block,
-    HCStreams,
     _adopt_shards,
+    first_streams,
 )
 from .layer_resolver import LayerInfo
 from .layer_resolver import resolve as resolve_layers
@@ -304,9 +303,7 @@ class DeepseekV41DSparkDrafter(Module):
             raise ValueError(
                 f"expected {len(self.stages)} stage windows, got {len(windows)}"
             )
-        streams = HCStreams(
-            expand_copies(embed(block_ids), self.config.hc_mult)
-        )
+        streams = first_streams(embed(block_ids), self.config.hc_mult)
         for stage, window in zip(self.stages, windows, strict=True):
             streams, _ = stage(streams, rows, block_ids, window)
         return streams.collapse()
@@ -344,7 +341,7 @@ class DeepseekV41DSparkDrafter(Module):
         """
         lead = drafters[0]
         streams = [
-            HCStreams(expand_copies(embed(ids), lead.config.hc_mult))
+            first_streams(embed(ids), lead.config.hc_mult)
             for embed, ids in zip(embeds, block_ids, strict=True)
         ]
         for i in range(len(lead.stages)):
@@ -397,7 +394,7 @@ class DeepseekV41DSparkDrafter(Module):
             for ids in block_ids
         ]
         streams = [
-            HCStreams(expand_copies(embed(ids), lead.config.hc_mult))
+            first_streams(embed(ids), lead.config.hc_mult)
             for embed, ids in zip(embeds, block_ids, strict=True)
         ]
         for i in range(len(lead.stages)):
