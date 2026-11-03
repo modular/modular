@@ -3248,7 +3248,7 @@ def mla_prefill_branch_bf16[
     scale: Float32,
     epsilon: Float32,
     buffer_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
-    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     buffer_length: Int,
     w_k: TileTensor[.bfloat16, address_space=.GENERIC, ...],
     w_uv: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -4203,7 +4203,7 @@ def mla_prefill_decode_graph_bf16[
     buffer_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     buffer_length: Int,
     max_seq_len: Int,
     w_k: TileTensor[.bfloat16, address_space=.GENERIC, ...],
