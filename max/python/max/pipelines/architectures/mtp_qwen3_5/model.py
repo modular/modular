@@ -24,11 +24,17 @@ from dataclasses import replace
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParamInterface, KVCacheParams
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import (
+    CheckpointRole,
+    KVCacheConfig,
+    PipelineConfig,
+    WeightEntry,
+    WeightTransform,
+)
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
 )
-from max.pipelines.lib.utils import weights_under_prefix
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
 
 from ..qwen3_5.model_config import Qwen3_5Config
@@ -81,10 +87,11 @@ class MTPQwen3_5DraftArchConfig(Qwen3_5Config):
         """
         assert context.kv_params is not None
         # The head's 15 tensors are BF16 in every published checkpoint, the
-        # NVFP4 one included, and their names match the module's under the
-        # ``mtp.`` prefix. The target's embedding table rides along: the
+        # NVFP4 one included. The target's embedding table rides along: the
         # head's config reads the checkpoint's compute dtype off it.
-        state_dict = weights_under_prefix(context.weights, _MTP_PREFIX)
+        state_dict = parse_state_dict_from_weights(
+            context.pipeline_config, context.weights, context.adapter
+        )
         for name in _EMBED_NAMES:
             if context.weights[name].exists():
                 state_dict["embed_tokens.weight"] = context.weights[name].data()
@@ -107,8 +114,19 @@ class MTPQwen3_5DraftArchConfig(Qwen3_5Config):
         draft.load_state_dict(state_dict, weight_alignment=1, strict=True)
         return draft, config
 
+    @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: Qwen3_5Config
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the head's weights.
 
-_MTP_PREFIX = "mtp."
+        They come from the draft's checkpoint, which is the target's, named
+        by the head's weight transform.
+        """
+        del config
+        assert isinstance(context.adapter, WeightTransform)
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]
+
 
 _EMBED_NAMES = (
     "model.language_model.embed_tokens.weight",

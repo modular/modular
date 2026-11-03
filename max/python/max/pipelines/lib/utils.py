@@ -121,22 +121,6 @@ def upper_bounded_default(upper_bound: int, default: int | None) -> int:
     return default
 
 
-def weights_under_prefix(
-    weights: Weights, prefix: str
-) -> dict[str, WeightData]:
-    """Returns the checkpoint's weights under ``prefix``, named relative to it.
-
-    A module whose attributes are named as its checkpoint names them loads
-    from a checkpoint that holds it under a prefix, such as a draft head
-    that ships in its target's.
-    """
-    return {
-        name.removeprefix(prefix): weight.data()
-        for name, weight in weights.items()
-        if name.startswith(prefix)
-    }
-
-
 def parse_state_dict_from_weights(
     pipeline_config: PipelineConfig,
     weights: Weights,

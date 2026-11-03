@@ -44,6 +44,7 @@ from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
+    WeightEntry,
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
@@ -67,6 +68,7 @@ from .model_config import Qwen3_5Config
 from .preprocess_graph import Qwen3_5ImagePreprocess
 from .qwen3_5 import Qwen3_5
 from .vision_packing import Qwen3_5VisionInputs, pack_uncached_images
+from .weight_adapters import qwen3_5_weight_entry
 
 logger = logging.getLogger("max.pipelines")
 
@@ -321,6 +323,18 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         return _loaded_module(config, state_dict), config
 
     @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: Qwen3_5Config
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the built model's weights.
+
+        Its rules name the whole checkpoint, and the model takes the weights
+        it declares.
+        """
+        del config
+        return [qwen3_5_weight_entry(context.adapter)]
+
+    @classmethod
     def _finalized_config(
         cls, context: ModelLoadContext, state_dict: dict[str, Any]
     ) -> Qwen3_5Config:
@@ -486,6 +500,12 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     def _load_state_dict(self) -> dict[str, Any]:
         self._checkpoint = super()._load_state_dict()
+        # One entry names the whole checkpoint; each graph binds its part.
+        entry = qwen3_5_weight_entry(self.adapter)
+        self.weight_naming = {
+            GraphRole.DECODER: (entry,),
+            GraphRole.VISION: (entry,),
+        }
         return self._checkpoint
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Qwen3_5Config:

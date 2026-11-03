@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from max.driver import Device
 from max.dtype import DType
@@ -31,6 +31,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateRegion,
 )
 from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithVisionCache
@@ -201,6 +202,10 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
     quant_scheme: Qwen3_5QuantScheme | None = None
     """Which modules are quantized and how; set by :meth:`_parse_quant_config`."""
 
+    linear_attn_scalar_dtypes: dict[str, DType] = field(default_factory=dict)
+    """The dtype the checkpoint stores each gated-DeltaNet scalar weight in,
+    keyed ``A_log``, ``dt_bias`` and ``norm.weight``; set by :meth:`finalize`."""
+
     declared_dtype: DType | None = None
     """The dtype the checkpoint declares for its unquantized tensors.
 
@@ -263,6 +268,30 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         if override is not None:
             return _POOL_DTYPE_MAP[override]
         return _declared_dtype(text_config) or DType.bfloat16
+
+    @override
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
+        attention_bias: bool = False,
+    ) -> None:
+        """Finalizes the config, and records the gated-DeltaNet scalars' dtypes."""
+        super().finalize(
+            huggingface_config,
+            state_dict,
+            return_logits,
+            return_hidden_states,
+            norm_method,
+            attention_bias,
+        )
+        for name, weight in state_dict.items():
+            _, linear_attn, scalar = name.partition(".linear_attn.")
+            if linear_attn and scalar in ("A_log", "dt_bias", "norm.weight"):
+                self.linear_attn_scalar_dtypes.setdefault(scalar, weight.dtype)
 
     @override
     def _parse_quant_config(

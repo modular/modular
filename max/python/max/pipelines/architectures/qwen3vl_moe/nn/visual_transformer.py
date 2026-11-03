@@ -154,9 +154,9 @@ class VisionPatchEmbed(Module, Shardable):
                 "VisionPatchEmbed layer cannot be sharded because no sharding strategy was provided."
             )
         proj_shards = self.proj.shard(devices)
-        shards = []
+        shards: list[VisionPatchEmbed] = []
         for shard_idx, device in enumerate(devices):
-            sharded = VisionPatchEmbed(
+            sharded = type(self)(
                 dtype=self.proj.weight.dtype,
                 devices=[device],
                 patch_size=self.patch_size,

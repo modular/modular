@@ -24,7 +24,13 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import (
+    CheckpointRole,
+    KVCacheConfig,
+    PipelineConfig,
+    WeightEntry,
+    WeightTransform,
+)
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
@@ -159,3 +165,15 @@ class DFlash2Qwen3_5ArchConfig(Llama3Config):
             strict=True,
         )
         return draft, DFlash2Qwen3_5Config(llama, dflash)
+
+    @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: DFlash2Qwen3_5Config
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the draft's weights.
+
+        They come from its own checkpoint, named by its weight transform.
+        """
+        del config
+        assert isinstance(context.adapter, WeightTransform)
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]

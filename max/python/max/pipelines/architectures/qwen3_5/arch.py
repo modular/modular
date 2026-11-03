@@ -29,7 +29,7 @@ from .model_config import Qwen3_5Config
 from .reasoning import Qwen3_5ReasoningParser  # noqa: F401  registers "qwen3_5"
 from .tokenizer import Qwen3_5Tokenizer
 from .tool_parser import Qwen3_5ToolParser  # noqa: F401  registers "qwen3_5"
-from .weight_adapters import convert_qwen3_5_state_dict
+from .weight_adapters import qwen3_5_weight_rules
 
 qwen3_5_arch = SupportedArchitecture(
     name="Qwen3_5ForConditionalGeneration",
@@ -46,9 +46,8 @@ qwen3_5_arch = SupportedArchitecture(
         InputModality.IMAGE,
         InputModality.VIDEO,
     },
-    weight_adapters={
-        WeightsFormat.safetensors: convert_qwen3_5_state_dict,
-    },
+    weight_rules=qwen3_5_weight_rules,
+    use_weight_rules=True,
     # Declaring the state leaves is what selects the Jenga pool.
     checkpoints_recurrent_state=True,
     config=Qwen3_5Config,

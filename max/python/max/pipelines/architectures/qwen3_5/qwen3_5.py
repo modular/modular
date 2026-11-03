@@ -271,6 +271,7 @@ class Qwen3_5LinearAttentionBlock(Module):
             ssm_dtype=config.mamba_ssm_dtype,
             proj_dtype=storage_dtype(attn_quant_config, compute_dtype),
             quant_config=attn_quant_config,
+            scalar_dtypes=config.linear_attn_scalar_dtypes,
         )
         self.mlp = MLP(
             storage_dtype(mlp_quant_config, compute_dtype),

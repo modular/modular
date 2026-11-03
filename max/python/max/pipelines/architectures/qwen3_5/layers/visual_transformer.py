@@ -19,18 +19,30 @@ from that package so we have a single implementation.
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from max import tree
-from max.graph import Graph, Type, Value
+from max.dtype import DType
+from max.graph import (
+    DeviceRef,
+    Graph,
+    ShardingStrategy,
+    TensorValue,
+    Type,
+    Value,
+    Weight,
+    ops,
+)
 from max.graph import Module as GraphModule
 from max.nn.legacy.graph_groups import (
     VisionEmbeddings,
     group_fields,
     vision_outputs,
 )
+from max.nn.legacy.linear import linear
+from max.pipelines.architectures.qwen3vl_moe.model_config import VisionConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.visual_transformer import (
     BilinearInterpolationPositionEmbedding,
     VisionBlock,
@@ -53,6 +65,56 @@ __all__ = [
 ]
 
 
+class Qwen3_5VisionPatchEmbed(VisionPatchEmbed):
+    """The patch embedding, holding the checkpoint's Conv3D weight.
+
+    The checkpoint stores the projection as ``[embed_dim, in_channels,
+    temporal_patch_size, patch_size, patch_size]``. The graph flattens it to
+    the linear weight it equals when the stride is the kernel, so the
+    checkpoint loads as stored.
+    """
+
+    def __init__(
+        self,
+        dtype: DType,
+        devices: Sequence[DeviceRef],
+        patch_size: int,
+        temporal_patch_size: int,
+        in_channels: int,
+        embed_dim: int,
+    ) -> None:
+        super().__init__(
+            dtype,
+            devices,
+            patch_size,
+            temporal_patch_size,
+            in_channels,
+            embed_dim,
+        )
+        self.proj.weight = Weight(
+            "weight",
+            dtype,
+            [
+                embed_dim,
+                in_channels,
+                temporal_patch_size,
+                patch_size,
+                patch_size,
+            ],
+            device=self.devices[0],
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        """Projects ``[n_patches, patch_dim]`` patches to the embedding."""
+        assert self.proj.bias is not None
+        weight = ops.reshape(
+            self.proj.weight.to(x.device), [self.embed_dim, self.patch_dim]
+        )
+        return linear(x.cast(weight.dtype), weight) + self.proj.bias.to(
+            x.device
+        )
+
+
 class Qwen3_5VisionTransformer(VisionTransformer):
     """The Qwen3VL vision transformer as the Qwen3.5 vision graph.
 
@@ -60,6 +122,21 @@ class Qwen3_5VisionTransformer(VisionTransformer):
     deepstack (intermediate visual features injected at multiple LM depths),
     which is a Qwen3VL-MoE feature.
     """
+
+    def __init__(self, config: VisionConfig) -> None:
+        super().__init__(config)
+        self.patch_embed = Qwen3_5VisionPatchEmbed(
+            dtype=config.dtype,
+            devices=self.devices,
+            patch_size=config.patch_size,
+            temporal_patch_size=config.temporal_patch_size,
+            in_channels=config.in_channels,
+            embed_dim=config.hidden_size,
+        )
+        self.patch_embed.sharding_strategy = ShardingStrategy.replicate(
+            len(self.devices)
+        )
+        self.patch_embed_shards = self.patch_embed.shard(self.devices)
 
     def trace(
         self,
