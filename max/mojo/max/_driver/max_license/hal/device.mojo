@@ -19,7 +19,7 @@ from .plugin import (
     DeviceHandle,
     M_driver_dlpack_device,
 )
-from ._plugin._overlay import HAL_PLUGINS
+from ._plugin._impl import HalPluginForTarget
 from .extensions.traits import SupportsPeerAccessV1
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 
@@ -87,9 +87,9 @@ struct Device[spec: DeviceSpec](Deinitable, Movable):
     var _self_ref: WeakPointer[Self]
     var id: Int64
 
-    comptime Extensions = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.spec]()
-    ].HookFor[DeviceSpec.target[Self.spec]()].extensions
+    comptime Extensions = HalPluginForTarget[
+        DeviceSpec.target[Self.spec]()
+    ].extensions
 
     # SAFETY: this field is immutably shared across the HAL
     # object graph, and must not be mutated without

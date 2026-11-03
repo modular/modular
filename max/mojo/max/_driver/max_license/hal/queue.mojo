@@ -18,7 +18,7 @@ from .plugin import (
     FunctionHandle,
     ContextHandle,
 )
-from ._plugin._overlay import HAL_PLUGINS
+from ._plugin._impl import HalPluginForTarget
 from .buffer import Buffer, BufferView
 from .context import Context
 from .memory import _enqueue_copy
@@ -54,9 +54,9 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
     var _context: ArcPointer[Context[Self.device_spec]]
     var _self_ref: WeakPointer[Self]
 
-    comptime HALExtensions = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.device_spec]()
-    ].HookFor[DeviceSpec.target[Self.device_spec]()].extensions
+    comptime HALExtensions = HalPluginForTarget[
+        DeviceSpec.target[Self.device_spec]()
+    ].extensions
 
     var _extensions: Pointer[Self.HALExtensions, ImmUntrackedOrigin]
 

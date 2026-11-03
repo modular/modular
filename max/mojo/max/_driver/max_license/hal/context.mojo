@@ -24,7 +24,7 @@ from .plugin import (
     M_driver_bundle_compilation_options,
     M_driver_dlpack_device,
 )
-from ._plugin._overlay import HAL_PLUGINS
+from ._plugin._impl import HalPluginForTarget
 
 from .buffer import Buffer, BufferView
 from .device import DeviceSpec
@@ -124,9 +124,9 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
     var _raw: ArcPointer[RawDriver]
     var _self_ref: WeakPointer[Self]
 
-    comptime HALExtensions = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.device_spec]()
-    ].HookFor[DeviceSpec.target[Self.device_spec]()].extensions
+    comptime HALExtensions = HalPluginForTarget[
+        DeviceSpec.target[Self.device_spec]()
+    ].extensions
 
     var _extensions: Pointer[Self.HALExtensions, ImmUntrackedOrigin]
 

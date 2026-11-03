@@ -67,7 +67,7 @@ from ..hal import (
     get_device_spec,
 )
 from ..hal._machine import DeviceRef, DeviceSpec
-from ..hal._plugin._overlay import HAL_PLUGINS
+from ..hal._plugin._impl import HalPluginForTarget
 from ..hal._plugin._trait import HalLaunchOptions
 from ..hal.event import EVENT_FLAG_CPU_VISIBLE
 from ..hal.extensions.traits import SupportsPeerAccessV1
@@ -497,13 +497,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     comptime device_spec = get_device_spec[0]()
     """`DeviceSpec` describing the device this context targets."""
 
-    comptime _PluginExecutionConfigType: ExecutionConfig = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.device_spec]()
-    ].HookFor[
+    comptime _PluginExecutionConfigType: ExecutionConfig = HalPluginForTarget[
         DeviceSpec.target[Self.device_spec]()
-    ].ExecutionConfigType[
-        DeviceRef(Self.device_spec, 0, private=())
-    ]
+    ].ExecutionConfigType[DeviceRef(Self.device_spec, 0, private=())]
 
     comptime ExecutionConfigType: ExecutionConfig = (
         ClusterLaunchConfig if conforms_to(
@@ -522,9 +518,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     comptime _target_value = Self.target._mlir_value
 
-    comptime _HALHooks = HAL_PLUGINS.for_target[Self._target_value].HookFor[
-        Self.target
-    ]
+    comptime _HALHooks = HalPluginForTarget[Self.target]
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -3097,9 +3091,9 @@ struct DeviceFunction[
         # Every grid/block launch, from a DeviceContext or a DeviceStream,
         # ends up here, so this is the one place the plugin's launcher has to
         # be honored.
-        comptime _HALHooks = HAL_PLUGINS.for_target[
-            ContextT._target_value
-        ].HookFor[CompilationTarget[_mlir_value=ContextT._target_value]()]
+        comptime _HALHooks = HalPluginForTarget[
+            CompilationTarget[_mlir_value=ContextT._target_value]()
+        ]
         comptime if _HALHooks.Launcher.overrides_grid_block:
             comptime if HostArgs.length != 0:
                 raise Error(
@@ -3610,9 +3604,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
 
     comptime _target_value = Self.target._mlir_value
 
-    comptime _HALHooks = HAL_PLUGINS.for_target[Self._target_value].HookFor[
-        Self.target
-    ]
+    comptime _HALHooks = HalPluginForTarget[Self.target]
 
     # ===-------------------------------------------------------------------===#
     # Fields
