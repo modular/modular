@@ -268,7 +268,7 @@ def test_fused_concat_cpu() raises:
         output_dyn.layout,
         input_fn,
         output_fn,
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
     # Verify results
@@ -375,7 +375,7 @@ def test_concat_with_epilogue() raises:
         axis,
         input_tuple,
         epilogue_add_10,
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
     # Verify epilogue was applied
@@ -441,7 +441,7 @@ def test_concat_many_inputs() raises:
         output.make_dynamic[.int64](),
         axis,
         input_tuple,
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
     # Verify each section

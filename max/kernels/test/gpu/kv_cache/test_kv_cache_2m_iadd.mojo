@@ -472,7 +472,7 @@ def test_kv_cache_2m_iadd_cpu[
 
 def main() raises:
     # CPU tests
-    with DeviceContext(api="cpu") as cpu_ctx:
+    with DeviceContext.cpu() as cpu_ctx:
         test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
             (10, 20, 30, 40),
             (40, 30, 20, 10),

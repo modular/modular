@@ -406,7 +406,7 @@ def test_empty_updates(gpu: DeviceContext, cpu: DeviceContext) raises:
 
 
 def main() raises:
-    var cpu = DeviceContext(api="cpu")
+    var cpu = DeviceContext.cpu()
     with DeviceContext() as gpu:
         test_overwrite(gpu, cpu)
         test_reductions[DType.float32](gpu, cpu)

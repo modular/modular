@@ -88,7 +88,7 @@ def test_concat() raises:
         concat_axis,
         input_tuple,
         epilogue_plus_one,
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
     # CHECK: == test_concat

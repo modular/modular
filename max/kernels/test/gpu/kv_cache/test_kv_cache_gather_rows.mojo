@@ -138,7 +138,7 @@ def run_case[
         UInt32(lengths.max_full_context_length),
     )
     var lut_host = lut.host_tile_tensor()
-    var cpu_ctx = DeviceContext(api="cpu")
+    var cpu_ctx = DeviceContext.cpu()
 
     comptime for kv in range(kv_dim):
         comptime if kv == 0:

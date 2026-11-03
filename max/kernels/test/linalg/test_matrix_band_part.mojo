@@ -66,7 +66,7 @@ def matrix_band_part[
         num_upper_buf,
         exclude_buf,
         output,
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
 

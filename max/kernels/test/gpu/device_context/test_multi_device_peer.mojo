@@ -123,7 +123,7 @@ def test_all_peer_access_enabled_transitions() raises:
 
 def test_cpu_peer_is_not_accessible() raises:
     var gpu1 = DeviceContext(device_id=1)
-    var cpu = DeviceContext(api="cpu")
+    var cpu = DeviceContext.cpu()
     assert_false(gpu1.device().can_access_peer(cpu.device()))
     with assert_raises():
         gpu1.enable_peer_access(cpu)
@@ -131,7 +131,7 @@ def test_cpu_peer_is_not_accessible() raises:
 
 def test_copy_from_another_driver_fails_cleanly() raises:
     var gpu1 = DeviceContext(device_id=1)
-    var cpu = DeviceContext(api="cpu")
+    var cpu = DeviceContext.cpu()
     var src = cpu.enqueue_create_buffer[.int32](1)
     src.enqueue_fill(7)
     var dst = gpu1.enqueue_create_buffer[.int32](1)

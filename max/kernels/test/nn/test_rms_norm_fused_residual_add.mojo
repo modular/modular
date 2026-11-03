@@ -176,7 +176,7 @@ def run_rms_norm_fused_residual_add_gpu[
     elementwise[simd_width_of[dtype](), target="cpu"](
         sum_fn,
         unfused_intermediate_buf.layout.shape_coord(),
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
     @inline(.always)

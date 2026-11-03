@@ -344,7 +344,7 @@ def _index_tensor_impl[
     )
 
     comptime if is_cpu[target]():
-        var cpu_ctx = DeviceContext(api="cpu")
+        var cpu_ctx = DeviceContext.cpu()
         if use_simd:
             elementwise[
                 target_simd_width,

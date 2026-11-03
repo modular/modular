@@ -109,9 +109,7 @@ def bench_memcpy(
     var length_in_elements = length_in_bytes // size_of[dtype]()
     var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
         length_in_elements
-    ) if config.pinned_memory else DeviceContext(
-        api="cpu"
-    ).enqueue_create_host_buffer[
+    ) if config.pinned_memory else DeviceContext.cpu().enqueue_create_host_buffer[
         dtype
     ](
         length_in_elements

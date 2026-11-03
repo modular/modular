@@ -38,7 +38,7 @@ def test_device_cannot_peer_itself() raises:
 
 
 def test_device_cannot_peer_cpu() raises:
-    var cpu = DeviceContext(api="cpu")
+    var cpu = DeviceContext.cpu()
     with DeviceContext() as ctx:
         assert_false(ctx.device().can_access_peer(cpu.device()))
 

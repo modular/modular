@@ -31,7 +31,7 @@ def print_elements(tensor: TileTensor) raises:
     elementwise[1](
         print_elements_lambda,
         tensor.layout.shape_coord(),
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
 
@@ -68,7 +68,7 @@ def test_arange[
     elementwise[1](
         arange_lambda,
         out_tensor.layout.shape_coord(),
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
     print_elements(out_tensor)

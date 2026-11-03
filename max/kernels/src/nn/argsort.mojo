@@ -82,7 +82,7 @@ def _argsort_cpu[
     elementwise[simd_width_of[indices.dtype](), target="cpu"](
         fill_indices_iota,
         Coord(indices.num_elements()),
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
     def cmp_fn(

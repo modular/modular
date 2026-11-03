@@ -483,7 +483,7 @@ def test_rope_ragged_rope_first[
 
 
 def main() raises -> None:
-    with DeviceContext(api="cpu") as ctx:
+    with DeviceContext.cpu() as ctx:
         # Full head RoPE - this works correctly and is production ready
         print("Full head RoPE")
         test_rope_ragged[8, .float32](ctx)

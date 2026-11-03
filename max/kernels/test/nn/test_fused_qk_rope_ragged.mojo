@@ -308,7 +308,7 @@ def test_fused_qk_rope[
 
 
 def main() raises -> None:
-    with DeviceContext(api="cpu") as ctx:
+    with DeviceContext.cpu() as ctx:
         # Full head RoPE
         test_fused_qk_rope[8, .float32](ctx)
         # Partial RoPE (last 4 elements of each head)

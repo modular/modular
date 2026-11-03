@@ -539,12 +539,43 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @staticmethod
+    @inline(.always)
+    def _default_api() -> String:
+        """Returns the device API that matches this context's target.
+
+        Resolving the API from `Self.target` keeps CPU targets from looking up
+        GPU device info, which only exists for accelerator targets.
+
+        Returns:
+            `"cpu"` for a CPU target, otherwise the API of the target
+            accelerator.
+        """
+        comptime if Self.target.is_cpu():
+            return "cpu"
+        else:
+            return String(Self.default_device_info.api)
+
+    @staticmethod
+    def _api_matches_target(api: String) -> Bool:
+        """Checks that a requested device API is one this target can run on.
+
+        Args:
+            api: Requested device API, such as "cpu", "gpu", "cuda" or "hip".
+
+        Returns:
+            `True` if a CPU target is paired with "cpu", or any other target
+            is paired with a non-CPU API.
+        """
+        var is_cpu_api = api.lower() == "cpu"
+        return is_cpu_api == Self.target.is_cpu()
+
     @inline(.always)
     def __init__(
         out self,
         device_id: Int = 0,
         *,
-        var api: String = String(Self.default_device_info.api),
+        var api: String = Self._default_api(),
     ) raises:
         """Constructs a `DeviceContext` for the specified device.
 
@@ -556,10 +587,14 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             device_id: ID of the accelerator device. If not specified, uses
                 the default accelerator (device 0).
             api: Requested device API (for example, "cuda" or "hip"). Defaults
-                to the device API specified by current target accelerator.
+                to the device API of this context's target, which is "cpu" for
+                a CPU target.
 
         Raises:
-            If device initialization fails or the specified device is not available.
+            If `api` does not match this context's target (a CPU target
+            requires "cpu" and any other target requires a non-CPU API), if
+            device initialization fails, or if the specified device is not
+            available.
 
         Example:
 
@@ -573,6 +608,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         var ctx2 = DeviceContext(1)
         ```
         """
+
+        if not Self._api_matches_target(api):
+            raise Error(
+                String(
+                    t"DeviceContext with target"
+                    t" {StaticString(Self.target.__triple())} cannot be created"
+                    t" with api '{api}'"
+                )
+            )
 
         var plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
         if not plugin_spec:
@@ -2493,9 +2537,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self.stream().enqueue_wait_for(event)
 
     @staticmethod
-    def number_of_devices(
-        *, var api: String = String(Self.default_device_info.api)
-    ) -> Int:
+    def number_of_devices(*, var api: String = Self._default_api()) -> Int:
         """Returns the number of devices available that support the specified API.
 
         Args:

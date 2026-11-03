@@ -149,9 +149,20 @@ def MojoHAL_DeviceContext_create(
     device_id: Int32,
 ) abi("C") -> _CString[]:
     try:
-        var ctx = DeviceContext(
-            Int(device_id), api=String(unsafe_from_utf8_ptr=api)
-        )
+        var requested_api = String(unsafe_from_utf8_ptr=api)
+        # The C++ side picks the api at runtime, so the boxed context's static
+        # target is not known here. A CPU request is built with the CPU target
+        # (which the constructor requires) and then rebound to the
+        # default-accelerator type that every box currently uses.
+        # TODO(MSTDL-3329): Box a `DeviceContext.Unknown` instead, which is
+        # agnostic to the static target, and drop this rebind.
+        var ctx: DeviceContext[]
+        if requested_api.lower() == "cpu":
+            ctx = rebind_var[DeviceContext[]](
+                DeviceContext.CPU(Int(device_id), api=requested_api^)
+            )
+        else:
+            ctx = DeviceContext(Int(device_id), api=requested_api^)
         var boxed = alloc(Layout[DeviceContext[]].single())
         boxed.unsafe_ptr().unsafe_write(ctx^)
         out_ctx[] = boxed^.unsafe_leak()

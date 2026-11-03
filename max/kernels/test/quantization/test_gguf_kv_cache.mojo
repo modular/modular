@@ -124,7 +124,7 @@ def check_paged_qkv[
 
 
 def main() raises:
-    with DeviceContext(api="cpu") as ctx:
+    with DeviceContext.cpu() as ctx:
         check_paged_qkv[qgemm_Q4_0, "q4_0"](ctx)
         check_paged_qkv[qgemm_Q4_K, "q4_k"](ctx)
         check_paged_qkv[qgemm_Q6_K, "q6_k"](ctx)

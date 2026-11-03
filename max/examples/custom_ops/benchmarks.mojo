@@ -114,7 +114,7 @@ def top_k() raises:
         idx_dtype, rank, batch_size, K
     ]()
 
-    var cpu_ctx = DeviceContext(api="cpu")
+    var cpu_ctx = DeviceContext.cpu()
 
     var in_vals = Tensor[IOSpec.Input, val_spec](cpu_ctx).rand()
     var out_vals = Tensor[IOSpec.Output, val_spec](cpu_ctx).rand()
@@ -167,7 +167,7 @@ def matmul() raises:
     comptime b_spec = get_row_major_tensor_spec_static[dtype, rank, K, N]()
     comptime c_spec = get_row_major_tensor_spec_static[dtype, rank, M, N]()
 
-    var cpu_ctx = DeviceContext(api="cpu")
+    var cpu_ctx = DeviceContext.cpu()
 
     var a = Tensor[IOSpec.Input, a_spec](cpu_ctx).rand()
     var b = Tensor[IOSpec.Input, b_spec](cpu_ctx).rand()
@@ -237,7 +237,7 @@ def tensor_core_mma() raises:
         DType.float32, rank, M, N
     ]()
 
-    var cpu_ctx = DeviceContext(api="cpu")
+    var cpu_ctx = DeviceContext.cpu()
 
     var a = Tensor[IOSpec.Input, a_spec](cpu_ctx).rand()
     var b = Tensor[IOSpec.Input, b_spec](cpu_ctx).rand()

@@ -285,7 +285,7 @@ def memcpy_or_fuse[
         # output lambda might operate on views (e.g., broadcast) that does not
         # always work with indices produced from a linearized address.
         elementwise[simd_width=1](
-            epilogue_wrapper, shape_1d, DeviceContext(api="cpu")
+            epilogue_wrapper, shape_1d, DeviceContext.cpu()
         )
 
 

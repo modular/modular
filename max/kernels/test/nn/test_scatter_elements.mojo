@@ -18,7 +18,7 @@ from std.testing import assert_equal
 
 
 def main() raises:
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
 
     def test_scatter_ax0(ctx: DeviceContext) raises:
         print("== test_scatter_ax0")

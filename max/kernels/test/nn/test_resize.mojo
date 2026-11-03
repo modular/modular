@@ -299,7 +299,7 @@ def _check_cubic_matches_naive(
 
 
 def main() raises:
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
 
     def test_upsample_sizes_nearest_1(ctx: DeviceContext) raises:
         print("== test_upsample_sizes_nearest_1")

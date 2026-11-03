@@ -226,7 +226,7 @@ def test_repeat_interleave_3d(ctx: DeviceContext) raises:
 
 
 def main() raises:
-    with DeviceContext(api="cpu") as ctx:
+    with DeviceContext.cpu() as ctx:
         test_collapse_dims_around_axis()
         test_repeat_interleave_1d(ctx)
         test_repeat_interleave_1d_broadcast_repeats(ctx)
