@@ -84,10 +84,13 @@ class FakeTransfer:
     Setting ``fails`` makes every poll raise ``error``, as a terminal transfer
     failure does: the destination blocks hold no valid KV, and the failure is
     sticky so a second poller cannot see completion instead.
+    ``writeback_blocks_per_leaf`` is what a load asks the manager to write
+    back.
     """
 
     def __init__(self, g0: Mapping[str, Sequence[int]] | None = None) -> None:
         self.g0_blocks_per_leaf = {} if g0 is None else g0
+        self.writeback_blocks_per_leaf: Mapping[str, Sequence[int]] = {}
         self.done = False
         self.fails = False
         self.error: Exception = KVLoadFailed("transfer failed")
@@ -209,6 +212,8 @@ class FakeConnector:
         self.load_error: Exception | None = None
         # Whether the next load's transfer fails on its very first poll.
         self.fail_on_first_poll = False
+        # Hashes a load reports a remote peer served rather than this tier.
+        self.peer_served: set[bytes] = set()
         self.asynchronous = asynchronous
         # Whether an offload skips the hashes a leaf already holds, as the
         # real connectors do, and so reports only the blocks it took.
@@ -357,6 +362,16 @@ class FakeConnector:
         if self.load_error is not None:
             raise self.load_error
         transfer = FakeTransfer()
+        transfer.writeback_blocks_per_leaf = {
+            leaf_id: [
+                bid
+                for bid, block_hash in zip(
+                    block_ids[leaf_id], hashes, strict=True
+                )
+                if block_hash in self.peer_served
+            ]
+            for leaf_id, hashes in block_hashes.items()
+        }
         transfer.fails = self.fail_on_first_poll
         if not self.asynchronous:
             transfer.done = True
@@ -3638,3 +3653,346 @@ def test_a_missing_block_stops_a_full_leaf_but_not_a_windowed_one() -> None:
     ((_, sent),) = connector.offloads
     assert sent[FULL] == [hashes[0]]
     assert sent[SLIDING] == [hashes[0], hashes[2]]
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_a_peer_pulled_prefix_is_not_offloaded_when_the_connector_reports_no_writeback_blocks(
+    asynchronous: bool,
+) -> None:
+    """Node B loads a prefix node A wrote, and never writes it back itself.
+
+    Its connector reports no block as peer-served, as the dKV connector does
+    with ``MODULAR_DKV_OFFLOAD_PEER_LOADS`` off.
+    """
+    # Node A computes the prefix and offloads it to its own store.
+    peer = FakeConnector([FULL], asynchronous=False)
+    node_a = make_manager(peer)
+    prompt = list(range(1, 10))
+    first = make_ctx(prompt)
+    node_a.claim(first)
+    node_a.alloc(first)
+    first.update(99)
+    node_a.step(first)
+    node_a.offload(0)
+    node_a.release(first)
+    prefix = sent_by_leaf(peer.offloads)[FULL]
+    assert prefix
+
+    # Node B starts cold; its connector answers for the prefix the way a
+    # hinted read served by node A does.
+    local = FakeConnector([FULL], asynchronous=asynchronous)
+    local.hold(prefix)
+    node_b = make_manager(local)
+    second = make_ctx(prompt + [10, 11, 12, 13])
+    node_b.claim(second)
+    transfer = node_b.alloc(second)
+    pulled = local.loads[-1][1][FULL]
+    assert pulled, "node B never loaded through its connector"
+    assert second.cached_prefix_external_length == len(pulled)
+    if asynchronous:
+        transfer.synchronize()
+        node_b.poll_transfers()
+    assert all(h in node_b.pools[0].prefix_caches[FULL] for h in pulled)
+
+    second.update(99)
+    node_b.step(second)
+    node_b.offload(0)
+    node_b.release(second)
+    for pending in local.transfers:
+        pending.synchronize()
+    node_b.poll_transfers()
+    # Evict everything from node B's G0, then give it every chance to offload.
+    node_b.reset_prefix_cache()
+    node_b.offload(0)
+
+    written = sent_by_leaf(local.offloads).get(FULL, [])
+    assert written, "node B should still offload the suffix it computed"
+    assert set(written).isdisjoint(pulled), (
+        "node B offloaded blocks it pulled from the peer: "
+        f"{sorted(set(written) & set(pulled))}"
+    )
+    metrics = node_b.take_metrics()
+    assert metrics.dkv_peer_writeback_blocks == 0
+    assert metrics.dkv_peer_writeback_blocks_evicted == 0
+
+
+_PEER_PROMPT = list(range(1, 10))
+
+
+def _peer_prefix(leaves: Sequence[str] = (FULL,)) -> list[bytes]:
+    """Returns the hashes another engine wrote for ``_PEER_PROMPT``."""
+    peer = FakeConnector(list(leaves), asynchronous=False)
+    node_a = make_manager(peer, leaves=leaves, num_huge_blocks=64)
+    first = make_ctx(_PEER_PROMPT)
+    node_a.claim(first)
+    node_a.alloc(first)
+    first.update(99)
+    node_a.step(first)
+    node_a.offload(0)
+    node_a.release(first)
+    return sent_by_leaf(peer.offloads)[leaves[0]]
+
+
+def _pull(
+    manager: JengaBlockManager, connector: FakeConnector, asynchronous: bool
+) -> TextContext:
+    """Admits a request extending ``_PEER_PROMPT`` and lands its onload."""
+    ctx = make_ctx(_PEER_PROMPT + [10, 11, 12, 13])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    assert connector.loads, "nothing was loaded through the connector"
+    if asynchronous:
+        transfer.synchronize()
+        manager.poll_transfers()
+    return ctx
+
+
+def _offloaded_at_release(
+    manager: JengaBlockManager, connector: FakeConnector, ctx: TextContext
+) -> list[tuple[dict[str, list[int]], dict[str, list[bytes]]]]:
+    """Runs the request's forward, then returns what its release offloaded.
+
+    The forward's own commit is offloaded first, so only what the release
+    adds is returned.
+    """
+    ctx.update(99)
+    manager.step(ctx)
+    manager.offload(0)
+    start = len(connector.offloads)
+    manager.release(ctx)
+    return connector.offloads[start:]
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_a_peer_served_prefix_is_offloaded_at_release(
+    asynchronous: bool,
+) -> None:
+    """What a peer served goes back out once, when the request is released."""
+    prefix = _peer_prefix()
+    connector = FakeConnector([FULL], asynchronous=asynchronous)
+    connector.hold(prefix)
+    connector.peer_served = set(prefix)
+    manager = make_manager(connector)
+
+    ctx = _pull(manager, connector, asynchronous)
+
+    pulled = connector.loads[-1][1][FULL]
+    assert pulled == prefix
+    ((block_ids, hashes),) = _offloaded_at_release(manager, connector, ctx)
+    assert hashes == {FULL: pulled}
+    assert len(block_ids[FULL]) == len(pulled)
+    assert manager.take_metrics().dkv_peer_writeback_blocks_dropped == 0
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_only_the_peer_served_tail_of_a_split_load_is_offloaded(
+    asynchronous: bool,
+) -> None:
+    """A head the co-located tier served is not written back to it."""
+    prefix = _peer_prefix()
+    connector = FakeConnector([FULL], asynchronous=asynchronous)
+    connector.hold(prefix)
+    connector.peer_served = set(prefix[3:])
+    manager = make_manager(connector)
+
+    ctx = _pull(manager, connector, asynchronous)
+
+    ((_, hashes),) = _offloaded_at_release(manager, connector, ctx)
+    assert hashes == {FULL: prefix[3:]}
+
+
+def test_peer_served_blocks_go_out_in_one_offload_for_every_leaf() -> None:
+    """A release adds one ``offload`` call carrying every leaf, not one each."""
+    leaves = (VALUES, SCALES)
+    prefix = _peer_prefix(leaves)
+    connector = FakeConnector(list(leaves), asynchronous=False)
+    connector.hold(prefix)
+    connector.peer_served = set(prefix)
+    manager = make_manager(connector, leaves=leaves, num_huge_blocks=64)
+
+    ctx = _pull(manager, connector, asynchronous=False)
+
+    ((_, hashes),) = _offloaded_at_release(manager, connector, ctx)
+    assert hashes == {VALUES: prefix, SCALES: prefix}
+
+
+def test_a_windowed_leaf_writes_back_none_of_a_peer_filled_window() -> None:
+    """Only the full-attention leaf writes back what a peer filled.
+
+    The fake reports peer-filled blocks on both leaves, the windowed one's
+    window included, yet the release's write-back carries the full leaf's
+    peer-filled hashes alone. The windowed leaf sends only its release
+    checkpoint, as it would without write-back.
+    """
+    groups = {
+        FULL: KVCacheGroupId.full(),
+        SLIDING: KVCacheGroupId("sliding_window", 4),
+    }
+    leaf_infos = {
+        FULL: KVLeafInfo(1, groups[FULL]),
+        SLIDING: KVLeafInfo(1, groups[SLIDING]),
+    }
+    peer = FakeConnector(groups, asynchronous=False)
+    node_a = make_manager(peer, num_huge_blocks=64, leaf_infos=leaf_infos)
+    first = make_ctx(_PEER_PROMPT)
+    node_a.claim(first)
+    node_a.alloc(first)
+    first.update(99)
+    node_a.step(first)
+    node_a.offload(0)
+    prefix = sent_by_leaf(peer.offloads)[FULL]
+    window = groups[SLIDING].blocks_in_window(1)
+    assert len(prefix) > window, "the prompt must outrun the window"
+
+    connector = FakeConnector(groups, asynchronous=False)
+    connector.hold(prefix)
+    connector.peer_served = set(prefix[3:])
+    manager = make_manager(connector, num_huge_blocks=64, leaf_infos=leaf_infos)
+
+    ctx = _pull(manager, connector, asynchronous=False)
+
+    _, loaded, _ = connector.loads[-1]
+    pulled = loaded[FULL]
+    assert loaded[SLIDING] == pulled[-window:]
+    assert connector.transfers[0].writeback_blocks_per_leaf[SLIDING], (
+        "the fake must report the window as peer-filled for this to bite"
+    )
+    released = _offloaded_at_release(manager, connector, ctx)
+    sent = [hashes for _, hashes in released]
+    assert [hashes for hashes in sent if hashes[FULL]] == [
+        {FULL: pulled[3:], SLIDING: []}
+    ]
+
+
+def test_a_release_counts_the_write_back_it_queues_and_what_was_evicted() -> (
+    None
+):
+    """Each peer-filled block still in the prefix cache counts as queued, and
+    one evicted before release counts as dropped, per leaf."""
+    leaves = (VALUES, SCALES)
+    prefix = _peer_prefix(leaves)
+    connector = FakeConnector(list(leaves), asynchronous=False)
+    connector.hold(prefix)
+    connector.peer_served = set(prefix[3:])
+    manager = make_manager(connector, leaves=leaves, num_huge_blocks=64)
+    ctx = _pull(manager, connector, asynchronous=False)
+    # A hash the prefix cache no longer holds, as for a block another request
+    # published and that was evicted once that request let it go.
+    manager._state_of(ctx).peer_loaded_hashes[VALUES].append(b"evicted")
+    manager.take_metrics()
+
+    _offloaded_at_release(manager, connector, ctx)
+
+    metrics = manager.take_metrics()
+    assert metrics.dkv_peer_writeback_blocks == 2 * len(prefix[3:])
+    assert metrics.dkv_peer_writeback_blocks_evicted == 1
+
+
+def test_a_release_counts_no_write_back_past_a_full_leaves_first_gap() -> None:
+    """A full leaf's offload stops at its first missing hash, so the count
+    stops there too and everything from the gap on counts as evicted."""
+    prefix = _peer_prefix()
+    connector = FakeConnector([FULL], asynchronous=False)
+    connector.hold(prefix)
+    connector.peer_served = set(prefix[3:])
+    manager = make_manager(connector)
+    ctx = _pull(manager, connector, asynchronous=False)
+    recorded = manager._state_of(ctx).peer_loaded_hashes[FULL]
+    assert len(recorded) == 6
+    recorded[1] = b"evicted"
+    manager.take_metrics()
+
+    ((_, sent),) = _offloaded_at_release(manager, connector, ctx)
+
+    assert sent[FULL] == recorded[:1]
+    metrics = manager.take_metrics()
+    assert metrics.dkv_peer_writeback_blocks == 1
+    assert metrics.dkv_peer_writeback_blocks_evicted == 5
+
+
+def test_a_failed_peer_onload_offloads_nothing_at_release() -> None:
+    """A copy that failed recorded nothing, and the recompute offloads itself."""
+    prefix = _peer_prefix()
+    connector = FakeConnector([FULL])
+    connector.hold(prefix)
+    connector.peer_served = set(prefix)
+    manager = make_manager(connector)
+    ctx = make_ctx(_PEER_PROMPT + [10, 11, 12, 13])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    manager.poll_transfers()
+
+    # The next alloc rolls the onload back and computes the prefix instead.
+    manager.alloc(ctx)
+    assert ctx.cached_prefix_external_length == 0
+    assert manager._state_of(ctx).peer_onload is None
+
+    assert _offloaded_at_release(manager, connector, ctx) == []
+
+
+def test_a_peer_onload_released_before_it_lands_offloads_nothing() -> None:
+    """A request gone before its copy landed has no release left to offload."""
+    prefix = _peer_prefix()
+    connector = FakeConnector([FULL])
+    connector.hold(prefix)
+    connector.peer_served = set(prefix)
+    manager = make_manager(connector)
+    ctx = make_ctx(_PEER_PROMPT + [10, 11, 12, 13])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    start = len(connector.offloads)
+
+    manager.release(ctx)
+    transfer.synchronize()
+    manager.poll_transfers()
+    manager.offload(0)
+
+    assert connector.offloads[start:] == []
+    metrics = manager.take_metrics()
+    assert metrics.dkv_peer_writeback_blocks_dropped == len(prefix)
+    assert metrics.dkv_peer_writeback_blocks == 0
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_a_rolled_back_peer_onload_offloads_nothing_at_release(
+    asynchronous: bool,
+) -> None:
+    """An onload undone because the rest of the prompt did not fit is dropped.
+
+    The retry then reuses the landed pages as a device hit, which loads
+    nothing from a peer, so the release has nothing of its own to offload.
+    """
+    prefix = _peer_prefix()
+    connector = FakeConnector([FULL], asynchronous=asynchronous)
+    connector.hold(prefix)
+    connector.peer_served = set(prefix)
+    manager = make_manager(connector, num_huge_blocks=32)
+    pool = manager.pools[0]
+    # Room for the onload's rows but not for the whole prompt.
+    filler = [
+        pool.alloc_block(FULL)
+        for _ in range(pool.num_free_blocks(FULL) - len(prefix) - 2)
+    ]
+    ctx = make_ctx(_PEER_PROMPT + list(range(10, 30)))
+    manager.claim(ctx)
+    with pytest.raises(InsufficientBlocksError):
+        manager.alloc(ctx)
+    assert connector.loads, "the onload never ran"
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    # Dropped once: by the rollback for an onload that had landed, by the
+    # landing for one rolled back before it.
+    dropped = manager.take_metrics().dkv_peer_writeback_blocks_dropped
+    assert dropped == len(prefix)
+
+    for block in filler:
+        pool.free_block(block)
+    manager.alloc(ctx)
+    assert ctx.cached_prefix_length == len(prefix)
+    assert ctx.cached_prefix_external_length == 0
+
+    assert _offloaded_at_release(manager, connector, ctx) == []
+    assert manager.take_metrics().dkv_peer_writeback_blocks_dropped == 0

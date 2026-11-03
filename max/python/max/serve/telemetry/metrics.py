@@ -636,6 +636,20 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "max.dkv.overlapped_peer_lookups",
         description="dKV peer lookups begun alongside the co-located lookup rather than after it, at most one per round, under MODULAR_DKV_OVERLAP_PEER_LOOKUPS. Zero with the option off; read against max.dkv.hinted_lookups for how often it fires.",
     ),
+    # The peer-load write-back. Counters, since take_metrics clears them every
+    # batch like the split loads above.
+    "max.dkv.peer_writeback_blocks": _create_counter(
+        "max.dkv.peer_writeback_blocks",
+        description="Blocks a hinted peer filled that a request's release queued to write back to the co-located dKV, per leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS, up to the first hash the device prefix cache lacks on a full-attention leaf. Zero with the option off; dKV skips any it already holds, so read against its newly acquired offload count.",
+    ),
+    "max.dkv.peer_writeback_blocks_evicted": _create_counter(
+        "max.dkv.peer_writeback_blocks_evicted",
+        description="Peer-filled hashes a release found missing from the device prefix cache, per leaf, with those behind the first on a full-attention leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS. Another request published these and they were evicted after it let them go, and that request normally wrote them to dKV already, so this is not a lost write-back.",
+    ),
+    "max.dkv.peer_writeback_blocks_dropped": _create_counter(
+        "max.dkv.peer_writeback_blocks_dropped",
+        description="Blocks a hinted peer filled that no release will write back, per full-attention leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS: those of an onload that landed after its request was released or rolled back, and those a rollback took back after the onload landed. Read against max.dkv.peer_writeback_blocks for how much of the peer-loaded KV the release-time write-back misses.",
+    ),
     "max.dkv.hinted_lookups": _create_counter(
         "max.dkv.hinted_lookups",
         description="dKV lookup rounds in which some entry routed to an attached peer. The rounds max.dkv.hinted_lookup_latency times.",
@@ -2455,6 +2469,33 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.overlapped_peer_lookups",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_blocks(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_blocks",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_blocks_evicted(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_blocks_evicted",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_blocks_dropped(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_blocks_dropped",
                 value,
                 self.extra_attributes,
             ),

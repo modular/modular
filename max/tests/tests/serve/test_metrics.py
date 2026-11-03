@@ -744,6 +744,18 @@ def test_dkv_overlapped_lookup_counters_are_counters() -> None:
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise
 
 
+def test_dkv_peer_writeback_counters_are_counters() -> None:
+    """Per-batch deltas like the split-load counter, so counters."""
+    common.configure_metrics(Settings())
+    for name in (
+        "max.dkv.peer_writeback_blocks",
+        "max.dkv.peer_writeback_blocks_evicted",
+        "max.dkv.peer_writeback_blocks_dropped",
+    ):
+        assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name
+        metrics.MaxMeasurement(name, 7).commit()  # Should not raise
+
+
 def test_dkv_hinted_lookup_latency_is_a_latency_histogram() -> None:
     """A window's mean hinted lookup, bucketed like the rpc latencies."""
     common.configure_metrics(Settings())

@@ -47,6 +47,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVLookup,
     KVProbe,
     KVTransfer,
+    writeback_blocks_of,
 )
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -583,6 +584,16 @@ class RequestCacheState:
     resumable: _RequestResumableState = _RequestResumableState()
     """Where the request can currently resume."""
 
+    peer_loaded_hashes: dict[str, list[bytes]] = field(default_factory=dict)
+    """The hashes, per streamed leaf, a landed onload read from a remote peer
+    rather than the connector's own tier. Offloaded at release, so the
+    connector's own tier holds them too."""
+
+    peer_onload: _OnloadSplice | None = None
+    """The in-flight onload whose transfer reports peer-filled blocks. Its
+    landing records them only while it is still this one, so an onload rolled
+    back before it landed records nothing."""
+
     def lookup_is_stale(self) -> bool:
         """Returns whether the answer is too old to load and is asked again.
 
@@ -845,6 +856,29 @@ class JengaBlockManager:
                 req_id, CheckpointEventKind.RELEASE, ctx.tokens.processed_length
             )
         )
+        # Queued here rather than when the onload landed, so the copy stays
+        # off the request's own prefill and reads pages the release is about
+        # to free, which stay pinned until the copy lands.
+        peer_loaded = self._requests[req_id].peer_loaded_hashes
+        if peer_loaded:
+            prefix_caches = self.pools[replica_idx].prefix_caches
+            for leaf_id, hashes in peer_loaded.items():
+                # Counted the way `offload` walks the run, which stops a
+                # full-prefix leaf at its first missing hash.
+                stops_at_gap = self._cacheable_groups[
+                    leaf_id
+                ].has_full_prefix_dependency
+                held = 0
+                for block_hash in hashes:
+                    if block_hash in prefix_caches[leaf_id]:
+                        held += 1
+                    elif stops_at_gap:
+                        break
+                self._metrics.dkv_peer_writeback_blocks += held
+                self._metrics.dkv_peer_writeback_blocks_evicted += (
+                    len(hashes) - held
+                )
+            self._pending_offloads[replica_idx].append(dict(peer_loaded))
         self.offload(replica_idx)
 
         for group in self._groups.values():
@@ -1492,6 +1526,28 @@ class JengaBlockManager:
                     self._commit_onloaded_blocks(
                         pool, pending.blocks, pending.commit_hashes
                     )
+                    splice = pending.splice
+                    state = (
+                        self._requests.get(splice.request_id)
+                        if splice is not None
+                        else None
+                    )
+                    if state is not None and state.peer_onload is splice:
+                        state.peer_onload = None
+                        self._record_peer_loads(
+                            state,
+                            pending.event,
+                            pending.blocks,
+                            pending.commit_hashes,
+                        )
+                    else:
+                        # Its request was released or rolled back before the
+                        # copy landed, so no release writes these back.
+                        served = writeback_blocks_of(pending.event)
+                        self._metrics.dkv_peer_writeback_blocks_dropped += sum(
+                            len(served.get(leaf_id, ()))
+                            for leaf_id in self._streamed_leaf_ids
+                        )
                 for block in pending.pinned_blocks():
                     pool.free_block(block)
             self._pending_transfers[replica_idx] = still_pending
@@ -1793,19 +1849,23 @@ class JengaBlockManager:
         loaded_hashes = list(desired[:aligned])
         if landed:
             self._commit_onloaded_blocks(pool, loaded_blocks, loaded_hashes)
+            self._record_peer_loads(state, event, loaded_blocks, loaded_hashes)
         else:
             start_idx = state.committed_idx
+            splice = _OnloadSplice(
+                request_id=request_id,
+                start_idx=start_idx,
+                end_idx=start_idx
+                + (num_device_blocks + aligned) * self._block_size,
+            )
+            if writeback_blocks_of(event):
+                state.peer_onload = splice
             self._track_transfer(
                 event,
                 loaded_blocks,
                 replica_idx,
                 commit_hashes=loaded_hashes,
-                splice=_OnloadSplice(
-                    request_id=request_id,
-                    start_idx=start_idx,
-                    end_idx=start_idx
-                    + (num_device_blocks + aligned) * self._block_size,
-                ),
+                splice=splice,
             )
         return aligned, loaded_blocks, event
 
@@ -1825,6 +1885,37 @@ class JengaBlockManager:
                     and not block.is_null
                 ):
                     pool.commit_into_prefix_cache(block_hash, block)
+
+    def _record_peer_loads(
+        self,
+        state: RequestCacheState,
+        event: KVTransfer,
+        blocks: Mapping[str, list[LittleKVCacheBlock]],
+        hashes: Sequence[bytes],
+    ) -> None:
+        """Records which of a landed onload's hashes a remote peer served.
+
+        Write-back covers the streamed, full-attention leaves only, which
+        offload their whole prefix as it commits. That is complete today:
+        MAX sends no peer hint for a tree with a sliding leaf (see
+        ``DKVConnector._usable_hint``), so a windowed leaf is never
+        peer-filled. ``blocks`` is each leaf's row, positional with
+        ``hashes``.
+        """
+        served = writeback_blocks_of(event)
+        if not served:
+            return
+        for leaf_id in self._streamed_leaf_ids:
+            bids = set(served.get(leaf_id, ()))
+            if not bids:
+                continue
+            state.peer_loaded_hashes.setdefault(leaf_id, []).extend(
+                block_hash
+                for block, block_hash in zip(
+                    blocks[leaf_id], hashes, strict=True
+                )
+                if not block.is_null and block.bid in bids
+            )
 
     def _skip_connector_after_failure(
         self, request_id: RequestID, failure: KVLoadFailed
@@ -1878,6 +1969,7 @@ class JengaBlockManager:
             return
         splice, failure = state.failed_onload
         state.failed_onload = None
+        state.peer_onload = None
         if (
             state.committed_idx != splice.end_idx
             or ctx.tokens.processed_length != splice.end_idx
@@ -2622,6 +2714,14 @@ class JengaBlockManager:
         reused_tokens = state.committed_idx - committed_idx
         if reused_tokens == 0:
             return
+        # The pages a peer filled are not the request's any more. One rolled
+        # back before its copy landed has recorded nothing yet, and counts as
+        # dropped when it lands.
+        self._metrics.dkv_peer_writeback_blocks_dropped += sum(
+            len(hashes) for hashes in state.peer_loaded_hashes.values()
+        )
+        state.peer_loaded_hashes.clear()
+        state.peer_onload = None
         state.committed_idx = committed_idx
         self._release_uncommitted_blocks(ctx, replica_idx)
         self._metrics.cache_tokens -= reused_tokens

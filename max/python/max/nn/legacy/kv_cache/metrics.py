@@ -269,6 +269,20 @@ class KVCacheMetrics:
     dkv_overlapped_peer_lookups: int = 0
     """Peer lookups begun alongside the co-located lookup rather than after
     it, under ``MODULAR_DKV_OVERLAP_PEER_LOOKUPS``."""
+    dkv_peer_writeback_blocks: int = 0
+    """Peer-filled blocks queued at release to write back to the co-located
+    dKV, under ``MODULAR_DKV_OFFLOAD_PEER_LOADS``, counted per leaf for the
+    hashes the device prefix cache still held, up to the first one it lacks
+    on a full-attention leaf, where the offload stops."""
+    dkv_peer_writeback_blocks_evicted: int = 0
+    """Peer-filled hashes a release found missing from the device prefix
+    cache, per leaf, with those behind the first on a full-attention leaf.
+    Another request published these and they were evicted after it let them
+    go, and that request normally wrote them to dKV already."""
+    dkv_peer_writeback_blocks_dropped: int = 0
+    """Peer-filled blocks no release will write back, per full-attention
+    leaf: those of an onload that landed after its request was released or
+    rolled back, and those a rollback took back after the onload landed."""
     dkv_hinted_lookups: int = 0
     """Lookup rounds in which some entry routed to an attached peer."""
     dkv_hinted_lookup_ms_total: float = 0.0
@@ -518,6 +532,16 @@ class KVCacheMetrics:
             dkv_split_loads=self.dkv_split_loads + other.dkv_split_loads,
             dkv_overlapped_peer_lookups=self.dkv_overlapped_peer_lookups
             + other.dkv_overlapped_peer_lookups,
+            dkv_peer_writeback_blocks=self.dkv_peer_writeback_blocks
+            + other.dkv_peer_writeback_blocks,
+            dkv_peer_writeback_blocks_evicted=(
+                self.dkv_peer_writeback_blocks_evicted
+                + other.dkv_peer_writeback_blocks_evicted
+            ),
+            dkv_peer_writeback_blocks_dropped=(
+                self.dkv_peer_writeback_blocks_dropped
+                + other.dkv_peer_writeback_blocks_dropped
+            ),
             dkv_hinted_lookups=self.dkv_hinted_lookups
             + other.dkv_hinted_lookups,
             dkv_hinted_lookup_ms_total=self.dkv_hinted_lookup_ms_total
