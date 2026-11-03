@@ -25,6 +25,7 @@ _CPU_ONLY_TESTS = [
     "test_is_inf.py",
     "test_is_nan.py",
     "test_matmul_packed.py",
+    "test_range_execute.py",
     "test_reduce_add.py",
     "test_rowwise_fusion.py",
     "test_shard_and_stack.py",
@@ -610,6 +611,7 @@ modular_py_test(
         "test_int_indexing.py",
         "test_is_inf.py",
         "test_is_nan.py",
+        "test_range_execute.py",
     ],
     # TODO(GEX-3773): test_is_nan times out at 600s on slow macOS BuildBuddy
     # workers; disable the whole group on macOS until investigated.

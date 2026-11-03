@@ -1129,7 +1129,7 @@ class TestNonMaximumSuppressionOp:
     """Tests for NMS interpreter op (mo.non_maximum_suppression).
 
     Routes through F.non_maximum_suppression -> ops.non_maximum_suppression ->
-    rmo.MoNonMaximumSuppressionOp -> mo.NonMaximumSuppressionOp ->
+    mo.NonMaximumSuppressionOp ->
     _handle_non_maximum_suppression -> nms_gc.nms_model. CPU-only (MO_HostOnly).
 
     The reference is a pure-NumPy greedy NMS implementation applied
@@ -7547,7 +7547,7 @@ class TestAvgPool2dOp:
 class TestRoiAlignOp:
     """Tests for roi_align interpreter op via F.roi_align.
 
-    Routes through F.roi_align -> ops.roi_align -> rmo.MoRoiAlignOp ->
+    Routes through F.roi_align -> ops.roi_align -> mo.RoiAlignOp ->
     mo.RoiAlignOp -> _handle_roi_align -> roi_align_gc.roi_align_model.
     The op is MO_SingleDeviceWithHostOperands: input/rois/output live on the
     input device, the four numeric scalars stay host-side. These tests run on
@@ -8054,7 +8054,7 @@ class TestTopKOp:
 class TestBottomKOp:
     """Tests for BottomK interpreter op (mo.bottom_k).
 
-    Uses F.bottom_k which routes through ops.bottom_k -> rmo.MoBottomKOp ->
+    Uses F.bottom_k which routes through ops.bottom_k -> mo.BottomKOp ->
     mo.bottom_k -> interpreter handler.  The reference implementation uses
     numpy stable argsort (ascending) to match the kernel's selection-sort
     ordering.
@@ -8160,7 +8160,7 @@ class TestBottomKOp:
 class TestArgNonzeroOp:
     """Tests for ArgNonzero interpreter op (mo.arg_nonzero).
 
-    Uses F.nonzero which routes through ops.nonzero -> rmo.MoArgNonzeroOp ->
+    Uses F.nonzero which routes through ops.nonzero -> mo.ArgNonzeroOp ->
     mo.ArgNonzeroOp -> interpreter handler. The reference is
     ``np.argwhere(x != 0).astype(np.int64)``, which returns row-major
     coordinates in the same order as the kernel.
@@ -8991,7 +8991,7 @@ class TestResizeLinearOp:
     """Tests for linear (bilinear) resize interpreter op (mo.resize.linear).
 
     Routes through F.resize_linear -> ops.resize_linear ->
-    rmo.MoResizeLinearOp -> mo.ResizeLinearOp -> _handle_resize_linear ->
+    mo.ResizeLinearOp -> _handle_resize_linear ->
     resize_gc.resize_model.  The CPU path is covered here; the GPU path is
     covered by TestResizeLinearGPU in test_interpreter_ops_gpu.py.
 
@@ -9297,7 +9297,7 @@ class TestResizeNearestOp:
     """Tests for nearest-neighbor resize interpreter op (mo.resize.nearest).
 
     Routes through F.resize_nearest -> ops.resize_nearest ->
-    rmo.MoResizeNearestOp -> mo.ResizeNearestOp -> _handle_resize_nearest ->
+    mo.ResizeNearestOp -> _handle_resize_nearest ->
     resize_gc.resize_model.  The CPU path is covered here; the GPU path is
     covered by TestResizeNearestGPU in test_interpreter_ops_gpu.py.
 

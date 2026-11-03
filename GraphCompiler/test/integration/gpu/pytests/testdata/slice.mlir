@@ -11,7 +11,7 @@ attributes {argument_names = ["buffer0", "rhs", "start", "stop", "step"], result
 
   %vbuf, %ch1 = mo.mutable.load(%buf, %ch0) : (!bt, !c) -> (!tt, !c)
 
-  %res = rmo.mo.slice(%vbuf, %start, %stop, %step) : (!tt, !st, !st, !st) -> !stt
+  %res = mo.slice(%vbuf, %start, %stop, %step) : (!tt, !st, !st, !st) -> !stt
   %res2 = rmo.mo.add(%res, %rhs) : (!stt, !stt) -> !stt
   %slice = mo.negative(%res2) : !stt
 

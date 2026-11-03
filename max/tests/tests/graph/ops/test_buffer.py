@@ -13,6 +13,7 @@
 """mutable ops tests."""
 
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -376,7 +377,7 @@ def test_no_implicit_load(
             abs(buffer)  # type: ignore
 
         assert "mo.mutable.load" not in str(graph)
-        assert "rmo.mo.slice" not in str(graph)
+        assert not re.search(r"\bmo\.slice\b", str(graph))
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)

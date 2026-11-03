@@ -20,7 +20,7 @@ from collections.abc import Sequence
 import numpy as np
 import pytest
 import torch
-from max._core.dialects import builtin, kgen, mo, rmo
+from max._core.dialects import builtin, kgen, mo
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -287,7 +287,7 @@ def test_resize_linear_gpu_dynamic_sizes(session: InferenceSession) -> None:
         x, size = (value.tensor for value in graph.inputs)
         graph.output(
             Graph.current._add_op_generated(
-                rmo.MoResizeLinearOp,
+                mo.ResizeLinearOp,
                 result=TensorType(
                     DType.float32,
                     ["batch", 3, "out_h", "out_w"],

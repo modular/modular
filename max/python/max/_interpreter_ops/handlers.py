@@ -1032,7 +1032,7 @@ def _handle_transpose(
 def _handle_slice(
     op: mo.SliceOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.slice via rmo.MoSliceOp with runtime starts/stops/steps.
+    """Handle mo.slice via mo.SliceOp with runtime starts/stops/steps.
 
     Inputs: (input, starts, stops, steps); the latter three are rank-1 int64
     tensors with one entry per dimension. Negative starts/stops are normalized
@@ -2011,7 +2011,7 @@ def _handle_max_pool(
 def _handle_tile(
     op: mo.TileOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.tile via rmo.MoTileOp with runtime repeats.
+    """Handle mo.tile via mo.TileOp with runtime repeats.
 
     Operands: input (any device), repeats (host int64 rank-1;
     ``to_numpy`` syncs a device-resident repeats to the host). Output
@@ -2331,7 +2331,7 @@ def _handle_pad_via_gc(
 def _handle_pad_constant(
     op: mo.PadConstantOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.constant via rmo.MoPadConstantOp (CPU + GPU)."""
+    """Handle mo.pad.constant via mo.PadConstantOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadConstantOp)
 
 
@@ -2339,7 +2339,7 @@ def _handle_pad_constant(
 def _handle_pad_reflect(
     op: mo.PadReflectOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.reflect via rmo.MoPadReflectOp (CPU + GPU)."""
+    """Handle mo.pad.reflect via mo.PadReflectOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadReflectOp)
 
 
@@ -2347,7 +2347,7 @@ def _handle_pad_reflect(
 def _handle_pad_repeat(
     op: mo.PadRepeatOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.repeat (edge pad) via rmo.MoPadRepeatOp (CPU + GPU)."""
+    """Handle mo.pad.repeat (edge pad) via mo.PadRepeatOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadRepeatOp)
 
 

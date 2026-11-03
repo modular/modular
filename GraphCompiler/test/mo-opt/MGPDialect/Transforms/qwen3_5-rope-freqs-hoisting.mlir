@@ -50,19 +50,19 @@ module {
     %in_vocab = rmo.and(%ge_zero, %lt_vocab) : (!mo.tensor<[total_seq_len], bool, gpu:0>, !mo.tensor<[total_seq_len], bool, gpu:0>) -> !mo.tensor<[total_seq_len], bool, gpu:0>
     %ids_shifted = rmo.sub(%arg0, %c0_si64) : (!mo.tensor<[total_seq_len], si64, gpu:0>, !mo.tensor<[], si64, gpu:0>) -> !mo.tensor<[total_seq_len], si64, gpu:0>
     %ids_masked = rmo.mul(%ids_shifted, %in_vocab) : (!mo.tensor<[total_seq_len], si64, gpu:0>, !mo.tensor<[total_seq_len], bool, gpu:0>) -> !mo.tensor<[total_seq_len], si64, gpu:0>
-    %embeds = rmo.mo.gather(%embed_dev, %ids_masked) [axis = 0] : (!mo.tensor<[248320, 4096], bf16, gpu:0>, !mo.tensor<[total_seq_len], si64, gpu:0>) -> !hidden
+    %embeds = mo.gather(%embed_dev, %ids_masked) [axis = 0] : (!mo.tensor<[248320, 4096], bf16, gpu:0>, !mo.tensor<[total_seq_len], si64, gpu:0>) -> !hidden
     %mask_col = rmo.reshape(%in_vocab) [newShape = #mosh<ape[total_seq_len, 1]> : !mosh.ape] : (!mo.tensor<[total_seq_len], bool, gpu:0>) -> !mo.tensor<[total_seq_len, 1], bool, gpu:0>
     %mask_bf16 = mo.cast(%mask_col) : (!mo.tensor<[total_seq_len, 1], bool, gpu:0>) -> !mo.tensor<[total_seq_len, 1], bf16, gpu:0>
     %embeds_masked = rmo.mul(%embeds, %mask_bf16) : (!hidden, !mo.tensor<[total_seq_len, 1], bf16, gpu:0>) -> !hidden
     %image_idx_col = rmo.reshape(%arg17) [newShape = #mosh<ape[total_image_tokens, 1]> : !mosh.ape] : (!mo.tensor<[total_image_tokens], si32, gpu:0>) -> !mo.tensor<[total_image_tokens, 1], si32, gpu:0>
     %hidden_in = mo.custom [symbol = "mo.scatter_nd.skip_oob_indices", device = #M.device_ref<"gpu", 0>](%embeds_masked, %arg16, %image_idx_col) : (!hidden, !mo.tensor<[vision_merged_seq_len, 4096], bf16, gpu:0>, !mo.tensor<[total_image_tokens, 1], si32, gpu:0>) -> !hidden
     // RoPE cos/sin (freqs_cis) table: built on host, then transferred to the device.
-    %dim_range = rmo.mo.range(%f64_zero, %f64_64, %f64_two) : (!mo.tensor<[], f64>, !mo.tensor<[], f64>, !mo.tensor<[], f64>) -> !mo.tensor<[32], f64>
+    %dim_range = mo.range(%f64_zero, %f64_64, %f64_two) : (!mo.tensor<[], f64>, !mo.tensor<[], f64>, !mo.tensor<[], f64>) -> !mo.tensor<[32], f64>
     %dim_ratio = rmo.div(%dim_range, %f64_64) : (!mo.tensor<[32], f64>, !mo.tensor<[], f64>) -> !mo.tensor<[32], f64>
     %theta_pow = rmo.pow(%rope_theta, %dim_ratio) : (!mo.tensor<[], f64>, !mo.tensor<[32], f64>) -> !mo.tensor<[32], f64>
     %inv_freq = rmo.div(%f64_one, %theta_pow) : (!mo.tensor<[], f64>, !mo.tensor<[32], f64>) -> !mo.tensor<[32], f64>
     %inv_freq_f32 = mo.cast(%inv_freq) : (!mo.tensor<[32], f64>) -> !mo.tensor<[32], f32>
-    %positions = rmo.mo.range(%f32_zero, %f32_16, %f32_one) : (!mo.tensor<[], f32>, !mo.tensor<[], f32>, !mo.tensor<[], f32>) -> !mo.tensor<[16], f32>
+    %positions = mo.range(%f32_zero, %f32_16, %f32_one) : (!mo.tensor<[], f32>, !mo.tensor<[], f32>, !mo.tensor<[], f32>) -> !mo.tensor<[16], f32>
     %positions_col = rmo.reshape(%positions) [newShape = #mosh<ape[16, 1]> : !mosh.ape] : (!mo.tensor<[16], f32>) -> !mo.tensor<[16, 1], f32>
     %inv_freq_row = rmo.reshape(%inv_freq_f32) [newShape = #mosh<ape[1, 32]> : !mosh.ape] : (!mo.tensor<[32], f32>) -> !mo.tensor<[1, 32], f32>
     %freqs_outer = rmo.mul(%positions_col, %inv_freq_row) : (!mo.tensor<[16, 1], f32>, !mo.tensor<[1, 32], f32>) -> !mo.tensor<[16, 32], f32>

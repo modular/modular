@@ -15,7 +15,7 @@
 from collections.abc import Iterable
 from enum import Enum, IntEnum
 
-from max._core.dialects import builtin, kgen, mo, rmo
+from max._core.dialects import builtin, kgen, mo
 from max.dtype import DType
 
 from ..dim import DimLike
@@ -145,7 +145,7 @@ def resize_linear(
     result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
 
     return Graph.current._add_op_generated(
-        rmo.MoResizeLinearOp,
+        mo.ResizeLinearOp,
         result_type.to_mlir(),
         input,
         shape_to_tensor(size),
@@ -223,7 +223,7 @@ def resize_nearest(
     result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
 
     return Graph.current._add_op_generated(
-        rmo.MoResizeNearestOp,
+        mo.ResizeNearestOp,
         result_type.to_mlir(),
         input,
         shape_to_tensor(size),
@@ -356,7 +356,7 @@ def resize_bicubic(
     )
 
     return Graph.current._add_op_generated(
-        rmo.MoResizeBicubicOp,
+        mo.ResizeBicubicOp,
         result_type.to_mlir(),
         input,
         size_operand,

@@ -292,21 +292,15 @@ RMO_GreaterEqualOp             # GreaterEqualOp
 RMO_GreaterOp                  # GreaterOp
 RMO_MOAddOp                    # MoAddOp; declares output params; graph.py reaches it structurally
 RMO_MOAndOp                    # MoAndOp; declares output params; graph.py reaches it structurally
-RMO_MOArgNonzeroOp             # MoArgNonzeroOp
 RMO_MOAvgPoolCeilOp            # MoAvgPoolCeilModeTrueOp
 RMO_MOAvgPoolOp                # MoAvgPoolOp
-RMO_MOBandPartOp               # MoLinalgBandPartOp
-RMO_MOBottomKOp                # MoBottomKOp
 RMO_MOBroadcastShapeOp         # MoBroadcastShapeOp; declares output params; graph.py reaches it structurally
 RMO_MOBroadcastToOp            # MoBroadcastToOp
 RMO_MOCastOp                   # MoCastOp; declares output params; graph.py reaches it structurally
 RMO_MOConvOp                   # MoConvOp
 RMO_MOConvTransposeOp          # MoConvTransposeOp; declares output params; graph.py reaches it structurally
-RMO_MOCumSumOp                 # MoCumsumOp
 RMO_MODivOp                    # MoDivOp; declares output params; graph.py reaches it structurally
 RMO_MOEqualOp                  # MoEqualOp; declares output params; graph.py reaches it structurally
-RMO_MOGatherNdOp               # MoGatherNdOp
-RMO_MOGatherOp                 # MoGatherOp
 RMO_MOGreaterEqualOp           # MoGreaterEqualOp; declares output params; graph.py reaches it structurally
 RMO_MOGreaterOp                # MoGreaterOp; declares output params; graph.py reaches it structurally
 RMO_MOMaxOp                    # MoMaxOp; declares output params; graph.py reaches it structurally
@@ -315,28 +309,14 @@ RMO_MOMaxPoolOp                # MoMaxPoolOp
 RMO_MOMinOp                    # MoMinOp; declares output params; graph.py reaches it structurally
 RMO_MOModOp                    # MoModOp; declares output params; graph.py reaches it structurally
 RMO_MOMulOp                    # MoMulOp; declares output params; graph.py reaches it structurally
-RMO_MONonMaximumSuppressionOp  # MoNonMaximumSuppressionOp
 RMO_MONotEqualOp               # MoNotEqualOp; declares output params; graph.py reaches it structurally
 RMO_MOOrOp                     # MoOrOp; declares output params; graph.py reaches it structurally
-RMO_MOPadConstantOp            # MoPadConstantOp
-RMO_MOPadReflectOp             # MoPadReflectOp
-RMO_MOPadRepeatOp              # MoPadRepeatOp
 RMO_MOPowOp                    # MoPowOp; declares output params; graph.py reaches it structurally
-RMO_MORandomNormalOp           # MoRandomNormalOp
-RMO_MORandomUniformOp          # MoRandomUniformOp
-RMO_MORangeOp                  # MoRangeOp
 RMO_MOReshapeOp                # MoReshapeOp; declares output params; graph.py reaches it structurally
-RMO_MOResizeBicubicOp          # MoResizeBicubicOp
-RMO_MOResizeLinearOp           # MoResizeLinearOp
-RMO_MOResizeNearestOp          # MoResizeNearestOp
-RMO_MORoiAlignOp               # MoRoiAlignOp
 RMO_MOSelectOp                 # MoSelectOp; declares output params; graph.py reaches it structurally
 RMO_MOShapeOfOp                # MoShapeOfOp; declares output params; graph.py reaches it structurally
-RMO_MOSliceOp                  # MoSliceOp
 RMO_MOSqueezeShapeOp           # MoSqueezeShapeOp; declares output params; graph.py reaches it structurally
 RMO_MOSubOp                    # MoSubOp; declares output params; graph.py reaches it structurally
-RMO_MOTileOp                   # MoTileOp
-RMO_MOTransposeOp              # MoTransposeOp
 RMO_MOXorOp                    # MoXorOp; declares output params; graph.py reaches it structurally
 RMO_MatmulOp                   # MatmulOp
 RMO_MaxOp                      # MaxOp

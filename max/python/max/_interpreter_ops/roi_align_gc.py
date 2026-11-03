@@ -29,7 +29,7 @@ cache key alongside dtype: one graph per (dtype, aligned, mode). The four
 numeric scalars (``output_height``, ``output_width``, ``spatial_scale``,
 ``sampling_ratio``) stay ordinary runtime operands. The public ``ops.roi_align``
 folds them into graph constants, which would grow the cache key with every
-distinct value, so this module emits ``rmo.MoRoiAlignOp`` directly instead (the
+distinct value, so this module emits ``mo.RoiAlignOp`` directly instead (the
 same reason ``band_part_gc`` bypasses ``ops.band_part``).
 
 The output's ROI and spatial dims depend on two host operands, so the graph
@@ -41,7 +41,7 @@ declares them symbolic and the op's registered shape function
 from dataclasses import dataclass
 
 from max import engine
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max._interpreter_ops import gc_compile
 from max.driver import Device
 from max.dtype import DType
@@ -103,7 +103,7 @@ def _roi_align_graph(module: Module, target: CompilationTarget) -> None:
         )
         graph.output(
             Graph.current._add_op_generated(
-                rmo.MoRoiAlignOp,
+                mo.RoiAlignOp,
                 out_type,
                 x,
                 rois,

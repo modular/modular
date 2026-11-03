@@ -43,7 +43,7 @@ from collections.abc import Callable
 
 import numpy as np
 from max import _core, engine
-from max._core.dialects import kgen, mo, rmo
+from max._core.dialects import kgen, mo
 from max._interpreter_ops import gc_compile
 from max.driver import Buffer, Device
 from max.dtype import DType
@@ -276,7 +276,7 @@ def _symbolic_dims(prefix: str) -> list[str]:
 def _build_transpose_graph(
     module: Module, device: Device, dtype: DType
 ) -> None:
-    """Transposes through ``rmo.MoTransposeOp`` with a runtime permutation.
+    """Transposes through ``mo.TransposeOp`` with a runtime permutation.
 
     The permutation is a ``[MAX_RANK]`` host operand, so one graph serves
     every permutation. Handlers pad input and perm to MAX_RANK and re-view
@@ -295,7 +295,7 @@ def _build_transpose_graph(
         data, perm = (v.tensor for v in graph.inputs)
         out_type = TensorType(dtype, _symbolic_dims("o"), device=device_ref)
         out = Graph.current._add_op_generated(
-            rmo.MoTransposeOp,
+            mo.TransposeOp,
             result=out_type,
             input=data,
             perm=perm,

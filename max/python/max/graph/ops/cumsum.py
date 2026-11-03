@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for cumsum."""
 
-from max._core.dialects import builtin, kgen, rmo
+from max._core.dialects import builtin, mo
 
 from ..graph import Graph
 from ..value import TensorValue, TensorValueLike
@@ -62,11 +62,10 @@ def cumsum(
 
     index_type = builtin.IndexType()
     return Graph.current._add_op_generated(
-        rmo.MoCumsumOp,
+        mo.CumsumOp,
         result=x.type,
         input=x,
         axis=builtin.IntegerAttr(index_type, axis),
         exclusive=builtin.IntegerAttr(index_type, int(exclusive)),
         reverse=builtin.IntegerAttr(index_type, int(reverse)),
-        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor

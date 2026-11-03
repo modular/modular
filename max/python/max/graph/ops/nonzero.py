@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for nonzero."""
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max.dtype import DType
 
 from ..dim import DimLike
@@ -60,7 +60,7 @@ def nonzero(x: TensorValueLike, out_dim: DimLike) -> TensorValue:
         raise ValueError("Scalar inputs not supported")
 
     result = Graph.current._add_op_generated(
-        rmo.MoArgNonzeroOp,
+        mo.ArgNonzeroOp,
         TensorType(dtype=DType.int64, shape=[out_dim, x.rank], device=x.device),
         TensorValue(x),
         kgen.ParamDeclArrayAttr([]),

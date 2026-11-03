@@ -35,14 +35,6 @@ MO::TensorType refineShape(MO::TensorType ty1, MO::TensorType ty2);
 MO::TensorType refineShapeWithDType(MO::TensorType ty1, MO::TensorType ty2,
                                     DType dtype);
 
-/// inferMoTypesImpl for TopK-like ops
-void inferMOTypesTopKImpl(
-    MLIRContext *context, MO::GraphOp graphOp, TensorValue input, TensorValue k,
-    TensorValue axis, TensorValue sorted, std::optional<ValueRange> rmoResults,
-    SmallVectorImpl<Type> &moOperandTypes, SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls);
-
 /// Returns the promotion dtype of `x` and `y`:
 ///   (max(category(x), category(y)), max(bitwidth(x), bitwidth(y)))
 /// with categories ordered `bool < unsigned int < signed int < float`. Errors
