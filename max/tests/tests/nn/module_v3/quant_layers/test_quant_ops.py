@@ -573,29 +573,34 @@ def test_nvfp4_grouped_matmul_reports_the_routed_row_count(
     monkeypatch.setattr(
         quant_ops, "interleave_grouped_scales", lambda s, **_: s
     )
-    device = CPU()
-    offsets = Tensor.zeros((_NUM_EXPERTS,), dtype=DType.uint32, device=device)
-    tokens = NVFP4Activation(
-        data=Tensor.zeros(
-            (_TOKENS, _HIDDEN_DIM // 2), dtype=DType.uint8, device=device
-        ),
-        scales=Tensor.zeros(
-            (_NUM_EXPERTS + 1, _HIDDEN_DIM // 64, 32, 4, 4),
-            dtype=DType.float8_e4m3fn,
-            device=device,
-        ),
-        input_scale=Tensor.zeros(
-            (_NUM_EXPERTS,), dtype=DType.float32, device=device
-        ),
-        scales_offset=offsets,
-    )
-    quant_ops.grouped_matmul(
-        tokens,
-        _stacked_nvfp4(_MOE_DIM, _HIDDEN_DIM, device),
-        Tensor.zeros((_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device),
-        Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
-        None,
-    )
+    with F.lazy():
+        device = CPU()
+        offsets = Tensor.zeros(
+            (_NUM_EXPERTS,), dtype=DType.uint32, device=device
+        )
+        tokens = NVFP4Activation(
+            data=Tensor.zeros(
+                (_TOKENS, _HIDDEN_DIM // 2), dtype=DType.uint8, device=device
+            ),
+            scales=Tensor.zeros(
+                (_NUM_EXPERTS + 1, _HIDDEN_DIM // 64, 32, 4, 4),
+                dtype=DType.float8_e4m3fn,
+                device=device,
+            ),
+            input_scale=Tensor.zeros(
+                (_NUM_EXPERTS,), dtype=DType.float32, device=device
+            ),
+            scales_offset=offsets,
+        )
+        quant_ops.grouped_matmul(
+            tokens,
+            _stacked_nvfp4(_MOE_DIM, _HIDDEN_DIM, device),
+            Tensor.zeros(
+                (_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device
+            ),
+            Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
+            None,
+        )
 
     assert seen["estimate"] is None
     stats = seen["stats"]
