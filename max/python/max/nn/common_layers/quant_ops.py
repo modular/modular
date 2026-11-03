@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import itertools
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -28,7 +27,7 @@ from max.driver import (
     accelerator_architecture_name,
 )
 from max.dtype import DType
-from max.graph import TensorValue
+from max.graph import DeviceRef, TensorValue
 from max.nn.common_layers.functional_kernels import (
     fused_silu,
     fused_silu_quantized,
@@ -61,11 +60,11 @@ from .quant_kernels import (
     grouped_ffn_blockwise_fp8_amd,
     grouped_matmul_block_scaled,
     grouped_quantize_dynamic_block_scaled,
-    preshuffle_blockwise_fp8_b,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
     silu_quantize_fp8,
+    stack_blockwise_mega_ffn_b,
 )
 from .quant_tensor import (
     FP8BlockActivation,
@@ -370,19 +369,14 @@ def quantized_weight(
     return _CONTAINERS[quant_config.format].zeros(shape, block_size=block_size)
 
 
-_BLOCKWISE_MEGA_FFN_PERMUTE_GROUP = 8
-"""Experts per permute when :func:`stack_blockwise_mega_ffn` stacks a layer."""
-
-
 def stack_blockwise_mega_ffn(
     experts: Sequence[Sequence[QuantAwareTensor]], device: Device
 ) -> FP8BlockTensor:
     """Stacks FP8 expert weights in the blockwise MegaFFN's 32-byte-lane order.
 
     As :func:`stack` of each expert's projections concatenated along ``N``,
-    with each expert's weight bytes permuted the way the op reads them. Init
-    concatenates, stacks and permutes on the host and moves only the result
-    to ``device``.
+    with each expert's weight bytes permuted the way the op reads them. The
+    host permutes each expert and copies it into ``device``'s stack.
 
     Args:
         experts: Each expert's :class:`FP8BlockTensor` projections in slot
@@ -393,30 +387,27 @@ def stack_blockwise_mega_ffn(
     Returns:
         The permuted weight stack and the row-major scale stack.
     """
-    # Any of this done on the device leaves a temporary freed between
-    # resident stacks; those holes left a 0.9-utilization KV cache no
-    # contiguous block. Groups bound the host's temporaries to a fraction of
-    # the experts.
-    items = [
-        join_projections([_fp8_block_on(p, CPU()) for p in projections])
-        for projections in experts
-    ]
-    assert all_fp8_block(items)
-    first = items[0]
-    assert isinstance(first, FP8BlockTensor)
-    n = len(items)
-    n_groups = -(-n // _BLOCKWISE_MEGA_FFN_PERMUTE_GROUP)
-    bounds = [n * g // n_groups for g in range(n_groups + 1)]
-    groups = [
-        preshuffle_blockwise_fp8_b(
-            F.stack([w.weight for w in items[lo:hi]], axis=0)
-        )
-        for lo, hi in itertools.pairwise(bounds)
-    ]
-    weight = groups[0] if n_groups == 1 else F.concat(groups, axis=0)
-    scales = F.stack([w.weight_scale_inv for w in items], axis=0)
+    # The op reads the projections from the host: a join, stack or permute
+    # on the device leaves a temporary freed between resident stacks, and
+    # those holes left a 0.9-utilization KV cache no contiguous block.
+    host = [[_fp8_block_on(p, CPU()) for p in ps] for ps in experts]
+    first = host[0][0]
+    weight = stack_blockwise_mega_ffn_b(
+        [p.weight for ps in host for p in ps],
+        len(host),
+        DeviceRef.from_device(device),
+    )
+    scales = F.stack(
+        [
+            F.concat([p.weight_scale_inv for p in ps], axis=0)
+            if len(ps) > 1
+            else ps[0].weight_scale_inv
+            for ps in host
+        ],
+        axis=0,
+    )
     return FP8BlockTensor(
-        weight=weight.to(device),
+        weight=weight,
         weight_scale_inv=scales.to(device),
         block_size=first.block_size,
     )

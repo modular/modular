@@ -36,16 +36,11 @@ hold its share of every fused block.
 
 from __future__ import annotations
 
-import logging
-import os
-import queue
-import threading
-import time
 from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Buffer, is_virtual_device_mode
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
@@ -55,8 +50,6 @@ from transformers import AutoConfig
 
 from .model import KimiK3ModelConfig
 from .model_config import KimiK3Config
-
-logger = logging.getLogger("max.pipelines")
 
 _TEXT = "language_model.model"
 
@@ -295,66 +288,6 @@ def _canonical_a_log(
     return _rewrap(broadcast, a_log, name)
 
 
-# Measured over the full 1.56 TB checkpoint on 8x MI355X from a cold page
-# cache: 54 GB/s with 64 MiB reads, where the init's own 4 KiB mmap faults
-# reach about 1.4 GB/s. Doubling the workers adds nothing.
-_PREFETCH_WORKERS = 32
-_PREFETCH_CHUNK = 64 << 20
-
-
-def prefetch_checkpoint(paths: Sequence[str | os.PathLike[str]]) -> int:
-    """Reads every byte of ``paths`` once, leaving them in the page cache.
-
-    The weights reach the graph as views of the checkpoint's mapping, so the
-    init that copies them to the devices then reads memory rather than
-    faulting the files in a page at a time.
-
-    Args:
-        paths: The checkpoint files; symlinks (as in the Hugging Face cache)
-            are followed.
-
-    Returns:
-        The number of bytes read.
-    """
-    files = [os.path.realpath(path) for path in paths]
-    jobs: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
-    for path in files:
-        for offset in range(0, os.path.getsize(path), _PREFETCH_CHUNK):
-            jobs.put((path, offset))
-    read_bytes = [0] * _PREFETCH_WORKERS
-
-    def read(worker: int) -> None:
-        buffer = bytearray(_PREFETCH_CHUNK)
-        while True:
-            try:
-                path, offset = jobs.get_nowait()
-            except queue.Empty:
-                return
-            with open(path, "rb", buffering=0) as f:
-                f.seek(offset)
-                read_bytes[worker] += f.readinto(buffer) or 0
-
-    start = time.perf_counter()
-    # Daemon threads rather than an executor, whose workers interpreter exit
-    # would join: a process that stops early must not wait for the read.
-    workers = [
-        threading.Thread(target=read, args=(i,), daemon=True)
-        for i in range(_PREFETCH_WORKERS)
-    ]
-    for worker in workers:
-        worker.start()
-    for worker in workers:
-        worker.join()
-    total = sum(read_bytes)
-    logger.info(
-        "Kimi K3: prefetched %.1f GB of checkpoint into the page cache in"
-        " %.1f s",
-        total / 1e9,
-        time.perf_counter() - start,
-    )
-    return total
-
-
 def _experts_are_packed(state_dict: dict[str, Weights], moe: str) -> bool:
     """Whether this MoE block's routed experts arrived MXFP4-packed."""
     return f"{moe}.experts.0.w1.{_PACKED}" in state_dict
@@ -396,21 +329,6 @@ def tp_degree(pipeline_config: Any) -> int:
     return len(pipeline_config.model.device_specs)
 
 
-def _uploads_weights(pipeline_config: Any) -> bool:
-    """Whether this load copies real checkpoint bytes to the devices.
-
-    A compile-only load (header-only weights, virtual devices) never reads
-    them, and a forced download has just written them through the page cache,
-    so neither gains from a prefetch.
-    """
-    model = pipeline_config.model
-    return not (
-        model.force_download
-        or model.header_only_weights
-        or is_virtual_device_mode()
-    )
-
-
 def convert_kimi_k3_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig,
@@ -439,14 +357,6 @@ def convert_kimi_k3_state_dict(
         module directly, with no ``language_model`` wrapper attribute.
     """
     pipeline_config = unused_kwargs.get("pipeline_config")
-    if pipeline_config is not None and _uploads_weights(pipeline_config):
-        # Warms the page cache while the graph is built and compiled, so the
-        # init that copies these views to the devices reads memory.
-        threading.Thread(
-            target=prefetch_checkpoint,
-            args=(pipeline_config.model.resolved_weight_paths(),),
-            daemon=True,
-        ).start()
     quantization_encoding = (
         _select_quantization_encoding(
             pipeline_config.model, KimiK3Config.DEFAULT_ENCODING

@@ -61,6 +61,7 @@ from max.pipelines.lib.graph_specs import (
 from max.pipelines.lib.utils import (
     CompilationTimer,
     parse_state_dict_from_weights,
+    start_checkpoint_prefetch,
 )
 from max.pipelines.lib.weight_transform import WeightEntry
 from max.pipelines.lora import (
@@ -1491,7 +1492,13 @@ class ModuleV3PipelineModelWithKVCache(
     def _load_decoder(
         self, session: InferenceSession
     ) -> Callable[..., ModuleV3Outputs]:
-        """Compiles the decoder through :meth:`load_graphs`."""
+        """Compiles the decoder through :meth:`load_graphs`.
+
+        A daemon thread reads the checkpoint into the page cache meanwhile,
+        so the init that copies the weights to the devices reads memory --
+        unless no weight bytes reach the devices.
+        """
+        start_checkpoint_prefetch(self.pipeline_config.model)
         self.load_graphs(session)
         # The callable keeps the weight registry; drop the other reference
         # to the checkpoint.

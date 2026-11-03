@@ -17,7 +17,13 @@ from __future__ import annotations
 import functools
 import math
 import os
-from collections.abc import Callable, Mapping, MutableMapping, MutableSequence
+from collections.abc import (
+    Callable,
+    Mapping,
+    MutableMapping,
+    MutableSequence,
+    Sequence,
+)
 from typing import Any, ParamSpec, TypeVar, cast
 
 import numpy as np
@@ -8977,6 +8983,48 @@ def preshuffle_block_scaled_b(
             [plane.reshape([e, n0, k0, -1]) for plane in planes], axis=-1
         )
     return w.reshape([e, n, k])
+
+
+def stack_blockwise_fp8_b(
+    projections: Sequence[TensorValue], experts: int, device: DeviceRef
+) -> TensorValue:
+    """Stacks FP8 expert projections in the blockwise MegaFFN's B layout.
+
+    Equal to concatenating each expert's projections along ``N``, stacking
+    the experts and applying :func:`preshuffle_block_scaled_b` with
+    :data:`BLOCKWISE_FP8_LANE_BYTES`, in one pass: the host reads the
+    checkpoint's mmapped bytes once, in order, and writes ``device``'s stack
+    an expert at a time, with no temporary on either side.
+
+    Args:
+        projections: Row-major ``[N_p, K]`` FP8 projections on the CPU, expert
+            by expert, each expert's in concatenation order.
+        experts: The number of experts.
+        device: The device the stack is built on.
+
+    Returns:
+        The permuted ``[experts, N, K]`` stack, on ``device``.
+
+    Raises:
+        ValueError: If the projections do not split evenly into experts.
+    """
+    if not experts or len(projections) % experts:
+        raise ValueError(
+            f"{len(projections)} projections do not split into {experts}"
+            " experts"
+        )
+    per_expert = len(projections) // experts
+    first = projections[0]
+    n = sum(int(p.shape[0]) for p in projections[:per_expert])
+    return ops.custom(
+        "mo.grouped.ffn.blockwise.fp8.amd.stack_b",
+        device=device,
+        values=list(projections),
+        out_types=[
+            TensorType(first.dtype, [experts, n, first.shape[1]], device=device)
+        ],
+        parameters={"projections": per_expert},
+    )[0].tensor
 
 
 def preshuffle_block_scaled_b_scales(scales: TensorValue) -> TensorValue:

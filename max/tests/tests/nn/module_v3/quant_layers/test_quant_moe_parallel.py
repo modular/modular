@@ -707,7 +707,7 @@ def test_expert_parallel_moe_blockwise_mega_ffn_needs_registered_op(
             ir = str(Graph.current._mlir_op)
 
     local_experts = _NUM_EXPERTS // len(devices)
-    assert _MEGA_FFN_OP not in ir
+    assert f'"{_MEGA_FFN_OP}"' not in ir
     if registered:
         # One preshuffled gate/up stack and one down stack per device.
         assert stacked == [local_experts] * 2 * len(devices)

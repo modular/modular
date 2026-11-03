@@ -32,6 +32,7 @@ from max.nn.legacy.kernels import (
     BLOCKWISE_FP8_LANE_BYTES,
     amd_mega_ffn_workspace_words,
     preshuffle_block_scaled_b,
+    stack_blockwise_fp8_b,
 )
 from max.nn.legacy.kernels import (
     block_scales_interleave as _block_scales_interleave,
@@ -448,6 +449,7 @@ def _preshuffle_blockwise_fp8_b(weight: TensorValue) -> TensorValue:
 
 
 preshuffle_blockwise_fp8_b = F.functional(_preshuffle_blockwise_fp8_b)
+stack_blockwise_mega_ffn_b = F.functional(stack_blockwise_fp8_b)
 
 
 __all__ = [
@@ -465,4 +467,5 @@ __all__ = [
     "quantize_dynamic_block_scaled_mxfp4",
     "quantize_dynamic_scaled_float8",
     "silu_quantize_fp8",
+    "stack_blockwise_mega_ffn_b",
 ]

@@ -24,8 +24,6 @@ from them are checked on a CPU mesh against :func:`interleave_for_tp`.
 
 from __future__ import annotations
 
-import threading
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
@@ -48,7 +46,6 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
     convert_kimi_k3_state_dict,
     interleave_for_tp,
-    prefetch_checkpoint,
     tp_degree,
 )
 from max.support.math import ceildiv
@@ -847,65 +844,6 @@ def test_graph_expert_stacks_match_interleave_for_tp(tp_size: int) -> None:
                     np.take(want, range(d * width, (d + 1) * width), axis),
                     err_msg=f"{name}{suffix} on device {d}",
                 )
-
-
-def test_prefetch_checkpoint_reads_every_file_through_symlinks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Every byte is read once, in chunks, including a file a symlink names
-    (the Hugging Face cache's layout)."""
-    monkeypatch.setattr(wa, "_PREFETCH_CHUNK", 1000)
-    sizes = {"a.safetensors": 2500, "blob": 1000}
-    for name, size in sizes.items():
-        (tmp_path / name).write_bytes(bytes(size))
-    (tmp_path / "b.safetensors").symlink_to(tmp_path / "blob")
-    paths = [tmp_path / "a.safetensors", tmp_path / "b.safetensors"]
-    assert prefetch_checkpoint(paths) == sum(sizes.values())
-
-
-def test_prefetch_checkpoint_readers_do_not_hold_up_exit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Its readers are daemon threads, so a process that stops early does
-    not wait for the read to finish."""
-    daemon: list[bool] = []
-
-    class Recording(threading.Thread):
-        def start(self) -> None:
-            daemon.append(self.daemon)
-            super().start()
-
-    monkeypatch.setattr(threading, "Thread", Recording)
-    (tmp_path / "a.safetensors").write_bytes(bytes(10))
-    prefetch_checkpoint([tmp_path / "a.safetensors"])
-    assert daemon and all(daemon)
-
-
-@pytest.mark.parametrize(
-    "force_download, header_only, virtual, uploads",
-    [
-        (False, False, False, True),
-        (True, False, False, False),
-        (False, True, False, False),
-        (False, False, True, False),
-    ],
-)
-def test_prefetch_only_when_weights_reach_the_devices(
-    monkeypatch: pytest.MonkeyPatch,
-    force_download: bool,
-    header_only: bool,
-    virtual: bool,
-    uploads: bool,
-) -> None:
-    """A compile-only load never reads the weights, and a forced download
-    has just written them through the page cache."""
-    monkeypatch.setattr(wa, "is_virtual_device_mode", lambda: virtual)
-    config = SimpleNamespace(
-        model=SimpleNamespace(
-            force_download=force_download, header_only_weights=header_only
-        )
-    )
-    assert wa._uploads_weights(config) is uploads
 
 
 def _pipeline_config(

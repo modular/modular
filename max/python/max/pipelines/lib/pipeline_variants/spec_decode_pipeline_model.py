@@ -130,7 +130,7 @@ from ..registration_draft import (
     default_target_hidden_states,
 )
 from ..registration_runtime import BatchContextLengths
-from ..utils import CompilationTimer
+from ..utils import CompilationTimer, start_checkpoint_prefetch
 from ..vision_encoder_cache import SupportsVisionEncoding, VisionEncodeResult
 from ..weight_transform import (
     CheckpointRole,
@@ -1552,6 +1552,9 @@ class SpecDecodePipelineModel(
         """Builds the draft and the target, then compiles the fused graph."""
         if error := _stage_error(self.pipeline_config):
             raise ValueError(error)
+        start_checkpoint_prefetch(
+            self.pipeline_config.model, self.pipeline_config.draft_model
+        )
         config = self.arch_config_as(SpecDecodeArchConfig)
         modules = self._build_modules(session)
         target, draft = modules.target, modules.draft
@@ -2411,6 +2414,9 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         """Builds the draft and the target, then compiles the fused module."""
+        start_checkpoint_prefetch(
+            self.pipeline_config.model, self.pipeline_config.draft_model
+        )
         config = self.arch_config_as(SpecDecodeArchConfig)
         modules = self._build_modules(session)
         _share_target_slots(modules)

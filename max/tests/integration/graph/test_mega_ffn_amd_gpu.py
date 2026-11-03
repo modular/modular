@@ -36,7 +36,7 @@ from typing import cast
 import numpy as np
 import pytest
 from max import functional as F
-from max.driver import Accelerator, Buffer, accelerator_api
+from max.driver import CPU, Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -75,6 +75,7 @@ from max.nn.legacy.kernels import (
     preshuffle_block_scaled_b,
     preshuffle_block_scaled_b_scales,
     quantize_dynamic_scaled_float8,
+    stack_blockwise_fp8_b,
 )
 from max.nn.legacy.moe.moe_fp8 import MoEQuantized
 from max.nn.legacy.quant_config import (
@@ -675,6 +676,50 @@ def test_mega_ffn_amd_blockwise_matches_chain(
             )
 
 
+@pytest.mark.skipif(
+    accelerator_api() != "hip", reason="the AMD MoE FFN is gfx950-only"
+)
+@pytest.mark.parametrize("on_gpu", [False, True])
+def test_stack_blockwise_fp8_b_matches_the_permute(on_gpu: bool) -> None:
+    """Stacking in one pass equals joining each expert's projections,
+    stacking the experts and permuting each block of 16 rows into 32-byte
+    lanes. Five experts reuse each of the GPU's two staging buffers."""
+    experts, rows, k = 5, (32, 16), 384
+    rng = np.random.default_rng(3)
+    projections = [
+        rng.integers(0, 256, (r, k), dtype=np.uint8)
+        for _ in range(experts)
+        for r in rows
+    ]
+    device = Accelerator() if on_gpu else CPU()
+    cpu = DeviceRef.CPU()
+    with Graph(
+        "stack_blockwise_fp8_b",
+        input_types=[
+            TensorType(DType.uint8, p.shape, cpu) for p in projections
+        ],
+    ) as graph:
+        graph.output(
+            stack_blockwise_fp8_b(
+                [v.tensor for v in graph.inputs],
+                experts,
+                DeviceRef.from_device(device),
+            )
+        )
+    model = InferenceSession(devices=[device]).load(graph)
+    (out,) = model.execute(*(Buffer.from_numpy(p) for p in projections))
+    got = np.from_dlpack(cast(Buffer, out).to(CPU()))
+
+    n = sum(rows)
+    expected = (
+        np.concatenate(projections)
+        .reshape(experts, n // 16, 16, k // 128, 4, 2, 16)
+        .transpose(0, 1, 3, 5, 4, 2, 6)
+        .reshape(experts, n, k)
+    )
+    np.testing.assert_array_equal(got, expected)
+
+
 def _blockwise_values(
     rows: int, n_experts: int, workspace_words: int
 ) -> tuple[Graph, list[TensorValue], BufferValue]:
@@ -956,12 +1001,12 @@ def test_blockwise_mega_ffn_layer_reads_checkpoint_experts(
         return mlir, CompiledCallable(staged, registry, session=session)
 
     mega_mlir, mega = compile_layer()
-    assert "mo.grouped.ffn.blockwise.fp8.amd" in mega_mlir
+    assert '"mo.grouped.ffn.blockwise.fp8.amd"' in mega_mlir
     monkeypatch.setattr(
         ExpertParallelMoE, "_blockwise_mega_ffn_amd_eligible", lambda _: False
     )
     chain_mlir, chain = compile_layer()
-    assert "mo.grouped.ffn.blockwise.fp8.amd" not in chain_mlir
+    assert '"mo.grouped.ffn.blockwise.fp8.amd"' not in chain_mlir
 
     offsets = np.zeros(n_experts + 1, dtype=np.uint32)
     offsets[1:] = np.cumsum(tokens_per_expert)

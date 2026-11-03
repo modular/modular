@@ -29,7 +29,9 @@ import pytest
 from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_kernels import stack_blockwise_mega_ffn_b
 from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
@@ -367,17 +369,26 @@ def test_sigma_permute_interleaves_gate_and_up_rows() -> None:
 def test_stack_blockwise_mega_ffn_permutes_each_expert(
     experts: int, halves: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Joined from one projection or two, stacked in one group or several,
-    each expert's bytes go through the preshuffle once and the scales stack
-    row-major.
+    """Hands the stacking op each expert's projections in order, once, and
+    stacks the scales row-major.
 
-    The preshuffle is stubbed with a visible byte change: the eager
-    interpreter this suite runs on has no rank-7 transpose, and the permute's
-    byte order is pinned by ``test_blockwise_fp8_lane_is_two_16_byte_planes``.
+    The op is stubbed with a visible byte change: the eager interpreter this
+    suite runs on cannot run it, and its byte order is pinned on the GPU by
+    ``test_stack_blockwise_fp8_b_matches_the_permute``.
     """
-    monkeypatch.setattr(
-        quant_ops, "preshuffle_blockwise_fp8_b", lambda w: w + 1
-    )
+
+    def stack_b(
+        projections: list[Tensor], n_experts: int, device: DeviceRef
+    ) -> Tensor:
+        assert device == DeviceRef.CPU()
+        per = len(projections) // n_experts
+        joined = [
+            F.concat(projections[e * per : (e + 1) * per], axis=0)
+            for e in range(n_experts)
+        ]
+        return F.stack(joined, axis=0) + 1
+
+    monkeypatch.setattr(quant_ops, "stack_blockwise_mega_ffn_b", stack_b)
     n, k = 32, 256
     rng = np.random.default_rng(5)
     data = rng.integers(0, 256, (experts, n, k), dtype=np.uint8)
@@ -401,6 +412,12 @@ def test_stack_blockwise_mega_ffn_permutes_each_expert(
 
     np.testing.assert_array_equal(stacked.weight.to_numpy(), data + 1)
     np.testing.assert_array_equal(stacked.weight_scale_inv.to_numpy(), scales)
+
+
+def test_stack_blockwise_mega_ffn_b_rejects_uneven_experts() -> None:
+    projection = Tensor(np.zeros((16, 128), dtype=np.uint8), device=CPU())
+    with pytest.raises(ValueError, match="do not split into 2 experts"):
+        stack_blockwise_mega_ffn_b([projection] * 3, 2, DeviceRef.CPU())
 
 
 # --------------------------------------------------------------------------- #
