@@ -277,20 +277,29 @@ correspond to:
 A config class reads raw Hugging Face fields in its `initialize()` class
 method, which receives the pipeline config and a required keyword-only
 `max_seq_len`. Later, `finalize()` sets the fields that depend on the
-checkpoint, such as whether the embeddings are tied. To extend a reference
-config, call `super().initialize()` so the parent maps every field it knows,
-then set the fields that differ.
+checkpoint, such as whether the embeddings are tied. Copy the closest
+reference config into your package and subclass the copy. Call
+`super().initialize()` so the parent maps every field it knows, then set the
+fields that differ.
 
-The following example extends `Llama3Config` from `llama3_modulev3`. That
-config already has a `logits_scaling` field, which the Llama 3 module divides
-the logits by. This checkpoint stores the reciprocal as `logit_scale`:
+The following example subclasses a copy of `Llama3Config` from
+`llama3_modulev3`, saved as `llama3_config.py` in your package. That config
+already has a `logits_scaling` field, which the Llama 3 module divides the
+logits by. This checkpoint stores the reciprocal as `logit_scale`:
+
+<!-- invisible-code-block: python
+from max.pipelines.architectures.llama3_modulev3.model_config import (
+    Llama3Config as _CopiedLlama3Config,
+)
+fake_module("yourpkg")
+fake_module("yourpkg.llama3_config", Llama3Config=_CopiedLlama3Config)
+__name__, __package__ = "yourpkg.model_config", "yourpkg"
+-->
 
 ```python title="model_config.py"
 from dataclasses import dataclass
 
-from max.pipelines.architectures.llama3_modulev3.model_config import (
-    Llama3Config,
-)
+from .llama3_config import Llama3Config
 
 
 @dataclass(kw_only=True)
@@ -306,40 +315,9 @@ class YourConfig(Llama3Config):
         return config
 ```
 
-The pipeline model decides which config class to build. The `llama3_modulev3`
-pipeline model reads it from a `config_class` attribute, and sizes the KV cache
-with the class in `model_config_cls`, so your `model.py` points both
-attributes at the new class:
-
-<!-- invisible-code-block: python
-fake_module("yourpkg")
-fake_module("yourpkg.model_config", YourConfig=YourConfig)
-__name__, __package__ = "yourpkg.model", "yourpkg"
--->
-
-```python title="model.py"
-from typing import Any, ClassVar
-
-from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
-
-from .model_config import YourConfig
-
-
-class YourModel(Llama3Model):
-    model_config_cls: ClassVar[type[Any]] = YourConfig
-    config_class = YourConfig
-```
-
-<!-- invisible-code-block: python
-fake_module("yourpkg.model", YourModel=YourModel)
-assert YourModel.config_class is YourConfig
-assert YourModel.model_config_cls is YourConfig
--->
-
-Other reference pipeline models, such as `olmo3`, name their config class
-directly inside `_create_model_config()`. To extend one of those, override
-`_create_model_config()` in your subclass and call `YourConfig.initialize()`
-there.
+Your pipeline model names `YourConfig` in `model_config_cls` and builds it in
+`_create_model_config()`, the way the `model.py` example earlier on this page
+does.
 
 ## Map checkpoint weights
 
