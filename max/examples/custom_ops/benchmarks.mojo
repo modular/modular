@@ -26,7 +26,8 @@ from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK
-from layout.int_tuple import product, to_index_list
+from std.utils import IndexList
+from layout import coord_to_index_list
 from extensibility import (
     IOSpec,
     ManagedTensorSlice,
@@ -44,7 +45,7 @@ struct Tensor[
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank, _],
 ](ImplicitlyCopyable):
-    comptime size = product(Self.static_spec.shape_tuple)
+    comptime size = Self.static_spec.static_size
 
     var slice: ManagedTensorSlice[
         io_spec=Self.io_spec, static_spec=Self.static_spec
@@ -58,8 +59,12 @@ struct Tensor[
             io_spec=Self.io_spec, static_spec=Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
-            to_index_list[Self.rank](Self.static_spec.shape_tuple),
-            to_index_list[Self.rank](Self.static_spec.strides_tuple),
+            rebind[IndexList[Self.rank]](
+                coord_to_index_list(Self.static_spec.shape_tuple)
+            ),
+            rebind[IndexList[Self.rank]](
+                coord_to_index_list(Self.static_spec.strides_tuple)
+            ),
         )
 
     def rand(self) raises -> Self:

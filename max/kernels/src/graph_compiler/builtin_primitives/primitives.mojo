@@ -61,7 +61,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    IntTuple,
     TensorLayout,
     TileTensor,
     row_major,
@@ -78,7 +77,6 @@ from std.memory import unsafe_memcpy
 from nn.concat import concat
 from nn.reshape import reshape
 from nn.slice import slice_as_view
-from layout.int_tuple import _IntTupleToCoordLike, UNKNOWN_VALUE
 from layout.tile_layout import Layout as TileLayout
 from extensibility import register_internal
 from extensibility import (
@@ -1212,16 +1210,16 @@ def mgp_buffer_get_size(
 @register_internal("mgp.tensor_spec.create")
 @inline(.never)
 def mgp_tensor_spec_create[
-    aRawDims: IntTuple,
     aRawDimsRank: Int,
-](*runtimeDims: Int) -> IndexList[aRawDimsRank]:
+](dims: Coord[...], *runtimeDims: Int) -> IndexList[aRawDimsRank]:
     var shape = IndexList[aRawDimsRank]()
     var runtimeIndex = 0
-    # Update Shape with runtime elements.
-    # Negative values in aRawDims indicate dynamic dimensions.
+    # Update Shape with runtime elements. The raw-dims encoding uses -1 for
+    # a dynamic dim, whose real value arrives in `runtimeDims`.
     comptime for i in range(aRawDimsRank):
-        if Int(aRawDims[i]) >= 0:
-            shape[i] = Int(aRawDims[i])
+        comptime dim = dims.element_types[i].static_value
+        if dim >= 0:
+            shape[i] = dim
         else:
             shape[i] = runtimeDims[runtimeIndex]
             runtimeIndex += 1
@@ -1862,104 +1860,147 @@ def all_zeros(indices: IndexList) -> Bool:
 # Affine view kernels
 # ===----------------------------------------------------------------------===#
 
+comptime _CoordDimValue[t: CoordLike]: Int = (
+    t.static_value
+) if t.is_static_value else -1
+"""A dim type as a plain `Int`, `-1` where the dim is dynamic."""
 
-@inline(.always)
-def _reshape_num_non_ones(shape: IntTuple, upto: Int) -> Int:
-    # Count of non-1 dims in shape[0:upto].
+
+comptime _CoordTypesEqual[
+    a: TypeList[Trait=CoordLike, ...], b: TypeList[Trait=CoordLike, ...]
+]: Bool = a.reduce_idx[a.length == b.length, _CoordTypesEqualReducer[b, ...]]
+"""Replaces equality on the old sentinel-encoded shapes: two Coords'
+element types match iff each component pair is both-static-and-equal
+or both-dynamic."""
+
+
+comptime _CoordTypesEqualReducer[
+    b: TypeList[Trait=CoordLike, ...], Prev: Bool, Element: CoordLike, idx: Int
+]: Bool = Prev and (
+    Element.is_static_value == b[idx].is_static_value
+    and (
+        not Element.is_static_value
+        or Element.static_value == b[idx].static_value
+    )
+)
+
+
+def _reshape_types_sentinels[
+    rank: Int, shape: TypeList[Trait=CoordLike, ...]
+]() -> IndexList[rank]:
+    # The shape's dim types as a runtime `IndexList` (a dynamic dim becomes
+    # -1, the old sentinel encoding), so the helpers below can run the same
+    # plain comparisons they always did; constant-folded at comptime calls.
+    var result = IndexList[rank]()
+    comptime for i in range(rank):
+        comptime if shape[i].is_static_value:
+            result[i] = shape[i].static_value
+        else:
+            result[i] = -1
+    return result
+
+
+def _reshape_num_dynamic_non_ones[
+    shape: TypeList[Trait=CoordLike, ...]
+]() -> Int:
+    # Count of dynamic dims among the non-1 dims.
     var n = 0
-    for i in range(upto):
-        if Int(shape[i]) != 1:
+    comptime for i in range(shape.length):
+        comptime if not shape[i].is_static_value:
             n += 1
     return n
 
 
-@inline(.always)
-def _reshape_nth_non_one_pos(shape: IntTuple, k: Int) -> Int:
-    # Position of the k-th (0-indexed) non-1 dim in shape.
-    var count = 0
-    for i in range(len(shape)):
-        if Int(shape[i]) != 1:
-            if count == k:
-                return i
-            count += 1
-    return len(shape)
+def _reshape_common_prefix[
+    a: TypeList[Trait=CoordLike, ...], b: TypeList[Trait=CoordLike, ...]
+]() -> Int:
+    # Length of the leading run of dims STATICALLY equal in both shapes. A
+    # dynamic dim never matches -- two distinct dynamic dims are not known
+    # equal -- so it ends the run.
+    comptime rank = min(a.length, b.length)
+    comptime av = _reshape_types_sentinels[rank, a]()
+    comptime bv = _reshape_types_sentinels[rank, b]()
+    var n = 0
+    for i in range(rank):
+        if av[i] < 0 or bv[i] < 0 or av[i] != bv[i]:
+            break
+        n += 1
+    return n
 
 
-@inline(.always)
-def _reshape_same_dropping_ones(a: IntTuple, b: IntTuple) -> Bool:
-    # True iff a and b have identical non-1 dims in the same order, i.e. the
-    # reshape only inserts/removes size-1 dims. Bounded loop (comptime-safe):
-    # each iteration consumes at least one non-1 dim from each side.
+def _reshape_common_suffix[
+    a: TypeList[Trait=CoordLike, ...],
+    b: TypeList[Trait=CoordLike, ...],
+    avoid: Int,
+]() -> Int:
+    # Length of the trailing run of dims statically equal in both shapes, not
+    # overlapping the `avoid` dims already claimed as a common prefix.
+    comptime la = a.length
+    comptime lb = b.length
+    comptime av = _reshape_types_sentinels[la, a]()
+    comptime bv = _reshape_types_sentinels[lb, b]()
+    var m = (la if la < lb else lb) - avoid
+    var n = 0
+    for i in range(m):
+        var v1 = av[la - 1 - i]
+        var v2 = bv[lb - 1 - i]
+        if v1 < 0 or v2 < 0 or v1 != v2:
+            break
+        n += 1
+    return n
+
+
+def _reshape_same_dropping_ones[
+    a: TypeList[Trait=CoordLike, ...], b: TypeList[Trait=CoordLike, ...]
+]() -> Bool:
+    # True iff a and b have identical non-(-1) dims in the same order, i.e.
+    # the reshape only inserts/removes size-1 dims. Bounded loop
+    # (comptime-safe): each iteration consumes at least one non-1 dim from
+    # each side.
+    comptime av = _reshape_types_sentinels[a.length, a]()
+    comptime bv = _reshape_types_sentinels[b.length, b]()
     var ai = 0
     var bi = 0
-    for _iter in range(len(a) + len(b) + 1):
-        while ai < len(a) and Int(a[ai]) == 1:
+    for _iter in range(a.length + b.length + 1):
+        while ai < a.length and av[ai] == 1:
             ai += 1
-        while bi < len(b) and Int(b[bi]) == 1:
+        while bi < b.length and bv[bi] == 1:
             bi += 1
-        if ai >= len(a) or bi >= len(b):
-            return ai >= len(a) and bi >= len(b)
-        if Int(a[ai]) != Int(b[bi]):
+        if ai >= a.length or bi >= b.length:
+            return ai >= a.length and bi >= b.length
+        if av[ai] != bv[bi]:
             return False
         ai += 1
         bi += 1
     return True
 
 
-@inline(.always)
-def _reshape_common_prefix(a: IntTuple, b: IntTuple) -> Int:
-    # Length of the leading run of dims STATICALLY equal in both shapes. A
-    # dynamic dim (`-1`, `UNKNOWN_VALUE`) never matches -- two distinct dynamic
-    # dims both print as -1 but are not known equal -- so it ends the run.
-    var m = len(a) if len(a) < len(b) else len(b)
+def _reshape_num_non_ones[
+    shape: TypeList[Trait=CoordLike, ...], upto: Int
+]() -> Int:
+    # Count of non-1 dims in shape[0:upto]. A dynamic dim is never statically
+    # known to be 1, so it counts as non-1.
+    comptime sv = _reshape_types_sentinels[shape.length, shape]()
     var n = 0
-    for i in range(m):
-        var av = Int(a[i])
-        var bv = Int(b[i])
-        if av < 0 or bv < 0 or av != bv:
-            break
-        n += 1
-    return n
-
-
-@inline(.always)
-def _reshape_common_suffix(a: IntTuple, b: IntTuple, avoid: Int) -> Int:
-    # Length of the trailing run of dims statically equal in both shapes, not
-    # overlapping the `avoid` dims already claimed as a common prefix.
-    var la = len(a)
-    var lb = len(b)
-    var m = (la if la < lb else lb) - avoid
-    var n = 0
-    for i in range(m):
-        var av = Int(a[la - 1 - i])
-        var bv = Int(b[lb - 1 - i])
-        if av < 0 or bv < 0 or av != bv:
-            break
-        n += 1
-    return n
-
-
-@inline(.always)
-def _reshape_num_dynamic_non_ones(shape: IntTuple) -> Int:
-    # Count of dynamic (`-1`, `UNKNOWN_VALUE`) dims among the non-1 dims.
-    var n = 0
-    for i in range(len(shape)):
-        var v = Int(shape[i])
-        if v != 1 and v < 0:
+    for i in range(min(upto, shape.length)):
+        if sv[i] != 1:
             n += 1
     return n
 
 
-@inline(.always)
-def _reshape_static_index_list[rank: Int, shape: IntTuple]() -> IndexList[rank]:
-    # The comptime `shape` as a runtime `IndexList` (a dynamic dim becomes -1).
-    # Only used as the default when a caller omits the runtime shape, which the
-    # graph compiler does exactly when the shape is fully static, so no -1
-    # survives into a computation.
-    var result = IndexList[rank]()
-    comptime for i in range(rank):
-        result[i] = Int(shape[i])
-    return result
+def _reshape_nth_non_one_pos[
+    shape: TypeList[Trait=CoordLike, ...], k: Int
+]() -> Int:
+    # Position of the k-th (0-indexed) non-1 dim in `shape`, or `shape.length`
+    # when there is none. A dynamic dim counts as non-1.
+    comptime sv = _reshape_types_sentinels[shape.length, shape]()
+    var count = 0
+    for i in range(shape.length):
+        if sv[i] != 1:
+            if count == k:
+                return i
+            count += 1
+    return shape.length
 
 
 @register_internal("mogg.index.reshape")
@@ -1968,38 +2009,34 @@ def mogg_index_reshape[
     from_rank: Int,
     //,
     to_rank: Int,
-    from_static_shape: IntTuple,
-    to_static_shape: IntTuple,
 ](
     index: IndexList[from_rank],
-    from_shape: IndexList[from_rank] = _reshape_static_index_list[
-        from_rank, from_static_shape
-    ](),
-    to_shape: IndexList[to_rank] = _reshape_static_index_list[
-        to_rank, to_static_shape
-    ](),
+    from_shape: Coord[...],
+    to_shape: Coord[...],
 ) -> IndexList[to_rank]:
     # Reindex `index` (a point in the from-shape) to the point in the to-shape
     # with the same row-major linear offset. Backs `mogg.index.reshape`: the
     # per-index (store-side) counterpart of the whole-tensor
     # `mogg.tensor.create.reshape` view, used for a reshape fused into an
-    # epilogue's store. `from_static_shape`/`to_static_shape` are the compile-time
-    # shapes (a dim is `-1`, `UNKNOWN_VALUE`, where dynamic); `from_shape`/
-    # `to_shape` are their runtime values, read only where a dim is dynamic.
+    # epilogue's store. `from_shape`/`to_shape` carry each dim twice: its
+    # static-vs-dynamic split in the Coord's element types, and its runtime
+    # value in the component itself (a static dim's folds to a constant).
     #
     # A single primitive serves both the static and dynamic reshape: a comptime
-    # check picks the cheapest reindexing the static shapes allow, and any path
-    # they fully determine leaves the runtime shapes unread, so the backend DCEs
-    # them down to exactly the static code -- there is no separate primitive.
-    #
+    # check picks the cheapest reindexing the static dims allow, and any path
+    # they fully determine reads no runtime extent, so the backend DCEs them
+    # down to exactly the static code -- there is no separate primitive.
+    comptime from_types = type_of(from_shape).element_types
+    comptime to_types = type_of(to_shape).element_types
+
     # Fast path: identity -- no remap. Guarded like the unit-shuffle path below:
     # with two or more dynamic non-1 dims, equal STATIC shapes don't imply equal
     # runtime shapes (`[A, B]` and `[B, A]` both read as `[-1, -1]`), so a
     # reorder would be mistaken for a no-op. With at most one, the static dims
     # match and element-count forces the lone dynamic dim equal, so it is a true
     # identity.
-    comptime if from_static_shape == to_static_shape and (
-        _reshape_num_dynamic_non_ones(from_static_shape) <= 1
+    comptime if _CoordTypesEqual[from_types, to_types] and (
+        _reshape_num_dynamic_non_ones[from_types]() <= 1
     ):
         return rebind[IndexList[to_rank]](index)
 
@@ -2008,19 +2045,21 @@ def mogg_index_reshape[
     # of `from`; every size-1 dim of `to` is index 0), with none of the
     # (de)linearize arithmetic below and no shape extents read at all. Guarded to
     # at most one dynamic non-1 dim: two or more distinct dynamic dims are
-    # indistinguishable in the static shape (all read as -1), so a genuine
+    # indistinguishable in the static shape, so a genuine
     # reorder like [A, B] -> [B, A] would be misread as a no-op; those fall
     # through to the general path, which relinearizes them correctly.
-    comptime if _reshape_same_dropping_ones(
-        from_static_shape, to_static_shape
-    ) and _reshape_num_dynamic_non_ones(from_static_shape) <= 1:
+    comptime if _reshape_same_dropping_ones[from_types, to_types]() and (
+        _reshape_num_dynamic_non_ones[from_types]() <= 1
+    ):
         var squeezed = IndexList[to_rank]()
         comptime for j in range(to_rank):
-            comptime if Int(to_static_shape[j]) == 1:
+            comptime if (
+                to_types[j].is_static_value and to_types[j].static_value == 1
+            ):
                 squeezed[j] = 0
             else:
-                comptime k = _reshape_num_non_ones(to_static_shape, j)
-                comptime fp = _reshape_nth_non_one_pos(from_static_shape, k)
+                comptime k = _reshape_num_non_ones[to_types, j]()
+                comptime fp = _reshape_nth_non_one_pos[from_types, k]()
                 squeezed[j] = index[fp]
         return squeezed
 
@@ -2029,10 +2068,10 @@ def mogg_index_reshape[
     # trailing run of statically-identical dims passes straight through and only
     # the merged/split dims are (de)linearized. Each extent uses the static dim
     # where known (comptime, so it folds) and the runtime dim only where it is
-    # `-1`; a fully static -- or outermost-only-dynamic -- reshape reads no
-    # runtime extent, so the backend drops `from_shape`/`to_shape`.
-    comptime p = _reshape_common_prefix(from_static_shape, to_static_shape)
-    comptime s = _reshape_common_suffix(from_static_shape, to_static_shape, p)
+    # dynamic; a fully static -- or outermost-only-dynamic -- reshape reads no
+    # runtime extent, so the backend drops the runtime reads.
+    comptime p = _reshape_common_prefix[from_types, to_types]()
+    comptime s = _reshape_common_suffix[from_types, to_types, p]()
 
     var out = IndexList[to_rank]()
     comptime for i in range(p):
@@ -2048,24 +2087,23 @@ def mogg_index_reshape[
     var from_stride: Int = 1
     comptime for i in range(from_rank - s - 1, p, -1):
         linear += index[i] * from_stride
-        comptime sd = Int(from_static_shape[i])
-        comptime if sd >= 0:
-            from_stride *= sd
+        comptime if from_types[i].is_static_value:
+            from_stride *= from_types[i].static_value
         else:
-            from_stride *= from_shape[i]
+            from_stride *= Int(from_shape[i])
     linear += index[p] * from_stride
 
     # Unravel onto the middle `to` dims; the outermost takes the remaining
     # quotient with no (redundant) modulo, so its extent is never read.
     var to_stride: Int = 1
     comptime for j in range(to_rank - s - 1, p, -1):
-        comptime sd = Int(to_static_shape[j])
-        comptime if sd >= 0:
+        comptime if to_types[j].is_static_value:
+            comptime sd = to_types[j].static_value
             out[j] = (linear // to_stride) % sd
             to_stride *= sd
         else:
-            out[j] = (linear // to_stride) % to_shape[j]
-            to_stride *= to_shape[j]
+            out[j] = (linear // to_stride) % Int(to_shape[j])
+            to_stride *= Int(to_shape[j])
     out[p] = linear // to_stride
     return out
 
@@ -2075,65 +2113,64 @@ def mogg_index_reshape[
 def mogg_index_slice_select[
     rank: Int,
     //,
-    static_starts: IntTuple,
-    static_steps: IntTuple,
-    in_static_shape: IntTuple,
-    out_static_shape: IntTuple,
+    static_starts: Coord,
+    static_steps: Coord,
 ](
     index: IndexList[rank],
-    in_shape: IndexList[rank] = _reshape_static_index_list[
-        rank, in_static_shape
-    ](),
-    out_shape: IndexList[rank] = _reshape_static_index_list[
-        rank, out_static_shape
-    ](),
+    in_shape: Coord[...],
+    out_shape: Coord[...],
 ) -> Tuple[IndexList[rank], Bool]:
     """Maps an index into a slice's input to the index into its output.
 
     Backs `mogg.index.slice.select`, whose body runs at the returned index
     only where the slice selects `index`. The slice follows `mo.slice`: a
     start resolves against its input dim the numpy way, and the output shape
-    bounds the slice, so stops are never read. A runtime shape is read only
-    where its static counterpart is `UNKNOWN_VALUE`, and a dim the static
-    bounds and shapes prove unsliced costs nothing.
+    bounds the slice, so stops are never read. `in_shape`/`out_shape` carry
+    each dim's static-vs-dynamic split in their element types and its runtime
+    value in the component itself; a dim the static bounds and shapes prove
+    unsliced costs nothing.
 
     Parameters:
         rank: The rank of the slice's input and output.
         static_starts: The slice's start per dim, as written.
         static_steps: The slice's positive step per dim.
-        in_static_shape: The slice's input shape, where statically known.
-        out_static_shape: The slice's output shape, where statically known.
 
     Args:
         index: An index into the slice's input.
-        in_shape: The input's runtime shape.
-        out_shape: The output's runtime shape.
+        in_shape: The slice's input shape.
+        out_shape: The slice's output shape.
 
     Returns:
         The index into the slice's output, and whether the slice selects
         `index` at all. The index means nothing where it does not.
     """
+    comptime in_types = type_of(in_shape).element_types
+    comptime out_types = type_of(out_shape).element_types
     var result = index
     var in_slice = True
     comptime for d in range(rank):
-        comptime start = Int(static_starts[d])
+        comptime start = (
+            Int(static_starts[d]) if static_starts.element_types[
+                d
+            ].is_static_value else -1
+        )
         comptime step = Int(static_steps[d])
-        comptime n_in = Int(in_static_shape[d])
-        comptime n_out = Int(out_static_shape[d])
-        comptime unsliced = (
-            start == 0 and step == 1 and n_in != UNKNOWN_VALUE and n_in == n_out
+        comptime n_in = _CoordDimValue[in_types[d]]
+        comptime n_out = _CoordDimValue[out_types[d]]
+        comptime unsliced = start == 0 and step == 1 and n_in != -1 and (
+            n_in == n_out
         )
         comptime if not unsliced:
             var in_dim: Int
-            comptime if n_in != UNKNOWN_VALUE:
+            comptime if n_in != -1:
                 in_dim = n_in
             else:
-                in_dim = in_shape[d]
+                in_dim = Int(in_shape[d])
             var out_dim: Int
-            comptime if n_out != UNKNOWN_VALUE:
+            comptime if n_out != -1:
                 out_dim = n_out
             else:
-                out_dim = out_shape[d]
+                out_dim = Int(out_shape[d])
             # Numpy's start resolution, which `MOToMAP` already applied where
             # the dim is static: from the end if negative, then clamped to 0.
             # A start past the end needs no clamp, since `out_dim` is then 0.
@@ -2144,7 +2181,7 @@ def mogg_index_slice_select[
             var s = start
             comptime if start < 0:
                 comptime clamp_needed = (
-                    n_out == UNKNOWN_VALUE or (n_out - 1) * step + 1 < -start
+                    n_out == -1 or (n_out - 1) * step + 1 < -start
                 )
                 comptime if clamp_needed:
                     s = max(start + in_dim, 0)
@@ -2353,9 +2390,11 @@ comptime _MoggSliceStrideTypes[
 ]()
 
 
-def _dense_row_major_anchor_stride(
-    rank: Int, shape: IntTuple, strides: IntTuple
-) -> Int:
+def _dense_row_major_anchor_stride[
+    rank: Int,
+    shape: TypeList[Trait=CoordLike, ...],
+    strides: TypeList[Trait=CoordLike, ...],
+]() -> Int:
     """Returns a stride that every dynamic stride of this layout is a whole
     multiple of, or 0 when no such stride can be established.
 
@@ -2367,18 +2406,20 @@ def _dense_row_major_anchor_stride(
     innermost dense-chain stride. A layout that is broadcast, permuted or
     step-scaled across the run fails the equality and yields 0.
     """
-    if rank < 2 or Int(strides[rank - 1]) != 1:
+    comptime sv = _reshape_types_sentinels[rank, shape]()
+    comptime tv = _reshape_types_sentinels[rank, strides]()
+    if rank < 2 or tv[rank - 1] != 1:
         return 0
 
     var anchor = 0
     for k in range(rank - 2, -1, -1):
-        var stride = Int(strides[k])
-        var inner_shape = Int(shape[k + 1])
-        var inner_stride = Int(strides[k + 1])
+        var stride = tv[k]
+        var inner_shape = sv[k + 1]
+        var inner_stride = tv[k + 1]
         if (
-            stride == UNKNOWN_VALUE
-            or inner_shape == UNKNOWN_VALUE
-            or inner_stride == UNKNOWN_VALUE
+            stride < 0
+            or inner_shape < 0
+            or inner_stride < 0
             or stride != inner_shape * inner_stride
         ):
             break
@@ -2389,21 +2430,21 @@ def _dense_row_major_anchor_stride(
 def _mogg_slice_view_alignment[
     rank: Int,
     dtype: DType,
-    input_shape: IntTuple,
-    input_strides: IntTuple,
-    static_starts: IntTuple,
-    static_steps: IntTuple,
+    input_shape: TypeList[Trait=CoordLike, ...],
+    input_strides: TypeList[Trait=CoordLike, ...],
+    static_starts: Coord,
+    static_steps: Coord,
 ](input_alignment: Int) -> Int:
     """Same alignment derivation as `Slice.get_view_alignment` (mirrored here,
     not called directly, since `builtin_kernels` already depends on
     `builtin_primitives` and importing the other way would be circular).
     """
-    comptime stride_types = _IntTupleToCoordLike[DType.int, input_strides]
-    comptime start_types = _IntTupleToCoordLike[DType.int, static_starts]
-    comptime step_types = _IntTupleToCoordLike[DType.int, static_steps]
-    comptime anchor = _dense_row_major_anchor_stride(
+    comptime stride_types = input_strides
+    comptime start_types = static_starts.element_types
+    comptime step_types = static_steps.element_types
+    comptime anchor = _dense_row_major_anchor_stride[
         rank, input_shape, input_strides
-    )
+    ]()
 
     var alignment = input_alignment
     comptime for i in range(rank):
@@ -2462,9 +2503,9 @@ def mogg_tensor_create_slice[
     stop_type: DType,
     step_type: DType,
     //,
-    output_static_shape: IntTuple,
-    static_starts: IntTuple,
-    static_steps: IntTuple,
+    output_static_shape: Coord,
+    static_starts: Coord,
+    static_steps: Coord,
 ](
     input: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
     starts: ManagedTensorSlice[dtype=start_type, rank=1, ...],
@@ -2475,19 +2516,19 @@ def mogg_tensor_create_slice[
     static_spec=input.static_spec.with_tile_layout_and_alignment[
         rank,
         TileLayout[
-            shape_types=_IntTupleToCoordLike[DType.int, output_static_shape],
+            shape_types=output_static_shape.element_types,
             stride_types=_MoggSliceStrideTypes[
                 rank,
                 input.static_spec.static_layout._stride_types,
-                _IntTupleToCoordLike[DType.int, static_steps],
+                static_steps.element_types,
             ],
         ],
     ](
         _mogg_slice_view_alignment[
             rank,
             dtype,
-            input._static_shape_tuple,
-            input._static_strides_tuple,
+            input.static_spec.static_layout._shape_types,
+            input.static_spec.static_layout._stride_types,
             static_starts,
             static_steps,
         ](input.alignment),
@@ -2496,9 +2537,9 @@ def mogg_tensor_create_slice[
     """Backing primitive for `mogg.tensor.create.slice`: a zero-copy strided
     view of `input`, offset and re-strided per `starts`/`stops`/`steps`.
     `output_static_shape`/`static_starts`/`static_steps` carry whatever is
-    known about the view's shape and bounds at compile time (an entry is
-    `UNKNOWN_VALUE` where it isn't), letting the result keep a static layout
-    and alignment instead of falling back to a fully dynamic one.
+    known about the view's shape and bounds at compile time, letting the
+    result keep a static layout and alignment instead of falling back to a
+    fully dynamic one.
 
     Parameters:
         dtype: The element type of `input`.
@@ -2536,15 +2577,15 @@ def mogg_tensor_create_slice[
 def _mogg_broadcast_view_strides[
     out_rank: Int,
     in_rank: Int,
-    input_shape: IntTuple,
-    input_strides: IntTuple,
+    input_shape: TypeList[Trait=CoordLike, ...],
+    input_strides: TypeList[Trait=CoordLike, ...],
 ]() -> IndexList[out_rank]:
     """Same view-stride derivation as `StaticBroadcastTo.get_view_strides_list`
     (mirrored here, not called directly, since `builtin_kernels` already
     depends on `builtin_primitives` and importing the other way would be
-    circular): `UNKNOWN_VALUE` marks a dimension whose stride isn't known at
-    compile time, so `with_int_tuple_layout` falls back to a dynamic entry
-    for it.
+    circular): a dynamic dimension -- whose stride isn't statically known --
+    becomes a -1 entry, so `with_coord_layout` falls back to a dynamic
+    entry for it.
     """
     var new_strides = IndexList[out_rank]()
     comptime delta = out_rank - in_rank
@@ -2552,12 +2593,16 @@ def _mogg_broadcast_view_strides[
         comptime if i < delta:
             new_strides[i] = 0
         else:
-            if Int(input_shape[i - delta]) == UNKNOWN_VALUE:
-                new_strides[i] = UNKNOWN_VALUE
-            elif Int(input_shape[i - delta]) <= 1:
+            if not input_shape[i - delta].is_static_value:
+                new_strides[i] = -1
+            elif input_shape[i - delta].static_value <= 1:
                 new_strides[i] = 0
             else:
-                new_strides[i] = Int(input_strides[i - delta])
+                new_strides[i] = (
+                    input_strides[i - delta]
+                    .static_value if input_strides[i - delta]
+                    .is_static_value else -1
+                )
     return new_strides
 
 
@@ -2566,19 +2611,19 @@ def mogg_tensor_create_broadcast[
     dtype: DType,
     in_rank: Int,
     //,
-    output_static_shape: IntTuple,
+    output_static_shape: Coord,
 ](
     input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
 ) -> ManagedTensorSlice[
     io_spec=input.io_spec,
-    static_spec=input.static_spec.with_int_tuple_layout[
-        len(output_static_shape),
+    static_spec=input.static_spec.with_coord_layout[
+        output_static_shape.rank,
         output_static_shape,
         _mogg_broadcast_view_strides[
-            len(output_static_shape),
+            output_static_shape.rank,
             in_rank,
-            input._static_shape_tuple,
-            input._static_strides_tuple,
+            input.static_spec.static_layout._shape_types,
+            input.static_spec.static_layout._stride_types,
         ](),
     ](),
 ]:
@@ -2600,7 +2645,7 @@ def mogg_tensor_create_broadcast[
     Args:
         input: The tensor to broadcast.
     """
-    comptime out_rank = len(output_static_shape)
+    comptime out_rank = output_static_shape.rank
     comptime delta = out_rank - in_rank
     var new_shape = IndexList[out_rank]()
     var new_strides = IndexList[out_rank]()
@@ -2622,13 +2667,13 @@ def mogg_tensor_create_reshape[
     in_rank: Int,
     out_rank: Int,
     //,
-    output_static_shape: IntTuple,
+    output_static_shape: Coord,
 ](
     input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
     output_shape: IndexList[out_rank],
 ) -> ManagedTensorSlice[
     io_spec=input.io_spec,
-    static_spec=input.static_spec.with_row_major_int_tuple_layout[
+    static_spec=input.static_spec.with_row_major_coord_layout[
         out_rank,
         output_static_shape,
     ](),
@@ -2647,7 +2692,7 @@ def mogg_tensor_create_reshape[
     honest runtime value here or every row past the first comes out wrong.
 
     `out_rank` is inferred from `output_shape` itself, not from
-    `len(output_static_shape)` -- both name the same rank, but a
+    `output_static_shape.rank` -- both name the same rank, but a
     comptime-parameter argument type can't depend on another comptime
     parameter's own derived value at inference time the way it can on a
     plain `Int`.
@@ -2665,8 +2710,8 @@ def mogg_tensor_create_reshape[
         output_shape: The view's shape at runtime -- authoritative for every
             dim, not just the ones `output_static_shape` doesn't know.
     """
-    comptime assert out_rank == len(
-        output_static_shape
+    comptime assert (
+        out_rank == output_static_shape.rank
     ), "out_rank must match output_static_shape's own rank"
     var view = reshape(input.to_tile_tensor[DType.int64](), output_shape)
     return {
@@ -2681,19 +2726,19 @@ def mogg_tensor_create_reshape[
 
 
 comptime _MoggTransposeStrideTypesTabulator[
-    permutations: IntTuple,
+    permutations: Coord,
     input_stride_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-]: CoordLike = Scalar[DType.int] if Int(
-    permutations[idx]
-) == UNKNOWN_VALUE else input_stride_types[
-    Int(permutations[idx])
+]: CoordLike = Scalar[DType.int] if not permutations.element_types[
+    idx
+].is_static_value else input_stride_types[
+    permutations.element_types[idx].static_value
 ]
 
 
 comptime _MoggTransposeStrideTypes[
     rank: Int,
-    permutations: IntTuple,
+    permutations: Coord,
     input_stride_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     rank,
@@ -2707,8 +2752,8 @@ def mogg_tensor_create_transpose[
     rank: Int,
     perm_type: DType,
     //,
-    output_static_shape: IntTuple,
-    static_permutations: IntTuple,
+    output_static_shape: Coord,
+    static_permutations: Coord,
 ](
     input: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
     permutations: ManagedTensorSlice[dtype=perm_type, rank=1, ...],
@@ -2717,7 +2762,7 @@ def mogg_tensor_create_transpose[
     static_spec=input.static_spec.with_tile_layout[
         rank,
         TileLayout[
-            shape_types=_IntTupleToCoordLike[DType.int, output_static_shape],
+            shape_types=output_static_shape.element_types,
             stride_types=_MoggTransposeStrideTypes[
                 rank,
                 static_permutations,
@@ -2730,7 +2775,7 @@ def mogg_tensor_create_transpose[
     reindexed view of `input` that reorders its dimensions -- the view's
     dimension `i` comes from `input`'s dimension `perm[i]`. `perm` is known
     per dimension either at compile time (an entry of `static_permutations`)
-    or, where that entry is `UNKNOWN_VALUE`, at runtime (the matching entry
+    or, where that entry is dynamic, at runtime (the matching entry
     of the `permutations` operand). Preserves whatever static shape/stride
     information is known at compile time, mirroring
     `Transpose.input_view`/`_TransposeStrideTypes`.
@@ -2743,7 +2788,7 @@ def mogg_tensor_create_transpose[
         output_static_shape: The view's shape, where known at compile time.
         static_permutations: The permutation applied to `input`'s
             dimensions to produce the view, where known at compile time
-            (`UNKNOWN_VALUE` for a dimension whose source is only known at
+            (a dynamic entry for a dimension whose source is only known at
             runtime, e.g. the eager interpreter's one-graph-per-op transpose).
 
     Args:
@@ -2757,12 +2802,12 @@ def mogg_tensor_create_transpose[
     var new_shape = IndexList[rank]()
     var new_strides = IndexList[rank]()
     comptime for i in range(rank):
-        comptime if Int(static_permutations[i]) == UNKNOWN_VALUE:
+        comptime if not static_permutations.element_types[i].is_static_value:
             var src = Int(permutations[i])
             new_shape[i] = input.dim_size(src)
             new_strides[i] = input.stride_length(src)
         else:
-            comptime src = Int(static_permutations[i])
+            comptime src = static_permutations.element_types[i].static_value
             new_shape[i] = input.dim_size[src]()
             new_strides[i] = input.stride_length[src]()
     return {input.unsafe_ptr(), new_shape, new_strides}

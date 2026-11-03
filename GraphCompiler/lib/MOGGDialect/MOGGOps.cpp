@@ -1616,11 +1616,11 @@ LogicalResult TensorCreateSliceOp::emitMojo(EmitMojoState &state) {
                     << TensorCreateSliceOp::getOperationName());
   MojoValue primitive(primitiveMojoName(sliceCreatePrimDecl));
   MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getOutShape().getIntDims()));
+      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
   MojoValue staticStarts = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getStaticStart()));
+      EmitMojoState::getAsCoordMojoValue(getStaticStart()));
   MojoValue staticSteps = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getStaticStep()));
+      EmitMojoState::getAsCoordMojoValue(getStaticStep()));
   MojoValue result = state.builder.var(primitive(
       {MojoValue(kParameterOutputStaticShape).equal(outputStaticShape),
        MojoValue(kParameterStaticStarts).equal(staticStarts),
@@ -1642,7 +1642,7 @@ LogicalResult TensorCreateBroadcastOp::emitMojo(EmitMojoState &state) {
                     << TensorCreateBroadcastOp::getOperationName());
   MojoValue primitive(primitiveMojoName(broadcastCreatePrimDecl));
   MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getOutShape().getIntDims()));
+      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
   MojoValue result = state.builder.var(primitive(
       {MojoValue(kParameterOutputStaticShape).equal(outputStaticShape)},
       {state.getMojoValueFor(getInput())}));
@@ -1662,7 +1662,7 @@ LogicalResult TensorCreateReshapeOp::emitMojo(EmitMojoState &state) {
                     << TensorCreateReshapeOp::getOperationName());
   MojoValue primitive(primitiveMojoName(reshapeCreatePrimDecl));
   MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getOutShape().getIntDims()));
+      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
   MojoValue outputShapeValue = state.builder.var(
       MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(getShape())}));
   MojoValue result = state.builder.var(primitive(
@@ -1676,10 +1676,10 @@ LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
   // Per-index reshape (store side, inside an epilogue functor): convert the
   // `Coord` index to an `IndexList`, remap it to the output shape preserving
   // the row-major offset via `mogg.index.reshape`, and wrap it back into a
-  // `Coord` for `mogg.tensor.store`. Static dims are comptime `IntTuple`s;
-  // dynamic inner dims' from/to shapes arrive as epilogue shape captures
-  // (`$dynamicShapes`), read only where the static shape is dynamic.
-  bool isDynamic = !getDynamicShapes().empty();
+  // `Coord` for `mogg.tensor.store`. The from/to shapes ride as runtime
+  // `Coord` args: static dims as `Idx[N]` components, dynamic dims' real
+  // values as epilogue shape captures (`$dynamicShapes`), or an all-static
+  // `Coord` built here when the shape is static.
   auto primDecl =
       state.registry.lookupPrimitive(IndexReshapeOp::getOperationName());
   ASSERT_STREAM(primDecl, "Primitive not found for "
@@ -1694,35 +1694,34 @@ LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
       "IndexReshapeOp::emitMojo reached without currentLambdaInfo set");
   MojoBuilder &builder = *lambdaInfo.lambdaBuilder;
 
-  // A rank-0 shape is emitted as rank-1 extent-1, here as everywhere else, so
-  // the ranks must follow: a `to_rank` of 0 contradicts its own static shape.
-  MojoValue fromStaticShape = builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getFromShape().getIntDims()));
-  MojoValue toStaticShape = builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getToShape().getIntDims()));
-
+  // The index carries the store method's abstract rank param, which can't
+  // unify with the primitive's concrete from-rank; rebind it (equal at
+  // every instantiation).
   MojoValue idxList = builder.var(
-      MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(getIndex())}));
+      MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(getIndex())})
+          .rebind(MojoValue(kStructIndexList)[MojoValue(
+              uint64_t(getFromShape().getRankNonZero()))]));
 
-  SmallVector<MojoValue> primParams = {
-      MojoValue("to_rank").equal(
-          MojoValue(uint64_t(getToShape().getRankNonZero()))),
-      MojoValue("from_static_shape").equal(fromStaticShape),
-      MojoValue("to_static_shape").equal(toStaticShape)};
   SmallVector<MojoValue> primArgs = {idxList};
-  if (isDynamic) {
-    // The index carries the store method's abstract rank param, which can't
-    // unify with the concrete-rank runtime `from_shape`, so rebind it to the
-    // concrete from-rank first (equal at every instantiation).
-    // `$dynamicShapes` is [from-shape, to-shape] (see the MAPToMOGG lowering).
-    primArgs[0] =
-        builder.var(idxList.rebind(MojoValue(kStructIndexList)[MojoValue(
-            uint64_t(getFromShape().getRankNonZero()))]));
+  if (getDynamicShapes().empty()) {
+    // A rank-0 shape is emitted as rank-1 extent-1, here as everywhere else,
+    // so the ranks must follow: a `to_rank` of 0 contradicts its own shape.
+    primArgs.push_back(
+        builder.var(state.getShapeAsCoordMojoValue(getFromShape(), {})));
+    primArgs.push_back(
+        builder.var(state.getShapeAsCoordMojoValue(getToShape(), {})));
+  } else {
+    // `$dynamicShapes` is [from-shape, to-shape] (see the MAPToMOGG
+    // lowering): functor shape-capture fields or kernel-scope `!mogg.shape`
+    // Coords, both already `Coord` values.
     primArgs.push_back(state.getMojoValueFor(getDynamicShapes()[0]));
     primArgs.push_back(state.getMojoValueFor(getDynamicShapes()[1]));
   }
 
-  MojoValue newIdxList = builder.var(primitive(primParams, primArgs));
+  MojoValue newIdxList =
+      builder.var(primitive({MojoValue("to_rank").equal(MojoValue(
+                                uint64_t(getToShape().getRankNonZero())))},
+                            primArgs));
   MojoValue newCoord = builder.var(MojoValue(kStructCoord)({}, {newIdxList}));
   state.setMojoValueFor(getResult(), newCoord);
   return success();
@@ -1730,13 +1729,13 @@ LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
 
 LogicalResult IndexSliceSelectOp::emitMojo(EmitMojoState &state) {
   // Store-side and per index, like `IndexReshapeOp` above, whose conventions
-  // this follows: statements go through the functor's own builder, and the
-  // static bounds and shapes ride as comptime `IntTuple`s so the primitive
-  // folds every unsliced dim. Runtime shapes, when either shape is dynamic,
-  // are the functor's shape-capture fields, or in a foreach the kernel-scope
-  // shapes its closure captures. The body is emitted where the
-  // primitive's in-slice bit is set, with its argument bound to the output
-  // index.
+  // this follows: statements go through the functor's own builder. The static
+  // bounds ride as comptime `Coord` params so the primitive folds every
+  // unsliced dim; the in/out shapes ride as runtime `Coord` args -- the
+  // functor's shape-capture fields, or in a foreach the kernel-scope shapes
+  // its closure captures, or an all-static `Coord` built here. The body is
+  // emitted where the primitive's in-slice bit is set, with its argument
+  // bound to the output index.
   auto primDecl =
       state.registry.lookupPrimitive(IndexSliceSelectOp::getOperationName());
   ASSERT_STREAM(primDecl, "Primitive not found for "
@@ -1749,34 +1748,32 @@ LogicalResult IndexSliceSelectOp::emitMojo(EmitMojoState &state) {
       "IndexSliceSelectOp::emitMojo reached without currentLambdaInfo set");
   MojoBuilder &builder = *lambdaInfo.lambdaBuilder;
 
-  // The index carries the store method's abstract rank, which would not unify
-  // with the concrete-rank runtime shapes; the two are equal at every
-  // instantiation.
-  MojoValue rank(uint64_t(getInShape().getRankNonZero()));
+  // The index carries the store method's abstract rank param, which can't
+  // unify with the primitive's concrete rank; rebind it (equal at every
+  // instantiation).
   MojoValue idxList = builder.var(
       MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(getIndex())})
-          .rebind(MojoValue(kStructIndexList)[rank]));
+          .rebind(MojoValue(kStructIndexList)[MojoValue(
+              uint64_t(getInShape().getRankNonZero()))]));
   SmallVector<MojoValue> args = {idxList};
-  // A functor's shape capture is already an `IndexList` field; a kernel-scope
-  // `!mogg.shape` is still a `Coord`.
-  for (Value shape : getDynamicShapes()) {
-    MojoValue value = state.getMojoValueFor(shape);
+  // The shapes are already `Coord` values: functor shape-capture fields, or
+  // kernel-scope `!mogg.shape` Coords a foreach closure captures. A static
+  // shape (no captures) is built here.
+  if (getDynamicShapes().empty()) {
     args.push_back(
-        isa<BlockArgument>(shape)
-            ? value
-            : builder.var(MojoValue(kFnCoordToIndexList)({}, {value})));
+        builder.var(state.getShapeAsCoordMojoValue(getInShape(), {})));
+    args.push_back(
+        builder.var(state.getShapeAsCoordMojoValue(getOutShape(), {})));
   }
+  for (Value shape : getDynamicShapes())
+    args.push_back(state.getMojoValueFor(shape));
 
   auto comptimeTuple = [&](ArrayRef<int64_t> values) {
-    return builder.comptime(EmitMojoState::getAsIntTupleMojoValue(values));
+    return builder.comptime(EmitMojoState::getAsCoordMojoValue(values));
   };
   MojoValue inverse = builder.var(primitive(
       {MojoValue(kParameterStaticStarts).equal(comptimeTuple(getStaticStart())),
-       MojoValue(kParameterStaticSteps).equal(comptimeTuple(getStaticStep())),
-       MojoValue("in_static_shape")
-           .equal(comptimeTuple(getInShape().getIntDims())),
-       MojoValue("out_static_shape")
-           .equal(comptimeTuple(getOutShape().getIntDims()))},
+       MojoValue(kParameterStaticSteps).equal(comptimeTuple(getStaticStep()))},
       args));
   Block &body = getBody().front();
   state.setMojoValueFor(body.getArgument(0),
@@ -1810,9 +1807,9 @@ LogicalResult TensorCreateTransposeOp::emitMojo(EmitMojoState &state) {
                     << TensorCreateTransposeOp::getOperationName());
   MojoValue primitive(primitiveMojoName(transposeCreatePrimDecl));
   MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getOutShape().getIntDims()));
+      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
   MojoValue staticPermutations = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getStaticPermutations()));
+      EmitMojoState::getAsCoordMojoValue(getStaticPermutations()));
   MojoValue result = state.builder.var(primitive(
       {MojoValue(kParameterOutputStaticShape).equal(outputStaticShape),
        MojoValue(kParameterStaticPermutations).equal(staticPermutations)},
@@ -2385,9 +2382,9 @@ MojoValue emitVariadicTensorPack(EmitMojoState &state,
     StaticTensorSpecRef spec = staticSpecOf(reboundInput);
     staticSpecInternals.push_back(spec.getInternals());
     staticSpecShapes.push_back(
-        MojoValue(kFnToIndexList)({rank}, {spec.shapeTuple()}));
+        MojoValue(kFnCoordToIndexList)({}, {spec.shapeTuple()}));
     staticSpecStrides.push_back(
-        MojoValue(kFnToIndexList)({rank}, {spec.stridesTuple()}));
+        MojoValue(kFnCoordToIndexList)({}, {spec.stridesTuple()}));
   }
   MojoValue inputSpecsInternalsComptime =
       state.builder.comptime(ParameterListRef::of(staticSpecInternals));
@@ -2712,6 +2709,31 @@ static FailureOr<unsigned> fusedRegionRank(Operation *op, Value shape) {
   return rank == 0 ? 1 : rank;
 }
 
+/// The `Coord` type a fused-region op's `$shape` operand has, spelled from
+/// the feeding `shape.create`'s static/dynamic split: static dims as
+/// `layout.ComptimeInt[n]`, dynamic ones as `Int`. The functor's shape-
+/// capture fields carry it so the reshape/slice-select primitives the body
+/// calls see the split in the field's own type.
+static FailureOr<MojoValue> fusedRegionShapeCoordType(Operation *op,
+                                                      Value shape) {
+  auto shapeCreate = shape.getDefiningOp<ShapeCreateOp>();
+  if (!shapeCreate)
+    return op->emitOpError("shape operand must come from a mogg.shape.create");
+  SmallVector<MojoValue> elementTypes;
+  for (TypedAttr dim : shapeCreate.getShape().getValues()) {
+    if (auto staticDim = MOSH::ShapeAttr::getStaticDim(dim))
+      elementTypes.push_back(
+          MojoValue("layout.ComptimeInt")[MojoValue(*staticDim)]);
+    else
+      elementTypes.push_back(MojoValue(kStructInt));
+  }
+  // Rank-0 shapes are represented as rank-1 extent-1, as everywhere else.
+  if (elementTypes.empty())
+    elementTypes.push_back(
+        MojoValue("layout.ComptimeInt")[MojoValue(int64_t(1))]);
+  return MojoValue(kStructCoord)[ArrayRef<MojoValue>(elementTypes)];
+}
+
 namespace {
 
 /// One MOGG-ABI fusion-lambda flavor. The load side (`map.iter.prologue`) and
@@ -2748,10 +2770,10 @@ static FailureOr<MojoValue>
 emitMapFusionFunctor(EmitMojoState &state, Region &region,
                      SmallVectorImpl<FusedCaptureInfo> &captureInfos,
                      const FusionLambdaInfo &lane, MojoValue valueDtype,
-                     ArrayRef<unsigned> shapeCaptureRanks = {},
+                     ArrayRef<MojoValue> shapeCaptureTypes = {},
                      ArrayRef<MojoValue> shapeCaptureArgs = {}) {
   unsigned numCaptures = captureInfos.size();
-  unsigned numShapeCaptures = shapeCaptureRanks.size();
+  unsigned numShapeCaptures = shapeCaptureTypes.size();
   MojoValue structNameVal = state.structDefsBuilder.newVar(
       state.structDefsBuilder.getIdentifier(lane.structName.str()));
   // One comptime `StaticTensorSpec` param per capture with a concrete dtype
@@ -2766,8 +2788,8 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
                                 captureInfos[j].dtype.text)
                       .str())));
 
-  // Shape captures (dynamic reshape runtime shapes) become trailing
-  // `IndexList[rank]` fields; their literal rank needs no struct param.
+  // Shape captures (dynamic reshape/slice runtime shapes) become trailing
+  // `Coord` fields, typed by each capture's static/dynamic split.
   SmallVector<MojoValue> shapeCaptureFields(numShapeCaptures);
 
   // Functor-side names per capture: the (ptr, shape, strides) fields and the
@@ -2803,9 +2825,8 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
           selfStridesFields[j] = state.structDefsBuilder.varDecl(indexListType);
         }
         for (unsigned k = 0; k < numShapeCaptures; ++k)
-          shapeCaptureFields[k] = state.structDefsBuilder.varDecl(
-              MojoValue(kStructIndexList)[MojoValue(
-                  static_cast<uint64_t>(shapeCaptureRanks[k]))]);
+          shapeCaptureFields[k] =
+              state.structDefsBuilder.varDecl(shapeCaptureTypes[k]);
 
         // The method must match the conformed trait (managed_tensor_slice.mojo)
         // for `_bind_to_fused_*` to accept it. Parameters match positionally;
@@ -4034,18 +4055,16 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
   }
 
   // Inner-dynamic store-index reshapes carry their runtime from/to shapes as
-  // trailing shape captures. Convert each `!mogg.shape` Coord to the
-  // `IndexList` the reshape primitive wants, and pass its rank so the functor
-  // can declare the matching field.
-  SmallVector<unsigned> shapeCaptureRanks;
+  // trailing shape captures: each `!mogg.shape` Coord is passed whole, and
+  // the functor's field carries its static/dynamic split as its own type.
+  SmallVector<MojoValue> shapeCaptureTypes;
   SmallVector<MojoValue> shapeCaptureArgs;
   for (Value shapeCap : getShapeCaptures()) {
-    FailureOr<unsigned> rankOr = fusedRegionRank(*this, shapeCap);
-    if (failed(rankOr))
+    FailureOr<MojoValue> typeOr = fusedRegionShapeCoordType(*this, shapeCap);
+    if (failed(typeOr))
       return failure();
-    shapeCaptureRanks.push_back(*rankOr);
-    shapeCaptureArgs.push_back(state.builder.var(
-        MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(shapeCap)})));
+    shapeCaptureTypes.push_back(*typeOr);
+    shapeCaptureArgs.push_back(state.getMojoValueFor(shapeCap));
   }
 
   FailureOr<MojoValue> functorOr = emitMapFusionFunctor(
@@ -4053,7 +4072,7 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
       wrapTransform ? traitTransformLane
       : wrapStore   ? traitStoreLane
                     : (isCompute ? computeLane : storeLane),
-      inputDtypeParam, shapeCaptureRanks, shapeCaptureArgs);
+      inputDtypeParam, shapeCaptureTypes, shapeCaptureArgs);
   if (failed(functorOr))
     return failure();
   MojoValue functorInstance = *functorOr;
@@ -4201,21 +4220,20 @@ LogicalResult TensorCreatePrologueOp::emitMojo(EmitMojoState &state) {
   }
 
   // Inner-dynamic load-index reshapes carry runtime shapes as trailing shape
-  // captures, as in the epilogue.
-  SmallVector<unsigned> shapeCaptureRanks;
+  // captures, as in the epilogue: each `!mogg.shape` Coord is passed whole.
+  SmallVector<MojoValue> shapeCaptureTypes;
   SmallVector<MojoValue> shapeCaptureArgs;
   for (Value shapeCap : getShapeCaptures()) {
-    FailureOr<unsigned> rankOr = fusedRegionRank(*this, shapeCap);
-    if (failed(rankOr))
+    FailureOr<MojoValue> typeOr = fusedRegionShapeCoordType(*this, shapeCap);
+    if (failed(typeOr))
       return failure();
-    shapeCaptureRanks.push_back(*rankOr);
-    shapeCaptureArgs.push_back(state.builder.var(
-        MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(shapeCap)})));
+    shapeCaptureTypes.push_back(*typeOr);
+    shapeCaptureArgs.push_back(state.getMojoValueFor(shapeCap));
   }
 
   FailureOr<MojoValue> functorOr = emitMapFusionFunctor(
       state, getBody(), captureInfos, traitFused ? traitLoadLane : bindLoadLane,
-      /*valueDtype=*/dtypeParam, shapeCaptureRanks, shapeCaptureArgs);
+      /*valueDtype=*/dtypeParam, shapeCaptureTypes, shapeCaptureArgs);
   if (failed(functorOr))
     return failure();
   MojoValue functorInstance = *functorOr;

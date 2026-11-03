@@ -37,7 +37,6 @@ from max.gpu.host.info import is_gpu, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     DefaultEngine,
     TileTensor,
     UNKNOWN_VALUE,
@@ -2231,11 +2230,11 @@ struct LayoutTransformMatmulKN2KNkni:
     @staticmethod
     def execute[
         a_type: DType,
-        a_shape: IntTuple,
+        a_shape: Coord,
         b_type: DType,
-        b_shape: IntTuple,
+        b_shape: Coord,
         c_type: DType,
-        c_shape: IntTuple,
+        c_shape: Coord,
     ](
         output_buffer: Some[Output & Tensor],
         b_input: Some[Input & Tensor],
@@ -2248,7 +2247,7 @@ struct LayoutTransformMatmulKN2KNkni:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
 
-        comptime if a_shape[0] != UNKNOWN_VALUE:
+        comptime if a_shape.element_types[0].is_static_value:
             kernel_type_m = Int(a_shape[0])
         _pack_b_ndbuffer_impl[
             a_type=a_type,
@@ -2270,11 +2269,11 @@ struct LayoutTransformMatmulNK2KNkni:
     @staticmethod
     def execute[
         a_type: DType,
-        a_shape: IntTuple,
+        a_shape: Coord,
         b_type: DType,
-        b_shape: IntTuple,
+        b_shape: Coord,
         c_type: DType,
-        c_shape: IntTuple,
+        c_shape: Coord,
     ](
         output_buffer: Some[Output & Tensor],
         b_input: Some[Input & Tensor],
@@ -2287,7 +2286,7 @@ struct LayoutTransformMatmulNK2KNkni:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
 
-        comptime if a_shape[0] != UNKNOWN_VALUE:
+        comptime if a_shape.element_types[0].is_static_value:
             kernel_type_m = Int(a_shape[0])
         _pack_b_ndbuffer_impl[
             a_type=a_type,
@@ -2314,10 +2313,10 @@ struct PackMatmulBShapeFunc:
 @extensibility.register_shape_function("pack_matmul_b_shape_func")
 def pack_matmul_b_shape_func_shape[
     a_type: DType,
-    a_shape: IntTuple,
-    b_shape: IntTuple,
+    a_shape: Coord,
+    b_shape: Coord,
     c_type: DType,
-    c_shape: IntTuple,
+    c_shape: Coord,
     transpose_in_0: Bool,
 ](b_input: Some[TileTensorable]) -> IndexList[2]:
     """Computes the output shape for the `pack_matmul_b_shape_func` graph op.
@@ -2327,7 +2326,7 @@ def pack_matmul_b_shape_func_shape[
             the packed B will be used in.
         a_shape: Static shape of the A operand; `a_shape[0]` is the M
             dimension used to select the matmul kernel variant
-            (`UNKNOWN_VALUE` for dynamic M).
+            (dynamic for a runtime `Scalar[DType.int]` entry).
         b_shape: Static shape of the B operand.
         c_type: Element type of the C (output) operand of the matmul
             the packed B will be used in.
@@ -2344,7 +2343,7 @@ def pack_matmul_b_shape_func_shape[
     """
     comptime assert type_of(b_input).rank == 2, "b_input must be rank 2"
     var kernel_type_m = 0
-    comptime if a_shape[0] != UNKNOWN_VALUE:
+    comptime if a_shape.element_types[0].is_static_value:
         kernel_type_m = Int(a_shape[0])
     return pack_matmul_b_shape_func[
         a_type,

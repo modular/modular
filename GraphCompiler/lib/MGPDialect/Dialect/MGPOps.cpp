@@ -342,17 +342,21 @@ LogicalResult TensorSpecCreateOp::emitMojo(MOGG::EmitMojoState &state) {
   size_t rank = tensorSpec.getRank();
   MojoValue rawDimsRankParam = rank;
 
-  // Emit dims as an IntTuple, mapping dynamic dims to -1 (UNKNOWN_VALUE).
+  // Emit dims as a Coord of fully static components: a dynamic dim is
+  // `Idx[-1]`, the raw-dims encoding `!mgp.tensor_spec` itself uses. The dims
+  // ride as a runtime argument, not a comptime parameter, so the host KGEN
+  // interpreter never has to materialize them.
   SmallVector<int64_t> dimValues;
   dimValues.reserve(rank);
   llvm::transform(tensorSpec.getDims(), std::back_inserter(dimValues),
                   [](const std::optional<int64_t> &d) -> int64_t {
                     return d.value_or(-1);
                   });
-  MojoValue rawDimsParam = EmitMojoState::getAsIntTupleMojoValue(dimValues);
+  MojoValue rawDimsArg = EmitMojoState::getAsCoordMojoValue(dimValues);
 
-  MojoValue result = state.builder.var(function(
-      {rawDimsParam, rawDimsRankParam}, state.getMojoValuesFor(getOperands())));
+  SmallVector<MojoValue> operands = state.getMojoValuesFor(getOperands());
+  operands.insert(operands.begin(), rawDimsArg);
+  MojoValue result = state.builder.var(function({rawDimsRankParam}, operands));
   state.setMojoValueFor(getResult(), result);
 
   return success();

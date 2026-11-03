@@ -42,12 +42,10 @@ from layout import (
     Coord,
     CoordLike,
     DefaultEngine,
-    IntTuple,
     RowMajorLayout,
     TensorEngine,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
 )
@@ -233,13 +231,13 @@ def _unsafe_str_to_coord[
     str_slice: StaticString
 ]() -> DynamicCoord[.int64, len(str_slice.split("_"))]:
     """
-    Convert a string of integers separated by "_" to an IntTuple.
+    Convert a string of integers separated by "_" to a coordinate.
 
     Parameters:
         str_slice: The string of integers separated by "_".
 
     Returns:
-        The IntTuple.
+        The coordinate.
     """
     comptime size = len(str_slice.split("_"))
     var coord = DynamicCoord[.int64, size]()
@@ -446,22 +444,21 @@ struct NanCheckRaiseOp:
 # ===-----------------------------------------------------------------------===#
 
 
-# Type-level transpose stride computation. Permute input stride CoordLike types
-# according to a permutation IntTuple. This avoids the interpreter heap limit
-# that prevents direct IntTuple element access in comptime-for loops.
+# Type-level transpose stride computation. Permute input stride CoordLike
+# types according to a permutation Coord.
 comptime _TransposeStrideTypesTabulator[
-    permutations: IntTuple,
+    permutations: Coord,
     input_stride_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-]: CoordLike = Int if Int(
-    permutations[idx]
-) == UNKNOWN_VALUE else input_stride_types[
-    Int(permutations[idx])
+]: CoordLike = Scalar[DType.int] if not permutations.element_types[
+    idx
+].is_static_value else input_stride_types[
+    permutations.element_types[idx].static_value
 ]
 
 
 comptime _TransposeStrideTypes[
-    permutations: IntTuple,
+    permutations: Coord,
     rank: Int,
     input_stride_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[

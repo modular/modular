@@ -32,12 +32,10 @@ from max.gpu.host import DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
-    IntTuple,
+    CoordLike,
     TileTensor,
-    UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from layout.int_tuple import _IntTupleToCoordLike
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout as TileLayout
 from nn.concat import fused_concat
@@ -1568,8 +1566,8 @@ struct StaticBroadcastTo:
     def get_view_strides_list[
         out_rank: Int,
         in_rank: Int,
-        input_shape: IntTuple,
-        input_strides: IntTuple,
+        input_shape: TypeList[Trait=CoordLike, ...],
+        input_strides: TypeList[Trait=CoordLike, ...],
     ]() -> IndexList[out_rank]:
         var new_strides = IndexList[out_rank]()
         comptime delta = out_rank - in_rank
@@ -1578,12 +1576,16 @@ struct StaticBroadcastTo:
             comptime if i < delta:
                 new_strides[i] = 0
             else:
-                if Int(input_shape[i - delta]) == UNKNOWN_VALUE:
+                if not input_shape[i - delta].is_static_value:
                     new_strides[i] = -1
-                elif Int(input_shape[i - delta]) <= 1:
+                elif input_shape[i - delta].static_value <= 1:
                     new_strides[i] = 0
                 else:
-                    new_strides[i] = Int(input_strides[i - delta])
+                    new_strides[i] = (
+                        input_strides[i - delta]
+                        .static_value if input_strides[i - delta]
+                        .is_static_value else -1
+                    )
         return new_strides
 
     @staticmethod
@@ -1592,19 +1594,19 @@ struct StaticBroadcastTo:
         in_rank: Int,
         out_rank: Int,
         //,
-        output_static_shape: IntTuple,
+        output_static_shape: Coord,
     ](
         x: InputTensor[dtype=dtype, rank=in_rank, ...],
         output_shape: IndexList[out_rank],
         out result: InputTensor[
-            static_spec=x.static_spec.with_int_tuple_layout[
+            static_spec=x.static_spec.with_coord_layout[
                 out_rank,
                 output_static_shape,
                 Self.get_view_strides_list[
                     out_rank,
                     x.rank,
-                    x._static_shape_tuple,
-                    x._static_strides_tuple,
+                    x.static_spec.static_layout._shape_types,
+                    x.static_spec.static_layout._stride_types,
                 ](),
             ]()
         ],
@@ -1645,12 +1647,12 @@ struct StaticReshape:
         dtype: DType,
         output_rank: Int,
         //,
-        output_static_shape: IntTuple,
+        output_static_shape: Coord,
     ](
         input: InputTensor[dtype=dtype, ...],
         shape: IndexList[output_rank],
         out result: InputTensor[
-            static_spec=input.static_spec.with_row_major_int_tuple_layout[
+            static_spec=input.static_spec.with_row_major_coord_layout[
                 output_rank, output_static_shape
             ]()
         ],
@@ -1749,8 +1751,8 @@ struct Transpose:
         dtype: DType,
         rank: Int,
         //,
-        output_static_shape: IntTuple,
-        static_permutations: IntTuple,
+        output_static_shape: Coord,
+        static_permutations: Coord,
     ](
         input: InputTensor[dtype=dtype, rank=rank, ...],
         permutations: InputTensor[rank=1, ...],
@@ -1758,9 +1760,7 @@ struct Transpose:
             static_spec=input.static_spec.with_tile_layout[
                 rank,
                 TileLayout[
-                    shape_types=_IntTupleToCoordLike[
-                        DType.int, output_static_shape
-                    ],
+                    shape_types=output_static_shape.element_types,
                     stride_types=_TransposeStrideTypes[
                         static_permutations,
                         rank,
@@ -1777,7 +1777,7 @@ struct Transpose:
     def execute[
         target: StaticString,
         _trace_name: StaticString,
-        static_permutations: IntTuple,
+        static_permutations: Coord,
         dtype: DType,
         rank: Int,
     ](
@@ -1844,23 +1844,21 @@ struct Slice:
     def get_view_alignment[
         rank: Int,
         dtype: DType,
-        input_shape: IntTuple,
-        input_strides: IntTuple,
-        static_starts: IntTuple,
-        static_steps: IntTuple,
+        input_shape: TypeList[Trait=CoordLike, ...],
+        input_strides: TypeList[Trait=CoordLike, ...],
+        static_starts: Coord,
+        static_steps: Coord,
     ](input_alignment: Int) -> Int:
-        # Convert IntTuples to CoordLike types at the MLIR level, then
-        # use type-level access (no interpreter heap allocation).
-        comptime stride_types = _IntTupleToCoordLike[.int, input_strides]
-        comptime start_types = _IntTupleToCoordLike[.int, static_starts]
-        comptime step_types = _IntTupleToCoordLike[.int, static_steps]
+        comptime stride_types = input_strides
+        comptime start_types = static_starts.element_types
+        comptime step_types = static_steps.element_types
 
         # A stride that is only known at runtime still moves the pointer by a
         # whole multiple of this one, so it bounds the alignment the same way a
         # static stride does. 0 when nothing can be established.
-        comptime anchor = _dense_row_major_anchor_stride(
+        comptime anchor = _dense_row_major_anchor_stride[
             rank, input_shape, input_strides
-        )
+        ]()
 
         var alignment = input_alignment
         comptime for i in range(rank):
@@ -1919,9 +1917,9 @@ struct Slice:
         dtype: DType,
         rank: Int,
         //,
-        output_static_shape: IntTuple,
-        static_starts: IntTuple,
-        static_steps: IntTuple,
+        output_static_shape: Coord,
+        static_starts: Coord,
+        static_steps: Coord,
     ](
         input: InputTensor[dtype=dtype, rank=rank, ...],
         starts: InputTensor[rank=1, ...],
@@ -1931,21 +1929,19 @@ struct Slice:
             static_spec=input.static_spec.with_tile_layout_and_alignment[
                 rank,
                 TileLayout[
-                    shape_types=_IntTupleToCoordLike[
-                        DType.int, output_static_shape
-                    ],
+                    shape_types=output_static_shape.element_types,
                     stride_types=_SliceStrideTypes[
                         rank,
                         input.static_spec.static_layout._stride_types,
-                        _IntTupleToCoordLike[.int, static_steps],
+                        static_steps.element_types,
                     ],
                 ],
             ](
                 Self.get_view_alignment[
                     rank,
                     dtype,
-                    input._static_shape_tuple,
-                    input._static_strides_tuple,
+                    input.static_spec.static_layout._shape_types,
+                    input.static_spec.static_layout._stride_types,
                     static_starts,
                     static_steps,
                 ](input.alignment),
@@ -1973,8 +1969,8 @@ struct Slice:
     def execute[
         target: StaticString,
         _trace_name: StaticString,
-        static_starts: IntTuple,
-        static_steps: IntTuple,
+        static_starts: Coord,
+        static_steps: Coord,
         dtype: DType,
         rank: Int,
     ](

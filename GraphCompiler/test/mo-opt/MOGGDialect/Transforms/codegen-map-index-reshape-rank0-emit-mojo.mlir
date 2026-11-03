@@ -4,10 +4,10 @@
 // the reduce's epilogue as a store-index transform. `reduce.mul` still lowers to
 // a kernel with an epilogue. Every emitter represents a
 // rank-0 shape as rank-1 extent-1, so the rank handed to mogg_index_reshape has
-// to say 1 as well -- a `to_rank` of 0 against a rank-1 `to_static_shape` cannot
+// to say 1 as well -- a `to_rank` of 0 against a rank-1 to-shape cannot
 // bind, and the store it feeds is a rank-1 tile tensor either way.
 
-// CHECK: mogg_index_reshape[to_rank = 1, from_static_shape = [[SHAPE:.*]], to_static_shape = [[SHAPE]]]
+// CHECK: mogg_index_reshape[to_rank = 1]
 // CHECK-NOT: mogg_index_reshape[to_rank = 0
 
 mo.graph @reduce_reshape_to_scalar() -> (!mo.tensor<[2], f32>) {

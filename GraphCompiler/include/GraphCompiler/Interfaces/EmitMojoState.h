@@ -420,19 +420,20 @@ public:
         .str();
   }
 
-  /// Dims as an IntTuple Mojo value, with kDynamic as -1 (UNKNOWN_VALUE).
-  static MojoValue getAsIntTupleMojoValue(ArrayRef<int64_t> dims) {
+  /// Dims as a `Coord` Mojo value: static dims as `Idx[N]` components,
+  /// dynamic dims (kDynamic) as runtime `Int(-1)` components. Rank-0
+  /// tensors become rank-1, as everywhere else.
+  static MojoValue getAsCoordMojoValue(ArrayRef<int64_t> dims) {
     SmallVector<MojoValue> dimsAsMojoValues;
     for (auto dim : dims) {
       if (dim == mlir::ShapedType::kDynamic)
-        dimsAsMojoValues.push_back(-1);
+        dimsAsMojoValues.push_back(MojoValue(kStructInt)({}, {MojoValue(-1)}));
       else
-        dimsAsMojoValues.push_back(std::to_string(dim));
+        dimsAsMojoValues.push_back(getComptimeIdx(dim));
     }
-    // Rank-0 tensors become rank-1.
     if (dimsAsMojoValues.empty())
-      dimsAsMojoValues.push_back(1);
-    return MojoValue(kStructIntTuple)({}, dimsAsMojoValues);
+      dimsAsMojoValues.push_back(getComptimeIdx(1));
+    return MojoValue(kStructCoord)({}, dimsAsMojoValues);
   }
 
   MojoValue getShapeAsIndexListMojoValue(MOSH::ShapeAttr shapeAttr,

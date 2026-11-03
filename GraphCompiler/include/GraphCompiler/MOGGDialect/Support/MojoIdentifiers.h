@@ -303,7 +303,6 @@ constexpr llvm::StringLiteral kStructColor = "max.runtime.tracing.Color";
 constexpr llvm::StringLiteral kFnTraceStart = "start";
 constexpr llvm::StringLiteral kFnTraceEnd = "end";
 constexpr llvm::StringLiteral kParameterColor = "color";
-constexpr llvm::StringLiteral kStructIntTuple = "layout.IntTuple";
 constexpr llvm::StringLiteral kStructCoord = "layout.Coord";
 constexpr llvm::StringLiteral kAliasIdx = "layout.Idx";
 constexpr llvm::StringLiteral kFnRowMajor = "layout.row_major";
@@ -371,7 +370,6 @@ constexpr llvm::StringLiteral kFnMsSimdStoreIntoTensorPointer =
 /// Returns a tile kernel's `(rows, cols)` tile shape.
 constexpr llvm::StringLiteral kFnGetKernelTileShape =
     "managed_tensor_slice.get_kernel_tile_shape";
-constexpr llvm::StringLiteral kFnToIndexList = "layout.to_index_list";
 /// Fully qualified because `std.utils` does not re-export `coord`.
 constexpr llvm::StringLiteral kFnCoordToIndexList =
     "std.utils.coord.coord_to_index_list";

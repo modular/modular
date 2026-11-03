@@ -26,7 +26,8 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
-from layout import Coord, IntTuple, TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
+from layout.int_tuple import coord_to_int_tuple
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
@@ -526,9 +527,9 @@ struct ConvCPU:
         input_layout: StaticString,
         filter_layout: StaticString,
         has_epilogue_fusion: Bool,
-        static_strides: IntTuple,
-        static_dilations: IntTuple,
-        static_padding: IntTuple,
+        static_strides: Coord,
+        static_dilations: Coord,
+        static_padding: Coord,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -573,16 +574,20 @@ struct ConvCPU:
                 pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
                 pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
 
-        comptime input_shape_val = Int(
-            input._static_shape_tuple[input.rank - 1]
-        )  # input C, NHWC
-        comptime filter_shape_val = Int(
-            filter._static_shape_tuple[filter.rank - 2]
-        )  # filter C, RSCF or FRSCf
+        comptime input_shape_val = (
+            input.static_spec.static_layout._shape_types[
+                input.rank - 1
+            ].static_value
+        )  # input C, NHWC; -1 where dynamic
+        comptime filter_shape_val = (
+            filter.static_spec.static_layout._shape_types[
+                filter.rank - 2
+            ].static_value
+        )  # filter C, RSCF or FRSCf; -1 where dynamic
         comptime conv_attr = ConvInfoStatic[input.rank - 2](
-            static_padding,
-            static_strides,
-            static_dilations,
+            coord_to_int_tuple[*static_padding.element_types](),
+            coord_to_int_tuple[*static_strides.element_types](),
+            coord_to_int_tuple[*static_dilations.element_types](),
             input_shape_val,
             filter_shape_val,
         )
@@ -679,9 +684,9 @@ struct ConvGPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        static_strides: IntTuple,
-        static_dilations: IntTuple,
-        static_padding: IntTuple,
+        static_strides: Coord,
+        static_dilations: Coord,
+        static_padding: Coord,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -737,9 +742,9 @@ struct ConvGPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        static_strides: IntTuple,
-        static_dilations: IntTuple,
-        static_padding: IntTuple,
+        static_strides: Coord,
+        static_dilations: Coord,
+        static_padding: Coord,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -1338,12 +1343,12 @@ struct PackConvFilterShape:
 
 @extensibility.register_shape_function("pack_conv_filter_shape")
 def pack_conv_filter_shape_fn[
-    input_shape: IntTuple,
-    filter_shape: IntTuple,
-    output_shape: IntTuple,
-    strides: IntTuple,
-    dilations: IntTuple,
-    paddings: IntTuple,
+    input_shape: Coord,
+    filter_shape: Coord,
+    output_shape: Coord,
+    strides: Coord,
+    dilations: Coord,
+    paddings: Coord,
     num_groups: Int,
 ](filter_buf: Some[TileTensorable]) -> IndexList[type_of(filter_buf).rank + 1]:
     """
@@ -1368,12 +1373,12 @@ def pack_conv_filter_shape_fn[
     return rebind[IndexList[type_of(filter_buf).rank + 1]](
         pack_filter_shape_conv[
             type_of(filter_buf).dtype,
-            input_shape,
-            filter_shape,
-            output_shape,
-            strides,
-            dilations,
-            paddings,
+            coord_to_int_tuple[*input_shape.element_types](),
+            coord_to_int_tuple[*filter_shape.element_types](),
+            coord_to_int_tuple[*output_shape.element_types](),
+            coord_to_int_tuple[*strides.element_types](),
+            coord_to_int_tuple[*dilations.element_types](),
+            coord_to_int_tuple[*paddings.element_types](),
             num_groups,
         ](filter_buf.to_tile_tensor())
     )

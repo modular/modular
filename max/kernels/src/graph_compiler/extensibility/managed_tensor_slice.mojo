@@ -50,17 +50,16 @@ from max.runtime.tracing import trace_arg
 from layout import (
     Coord,
     CoordLike,
-    IntTuple,
     Layout,
     TileTensor,
     coord_to_index_list,
 )
+from layout.int_tuple import coord_to_int_tuple
 from layout.coord import (
     ComptimeInt,
     _IntToComptimeInt,
     crd2idx,
 )
-from layout.int_tuple import _IntTupleToCoordLike, coord_to_int_tuple
 from layout.tile_io import TileCopier
 from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
 
@@ -218,19 +217,19 @@ comptime _IndexListToTileLayout[
 Negative values (-1) become Scalar, non-negative become ComptimeInt."""
 
 
-comptime _RowMajorIntTupleTileLayout[
-    shape: IntTuple,
-] = _RowMajorTileLayout[_IntTupleToCoordLike[.int, shape]]
-"""A TileLayout with row-major strides derived from an IntTuple shape."""
+comptime _RowMajorCoordTileLayout[
+    shape: Coord,
+] = _RowMajorTileLayout[shape.element_types]
+"""A TileLayout with row-major strides derived from a Coord shape."""
 
 
-comptime _IntTupleShapeIndexListStridesToTileLayout[
-    shape: IntTuple, strides: IndexList
+comptime _CoordShapeIndexListStridesToTileLayout[
+    shape: Coord, strides: IndexList
 ] = TileLayout[
-    shape_types=_IntTupleToCoordLike[.int, shape],
+    shape_types=shape.element_types,
     stride_types=_IndexListToCoordLike[strides],
 ]
-"""Convert an IntTuple shape and IndexList strides to a TileLayout."""
+"""Convert a Coord shape and IndexList strides to a TileLayout."""
 
 
 def get_row_major_tensor_spec_static[
@@ -506,6 +505,20 @@ trait ElementwiseFusionTile(TrivialRegisterPassable):
         ...
 
 
+def _coord_sentinel_value[*element_types: CoordLike]() -> Coord[*element_types]:
+    """A `Coord` of these types with each dynamic component set to -1.
+
+    Static components carry their compile-time values; a `Scalar` component
+    (a dynamic dim) carries -1, the raw-dims encoding of an unknown dimension,
+    so value consumers see the same sentinel the old IntTuple aliases did.
+    """
+    var result = Coord[*element_types]()
+    comptime for i in range(Coord[*element_types].rank):
+        comptime if not element_types[i].is_static_value:
+            result[i] = rebind[type_of(result[i])](-1)
+    return result
+
+
 # Compile time Tensor information
 struct StaticTensorSpec[
     dtype: DType,
@@ -525,13 +538,14 @@ struct StaticTensorSpec[
     `ManagedTensorSlice` instances parameterized by a `StaticTensorSpec`.
     """
 
-    # IntTuple aliases for static shape/strides.
-    comptime shape_tuple = coord_to_int_tuple[
-        *Self.static_layout._shape_types
-    ]()
-    comptime strides_tuple = coord_to_int_tuple[
-        *Self.static_layout._stride_types
-    ]()
+    # Coord aliases for static shape/strides: static dims carry their
+    # compile-time values, dynamic dims the -1 unknown-dim sentinel.
+    comptime shape_tuple: Coord[*Self.static_layout._shape_types] = (
+        _coord_sentinel_value[*Self.static_layout._shape_types]()
+    )
+    comptime strides_tuple: Coord[*Self.static_layout._stride_types] = (
+        _coord_sentinel_value[*Self.static_layout._stride_types]()
+    )
 
     var alignment: Int
     var address_space: AddressSpace
@@ -667,14 +681,14 @@ struct StaticTensorSpec[
         }
 
     @inline(.always)
-    def with_int_tuple_layout[
-        new_rank: Int, new_shape: IntTuple, new_strides: IndexList
+    def with_coord_layout[
+        new_rank: Int, new_shape: Coord, new_strides: IndexList
     ](
         self,
     ) -> StaticTensorSpec[
         Self.dtype,
         new_rank,
-        static_layout=_IntTupleShapeIndexListStridesToTileLayout[
+        static_layout=_CoordShapeIndexListStridesToTileLayout[
             new_shape, new_strides
         ],
     ]:
@@ -684,12 +698,12 @@ struct StaticTensorSpec[
         }
 
     @inline(.always)
-    def with_int_tuple_layout_and_alignment[
-        new_rank: Int, new_shape: IntTuple, new_strides: IndexList
+    def with_coord_layout_and_alignment[
+        new_rank: Int, new_shape: Coord, new_strides: IndexList
     ](self, new_alignment: Int) -> StaticTensorSpec[
         Self.dtype,
         new_rank,
-        static_layout=_IntTupleShapeIndexListStridesToTileLayout[
+        static_layout=_CoordShapeIndexListStridesToTileLayout[
             new_shape, new_strides
         ],
     ]:
@@ -699,14 +713,14 @@ struct StaticTensorSpec[
         }
 
     @inline(.always)
-    def with_row_major_int_tuple_layout[
-        new_rank: Int, new_shape: IntTuple
+    def with_row_major_coord_layout[
+        new_rank: Int, new_shape: Coord
     ](
         self,
     ) -> StaticTensorSpec[
         Self.dtype,
         new_rank,
-        static_layout=_RowMajorIntTupleTileLayout[new_shape],
+        static_layout=_RowMajorCoordTileLayout[new_shape],
     ]:
         return {
             self.alignment,
@@ -810,10 +824,14 @@ struct StaticTensorSpec[
             coord_to_int_tuple[*Self.static_layout._stride_types](),
         )
 
-    comptime static_size: Int = Layout(
-        coord_to_int_tuple[*Self.static_layout._shape_types](),
-        coord_to_int_tuple[*Self.static_layout._stride_types](),
-    ).size()
+    # -1 (UNKNOWN_VALUE) when any dim is dynamic, as the old
+    # `product(IntTuple)` reducer returned, rather than multiplying the
+    # dynamic dims' -1 through.
+    comptime static_size: Int = (
+        Self.static_layout.static_product if Coord[
+            *Self.static_layout._shape_types
+        ].all_dims_known else -1
+    )
 
     def get_internals(self) -> StaticTensorSpecInternal[Self.dtype, Self.rank]:
         """
@@ -1277,7 +1295,7 @@ struct ManagedTensorSlice[
 
     comptime address_space = Self.static_spec.address_space
     comptime alignment = Self.static_spec.alignment
-    # IntTuple aliases for static shape/strides.
+    # Coord aliases for static shape/strides.
     comptime _static_shape_tuple = Self.static_spec.shape_tuple
     comptime _static_strides_tuple = Self.static_spec.strides_tuple
 

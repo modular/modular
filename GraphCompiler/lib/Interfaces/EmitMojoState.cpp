@@ -558,7 +558,7 @@ ErrorOr<MojoValue> EmitMojoState::inferDefaultKernelParamValue(
       SmallVector<int64_t> values;
       for (auto val : arrAttr)
         values.push_back(cast<IntegerAttr>(val).getValue().getSExtValue());
-      return EmitMojoState::getAsIntTupleMojoValue(values);
+      return EmitMojoState::getAsCoordMojoValue(values);
     } else
       return Error(llvm::formatv("Unsupported custom param MLIR type for `{}`",
                                  paramName));

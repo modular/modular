@@ -113,12 +113,12 @@ def _check_pack_views[length: Int, ngpus: Int]() raises:
     comptime specs = StaticTensorSpecList[
         ParameterList.of[spec.get_internals(), spec.get_internals()](),
         ParameterList.of[
-            to_index_list[1](spec.shape_tuple),
-            to_index_list[1](spec.shape_tuple),
+            coord_to_index_list(spec.shape_tuple),
+            coord_to_index_list(spec.shape_tuple),
         ](),
         ParameterList.of[
-            to_index_list[1](spec.strides_tuple),
-            to_index_list[1](spec.strides_tuple),
+            coord_to_index_list(spec.strides_tuple),
+            coord_to_index_list(spec.strides_tuple),
         ](),
     ]()
     comptime SlotPtr = Pointer[
@@ -295,10 +295,10 @@ def _run[ngpus: Int, length: Int](ctxs: Array[DeviceContext[], ngpus]) raises:
     comptime sig_spec = get_row_major_tensor_spec_static[
         DType.uint8, 1, signal_bytes
     ]()
-    comptime in_shape = to_index_list[1](in_spec.shape_tuple)
-    comptime in_strides = to_index_list[1](in_spec.strides_tuple)
-    comptime sig_shape = to_index_list[1](sig_spec.shape_tuple)
-    comptime sig_strides = to_index_list[1](sig_spec.strides_tuple)
+    comptime in_shape = coord_to_index_list(in_spec.shape_tuple)
+    comptime in_strides = coord_to_index_list(in_spec.strides_tuple)
+    comptime sig_shape = coord_to_index_list(sig_spec.shape_tuple)
+    comptime sig_strides = coord_to_index_list(sig_spec.strides_tuple)
 
     comptime in_specs = StaticTensorSpecList[
         ParameterList.splat[ngpus, in_spec.get_internals()](),
