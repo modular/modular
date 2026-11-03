@@ -390,7 +390,7 @@ def _get_global_handle[
 
     # Otherwise, we have not initialized the handle yet.
     var handle_ptr = alloc(AllocLayout[Handle[backend]].single()).unsafe_leak()
-    with KernelLoadScope(ctx.assert_default_target()):
+    with KernelLoadScope(ctx):
         handle_ptr.unsafe_write(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),
@@ -556,9 +556,7 @@ def matmul[
             transpose_b,
         )
 
-    with KernelLoadScope(ctx.assert_default_target()), Trace[
-        TraceLevel.OP, target=StaticString("gpu")
-    ](
+    with KernelLoadScope(ctx), Trace[TraceLevel.OP, target=StaticString("gpu")](
         String(t"{handle.resolved_backend}_matmul"),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),

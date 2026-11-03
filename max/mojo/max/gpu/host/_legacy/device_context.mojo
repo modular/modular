@@ -4267,6 +4267,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     comptime CPU = DeviceContext[CompilationTarget.current()]
     """DeviceContext type for the current CPU target."""
 
+    comptime Unknown = DeviceContext[CompilationTarget._unknown()]
+    """DeviceContext type whose compilation target is not statically known."""
+
     comptime Optional[
         target: CompilationTarget = default_accelerator()
     ] = Optional[DeviceContext[target]]
@@ -4630,6 +4633,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             t" {call_location()}"
         )
         return rebind[DeviceContext[]](self)
+
+    @inline(.always)
+    def into_unknown_target(self) -> DeviceContext.Unknown:
+        """Erases this DeviceContext's static target.
+
+        For code that only uses the context's handle, so it neither needs nor
+        should assume a target.
+
+        Returns:
+            This device context with an unknown target.
+        """
+        return rebind[DeviceContext.Unknown](self)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

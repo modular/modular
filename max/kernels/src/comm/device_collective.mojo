@@ -66,7 +66,7 @@ def _launch_device_collective[
     comptime for i in range(num_devices):
         worker_ids[i] = task_id_for_device(Int(dev_ctxs[i].device().id))
 
-    var gate = CollectiveGate(dev_ctxs[0].assert_default_target(), num_devices)
+    var gate = CollectiveGate(dev_ctxs[0], num_devices)
     var tg = TaskGroup()
     # The deferred dispatch adds tasks to the group it runs in. The group
     # outlives it, which the origin checker cannot see through the capture.
@@ -90,7 +90,7 @@ def _launch_device_collective[
             != 0
         )
         # Lets this worker's own loads through the gate its collective holds.
-        with CollectiveEnqueueScope(dev_ctxs[index].assert_default_target()):
+        with CollectiveEnqueueScope(dev_ctxs[index]):
             try:
                 func[index]()
             except e:

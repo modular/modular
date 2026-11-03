@@ -452,6 +452,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     comptime CPU = DeviceContext[CompilationTarget.current()]
     """DeviceContext type for the current CPU target."""
 
+    comptime Unknown = DeviceContext[CompilationTarget._unknown()]
+    """DeviceContext type whose compilation target is not statically known."""
+
     comptime Optional[
         target: CompilationTarget = default_accelerator()
     ] = Optional[DeviceContext[target]]
@@ -853,6 +856,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         )
         return rebind[DeviceContext[]](self)
 
+    @inline(.always)
+    def into_unknown_target(self) -> DeviceContext.Unknown:
+        """Erases this DeviceContext's static target.
+
+        For code that only uses the context's handle, so it neither needs nor
+        should assume a target.
+
+        Returns:
+            This device context with an unknown target.
+        """
+        return rebind[DeviceContext.Unknown](self)
+
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
@@ -1090,7 +1105,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # The HAL uses logical events where creation and recording happen in
         # one step. To work around this, initially create a DeviceEvent without
         # a backing HAL event.
-        return DeviceEvent._create_unrecorded(self.assert_default_target())
+        return DeviceEvent._create_unrecorded(self)
 
     @inline(.always)
     def compile_function[
@@ -1138,7 +1153,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         return DeviceFunction[func, Self._HALHooks.FunctionWrapper](
-            self.assert_default_target(), func_attribute=func_attribute
+            self, func_attribute=func_attribute
         )
 
     @inline(.always)
@@ -1255,9 +1270,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     block_dim, location=call_location()
                 )
 
-            var gpu_kernel = DeviceFunction[FuncType.__call__](
-                self.assert_default_target()
-            )
+            var gpu_kernel = DeviceFunction[FuncType.__call__](self)
 
             gpu_kernel._do_call_closure_checked(
                 self,
@@ -1512,7 +1525,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     block_dim, location=call_location()
                 )
             var gpu_kernel = DeviceFunction[FuncType.__call__](
-                self.assert_default_target(), func_attribute=func_attribute
+                self, func_attribute=func_attribute
             )
             gpu_kernel._call_closure_checked(
                 self,
@@ -1647,9 +1660,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If loading the function fails or the assembly code is invalid.
         """
-        return DeviceExternalFunction(
-            self.assert_default_target(), function_name^, asm
-        )
+        return DeviceExternalFunction(self, function_name^, asm)
 
     @inline(.always)
     def enqueue_function[
@@ -2869,7 +2880,7 @@ struct DeviceFunction[
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_DeviceFunctionInner]
     # Null until the C++ runtime shim provides it; read by the CUDA/HIP
     # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
@@ -2888,7 +2899,7 @@ struct DeviceFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext[],
+        ctx: DeviceContext,
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
@@ -2925,7 +2936,7 @@ struct DeviceFunction[
         var func_handle = ctx._context[].get_or_load_function(
             info.asm, info.function_name
         )
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._handle = None
         self._func_info = info
         self._inner = ArcPointer(
@@ -3415,7 +3426,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_ExternalFunctionInner]
 
     # ===-------------------------------------------------------------------===#
@@ -3425,7 +3436,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext[],
+        ctx: DeviceContext,
         var function_name: String,
         asm: StringSlice,
     ) raises:
@@ -3440,7 +3451,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         var func_handle = ctx._context[].get_or_load_function_dynamic(
             asm, function_name
         )
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._inner = ArcPointer(_ExternalFunctionInner(func_handle))
 
     # ===-------------------------------------------------------------------===#
@@ -3973,9 +3984,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 _check_dim["DeviceStream.enqueue_function", "block_dim"](
                     block_dim, location=call_location()
                 )
-            var gpu_kernel = DeviceFunction[FuncType.__call__](
-                self._ctx.assert_default_target()
-            )
+            var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
             gpu_kernel._call_closure_checked(
                 self,
                 func,
@@ -4029,9 +4038,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 _check_dim["DeviceStream.enqueue_function", "block_dim"](
                     block_dim, location=call_location()
                 )
-            var gpu_kernel = DeviceFunction[FuncType.__call__](
-                self._ctx.assert_default_target()
-            )
+            var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
             gpu_kernel._do_call_closure_checked(
                 self,
                 execution_config,
@@ -4319,7 +4326,7 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
     # `_event` is an `ArcPointer[Optional[...]]` so that all copies of a
     # DeviceEvent  share the same backing event, which matches the behavior
     # of the existing reference-counted DeviceEvent implementation.
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _event: ArcPointer[Optional[Event[EVENT_FLAG_CPU_VISIBLE]]]
 
     # ===-------------------------------------------------------------------===#
@@ -4327,7 +4334,7 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext[]) raises:
+    def __init__(out self, ctx: DeviceContext) raises:
         """Creates a new event recorded on the given context's default stream.
 
         Args:
@@ -4337,13 +4344,13 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
             If event creation or recording fails.
         """
         var hal_event = ctx._stream[].record_event[EVENT_FLAG_CPU_VISIBLE]()
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._event = ArcPointer(Optional(hal_event^))
 
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext[],
+        ctx: DeviceContext,
         var event: Optional[Event[EVENT_FLAG_CPU_VISIBLE]],
     ):
         """Initializes a DeviceEvent wrapping a possibly-empty HAL event.
@@ -4352,12 +4359,12 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
             ctx: The device context that owns the event.
             event: The (possibly-unrecorded) HAL event to wrap.
         """
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._event = ArcPointer(event^)
 
     @doc_hidden
     @staticmethod
-    def _create_unrecorded(ctx: DeviceContext[]) -> DeviceEvent:
+    def _create_unrecorded(ctx: DeviceContext) -> DeviceEvent:
         """Returns a `DeviceEvent` with no HAL event allocated yet."""
         return DeviceEvent(ctx, Optional[Event[EVENT_FLAG_CPU_VISIBLE]](None))
 
@@ -5225,15 +5232,15 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
 
 
 struct _HostMappedBuffer[dtype: DType]:
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _dev_buf: DeviceBuffer[Self.dtype]
     var _cpu_buf: HostBuffer[Self.dtype]
 
     def __init__(
-        out self, ctx: DeviceContext[], buf: DeviceBuffer[Self.dtype]
+        out self, ctx: DeviceContext, buf: DeviceBuffer[Self.dtype]
     ) raises:
         var cpu_buf = ctx.enqueue_create_host_buffer[Self.dtype](len(buf))
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._dev_buf = buf
         self._cpu_buf = cpu_buf
 
