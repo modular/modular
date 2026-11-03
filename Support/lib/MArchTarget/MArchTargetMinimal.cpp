@@ -189,6 +189,29 @@ std::string M::getHostCPUFeatures() {
   return encodeFeatures(*targetInfoOr);
 }
 
+/// Expands an AArch64 `-march` (base architecture plus `+ext`/`+noext`
+/// modifiers) into LLVM target features, as the clang driver's
+/// getAArch64ArchFeaturesFromMarch does. Returns false if the base is not an
+/// AArch64 architecture.
+static bool
+getAArch64ArchFeaturesFromMarch(StringRef march,
+                                std::vector<std::string> &features) {
+  auto [base, mods] = march.split('+');
+  const llvm::AArch64::ArchInfo *archInfo = llvm::AArch64::parseArch(base);
+  if (!archInfo)
+    return false;
+  llvm::AArch64::ExtensionSet exts;
+  exts.addArchDefaults(*archInfo);
+  SmallVector<StringRef> modList;
+  mods.split(modList, '+', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  // Unknown modifiers are ignored here; processExts still forwards them
+  // through the FeatureMap, as before.
+  for (StringRef mod : modList)
+    exts.parseModifier(mod);
+  exts.toLLVMFeatureList(features);
+  return true;
+}
+
 ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
                                           StringRef march, StringRef mcpu,
                                           StringRef mtune) {
