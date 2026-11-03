@@ -191,25 +191,24 @@ std::string M::getHostCPUFeatures() {
 
 /// Expands an AArch64 `-march` (base architecture plus `+ext`/`+noext`
 /// modifiers) into LLVM target features, as the clang driver's
-/// getAArch64ArchFeaturesFromMarch does. Returns false if the base is not an
-/// AArch64 architecture.
-static bool
+/// getAArch64ArchFeaturesFromMarch does, and appends them to `features`.
+/// Does nothing if the base is not an AArch64 architecture.
+static void
 getAArch64ArchFeaturesFromMarch(StringRef march,
                                 std::vector<std::string> &features) {
   auto [base, mods] = march.split('+');
   const llvm::AArch64::ArchInfo *archInfo = llvm::AArch64::parseArch(base);
   if (!archInfo)
-    return false;
+    return;
   llvm::AArch64::ExtensionSet exts;
   exts.addArchDefaults(*archInfo);
   SmallVector<StringRef> modList;
   mods.split(modList, '+', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-  // Unknown modifiers are ignored here; processExts still forwards them
-  // through the FeatureMap, as before.
+  // Unknown modifiers are ignored here; processExts forwards them through the
+  // FeatureMap.
   for (StringRef mod : modList)
     exts.parseModifier(mod);
   exts.toLLVMFeatureList(features);
-  return true;
 }
 
 ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
@@ -333,7 +332,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
 
   // Reset the vendor name if it's not one known to LLVM. This can occur when
   // the triple arch name is set to a value containing hyphens, such as
-  // "armv8.2-a". In this case, the vendor is set to "a", which is unknown.
+  // "armv7-a". In this case, the vendor is set to "a", which is unknown.
   if (triple.getVendor() == Triple::UnknownVendor)
     triple.setVendor(Triple::VendorType::UnknownVendor);
 
