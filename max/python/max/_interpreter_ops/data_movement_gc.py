@@ -30,7 +30,7 @@ the deleted Mojo kernels used), so the sweep is ops x widths, not ops x
 widths x ranks.
 
 ``MutableStoreSlice`` is the family's one unusual member: its graph takes
-an in-place ``BufferType`` input, emits ``rmo.MoMutableStoreSliceOp`` with
+an in-place ``BufferType`` input, emits ``mo.MutableStoreSliceOp`` with
 the device-chain idiom from ``max.graph.ops.buffer_store_slice``, and has
 no tensor outputs (``graph.output()`` packs the chain).
 
@@ -348,7 +348,7 @@ _register_spec(mo.BroadcastToOp, _build_broadcast_graph)
 def _build_store_slice_graph(
     module: Module, device: Device, dtype: DType
 ) -> None:
-    """rmo.MoMutableStoreSliceOp writing in place into a BufferType input.
+    """mo.MutableStoreSliceOp writing in place into a BufferType input.
 
     Chain idiom copied from ``max.graph.ops.buffer_store_slice``
     (graph/ops/buffer.py), but with runtime starts/stops/steps operands
@@ -374,15 +374,15 @@ def _build_store_slice_graph(
         src, starts, stops, steps = (v.tensor for v in graph.inputs[1:])
         in_chain = Graph.current.device_chains[dst.device]
         out_chain = Graph.current._add_op_generated(
-            rmo.MoMutableStoreSliceOp,
+            mo.MutableStoreSliceOp,
             mo.ChainType(),
             dst,
             src,
             starts,
             stops,
             steps,
-            kgen.ParamDeclArrayAttr([]),
             in_chain,
+            kgen.ParamDeclArrayAttr([]),
         )[-1]
         Graph.current.device_chains[dst.device] = out_chain
         graph.output()

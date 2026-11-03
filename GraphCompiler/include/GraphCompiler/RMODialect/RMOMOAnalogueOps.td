@@ -1527,68 +1527,6 @@ def RMO_MOCumSumOp : RMO_MOAnaloguePureTensorOp<"cumsum", [
   }];
 }
 
-def RMO_MOMutableLoadOp : RMO_MOAnalogueOp<"mutable.load", [
-  AllDTypesMatch<["inBuffer", "outTensor"]>,
-  DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
-  DeclareOpInterfaceMethods<MO_MutableOpInterface>,
-  DeclareOpInterfaceMethods<RMO_MOAnalogue, ["inferMOTypes"]>,
-]> {
-  let arguments = (ins
-    MO_Buffer:$inBuffer,
-    MO_ParamDecls:$outputParamDecls,
-    MO_Chain:$inChain
-  );
-  let results = (outs MO_Tensor:$outTensor, MO_Chain:$outChain);
-
-  let assemblyFormat = [{
-    `` custom<ParamDecls>($outputParamDecls) `(` operands `)` attr-dict `:`
-    functional-type(operands, results)
-  }];
-}
-
-def RMO_MOMutableStoreOp : RMO_MOAnalogueOp<"mutable.store", [
-  AllDTypesMatch<["inBuffer", "inTensor"]>,
-  DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
-  DeclareOpInterfaceMethods<MO_MutableOpInterface>,
-  DeclareOpInterfaceMethods<RMO_MOAnalogue, ["inferMOTypes"]>,
-]> {
-  let arguments = (ins
-    MO_Buffer:$inBuffer,
-    MO_Tensor:$inTensor,
-    MO_ParamDecls:$outputParamDecls,
-    MO_Chain:$inChain
-  );
-
-  let results = (outs MO_Chain:$outChain);
-
-  let assemblyFormat = [{
-    `` custom<ParamDecls>($outputParamDecls) `(` operands `)` attr-dict `:`
-    functional-type(operands, results)
-  }];
-}
-
-def RMO_MOMutableStoreSliceOp : RMO_MOAnalogueOp<"mutable.store.slice", [
-  AllDTypesMatch<["inBuffer", "slice"]>,
-  DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
-  DeclareOpInterfaceMethods<MO_MutableOpInterface>,
-]> {
-  let arguments = (ins
-    MO_Buffer:$inBuffer,
-    MO_Tensor:$slice,
-    MO_IndicesVectorIfRanked:$start,
-    MO_IndicesVectorIfRanked:$stop,
-    MO_IndicesVectorIfRanked:$step,
-    MO_ParamDecls:$outputParamDecls,
-    MO_Chain:$inChain
-  );
-  let results = (outs MO_Chain:$outChain);
-
-  let assemblyFormat = [{
-    `` custom<ParamDecls>($outputParamDecls) `(` operands `)` attr-dict `:`
-    functional-type(operands, results)
-  }];
-}
-
 def RMO_MOTransferOp : RMO_MOAnalogueOp<"transfer"> {
   let arguments = (ins
     MO_Tensor:$input,

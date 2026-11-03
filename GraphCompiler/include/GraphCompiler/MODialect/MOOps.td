@@ -4957,6 +4957,7 @@ def MO_MutableStoreOp : MO_MutableOp<"mutable.store", [
 }
 
 def MO_MutableStoreSliceOp : MO_MutableOp<"mutable.store.slice", [
+  AllDTypesMatch<["inBuffer", "slice"]>,
   MO_SingleDeviceWithHostOperands<
     /*hostOperands*/["start", "stop", "step"],
     /*deviceOperands*/["inBuffer", "slice"]>,

@@ -315,9 +315,6 @@ RMO_MOMaxPoolOp                # MoMaxPoolOp
 RMO_MOMinOp                    # MoMinOp; declares output params; graph.py reaches it structurally
 RMO_MOModOp                    # MoModOp; declares output params; graph.py reaches it structurally
 RMO_MOMulOp                    # MoMulOp; declares output params; graph.py reaches it structurally
-RMO_MOMutableLoadOp            # MoMutableLoadOp
-RMO_MOMutableStoreOp           # MoMutableStoreOp
-RMO_MOMutableStoreSliceOp      # MoMutableStoreSliceOp
 RMO_MONonMaximumSuppressionOp  # MoNonMaximumSuppressionOp
 RMO_MONotEqualOp               # MoNotEqualOp; declares output params; graph.py reaches it structurally
 RMO_MOOrOp                     # MoOrOp; declares output params; graph.py reaches it structurally

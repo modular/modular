@@ -344,77 +344,6 @@ struct LegalizeRMOMOAnalogue
   }
 };
 
-struct LegalizeMutableLoadOp : public OpRewritePattern<RMO::MOMutableLoadOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RMO::MOMutableLoadOp op,
-                                PatternRewriter &rewriter) const override {
-    auto graphOp = op->getParentOfType<MO::GraphOp>();
-
-    SmallVector<Type> moOperandTypes, moResultTypes;
-    SmallVector<SmallVector<KGEN::ParamDeclAttr>> moInputParamDecls;
-    SmallVector<SmallVector<KGEN::ParamDeclAttr>> moOutputParamDecls;
-
-    RMO::MOAnalogue rma = op;
-    rma.inferMOTypes(graphOp, moOperandTypes, moResultTypes, moInputParamDecls,
-                     moOutputParamDecls);
-
-    SmallVector<Value> moOperands;
-    moOperands.push_back(op.getInBuffer());
-    moOperands.push_back(op.getInChain());
-
-    auto moOp = MO::MutableLoadOp::create(rewriter, op->getLoc(), moResultTypes,
-                                          moOperands);
-    moOp->setDiscardableAttrs(op->getRawDictionaryAttrs());
-    OpResult outTensorRes = moOp->getOpResult(0);
-    auto reboundOutput = rebindToShape(graphOp, outTensorRes,
-                                       op.getOutTensor().getType(), rewriter);
-    rewriter.replaceAllUsesWith(op.getOutTensor(), reboundOutput);
-    rewriter.replaceAllUsesWith(op.getOutChain(), moOp.getOutChain());
-
-    op->erase();
-
-    return success();
-  }
-};
-
-struct LegalizeMutableStoreOp : public OpRewritePattern<RMO::MOMutableStoreOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RMO::MOMutableStoreOp op,
-                                PatternRewriter &rewriter) const override {
-
-    auto graphOp = op->getParentOfType<MO::GraphOp>();
-
-    SmallVector<Type> moOperandTypes, moResultTypes;
-    SmallVector<SmallVector<KGEN::ParamDeclAttr>> moInputParamDecls;
-    SmallVector<SmallVector<KGEN::ParamDeclAttr>> moOutputParamDecls;
-
-    RMO::MOAnalogue rmaOp = op;
-    rmaOp.inferMOTypes(graphOp, moOperandTypes, moResultTypes,
-                       moInputParamDecls, moOutputParamDecls);
-
-    SmallVector<Value> moOperands;
-
-    auto reboundInTensor =
-        rebindToShape(graphOp, op.getInTensorMutable(),
-                      cast<TensorType>(moOperandTypes[1]), rewriter);
-
-    moOperands.push_back(op.getInBuffer());
-    moOperands.push_back(reboundInTensor);
-    moOperands.push_back(op.getInChain());
-
-    auto moOp = MO::MutableStoreOp::create(rewriter, op->getLoc(),
-                                           moResultTypes, moOperands);
-    moOp->setDiscardableAttrs(op->getRawDictionaryAttrs());
-    rewriter.replaceAllUsesWith(op.getOutChain(), moOp.getOutChain());
-
-    op->erase();
-
-    return success();
-  }
-};
-
 struct LegalizeTransferOp : public OpRewritePattern<RMO::MOTransferOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -428,57 +357,6 @@ struct LegalizeTransferOp : public OpRewritePattern<RMO::MOTransferOp> {
 
     rewriter.replaceOpWithNewOp<MO::TransferOp>(
         op, op.getInput(), outTy.getDeviceRef(), op.getInChain());
-
-    return success();
-  }
-};
-
-struct LegalizeMutableStoreSliceOp
-    : public OpRewritePattern<RMO::MOMutableStoreSliceOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RMO::MOMutableStoreSliceOp op,
-                                PatternRewriter &rewriter) const override {
-
-    auto graphOp = op->getParentOfType<MO::GraphOp>();
-
-    SmallVector<Type> moOperandTypes, moResultTypes;
-    SmallVector<SmallVector<KGEN::ParamDeclAttr>> moInputParamDecls;
-    SmallVector<SmallVector<KGEN::ParamDeclAttr>> moOutputParamDecls;
-
-    RMO::MOAnalogue rmaOp = op;
-    rmaOp.inferMOTypes(graphOp, moOperandTypes, moResultTypes,
-                       moInputParamDecls, moOutputParamDecls);
-
-    SmallVector<Value> moOperands;
-
-    moOperands.push_back(op.getInBuffer());
-
-    for (size_t i = 1; i < moOperandTypes.size() - 1; ++i) {
-      SmallVector<KGEN::ParamDeclAttr> &curInputDecls = moInputParamDecls[i];
-
-      auto rebound = rebindToShape(graphOp, op->getOpOperand(i),
-                                   cast<TensorType>(moOperandTypes[i]),
-                                   rewriter, curInputDecls);
-
-      moOperands.push_back(rebound);
-    }
-
-    moOperands.push_back(op.getInChain());
-
-    // Only the inherent `outputParamDecls` carries over into properties; the
-    // discardable half is replaced wholesale just below.
-    MO::MutableStoreSliceOp::Properties properties;
-    if (auto decls = op->getAttrOfType<KGEN::ParamDeclArrayAttr>(
-            MO::MutableStoreSliceOp::getAttributeNames().front()))
-      properties.setOutputParamDecls(decls);
-
-    auto moOp = MO::MutableStoreSliceOp::create(
-        rewriter, op->getLoc(), moResultTypes, moOperands, properties);
-    moOp->setDiscardableAttrs(op->getRawDictionaryAttrs());
-    rewriter.replaceAllUsesWith(op.getOutChain(), moOp.getOutChain());
-
-    op->erase();
 
     return success();
   }
@@ -1210,9 +1088,6 @@ struct LegalizeRMOOps
 
     // Override for rmo.mo.transfer to handle chain and avoid param decls.
     blockPatterns.add<LegalizeTransferOp>(context);
-
-    blockPatterns.add<LegalizeMutableLoadOp, LegalizeMutableStoreOp,
-                      LegalizeMutableStoreSliceOp>(context);
 
     if (!skipRMORebind)
       blockPatterns.add<LowerRebindTensorShapeOp>(context);
