@@ -445,7 +445,8 @@ struct RawDriver(Movable):
         var value = MaybeUninit[T]()
         var status = self._raw.base.device_property.get()(
             device,
-            name.as_c_string_span(),
+            # A literal's nul bytes are checked at compile time.
+            StringLiteral._from[name]().as_c_string_span(),
             OutParam[T](to=value).unsafe_bitcast[NoneType](),
         )
         if status == STATUS_UNKNOWN_PROPERTY_NAME:
@@ -846,7 +847,8 @@ struct RawDriver(Movable):
         var status = self._raw.base.function_load.get()(
             context,
             bundle,
-            name.as_c_string_span(),
+            # The plugin reads `byte_length()` bytes, not up to a nul byte.
+            name._as_c_string_span_unchecked(),
             UInt64(name.byte_length()),
             OutParam[FunctionHandle](to=func),
         )

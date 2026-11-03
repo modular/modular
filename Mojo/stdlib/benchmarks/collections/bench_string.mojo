@@ -333,6 +333,23 @@ def bench_string_is_valid_utf8(mut b: Bencher, input: BenchInput) raises:
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string as_c_string_span
+# ===-----------------------------------------------------------------------===#
+def bench_string_as_c_string_span(mut b: Bencher, input: BenchInput) raises:
+    var items = make_string(input.length, input.filename + ".txt")
+    # Add the terminator up front, so this measures the nul byte check that
+    # every call makes.
+    _ = items.as_c_string_span()
+
+    @inline(.always)
+    def call_fn() raises {mut items}:
+        var res = black_box(items).as_c_string_span()
+        keep(res.ptr())
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark write_utf8
 # ===-----------------------------------------------------------------------===#
 def bench_write_utf8(mut b: Bencher, input: BenchInput) raises:
@@ -510,6 +527,12 @@ def main() raises:
                 m,
                 bench_string_is_valid_utf8,
                 "bench_string_is_valid_utf8",
+                input,
+            )
+            _add_bench(
+                m,
+                bench_string_as_c_string_span,
+                "bench_string_as_c_string_span",
                 input,
             )
             _add_bench(m, bench_write_utf8, "bench_write_utf8", input)

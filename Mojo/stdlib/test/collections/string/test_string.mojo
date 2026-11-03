@@ -1582,6 +1582,75 @@ def test_as_c_string_span_heap() raises:
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
+def test_as_c_string_span_interior_nul() raises:
+    # The repro from issue #7450: C would only see "Hello".
+    var string = String("Hello\x00World")
+    with assert_raises(contains="interior nul byte"):
+        _ = string.as_c_string_span()
+    # The string itself is left unchanged.
+    assert_equal(string.byte_length(), 11)
+    assert_equal(string, "Hello\x00World")
+
+
+def test_as_c_string_span_nul_positions() raises:
+    var cases: List[String] = [
+        "\x00",  # Only a nul byte.
+        "\x00abc",  # At the start.
+        "ab\x00c",  # In the middle.
+        "abc\x00",  # At the end, before the added terminator.
+        "a\x00\x00b",  # Repeated.
+        "\x00\x00\x00",  # Only nul bytes.
+        "a\x00b\x00c",  # More than one, apart.
+    ]
+    for s in cases:
+        var string = s.copy()
+        with assert_raises(contains="interior nul byte"):
+            _ = string.as_c_string_span()
+
+
+def test_as_c_string_span_nul_in_long_string() raises:
+    # Long strings are scanned with SIMD, so try a nul byte at each offset
+    # around the vector boundaries, and past the inline capacity.
+    for i in range(130):
+        var string = String("a") * 130
+        string.unsafe_ptr_mut()[unsafe_offset=i] = 0
+        with assert_raises(contains="interior nul byte"):
+            _ = string.as_c_string_span()
+
+
+def test_as_c_string_span_long_string_without_nul() raises:
+    var string = String("a") * 10_000
+    assert_equal(len(string.as_c_string_span()), 10_000)
+    # The second call takes the path where the terminator is already present.
+    assert_equal(len(string.as_c_string_span()), 10_000)
+
+
+def test_as_c_string_span_already_terminated() raises:
+    # A `String` made from a literal already has a nul terminator.
+    var string = String("abc")
+    assert_true(string._has_nul_terminator())
+    assert_equal(len(string.as_c_string_span()), 3)
+
+    # A terminated string is still checked for nul bytes.
+    var with_nul = String("abc\x00def")
+    assert_true(with_nul._has_nul_terminator())
+    with assert_raises(contains="interior nul byte"):
+        _ = with_nul.as_c_string_span()
+
+
+def test_as_c_string_span_after_mutation() raises:
+    var string = String("abc")
+    assert_equal(len(string.as_c_string_span()), 3)
+    # Appending clears the terminator, and the new nul byte is caught.
+    string += "\x00def"
+    with assert_raises(contains="interior nul byte"):
+        _ = string.as_c_string_span()
+    # Removing the nul byte makes the string valid again.
+    string = string.replace("\x00", "")
+    assert_equal(len(string.as_c_string_span()), 6)
+    assert_equal(string, "abcdef")
+
+
 def test_variadic_ctors() raises:
     var s = String("message", 42, 42.2, True, sep=", ")
     assert_equal(s, "message, 42, 42.2, True")

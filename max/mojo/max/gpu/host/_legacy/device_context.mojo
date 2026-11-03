@@ -34,6 +34,7 @@ from std.math import align_up
 from std.os import abort
 from std.pathlib import Path
 from std.ffi import (
+    c_char,
     c_int,
     c_uint,
     c_size_t,
@@ -3044,7 +3045,11 @@ def _load_function(
             ctx,
             module_name.as_c_string_span(),
             function_name.as_c_string_span(),
-            asm.as_c_string_span(),
+            # `asm` may be object code, which contains nul bytes. The runtime
+            # reads `byte_length()` bytes, not up to a nul byte.
+            CStringSpan(
+                unsafe_from_ptr=asm.unsafe_ptr().unsafe_bitcast[c_char]()
+            ),
             c_size_t(asm.byte_length()),
             max_dynamic_shared_size_bytes,
             debug_level.as_c_string_span(),
@@ -3983,7 +3988,9 @@ struct DeviceExternalFunction[
                 ctx._handle,
                 module_name.as_c_string_span(),
                 function_name.as_c_string_span(),
-                asm.as_c_string_span(),
+                # `asm` may be object code, which contains nul bytes. The
+                # runtime reads `byte_length()` bytes, not up to a nul byte.
+                asm._as_c_string_span_unchecked(),
                 c_size_t(asm.byte_length()),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_span(),
@@ -7308,7 +7315,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 to the device API specified by current target accelerator.
 
         Returns:
-            The number of available devices supporting the specified API.
+            The number of available devices supporting the specified API, or
+            0 if `api` contains a nul byte, since no device API's name does.
 
         Example:
 
@@ -7323,12 +7331,15 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         ```
         """
         # int32_t *AsyncRT_DeviceContext_numberOfDevices(const char* kind)
-        return Int(
-            external_call[
-                "AsyncRT_DeviceContext_numberOfDevices",
-                Int32,
-            ](api.as_c_string_span())
-        )
+        try:
+            return Int(
+                external_call[
+                    "AsyncRT_DeviceContext_numberOfDevices",
+                    Int32,
+                ](api.as_c_string_span())
+            )
+        except:
+            return 0
 
     @staticmethod
     def enable_all_peer_access() raises:

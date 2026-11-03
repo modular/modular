@@ -38,6 +38,7 @@ from std._plugin import CurrentPlugin
 from std.atomic import Atomic, Ordering, fence
 from std.sys import size_of, bit_width_of
 from std.ffi import c_char, CStringSpan
+from std.ffi.cstring import _validate_bytes
 from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
@@ -1514,19 +1515,66 @@ struct String(
     @inline(.always)
     def as_c_string_slice(
         mut self,
-    ) -> CStringSpan[ImmOrigin(origin_of(self))]:
+    ) raises -> CStringSpan[ImmOrigin(origin_of(self))]:
         """Return a `CStringSpan` to the underlying memory of the string.
 
         Returns:
             The `CStringSpan` of the string.
+
+        Raises:
+            An error if the string contains a nul byte.
         """
         return self.as_c_string_span()
 
     @inline(.always)
     def as_c_string_span(
         mut self,
+    ) raises -> CStringSpan[ImmOrigin(origin_of(self))]:
+        """Returns a `CStringSpan` to the underlying memory of the string.
+
+        Adds a nul terminator after the string's bytes if it doesn't already
+        have one, which may reallocate the string.
+
+        C reads a string up to its first nul byte, so a string that contains a
+        nul byte can't be passed to C without silently losing the bytes after
+        it. This method raises instead.
+
+        Returns:
+            The `CStringSpan` of the string.
+
+        Raises:
+            An error if the string contains a nul byte.
+
+        Example:
+
+        ```mojo
+        from std.ffi import c_size_t, external_call
+        from std.testing import assert_equal, assert_raises
+
+        var name = String("Mojo")
+        var length = external_call["strlen", c_size_t](name.as_c_string_span())
+        assert_equal(length, 4)
+
+        var bad = String("Hello\\x00World")
+        with assert_raises(contains="interior nul byte"):
+            _ = bad.as_c_string_span()
+        ```
+        """
+        var c_str = self._as_c_string_span_unchecked()
+        _validate_bytes(
+            Span(unsafe_ptr=self.unsafe_ptr(), length=self.byte_length() + 1)
+        )
+        return c_str
+
+    @doc_hidden
+    @inline(.always)
+    def _as_c_string_span_unchecked(
+        mut self,
     ) -> CStringSpan[ImmOrigin(origin_of(self))]:
-        """Return a `CStringSpan` to the underlying memory of the string.
+        """Like `as_c_string_span()`, but doesn't check for nul bytes.
+
+        Only use this when the callee is also given `byte_length()` and reads
+        that many bytes, rather than reading up to the first nul byte.
 
         Returns:
             The `CStringSpan` of the string.

@@ -20,6 +20,7 @@ from std.collections.string.string_span import get_static_string
 from std.format._utils import _FixedWriteBuffer, _FlushingWriteBuffer
 from std.sys import _libc as libc
 from std.ffi import (
+    c_char,
     c_size_t,
     c_ssize_t,
     external_call,
@@ -73,7 +74,14 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
 
         self.handle = fdopen(
             dup(stream_id._value),
-            Self.mode.as_c_string_span(),
+            # Safety: `Self.mode` is a compile-time string, so it is materialized
+            # as a nul-terminated literal. This is on the path `debug_assert`
+            # prints through, so it doesn't evaluate a compile-time check.
+            CStringSpan(
+                unsafe_from_ptr=get_static_string[Self.mode]()
+                .unsafe_ptr()
+                .unsafe_bitcast[c_char]()
+            ),
         )
 
     def __enter__(self) -> Self:
@@ -197,7 +205,14 @@ def _printf_cpu[
         # themselves rather than references to them.
         _ = external_call["KGEN_CompilerRT_fprintf", Int32, num_fixed_args=2](
             fd,
-            get_static_string[fmt]().as_c_string_span(),
+            # Safety: `fmt` is a compile-time string, so it is materialized
+            # as a nul-terminated literal. This is on the path `debug_assert`
+            # prints through, so it doesn't evaluate a compile-time check.
+            CStringSpan(
+                unsafe_from_ptr=get_static_string[fmt]()
+                .unsafe_ptr()
+                .unsafe_bitcast[c_char]()
+            ),
             args.get_loaded_kgen_pack(),
         )
 
@@ -265,7 +280,14 @@ def _snprintf[
         external_call["snprintf", Int32, num_fixed_args=3](
             str,
             size,
-            get_static_string[fmt]().as_c_string_span(),
+            # Safety: `fmt` is a compile-time string, so it is materialized
+            # as a nul-terminated literal. This is on the path `debug_assert`
+            # prints through, so it doesn't evaluate a compile-time check.
+            CStringSpan(
+                unsafe_from_ptr=get_static_string[fmt]()
+                .unsafe_ptr()
+                .unsafe_bitcast[c_char]()
+            ),
             args.get_loaded_kgen_pack(),
         )
     )

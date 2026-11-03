@@ -29,7 +29,7 @@ from std.collections.string.string_span import (
     _get_kgen_string,
     get_static_string,
 )
-from std.ffi import CStringSpan, external_call
+from std.ffi import c_char, CStringSpan, external_call
 from std.io.file_descriptor import RawFileDescriptor
 from std.math.math import _UnaryMathOp
 from std.io.io import _printf
@@ -74,7 +74,13 @@ def _debug_assert_emit[
         "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread:"
         " [%llu,%llu,%llu] Assert Error: %s\n"
     ](
-        loc.file_name().as_c_string_span(),
+        # Safety: the compiler sets the file name from a whole string
+        # literal, so it is nul-terminated. Asserting must not raise.
+        CStringSpan(
+            unsafe_from_ptr=loc.file_name()
+            .unsafe_ptr()
+            .unsafe_bitcast[c_char]()
+        ),
         loc.line(),
         loc.column(),
         UInt(block_idx.x),
@@ -101,7 +107,14 @@ def _printf_emit[
     var loaded_pack = args.get_loaded_kgen_pack()
 
     _ = external_call["vprintf", Int32](
-        get_static_string[fmt]().as_c_string_span(),
+        # Safety: `fmt` is a compile-time string, so it is materialized as a
+        # nul-terminated literal. This is on the path `debug_assert` prints
+        # through, so it doesn't evaluate a compile-time check.
+        CStringSpan(
+            unsafe_from_ptr=get_static_string[fmt]()
+            .unsafe_ptr()
+            .unsafe_bitcast[c_char]()
+        ),
         Pointer(to=loaded_pack),
     )
 

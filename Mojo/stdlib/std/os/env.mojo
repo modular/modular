@@ -35,15 +35,19 @@ def setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
         its value is not changed unless `overwrite` is True.
 
     Returns:
-      False if the name is empty or contains an `=` character. In any other
-      case, True is returned.
+      False if the name is empty or contains an `=` character, or if the name
+      or value contains a nul byte. In any other case, True is returned.
     """
-    var status = external_call["setenv", Int32](
-        name.as_c_string_span(),
-        value.as_c_string_span(),
-        Int32(1 if overwrite else 0),
-    )
-    return status == 0
+    try:
+        var status = external_call["setenv", Int32](
+            name.as_c_string_span(),
+            value.as_c_string_span(),
+            Int32(1 if overwrite else 0),
+        )
+        return status == 0
+    except:
+        # C can't represent a nul byte in a name or value.
+        return False
 
 
 def unsetenv(var name: String) -> Bool:
@@ -53,9 +57,14 @@ def unsetenv(var name: String) -> Bool:
         name: The name of the environment variable.
 
     Returns:
-        True if unsetting the variable succeeded. Otherwise, False is returned.
+        True if unsetting the variable succeeded. Otherwise, False is returned,
+        including when the name contains a nul byte.
     """
-    return external_call["unsetenv", c_int](name.as_c_string_span()) == 0
+    try:
+        return external_call["unsetenv", c_int](name.as_c_string_span()) == 0
+    except:
+        # C can't represent a nul byte in a name.
+        return False
 
 
 def getenv(var name: String, default: String = "") -> String:
@@ -71,11 +80,17 @@ def getenv(var name: String, default: String = "") -> String:
         doesn't exist.
 
     Returns:
-      The value of the environment variable.
+      The value of the environment variable, or `default` if it doesn't exist
+      or the name contains a nul byte.
     """
-    var ptr = external_call[
-        "getenv", Optional[Pointer[UInt8, ImmUntrackedOrigin]]
-    ](name.as_c_string_span())
+    var ptr: Optional[Pointer[UInt8, ImmUntrackedOrigin]]
+    try:
+        ptr = external_call[
+            "getenv", Optional[Pointer[UInt8, ImmUntrackedOrigin]]
+        ](name.as_c_string_span())
+    except:
+        # No variable name contains a nul byte, since C can't represent one.
+        return default
     if not ptr:
         return default
     return String(unsafe_from_utf8_ptr=ptr.value())

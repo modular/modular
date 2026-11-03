@@ -48,22 +48,24 @@ comptime _TraceType_MAX = 4
 
 
 @inline(.always)
-def _setup_category(
+def _setup_category[
+    name: StaticString
+](
     name_category: def(UInt32, CStringSpan[_]) thin abi("C") -> NoneType,
     value: Int,
-    name: StaticString,
 ):
-    name_category(UInt32(value), name.as_c_string_span())
+    # A literal's nul bytes are checked at compile time.
+    name_category(UInt32(value), StringLiteral._from[name]().as_c_string_span())
 
 
 def _setup_categories(
     name_category: def(UInt32, CStringSpan[_]) thin abi("C") -> NoneType
 ):
-    _setup_category(name_category, _TraceType_OTHER, "Other")
-    _setup_category(name_category, _TraceType_ASYNCRT, "AsyncRT")
-    _setup_category(name_category, _TraceType_MEM, "Memory")
-    _setup_category(name_category, _TraceType_KERNEL, "Kernel")
-    _setup_category(name_category, _TraceType_MAX, "Max")
+    _setup_category["Other"](name_category, _TraceType_OTHER)
+    _setup_category["AsyncRT"](name_category, _TraceType_ASYNCRT)
+    _setup_category["Memory"](name_category, _TraceType_MEM)
+    _setup_category["Kernel"](name_category, _TraceType_KERNEL)
+    _setup_category["Max"](name_category, _TraceType_MAX)
 
 
 def _on_error_msg() -> Error:

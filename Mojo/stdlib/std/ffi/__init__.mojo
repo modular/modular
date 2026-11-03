@@ -45,10 +45,7 @@ def main() raises:
 """
 
 from std.collections.optional import OptionalReg
-from std.collections.string.string_span import (
-    _get_kgen_string,
-    get_static_string,
-)
+from std.collections.string.string_span import _get_kgen_string
 from std.os import PathLike as stdPathLike, abort
 from std.pathlib import Path
 from std.sys._libc import dlclose, dlerror, dlopen, dlsym
@@ -502,9 +499,13 @@ struct OwnedDLHandle(Boolable, Movable):
             An optional pointer to the symbol, or `None` if not found.
         """
         var name_copy = String(name)
-        return self.get_symbol[result_type](
-            cstr_name=name_copy.as_c_string_span()
-        )
+        try:
+            return self.get_symbol[result_type](
+                cstr_name=name_copy.as_c_string_span()
+            )
+        except:
+            # No symbol name contains a nul byte, since C can't represent one.
+            return None
 
     def get_symbol[
         mut: Bool, origin: Origin[mut=mut], //, result_type: AnyType
@@ -676,12 +677,15 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Returns:
             `True` if the symbol exists.
         """
-        var opaque_function_ptr = dlsym(
-            self.handle,
-            name.as_c_string_span().ptr(),
-        )
-
-        return Bool(opaque_function_ptr)
+        try:
+            var opaque_function_ptr = dlsym(
+                self.handle,
+                name.as_c_string_span().ptr(),
+            )
+            return Bool(opaque_function_ptr)
+        except:
+            # No symbol name contains a nul byte, since C can't represent one.
+            return False
 
     def close(mut self):
         """Unload the associated dynamic library.
@@ -731,9 +735,13 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             ' the function type, e.g. `def(Float64) thin abi("C") -> Float64`'
         )
 
-        return self._get_function[result_type](
-            cstr_name=name.as_c_string_span()
-        )
+        try:
+            return self._get_function[result_type](
+                cstr_name=name.as_c_string_span()
+            )
+        except e:
+            # Like a missing symbol, which `_get_function` aborts on.
+            abort(t"symbol not found: {e}")
 
     @inline(.always)
     def _get_function[
@@ -749,10 +757,10 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Returns:
             A handle to the function.
         """
-        # Force unique the func_name so we know that it is nul-terminated.
-        comptime func_name_literal = get_static_string[func_name]()
+        # A literal is nul-terminated, and its nul bytes are checked at
+        # compile time.
         return self._get_function[result_type](
-            cstr_name=func_name_literal.as_c_string_span(),
+            cstr_name=StringLiteral._from[func_name]().as_c_string_span(),
         )
 
     @inline(.always)
@@ -798,9 +806,13 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             An optional pointer to the symbol, or `None` if not found.
         """
         var name_copy = String(name)
-        return self.get_symbol[result_type](
-            cstr_name=name_copy.as_c_string_span()
-        )
+        try:
+            return self.get_symbol[result_type](
+                cstr_name=name_copy.as_c_string_span()
+            )
+        except:
+            # No symbol name contains a nul byte, since C can't represent one.
+            return None
 
     def get_symbol[
         result_type: AnyType
