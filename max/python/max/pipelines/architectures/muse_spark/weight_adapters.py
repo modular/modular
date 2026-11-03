@@ -174,3 +174,15 @@ def convert_safetensor_vision_state_dict(
         MUSE_SPARK_VISION_SAFETENSOR_MAP,
         tuple(MUSE_SPARK_LANGUAGE_SAFETENSOR_MAP),
     )
+
+
+def convert_registered_state_dict(
+    state_dict: Mapping[str, Weights], **kwargs: object
+) -> dict[str, WeightData]:
+    """Adapts each checkpoint tensor once into its registered role namespace."""
+    language = convert_safetensor_language_state_dict(state_dict, **kwargs)
+    vision = convert_safetensor_vision_state_dict(state_dict, **kwargs)
+    return {
+        **{"decoder." + name: value for name, value in language.items()},
+        **{"vision." + name: value for name, value in vision.items()},
+    }

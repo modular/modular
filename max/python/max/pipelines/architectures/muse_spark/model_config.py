@@ -28,12 +28,17 @@ from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
+from max.pipelines.architectures.muse_glimmer.model_config import (
+    MuseGlimmerVisionConfig,
+)
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
     ModelOutputConfig,
 )
 from max.pipelines.lib.registration_runtime import (
@@ -48,6 +53,8 @@ from max.pipelines.modeling.config_enums import (
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+from .vision.vision_model import parse_vision_config
 
 logger = logging.getLogger("max.pipelines")
 
@@ -350,8 +357,15 @@ class MuseSparkTextConfig(ArchConfigWithBoundedMaxSeqLen):
         )
 
 
+# processor_config.json's ``max_image_tokens``: merged tokens of the largest
+# image the processor emits.
+_MAX_IMAGE_TOKENS = 4096
+
+
 @dataclass(kw_only=True)
-class MuseSparkConfig(ArchConfigWithKVCache, DeploymentConfig):
+class MuseSparkConfig(
+    ArchConfigWithKVCache, ArchConfigWithVisionCache, DeploymentConfig
+):
     """Top-level Muse Spark configuration."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
@@ -367,8 +381,14 @@ class MuseSparkConfig(ArchConfigWithKVCache, DeploymentConfig):
     video_token_id: int
     audio_token_id: int
     text_config: MuseSparkTextConfig
+    vision_config: MuseGlimmerVisionConfig
     quantization_encoding: SupportedEncoding | None = None
     mesh: DeviceMesh | None = None
+
+    weight_prefixes: ClassVar[Mapping[str, str]] = {
+        GraphRole.DECODER: "decoder.",
+        GraphRole.VISION: "vision.",
+    }
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:
         """Places the text module on the serving mesh."""
@@ -381,6 +401,21 @@ class MuseSparkConfig(ArchConfigWithKVCache, DeploymentConfig):
     def get_max_seq_len(self) -> int:
         """Returns the maximum sequence length of the text decoder."""
         return self.text_config.get_max_seq_len()
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Bytes of one max-resolution image's embeddings."""
+        hidden, dtype = cls.get_vision_cache_row_spec(huggingface_config)
+        return _MAX_IMAGE_TOKENS * hidden * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType]:
+        """One bfloat16 row of the text hidden size per merged image token."""
+        return (huggingface_config.text_config.hidden_size, DType.bfloat16)
 
     @staticmethod
     def construct_kv_params(
@@ -505,6 +540,7 @@ class MuseSparkConfig(ArchConfigWithKVCache, DeploymentConfig):
             video_token_id=huggingface_config.video_token_id,
             audio_token_id=huggingface_config.audio_token_id,
             text_config=text_config,
+            vision_config=parse_vision_config(huggingface_config),
             quantization_encoding=quantization_encoding,
         )
 
@@ -521,7 +557,7 @@ class MuseSparkConfig(ArchConfigWithKVCache, DeploymentConfig):
         nvfp4 = self.text_config.nvfp4
         if nvfp4 is not None:
             expert_zero_gate = re.compile(
-                r"language_model\.layers\.(\d+)\.mlp\.experts\.0\.gate_proj\.weight(\.data)?"
+                r"decoder\.language_model\.layers\.(\d+)\.mlp\.experts\.0\.gate_proj\.weight(\.data)?"
             )
             expert_dtypes = {
                 int(match[1]): data.dtype
