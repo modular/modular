@@ -860,8 +860,21 @@ class OpenAIChatResponseGenerator(
                 # Handle streaming tool calls if enabled
                 merged_stream_content: str | None = None
                 tool_call_chunks: list[ChoiceDeltaToolCall] = []
-                if self.parse_tool_calls and chunk.decoded_tokens:
-                    tool_deltas = self.parser.parse_delta(chunk.decoded_tokens)
+                if self.parse_tool_calls and (
+                    chunk.decoded_tokens or chunk.status.is_done
+                ):
+                    tool_deltas = (
+                        self.parser.parse_delta(chunk.decoded_tokens)
+                        if chunk.decoded_tokens
+                        else None
+                    )
+                    # Generation can stop inside a tool call without decoding
+                    # the call's close, so a parser that tracks open calls
+                    # closes them once the stream is done.
+                    finish = getattr(self.parser, "finish", None)
+                    if chunk.status.is_done and finish is not None:
+                        if closing := finish():
+                            tool_deltas = (tool_deltas or []) + closing
                     if tool_deltas is not None:
                         # parse_delta returns [] (not None) once inside the
                         # tool-calls section, even if no deltas are ready yet.
