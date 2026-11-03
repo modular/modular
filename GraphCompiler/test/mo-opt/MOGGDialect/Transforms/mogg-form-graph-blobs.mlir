@@ -50,6 +50,61 @@ mo.graph @execute_between(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32
   mo.output %d : !mo.tensor<[2, 2], f32>
 }
 
+// A sequence computed only from constants runs once at init, so it stays out
+// of blobs; the sequence on the graph's argument fuses.
+// CHECK-LABEL: mo.graph @invariant
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+// CHECK:         mogg.graph_blob {
+// CHECK:       mo.output
+mo.graph @invariant(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
+  %w = mo.constant <#M.dense_array<1.000000e+00, 2.000000e+00, 3.000000e+00, 4.000000e+00> : tensor<2x2xf32>> : !mo.tensor<[2, 2], f32>
+  %x = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%w) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %y = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%x) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %c = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%b) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  mo.output %y, %c : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
+}
+
+// A graph region can use a value before its definition. The pass sorts the
+// body first, so a constant defined after its readers still keeps them out;
+// the sort moves them after the routines on the graph's argument.
+// CHECK-LABEL: mo.graph @invariant_out_of_order
+// CHECK:       mo.constant
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+// CHECK:         mogg.graph_blob {
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+// CHECK:       mo.output
+mo.graph @invariant_out_of_order(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
+  %x = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%w) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %y = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%x) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %w = mo.constant <#M.dense_array<1.000000e+00, 2.000000e+00, 3.000000e+00, 4.000000e+00> : tensor<2x2xf32>> : !mo.tensor<[2, 2], f32>
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %c = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%b) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  mo.output %y, %c : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
+}
+
+// Weights are invariant too, so the sequence on them stays out of blobs. The
+// one on an aliased external constant fuses: something else can update it
+// between executions.
+// CHECK-LABEL: mo.graph @external
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32, gpu:0>) -> (!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:0>)
+// CHECK:         mogg.graph_blob {
+// CHECK:       mo.output
+mo.graph @external() -> (!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:0>) {
+  %w = mo.constant.external [name = "w", align = 16, device = #M.device_ref<"gpu", 0>] : !mo.tensor<[2, 2], f32, gpu:0>
+  %u = mo.constant.external [name = "u", align = 16, device = #M.device_ref<"gpu", 0>, hasAlias = true] : !mo.tensor<[2, 2], f32, gpu:0>
+  %x = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%w) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  %y = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%x) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%u) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  %c = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%b) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  mo.output %y, %c : !mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:0>
+}
+
 // Routines on different devices stay apart.
 // CHECK-LABEL: mo.graph @two_devices
 // CHECK-NOT:   mogg.graph_blob

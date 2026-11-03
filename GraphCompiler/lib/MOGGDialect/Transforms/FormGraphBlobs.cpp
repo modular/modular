@@ -24,10 +24,14 @@
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
+#include "mlir/Analysis/TopologicalSortUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/SetVector.h"
 
 using namespace mlir;
 using namespace M;
@@ -199,7 +203,50 @@ void fuse(ArrayRef<RoutineOp> members) {
     rewriter.eraseOp(member);
 }
 
-void formInBlock(Block &block, SymbolTable &symbols) {
+// The values `op` reads: its operands, and the values from above that its
+// regions read, such as an elementwise loop's inputs.
+llvm::SetVector<Value> readValues(Operation &op) {
+  llvm::SetVector<Value> values(op.operand_begin(), op.operand_end());
+  getUsedValuesDefinedAbove(op.getRegions(), values);
+  return values;
+}
+
+// The values of a graph's body that are the same on every execution, so they
+// can be computed once at init, as MGP's `ExecInvariantCodeMotion` does.
+// `body` must be in dataflow order.
+llvm::DenseSet<Value> findInvariantValues(Block &body) {
+  llvm::DenseSet<Value> invariant;
+  auto isInvariant = [&](Value value) { return invariant.contains(value); };
+  auto isEffect = [](Type type) {
+    return isa<MO::ChainType, MO::BufferType>(type);
+  };
+  for (Operation &op : body) {
+    // A constant is invariant, unless it's an external one something else can
+    // update between executions.
+    if (auto constant = dyn_cast<MO::ConstantLike>(op)) {
+      auto external = dyn_cast<MO::ConstantExternalOp>(op);
+      if (!external || !external.getHasAlias())
+        invariant.insert(constant.getResult());
+      continue;
+    }
+    // TODO(GEX-4484): Find the invariant values of a `mo.parallel` body, which
+    // `MOGGToMGP` stamps out once per device. Until then it counts as variant,
+    // like control flow.
+    if (isa<RegionBranchOpInterface, MO::ParallelOp>(op) ||
+        llvm::any_of(op.getOperandTypes(), isEffect) ||
+        llvm::any_of(op.getResultTypes(), isEffect) ||
+        !llvm::all_of(readValues(op), isInvariant))
+      continue;
+    invariant.insert(op.result_begin(), op.result_end());
+  }
+  return invariant;
+}
+
+// Forms blobs in `block`. A routine computing only `invariant` values stays
+// out: it runs once at init, and a blob runs on every execution.
+void formInBlock(Block &block, SymbolTable &symbols,
+                 const llvm::DenseSet<Value> &invariant) {
+  auto isInvariant = [&](Value value) { return invariant.contains(value); };
   SmallVector<RoutineOp> sequence;
   // Ends the current sequence, fusing it if it holds more than one routine.
   auto close = [&] {
@@ -211,12 +258,16 @@ void formInBlock(Block &block, SymbolTable &symbols) {
     auto routine = dyn_cast<RoutineOp>(op);
     if (!routine) {
       for (Region &region : op.getRegions()) {
-        for (Block &nested : region)
-          formInBlock(nested, symbols);
+        for (Block &nested : region) {
+          if (sortTopologically(&nested))
+            formInBlock(nested, symbols, invariant);
+        }
       }
       continue;
     }
-    if (!canJoinBlob(routine, symbols))
+    // A routine with no outputs stays out too.
+    if (!canJoinBlob(routine, symbols) ||
+        llvm::all_of(routine.getOutputs(), isInvariant))
       continue;
     if (!sequence.empty() && extendsSequence(sequence.back(), routine)) {
       sequence.push_back(routine);
@@ -239,8 +290,16 @@ struct FormGraphBlobsPass
     SymbolTable symbols(module);
     for (auto graph : module.getOps<MO::GraphOp>()) {
       // A device graph captures each launch as its own node.
-      if (!graph.getIsDeviceGraph())
-        formInBlock(graph.getBody().front(), symbols);
+      if (graph.getIsDeviceGraph())
+        continue;
+      // A graph region can use a value before the op that defines it. Both
+      // the analysis and formation walk a block in dataflow order, so sort it
+      // first; a block with a cycle has none and forms no blobs.
+      Block &body = graph.getBody().front();
+      if (!sortTopologically(&body))
+        continue;
+      llvm::DenseSet<Value> invariant = findInvariantValues(body);
+      formInBlock(body, symbols, invariant);
     }
   }
 };
