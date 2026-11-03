@@ -248,7 +248,8 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
 struct TemporaryDirectory:
     """Temporary directory that cleans up automatically.
 
-    Creates a directory that's deleted when the context exits:
+    For example, this creates a directory that's deleted when the context ends:
+
     ```mojo
     from std.tempfile import TemporaryDirectory
     import std.os
@@ -263,8 +264,18 @@ struct TemporaryDirectory:
         print(std.os.path.exists(temp_path))  # False - cleaned up
     ```
 
-    The directory and all its contents are removed on exit, even if an error occurs.
-    Set `ignore_cleanup_errors=True` to suppress cleanup failures.
+    The directory and all its contents are removed on exit, even if an error
+    occurs inside the context. Such an error is discarded as long as cleanup
+    succeeds. Set `ignore_cleanup_errors=True` to suppress cleanup failures;
+    errors raised inside the context are then discarded even when the directory
+    can't be fully removed. Use `try` inside the context when you need to
+    handle or report an error.
+
+    The directory name is built as `prefix` followed by 8 random characters and
+    `suffix`. The random characters come from `std.random`, so every run of the
+    program generates the same sequence of names, skipping any names already in
+    use. Call `seed()` from `std.random` first when you need different names
+    across runs.
     """
 
     var name: String
