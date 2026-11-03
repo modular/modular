@@ -33,6 +33,7 @@ from kv_cache.types import KVCacheStaticParams, KVCollectionT
 from layout import (
     Coord,
     Layout,
+    TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
@@ -79,6 +80,32 @@ comptime logger = Logger()
 from .kernels import *
 
 
+@inline(.always)
+def _mut_pointer_tile(
+    tile: TileTensor[mut=True, address_space=.GENERIC, ...],
+) -> TileTensor[tile.dtype, tile.LayoutType, tile.origin]:
+    """Rebuilds `tile` as a mutable view over its pointer.
+
+    The scaled paged KV cache collection holds pointer-backed tiles, so a
+    projected argument with another storage policy aborts here at run time.
+    """
+    return {ptr = tile.unsafe_ptr(), layout = tile.layout}
+
+
+@inline(.always)
+def _imm_pointer_tile(
+    tile: TileTensor[address_space=.GENERIC, ...],
+) -> TileTensor[tile.dtype, tile.LayoutType, ImmOrigin(tile.origin)]:
+    """Rebuilds `tile` as an immutable view over its pointer.
+
+    The scaled paged KV cache collection holds pointer-backed tiles, so a
+    projected argument with another storage policy aborts here at run time.
+    """
+    return TileTensor[tile.dtype, tile.LayoutType, ImmOrigin(tile.origin)](
+        ptr=tile.unsafe_ptr().as_imm(), layout=tile.layout
+    )
+
+
 @extensibility.register("mo.kv_cache.store.paged.ragged")
 struct Struct_kv_cache_store_paged:
     """Registers the `mo.kv_cache.store.paged.ragged` graph op with the graph compiler.
@@ -87,32 +114,54 @@ struct Struct_kv_cache_store_paged:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        kv_type: DType,
         target: StaticString,
         key_or_value: Int,
         v_head_dim: Int = -1,
     ](
-        inputs: FusedInputTensor[dtype=dtype, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        inputs: Some[Input & Fused & LoadAccess],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime dtype = type_of(inputs).dtype
+        comptime kv_type = type_of(kv_blocks).dtype
+        comptime assert type_of(inputs).rank == 3
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(inputs), UnsafeFusedView)
+        var inputs_view = unsafe_fused_view(inputs)
+        comptime assert conforms_to(type_of(inputs_view), Loadable)
+
         var paged_kv_collection = generic_get_paged_cache[
             v_head_size=v_head_dim
         ](
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         comptime KVCacheT = paged_kv_collection.CacheType
         var cache: KVCacheT
@@ -127,10 +176,11 @@ struct Struct_kv_cache_store_paged:
                 kv_params.k_head_size() if key_or_value
                 == 0 else kv_params.v_head_size
             )
-            if Int(inputs.dim_size(2)) != width:
+            var row_width = Int(inputs.shape()[2].value())
+            if row_width != width:
                 raise Error(
                     t"a split KV cache stores {width}-wide rows here, got"
-                    t" {Int(inputs.dim_size(2))}"
+                    t" {row_width}"
                 )
 
         comptime if key_or_value == 0:
@@ -141,20 +191,22 @@ struct Struct_kv_cache_store_paged:
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](idx: Coord) {var inputs} -> SIMD[kv_type, width]:
+        ](idx: Coord) {var inputs_view} -> SIMD[kv_type, width]:
             # The value dtype is the producer compute dtype (bf16), which need
             # not match the cache: an FP8 cache saturates on the store rather
             # than emitting NaN for out-of-range values.
             return cast_saturating[kv_type](
-                inputs._lambda_load[width=width, element_alignment=alignment](
-                    idx,
+                rebind[SIMD[dtype, width]](
+                    inputs_view.load[width=width, element_alignment=alignment](
+                        idx
+                    )
                 )
             )
 
         kv_cache_store_ragged[target=target, head_dim_offset=head_dim_offset](
             cache,
-            inputs.shape_coord(),
-            input_row_offsets.to_tile_tensor(),
+            inputs.shape(),
+            input_row_offsets.to_tile_tensor[.uint32](),
             input_fn,
             context,
         )
@@ -238,35 +290,68 @@ struct Struct_kv_cache_store_k_scales_paged:
     @inline(.always)
     @staticmethod
     def execute[
-        cache_dtype: DType,
-        scale_dtype: DType,
         target: StaticString,
         //,
         quantization_granularity: Int,
     ](
-        input_k_scales: FusedInputTensor[dtype=scale_dtype, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        k_scales_blocks: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        input_k_scales: Some[Input & Fused & LoadAccess],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        k_scales_blocks: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
         # Resolves a request's scale pages. Pass `kv_lookup_table` itself when
         # the scales share the values' block-id space; pass a distinct table
         # when they are paged independently.
-        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        k_scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
         context: DeviceContext,
     ) raises:
-        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
-        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
-        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
-        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(k_scales_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_scales_lookup_table), TileTensorable
+        )
+        comptime cache_dtype = type_of(kv_blocks).dtype
+        comptime scale_dtype = type_of(k_scales_blocks).dtype
+        comptime assert type_of(input_k_scales).rank == 3
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(input_k_scales).dtype == scale_dtype
+        comptime assert type_of(k_scales_blocks).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(k_scales_lookup_table).rank == 2
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input_k_scales), UnsafeFusedView)
+        var input_k_scales_view = unsafe_fused_view(input_k_scales)
+        comptime assert conforms_to(type_of(input_k_scales_view), Loadable)
+
+        comptime page_size = type_of(kv_blocks)._shape_types[3].static_value
+        comptime head_dim = type_of(kv_blocks)._shape_types[5].static_value
+        comptime num_heads = type_of(kv_blocks)._shape_types[4].static_value
+        comptime is_mla = type_of(kv_blocks)._shape_types[1].static_value == 1
         comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
 
+        # The builder takes pointer-backed tiles; a non-pointer storage policy
+        # aborts here at run time.
         var k_collection = generic_get_paged_cache_with_scales[
             cache_dtype,
             scale_dtype,
@@ -274,22 +359,20 @@ struct Struct_kv_cache_store_k_scales_paged:
             page_size,
             quantization_granularity,
         ](
-            kv_blocks.to_tile_tensor(),
-            page_stride.to_tile_tensor(),
-            cache_lengths.to_tile_tensor(),
-            kv_lookup_table.to_tile_tensor(),
-            max_prompt_length.to_tile_tensor(),
-            max_cache_length.to_tile_tensor(),
-            k_scales_blocks.to_tile_tensor(),
-            scales_page_stride.to_tile_tensor(),
-            k_scales_lookup_table.to_tile_tensor(),
+            _mut_pointer_tile(kv_blocks.to_tile_tensor()),
+            _imm_pointer_tile(page_stride.to_tile_tensor[.int64]()),
+            _imm_pointer_tile(cache_lengths.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(kv_lookup_table.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(max_prompt_length.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(max_cache_length.to_tile_tensor[.uint32]()),
+            _mut_pointer_tile(k_scales_blocks.to_tile_tensor()),
+            _imm_pointer_tile(scales_page_stride.to_tile_tensor[.int64]()),
+            _imm_pointer_tile(k_scales_lookup_table.to_tile_tensor[.uint32]()),
         )
 
         var k_cache = k_collection.get_key_cache(Int(layer_idx))
 
-        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
-            DType.int64
-        ]()
+        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[.uint32]()
 
         def write_scale_to_cache[
             width: Int,
@@ -297,30 +380,30 @@ struct Struct_kv_cache_store_k_scales_paged:
         ](idx: Coord) {
             var k_cache,
             var input_row_offsets_tt,
-            var input_row_offsets,
-            var input_k_scales,
+            var input_k_scales_view,
         }:
             var row = Int(idx[0])
             # Same bound as the value store: a row past the last offset
             # belongs to no request, and the search below would answer with
             # the last one and write it past the end of that request's span.
             if row >= Int(
-                input_row_offsets_tt[input_row_offsets_tt.num_elements() - 1]
+                input_row_offsets_tt.load[width=1](
+                    Coord(input_row_offsets_tt.num_elements() - 1)
+                )
             ):
                 return
-            var loaded_val = input_k_scales._lambda_load[
-                width=width, element_alignment=alignment
-            ](
-                (
-                    row,
-                    Int(idx[1]),
-                    Int(idx[2]),
-                ),
+            var loaded_val = rebind[SIMD[scale_dtype, width]](
+                input_k_scales_view.load[
+                    width=width, element_alignment=alignment
+                ](Coord(row, Int(idx[1]), Int(idx[2])))
             )
             var batch_idx = get_batch_from_row_offsets(
                 input_row_offsets_tt, row
             )
-            var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
+            var token_idx = Int(
+                UInt32(row)
+                - input_row_offsets_tt.load[width=1](Coord(batch_idx))
+            )
             var h_idx = Int(idx[1])
             var hd_idx = Int(idx[2])
             var cache_length = k_cache.cache_length(batch_idx)
@@ -342,7 +425,7 @@ struct Struct_kv_cache_store_k_scales_paged:
         )
 
         elementwise[simd_width=simd_width, target=target](
-            write_scale_to_cache, input_k_scales.shape_coord(), context
+            write_scale_to_cache, input_k_scales.shape(), context
         )
 
 
@@ -354,26 +437,50 @@ struct Struct_kv_cache_store_padded:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType, target: StaticString, key_or_value: Int
+        target: StaticString, key_or_value: Int
     ](
-        inputs: FusedInputTensor[dtype=dtype, rank=4, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        valid_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        inputs: Some[Input & Fused & LoadAccess],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        valid_lengths: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(valid_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime dtype = type_of(kv_blocks).dtype
+        comptime assert type_of(inputs).rank == 4
+        comptime assert type_of(inputs).dtype == dtype
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(valid_lengths).rank == 1
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(inputs), UnsafeFusedView)
+        var inputs_view = unsafe_fused_view(inputs)
+        comptime assert conforms_to(type_of(inputs_view), Loadable)
+
         var paged_kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         comptime KVCacheT = paged_kv_collection.CacheType
         var cache: KVCacheT
@@ -386,16 +493,16 @@ struct Struct_kv_cache_store_padded:
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](idx: Coord) {var inputs} -> SIMD[dtype, width]:
+        ](idx: Coord) {var inputs_view} -> SIMD[dtype, width]:
             comptime assert idx.rank == 4
-            return inputs._lambda_load[
-                width=width, element_alignment=alignment
-            ](idx)
+            return rebind[SIMD[dtype, width]](
+                inputs_view.load[width=width, element_alignment=alignment](idx)
+            )
 
         kv_cache_store_padded[target=target](
             cache,
-            inputs.shape_coord(),
-            valid_lengths.to_tile_tensor(),
+            inputs.shape(),
+            valid_lengths.to_tile_tensor[.uint32](),
             input_fn,
             context,
         )
