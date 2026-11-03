@@ -90,8 +90,9 @@ modular_py_test(
     name = "test_graph_signature",
     size = "large",
     srcs = ["test_graph_signature.py"],
+    # NVIDIA only: the ModuleV3 copy of this test covers MI355, which
+    # shares the spec-state and KDA code under test.
     gpu_constraints = ["//:has_gpu"] + select({
-        "//:mi355_gpu": [],
         "//:nvidia_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -122,8 +123,9 @@ modular_py_test(
     name = "test_kda_layer_rollback",
     size = "large",
     srcs = ["test_kda_layer_rollback.py"],
+    # NVIDIA only: the ModuleV3 copy of this test covers MI355, which
+    # shares the spec-state and KDA code under test.
     gpu_constraints = ["//:has_gpu"] + select({
-        "//:mi355_gpu": [],
         "//:nvidia_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -179,9 +181,6 @@ modular_py_test(
         "//:nvidia_gpu": {
             "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
         },
-        "//:amd_gpu": {
-            "MODULAR_SHMEM_LIB_DIR": "../+http_archive+rocshmem/lib",
-        },
         "//conditions:default": {},
     }),
     exec_properties = {
@@ -189,8 +188,9 @@ modular_py_test(
         "test.resources:gpu-2": "0.01",
         "test.resources:gpu-memory": "60",
     },
+    # NVIDIA only: the ModuleV3 copy of this test covers MI355, which
+    # shares the spec-state and KDA code under test.
     gpu_constraints = ["//:has_multi_gpu"] + select({
-        "//:mi355_gpu": [],
         "//:nvidia_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
