@@ -1508,6 +1508,43 @@ def concat_nvfp4(*tensors: NVFP4Tensor, axis: int = 0) -> NVFP4Tensor:
     )
 
 
+def gate_scaled_nvfp4(gate_up: NVFP4Tensor) -> NVFP4Tensor:
+    """A fused gate/up stack carrying only its gate's per-tensor scales.
+
+    ``gate_up`` keeps ``[E, 2]`` ``(gate, up)`` scales; the result keeps the
+    gate's, as :func:`concat_nvfp4` does.
+    """
+    return NVFP4Tensor(
+        weight=gate_up.weight,
+        weight_scale=gate_up.weight_scale,
+        weight_scale_2=gate_up.weight_scale_2[:, 0],
+        input_scale=gate_up.input_scale[:, 0],
+        block_size=gate_up.block_size,
+    )
+
+
+def fold_up_scale_nvfp4(down: NVFP4Tensor, gate_up: NVFP4Tensor) -> NVFP4Tensor:
+    """Folds the up/gate scale ratio of a fused gate/up stack into ``down``.
+
+    A fused gate/up weight keeps only the gate's ``weight_scale_2``, so SwiGLU
+    yields ``v / r`` with ``r = up / gate`` scale. Quantizing that with
+    ``input_scale / r`` gives ``v``'s FP4 codes, and ``weight_scale_2 * r``
+    restores the scale in the down epilogue.
+    """
+    ratio = gate_up.weight_scale_2[:, 1] / gate_up.weight_scale_2[:, 0]
+    # The cast round trip keeps the compiler from folding a consumer's
+    # ``1 / input_scale`` into this quotient: one rounding instead of the
+    # two the per-expert form gave, and different FP4 codes.
+    input_scale = (down.input_scale / ratio).cast(DType.float64)
+    return NVFP4Tensor(
+        weight=down.weight,
+        weight_scale=down.weight_scale,
+        weight_scale_2=down.weight_scale_2 * ratio,
+        input_scale=input_scale.cast(DType.float32),
+        block_size=down.block_size,
+    )
+
+
 def concat_mxfp8(*tensors: MXFP8Tensor, axis: int = 0) -> MXFP8Tensor:
     """Concatenate two or more :class:`MXFP8Tensor`s along the row axis."""
     if not tensors:

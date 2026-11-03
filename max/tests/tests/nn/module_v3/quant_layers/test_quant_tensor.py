@@ -40,7 +40,7 @@ from max.nn.common_layers.quant_tensor import (
     all_nvfp4,
 )
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMesh, Sharded
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
 
 
 def test_init_stores_tensors_and_block_size() -> None:
@@ -348,6 +348,38 @@ def test_nvfp4_zeros_global_scales_are_host_scalars() -> None:
         assert list(qt.input_scale.shape) == []
         assert qt.weight_scale_2.device.is_host
         assert qt.input_scale.device.is_host
+
+
+def test_nvfp4_stacked_zeros_adds_an_expert_axis() -> None:
+    """A stack keeps one block grid per expert and per-expert host scales."""
+    with F.lazy():
+        qt = NVFP4Tensor.stacked_zeros(4, (256, 512), scales_per_expert=2)
+        assert list(qt.weight.shape) == [4, 256, 256]
+        assert list(qt.weight_scale.shape) == [4, 256, 32]
+        assert list(qt.weight_scale_2.shape) == [4, 2]
+        assert list(qt.input_scale.shape) == [4, 2]
+        assert qt.weight_scale_2.device.is_host
+        assert qt.input_scale.device.is_host
+
+        assert list(
+            NVFP4Tensor.stacked_zeros(4, (8, 24)).input_scale.shape
+        ) == [4]
+
+
+def test_nvfp4_local_experts_cuts_the_host_scales_too() -> None:
+    """Each device's experts come with their own per-expert scales."""
+    with F.lazy(), patch("max.graph.type.Accelerator") as mock:
+        mock.side_effect = _fake_gpu
+        mesh = DeviceMesh((mock(0), mock(1)), (2,), (TP,))
+        qt = NVFP4Tensor.stacked_zeros(
+            4, (256, 512), device=DeviceMapping(mesh, (Sharded(axis=0),))
+        )
+        for device in range(2):
+            local = qt.local_experts(device)
+            assert list(local.weight.shape) == [2, 256, 256]
+            assert list(local.weight_scale.shape) == [2, 256, 32]
+            assert list(local.weight_scale_2.shape) == [2]
+            assert list(local.input_scale.shape) == [2]
 
 
 def test_nvfp4_init_stores_tensors_and_block_size() -> None:

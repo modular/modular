@@ -40,7 +40,7 @@ muse_spark_arch = SupportedArchitecture(
     context_type=TextAndVisionContext,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_registered_state_dict,
     },

@@ -17,10 +17,9 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 
 from max.graph.weights import WeightData, Weights
-from max.graph.weights.weights import Shape
 
 MUSE_SPARK_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
     "model.language_model.": "language_model.",
@@ -51,9 +50,14 @@ _STACKED_EXPERTS = re.compile(
     r"^(?P<prefix>language_model\.layers\.\d+\.mlp\.experts\.)"
     r"(?P<proj>gate_up_proj|down_proj)(?P<suffix>.*)$"
 )
-_NVFP4_SUFFIXES = frozenset(
-    {"", "_weight_scale", "_weight_scale_2", "_input_scale"}
-)
+# An NVFP4 stack's checkpoint suffixes and their leaves in ``StackedExperts``;
+# a BF16 stack is a bare tensor under the checkpoint's own name.
+_LEAVES = {
+    "": "weight",
+    "_weight_scale": "weight_scale",
+    "_weight_scale_2": "weight_scale_2",
+    "_input_scale": "input_scale",
+}
 
 
 def _rename(
@@ -75,44 +79,9 @@ def _rename(
     return new_state_dict
 
 
-def _view(
-    data: WeightData, index: tuple[int | slice, ...], name: str
-) -> WeightData:
-    buf = data.to_buffer()
-    # Buffer indexing takes one index per axis; a 1-D scalar stack drops `i`.
-    buf = buf[(index + (slice(None),) * buf.rank)[: buf.rank]]
-    return WeightData(buf, name, data.dtype, Shape(buf.shape))
-
-
-def _split_experts(
-    prefix: str, proj: str, leaves: dict[str, WeightData]
-) -> Iterator[tuple[str, WeightData]]:
-    """Yields one expert's projection per row ``e`` of the stacked tensors.
-
-    ``gate_up_proj`` stacks gate rows then up rows; its ``[E, 2]`` NVFP4
-    scalars are ``(gate, up)``. Every leaf is a view, never a copy.
-    """
-    halves = ("gate_proj", "up_proj") if proj == "gate_up_proj" else (proj,)
-    stacked = leaves[""]
-    rows = int(stacked.shape[1]) // len(halves)
-    for e in range(int(stacked.shape[0])):
-        for i, half in enumerate(halves):
-            row_slice = slice(i * rows, (i + 1) * rows)
-            for leaf, index in (
-                ("weight", (e, row_slice)),
-                ("weight_scale", (e, row_slice)),
-                ("weight_scale_2", (e, i)),
-                ("input_scale", (e, i)),
-            ):
-                data = leaves.get("" if leaf == "weight" else f"_{leaf}")
-                if data is not None:
-                    name = f"{prefix}{e}.{half}.{leaf}"
-                    yield name, _view(data, index, name)
-
-
 def _convert_moe(state_dict: dict[str, WeightData]) -> dict[str, WeightData]:
     out: dict[str, WeightData] = {}
-    stacks: dict[tuple[str, str], dict[str, WeightData]] = defaultdict(dict)
+    stacks: dict[str, dict[str, WeightData]] = defaultdict(dict)
     for name, data in state_dict.items():
         for before, after in _MOE_RENAMES:
             name = name.replace(before, after)
@@ -120,18 +89,22 @@ def _convert_moe(state_dict: dict[str, WeightData]) -> dict[str, WeightData]:
         if match is None:
             out[name] = data
             continue
-        if match["suffix"] not in _NVFP4_SUFFIXES:
+        if match["suffix"] not in _LEAVES:
             raise ValueError(f"Unexpected expert tensor: {name}")
-        stacks[match["prefix"], match["proj"]][match["suffix"]] = data
+        stacks[match["prefix"] + match["proj"]][match["suffix"]] = data
 
-    for (prefix, proj), leaves in stacks.items():
-        if set(leaves) not in ({""}, _NVFP4_SUFFIXES):
-            missing = sorted(_NVFP4_SUFFIXES - set(leaves))
+    for stack, leaves in stacks.items():
+        if set(leaves) == {""}:
+            out[stack] = leaves[""]
+        elif set(leaves) == set(_LEAVES):
+            for suffix, data in leaves.items():
+                out[f"{stack}.{_LEAVES[suffix]}"] = data
+        else:
+            missing = sorted(set(_LEAVES) - set(leaves))
             raise ValueError(
-                f"{prefix}{proj} is neither BF16 nor NVFP4: missing"
-                f" {[proj + s for s in missing]}"
+                f"{stack} is neither BF16 nor NVFP4: missing"
+                f" {[stack + s for s in missing]}"
             )
-        out.update(_split_experts(prefix, proj, leaves))
     return out
 
 
@@ -141,10 +114,9 @@ def convert_safetensor_language_state_dict(
     """Maps the text checkpoint keys onto the ``MuseSpark`` module tree.
 
     Each layer's stacked ``experts.gate_up_proj`` and ``experts.down_proj``
-    become per-expert ``gate_proj``/``up_proj``/``down_proj`` weights:
-    BF16 ``weight`` tensors, or NVFP4 ``weight``, ``weight_scale``,
-    ``weight_scale_2`` and ``input_scale`` on the layers the checkpoint
-    quantizes, the names the checkpoint gives a quantized projection.
+    stay whole: a BF16 tensor under its own name, or NVFP4 ``weight``,
+    ``weight_scale``, ``weight_scale_2`` and ``input_scale`` on the layers
+    the checkpoint quantizes, as ``StackedExperts`` names them.
 
     Raises:
         ValueError: If a key is neither a text, vision nor audio key, or an

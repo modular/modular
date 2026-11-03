@@ -14,7 +14,9 @@
 
 from unittest.mock import MagicMock, NonCallableMock
 
+import pytest
 from max.graph.weights import Weights
+from max.pipelines.architectures.muse_spark.model_config import MuseSparkConfig
 from max.pipelines.architectures.muse_spark.modules import MuseSparkDecoder
 from max.pipelines.architectures.muse_spark.weight_adapters import (
     convert_registered_state_dict,
@@ -22,7 +24,10 @@ from max.pipelines.architectures.muse_spark.weight_adapters import (
 from max.pipelines.lib.role_contracts import DecoderInputs, VisionInputs
 
 
-def test_decoder_feeds_the_text_tower_in_its_graph_input_order() -> None:
+@pytest.mark.parametrize("ep_buffers", [None, ("counters", "pointers")])
+def test_decoder_feeds_the_text_tower_in_its_graph_input_order(
+    ep_buffers: tuple[str, ...] | None,
+) -> None:
     tokens, offsets, count, embeddings, indices, full, sliding = (
         NonCallableMock() for _ in range(7)
     )
@@ -37,10 +42,18 @@ def test_decoder_feeds_the_text_tower_in_its_graph_input_order() -> None:
             return_n_logits=count,
             vision=VisionInputs(embeddings=embeddings, scatter_indices=indices),
             kv=(full, sliding),
+            ep=ep_buffers,
         ),
     )
     model.assert_called_once_with(
-        tokens, count, offsets, embeddings, indices, full, sliding
+        tokens,
+        count,
+        offsets,
+        embeddings,
+        indices,
+        full,
+        sliding,
+        *(ep_buffers or ()),
     )
     assert outputs.next_token_logits is logits
     assert outputs.logits is None
@@ -59,3 +72,8 @@ def test_registered_weights_adapt_both_roles_without_cross_contamination() -> (
         "decoder.language_model.embed_tokens.weight": "language",
         "vision.vision_tower.patch_embedder.position_embedding_table": "vision",
     }
+
+
+def test_exports_carry_the_ep_init_graph() -> None:
+    """A virtual-device export never runs EP init, so only the specs carry it."""
+    assert MuseSparkConfig.export_ep_init

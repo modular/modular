@@ -268,6 +268,43 @@ def test_concat_nvfp4_shares_the_global_scales() -> None:
         assert fused.input_scale is gate.input_scale
 
 
+def _host_nvfp4(
+    scale_2: list[float] | list[list[float]],
+    input_scale: list[float] | list[list[float]],
+) -> NVFP4Tensor:
+    num_experts = len(scale_2)
+    return NVFP4Tensor(
+        weight=Tensor(np.zeros((num_experts, 2, 1), np.uint8), device=CPU()),
+        weight_scale=Tensor(
+            np.zeros((num_experts, 2, 1), np.float32), device=CPU()
+        ),
+        weight_scale_2=Tensor(np.array(scale_2, np.float32), device=CPU()),
+        input_scale=Tensor(np.array(input_scale, np.float32), device=CPU()),
+    )
+
+
+def test_gate_scaled_nvfp4_keeps_the_gate_scales() -> None:
+    """A fused gate/up stack carries the gate's scales, as concat does."""
+    gate_up = _host_nvfp4([[1.0, 4.0], [2.0, 2.0]], [[0.5, 7.0], [0.25, 9.0]])
+    gated = quant_ops.gate_scaled_nvfp4(gate_up)
+    np.testing.assert_array_equal(gated.weight_scale_2.to_numpy(), [1.0, 2.0])
+    np.testing.assert_array_equal(gated.input_scale.to_numpy(), [0.5, 0.25])
+    assert gated.weight is gate_up.weight
+
+
+def test_fold_up_scale_nvfp4_moves_the_up_gate_ratio_into_down() -> None:
+    """With r = up / gate scale, down's scale gains r and its input scale
+    loses it, so the down matmul sees the up half at its own scale."""
+    gate_up = _host_nvfp4([[1.0, 4.0], [2.0, 2.0]], [[1.0, 1.0], [1.0, 1.0]])
+    down = _host_nvfp4([3.0, 5.0], [8.0, 6.0])
+    folded = quant_ops.fold_up_scale_nvfp4(down, gate_up)
+    # r = [4, 1]
+    np.testing.assert_array_equal(folded.weight_scale_2.to_numpy(), [12.0, 5.0])
+    np.testing.assert_array_equal(folded.input_scale.to_numpy(), [2.0, 6.0])
+    assert folded.input_scale.dtype == DType.float32
+    assert folded.weight is down.weight
+
+
 def test_concat_nvfp4_quantizers_pin_the_max_amax(sm100_arch: None) -> None:
     """Fake-quant gate||up shares one global amax before the packed concat.
 

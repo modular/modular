@@ -22,6 +22,7 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.nn.legacy.quant_config import NVFP4_BLOCK_SIZE, QuantConfig
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
@@ -42,7 +43,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ModelOutputConfig,
 )
 from max.pipelines.lib.registration_runtime import (
-    DeploymentConfig,
+    ExpertParallelDeploymentConfig,
     ModuleRuntime,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
@@ -54,6 +55,7 @@ from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from .mesh import bf16_dispatch, device_mesh, ep_config
 from .vision.vision_model import parse_vision_config
 
 logger = logging.getLogger("max.pipelines")
@@ -153,13 +155,15 @@ def parse_nvfp4(
             " but modules_to_not_convert leaves the experts of layers"
             f" {sorted(bf16_expert_layers)} bfloat16"
         )
+    quant_config = QuantConfig.nvfp4(
+        mlp_quantized_layers=set(range(num_hidden_layers)) - excluded_layers,
+        attn_quantized_layers=set(),
+        embedding_output_dtype=DType.bfloat16,
+    )
+    # The EP layers then run gate_up with its SwiGLU and NVFP4 quantize
+    # fused, which the graph compiler folds with down into one MegaFFN launch.
     return MuseSparkNVFP4(
-        quant_config=QuantConfig.nvfp4(
-            mlp_quantized_layers=set(range(num_hidden_layers))
-            - excluded_layers,
-            attn_quantized_layers=set(),
-            embedding_output_dtype=DType.bfloat16,
-        ),
+        quant_config=replace(quant_config, can_use_fused_swiglu=True),
         excluded_modules=frozenset(excluded_modules),
     )
 
@@ -364,7 +368,9 @@ _MAX_IMAGE_TOKENS = 4096
 
 @dataclass(kw_only=True)
 class MuseSparkConfig(
-    ArchConfigWithKVCache, ArchConfigWithVisionCache, DeploymentConfig
+    ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
+    ExpertParallelDeploymentConfig,
 ):
     """Top-level Muse Spark configuration."""
 
@@ -384,15 +390,42 @@ class MuseSparkConfig(
     vision_config: MuseGlimmerVisionConfig
     quantization_encoding: SupportedEncoding | None = None
     mesh: DeviceMesh | None = None
+    ep: EPConfig | None = None
+    """The NVFP4 experts' exchange, under expert parallelism."""
+
+    # Each MoE block dispatches only its own slice of the rows (P2P), so
+    # exporters must not pick the allreduce EP backend.
+    ep_dispatch_token_layout: ClassVar[str | None] = "tp_sharded"
+    # Mach boots expert parallelism from an exported ep_init graph, which
+    # a virtual-device export can only get from the graph specs.
+    export_ep_init: ClassVar[bool] = True
 
     weight_prefixes: ClassVar[Mapping[str, str]] = {
         GraphRole.DECODER: "decoder.",
         GraphRole.VISION: "vision.",
     }
 
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        """Sizes the exchange for BF16 tokens, the larger of both formats.
+
+        The BF16 expert layers share the NVFP4 layers' exchange.
+        """
+        return bf16_dispatch(self._nvfp4_ep(runtime))
+
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:
-        """Places the text module on the serving mesh."""
-        return replace(self, mesh=runtime.mesh)
+        """Places the text module on the mesh, the NVFP4 exchange on its node."""
+        device_mesh(self.text_config, runtime.mesh.devices, runtime.ep_size)
+        ep = None
+        if runtime.ep is not None:
+            ep = replace(self._nvfp4_ep(runtime), node_id=runtime.ep.node_id)
+        return replace(self, mesh=runtime.mesh, ep=ep)
+
+    def _nvfp4_ep(self, runtime: ModuleRuntime) -> EPConfig:
+        return ep_config(
+            self.text_config,
+            len(runtime.mesh.devices),
+            runtime.max_batch_input_tokens,
+        )
 
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""
@@ -556,13 +589,13 @@ class MuseSparkConfig(
         )
         nvfp4 = self.text_config.nvfp4
         if nvfp4 is not None:
-            expert_zero_gate = re.compile(
-                r"decoder\.language_model\.layers\.(\d+)\.mlp\.experts\.0\.gate_proj\.weight(\.data)?"
+            expert_gate_up = re.compile(
+                r"decoder\.language_model\.layers\.(\d+)\.mlp\.experts\.gate_up_proj(\.weight)?"
             )
             expert_dtypes = {
                 int(match[1]): data.dtype
                 for name, data in state_dict.items()
-                if (match := expert_zero_gate.fullmatch(name))
+                if (match := expert_gate_up.fullmatch(name))
             }
             self.text_config.nvfp4 = replace(
                 nvfp4,

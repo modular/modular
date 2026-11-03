@@ -575,18 +575,22 @@ class ExpertParallelMoE(QuantizedMoE):
     def _num_local_experts(self) -> int:
         return self.num_experts // self.mesh.num_devices
 
-    def _init_experts(self) -> ModuleList[QuantizedMLP]:
-        dtype, mesh = defaults()
+    @staticmethod
+    def _check_mesh(mesh: DeviceMesh, num_experts: int) -> None:
         if mesh.ndim != 1:
             raise ValueError(
                 "Mesh used with ExpertParallelMoE must have exactly one device"
                 f" axis, but got {mesh}"
             )
-        if self.num_experts % mesh.num_devices != 0:
+        if num_experts % mesh.num_devices != 0:
             raise ValueError(
-                f"num_experts ({self.num_experts}) must be divisible by the "
+                f"num_experts ({num_experts}) must be divisible by the "
                 f"number of devices ({mesh.num_devices}) for expert parallelism"
             )
+
+    def _init_experts(self) -> ModuleList[QuantizedMLP]:
+        dtype, mesh = defaults()
+        self._check_mesh(mesh, self.num_experts)
         num_local_experts = self.num_experts // mesh.num_devices
         experts: list[QuantizedMLP] = []
         for device in mesh.devices:
@@ -619,6 +623,16 @@ class ExpertParallelMoE(QuantizedMoE):
     @property
     def gate_up_proj(self) -> list[QuantAwareTensor]:
         """Per-device stacked ``[gate, up]`` weight bundle for local experts."""
+        stacked = self._stack_gate_up()
+        if self._uses_fused_swiglu:
+            permuted: list[QuantAwareTensor] = []
+            for w in stacked:
+                assert isinstance(w, NVFP4Tensor)
+                permuted.append(quant_ops.sigma_permute_gate_up_nvfp4(w))
+            return permuted
+        return stacked
+
+    def _stack_gate_up(self) -> list[QuantAwareTensor]:
         per_device: list[list[list[QuantAwareTensor]]] = [
             [] for _ in self.mesh.devices
         ]
@@ -638,14 +652,7 @@ class ExpertParallelMoE(QuantizedMoE):
             per_device[idx].append(
                 [expert.gate_proj.weight, expert.up_proj.weight]
             )
-        stacked = self._stack_local_experts(per_device)
-        if self._uses_fused_swiglu:
-            permuted: list[QuantAwareTensor] = []
-            for w in stacked:
-                assert isinstance(w, NVFP4Tensor)
-                permuted.append(quant_ops.sigma_permute_gate_up_nvfp4(w))
-            return permuted
-        return stacked
+        return self._stack_local_experts(per_device)
 
     @property
     def down_proj(self) -> list[QuantAwareTensor]:
