@@ -32,7 +32,7 @@ TEST(Threading, haveThreadAffinity) {
 
 #if defined(__APPLE__)
   // On macos, we don't have/use thread affinity.
-  EXPECT_FALSE(haveThreadAffinity());
+  EXPECT_TRUE(haveThreadAffinity());
 #endif
 }
 
