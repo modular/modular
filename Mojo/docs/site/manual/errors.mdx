@@ -3,40 +3,41 @@ title: Errors, error handling, and context managers
 sidebar_label: Errors and context managers
 ---
 
-Mojo represents errors as values—specifically, as alternate return values from
-functions. Unlike stack-unwinding exceptions in languages like C++ or Java, Mojo
-errors don't require expensive call stack unwinding, so their runtime overhead
-is as low as returning and checking an extra `Bool`. This design also enables
-error handling in contexts where traditional exceptions aren't available, like
-GPU kernels.
+Mojo represents errors as values—specifically, as alternate return values
+from functions. Unlike stack-unwinding exceptions in languages like C++ or
+Java, Mojo errors don't require expensive call stack unwinding, so their
+runtime overhead is as low as returning and checking an extra `Bool`. This
+design also enables error handling in contexts where traditional exceptions
+aren't available, like GPU kernels.
 
 This page covers:
 
 - [**Raise an error**](#raise-an-error) — Use the built-in `Error` type to
   raise errors with string messages.
-- [**Handle an error**](#handle-an-error) — Use `try`/`except`/`else`/`finally`
-  to detect and recover from errors.
-- [**Typed errors**](#typed-errors) — Define custom error types as structs for
-  structured error data and compile-time type checking.
-- [**Representing multiple error conditions**](#representing-multiple-error-conditions)
+- [**Handle an error**](#handle-an-error) — Use
+  `try`/`except`/`else`/`finally` to detect and recover from errors.
+- [**Typed errors**](#typed-errors) — Define custom error types as structs
+  for structured error data and compile-time type checking.
+- [**Representing multiple error
+  conditions**](#representing-multiple-error-conditions)
   — Use enumerated error types or the `Variant` type for pattern matching.
 - [**The `Never` type**](#the-never-type) — Mark functions that always raise
   or never raise.
-- [**Parametric raises**](#parametric-raises) — Write parameterized functions
-  that propagate error types from their arguments.
-- [**Typed and `Error` interaction**](#typed-errors-and-error-interaction) —
-  Work with code that uses both error styles.
-- [**Stack traces**](#enable-stack-trace-generation-for-errors) — Enable stack
-  trace collection for debugging.
+- [**Parametric raises**](#parametric-raises) — Write parameterized
+  functions that propagate error types from their arguments.
+- [**Typed and `Error` interaction**](#typed-errors-and-error-interaction)
+  — Work with code that uses both error styles.
+- [**Stack traces**](#enable-stack-trace-generation-for-errors) — Enable
+  stack trace collection for debugging.
 - [**Context managers**](#use-a-context-manager) — Manage resources safely
   with the `with` statement.
 
-An error interrupts the normal execution flow of your program. If you provide an
-error handler (using [`try`/`except`](#handle-an-error)) in the current
-function, execution resumes with that handler. If the error isn't handled in the
-current function, it propagates to the calling function, and so on. If an error
-isn't caught by any handler, your program terminates with a non-zero exit code
-and prints the error message:
+An error interrupts the normal execution flow of your program. If you
+provide an error handler (using [`try`/`except`](#handle-an-error)) in the
+current function, execution resumes with that handler. If the error isn't
+handled in the current function, it propagates to the calling function, and
+so on. If an error isn't caught by any handler, your program terminates
+with a non-zero exit code and prints the error message:
 
 ```output
 Unhandled exception caught during execution: record not found
@@ -903,7 +904,7 @@ var f = open(input_file, "r")
 var content = f.read()
 # Process the content as needed
 # Close the file handle
-f.close()
+f^.close()
 ```
 
 Calling [`close()`](/docs/std/io/file/FileHandle/#close) releases the
@@ -929,7 +930,7 @@ try:
     # Process the content as needed
 finally:
     # Ensure that the file handle is closed even if read() raises an error
-    f.close()
+    f^.close()
 ```
 
 However, the [`FileHandle`](/docs/std/io/file/FileHandle/) struct
