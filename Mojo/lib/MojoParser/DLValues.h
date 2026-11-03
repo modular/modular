@@ -18,7 +18,7 @@
 #ifndef KGEN_MOJOPARSER_DLVALUES_H
 #define KGEN_MOJOPARSER_DLVALUES_H
 
-#include "OverloadSet.h"
+#include "Mojo/MojoParser/CallOperands.h"
 
 namespace M::KGEN::LIT {
 

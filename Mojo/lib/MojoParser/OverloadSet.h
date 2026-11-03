@@ -18,12 +18,13 @@
 #ifndef KGEN_MOJOPARSER_CALLEMISSION_H
 #define KGEN_MOJOPARSER_CALLEMISSION_H
 
-#include "DeferredTypingContext.h"
 #include "ParamBindings.h"
 
 #include "Mojo/Support/TriResult.h"
 
 namespace M::KGEN::LIT {
+
+class DeferredTypingContext;
 
 /// The callee an overload filter selected, or why none was selected.
 using CalleeResult = TriResult<PValue>;

@@ -23,6 +23,7 @@
 #include "Mojo/Support/MojoPrecompiledFile.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 
+#include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 

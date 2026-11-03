@@ -22,6 +22,7 @@
 #include "MojoUtils.h"
 #include "OverloadFitness.h"
 #include "ParamInf.h"
+#include "ParserEvaluationContext.h"
 #include "StabilityMarkers.h"
 #include "Traits.h"
 

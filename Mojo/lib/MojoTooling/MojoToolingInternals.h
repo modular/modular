@@ -14,12 +14,14 @@
 #ifndef KGEN_LIB_MOJOTOOLING_MOJOTOOLINGINTERNALS_H
 #define KGEN_LIB_MOJOTOOLING_MOJOTOOLINGINTERNALS_H
 
-#include "Mojo/MojoParser/DeclResolver.h"
-#include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/SharedState.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "llvm/Support/JSON.h"
-#include <optional>
+
+namespace M::KGEN::LIT {
+class ASTDecl;
+class DeclResolver;
+class TopLevelModuleASTDecl;
+} // namespace M::KGEN::LIT
 
 namespace M {
 
@@ -38,11 +40,6 @@ void resolveSignaturesForLSP(KGEN::LIT::DeclResolver &resolver);
 } // namespace M
 
 namespace M::KGEN::LIT {
-
-/// Serialize a supported AST declaration. Returns nullopt for declarations
-/// outside the public documentation model.
-std::optional<llvm::json::Object> serializeDocDecl(ASTDecl &decl,
-                                                   MojoParserContext &ctx);
 
 /// This class represents the internal implementation of the parser driver.
 struct MojoParserContext::Impl {

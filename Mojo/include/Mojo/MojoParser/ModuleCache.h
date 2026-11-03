@@ -21,7 +21,11 @@
 #ifndef MOJO_MOJOPARSER_MODULECACHE_H
 #define MOJO_MOJOPARSER_MODULECACHE_H
 
-#include "mlir/IR/BuiltinOps.h"
+#include "llvm/ADT/StringRef.h"
+
+namespace mlir {
+class ModuleOp;
+}
 
 namespace M::KGEN::LIT {
 class ASTDecl;

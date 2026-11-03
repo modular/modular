@@ -19,7 +19,6 @@
 #define KGEN_MOJOPARSER_SPECIALIZEINFERENCE_H
 
 #include "InferenceState.h"
-#include "OverloadSet.h"
 
 namespace M::KGEN::LIT {
 

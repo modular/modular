@@ -26,8 +26,6 @@
 #include "MojoToolingInternals.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
-#include "mlir/IR/Verifier.h"
-#include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringSet.h"

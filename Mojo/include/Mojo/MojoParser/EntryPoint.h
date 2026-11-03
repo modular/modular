@@ -16,7 +16,6 @@
 
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include <filesystem>
 
 namespace llvm {
 class SourceMgr;

@@ -14,12 +14,13 @@
 #ifndef KGEN_MOJOTOOLING_PARSERDRIVER_H
 #define KGEN_MOJOTOOLING_PARSERDRIVER_H
 
-#include "Mojo/KGENDialect/KGENAttrs.h"
-#include "Mojo/MojoParser/ASTType.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include <filesystem>
+#include <memory>
+#include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace llvm {
 class SMDiagnostic;
@@ -111,15 +112,8 @@ public:
   /// Return the shared state user by the parser.
   SharedState &getSharedState();
 
-  /// Return the full list of directories considered for module lookup from
-  /// the given file.
-  std::vector<std::string> getModuleSearchDirectories(unsigned fileId);
-
   /// Return the compilation options used by the parser.
   const KGEN::CompilationOptions &getCompilationOptions();
-
-  /// Return the frontend options used by the parser.
-  const FrontendOptions &getFrontendOptions();
 
   /// Parse a SourceMgr file given its id as a module.
   ///

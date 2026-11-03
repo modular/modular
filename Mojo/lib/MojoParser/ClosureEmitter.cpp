@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ClosureEmitter.h"
+#include "ExprNodes.h"
 #include "IREmitter.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"

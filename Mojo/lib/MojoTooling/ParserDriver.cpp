@@ -22,25 +22,17 @@
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/Lexer.h"
-#include "Mojo/MojoParser/ModuleLoader.h"
 #include "Mojo/MojoParser/SharedState.h"
-#include "Mojo/POPDialect/POPDialect.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 
 #include "MojoToolingInternals.h"
-#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/Filesystem/Paths.h"
-#include "Support/Telemetry/Telemetry.h"
-#include "mlir/Bytecode/Encoding.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
-#include "mlir/IR/Verifier.h"
-#include "mlir/Support/Timing.h"
-#include "llvm/ADT/ScopeExit.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SourceMgr.h"
 
+#include <deque>
 #include <filesystem>
 
 using namespace M;
@@ -91,23 +83,8 @@ llvm::SourceMgr &MojoParserContext::getSourceMgr() {
 
 SharedState &MojoParserContext::getSharedState() { return impl->sharedState; }
 
-std::vector<std::string>
-MojoParserContext::getModuleSearchDirectories(unsigned fileId) {
-  std::vector<std::string> searchDirs;
-  impl->sharedState.getModuleLoader().traverseImportDirectories(
-      fileId, [&](StringRef dir) {
-        searchDirs.push_back(dir.str());
-        return WalkResult::advance();
-      });
-  return searchDirs;
-}
-
 const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
   return impl->sharedState.options;
-}
-
-const FrontendOptions &MojoParserContext::getFrontendOptions() {
-  return impl->sharedState.frontendOptions;
 }
 
 //===----------------------------------------------------------------------===//

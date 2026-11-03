@@ -20,6 +20,8 @@
 #include "IREmitter.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
+#include "OverloadSet.h"
+#include "ParamBindings.h"
 
 #include "Mojo/LITDialect/LITOps.h"
 

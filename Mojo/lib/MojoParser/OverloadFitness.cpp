@@ -19,12 +19,12 @@
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
-#include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
 #include "OverloadSet.h"
 #include "ParamInf.h"
+#include "ParserEvaluationContext.h"
 
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITTypes.h"
