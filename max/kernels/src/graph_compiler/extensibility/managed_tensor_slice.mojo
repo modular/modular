@@ -50,11 +50,9 @@ from max.runtime.tracing import trace_arg
 from layout import (
     Coord,
     CoordLike,
-    Layout,
     TileTensor,
     coord_to_index_list,
 )
-from layout.int_tuple import coord_to_int_tuple
 from layout.coord import (
     ComptimeInt,
     _IntToComptimeInt,
@@ -817,13 +815,6 @@ struct StaticTensorSpec[
             self.address_space,
         }
 
-    @inline(.always)
-    def to_layout(self) -> Layout:
-        return Layout(
-            coord_to_int_tuple[*Self.static_layout._shape_types](),
-            coord_to_int_tuple[*Self.static_layout._stride_types](),
-        )
-
     # -1 (UNKNOWN_VALUE) when any dim is dynamic, as the old
     # `product(IntTuple)` reducer returned, rather than multiplying the
     # dynamic dims' -1 through.
@@ -1289,8 +1280,9 @@ struct ManagedTensorSlice[
     def get_type_name() -> String:
         return String(
             t"ManagedTensorSlice[mut = {Self.mut}, dtype = {Self.dtype},"
-            t" rank = {Self.rank}, static_spec (as Layout) ="
-            t" {Self.static_spec.to_layout()}]"
+            t" rank = {Self.rank}, static_spec (shape, strides) ="
+            t" ({Self.static_spec.shape_tuple},"
+            t" {Self.static_spec.strides_tuple})]"
         )
 
     comptime address_space = Self.static_spec.address_space
