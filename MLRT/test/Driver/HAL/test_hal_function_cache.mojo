@@ -68,8 +68,8 @@ def test_static_and_dynamic_agree[
     var info = ctx._compile_inner[type_of(scale_kernel), scale_kernel]()
     var name = String(info.function_name)
 
-    var first = ctx.get_or_load_function(info.asm, name.copy())
-    var second = ctx.get_or_load_function(info.asm, name.copy())
+    var first = ctx.get_or_load_function(info.asm, info.function_name)
+    var second = ctx.get_or_load_function(info.asm, info.function_name)
     assert_equal(Int(first), Int(second))
 
     var copied = String()
@@ -89,7 +89,7 @@ def test_compile_function_inline_uses_cache[
     assert_equal(Int(first), Int(second))
 
     var info = ctx._compile_inner[type_of(scale_kernel), scale_kernel]()
-    var direct = ctx.get_or_load_function(info.asm, String(info.function_name))
+    var direct = ctx.get_or_load_function(info.asm, info.function_name)
     assert_equal(Int(first), Int(direct))
 
 
