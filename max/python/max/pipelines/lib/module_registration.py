@@ -74,7 +74,14 @@ from abc import ABCMeta
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Protocol, cast, runtime_checkable
+from typing import (
+    Any,
+    ClassVar,
+    Protocol,
+    TypeAlias,
+    cast,
+    runtime_checkable,
+)
 
 import numpy as np
 from max import functional as F
@@ -88,7 +95,15 @@ from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.legacy.comm.ep import EPInit
 from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
+from max.nn.legacy.graph_groups import (
+    DecoderGraphInputs,
+    HiddenStates,
+    Logits,
+    VisionMerge,
+)
+from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.context import TextContext
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
 from max.pipelines.modeling.types import RequestID
@@ -142,6 +157,7 @@ from .registration_runtime import (
     uses_expert_parallel_exchange,
 )
 from .request_state import (
+    RequestStateGroup,
     RequestStateMixin,
     RequestStateStore,
     build_state_store,
@@ -309,12 +325,15 @@ def decoder_input_types(
     state: Sequence[Any] = (),
     scratch: Sequence[BufferType] = (),
     input_layout: Sequence[str] | None = None,
-) -> OrderedDict[str, object]:
+) -> DecoderGraphInputs:
     """Returns a ``DECODER`` graph's input types, keyed by field.
 
     The keys are the :class:`~max.pipelines.lib.role_contracts.DecoderInputs`
     fields the deployment sets, in its order, and the leaves are the graph's
-    inputs.
+    inputs. The graph takes the tree as its one argument, so an exported
+    graph names its inputs. It takes ``vision`` as a
+    :class:`~max.nn.legacy.graph_groups.VisionMerge` group, the kind a
+    serving engine feeds image embeddings by.
 
     Args:
         kv_params: The KV cache parameters that supply the ``kv`` subtree.
@@ -357,7 +376,10 @@ def decoder_input_types(
     if token_positions is not None:
         types["token_positions"] = token_positions
     if vision is not None:
-        types["vision"] = vision
+        types["vision"] = VisionMerge(
+            image_embeddings=vision.embeddings,
+            image_token_indices=vision.scatter_indices,
+        )
     if batch_context_lengths is not None:
         types["batch_context_lengths"] = tuple(batch_context_lengths)
     if ep is not None:
@@ -380,7 +402,24 @@ def decoder_input_types(
                 f"invalid decoder input_layout: duplicate fields {duplicates}, "
                 f"unknown fields {unknown}, missing fields {missing}"
             )
-    return OrderedDict((name, types[name]) for name in order if name in types)
+    return DecoderGraphInputs(
+        (name, types[name]) for name in order if name in types
+    )
+
+
+def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
+    """Returns a decoder graph's named inputs as its role's fields.
+
+    The graph takes ``vision`` as a ``vision_merge`` group, which the decoder
+    reads as :class:`~max.pipelines.lib.role_contracts.VisionInputs`.
+    """
+    fields = OrderedDict(inputs)
+    if (vision := fields.get("vision")) is not None:
+        fields["vision"] = VisionInputs(
+            embeddings=vision["image_embeddings"],
+            scatter_indices=vision["image_token_indices"],
+        )
+    return fields
 
 
 def decoder_vision_input_types(
@@ -522,7 +561,7 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
     def bind_input_tree(self, input_tree: OrderedDict[str, object]) -> None:
         """Binds the graph's inputs, and sizes the ones this fills."""
         super().bind_input_tree(input_tree)
-        _, self._input_tree_def = tree.flatten(input_tree)
+        _, self._input_tree_def = tree.flatten(_decoder_fields(input_tree))
         self._batch_context_lengths = (
             BatchContextLengths(
                 self.runtime.data_parallel_degree,
@@ -700,37 +739,102 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
         )
 
 
-class _DecoderGraph(Module[..., DecoderOutputs]):
+_GroupedOutputs: TypeAlias = (
+    GroupedDecoderOutputs[Tensor]
+    | tuple[GroupedDecoderOutputs[Tensor], RequestStateGroup]
+)
+"""A decoder graph's outputs, named by group as :func:`_grouped_outputs`
+names them."""
+
+
+class _DecoderGraph(
+    Module[[DecoderGraphInputs], _GroupedOutputs | DecoderOutputs]
+):
     """Calls a decoder with :class:`DecoderInputs` built from its graph inputs.
 
-    The graph takes the leaves of :func:`decoder_input_types` in order, and
-    binds the LoRA inputs into the decoder's LoRA layers before calling it.
-    It is name-transparent to the decoder, so the weight names are the
-    decoder's own.
+    The graph takes the :func:`decoder_input_types` tree as its one argument
+    and returns the decoder's outputs named by group, so an exported graph
+    names both. A pipeline stage before the last returns what it hands the
+    next stage, in the tree the decoder returns it. The graph binds the LoRA
+    inputs into the decoder's LoRA layers before calling it. It is
+    name-transparent to the decoder, so the weight names are the decoder's
+    own.
     """
 
     def __init__(
         self,
         decoder: Module[[DecoderInputs], DecoderOutputs],
-        input_types: Mapping[str, object],
+        *,
         lora_manager: LoRAManagerV3 | None = None,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        last_stage: bool = True,
     ) -> None:
         super().__init__()
         # The LoRA weight adapter nests every checkpoint key under `model.`.
         decoder.name_transparent = lora_manager is None
         self.model = decoder
-        # A plain dict flattens in sorted key order; the graph takes its
-        # inputs in field order.
-        _, self.input_tree = tree.flatten(OrderedDict(input_types))
         self.lora_manager = lora_manager
+        self.return_hidden_states = return_hidden_states
+        self.last_stage = last_stage
 
-    def forward(self, *inputs: Tensor) -> DecoderOutputs:
+    def forward(
+        self, inputs: DecoderGraphInputs
+    ) -> _GroupedOutputs | DecoderOutputs:
         """Groups the graph's inputs into fields and runs the decoder."""
-        fields = DecoderInputs(**tree.unflatten(self.input_tree, inputs))
+        fields = DecoderInputs(**_decoder_fields(inputs))
         if fields.lora is not None:
             assert self.lora_manager is not None
             self.lora_manager.bind_inputs(self.model, fields.lora)
-        return self.model(fields)
+        outputs = self.model(fields)
+        if not self.last_stage:
+            return outputs
+        return _grouped_outputs(outputs, self.return_hidden_states)
+
+
+def _grouped_outputs(
+    outputs: DecoderOutputs, return_hidden_states: ReturnHiddenStates
+) -> _GroupedOutputs:
+    """Names a decoder's outputs by group, as a graph-API decoder's are.
+
+    The role's fields go in a ``logits`` group, then a ``hidden_states`` group
+    keyed by ``return_hidden_states`` when there are any, and its per-request
+    ``state`` follows in a
+    :class:`~max.pipelines.lib.request_state.RequestStateGroup`. The leaves
+    keep the role's order, so the graph's outputs do too.
+    """
+    grouped: GroupedDecoderOutputs[Tensor] = GroupedDecoderOutputs(
+        logits=Logits(
+            next_token_logits=outputs.next_token_logits,
+            logits=outputs.logits,
+            logit_offsets=outputs.logit_offsets,
+        )
+    )
+    if outputs.hidden_states is not None:
+        grouped["hidden_states"] = HiddenStates(
+            {return_hidden_states.value: (outputs.hidden_states,)}
+        )
+    if not outputs.state:
+        return grouped
+    return grouped, RequestStateGroup(state=tuple(outputs.state))
+
+
+def _role_outputs(outputs: _GroupedOutputs) -> DecoderOutputs:
+    """Returns what :func:`_grouped_outputs` named as the role's outputs."""
+    state: tuple[Tensor, ...] | None = None
+    if isinstance(outputs, tuple):
+        outputs, state_group = outputs
+        state = state_group["state"]
+    logits = outputs.logits
+    hidden_states: Tensor | None = None
+    if "hidden_states" in outputs:
+        (hidden_states,) = outputs.hidden_states.tensors()
+    return DecoderOutputs(
+        next_token_logits=logits["next_token_logits"],
+        logits=logits.get("logits"),
+        logit_offsets=logits.get("logit_offsets"),
+        hidden_states=hidden_states,
+        state=state,
+    )
 
 
 def _returned_types(spec: GraphSpec) -> tree.Tree[Type[Any]]:
@@ -1185,8 +1289,13 @@ class ModuleV3DecoderPipelineModel(
         # A stage after the first takes the previous stage's return last.
         if boundary := stage_input_types(stage, ()):
             (decoder_inputs["stage_boundary"],) = boundary
-        input_types = self._bind_graph_inputs(decoder_inputs)
-        graph = _DecoderGraph(decoder, input_types, lora_manager)
+        self._bind_graph_inputs(decoder_inputs)
+        graph = _DecoderGraph(
+            decoder,
+            lora_manager=lora_manager,
+            return_hidden_states=self.return_hidden_states,
+            last_stage=stage is None or stage.is_last,
+        )
         if stage is not None:
             # A stage holds only its own layers.
             declared = dict(graph.parameters)
@@ -1198,7 +1307,7 @@ class ModuleV3DecoderPipelineModel(
         spec = GraphSpec(
             graph,
             graph_name(decoder_cls),
-            tuple(tree.leaves(input_types)),
+            (decoder_inputs,),
             weights=_cast_to_parameter_dtypes(graph, state_dict),
         )
         if stage is not None and not stage.is_last and stage.trace_only:
@@ -1239,17 +1348,21 @@ class ModuleV3DecoderPipelineModel(
         compiled = self.model
         assert isinstance(compiled, CompiledCallable)
         raw_outputs = iter(compiled.execute_raw(*model_inputs.buffers))
-        outputs = tree.unflatten(
-            compiled.out_tree,
-            [
-                Tensor._from_shards(
-                    tuple(
-                        itertools.islice(raw_outputs, layout.mesh.num_devices)
-                    ),
-                    layout.mapping,
-                )
-                for layout in compiled.out_layouts
-            ],
+        outputs = _role_outputs(
+            tree.unflatten(
+                compiled.out_tree,
+                [
+                    Tensor._from_shards(
+                        tuple(
+                            itertools.islice(
+                                raw_outputs, layout.mesh.num_devices
+                            )
+                        ),
+                        layout.mapping,
+                    )
+                    for layout in compiled.out_layouts
+                ],
+            )
         )
         if self._state_store is not None:
             self._state_store.update(

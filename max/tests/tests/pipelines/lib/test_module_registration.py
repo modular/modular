@@ -24,6 +24,7 @@ from unittest.mock import NonCallableMock
 import numpy as np
 import pytest
 from max import tree
+from max._artifact.value_types import treedef_to_json
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -31,6 +32,7 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData, WeightsFormat
 from max.nn import Module
 from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.graph_groups import DecoderGraphInputs, VisionMerge
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
@@ -210,33 +212,33 @@ def _arch(**kwargs: Any) -> SupportedArchitecture:
     )
 
 
-def _toy_input_types(**extra: Any) -> dict[str, object]:
-    return {
-        "tokens": X,
-        "input_row_offsets": X,
-        "return_n_logits": X,
-        "kv": {"a": X, "b": X},
+def _toy_input_types(**extra: Any) -> DecoderGraphInputs:
+    return DecoderGraphInputs(
+        tokens=X,
+        input_row_offsets=X,
+        return_n_logits=X,
+        kv={"a": X, "b": X},
         **extra,
-    }
+    )
 
 
 def test_the_graph_feeds_each_field_and_keeps_weight_names() -> None:
     decoder = ToyDecoder(ToyConfig())
     names = [name for name, _ in decoder.parameters]
-    adapter = _DecoderGraph(decoder, _toy_input_types())
+    adapter = _DecoderGraph(decoder)
 
     assert [name for name, _ in adapter.parameters] == names == ["scale.weight"]
 
     run = adapter.compile(
-        X, X, X, X, X, weights={"scale.weight": np.full(2, 2, np.float32)}
+        _toy_input_types(), weights={"scale.weight": np.full(2, 2, np.float32)}
     )
     tokens, offsets, n_logits, kv_a, kv_b = (
         Buffer.from_numpy(np.full(2, value, np.float32))
         for value in (1, 2, 3, 4, 5)
     )
-    outputs = run(tokens, offsets, n_logits, kv_a, kv_b)
+    (logits,) = run.execute_raw(tokens, offsets, n_logits, kv_a, kv_b)
     np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor),
+        np.from_dlpack(logits),
         np.full(2, 1 * 2 + 2 * 10 + 3 * 100 + 4 * 1000 - 5, np.float32),
     )
 
@@ -244,35 +246,144 @@ def test_the_graph_feeds_each_field_and_keeps_weight_names() -> None:
 def test_the_graph_binds_lora_inputs_rather_than_reading_them_as_kv() -> None:
     decoder = ToyDecoder(ToyConfig())
     manager = NonCallableMock(spec=LoRAManagerV3)
-    adapter = _DecoderGraph(
-        decoder, _toy_input_types(lora=(X, X)), lora_manager=manager
-    )
+    adapter = _DecoderGraph(decoder, lora_manager=manager)
 
     # The LoRA weight adapter nests the checkpoint's keys under `model.`.
     assert [name for name, _ in adapter.parameters] == ["model.scale.weight"]
     run = adapter.compile(
-        X,
-        X,
-        X,
-        X,
-        X,
-        X,
-        X,
+        _toy_input_types(lora=(X, X)),
         weights={"model.scale.weight": np.full(2, 2, np.float32)},
     )
     tokens, offsets, n_logits, kv_a, kv_b, lora_a, lora_b = (
         Buffer.from_numpy(np.full(2, value, np.float32))
         for value in (1, 2, 3, 4, 5, 6, 7)
     )
-    outputs = run(tokens, offsets, n_logits, kv_a, kv_b, lora_a, lora_b)
+    (logits,) = run.execute_raw(
+        tokens, offsets, n_logits, kv_a, kv_b, lora_a, lora_b
+    )
     np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor),
+        np.from_dlpack(logits),
         np.full(2, 1 * 2 + 2 * 10 + 3 * 100 + 4 * 1000 - 5, np.float32),
     )
     (bound_model, lora_inputs), _ = manager.bind_inputs.call_args
     # Compiling traces a copy of the module, so the bound decoder is the copy.
     assert type(bound_model) is ToyDecoder
     assert len(lora_inputs) == 2
+
+
+class EchoDecoder(PlainDecoder):
+    """Returns its inputs, so each output shows which input fed it."""
+
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        assert inputs.vision is not None
+        return DecoderOutputs(
+            next_token_logits=inputs.tokens,
+            logits=inputs.vision.embeddings,
+            logit_offsets=inputs.input_row_offsets,
+            hidden_states=inputs.vision.scatter_indices,
+            state=inputs.state,
+        )
+
+
+def test_the_graph_names_its_inputs_and_outputs_in_buffer_order() -> None:
+    types = decoder_input_types(
+        NonCallableMock(
+            get_symbolic_inputs=lambda: (
+                KVCacheInputsPerDevice(_KV_BLOCKS, X, X, X, X, X),
+            )
+        ),
+        DeviceRef.CPU(),
+        vision=VisionInputs(embeddings=X, scatter_indices=X),
+        state=(X,),
+    )
+    run = _DecoderGraph(
+        EchoDecoder(ToyConfig()), return_hidden_states=ReturnHiddenStates.LAST
+    ).compile(types)
+
+    # An exported graph records both trees, which name every buffer.
+    treedef_to_json(run.in_tree)
+    (root,) = run.in_tree.children[0].children
+    assert root.meta == (DecoderGraphInputs, None)
+    assert root.child_keys == (
+        "tokens",
+        "vision",
+        "input_row_offsets",
+        "return_n_logits",
+        "kv",
+        "state",
+    )
+    vision = root.children[1]
+    assert vision.meta == (VisionMerge, None)
+    assert vision.child_keys == ("image_embeddings", "image_token_indices")
+    leaf = {"kind": "leaf"}
+    assert treedef_to_json(run.out_tree) == {
+        "kind": "tuple",
+        "children": [
+            {
+                "kind": "node",
+                "type": "decoder_outputs",
+                "keys": ["logits", "hidden_states"],
+                "children": [
+                    {
+                        "kind": "node",
+                        "type": "logits",
+                        "keys": [
+                            "next_token_logits",
+                            "logits",
+                            "logit_offsets",
+                        ],
+                        "children": [leaf, leaf, leaf],
+                    },
+                    {
+                        "kind": "node",
+                        "type": "hidden_states",
+                        "keys": ["last"],
+                        "children": [{"kind": "tuple", "children": [leaf]}],
+                    },
+                ],
+            },
+            {
+                "kind": "node",
+                "type": "request_state",
+                "keys": ["state"],
+                "children": [{"kind": "tuple", "children": [leaf]}],
+            },
+        ],
+    }
+
+    # The batch's buffers and the graph's outputs keep the role's order.
+    tokens = Buffer.from_numpy(np.array([0], np.int64))
+    offsets = Buffer.from_numpy(np.array([3, 4], np.uint32))
+    n_logits = Buffer.from_numpy(np.array([4], np.int64))
+    embeddings, indices, kv_buffer, state = (
+        Buffer.from_numpy(np.full(2, value, np.float32))
+        for value in (1, 2, 5, 6)
+    )
+    kv = KVCacheInputsPerDevice(
+        kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer
+    )
+    processor = _batch_processor(1)
+    processor.bind_input_tree(types)
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1)]], kv_cache_inputs=(kv,)
+    )
+    inputs.tokens, inputs.input_row_offsets = tokens, offsets
+    inputs.return_n_logits, inputs.state = n_logits, (state,)
+    inputs.vision_embeddings = [embeddings]
+    inputs.vision_scatter_indices = [indices]
+    assert inputs.buffers == (
+        tokens,
+        embeddings,
+        indices,
+        offsets,
+        n_logits,
+        *tree.leaves(kv),
+        state,
+    )
+    assert [
+        int(np.from_dlpack(output)[0])
+        for output in run.execute_raw(*inputs.buffers)
+    ] == [0, 1, 3, 2, 6]
 
 
 def test_decoder_inputs_take_the_canonical_order() -> None:
@@ -301,7 +412,7 @@ def test_optional_decoder_inputs_take_their_canonical_place() -> None:
     types = decoder_input_types(
         kv_params,
         DeviceRef.CPU(),
-        vision=NonCallableMock(spec=VisionInputs),
+        vision=VisionInputs(embeddings=X, scatter_indices=X),
         batch_context_lengths=(X,),
         ep=NonCallableMock(),
         lora=(X,),
@@ -1202,6 +1313,7 @@ def _staged_model(
         model=SimpleNamespace(pipeline_stage=stage, data_parallel_degree=1)
     )
     model.pipeline_config = pipeline_config
+    model.return_hidden_states = ReturnHiddenStates.NONE
     model._lora_manager = None
     model._batch_processor = None
     model.max_batch_size = 1
@@ -1243,21 +1355,21 @@ def test_a_later_stage_starts_from_the_boundary_with_its_own_weights() -> None:
     spec = model.graph_specs(StagedConfig(layers=stage.layers))[
         GraphRole.DECODER
     ]
+    (inputs,) = spec.input_types
+    assert isinstance(inputs, DecoderGraphInputs)
     # The boundary comes after every other input.
-    assert len(spec.input_types) == 5
-    assert spec.input_types[-1] == X
+    assert list(inputs)[-1] == "stage_boundary"
+    assert inputs["stage_boundary"] == (X,)
     assert set(spec.weights) == {"layer_1.weight"}
     run = spec.module.compile(*spec.input_types, weights=spec.weights)
-    outputs = run(
+    (logits,) = run.execute_raw(
         Buffer.from_numpy(np.zeros(1, np.int64)),
         Buffer.from_numpy(np.array([0, 1], np.uint32)),
         Buffer.from_numpy(np.ones(1, np.int64)),
         Buffer.from_numpy(np.full(2, 4, np.float32)),
         Buffer.from_numpy(np.full(2, 5, np.float32)),
     )
-    np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 15)
-    )
+    np.testing.assert_array_equal(np.from_dlpack(logits), np.full(2, 15))
 
 
 def test_the_bound_inputs_keep_a_nested_stage_boundary_last() -> None:
@@ -1316,7 +1428,7 @@ def test_the_next_stage_takes_the_tree_the_last_one_returned() -> None:
         StagedConfig(layers=stage.layers)
     )[GraphRole.DECODER]
     run = spec.module.compile(*spec.input_types, weights=spec.weights)
-    outputs = run(
+    (logits,) = run.execute_raw(
         Buffer.from_numpy(np.zeros(1, np.int64)),
         Buffer.from_numpy(np.array([0, 1], np.uint32)),
         Buffer.from_numpy(np.ones(1, np.int64)),
@@ -1324,9 +1436,7 @@ def test_the_next_stage_takes_the_tree_the_last_one_returned() -> None:
         Buffer.from_numpy(np.full(2, 5, np.float32)),
         Buffer.from_numpy(np.full(2, 7, np.float32)),
     )
-    np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 22)
-    )
+    np.testing.assert_array_equal(np.from_dlpack(logits), np.full(2, 22))
 
 
 def test_only_the_first_stage_encodes_images() -> None:
@@ -1469,16 +1579,12 @@ def test_the_graph_hands_the_decoder_its_workspace() -> None:
     workspace = BufferType(DType.float32, [1, 2], device=DeviceRef.CPU())
     types = _toy_input_types(scratch=(workspace,))
     types["kv"] = (X,)
-    run = _DecoderGraph(ScratchReader(ToyConfig()), types).compile(
-        X, X, X, X, workspace
-    )
-    outputs = run(
+    run = _DecoderGraph(ScratchReader(ToyConfig())).compile(types)
+    (logits,) = run.execute_raw(
         *(Buffer.from_numpy(np.full(2, 1, np.float32)) for _ in range(4)),
         Buffer.from_numpy(np.full((1, 2), 2, np.float32)),
     )
-    np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 3)
-    )
+    np.testing.assert_array_equal(np.from_dlpack(logits), np.full(2, 3))
 
 
 @dataclass(frozen=True)

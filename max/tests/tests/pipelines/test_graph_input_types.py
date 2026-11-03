@@ -105,6 +105,7 @@ from max.pipelines.lib.interfaces import (
     PipelineModel,
     modulev3_ragged_kv_symbolic_input_tree,
 )
+from max.pipelines.lib.module_registration import decoder_input_types
 from max.pipelines.lib.registration_graph_api import (
     graph_api_decoder_input_types,
 )
@@ -222,6 +223,12 @@ def _llama3(
         Llama3.input_tree(model, kv_params, needs_hidden_state_input=hidden),
         Llama3.input_types(model, kv_params, needs_hidden_state_input=hidden),
     )
+
+
+def _registered_decoder() -> tuple[_InputTree, _InputTypes]:
+    """A decoder registered by role, whose graph takes its fields by name."""
+    types = decoder_input_types(_kv_params(_gpus(1)), DeviceRef.GPU(0))
+    return types, tuple(tree.leaves(types))
 
 
 def _distributed_llama3() -> tuple[_InputTree, _InputTypes]:
@@ -352,6 +359,7 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "mimo_v2": lambda: _per_device_offsets(MiMoV2, two_caches=True),
     "deepseekV4_single_device": lambda: _deepseekV4(_gpus(1)),
     "deepseekV4_multi_device": lambda: _deepseekV4(_gpus(2)),
+    "registered_decoder": _registered_decoder,
 }
 
 

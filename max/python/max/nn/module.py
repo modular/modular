@@ -562,7 +562,7 @@ class Module(Generic[_P, _R]):
 
     def trace(
         self,
-        *input_types: InputType,
+        *input_types: tree.Tree[InputType],
         name: str | None = None,
         custom_extensions: Iterable[Path] = (),
         allow_subgraphs: bool = True,
@@ -598,7 +598,8 @@ class Module(Generic[_P, _R]):
         Args:
             *input_types: The type of each tensor argument of ``forward``, as
                 a :class:`~max.graph.TensorType` or a
-                :class:`~max.tensor.sharding.TensorLayout`.
+                :class:`~max.tensor.sharding.TensorLayout`, or a tree of them
+                for an argument that is a tree of tensors.
             name: The name of the graph. Defaults to the class's qualified
                 name.
             custom_extensions: Paths to custom Mojo kernel libraries.
@@ -628,7 +629,7 @@ class Module(Generic[_P, _R]):
 
     def compile(
         self,
-        *input_types: InputType,
+        *input_types: tree.Tree[InputType],
         weights: Mapping[str, DLPackArray] | None = None,
         session: InferenceSession | None = None,
         name: str | None = None,
@@ -678,8 +679,9 @@ class Module(Generic[_P, _R]):
         Args:
             *input_types: The type of each tensor argument of ``forward``, as
                 a :class:`~max.graph.TensorType` or a
-                :class:`~max.tensor.sharding.TensorLayout`. The device
-                of each type determines where the computation runs.
+                :class:`~max.tensor.sharding.TensorLayout`, or a tree of them
+                for an argument that is a tree of tensors. The device of each
+                type determines where the computation runs.
             weights: The values of the parameters, keyed by the names that
                 :attr:`parameters` yields. Defaults to the values currently
                 held by this module.
@@ -733,7 +735,7 @@ class Module(Generic[_P, _R]):
 
     def stage(
         self,
-        *input_types: InputType,
+        *input_types: tree.Tree[InputType],
         weights: Mapping[str, DLPackArray] | None = None,
         name: str | None = None,
         custom_extensions: Iterable[Path] = (),
