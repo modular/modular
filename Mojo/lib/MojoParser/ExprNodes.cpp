@@ -623,7 +623,8 @@ static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
   }
 
   // Bind the IntLiteral[value] parameter.
-  type = litStruct.legacyBindReference({value});
+  type = litStruct.bindAllReferences(&emitter.shared.getEvaluationContext(),
+                                     {value});
 
   // Create an instance of IntLiteral[val]()
   return emitter.emitConstructorCall(

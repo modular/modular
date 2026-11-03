@@ -1304,6 +1304,7 @@ TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
     forwardParams.push_back(ParamIndexRefAttr::get(0, idx, t));
 
   // TODO: we don't need sig in struct type under the generator representation.
+  // Remove it after fully migration.
   auto newSig = paramValues.empty() ? sig : sig.bind(paramValues);
   auto st = LIT::StructType::get(getFullyResolvedSymbolRef(*this),
                                  forwardParams, newSig);
@@ -1321,6 +1322,14 @@ TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
   // TODO: maybe worth a cache here?
   return BindParamsAttr::get(typeExpr.getContext(), typeExpr, paramValues,
                              evalCtx);
+}
+
+LIT::StructType
+StructDeclOp::bindAllReferences(ParameterEvaluationContext *evalCtx,
+                                ArrayRef<TypedAttr> paramValues) {
+  TypedAttr typeVal = this->bindReference(evalCtx, paramValues);
+  // must be fully resolved to a struct type.
+  return cast<LIT::StructType>(ParamType::get(typeVal));
 }
 
 std::optional<size_t> StructDeclOp::findFieldIndex(StringRef name) {

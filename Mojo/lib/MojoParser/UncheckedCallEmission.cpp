@@ -252,7 +252,8 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
   Type compatibleVariadicPackType =
       cast<StructASTDecl>(expectedPackType.getDecl(emitter.shared))
           ->getOp()
-          .legacyBindReference(paramBindings);
+          .bindAllReferences(&emitter.shared.getEvaluationContext(),
+                             paramBindings);
   auto compatibleRefType =
       actualRefType.getWithElement(compatibleVariadicPackType);
 

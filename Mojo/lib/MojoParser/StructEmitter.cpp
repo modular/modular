@@ -1445,7 +1445,8 @@ void StructEmitter::synthesizeEnumCaseListsAndStorage(
   addAlias(kEnumCaseTypesName, caseTypes);
 
   // The storage is the only field: `std.builtin._enum` reads it as field 0.
-  StructType storageType = enumStorageDeclOp.legacyBindReference({caseTypes});
+  StructType storageType = enumStorageDeclOp.bindAllReferences(
+      &shared.getEvaluationContext(), {caseTypes});
   auto storageField =
       StructFieldOp::create(builder, kEnumStorageFieldName, storageType);
   storageField.setIsDocHidden(true);

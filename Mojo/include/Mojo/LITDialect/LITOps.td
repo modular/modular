@@ -555,6 +555,12 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypedAttr bindReference(ParameterEvaluationContext *evalCtx,
                             ArrayRef<TypedAttr> paramValues = {});
 
+    /// Get a fully bound struct type with the given parameter values.
+    /// The method assume that the provided parameter values will lead to a
+    /// fully bound struct type.
+    StructType bindAllReferences(ParameterEvaluationContext *evalCtx,
+                                 ArrayRef<TypedAttr> paramValues = {});
+
     /// Get whether this struct is compiler generated.
     bool isSynthetic();
 

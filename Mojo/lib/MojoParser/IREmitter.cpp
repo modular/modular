@@ -2141,7 +2141,8 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
   }
 
   // Bind the Origin parameters.
-  originType = litStruct.legacyBindReference({mutBool, litOrigin});
+  originType = litStruct.bindAllReferences(&shared.getEvaluationContext(),
+                                           {mutBool, litOrigin});
 
   // If we are referencing an origin parameter, we need to find the
   // Origin it corresponds to and use that. Consider:
