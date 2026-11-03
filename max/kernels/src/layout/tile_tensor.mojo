@@ -37,6 +37,7 @@ from .swizzle import Swizzle
 
 from .tensor_engine import (
     DevicePointerEngine,
+    StorageIO,
     TensorOps,
     TensorEngine,
     TileIO,
@@ -1253,26 +1254,41 @@ struct TileTensor[
         non_temporal: Bool = False,
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
         """Loads `width` elements at `offset` through the engine's raw
-        pointer."""
-        return self.ptr.unsafe_load[
-            width=width,
-            alignment=alignment,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ](offset)
+        pointer, or through `StorageIO.load` for an engine whose storage has
+        none."""
+        comptime if conforms_to(Self.Engine, StorageIO):
+            return downcast[Self.Engine, StorageIO].load[
+                width=width,
+                alignment=alignment,
+                invariant=invariant,
+                non_temporal=non_temporal,
+            ](self._storage, _index(offset))
+        else:
+            return self.ptr.unsafe_load[
+                width=width,
+                alignment=alignment,
+                invariant=invariant,
+                non_temporal=non_temporal,
+            ](offset)
 
     @inline(.nodebug)
     def _store_storage[
         alignment: Int,
         non_temporal: Bool = False,
     ](self, offset: Some[Indexer], value: SIMD[Self.dtype, _]) where Self.mut:
-        """Stores `value` at `offset` through the engine's raw pointer."""
+        """Stores `value` at `offset` through the engine's raw pointer, or
+        through `StorageIO.store` for an engine whose storage has none."""
         # `where Self.mut` does not narrow `Self.origin`'s mutability
-        # parameter to `True`, so cast to the mutable pointer type `store`
-        # requires.
-        self.ptr.unsafe_mut_cast[True]().unsafe_store[
-            alignment=alignment, non_temporal=non_temporal
-        ](offset, value)
+        # parameter to `True`, so cast to the mutable storage or pointer type
+        # `store` requires.
+        comptime if conforms_to(Self.Engine, StorageIO):
+            downcast[Self.Engine, StorageIO].store[
+                alignment=alignment, non_temporal=non_temporal
+            ](self._unsafe_storage_cast[to_mut=True](), _index(offset), value)
+        else:
+            self.ptr.unsafe_mut_cast[True]().unsafe_store[
+                alignment=alignment, non_temporal=non_temporal
+            ](offset, value)
 
     @inline(.nodebug)
     def __getitem__(self, i0: Some[CoordLike]) -> Self.ElementType:
