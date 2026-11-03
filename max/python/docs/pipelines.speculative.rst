@@ -11,11 +11,29 @@ max.pipelines.speculative
 
 .. currentmodule:: max.pipelines.speculative
 
+Submodules
+----------
+
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.speculative.cross_attention
+   max.pipelines.speculative.draft_contracts
+   max.pipelines.speculative.driver
+   max.pipelines.speculative.eagle
+   max.pipelines.speculative.gated_delta_rollback
+   max.pipelines.speculative.spec_adapters
+   max.pipelines.speculative.spec_width_policy
+
 .. toctree::
    :maxdepth: 1
    :hidden:
 
+   pipelines.speculative.cross_attention
+   pipelines.speculative.draft_contracts
    pipelines.speculative.driver
+   pipelines.speculative.eagle
+   pipelines.speculative.gated_delta_rollback
    pipelines.speculative.spec_adapters
    pipelines.speculative.spec_width_policy
 

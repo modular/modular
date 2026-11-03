@@ -964,6 +964,28 @@
               "items": [
                 {
                   "type": "category",
+                  "label": "cross_attention",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.cross_attention"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.cross_attention__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "draft_contracts",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.draft_contracts"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.draft_contracts__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "driver",
                   "link": {
                     "type": "doc",
@@ -975,13 +997,24 @@
                 },
                 {
                   "type": "category",
-                  "label": "spec_width_policy",
+                  "label": "eagle",
                   "link": {
                     "type": "doc",
-                    "id": "api/python/pipelines.speculative.spec_width_policy"
+                    "id": "api/python/pipelines.speculative.eagle"
                   },
                   "items": [
-                    "__AUTOGEN:max.pipelines.speculative.spec_width_policy__"
+                    "__AUTOGEN:max.pipelines.speculative.eagle__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "gated_delta_rollback",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.gated_delta_rollback"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.gated_delta_rollback__"
                   ]
                 },
                 {
@@ -993,6 +1026,17 @@
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.speculative.spec_adapters__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "spec_width_policy",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.spec_width_policy"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.spec_width_policy__"
                   ]
                 },
                 "__AUTOGEN:max.pipelines.speculative__"
