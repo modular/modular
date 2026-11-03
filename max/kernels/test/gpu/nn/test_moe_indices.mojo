@@ -15,7 +15,8 @@
 from max.gpu.host import DeviceContext, HostBuffer
 from std.collections import Set
 from std.math import align_up, ceildiv
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import Layout as MixedLayout
 from layout._fillers import random
 from nn.moe import moe_create_indices, moe_create_indices_with_slots
 from std.random import random_float64, random_ui64, seed
@@ -222,78 +223,105 @@ def fill_skewed(top_k_buffer_host: HostBuffer[.uint32], num_tokens: Int):
         top_k_buffer_host[i] = 0
 
 
+def check_and_pack_strided_output[
+    dtype: DType
+](buffer: HostBuffer[dtype], length: Int, stride: Int) raises:
+    if stride == 1:
+        return
+    for i in range(length):
+        assert_equal(
+            buffer[i * stride + 1], Scalar[dtype](23), "output padding"
+        )
+    for i in range(length):
+        buffer[i] = buffer[i * stride]
+
+
 def test_moe_create_indices[
     num_experts: Int = 256,
     test_scales_offset: Bool = False,
     skewed: Bool = False,
-](token_expert_order_length: Int, ctx: DeviceContext) raises:
+](
+    token_expert_order_length: Int,
+    ctx: DeviceContext,
+    strided_tensor: Int = -1,
+) raises:
+    var token_stride = 2 if strided_tensor == 0 else 1
+    var start_stride = 2 if strided_tensor == 1 else 1
+    var restore_stride = 2 if strided_tensor == 2 else 1
+    var expert_stride = 2 if strided_tensor == 3 else 1
+    var stats_stride = 2 if strided_tensor == 4 else 1
+    var input_stride = 2 if strided_tensor == 5 else 1
     var token_expert_order_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
-    ](token_expert_order_length)
+    ](token_expert_order_length * token_stride)
     var top_k_buffer_host = ctx.enqueue_create_host_buffer[.uint32](
-        token_expert_order_length
+        token_expert_order_length * input_stride
     )
     var restore_token_order_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
-    ](token_expert_order_length)
+    ](token_expert_order_length * restore_stride)
     var expert_usage_stats_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
-    ](2)
+    ](2 * stats_stride)
     var expert_start_indices_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
-    ](num_experts + 1)
+    ]((num_experts + 1) * start_stride)
     var expert_ids_buffer_host = ctx.enqueue_create_host_buffer[.int32](
-        num_experts
+        num_experts * expert_stride
     )
 
     var token_expert_order_buffer_device = ctx.enqueue_create_buffer[
         DType.uint32
-    ](token_expert_order_length)
+    ](token_expert_order_length * token_stride)
     var expert_start_indices_buffer = ctx.enqueue_create_buffer[.uint32](
-        num_experts + 1
+        (num_experts + 1) * start_stride
     )
     var restore_token_order_buffer = ctx.enqueue_create_buffer[.uint32](
-        token_expert_order_length
+        token_expert_order_length * restore_stride
     )
-    var expert_ids_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
-    var expert_usage_stats_buffer = ctx.enqueue_create_buffer[.uint32](2)
+    var expert_ids_buffer = ctx.enqueue_create_buffer[.int32](
+        num_experts * expert_stride
+    )
+    var expert_usage_stats_buffer = ctx.enqueue_create_buffer[.uint32](
+        2 * stats_stride
+    )
     var top_k_buffer_device = ctx.enqueue_create_buffer[.uint32](
-        token_expert_order_length
+        token_expert_order_length * input_stride
     )
 
     var token_expert_order = TileTensor(
         token_expert_order_buffer_device,
-        row_major(token_expert_order_length),
+        MixedLayout(Coord(token_expert_order_length), Coord(token_stride)),
     )
 
     var expert_start_indices = TileTensor(
         expert_start_indices_buffer,
-        row_major(num_experts + 1),
+        MixedLayout(Coord(num_experts + 1), Coord(start_stride)),
     )
 
     var restore_token_order = TileTensor(
         restore_token_order_buffer,
-        row_major(token_expert_order_length),
+        MixedLayout(Coord(token_expert_order_length), Coord(restore_stride)),
     )
 
     var expert_ids = TileTensor(
         expert_ids_buffer,
-        row_major(num_experts),
+        MixedLayout(Coord(num_experts), Coord(expert_stride)),
     )
 
     var expert_usage_stats = TileTensor(
         expert_usage_stats_buffer,
-        row_major(Idx[2]),
+        MixedLayout(Coord(Idx[2]), Coord(stats_stride)),
     )
 
     var top_k = TileTensor(
         top_k_buffer_device,
-        row_major(token_expert_order_length),
+        MixedLayout(Coord(token_expert_order_length), Coord(input_stride)),
     )
 
     var top_k_host = TileTensor(
         top_k_buffer_host,
-        row_major(token_expert_order_length),
+        MixedLayout(Coord(token_expert_order_length), Coord(input_stride)),
     )
 
     ctx.synchronize()
@@ -301,9 +329,18 @@ def test_moe_create_indices[
     # Fill top_k_host with random expert IDs, or route every token to one
     # expert to exercise a skewed (non-uniform) distribution.
     comptime if skewed:
-        fill_skewed(top_k_buffer_host, token_expert_order_length)
+        fill_skewed(top_k_buffer_host, token_expert_order_length * input_stride)
+        if input_stride > 1:
+            for i in range(token_expert_order_length):
+                top_k_buffer_host[i * input_stride + 1] = 1
     else:
         random(top_k_host, min=0, max=UInt32(num_experts))
+    if strided_tensor >= 0:
+        token_expert_order_buffer_device.enqueue_fill(23)
+        expert_start_indices_buffer.enqueue_fill(23)
+        restore_token_order_buffer.enqueue_fill(23)
+        expert_ids_buffer.enqueue_fill(23)
+        expert_usage_stats_buffer.enqueue_fill(23)
     ctx.enqueue_copy(top_k_buffer_device, top_k_buffer_host)
 
     var scales_offset_buffer_host = ctx.enqueue_create_host_buffer[
@@ -346,6 +383,34 @@ def test_moe_create_indices[
     )
     ctx.enqueue_copy(scales_offset_buffer_host, scales_offset_buffer)
     ctx.synchronize()
+
+    check_and_pack_strided_output(
+        token_expert_order_buffer_host, token_expert_order_length, token_stride
+    )
+    check_and_pack_strided_output(
+        expert_start_indices_buffer_host, num_experts + 1, start_stride
+    )
+    check_and_pack_strided_output(
+        restore_token_order_buffer_host,
+        token_expert_order_length,
+        restore_stride,
+    )
+    check_and_pack_strided_output(
+        expert_ids_buffer_host, num_experts, expert_stride
+    )
+    check_and_pack_strided_output(
+        expert_usage_stats_buffer_host, 2, stats_stride
+    )
+    for i in range(token_expert_order_length):
+        top_k_buffer_host[i] = top_k_buffer_host[i * input_stride]
+
+    comptime if skewed:
+        for e in range(num_experts + 1):
+            assert_equal(
+                expert_start_indices_buffer_host[e],
+                UInt32(0 if e == 0 else token_expert_order_length),
+                "skewed CSR boundary",
+            )
 
     comptime if test_scales_offset:
         check_scales_offset(
@@ -577,6 +642,16 @@ def main() raises:
         # Skewed distribution: every token on expert 0, so one group holds
         # them all and the rest are empty.
         test_moe_create_indices[skewed=True](1024, ctx)
+        test_moe_create_indices[skewed=True](16_385, ctx)
+        test_moe_create_indices[skewed=True, test_scales_offset=True](
+            16_385, ctx
+        )
+
+        # Isolate each input/output stride so one fallback guard cannot mask another.
+        for tensor in range(6):
+            test_moe_create_indices[skewed=True, test_scales_offset=True](
+                16_385, ctx, strided_tensor=tensor
+            )
         test_moe_create_indices[num_experts=513, skewed=True](100_000, ctx)
 
         # Slot layout. DeepSeek-V4 decode/prefill shapes, expert parallel on
