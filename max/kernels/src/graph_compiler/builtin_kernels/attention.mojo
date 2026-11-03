@@ -1644,25 +1644,15 @@ struct NoMaskFlashAttentionCPU:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @inline(.always)
-        def k_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[k.dtype, width]:
-            return k._lambda_load[width=width](
-                rebind[IndexList[k.rank]](coords)
-            )
+        def k_input_fn[width: Int](coords: Coord) {imm} -> SIMD[k.dtype, width]:
+            return k._lambda_load[width=width](coords)
 
         @inline(.always)
-        def v_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[v.dtype, width]:
-            return v._lambda_load[width=width](
-                rebind[IndexList[v.rank]](coords)
-            )
+        def v_input_fn[width: Int](coords: Coord) {imm} -> SIMD[v.dtype, width]:
+            return v._lambda_load[width=width](coords)
 
         @inline(.always)
-        def mask_input_fn[
-            width: Int, _rank: Int
-        ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
+        def mask_input_fn[width: Int](idx: Coord) -> SIMD[dtype, width]:
             return SIMD[dtype, width](0)
 
         nn_flash_attention(
@@ -1701,28 +1691,18 @@ struct WithMaskFlashAttentionCPU:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @inline(.always)
-        def k_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[k.dtype, width]:
-            return k._lambda_load[width=width](
-                rebind[IndexList[k.rank]](coords)
-            )
+        def k_input_fn[width: Int](coords: Coord) {imm} -> SIMD[k.dtype, width]:
+            return k._lambda_load[width=width](coords)
 
         @inline(.always)
-        def v_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[v.dtype, width]:
-            return v._lambda_load[width=width](
-                rebind[IndexList[v.rank]](coords)
-            )
+        def v_input_fn[width: Int](coords: Coord) {imm} -> SIMD[v.dtype, width]:
+            return v._lambda_load[width=width](coords)
 
         @inline(.always)
         def mask_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[mask.dtype, width]:
-            return mask._lambda_load[width=width](
-                rebind[IndexList[mask.rank]](coords)
-            )
+            width: Int
+        ](coords: Coord) {imm} -> SIMD[mask.dtype, width]:
+            return mask._lambda_load[width=width](coords)
 
         nn_flash_attention(
             k_input_fn,
