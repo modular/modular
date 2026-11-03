@@ -688,6 +688,44 @@ def test_fused_moe_plan_follows_the_backend(
     assert _plan_fused_moe_workspace(_ep2_fused_config()) == nv24
 
 
+def test_fused_moe_plan_serves_the_top6_cell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A top-6 MoE cell, split over 2 ranks, is served: 192
+    routed experts (96 local), top-6, hidden 5120, MoE width 2304, NVFP4, at
+    a 128-token per-rank capacity, on the decode token block. Its
+    neighbors keep the chain: top-k 8 at the same shape, one token of capacity
+    more, and 384 routed experts over 2 ranks (192 local, past
+    the scheduler's 128)."""
+    monkeypatch.setattr(ep_kernels, "accelerator_api", lambda: "cuda")
+    top6 = _ep2_fused_config(
+        n_experts=192,
+        top_k=6,
+        hidden_size=5120,
+        moe_dim=2304,
+        max_tokens_per_rank=128,
+    )
+    cells, *refusals = _fused_moe_plans(
+        [
+            _fused_moe_parameters(config)
+            for config in (
+                top6,
+                dataclasses.replace(top6, top_k=8),
+                dataclasses.replace(top6, max_tokens_per_rank=129),
+                dataclasses.replace(top6, n_experts=384),
+            )
+        ]
+    )
+    assert cells[1:] == (8, ""), cells
+    assert cells[0] > 0, cells
+    reasons = ("local experts", "capacity", "local experts")
+    for answer, reason in zip(refusals, reasons, strict=True):
+        assert (answer[0], answer[1]) == (0, 0) and reason in answer[2], (
+            reason,
+            answer,
+        )
+
+
 def test_fused_moe_bound_covers_every_format_of_its_element_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

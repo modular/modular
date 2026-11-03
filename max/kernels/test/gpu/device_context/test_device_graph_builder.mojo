@@ -872,7 +872,9 @@ def test_region_node_structure(ctx: DeviceContext[]) raises:
 
             _ = b.add_memset(buf, UInt8(0x55))
 
-        var outer_sink = builder.region(outer)
+        # Without the dependency the two regions are unordered roots, and the
+        # final value below would depend on which one replay runs last.
+        var outer_sink = builder.region(outer, dependencies=[chained])
         assert_equal(builder._last_node_id(), Optional(Int32(4)))
         assert_equal(Int(outer_sink.id), 4)
 
