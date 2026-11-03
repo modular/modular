@@ -24,6 +24,7 @@ from test_utils.cabi_check import (
     AbiTypedef,
     AbiTypedefLike,
     _c_field_decl,
+    _c_type_decl,
     assert_cabi_constant,
     _c_scalar_name,
     constant_checks,
@@ -77,6 +78,9 @@ struct FieldProbe:
 
     @__annotation(CField(c_type="void *"))
     var gamma: UInt64
+
+    @__annotation(CField(c_type=.array("__u64", 2)))
+    var pad: Array[UInt64, 2]
 
 
 def test_preamble() raises:
@@ -191,9 +195,21 @@ def test_struct_checks_cfield() raises:
             " int32_t *ptr)\n"
             "MOJO_CHECK_CABI_FIELD(FieldProbe, struct FieldProbe, gamma)\n"
             "MOJO_CHECK_CABI_FIELD_TYPE(FieldProbe, struct FieldProbe, gamma,"
-            " void * *ptr)"
+            " void * *ptr)\n"
+            "MOJO_CHECK_CABI_FIELD(FieldProbe, struct FieldProbe, pad)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(FieldProbe, struct FieldProbe, pad,"
+            " __u64 (*ptr)[2])"
         ),
     )
+
+
+def test_c_type_decl() raises:
+    # A string converts implicitly to the `.type` case.
+    assert_equal(_c_type_decl("uint16_t"), "uint16_t *ptr")
+    assert_equal(_c_type_decl("void *"), "void * *ptr")
+    assert_equal(_c_type_decl(.array("__u64", 2)), "__u64 (*ptr)[2]")
+    with assert_raises(contains="spells no C type"):
+        _ = _c_type_decl(.default)
 
 
 def test_c_scalar_name() raises:
@@ -222,6 +238,16 @@ def test_c_field_decl_array() raises:
     assert_equal(
         _c_field_decl[Array[UInt16, 16]](),
         Optional[String]("uint16_t (*ptr)[16]"),
+    )
+
+
+def test_c_field_decl_wide_array() raises:
+    # A 64-bit array's implied check is the exact `<stdint.h>` element type,
+    # unlike a 64-bit scalar's; a field spelled differently in C names its
+    # type with `CField(c_type=)`.
+    assert_equal(
+        _c_field_decl[Array[UInt64, 2]](),
+        Optional[String]("uint64_t (*ptr)[2]"),
     )
 
 
