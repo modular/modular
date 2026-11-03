@@ -34,7 +34,7 @@ from std.utils.numerics import neg_inf
 
 from max.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile, vectorize
-from std.atomic import Atomic
+from std.atomic import Atomic, Ordering
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
 
@@ -1121,9 +1121,17 @@ def _atomic_reduce[
         var desired = reduction_fn[dtype, 1](expected, update)
         if desired.to_bits() == expected.to_bits():
             return
+        # Relaxed orderings: the only memory this loop shares with another
+        # thread is the destination element itself, and atomicity alone makes
+        # each update land exactly once. Nothing is published through it, so
+        # there is no edge to order against.
         # Apple GPU only exposes a weak compare-exchange primitive; the retry
         # loop already tolerates spurious failures.
-        if Atomic.compare_exchange[weak=is_apple_gpu()](ptr, expected, desired):
+        if Atomic.compare_exchange[
+            success_ordering=Ordering.RELAXED,
+            failure_ordering=Ordering.RELAXED,
+            weak=is_apple_gpu(),
+        ](ptr, expected, desired):
             return
 
 
@@ -1137,9 +1145,14 @@ def _atomic_add[
     dtype: DType, //
 ](ptr: MutPointer[Scalar[dtype], ...], update: Scalar[dtype]):
     """Adds an update atomically, using compare-exchange on unsupported targets.
+
+    The add is relaxed, not the seq_cst the stdlib defaults to. A scatter
+    shares nothing but the destination element between threads, so atomicity
+    is all it needs; a seq_cst add also pays a device-scope fence per update,
+    and these run one per element.
     """
     comptime if _has_native_atomic_add[dtype]():
-        _ = Atomic.fetch_add(ptr, update)
+        _ = Atomic.fetch_add[ordering=Ordering.RELAXED](ptr, update)
     else:
 
         @inline(.always)
