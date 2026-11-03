@@ -694,6 +694,17 @@
                 },
                 {
                   "type": "category",
+                  "label": "decoder_scratch",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.decoder_scratch"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.decoder_scratch__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "auto_processor",
                   "link": {
                     "type": "doc",
@@ -760,6 +771,17 @@
                 },
                 {
                   "type": "category",
+                  "label": "module_registration",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.module_registration"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.module_registration__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "registry",
                   "link": {
                     "type": "doc",
@@ -778,6 +800,72 @@
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.lib.pipeline_parallel__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "registration_draft",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.registration_draft"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.registration_draft__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "registration_encoder",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.registration_encoder"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.registration_encoder__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "registration_graph_api",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.registration_graph_api"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.registration_graph_api__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "registration_runtime",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.registration_runtime"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.registration_runtime__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "request_state",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.request_state"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.request_state__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "role_contracts",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.role_contracts"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.role_contracts__"
                   ]
                 },
                 "__AUTOGEN:max.pipelines.lib__"
