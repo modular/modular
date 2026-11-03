@@ -47,7 +47,6 @@ from std.sys import inlined_assembly
 from layout import (
     Coord,
     ComptimeInt,
-    Layout,
     RowMajorLayout,
     TensorEngine,
     TileTensor,
@@ -857,8 +856,6 @@ struct GroupedBlockScaledMatmulKernel[
     ].to_layout() if Self.transpose_b else tile_layout_mn_major_typed[
         Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ].to_layout()
-
-    comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
 
     # SF_K_GROUP_SIZE = SF_ATOM_K * vec_sf_size
     comptime SF_K_GROUP_SIZE = SF_ATOM_K * Self.config.vec_sf_size

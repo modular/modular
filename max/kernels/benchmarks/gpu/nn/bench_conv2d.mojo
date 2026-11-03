@@ -84,7 +84,6 @@ from internal_utils import arg_parse
 from layout import (
     Coord,
     Idx,
-    Layout,
     TileTensor,
     row_major,
 )
@@ -165,15 +164,8 @@ def bench_conv2d[
     var h_out = (in_height + 2 * pad_h - filter_r) // stride_h + 1
     var w_out = (in_width + 2 * pad_w - filter_s) // stride_w + 1
 
-    comptime input_layout = Layout.row_major(
-        batch, in_height, in_width, in_channels
-    )
-    comptime filter_rscf_layout = Layout.row_major(
-        filter_r, filter_s, in_channels, out_channels
-    )
-
-    var input_size = comptime (input_layout.size())
-    var filter_size = comptime (filter_rscf_layout.size())
+    var input_size = batch * in_height * in_width * in_channels
+    var filter_size = filter_r * filter_s * in_channels * out_channels
     var output_size = batch * h_out * w_out * out_channels
 
     var flops = compute_conv2d_flops(
