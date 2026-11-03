@@ -1402,11 +1402,6 @@ struct VariadicPack[
         Ts: The list of types held by the argument pack.
     """
 
-    @deprecated(use=Ts)
-    comptime element_types = Self.Ts
-    """The list of types held by the argument pack. Deprecated alias for `Ts`.
-    """
-
     comptime _mlir_type = __mlir_type[
         `!lit.ref.pack<:param_list<`,
         Self.element_trait,

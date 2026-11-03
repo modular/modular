@@ -37,16 +37,10 @@ from .arc_pointer import ArcPointer
 from .memory import (
     unsafe_memcmp,
     unsafe_memcpy,
-    # TODO(MSTDL-2918): Remove this export once the `memmove` deprecation is
-    # dropped; callers should use `unsafe_memmove`.
-    memmove,
     unsafe_memmove,
     unsafe_memset,
     unsafe_memset_zero,
     unsafe_destroy_n,
-    is_trivially_copyable,
-    is_trivially_deletable,
-    is_trivially_movable,
     unsafe_uninit_copy_n,
     unsafe_uninit_move_n,
     forget_deinit,

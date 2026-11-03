@@ -1049,19 +1049,6 @@ struct StringSpan[origin: ImmOrigin](
     # Methods
     # ===------------------------------------------------------------------===#
 
-    @deprecated(use=as_c_string_span)
-    @__allow_legacy_custom_self_type
-    @inline(.always)
-    def as_c_string_slice(
-        self: StaticString,
-    ) -> CStringSpan[ImmStaticOrigin]:
-        """Return a CStringSpan for this StaticString.
-
-        Returns:
-            A c-compatible CStringSpan.
-        """
-        return self.as_c_string_span()
-
     @__allow_legacy_custom_self_type
     @inline(.always)
     def as_c_string_span(

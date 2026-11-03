@@ -10,44 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Existential-type helpers built on `AnyType`, plus deprecated aliases for
-the traits that used to live in this module.
+"""Existential-type helpers built on `AnyType`.
 
 This module defines `Some` and `SomeTypeList`, aliases that let a function
 signature express "any type conforming to trait `X`" without introducing an
-explicit type parameter. It also keeps deprecated aliases for `AnyType` and
-`Deinitable`, both of which are now defined in `std.traits`.
+explicit type parameter.
 """
 
 from std.builtin.variadics import _MLIR
 import std.traits
-
-
-@deprecated(
-    "`AnyType` has moved to `std.traits`. It's still exported from the"
-    " prelude, so most code needs no changes; for the explicit import path"
-    " use `std.traits.anytype.AnyType`."
-)
-comptime AnyType = std.traits.AnyType
-"""Deprecated: The most basic trait that all Mojo types extend by default.
-
-This trait has moved to `std.traits.anytype`. It's exported from the
-prelude, so most code doesn't need to change. This alias will be removed in
-a future version of Mojo."""
-
-
-@deprecated(
-    "`Deinitable` has moved to `std.traits`. It's still exported from the"
-    " prelude, so most code needs no changes; for the explicit import path"
-    " use `std.traits.deinitable.Deinitable`."
-)
-comptime Deinitable = std.traits.Deinitable
-"""Deprecated: A trait for types that require lifetime management through
-destructors.
-
-This trait has moved to `std.traits.deinitable`. It's exported from the
-prelude, so most code doesn't need to change. This alias will be removed in
-a future version of Mojo."""
 
 
 comptime __SomeImpl[Trait: type_of(std.traits.AnyType), T: Trait] = T

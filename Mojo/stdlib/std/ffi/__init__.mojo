@@ -59,7 +59,7 @@ from std.memory.alloc import dealloc, ThinAllocation
 from std.memory.unsafe_pointer import unsafe_cast
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
-from .cstring import CStringSpan, CStringSlice
+from .cstring import CStringSpan
 from .unsafe_union import UnsafeUnion
 
 # ===-----------------------------------------------------------------------===#

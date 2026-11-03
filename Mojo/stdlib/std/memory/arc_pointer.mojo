@@ -371,28 +371,6 @@ struct ArcPointer[T: Movable](
             .unsafe_origin_cast[ImmOrigin(origin)]()
         )
 
-    @doc_hidden
-    @deprecated(use=ptr)
-    def unsafe_ptr[
-        mut: Bool,
-        origin: Origin[mut=mut],
-        //,
-    ](ref[origin] self) -> Pointer[Self.T, origin]:
-        """Retrieves a pointer to the underlying memory.
-
-        Parameters:
-            mut: Whether the pointer is mutable.
-            origin: The origin of the pointer.
-
-        Returns:
-            A `Pointer` to the pointee.
-        """
-        return (
-            Pointer(to=self._inner[].payload_ref())
-            .unsafe_mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
-        )
-
     def count(self) -> UInt64:
         """Returns the current strong reference count.
 

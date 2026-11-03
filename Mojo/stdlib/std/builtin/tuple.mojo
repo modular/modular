@@ -59,10 +59,6 @@ struct Tuple[*Ts: AnyType](
         Ts: The elements type.
     """
 
-    @deprecated(use=Ts)
-    comptime element_types = Self.Ts
-    """The elements type. Deprecated alias for `Ts`."""
-
     comptime __del__is_trivial = Self.Ts.all[IsTriviallyDeinitable]()
     comptime __copy_ctor_is_trivial = Self.Ts.all[IsTriviallyCopyable]()
     comptime __move_ctor_is_trivial = Self.Ts.all[IsTriviallyMovable]()

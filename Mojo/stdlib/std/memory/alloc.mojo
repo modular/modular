@@ -788,32 +788,6 @@ def _alloc_bytes(
     return pointer.unsafe_value()
 
 
-@deprecated(
-    "`alloc` without a `Layout` is deprecated, use the `Layout`-based `alloc`"
-    " instead; as a temporary migration step, use `unsafe_alloc`"
-)
-@inline(.always)
-def alloc[
-    type: AnyType, /
-](count: Int, *, alignment: Int = align_of[type]()) -> Pointer[
-    type, MutUntrackedOrigin
-]:
-    """Allocates contiguous storage for `count` elements of `type` with
-    alignment `alignment`.
-
-    Parameters:
-        type: The type of the elements to allocate storage for.
-
-    Args:
-        count: Number of elements to allocate.
-        alignment: The alignment of the allocation.
-
-    Returns:
-        A pointer to the newly allocated uninitialized array.
-    """
-    return unsafe_alloc[type](count, alignment=alignment)
-
-
 @inline(.always)
 def unsafe_alloc[
     type: AnyType, /

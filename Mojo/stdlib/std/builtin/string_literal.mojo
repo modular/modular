@@ -352,19 +352,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   return type.
         return ptr.unsafe_bitcast[Byte]()
 
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=ptr)
-    def unsafe_ptr(
-        self,
-    ) -> Pointer[Byte, ImmStaticOrigin]:
-        """Get a pointer to the underlying data.
-
-        Returns:
-            The pointer to the data.
-        """
-        return self.ptr()
-
     @inline(.always)
     def as_c_string_span(
         self,
@@ -376,19 +363,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         # Safety: StringLiteral is guaranteed to be nul-terminated.
         return CStringSpan(unsafe_from_ptr=self.ptr().unsafe_bitcast[c_char]())
-
-    @deprecated(use=as_c_string_span)
-    @inline(.always)
-    def as_c_string_slice(
-        self,
-    ) -> CStringSpan[ImmStaticOrigin]:
-        """Return a `CStringSpan` to the underlying memory of the string.
-
-        Returns:
-            The `CStringSpan` of the string.
-        """
-        # Safety: StringLiteral is guaranteed to be nul-terminated.
-        return self.as_c_string_span()
 
     @inline(.nodebug)
     def as_string_slice(self) -> StaticString:

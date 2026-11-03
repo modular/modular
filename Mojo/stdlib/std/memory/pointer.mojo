@@ -774,51 +774,6 @@ struct Pointer[
         return self.unsafe_offset(offset)
 
     @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_offset)
-    def __sub__[I: Indexer, //](self, offset: I) -> Self:
-        """Return a pointer at an offset from the current one.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            offset: The offset index.
-
-        Returns:
-            An offset pointer.
-        """
-        return self.unsafe_offset(-1 * index(offset))
-
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_offset)
-    def __iadd__[I: Indexer, //](mut self, offset: I):
-        """Add an offset to this pointer.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            offset: The offset index.
-        """
-        self = self.unsafe_offset(offset)
-
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_offset)
-    def __isub__[I: Indexer, //](mut self, offset: I):
-        """Subtract an offset from this pointer.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            offset: The offset index.
-        """
-        self = self.unsafe_offset(-1 * index(offset))
-
-    @doc_hidden
     @__unsafe_nested_origins_read_only
     @inline(.always)
     def __sub__(
@@ -1514,28 +1469,6 @@ struct Pointer[
         return result
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_load)
-    def load[
-        dtype: DType,
-        //,
-        width: Int = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        invariant: Bool = _default_invariant[Self.mut](),
-        non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...]) -> SIMD[dtype, width]:
-        return self.unsafe_load[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ]()
-
-    @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def unsafe_load[
         dtype: DType,
@@ -1585,28 +1518,6 @@ struct Pointer[
         ]()
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_load)
-    def load[
-        dtype: DType,
-        //,
-        width: Int = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        invariant: Bool = _default_invariant[Self.mut](),
-        non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...], offset: Scalar,) -> SIMD[dtype, width]:
-        return self.unsafe_load[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ](offset)
-
-    @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def unsafe_load[
         I: Indexer,
@@ -1654,29 +1565,6 @@ struct Pointer[
             invariant=invariant,
             non_temporal=non_temporal,
         ]()
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_load)
-    def load[
-        I: Indexer,
-        dtype: DType,
-        //,
-        width: Int = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        invariant: Bool = _default_invariant[Self.mut](),
-        non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...], offset: I,) -> SIMD[dtype, width]:
-        return self.unsafe_load[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ](offset)
 
     @__allow_legacy_custom_self_type
     @inline(.nodebug)
@@ -1827,76 +1715,6 @@ struct Pointer[
         ](val)
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_store)
-    def store[
-        I: Indexer,
-        dtype: DType,
-        //,
-        width: SIMDLength = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        non_temporal: Bool = False,
-    ](
-        self: MutPointer[Scalar[dtype], ...],
-        offset: I,
-        val: SIMD[dtype, width],
-    ):
-        self.unsafe_store[
-            width,
-            alignment=alignment,
-            volatile=volatile,
-            non_temporal=non_temporal,
-        ](offset, val)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_store)
-    def store[
-        dtype: DType,
-        offset_type: DType,
-        //,
-        width: Int = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        non_temporal: Bool = False,
-    ](
-        self: MutPointer[Scalar[dtype], ...],
-        offset: Scalar[offset_type],
-        val: SIMD[dtype, width],
-    ):
-        self.unsafe_store[
-            width,
-            alignment=alignment,
-            volatile=volatile,
-            non_temporal=non_temporal,
-        ](offset, val)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_store)
-    def store[
-        dtype: DType,
-        //,
-        width: SIMDLength = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        non_temporal: Bool = False,
-    ](self: MutPointer[Scalar[dtype], ...], val: SIMD[dtype, width]):
-        self.unsafe_store[
-            width,
-            alignment=alignment,
-            volatile=volatile,
-            non_temporal=non_temporal,
-        ](val)
-
-    @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def _store[
         dtype: DType,
@@ -1955,15 +1773,6 @@ struct Pointer[
         return strided_load(self, Int(stride), SIMD[.bool, width](fill=True))
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_strided_load)
-    def strided_load[
-        dtype: DType, S: Intable, //, width: Int
-    ](self: Pointer[Scalar[dtype], ...], stride: S,) -> SIMD[dtype, width]:
-        return self.unsafe_strided_load[width=width](stride)
-
-    @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def unsafe_strided_store[
         dtype: DType,
@@ -1994,22 +1803,6 @@ struct Pointer[
           `width` is undefined behavior.
         """
         strided_store(val, self, Int(stride), SIMD[.bool, width](fill=True))
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_strided_store)
-    def strided_store[
-        dtype: DType,
-        S: Intable,
-        //,
-        width: SIMDLength = 1,
-    ](
-        self: MutPointer[Scalar[dtype], ...],
-        val: SIMD[dtype, width],
-        stride: S,
-    ):
-        self.unsafe_strided_store[width=width](val, stride)
 
     @__allow_legacy_custom_self_type
     @inline(.nodebug)
@@ -2092,24 +1885,6 @@ struct Pointer[
         return gather[alignment=alignment](base, mask, default)
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_gather)
-    def gather[
-        dtype: DType,
-        //,
-        *,
-        width: SIMDLength = 1,
-        alignment: Int = align_of[dtype](),
-    ](
-        self: Pointer[Scalar[dtype], ...],
-        offset: SIMD[_, width],
-        mask: SIMD[.bool, width] = SIMD[.bool, width](fill=True),
-        default: SIMD[dtype, width] = 0,
-    ) -> SIMD[dtype, width]:
-        return self.unsafe_gather[alignment=alignment](offset, mask, default)
-
-    @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def unsafe_scatter[
         dtype: DType,
@@ -2190,32 +1965,6 @@ struct Pointer[
         scatter[alignment=alignment](val, base, mask)
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_scatter)
-    def scatter[
-        dtype: DType,
-        //,
-        *,
-        width: SIMDLength = 1,
-        alignment: Int = align_of[dtype](),
-    ](
-        self: MutPointer[Scalar[dtype], ...],
-        offset: SIMD[_, width],
-        val: SIMD[dtype, width],
-        mask: SIMD[.bool, width] = SIMD[.bool, width](fill=True),
-    ):
-        self.unsafe_scatter[alignment=alignment](offset, val, mask)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_free)
-    def free(self: MutPointer[Self.T, ...]):
-        """Free the memory referenced by the pointer."""
-        _free(self)
-
-    @__allow_legacy_custom_self_type
     @inline(.always)
     def unsafe_free(self: MutPointer[Self.T, ...]):
         """Frees the memory referenced by the pointer."""
@@ -2249,45 +1998,9 @@ struct Pointer[
             ](self._mlir_value)
         }
 
-    @doc_hidden
-    @always_inline("builtin")
-    @deprecated(use=unsafe_bitcast)
-    def bitcast[
-        U: AnyType
-    ](self) -> Pointer[U, Self.origin, address_space=Self.address_space]:
-        return self.unsafe_bitcast[U]()
-
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
     ] = Pointer[Self.T, target_origin, address_space=Self.address_space]
-
-    @inline(.nodebug)
-    @deprecated(
-        "`mut_cast` is deprecated in favor of explicitly specifying a"
-        " mutability on the pointer type (`ImmPointer` or `MutPointer`). If"
-        " a mutability cast is truly needed (this should almost always be"
-        " avoided), use `unsafe_mut_cast` instead."
-    )
-    def mut_cast[
-        target_mut: Bool
-    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
-        """Changes the mutability of a pointer.
-
-        This is a safe way to change the mutability of a pointer with an
-        unbounded mutability. This function will emit a compile time error if
-        you try to cast an immutable pointer to mutable.
-
-        Parameters:
-            target_mut: Mutability of the destination pointer.
-
-        Returns:
-            A pointer with the same type, origin and address space as the
-            original pointer, but with the newly specified mutability.
-        """
-        comptime assert (
-            target_mut == False or target_mut == Self.mut
-        ), "Cannot safely cast an immutable pointer to mutable"
-        return self.unsafe_mut_cast[target_mut]()
 
     @always_inline("builtin")
     def unsafe_mut_cast[
@@ -2418,14 +2131,6 @@ struct Pointer[
             ](self._mlir_value)
         }
 
-    @doc_hidden
-    @always_inline("builtin")
-    @deprecated(use=unsafe_address_space_cast)
-    def address_space_cast[
-        target_address_space: AddressSpace = Self.address_space,
-    ](self) -> Pointer[Self.T, Self.origin, address_space=target_address_space]:
-        return self.unsafe_address_space_cast[target_address_space]()
-
     @inline(.always)
     def unsafe_deinit_pointee(
         self,
@@ -2511,18 +2216,6 @@ struct Pointer[
         return __get_address_as_owned_value(
             self.unsafe_address_space_cast[.GENERIC]()._mlir_value
         )
-
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_take_pointee)
-    def take_pointee(
-        self,
-    ) -> Self.T where (
-        Self.mut
-        and Self.address_space == .GENERIC
-        and conforms_to(Self.T, Movable)
-    ):
-        return self.unsafe_take_pointee()
 
     @inline(.always)
     def unsafe_write(

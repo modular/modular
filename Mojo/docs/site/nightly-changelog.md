@@ -247,6 +247,49 @@ This version is still a work in progress.
   trait, and `pow()` now takes `SIMD` values only. Nothing conformed to
   `CeilDivableRaising`, so the raising `ceildiv()` overload is removed too.
 
+- Removed APIs that were deprecated in Mojo 1.1 or earlier. Use the
+  replacement in each case:
+
+  - The `Pointer` methods `load()`, `store()`, `strided_load()`,
+    `strided_store()`, `gather()`, `scatter()`, `free()`, `bitcast()`,
+    `address_space_cast()`, and `take_pointee()`. Use their `unsafe_`-prefixed
+    spellings, such as `unsafe_load()`.
+
+  - `Pointer.mut_cast()`. Spell the mutability in the pointer type
+    (`ImmPointer` or `MutPointer`), or use `unsafe_mut_cast()`.
+
+  - Subtracting an integer from a `Pointer` and the `+=` and `-=` operators.
+    Use `unsafe_offset()`. Adding an integer and positional indexing such as
+    `ptr[i]` remain deprecated.
+
+  - `memmove()`. Use `unsafe_memmove()`.
+
+  - The `alloc[T](count)` overload. Use `alloc(Layout[T](length=count))`,
+    which returns an `Allocation`, or `unsafe_alloc[T](count)` for a raw
+    pointer.
+
+  - `is_trivially_movable()`, `is_trivially_copyable()`, and
+    `is_trivially_deletable()`. Use `IsTriviallyMovable[T]`,
+    `IsTriviallyCopyable[T]`, and `IsTriviallyDeinitable[T]` from
+    `std.traits`.
+
+  - The `CStringSlice` alias and `as_c_string_slice()` on `String`,
+    `StringSlice`, and `StringLiteral`. Use `CStringSpan` and
+    `as_c_string_span()`.
+
+  - `unsafe_ptr()` on `ArcPointer`, `OwnedPointer`, `CStringSpan`, and
+    `StringLiteral`. Use `ptr()`.
+
+  - `String.capacity()` and `String.reserve()`. Use `capacity_bytes()` and
+    `reserve_bytes()`.
+
+  - `Tuple.element_types` and `VariadicPack.element_types`. Use `Ts`.
+
+  - The `AnyType` and `Deinitable` aliases in `std.builtin.anytype`, and the
+    `Movable`, `Copyable`, and `ImplicitlyCopyable` aliases in
+    `std.builtin.value`. These traits live in `std.traits` and are still
+    exported from the prelude.
+
 ## Fixed
 
 - `SIMD.slice()` no longer passes `llvm.vector.extract` an offset that is not

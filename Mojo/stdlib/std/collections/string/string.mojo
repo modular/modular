@@ -625,11 +625,6 @@ struct String(
     # null terminator, inline, and indirect. If indirect the length is also
     # stored in the capacity field.
 
-    @deprecated(use=capacity_bytes)
-    @doc_hidden
-    def capacity(self) -> Int:
-        return self.capacity_bytes()
-
     @inline(.nodebug)
     def capacity_bytes(self) -> Int:
         """Get the current capacity of the `String`'s internal buffer.
@@ -1510,18 +1505,6 @@ struct String(
 
         return self.unsafe_ptr().unsafe_mut_cast[True]()
 
-    @deprecated(use=as_c_string_span)
-    @inline(.always)
-    def as_c_string_slice(
-        mut self,
-    ) -> CStringSpan[ImmOrigin(origin_of(self))]:
-        """Return a `CStringSpan` to the underlying memory of the string.
-
-        Returns:
-            The `CStringSpan` of the string.
-        """
-        return self.as_c_string_span()
-
     @inline(.always)
     def as_c_string_span(
         mut self,
@@ -2341,11 +2324,6 @@ struct String(
         if unsafe_uninit_length > self.capacity_bytes():
             self.reserve_bytes(unsafe_uninit_length)
         self._set_byte_length(unsafe_uninit_length)
-
-    @deprecated(use=reserve_bytes)
-    @doc_hidden
-    def reserve(mut self, new_capacity_bytes: Int, /):
-        self.reserve_bytes(new_capacity_bytes)
 
     @stable(since="1.1")
     def reserve_bytes(mut self, new_capacity_bytes: Int, /):
