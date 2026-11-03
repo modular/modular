@@ -1422,13 +1422,30 @@ struct List[T: AnyType, /](
     def __getitem__(
         self, slice: StridedSlice
     ) -> Self where conforms_to(Self.T, Copyable):
-        """Gets the sequence of elements at the specified positions.
+        """Gets a new list with the elements at the specified positions.
+
+        Subscripting calls this method: `lst[1:5:2]` is `lst.__getitem__()`.
+
+        The slice's bounds are resolved with `indices()`: negative bounds
+        count back from the end of the list, and `None` bounds resolve to
+        the start or the end in the step's direction.
 
         Args:
-            slice: A slice that specifies positions of the new list.
+            slice: The slice specifying the positions of the elements.
 
         Returns:
-            A new list containing the list at the specified slice.
+            A new list with the elements at the specified positions.
+
+        Examples:
+
+        ```mojo
+        var letters: List[String] = ["a", "b", "c", "d", "e", "f", "g"]
+        # The stride picks every second element.
+        print(letters[0:7:2])  # [a, c, e, g]
+        # The negative end counts back from the end, excluding the last
+        # element.
+        print(letters[0:-1:2])  # [a, c, e]
+        ```
         """
         var start, end, step = slice.indices(len(self))
         var r = range(start, end, step)
@@ -1449,17 +1466,31 @@ struct List[T: AnyType, /](
     def __getitem__(
         ref self, slice: ContiguousSlice
     ) -> Span[Self.T, Self._InteriorOrigin[origin_of(self)]]:
-        """Gets the sequence of elements at the specified positions.
+        """Gets a span over the elements at the specified slice positions.
+
+        Subscripting calls this method: `lst[1:5]` is `lst.__getitem__()`.
 
         Aborts if `slice`'s start or end index is out of bounds (valid range
         is `0` to `len(self)`, inclusive), or if start is greater than end.
-        Negative indices are not supported and always abort.
+        Negative indices are not supported: they abort when bounds checking
+        is enabled (the default on CPU) and cause undefined behavior
+        otherwise. Compute bounds from the length instead, like
+        `lst[1 : len(lst) - 1]`.
 
         Args:
-            slice: A slice the specifies the positions of the new list.
+            slice: The slice specifying the range of elements.
 
         Returns:
             A span over the specified slice.
+
+        Examples:
+
+        ```mojo
+        var numbers: List[Int] = [10, 20, 30, 40, 50]
+        # Bounds must be non-negative, so compute them from the length.
+        var middle = numbers[1 : len(numbers) - 1]
+        print(middle)  # [20, 30, 40]
+        ```
         """
         var start, end = check_slice_bounds(slice, len(self))
         return {
@@ -1473,6 +1504,8 @@ struct List[T: AnyType, /](
         ref self, idx: IntLiteral, /
     ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
         """Gets the list element at the given index.
+
+        Subscripting calls this method: `lst[3]` invokes `lst.__getitem__(3)`.
 
         Args:
             idx: The index of the element.
@@ -1494,9 +1527,12 @@ struct List[T: AnyType, /](
     ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
         """Gets the list element at the given index.
 
-        Unlike when subscripting using slices negative indices are
-        considered out of bounds. They will be checked in the same situations
-        as "off the end" indexing.
+        Subscripting calls this method: `lst[3]` invokes `lst.__getitem__(3)`.
+
+        The index is bounds-checked: a negative index or one past the end
+        aborts at run time when the check is enabled (the default on CPU).
+        To index from the end, compute the position from the length, like
+        `lst[len(lst) - 1]`.
 
         Args:
             idx: The index of the element.
@@ -1514,9 +1550,12 @@ struct List[T: AnyType, /](
     ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
         """Gets the list element at the given index.
 
-        Unlike when subscripting using slices negative indices are
-        considered out of bounds. They will be checked in the same situations
-        as "off the end" indexing.
+        Subscripting calls this method: `lst[3]` invokes `lst.__getitem__(3)`.
+
+        The index is bounds-checked: a negative index or one past the end
+        aborts at run time when the check is enabled (the default on CPU).
+        To index from the end, compute the position from the length, like
+        `lst[len(lst) - 1]`.
 
         Args:
             idx: The index of the element.
