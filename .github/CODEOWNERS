@@ -20,6 +20,8 @@
 /bazel/public-patches/llvm-elf-extractor-local-copy.patch @modular/sdlc
 /bazel/public-patches/llvm-machinefunction-sti-ref-to-ptr.patch @modular/sdlc
 /bazel/public-patches/llvm-revert-lldb-elf-section-name-string.patch @modular/sdlc
+/bazel/public-patches/llvm-lldb-macosx-objcxx-headers.patch @modular/sdlc
+/bazel/public-patches/llvm-softpromote-scalar-to-vector.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0002-Increase-request-parallelism.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0003-Accept-any-200-from-the-health-endpoint.patch @modular/sdlc
@@ -33,6 +35,7 @@
 /bazel/public-patches/grpc-loads.patch @modular/sdlc
 /bazel/public-patches/grpc-no-macos-x86.patch @modular/sdlc
 /bazel/public-patches/grpc-warnings.patch @modular/sdlc
+/bazel/public-patches/llvm-avx2-bf16-broadcast.patch @modular/sdlc
 /bazel/public-patches/llvm-flag-defaults.patch @modular/sdlc
 /bazel/public-patches/llvm-libxml2-config-setting-visibility.patch @modular/sdlc
 /bazel/public-patches/opentelemetry-cpp-loads.patch @modular/sdlc

@@ -238,8 +238,9 @@ static LogicalResult runLLVMOptPasses(llvm::Module &module,
   standardInstrumentations.registerCallbacks(pic, &moduleAnalysisMgr);
 
   TargetLibraryInfoImpl targetLibInfo(Triple(module.getTargetTriple()));
-  PassBuilder passBuilder(&targetMachine, PipelineTuningOptions(),
-                          /*PGOOpt=*/std::nullopt, &pic);
+  PassBuilder passBuilder(module.getContext(), &targetMachine,
+                          PipelineTuningOptions(), /*PGOOpt=*/std::nullopt,
+                          &pic);
 
   // Specially handle the alias analysis manager so that we can register
   // a custom pipeline of AA passes with it.

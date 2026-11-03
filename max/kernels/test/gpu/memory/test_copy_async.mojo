@@ -25,22 +25,34 @@ def test_mbarrier[
 ](
     addr0: MutPointer[Int8, origin],
     addr1: MutPointer[UInt8, origin],
-    addr2: MutPointer[Float32, origin, address_space=.GLOBAL],
-    addr3: MutPointer[Float32, origin, address_space=.SHARED],
-    addr4: MutPointer[Float64, origin, address_space=.GLOBAL],
-    addr5: MutPointer[Float64, origin, address_space=.SHARED],
+    addr2: MutPointer[Float32, origin, address_space=.SHARED],
+    addr3: MutPointer[Float64, origin, address_space=.SHARED],
 ):
     async_copy_arrive(addr0)
     async_copy_arrive(addr1)
     async_copy_arrive(addr2)
     async_copy_arrive(addr3)
-    async_copy_arrive(addr4)
-    async_copy_arrive(addr5)
 
 
 def _verify_mbarrier(asm: StringSlice) raises -> None:
-    assert_true("cp.async.mbarrier.arrive.b64" in asm)
+    # Mbarrier objects must live in shared memory. NVPTX rewrites generic
+    # mbarrier operands to the `.shared` form (llvm 64eb69b652ea), so valid
+    # addresses lower to the shared arrive instruction.
     assert_true("cp.async.mbarrier.arrive.shared.b64" in asm)
+
+
+def test_mbarrier_global_rejected[
+    origin: MutOrigin
+](addr: MutPointer[Float32, origin, address_space=.GLOBAL]):
+    async_copy_arrive(addr)
+
+
+def _verify_mbarrier_global_rejected(asm: StringSlice) raises -> None:
+    # A global address can never hold an mbarrier, so the new NVPTX lowers
+    # the provably-invalid arrive to `trap` instead of emitting the
+    # address-space-generic form (llvm 64eb69b652ea).
+    assert_true("trap" in asm)
+    assert_true("cp.async.mbarrier.arrive" not in asm)
 
 
 def test_mbarrier_sm80() raises:
@@ -57,6 +69,24 @@ def test_mbarrier_sm90() raises:
         test_mbarrier[MutUntrackedOrigin], target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_mbarrier(asm)
+
+
+def test_mbarrier_global_rejected_sm80() raises:
+    print("test_mbarrier_global_rejected_sm80")
+    var asm = _compile_code[
+        test_mbarrier_global_rejected[MutUntrackedOrigin],
+        target=get_gpu_target(),
+    ]().asm
+    _verify_mbarrier_global_rejected(asm)
+
+
+def test_mbarrier_global_rejected_sm90() raises:
+    print("test_mbarrier_global_rejected_sm90")
+    var asm = _compile_code[
+        test_mbarrier_global_rejected[MutUntrackedOrigin],
+        target=get_gpu_target["sm_90"](),
+    ]().asm
+    _verify_mbarrier_global_rejected(asm)
 
 
 def test_mbarrier_init[
@@ -318,6 +348,8 @@ def test_async_copy_with_eviction_sm90() raises:
 def main() raises:
     test_mbarrier_sm80()
     test_mbarrier_sm90()
+    test_mbarrier_global_rejected_sm80()
+    test_mbarrier_global_rejected_sm90()
     test_mbarrier_init_sm80()
     test_mbarrier_init_sm90()
     test_mbarrier_test_wait_sm80()

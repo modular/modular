@@ -59,6 +59,7 @@ Builtin_IntegerAttr     # IntegerAttr
 Builtin_StringAttr      # StringAttr
 Builtin_TypeAttr        # TypeAttr
 Builtin_UnitAttr        # UnitAttr
+DLTIQueryInterface      # required: referenced by ModuleOp
 ElementsAttrInterface   # required: ElementsAttr; graph.cpp buffer_from_constant_attr
 ModuleOp                # ModuleOp
 RemoveDeadValuesPass    # RemoveDeadValuesPass

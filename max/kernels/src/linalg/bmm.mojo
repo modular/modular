@@ -1695,7 +1695,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         comptime assert (
             out_coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        epilogue_fn[dtype, width, alignment=1](
+        epilogue_fn[dtype, width, alignment=alignment](
             (block_idx.z, out_coords[0], out_coords[1]), val
         )
 

@@ -250,7 +250,8 @@ public:
 
   bool MightHaveChildren() override { return true; }
 
-  llvm::Expected<size_t> GetIndexOfChildWithName(ConstString name) override {
+  llvm::Expected<size_t>
+  GetIndexOfChildWithName(llvm::StringRef name) override {
     if (m_inner)
       return m_inner->GetIndexOfChildWithName(name);
     return m_backend.GetIndexOfChildWithName(name);
