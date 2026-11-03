@@ -5241,7 +5241,7 @@ static constexpr llvm::StringLiteral kStableTensorArgAlias =
 static constexpr llvm::StringLiteral kShapeTensorArgStructName =
     "_MoggShapeTensorArg";
 static constexpr llvm::StringLiteral kShapeTensorArgDefs = R"mojo(
-from layout import Coord, TensorLayout, TileTensor
+from layout import Coord, CurrentTensorEngine, TensorLayout, TileTensor
 from extensibility import Tensor, TileTensorable
 
 
@@ -5266,6 +5266,7 @@ struct _MoggShapeTensorArg[
     comptime __shape_types = Self.LayoutType.__shape_types
     comptime rank = Self.LayoutType.rank
     comptime alignment = Self._alignment
+    comptime Engine = CurrentTensorEngine[Self.LayoutType]
     var handle: Pointer[Scalar[Self.dtype], UntrackedOrigin[mut = Self.mut]]
     var _layout: Self.LayoutType
 
@@ -5295,11 +5296,13 @@ struct _MoggShapeTensorArg[
         dtype = Self.dtype,
         LayoutType = Self.LayoutType,
         origin = UntrackedOrigin[mut = Self.mut],
+        Engine = Self.Engine,
     ]:
         return TileTensor[
             dtype = Self.dtype,
             LayoutType = Self.LayoutType,
             origin = UntrackedOrigin[mut = Self.mut],
+            Engine = Self.Engine,
         ](ptr=self.handle, layout=self.layout())
 )mojo";
 

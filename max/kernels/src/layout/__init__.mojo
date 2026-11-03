@@ -80,6 +80,8 @@ from ._plugin import (
     CurrentLayoutPlugin,
     CurrentTensorEngine,
     DefaultLayoutPlugin,
+    DeviceGlobalAddressSpace,
+    DeviceTensorEngine,
     LayoutPluginForTarget,
     LayoutPluginHooks,
     TensorEngineForTarget,
