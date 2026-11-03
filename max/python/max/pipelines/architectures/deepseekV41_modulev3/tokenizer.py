@@ -16,12 +16,15 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 from max.pipelines.context import TextContext
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
     TextTokenizer,
     _render_custom_chat_template,
+    run_with_default_executor,
 )
 from max.pipelines.modeling.types import (
     TextContentPart,
@@ -30,7 +33,11 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
 )
 
-from ..deepseekV41.tokenizer import _flatten_message, render_prompt
+from ..deepseekV41.tokenizer import (
+    _flatten_message,
+    encode_literal_text,
+    render_prompt,
+)
 
 
 class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextTokenizer):
@@ -68,6 +75,16 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextTokenizer):
             tools,
             **{"add_generation_prompt": True, **chat_template_options},
         )
+
+    async def _encode_text(
+        self, text: str, add_special_tokens: bool
+    ) -> npt.NDArray[np.integer[Any]]:
+        # Every image placeholder in text stays text: this build has no
+        # vision path, and the model routes the image token as an image.
+        encoded = await run_with_default_executor(
+            encode_literal_text, self.delegate, text, add_special_tokens
+        )
+        return np.array(encoded)
 
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         """Rejects media inputs, then defers to the base tokenizer."""

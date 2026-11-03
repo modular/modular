@@ -155,9 +155,27 @@ modular_py_test(
 modular_py_test(
     name = "test_encoding",
     srcs = ["test_encoding.py"],
+    ignore_extra_deps = [
+        requirement("jinja2"),
+    ],
+    ignore_unresolved_imports = [
+        "tokenizers.AddedToken",
+        "tokenizers.Tokenizer",
+        "tokenizers.decoders",
+        "tokenizers.models",
+        "tokenizers.pre_tokenizers",
+    ],
     deps = [
         "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/tests/integration/test_common:mocks",
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("transformers"),
     ],
 )
 
