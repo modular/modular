@@ -8,12 +8,20 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
+test_suite(
+    name = "router_gate_prefill_helpers_test",
+    tests = ["//max/kernels/benchmarks/router_gate_prefill_utils:test_validation.mojo.test"],
+)
+
 _RUN_BENCHMARKS = [
     "algorithm/parallelize_overhead.mojo",
     "nn/bench_gather_reduce.mojo",
 ]
 
 _EXTRA_DEPS = {
+    "gpu/linalg/bench_router_gate_prefill_sm100.mojo": [
+        "//max/kernels/benchmarks/router_gate_prefill_utils",
+    ],
     "algorithm/parallelize_overhead.mojo": ["//max:max_mojo"],
     "gpu/nn/bench_argmax.mojo": ["//max:builtin_kernels"],
     "gpu/nn/bench_normalization.mojo": ["//max:builtin_kernels"],
@@ -197,6 +205,7 @@ _EXTRA_CONSTRAINTS = {
     "gpu/quantization/bench_qmatmul_int4.mojo": ["//:nvidia_gpu"],  # INT4 GEMM only compiles for NVIDIA
     "gpu/linalg/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
     "gpu/linalg/bench_block_scaled_matmul_compute_fn.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
+    "gpu/linalg/bench_router_gate_prefill_sm100.mojo": ["//:b200_gpu"],  # SM100-specific split-bf16 router GEMM
     "gpu/linalg/bench_o_proj_matmul_mxfp8_amd.mojo": ["//:mi355_gpu"],  # CDNA4 block-scaled matmul
     "gpu/linalg/bench_matmul_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific TMA epilogue matmul
     "gpu/linalg/bench_matmul_1d_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific 1D bias TMA epilogue matmul

@@ -60,6 +60,7 @@ from linalg.matmul.gpu.amd import (
     block_scaled_grouped_matmul_amd_preb,
 )
 from linalg.gemv import router_gate_mixed_gemv, router_gate_use_mixed_gemv
+from linalg.router_gate_gemm import router_gate_tf32_gemm
 from linalg.matmul.gpu.amd.smallm_streaming_matmul import (
     smallm_streaming_matmul,
 )
@@ -2812,6 +2813,13 @@ struct Struct_lora_sgmv_qkv_expand_ragged:
         )
 
 
+# Smallest `M` that takes the SM100 split-bf16 router GEMM. Above `M = 8192` the
+# fp32 matmul dispatch rounds the weight to TF32 to nearest, which the GEMM
+# reproduces; at and below it the dispatch truncates, so those sizes (and decode)
+# keep the GEMV and cast + matmul routes.
+comptime _ROUTER_GATE_TF32_MIN_M = 8704
+
+
 @extensibility.register("mo.router.gate.mixed.gemv")
 struct Struct_router_gate_mixed_gemv:
     """MOGG wrapper for the mixed-input router-gate GEMV.
@@ -2826,9 +2834,11 @@ struct Struct_router_gate_mixed_gemv:
       dotted against the unchanged fp32 `b` in a SINGLE launch, fusing away the
       standalone bf16->fp32 activation cast that otherwise precedes the fp32
       router GEMV.
-    - large `M` (prefill): the fused GEMV is catastrophically slow, so the op
-      falls back to the baseline chain — cast `a` to fp32, then an ordinary
-      fp32 matmul against the fp32 `b` (two launches, matching baseline).
+    - large `M` (prefill): the fused GEMV is catastrophically slow. On SM100
+      from `M = 8704` the op runs `router_gate_tf32_gemm`, one bf16
+      tensor-core GEMM that reads `a` once; elsewhere it falls back to the
+      baseline chain — cast `a` to fp32, then an ordinary fp32 matmul against
+      the fp32 `b` (two launches, matching baseline).
 
     Because bf16->fp32 widening is lossless, every route is fp32 arithmetic
     over exactly the widened bf16 values: at the same launch config the fused
@@ -2919,6 +2929,25 @@ struct Struct_router_gate_mixed_gemv:
                 context,
             )
             return
+
+        # SM100 prefill: one bf16 tensor-core GEMM reads the activation once
+        # instead of casting it to fp32 and streaming that copy.
+        # The two-CTA MMA needs 2*N columns in [32, 256], in steps of 32.
+        # TMA requires a 16-byte bf16 row stride.
+        comptime if (
+            _is_sm10x_gpu(context.default_device_info)
+            and 16 <= N <= 128
+            and N % 16 == 0
+            and K % 8 == 0
+        ):
+            if M >= _ROUTER_GATE_TF32_MIN_M:
+                var a_gemm_tt = a.to_tile_tensor[.bfloat16]().reshape(
+                    row_major(M, Idx[K])
+                )
+                router_gate_tf32_gemm(
+                    c_tt, a_gemm_tt.as_imm(), b_tt.as_imm(), M, context
+                )
+                return
 
         # Large-M prefill: preserve the baseline's semantics and performance —
         # widen the bf16 activation to fp32 (the standalone cast the fused path

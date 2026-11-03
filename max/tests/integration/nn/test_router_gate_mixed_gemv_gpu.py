@@ -56,11 +56,11 @@ def test_router_gate_mixed_gemv_op(
 ) -> None:
     """The op returns fp32 [M, N] and is numerically equal to cast-A @ B.T on
     both the tiny-M fused route and the large-M cast + fp32-matmul fallback."""
+    compiled = gpu_session.load(_build_op_graph(m))
+
     torch.manual_seed(0)
     a = torch.randn(m, K, dtype=torch.bfloat16, device="cuda")
     b = torch.randn(N, K, dtype=torch.float32, device="cuda")
-
-    compiled = gpu_session.load(_build_op_graph(m))
     got = from_dlpack(compiled.execute(a, b)[0])
 
     assert tuple(got.shape) == (m, N)
@@ -103,6 +103,70 @@ def test_router_gate_mixed_gemv_matches_standard_path(
         a_t = torch.randn(m, K, dtype=torch.bfloat16, device="cuda")
         fused, standard_out = compiled.execute(a_t, b_t)
         assert torch.equal(from_dlpack(fused), from_dlpack(standard_out)), m
+
+
+@pytest.mark.skipif(
+    torch.version.hip is not None, reason="SM100 tiling is pinned to NVIDIA"
+)
+@pytest.mark.parametrize("m", [8704, 9000])
+def test_router_gate_mixed_gemv_large_m_matches_standard_path(
+    gpu_session: InferenceSession, m: int
+) -> None:
+    """Above M = 8192 the standard chain rounds the weight to TF32 to nearest;
+    the SM100 split-bf16 GEMM does too, so the logits agree to fp32 accumulation
+    order and expert selection does not move."""
+    with Graph(
+        "router_gate_mixed_gemv_large_m",
+        input_types=(
+            TensorType(DType.bfloat16, [m, K], device=DeviceRef.GPU()),
+            TensorType(DType.float32, [N, K], device=DeviceRef.GPU()),
+        ),
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        standard = ops.matmul(a.cast(DType.float32), ops.transpose(b, 0, 1))
+        graph.output(_router_gate_mixed_gemv(a, b), standard)
+    compiled = gpu_session.load(graph)
+
+    torch.manual_seed(2)
+    a_t = torch.randn(m, K, dtype=torch.bfloat16, device="cuda")
+    b_t = 0.02 * torch.randn(N, K, dtype=torch.float32, device="cuda")
+    fused, standard_out = (from_dlpack(t) for t in compiled.execute(a_t, b_t))
+    # The activation takes most of the test's GPU memory budget.
+    del a_t
+    torch.testing.assert_close(fused, standard_out, rtol=1e-4, atol=1e-3)
+    top4_fused = fused.topk(4, dim=1).indices.sort(dim=1).values
+    top4_standard = standard_out.topk(4, dim=1).indices.sort(dim=1).values
+    assert (top4_fused != top4_standard).any(dim=1).sum().item() <= m // 2000
+
+
+@pytest.mark.parametrize(
+    "n,k", [(8, 128), (127, 128), (120, 128), (144, 128), (128, 124)]
+)
+def test_router_gate_mixed_gemv_unsupported_gemm_shape(
+    gpu_session: InferenceSession, n: int, k: int
+) -> None:
+    with Graph(
+        "router_gate_mixed_gemv_unsupported_gemm_shape",
+        input_types=(
+            TensorType(DType.bfloat16, ["m", k], device=DeviceRef.GPU()),
+            TensorType(DType.float32, [n, k], device=DeviceRef.GPU()),
+        ),
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        standard = ops.matmul(a.cast(DType.float32), ops.transpose(b, 0, 1))
+        graph.output(_router_gate_mixed_gemv(a, b), standard)
+    compiled = gpu_session.load(graph)
+
+    torch.manual_seed(3)
+    b_t = 0.02 * torch.randn(n, k, dtype=torch.float32, device="cuda")
+    for m in (1, 129, 8704):
+        a_t = torch.randn(m, k, dtype=torch.bfloat16, device="cuda")
+        fused, standard = (from_dlpack(t) for t in compiled.execute(a_t, b_t))
+        if m > 128:
+            torch.testing.assert_close(fused, standard, rtol=0, atol=0)
+        else:
+            reference = a_t.float() @ b_t.t()
+            torch.testing.assert_close(fused, reference, rtol=1e-4, atol=1e-3)
 
 
 @pytest.mark.skipif(

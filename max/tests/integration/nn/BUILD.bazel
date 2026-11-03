@@ -564,14 +564,16 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    tags = [
-        "gpu",
-    ],
-    target_compatible_with = select({
+    gpu_constraints = ["//:has_gpu"] + select({
         "//:amd_gpu": [],
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    precompile_mefs = True,
+    precompile_shards = 4,
+    tags = [
+        "gpu",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

@@ -227,8 +227,11 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
 
     comptime if c_type == .float32:
         comptime assert (
-            a_type == b_type == .float32
-        ), "Only support float32 input types is tested for float32 output dtype"
+            a_type == b_type == .float32 or a_type == b_type == .bfloat16
+        ), (
+            "Only float32 and bfloat16 input types are tested for float32"
+            " output dtype"
+        )
         comptime assert (
             register_based_epilogue
         ), "only register-based epilogue is supported for float32 output dtype"
