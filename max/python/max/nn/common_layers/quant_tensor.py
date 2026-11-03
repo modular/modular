@@ -633,6 +633,22 @@ class NVFP4Activation(QTensor):
 
 
 @module_dataclass(frozen=True)
+class MXFP8Activation(QTensor):
+    """MXFP8-quantized activation tensor, rows sorted by expert.
+
+    Args:
+        data: ``float8_e4m3fn`` tokens of shape ``[total_tokens, K]``.
+        scales: ``float8_e8m0fnu`` block scales, one per 32 values, in the
+            padded SF-atom layout.
+        scales_offset: Per-expert offset into the padded ``scales``.
+    """
+
+    data: Tensor
+    scales: Tensor
+    scales_offset: Tensor
+
+
+@module_dataclass(frozen=True)
 class FP8BlockActivation(QTensor):
     """FP8 block-quantized activation tensor.
 
@@ -966,6 +982,7 @@ QuantAwareTensor: TypeAlias = (
     | MXFP8Quantizer
     | MXFP4Quantizer
     | NVFP4Activation
+    | MXFP8Activation
     | FP8BlockActivation
 )
 
@@ -1003,6 +1020,7 @@ __all__ = [
     "FP8BlockTensor",
     "MXFP4Quantizer",
     "MXFP4Tensor",
+    "MXFP8Activation",
     "MXFP8Quantizer",
     "MXFP8Tensor",
     "NVFP4Activation",

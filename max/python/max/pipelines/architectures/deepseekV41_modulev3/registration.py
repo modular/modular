@@ -170,10 +170,13 @@ class RegisteredDeepseekV41Config(
         )
 
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
-        """Sizes the same NVFP4 exchange as the legacy serving path."""
+        """Sizes the same exchange as the legacy serving path."""
         assert self.pipeline_config is not None
         return build_ep_config(
-            self.pipeline_config, self, runtime.mesh.num_devices
+            self.pipeline_config,
+            self,
+            runtime.mesh.num_devices,
+            self.routed_expert_format,
         )
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:

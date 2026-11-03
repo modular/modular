@@ -22,6 +22,7 @@ layer-level lazy-trace tests.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -37,6 +38,7 @@ from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     MXFP4Quantizer,
     MXFP4Tensor,
+    MXFP8Activation,
     MXFP8Quantizer,
     MXFP8Tensor,
     NVFP4Activation,
@@ -44,7 +46,7 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4TensorQuantizer,
     QuantAwareTensor,
 )
-from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.comm.ep import EPConfig, ep_kernels
 from max.nn.legacy.quant_config import QuantConfig, QuantFormat
 from max.tensor import Tensor, default_dtype
 
@@ -365,12 +367,8 @@ def test_concat_nvfp4_requires_a_tensor() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_sigma_permute_interleaves_gate_and_up_rows() -> None:
-    """The fused SwiGLU kernel wants ``[g0, u0, g1, u1, ...]`` on the N axis.
-
-    Checked eagerly on CPU: the stacked ``[gate; up]`` rows come back
-    row-interleaved, and the same permutation is applied to the block scales.
-    """
+def _gate_up_leaves() -> tuple[np.ndarray, np.ndarray, list[int]]:
+    """Returns distinct-valued ``[gate; up]`` leaves and their sigma order."""
     num_experts, gate_rows, cols = 2, 3, 4
     rows = 2 * gate_rows
 
@@ -380,7 +378,25 @@ def test_sigma_permute_interleaves_gate_and_up_rows() -> None:
     scales = np.arange(num_experts * rows * 2, dtype=np.float32).reshape(
         num_experts, rows, 2
     )
+    # sigma(2i) = i (gate row i), sigma(2i + 1) = gate_rows + i (up row i).
+    order = [i // 2 if i % 2 == 0 else gate_rows + i // 2 for i in range(rows)]
+    return data, scales, order
 
+
+@pytest.mark.parametrize(
+    "permute",
+    [quant_ops.sigma_permute_gate_up_nvfp4, quant_ops.sigma_permute_gate_up],
+)
+def test_sigma_permute_interleaves_gate_and_up_rows(
+    permute: Callable[[NVFP4Tensor], QuantAwareTensor],
+) -> None:
+    """The fused SwiGLU kernel wants ``[g0, u0, g1, u1, ...]`` on the N axis.
+
+    Checked eagerly on CPU: the stacked ``[gate; up]`` rows come back
+    row-interleaved, and the same permutation is applied to the block scales.
+    """
+    data, scales, order = _gate_up_leaves()
+    num_experts = data.shape[0]
     weight = NVFP4Tensor(
         weight=Tensor(data, device=CPU()),
         weight_scale=Tensor(scales, device=CPU()),
@@ -388,10 +404,9 @@ def test_sigma_permute_interleaves_gate_and_up_rows() -> None:
         input_scale=Tensor(np.ones(num_experts, np.float32), device=CPU()),
     )
 
-    permuted = quant_ops.sigma_permute_gate_up_nvfp4(weight)
+    permuted = permute(weight)
 
-    # sigma(2i) = i (gate row i), sigma(2i + 1) = gate_rows + i (up row i).
-    order = [i // 2 if i % 2 == 0 else gate_rows + i // 2 for i in range(rows)]
+    assert isinstance(permuted, NVFP4Tensor)
     np.testing.assert_array_equal(permuted.weight.to_numpy(), data[:, order])
     np.testing.assert_array_equal(
         permuted.weight_scale.to_numpy(), scales[:, order]
@@ -399,6 +414,27 @@ def test_sigma_permute_interleaves_gate_and_up_rows() -> None:
     # The global scales are untouched by the permutation.
     assert permuted.weight_scale_2 is weight.weight_scale_2
     assert permuted.input_scale is weight.input_scale
+    assert permuted.block_size == weight.block_size
+
+
+@pytest.mark.parametrize("container", [MXFP4Tensor, MXFP8Tensor])
+def test_sigma_permute_interleaves_mx_gate_and_up_rows(
+    container: type[MXFP4Tensor | MXFP8Tensor],
+) -> None:
+    """MX weights take the same interleave on both leaves, in their own type."""
+    data, scales, order = _gate_up_leaves()
+    weight = container(
+        weight=Tensor(data, device=CPU()),
+        weight_scale=Tensor(scales, device=CPU()),
+    )
+
+    permuted = quant_ops.sigma_permute_gate_up(weight)
+
+    assert type(permuted) is container
+    np.testing.assert_array_equal(permuted.weight.to_numpy(), data[:, order])
+    np.testing.assert_array_equal(
+        permuted.weight_scale.to_numpy(), scales[:, order]
+    )
     assert permuted.block_size == weight.block_size
 
 
@@ -527,6 +563,21 @@ def _nvfp4_dispatch() -> list[tuple[Tensor, ...]]:
     ]
 
 
+def _mxfp8_dispatch() -> list[tuple[Tensor, ...]]:
+    """The six MXFP8 dispatch outputs in the NVIDIA block-scaled layout."""
+    return [
+        (
+            _value([_TOKENS, _HIDDEN_DIM], DType.float8_e4m3fn),
+            _value([1, 1, 32, 4, 4], DType.float8_e8m0fnu),
+            _value([_NUM_LOCAL_EXPERTS + 1], DType.uint32),
+            _value([_NUM_LOCAL_EXPERTS], DType.uint32),
+            _value([_NUM_LOCAL_EXPERTS], DType.int32),
+            _metadata(),
+        )
+        for _ in range(2)
+    ]
+
+
 def test_payload_bf16_has_no_scales() -> None:
     """A bf16 dispatch carries usage stats and no scale columns."""
     with F.lazy():
@@ -609,6 +660,34 @@ def test_payload_nvfp4_tokens_require_the_uniform_scale(
             payload.per_device_tokens()
 
 
+def test_payload_mxfp8_carries_scales_offsets_and_usage_stats(
+    mxfp8_quant_config: QuantConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An MXFP8 dispatch adds scale offsets beside the host usage stats.
+
+    On CUDA it takes NVFP4's padded block-scaled layout; MX has no uniform
+    activation scale, so its tokens wrap without one.
+    """
+    monkeypatch.setattr(ep_kernels, "accelerator_api", lambda: "cuda")
+    with F.lazy():
+        config = _ep_config(DType.float8_e4m3fn, mxfp8_quant_config)
+        payload = quant_ops.EPDispatchPayload.from_dispatch(
+            _mxfp8_dispatch(), mxfp8_quant_config, config
+        )
+
+        assert payload.scales is not None
+        assert payload.scales_offset is not None
+        assert payload.usage_stats is not None
+
+        tokens = payload.per_device_tokens()
+        assert len(tokens) == 2
+        first = tokens[0]
+        assert isinstance(first, MXFP8Activation)
+        assert first.data is payload.tokens[0]
+        assert first.scales is payload.scales[0]
+        assert first.scales_offset is payload.scales_offset[0]
+
+
 def test_nvfp4_grouped_matmul_reports_the_routed_row_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -662,6 +741,62 @@ def test_nvfp4_grouped_matmul_reports_the_routed_row_count(
     assert stats.to_numpy().tolist() == [_TOKENS, _NUM_EXPERTS]
 
 
+@pytest.mark.parametrize("container", [MXFP4Tensor, MXFP8Tensor])
+def test_mx_grouped_matmul_reports_the_routed_row_count(
+    container: type[MXFP4Tensor | MXFP8Tensor],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dispatcher's row estimate is the routed row count, not a constant.
+
+    Dispatched MXFP8 rows reach the kernel as they are, without a second
+    quantize.
+    """
+    seen: dict[str, object] = {}
+
+    def spy(*args: Tensor, estimated_total_m: object, **_: object) -> Tensor:
+        seen["tokens"], seen["scales"], seen["offsets"] = (
+            args[0],
+            args[2],
+            args[5],
+        )
+        seen["stats"], seen["estimate"] = args[8], estimated_total_m
+        return Tensor.zeros((_TOKENS, _MOE_DIM), dtype=DType.bfloat16)
+
+    monkeypatch.setattr(quant_ops, "grouped_matmul_block_scaled", spy)
+    monkeypatch.setattr(
+        quant_ops, "interleave_grouped_scales", lambda s, **_: s
+    )
+    device = CPU()
+    tokens = MXFP8Activation(
+        data=Tensor.zeros(
+            (_TOKENS, _HIDDEN_DIM), dtype=DType.float8_e4m3fn, device=device
+        ),
+        scales=Tensor.zeros(
+            (_NUM_EXPERTS + 1, _HIDDEN_DIM // 128, 32, 4, 4),
+            dtype=DType.float8_e8m0fnu,
+            device=device,
+        ),
+        scales_offset=Tensor.zeros(
+            (_NUM_EXPERTS,), dtype=DType.uint32, device=device
+        ),
+    )
+    quant_ops.grouped_matmul(
+        tokens,
+        _stacked_mx(container, _MOE_DIM, _HIDDEN_DIM, device),
+        Tensor.zeros((_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device),
+        Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
+        None,
+    )
+
+    assert seen["tokens"] is tokens.data
+    assert seen["scales"] is tokens.scales
+    assert seen["offsets"] is tokens.scales_offset
+    assert seen["estimate"] is None
+    stats = seen["stats"]
+    assert isinstance(stats, Tensor)
+    assert stats.to_numpy().tolist() == [_TOKENS, _NUM_EXPERTS]
+
+
 # --------------------------------------------------------------------------- #
 # SwiGLU route
 # --------------------------------------------------------------------------- #
@@ -684,6 +819,26 @@ def _stacked_nvfp4(rows: int, cols: int, device: Device) -> NVFP4Tensor:
             (_NUM_EXPERTS,), dtype=DType.float32, device=CPU()
         ),
         block_size=(1, 16),
+    )
+
+
+def _stacked_mx(
+    container: type[MXFP4Tensor | MXFP8Tensor],
+    rows: int,
+    cols: int,
+    device: Device,
+) -> MXFP4Tensor | MXFP8Tensor:
+    return container(
+        weight=Tensor.zeros(
+            (_NUM_EXPERTS, rows, cols // container.values_per_byte),
+            dtype=container.storage_dtype,
+            device=device,
+        ),
+        weight_scale=Tensor.zeros(
+            (_NUM_EXPERTS, rows, cols // 32),
+            dtype=DType.float8_e8m0fnu,
+            device=device,
+        ),
     )
 
 
@@ -713,7 +868,16 @@ def _swiglu_route(
 ) -> str:
     """Traces ``grouped_matmul_silu`` and names the activation it returns."""
     nvfp4 = encoding == "nvfp4"
-    build = _stacked_nvfp4 if nvfp4 else _stacked_fp8
+    mxfp4 = encoding == "mxfp4"
+    gate_up: QuantAwareTensor
+    down: QuantAwareTensor
+    if mxfp4:
+        gate_up = _stacked_mx(MXFP4Tensor, 2 * _MOE_DIM, _HIDDEN_DIM, device)
+        down = _stacked_mx(MXFP4Tensor, _HIDDEN_DIM, _MOE_DIM, device)
+    else:
+        build = _stacked_nvfp4 if nvfp4 else _stacked_fp8
+        gate_up = build(2 * _MOE_DIM, _HIDDEN_DIM, device)
+        down = build(_HIDDEN_DIM, _MOE_DIM, device)
     offsets = Tensor.zeros((_NUM_EXPERTS,), dtype=DType.uint32, device=device)
     if not prequantized:
         tokens: quant_ops.QuantAwareTensor = Tensor.zeros(
@@ -736,6 +900,20 @@ def _swiglu_route(
             ),
             scales_offset=offsets,
         )
+    elif mxfp4:
+        tokens = MXFP8Activation(
+            data=Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM),
+                dtype=DType.float8_e4m3fn,
+                device=device,
+            ),
+            scales=Tensor.zeros(
+                (_NUM_EXPERTS + 1, _HIDDEN_DIM // 128, 32, 4, 4),
+                dtype=DType.float8_e8m0fnu,
+                device=device,
+            ),
+            scales_offset=offsets,
+        )
     else:
         tokens = FP8BlockActivation(
             data=Tensor.zeros(
@@ -751,13 +929,13 @@ def _swiglu_route(
         )
     out = quant_ops.grouped_matmul_silu(
         tokens,
-        build(2 * _MOE_DIM, _HIDDEN_DIM, device),
-        build(_HIDDEN_DIM, _MOE_DIM, device),
+        gate_up,
+        down,
         Tensor.zeros((_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device),
         Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
         Tensor.zeros((2,), dtype=DType.uint32, device=device),
         quant_config,
-        scales_offset=offsets if nvfp4 else None,
+        scales_offset=offsets if nvfp4 or mxfp4 else None,
         accum_dtype=accum_dtype,
         swiglu_limit=swiglu_limit,
     )
@@ -811,12 +989,23 @@ def _swiglu_route(
             0.0,
             "NVFP4Activation",
         ),
+        # deepseekV41_modulev3's MXFP4 experts read MXFP8 dispatch rows
+        # through the fused SwiGLU, which re-quantizes to MXFP8.
+        (
+            "deepseekV41 EP",
+            "mxfp4",
+            True,
+            None,
+            0.0,
+            "MXFP8Activation",
+        ),
     ],
 )
 def test_swiglu_route_per_architecture(
     mock_accelerator: MagicMock,
     nvfp4_quant_config: QuantConfig,
     fp8_quant_config: QuantConfig,
+    mxfp8_quant_config: QuantConfig,
     sm100_arch: None,
     arch: str,
     encoding: str,
@@ -832,7 +1021,14 @@ def test_swiglu_route_per_architecture(
     holding more experts than the GPU has SMs.
     """
     device = mock_accelerator()
-    config = nvfp4_quant_config if encoding == "nvfp4" else fp8_quant_config
+    config = {
+        "fp8": fp8_quant_config,
+        "nvfp4": nvfp4_quant_config,
+        # The EP dispatch's quant config, as V4.1's MXFP4 experts build it.
+        "mxfp4": dataclasses.replace(
+            mxfp8_quant_config, can_use_fused_swiglu=True
+        ),
+    }[encoding]
     with F.lazy():
         got = _swiglu_route(
             encoding, prequantized, accum_dtype, limit, device, config
@@ -999,6 +1195,61 @@ def test_quantized_weight_mxfp4_fake(
         assert isinstance(weight, MXFP4Tensor)
         assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
         assert weight._tensor.dtype == DType.bfloat16
+
+
+def test_stack_mxfp4_adds_expert_axis_to_both_leaves() -> None:
+    """Stacking per-expert weights lifts both leaves to a leading E axis."""
+    with F.lazy():
+        weights: list[QuantAwareTensor] = [
+            MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM)) for _ in range(4)
+        ]
+        stacked = quant_ops.stack(weights, axis=0)
+
+        assert isinstance(stacked, MXFP4Tensor)
+        assert list(stacked.weight.shape) == [4, _MOE_DIM, _HIDDEN_DIM // 2]
+        assert list(stacked.weight_scale.shape) == [
+            4,
+            _MOE_DIM,
+            _HIDDEN_DIM // 32,
+        ]
+        assert stacked.block_size == (1, 32)
+
+
+def test_concat_mxfp4_fuses_rows() -> None:
+    """Fusing gate||up concatenates both leaves along the rows."""
+    with F.lazy():
+        gate = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM))
+        up = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM))
+        fused = quant_ops.concat_weights(gate, up, axis=0)
+
+        assert isinstance(fused, MXFP4Tensor)
+        assert list(fused.weight.shape) == [2 * _MOE_DIM, _HIDDEN_DIM // 2]
+        assert list(fused.weight_scale.shape) == [
+            2 * _MOE_DIM,
+            _HIDDEN_DIM // 32,
+        ]
+        assert fused.block_size == gate.block_size
+
+
+@pytest.mark.parametrize("axis", [1, -1])
+def test_concat_mxfp4_rejects_the_packed_k_axis(axis: int) -> None:
+    with F.lazy():
+        w = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM))
+        with pytest.raises(ValueError, match="packed K axis"):
+            quant_ops.concat_mxfp4(w, w, axis=axis)
+
+
+def test_concat_mxfp4_rejects_mixed_block_sizes() -> None:
+    with F.lazy():
+        w = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM))
+        other = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM), block_size=(1, 16))
+        with pytest.raises(ValueError, match="same block_size"):
+            quant_ops.concat_mxfp4(w, other)
+
+
+def test_concat_mxfp4_requires_a_tensor() -> None:
+    with pytest.raises(ValueError, match="at least one tensor"):
+        quant_ops.concat_mxfp4()
 
 
 def test_matmul_mxfp4_names_the_hardware_on_nvidia(

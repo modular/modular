@@ -28,7 +28,8 @@ resolved here.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from enum import Enum
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -39,6 +40,14 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     spec_decode_cache_slack,
+)
+from max.nn.legacy.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -56,6 +65,9 @@ from max.pipelines.speculative.config import SpeculativeMethod
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from ..deepseekV41.model_config import (
+    RoutedExpertFormat as _V2RoutedExpertFormat,
+)
 from . import interface
 
 # DSpark draft stages when the checkpoint config does not say.
@@ -168,6 +180,106 @@ def forward_row_bound(pipeline_config: PipelineConfig, max_length: int) -> int:
     )
 
 
+class RoutedExpertFormat(Enum):
+    """How the trunk's routed experts are quantized.
+
+    Resolved once from the checkpoint's ``quantization_config``
+    (:meth:`from_quantization_config`); the weight adapter, the routed
+    experts, the expert-parallel dispatch and the memory planner all follow
+    it.
+    """
+
+    NVFP4 = "nvfp4"
+    """W4A4 from NVIDIA ModelOpt: packed E2M1 weights with an E4M3 scale per
+    16, a per-expert global scale and a static activation scale."""
+
+    MXFP4 = "mxfp4"
+    """W4A8 as DeepSeek releases it: packed E2M1 weights with an E8M0 scale
+    per 32, against activations quantized to MXFP8 (E4M3 with an E8M0 scale
+    per 32) at run time, as the reference's ``act_quant(x, 32, "ue8m0")``."""
+
+    @classmethod
+    def from_quantization_config(
+        cls, quantization_config: Mapping[str, Any] | None
+    ) -> RoutedExpertFormat:
+        """Returns the format a checkpoint's ``quantization_config`` declares.
+
+        The ModuleV2 pipeline's resolution, so both pipelines read a
+        checkpoint the same way: a ModelOpt config, or none, is NVFP4 and
+        DeepSeek's own ``expert_dtype: "fp4"`` is MXFP4.
+
+        Raises:
+            ValueError: If ``quantization_config`` declares neither.
+        """
+        return cls(
+            _V2RoutedExpertFormat.from_quantization_config(
+                quantization_config
+            ).value
+        )
+
+    @classmethod
+    def of(cls, huggingface_config: object) -> RoutedExpertFormat:
+        """Returns the format of a Hugging Face config, as object or mapping."""
+        if isinstance(huggingface_config, Mapping):
+            return cls.from_quantization_config(
+                huggingface_config.get("quantization_config")
+            )
+        return cls.from_quantization_config(
+            getattr(huggingface_config, "quantization_config", None)
+        )
+
+    def weight_quant_config(self) -> QuantConfig:
+        """The per-expert weight container's format.
+
+        The experts hold no routed layer index: the config names the
+        container (:func:`~max.nn.common_layers.quant_ops.quantized_weight`).
+        """
+        if self is RoutedExpertFormat.NVFP4:
+            return QuantConfig.nvfp4(
+                mlp_quantized_layers=(), attn_quantized_layers=()
+            )
+        return QuantConfig.mxfp4(mlp_quantized_layers=())
+
+    @property
+    def dispatch_dtype(self) -> DType:
+        """The storage dtype of expert-parallel dispatch rows."""
+        if self is RoutedExpertFormat.NVFP4:
+            return DType.uint8
+        return DType.float8_e4m3fn
+
+    def dispatch_quant_config(self, num_layers: int) -> QuantConfig:
+        """The format the expert-parallel dispatch quantizes rows to.
+
+        NVFP4 rows quantize against one static per-layer input scale (the
+        modelopt activation format); MXFP4 experts read MXFP8 rows, each
+        32-value block scaled by its own max. Either way the experts' gate/up
+        runs as the fused SwiGLU grouped matmul, which the graph compiler
+        fuses with the down projection into one MegaFFN launch.
+        """
+        if self is RoutedExpertFormat.MXFP4:
+            return replace(
+                QuantConfig.mxfp8(mlp_quantized_layers=range(num_layers)),
+                can_use_fused_swiglu=True,
+            )
+        return QuantConfig(
+            format=QuantFormat.NVFP4,
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.STATIC,
+                dtype=DType.float32,
+                block_size=(1, 16),
+            ),
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                dtype=DType.float8_e4m3fn,
+                block_size=(1, 16),
+            ),
+            mlp_quantized_layers=set(range(num_layers)),
+            attn_quantized_layers=set(),
+            can_use_fused_swiglu=True,
+        )
+
+
 @dataclass(kw_only=True)
 class DeepseekV41Config(ArchConfigWithKVCache):
     """Configuration for DeepSeek-V4.1-Flash models (ModuleV3).
@@ -177,11 +289,13 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     class delegates to.
     """
 
-    # The published NVFP4 checkpoint's dense FP8 + expert NVFP4 blocks; the
-    # float32 entry is a checkpoint dequantized offline.
+    # The NVFP4 checkpoint's dense FP8 + expert NVFP4 blocks, and
+    # DeepSeek's own FP8 checkpoint with MXFP4 experts; the routed experts'
+    # format reads off ``quantization_config`` (:class:`RoutedExpertFormat`).
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float4_e2m1fnx2"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
         "float4_e2m1fnx2",
+        "float8_e4m3fn",
     }
 
     # MAX-specific fields.
@@ -191,6 +305,7 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     max_seq_len: int
     quantization_encoding: SupportedEncoding | None = None
     data_parallel_degree: int = 1
+    routed_expert_format: RoutedExpertFormat = RoutedExpertFormat.NVFP4
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     max_batch_rows: int = 0
@@ -533,5 +648,6 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             quantization_encoding=quantization_encoding,
             data_parallel_degree=model_config.data_parallel_degree,
             max_batch_rows=forward_row_bound(pipeline_config, max_seq_len),
+            routed_expert_format=RoutedExpertFormat.of(hf_config),
             **cls.resolve_text_fields(text_config),
         )

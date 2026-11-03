@@ -28,6 +28,7 @@ from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     MXFP4Quantizer,
     MXFP4Tensor,
+    MXFP8Activation,
     MXFP8Quantizer,
     MXFP8Tensor,
     NVFP4Activation,
@@ -714,6 +715,28 @@ def test_nvfp4_activation_leaves() -> None:
             "data",
             "scales",
             "input_scale",
+            "scales_offset",
+        }
+        assert list(act.data.shape) == [8, 128]
+
+
+# --------------------------------------------------------------------------- #
+# MXFP8Activation
+# --------------------------------------------------------------------------- #
+
+
+def test_mxfp8_activation_leaves() -> None:
+    """The dispatched-token wrapper exposes its three leaves as parameters."""
+    with F.lazy():
+        act = MXFP8Activation(
+            data=Tensor.zeros((8, 128), dtype=DType.float8_e4m3fn),
+            scales=Tensor.zeros((1, 1, 32, 4, 4), dtype=DType.float8_e8m0fnu),
+            scales_offset=Tensor.zeros((4,), dtype=DType.uint32),
+        )
+
+        assert {name for name, _ in act.parameters} == {
+            "data",
+            "scales",
             "scales_offset",
         }
         assert list(act.data.shape) == [8, 128]

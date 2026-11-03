@@ -33,13 +33,6 @@ def swiglu(gate: Tensor, up: Tensor, limit: float | None = 10.0) -> Tensor:
     return F.silu(gate) * up
 
 
-def stack(weights: list[NVFP4Tensor]) -> NVFP4Tensor:
-    """Stacks local weights and their per-expert scalars."""
-    result = quant_ops.stack(list(weights))
-    assert isinstance(result, NVFP4Tensor)
-    return result
-
-
 def routed(
     x: Tensor,
     ids: Tensor,

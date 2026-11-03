@@ -219,6 +219,7 @@ class FeedForward(Module[..., Tensor]):
             mesh=mesh,
             swiglu_limit=config.swiglu_limit,
             ep_batch_manager=ep_batch_manager,
+            expert_format=config.routed_expert_format,
         )
 
     def forward(

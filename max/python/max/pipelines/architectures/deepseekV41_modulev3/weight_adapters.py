@@ -16,7 +16,8 @@ Every dense FP8 pair retains its compact E8M0 scales, wo_a included: the
 adapter never converts a byte, so the model loads the checkpoint's own
 codes and Mach hands the compiled graph the checkpoint's own tensors.
 Routed NVFP4 projections keep their separate per-expert input and weight
-scales.
+scales; routed MXFP4 projections keep their packed codes and E8M0 scales,
+relabeled to the tree's ``uint8`` and ``float8_e8m0fnu``.
 """
 
 from __future__ import annotations
@@ -64,10 +65,12 @@ _STACKED_PROJECTION_NORMS = {
 # the tree declares; `_relabel` only ever relabels within this set.
 _E8M0 = DType.float8_e8m0fnu
 
-# Rename table A, the only checkpoint-name -> tree-name renames.
+# Rename table A, the only checkpoint-name -> tree-name renames. Each
+# expert projection's leaves nest under its ``weight`` container; an MXFP4
+# expert's ``scale`` is that container's ``weight_scale``.
 _EXPERT_TENSOR = re.compile(
     r"^(?P<head>.*\.ffn\.experts\.(?P<expert>\d+)\.w[123])"
-    r"\.(?P<kind>weight_scale_2|weight_scale|input_scale|weight)$"
+    r"\.(?P<kind>weight_scale_2|weight_scale|input_scale|weight|scale)$"
 )
 
 # The routed experts' static gate/up scalars a derived leaf reduces: the
@@ -128,7 +131,8 @@ def to_tree_name(name: str) -> str:
     match = _EXPERT_TENSOR.match(name)
     if match is None:
         return name
-    return f"{match['head']}.weight.{match['kind']}"
+    kind = "weight_scale" if match["kind"] == "scale" else match["kind"]
+    return f"{match['head']}.weight.{kind}"
 
 
 def _as_buffer(data: DLPackArray) -> Buffer:
@@ -757,10 +761,18 @@ def _rename_checkpoint(
                 "injective"
             )
         if name.endswith(".scale") and not name.endswith("weight_scale"):
-            # The only ``.scale`` leaves the tree holds are the dense
-            # FP8 compact E8M0 scales -- ``wo_a``'s included -- relabel
-            # only.
+            # The ``.scale`` leaves are E8M0: the dense FP8 compact scales
+            # (``wo_a``'s included) and the MXFP4 experts' -- relabel only.
             data = _relabel_dense_scale(name, data)
+        elif data.dtype == DType.int8 and tree_name.endswith(".weight.weight"):
+            # MXFP4 experts store their packed E2M1 pairs as ``I8``; the
+            # bytes are the tree's ``uint8`` codes.
+            data = WeightData(
+                _view_same_width(_as_buffer(data.data), DType.uint8),
+                data.name,
+                DType.uint8,
+                data.shape,
+            )
         out[tree_name] = data
     return out
 

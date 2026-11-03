@@ -10,7 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""V4.1 local routed experts and the tensor-parallel shared expert."""
+"""V4.1 local routed experts and the tensor-parallel shared expert.
+
+The routed experts are NVFP4 or MXFP4, as the checkpoint's
+:class:`~..model_config.RoutedExpertFormat` says.
+"""
+
+from collections.abc import Sequence
 
 from max import functional as F
 from max.dtype import DType
@@ -20,56 +26,72 @@ from max.nn.common_layers import quant_ops
 from max.nn.common_layers.quant_ops import (
     EPDispatchPayload,
     ep_requires_dispatch_scales,
-    sigma_permute_gate_up_nvfp4,
+    sigma_permute_gate_up,
 )
 from max.nn.common_layers.quant_tensor import (
+    MXFP4Tensor,
     NVFP4Activation,
     NVFP4Tensor,
+    QuantAwareTensor,
 )
 from max.nn.legacy.activation import GatedActivation
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.nn.transparent_module import TransparentModule
 from max.tensor import Tensor, default_device, defaults
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Partial
 from max.tensor.sharding.action import PerShard
 
-from . import nvfp4_ops
+from ..model_config import RoutedExpertFormat
+from . import mxfp4_ops, nvfp4_ops
 from .mxfp8_linear import MXFP8Linear, Mxfp8Rows
 
+_ExpertWeight = NVFP4Tensor | MXFP4Tensor
 
-class _NVFP4Linear(Module[[Tensor], Tensor]):
-    weight: NVFP4Tensor
 
-    def __init__(self, in_dim: int, out_dim: int) -> None:
+class _ExpertLinear(Module[[Tensor], Tensor]):
+    weight: _ExpertWeight
+
+    def __init__(
+        self, in_dim: int, out_dim: int, expert_format: RoutedExpertFormat
+    ) -> None:
         super().__init__()
-        self.weight = NVFP4Tensor.zeros((out_dim, in_dim))
+        weight = quant_ops.quantized_weight(
+            out_dim, in_dim, expert_format.weight_quant_config()
+        )
+        assert isinstance(weight, (NVFP4Tensor, MXFP4Tensor))
+        self.weight = weight
 
     def forward(self, x: Tensor) -> Tensor:
-        raise NotImplementedError("Routed projections use grouped NVFP4 matmul")
+        raise NotImplementedError("Routed projections use grouped matmuls")
 
 
 class _Expert(Module[[], None]):
-    w1: _NVFP4Linear
-    w3: _NVFP4Linear
-    w2: _NVFP4Linear
+    w1: _ExpertLinear
+    w3: _ExpertLinear
+    w2: _ExpertLinear
 
-    def __init__(self, hidden_dim: int, moe_dim: int) -> None:
+    def __init__(
+        self, hidden_dim: int, moe_dim: int, expert_format: RoutedExpertFormat
+    ) -> None:
         super().__init__()
-        self.w1 = _NVFP4Linear(hidden_dim, moe_dim)
-        self.w3 = _NVFP4Linear(hidden_dim, moe_dim)
-        self.w2 = _NVFP4Linear(moe_dim, hidden_dim)
+        self.w1 = _ExpertLinear(hidden_dim, moe_dim, expert_format)
+        self.w3 = _ExpertLinear(hidden_dim, moe_dim, expert_format)
+        self.w2 = _ExpertLinear(moe_dim, hidden_dim, expert_format)
 
     def forward(self) -> None:
         raise NotImplementedError("Experts are evaluated as local groups")
 
 
 class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
-    """Local NVFP4 W4A4 experts followed by float32 all-reduce.
+    """Local quantized experts followed by float32 all-reduce.
 
-    Under expert parallelism (:meth:`ep_forward`) the same local grouped
-    chain runs on what each rank received through the P2P dispatch, and
-    the combine returns every rank its own rows complete.
+    NVFP4 experts run W4A4 against the checkpoint's static activation
+    scales; MXFP4 experts run W4A8, quantizing each GEMM's input to MXFP8
+    as the reference does. Under expert parallelism (:meth:`ep_forward`)
+    each rank runs its local experts on what it received through the P2P
+    dispatch, and the combine returns every rank its own rows complete.
 
     Drops its parent attribute name so leaves stay ``ffn.experts.E.wN``.
 
@@ -81,6 +103,7 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         swiglu_limit: Asymmetric clamp limit from training.
         ep_batch_manager: The EP batch manager when the routed experts run
             expert-parallel; ``None`` keeps the tensor-parallel path.
+        expert_format: How the checkpoint quantizes the experts.
     """
 
     experts: ModuleList[_Expert]
@@ -94,16 +117,18 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         mesh: DeviceMesh | None = None,
         swiglu_limit: float | None = 10.0,
         ep_batch_manager: EPBatchManager | None = None,
+        expert_format: RoutedExpertFormat = RoutedExpertFormat.NVFP4,
     ) -> None:
         super().__init__()
         self.mesh = mesh or defaults()[1]
+        self.expert_format = expert_format
         self.hidden_dim = hidden_dim
         self.moe_dim = moe_dim
         self.ep_batch_manager = ep_batch_manager
         if self.mesh.ndim != 1 or num_experts % self.mesh.num_devices:
             raise ValueError("Experts must divide evenly across a 1-D mesh")
         if hidden_dim % 32 or moe_dim % 32:
-            raise ValueError("NVFP4 expert widths must be divisible by 32")
+            raise ValueError("Expert widths must be divisible by 32")
         self.num_experts = num_experts
         self.per_rank = num_experts // self.mesh.num_devices
         self.swiglu_limit = swiglu_limit
@@ -111,26 +136,29 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         for e in range(num_experts):
             device = self.mesh.devices[e // self.per_rank]
             with default_device(device):
-                expert = _Expert(hidden_dim, moe_dim)
+                expert = _Expert(hidden_dim, moe_dim, expert_format)
             # NVFP4Tensor.zeros puts the scalars on the host. The grouped
             # quantize kernel reads them on the device every step, so a host
             # copy would be freed under it; place them at load time instead.
             for linear in (expert.w1, expert.w3, expert.w2):
                 tensor = linear.weight
-                tensor.weight_scale_2 = tensor.weight_scale_2.to(device)
-                tensor.input_scale = tensor.input_scale.to(device)
+                if isinstance(tensor, NVFP4Tensor):
+                    tensor.weight_scale_2 = tensor.weight_scale_2.to(device)
+                    tensor.input_scale = tensor.input_scale.to(device)
             experts.append(expert)
         self.experts = ModuleList(experts)
-        # The dispatch quantizes every rank's activations with one uniform
-        # scale: the max static ``w1``/``w3`` ``input_scale`` over all
-        # experts, a pure function of the checkpoint the weight adapter
-        # materializes as this leaf. Reading it here replaces the
-        # in-graph cross-device max the EP forward used to run per step
-        # -- two 4-byte scalar hubs whose gather/scatter lower to
-        # device-wait pairs.
-        self.global_input_scale = Tensor.zeros(
-            [1], dtype=DType.float32, device=self.mesh
-        )
+        if expert_format is RoutedExpertFormat.NVFP4:
+            # The dispatch quantizes every rank's activations with one
+            # uniform scale: the max static ``w1``/``w3`` ``input_scale``
+            # over all experts, a pure function of the checkpoint the weight
+            # adapter materializes as this leaf. Reading it here replaces
+            # the in-graph cross-device max the EP forward used to run per
+            # step -- two 4-byte scalar hubs whose gather/scatter lower to
+            # device-wait pairs. MXFP8 dispatch scales each block by its
+            # own max, so MXFP4 experts have no such leaf.
+            self.global_input_scale = Tensor.zeros(
+                [1], dtype=DType.float32, device=self.mesh
+            )
 
     def forward(
         self, x: Tensor, topk_ids: Tensor, topk_weights: Tensor
@@ -140,7 +168,7 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
 
     def _local_bundles(
         self,
-    ) -> list[tuple[NVFP4Tensor, NVFP4Tensor, NVFP4Tensor]]:
+    ) -> list[tuple[QuantAwareTensor, QuantAwareTensor, QuantAwareTensor]]:
         """Per-rank stacked local weights: ``(w1, w3, w2)``.
 
         Each stack holds its rank's ``per_rank`` experts in expert order,
@@ -153,9 +181,9 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
             ]
             bundles.append(
                 (
-                    nvfp4_ops.stack([e.w1.weight for e in local]),
-                    nvfp4_ops.stack([e.w3.weight for e in local]),
-                    nvfp4_ops.stack([e.w2.weight for e in local]),
+                    quant_ops.stack([e.w1.weight for e in local]),
+                    quant_ops.stack([e.w3.weight for e in local]),
+                    quant_ops.stack([e.w2.weight for e in local]),
                 )
             )
         return bundles
@@ -172,10 +200,13 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
 
         Every rank routes its own rows (the gate weight is replicated),
         dispatches each (token, expert) pair to the rank owning the expert
-        through the P2P EP buffers, runs its local experts on what it
-        received (the same NVFP4 W4A4 grouped chain as the TP path, with
-        the training clamp), and combines the outputs back to the owning
-        rank with the router weights applied. The result is each rank's
+        through the P2P EP buffers, quantized to the experts' activation
+        format (NVFP4 against one uniform scale, or MXFP8), runs its local
+        experts on what it received, and combines the outputs back to the
+        owning rank with the router weights applied. The local experts run
+        as the fused gate/up + clamped SwiGLU + re-quantize grouped matmul
+        followed by the down projection's grouped matmul, which the graph
+        compiler fuses into one MegaFFN launch. The result is each rank's
         own rows, complete: bf16 in ``x``'s placement.
 
         ``comm`` must be the buffers bound from the EP graph inputs; see
@@ -197,10 +228,10 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         mgr.bind_comm_buffers(comm)
         config = mgr.config
         quant_config = config.dispatch_quant_config
-        if quant_config is None or not quant_config.is_nvfp4:
+        if quant_config is None or not quant_config.can_use_fused_swiglu:
             raise ValueError(
-                "the V4.1 EP path requires NVFP4 dispatch (the experts "
-                "quantize their activations on device)"
+                "the V4.1 EP path requires a quantized dispatch the fused "
+                "SwiGLU kernel reads"
             )
 
         x_shards = list(x.local_shards)
@@ -226,30 +257,30 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         payload = EPDispatchPayload.from_dispatch(
             dispatch_results, quant_config, config
         )
-        # The NVFP4 branch of ``per_device_tokens``, with each device's
-        # activation carrying its own copy of the uniform scale (the shared
-        # helper takes one scale for every device).
-        assert (
-            payload.scales is not None
-            and payload.scales_offset is not None
-            and global_scales is not None
-        )
-        tokens = [
-            NVFP4Activation(
-                data=data,
-                scales=scale,
-                input_scale=global_scales[i],
-                scales_offset=offset,
-            )
-            for i, (data, scale, offset) in enumerate(
-                zip(
-                    payload.tokens,
-                    payload.scales,
-                    payload.scales_offset,
-                    strict=True,
+        assert payload.scales is not None and payload.scales_offset is not None
+        tokens: Sequence[QuantAwareTensor]
+        if global_scales is None:
+            tokens = payload.per_device_tokens()
+        else:
+            # The NVFP4 branch of ``per_device_tokens``, with each device's
+            # activation carrying its own copy of the uniform scale (the
+            # shared helper takes one scale for every device).
+            tokens = [
+                NVFP4Activation(
+                    data=data,
+                    scales=scale,
+                    input_scale=global_scales[i],
+                    scales_offset=offset,
                 )
-            )
-        ]
+                for i, (data, scale, offset) in enumerate(
+                    zip(
+                        payload.tokens,
+                        payload.scales,
+                        payload.scales_offset,
+                        strict=True,
+                    )
+                )
+            ]
 
         # Estimated token-expert pairs across all ranks, for the grouped
         # kernels' tile regime. The total row count arrives from the host,
@@ -260,58 +291,21 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
             total_rows * int(topk_ids.shape[1]) // config.n_gpus_per_node
         ).cast(DType.uint32)
 
-        activation = GatedActivation("silu", limit=self.swiglu_limit or 0.0)
-        bundles = self._local_bundles()
-        down_bundle = []
-        for rank in range(self.mesh.num_devices):
-            _w1, _w3, w2 = bundles[rank]
-            # The fused gate/up kernel reads adjacent output columns as
-            # (gate, up) pairs: stack each expert's ``[w1; w3]`` rows, then
-            # sigma-permute (the ExpertParallelMoE weight layout).
-            local = self.experts[
-                rank * self.per_rank : (rank + 1) * self.per_rank
-            ]
-            concatenated: list[NVFP4Tensor] = []
-            for expert in local:
-                # concat_weights dispatches on the weight type, so the
-                # all-NVFP4 inputs' result needs the runtime check.
-                gate = quant_ops.concat_weights(
-                    expert.w1.weight, expert.w3.weight, axis=0
-                )
-                assert isinstance(gate, NVFP4Tensor)
-                concatenated.append(gate)
-            gate_up = sigma_permute_gate_up_nvfp4(nvfp4_ops.stack(concatenated))
-            down_in = quant_ops.grouped_matmul_silu(
+        down_bundle = [
+            self.dispatched(
+                rank,
                 tokens[rank],
-                gate_up,
-                w2,
                 payload.expert_start[rank],
                 payload.expert_ids[rank],
                 payload.usage_stats[rank]
                 if payload.usage_stats is not None
                 else None,
+                payload.scales_offset[rank],
                 quant_config,
-                scales_offset=payload.scales_offset[rank]
-                if payload.scales_offset is not None
-                else None,
-                estimated_total_m=estimated_total_m,
-                activation=activation,
+                estimated_total_m,
             )
-            down_bundle.append(
-                quant_ops.grouped_matmul(
-                    down_in,
-                    w2,
-                    payload.expert_start[rank],
-                    payload.expert_ids[rank],
-                    payload.usage_stats[rank]
-                    if payload.usage_stats is not None
-                    else None,
-                    scales_offset=payload.scales_offset[rank]
-                    if payload.scales_offset is not None
-                    else None,
-                    estimated_total_m=estimated_total_m,
-                )
-            )
+            for rank in range(self.mesh.num_devices)
+        ]
         combine_results = mgr.ep_combine_all(
             down_bundle, weight_shards, device_ids
         )
@@ -320,6 +314,79 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         )
         return out.cast(DType.bfloat16)
 
+    def dispatched(
+        self,
+        rank: int,
+        tokens: QuantAwareTensor,
+        expert_start: Tensor,
+        expert_ids: Tensor,
+        usage_stats: Tensor | None,
+        scales_offset: Tensor,
+        quant_config: QuantConfig,
+        estimated_total_m: Tensor,
+    ) -> Tensor:
+        """Runs ``rank``'s experts over the rows its dispatch delivered.
+
+        The gate/up grouped matmul runs with the clamped SwiGLU and the
+        down input's re-quantize in its epilogue, and the graph compiler
+        fuses it with the down projection's grouped matmul into one MegaFFN
+        launch. Both read only the received rows.
+
+        Args:
+            rank: The mesh rank whose local experts run.
+            tokens: The received rows, quantized in the dispatch format and
+                sorted by local expert.
+            expert_start: The ``[groups + 1]`` uint32 row offsets.
+            expert_ids: The ``[groups]`` int32 local expert of each group.
+            usage_stats: The dispatch's host usage stats, if it has them.
+            scales_offset: Each group's scale-tile offset.
+            quant_config: The dispatch's quantization.
+            estimated_total_m: Estimated rows received per device, on host.
+
+        Returns:
+            ``[rows, hidden]`` bf16 down projections, without routing
+            weights: the combine applies them after the down projection.
+            The single-device path (:func:`.mxfp4_ops.routed`) instead
+            scales the SwiGLU output before the down input's MXFP8
+            quantize, as the reference does, so the two round differently.
+        """
+        # The fused gate/up kernel reads adjacent output columns as
+        # (gate, up) pairs: stack each expert's ``[w1; w3]`` rows, then
+        # sigma-permute (the ExpertParallelMoE weight layout).
+        local = self.experts[rank * self.per_rank : (rank + 1) * self.per_rank]
+        stacked = quant_ops.stack(
+            [
+                quant_ops.concat_weights(
+                    expert.w1.weight, expert.w3.weight, axis=0
+                )
+                for expert in local
+            ]
+        )
+        assert isinstance(stacked, (NVFP4Tensor, MXFP4Tensor))
+        gate_up = sigma_permute_gate_up(stacked)
+        down = quant_ops.stack([expert.w2.weight for expert in local])
+        down_in = quant_ops.grouped_matmul_silu(
+            tokens,
+            gate_up,
+            down,
+            expert_start,
+            expert_ids,
+            usage_stats,
+            quant_config,
+            scales_offset=scales_offset,
+            estimated_total_m=estimated_total_m,
+            activation=GatedActivation("silu", limit=self.swiglu_limit or 0.0),
+        )
+        return quant_ops.grouped_matmul(
+            down_in,
+            down,
+            expert_start,
+            expert_ids,
+            usage_stats,
+            scales_offset=scales_offset,
+            estimated_total_m=estimated_total_m,
+        )
+
     def partial(
         self, x: Tensor, topk_ids: Tensor, topk_weights: Tensor
     ) -> Tensor:
@@ -327,8 +394,13 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         if topk_ids.dtype != DType.int32 or topk_weights.dtype != DType.float32:
             raise ValueError("Routing requires int32 ids and float32 weights")
         bundles = self._local_bundles()
+        routed = (
+            mxfp4_ops.routed
+            if self.expert_format is RoutedExpertFormat.MXFP4
+            else nvfp4_ops.routed
+        )
         partial = F.call_on_mesh(
-            nvfp4_ops.routed,
+            routed,
             self.mesh,
             out_specs=DeviceMapping(self.mesh, (Partial(),)),
         )(
