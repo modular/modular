@@ -1254,7 +1254,7 @@ bool ASTType::containsUnmaterializableOrigins(SharedState &shared) const {
     // Actually global memory /can/ be materialized, so that it totally fine. We
     // allow AnyOriginAttr because it is the general "disable checking" origin.
     // Banning it prevents many important patterns from working, e.g. default
-    // arguments of null UnsafePointer.
+    // arguments of null Pointer.
     if (sugarIsa<StaticOriginAttr, AnyOriginAttr>(o))
       continue;
 

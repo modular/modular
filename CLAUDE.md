@@ -184,7 +184,6 @@ python max/kernels/benchmarks/autotune/kbench.py benchmarks/gpu/linalg/bench_mat
 - Avoid deprecated types like `Tensor` (use modern alternatives)
 - Follow value semantics and ownership conventions
 - Use `Origin` parameters (`ImmOrigin`/`MutOrigin`) with `Pointer` in APIs
-- Prefer `Pointer` to the deprecated `UnsafePointer` alias
 
 ### MAX Kernel Development
 

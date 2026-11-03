@@ -1758,7 +1758,7 @@ static std::optional<int64_t> findAddressSpace(Type type) {
 
 /// Return the address space of the given symbol, if it has one. This is the
 /// address space of the reference that holds the value or the address space
-/// parameter of its type (e.g. `UnsafePointer[..., address_space=SHARED]`),
+/// parameter of its type (e.g. `Pointer[..., address_space=SHARED]`),
 /// including one nested in a type parameter such as an array's element type.
 static std::optional<int64_t> getAddressSpace(const Symbol &symbol) {
   if (!symbol.decl->isArgumentDecl() && !symbol.decl->isParameterDecl() &&

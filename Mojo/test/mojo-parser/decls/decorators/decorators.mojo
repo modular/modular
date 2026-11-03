@@ -498,10 +498,10 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 struct InteriorOriginReturnTest(Movable where False):
-    var data: UnsafePointer[Int, UntrackedOrigin[mut=True]]
+    var data: Pointer[Int, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[Int, UntrackedOrigin[mut=True]].unsafe_dangling()
+        self.data = Pointer[Int, UntrackedOrigin[mut=True]].unsafe_dangling()
 
 # CHECK-LABEL: lit.fn @"with_interior_origins(decorators::InteriorOriginReturnTest)"
 # CHECK-SAME: defines_interior_origins

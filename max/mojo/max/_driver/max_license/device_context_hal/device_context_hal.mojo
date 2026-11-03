@@ -1779,7 +1779,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         Pinned memory is guaranteed to remain resident in the host's RAM, not be
         paged/swapped out to disk. Memory allocated normally (for example, using
-        [`alloc()`](/docs/std/memory/unsafe_pointer/alloc/))
+        [`alloc()`](/docs/std/memory/alloc/alloc/))
         is pageable—individual pages of memory can be moved to secondary storage
         (disk/SSD) when main memory fills up.
 

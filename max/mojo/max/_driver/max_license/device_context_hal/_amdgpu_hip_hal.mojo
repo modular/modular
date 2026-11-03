@@ -13,7 +13,7 @@
 """HIP native-handle accessors for the HAL `DeviceContext`."""
 
 from .device_context_hal import DeviceContext, DeviceFunction, DeviceStreamBase
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 
 
 struct _ihipDevice_t:

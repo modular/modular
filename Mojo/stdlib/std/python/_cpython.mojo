@@ -22,7 +22,7 @@ from .python_object import PythonObject
 from std.collections import Array
 from std.memory import OpaquePointer
 from std.memory.alloc import alloc, Layout
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.os import abort, getenv, setenv
 from std.os.path import dirname
 from std.pathlib import Path

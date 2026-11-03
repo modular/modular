@@ -396,7 +396,7 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
         """Returns split-K partials slot `slot`, typed as `S`.
 
         The scratch is an array of fixed `_SPLITK_STATE_BYTES` slots, so it is
-        addressed by slot index: indexing an `UnsafePointer[S]` would stride by
+        addressed by slot index: indexing a `Pointer[S]` would stride by
         `size_of[S]()` and walk off the slot bounds.
 
         Parameters:

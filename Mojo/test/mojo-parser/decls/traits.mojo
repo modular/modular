@@ -954,15 +954,15 @@ struct FormVariadicPackWithCastedElementVariadic[
     def foo(self, var storage: VariadicPack[element_trait=Self.element_trait, _, *Self.element_types]):
         pass
 
-# This tests that we can take UnsafePointer (which has an AnyType bound for T)
+# This tests that we can take Pointer (which has an AnyType bound for T)
 # and conditional conformance rebind the parametric type with AnyType bound down
 # to Movable correctly.
-def take_movable_pointer[T: Movable&AnyType](ptr: UnsafePointer[T, AnyOrigin[mut=True]]): pass
+def take_movable_pointer[T: Movable&AnyType](ptr: Pointer[T, AnyOrigin[mut=True]]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !kgen.param<:meta<!lit.struct<#Pointer <{{.*}}meta<!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>
+# CHECK-SAME: %ptr: !lit.struct<#Pointer <{{.*}}meta<!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>
 def test_parametric_anytype_movable[element_trait: _CollectionElementMetaType, //,
                                   *element_types: element_trait]
-                                  (ptr: UnsafePointer[element_types[0], AnyOrigin[mut=True]]):
+                                  (ptr: Pointer[element_types[0], AnyOrigin[mut=True]]):
 
         # CHECK: lit.call {{.*}}take_movable_pointer
         # CHECK-SAME: <:!AnyType_Movable {{.*}}!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>

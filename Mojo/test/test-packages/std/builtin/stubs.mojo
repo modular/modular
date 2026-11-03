@@ -1600,16 +1600,6 @@ struct Pointer[
         return {self._mlir_value}  # allow kgen.pointer to convert.
 
 
-comptime UnsafePointer[
-    mut: Bool,
-    //,
-    T: AnyType,
-    origin: Origin[mut=mut],
-    *,
-    address_space: AddressSpace = .GENERIC,
-] = Pointer[T, origin, address_space=address_space]
-
-
 struct Tuple[*element_types: Movable](ImplicitlyCopyable):
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,

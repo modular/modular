@@ -420,7 +420,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
   /// we inferred a value for the parameter from previous arguments, substitute
   /// it into the expected types of subsequent arguments.  This allows us to
   /// handle dependent argument types like:
-  ///     def foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
+  ///     def foo[dt: DType](p: Pointer[Scalar[dt]], v:
   ///     Scalar[p.type.type]):
   /// where the type of 'v' depends on 'dt' being inferred.
 
@@ -513,7 +513,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
     //     dtype: DType
     //     width: Int = 1,
     // ](
-    //     self: UnsafePointer[Scalar[dtype], ...],
+    //     self: Pointer[Scalar[dtype], ...],
     //     val: SIMD[dtype, width],
     // )
     //

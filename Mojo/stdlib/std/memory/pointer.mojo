@@ -41,6 +41,7 @@ from std.sys.intrinsics import (
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.format_int import _write_int
+from std.collections import OptionalReg
 from std.simd import _simd_construction_checks
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.reflection import reflect
@@ -254,6 +255,65 @@ Parameters:
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
+
+
+# ===-----------------------------------------------------------------------===#
+# unsafe_cast
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
+@doc_hidden
+def unsafe_cast[
+    from_mut: Bool,
+    from_type: AnyType,
+    from_origin: Origin[mut=from_mut],
+    from_address_space: AddressSpace,
+    mut: Bool = from_mut,
+    //,
+    *,
+    Type: AnyType = from_type,
+    origin: Origin[mut=mut] = from_origin,
+    address_space: AddressSpace = from_address_space,
+](
+    pointer: Optional[
+        Pointer[from_type, from_origin, address_space=from_address_space]
+    ],
+    out result: Optional[Pointer[Type, origin, address_space=address_space]],
+):
+    result = Pointer(to=pointer).unsafe_bitcast[type_of(result)]()[]
+
+
+@inline(.always)
+@doc_hidden
+def unsafe_cast[
+    from_mut: Bool,
+    from_type: AnyType,
+    from_origin: Origin[mut=from_mut],
+    from_address_space: AddressSpace,
+    mut: Bool = from_mut,
+    //,
+    *,
+    Type: AnyType = from_type,
+    origin: Origin[mut=mut] = from_origin,
+    address_space: AddressSpace = from_address_space,
+](
+    pointer: OptionalReg[
+        Pointer[from_type, from_origin, address_space=from_address_space]
+    ],
+    out result: OptionalReg[Pointer[Type, origin, address_space=address_space]],
+):
+    result = Pointer(to=pointer).unsafe_bitcast[type_of(result)]()[]
+
+
+@inline(.nodebug)
+@doc_hidden
+def pointer_to_int(pointer: Optional[Pointer[...]]) -> Int:
+    return Pointer(to=pointer).unsafe_bitcast[Int]()[]
+
+
+comptime _UnsafeDanglingPluginHookFnType = def[alignment: Int]() thin -> Int
+"""Plugin-hook signature for `PluginHooks.unsafe_dangling_fn`; keep in sync with `Pointer.unsafe_dangling`."""
 
 
 # ===-----------------------------------------------------------------------===#

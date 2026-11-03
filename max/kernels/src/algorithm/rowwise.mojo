@@ -877,7 +877,7 @@ struct RowCache[
         # Seed from a runtime value (never a literal): on `shared=False`
         # handles `load`'s shmem branch is comptime-dead but still
         # type-checked, and a provably-constant address would fold into
-        # `UnsafePointer(unsafe_from_address=...)`'s IntLiteral overload,
+        # `Pointer(unsafe_from_address=...)`'s IntLiteral overload,
         # whose comptime null check rejects it. `cache` overwrites this
         # with the real base when `shared`.
         self._shmem_addr = Int(row_coord[0])

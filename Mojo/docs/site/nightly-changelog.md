@@ -253,6 +253,9 @@ This version is still a work in progress.
 - Removed APIs that were deprecated in Mojo 1.1 or earlier. Use the
   replacement in each case:
 
+  - The `UnsafePointer` alias and the `std.memory.unsafe_pointer` module that
+    defined it. Use `Pointer`.
+
   - The `Pointer` methods `load()`, `store()`, `strided_load()`,
     `strided_store()`, `gather()`, `scatter()`, `free()`, `bitcast()`,
     `address_space_cast()`, and `take_pointee()`. Use their `unsafe_`-prefixed

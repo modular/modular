@@ -16,7 +16,7 @@ combined in a single pass, which is why each is a separate lane.
 
 | Tool        | Detects                                                                                   | Kernel bug class for us                                                       |
 |-------------|-------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------|
-| `memcheck`  | Out-of-bounds and misaligned accesses (global/local/shared), plus leaks & hardware errors | `UnsafePointer`/`LayoutTensor` stride overruns, `async_copy` over-reads       |
+| `memcheck`  | Out-of-bounds and misaligned accesses (global/local/shared), plus leaks & hardware errors | `Pointer`/`LayoutTensor` stride overruns, `async_copy` over-reads             |
 | `racecheck` | Shared-memory data races between threads **in the same block**                            | Missing/misplaced `barrier()` around SMEM reductions and `cp.async` tiles     |
 | `initcheck` | Reads of uninitialized device **global** memory                                           | Scratch/workspace/accumulator buffers read before fully written               |
 | `synccheck` | Misuse of synchronization primitives (`__syncthreads`, `__syncwarp`, named barriers)      | Divergent or mismatched-count barriers in warp-specialized SM90/SM100 kernels |

@@ -297,21 +297,21 @@ struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):
     def __getitem_param__[
         idx: Int
     ](ref self) -> ref[self] Self.element_types[idx]:
-        var storage_kgen_ptr = UnsafePointer(
+        var storage_kgen_ptr = Pointer(
             to=self._mlir_value
         )._get_kgen_pointer()
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
             index=idx.__mlir_index__(),
-            _type=UnsafePointer[
+            _type=Pointer[
                 Self.element_types[idx], origin_of(self)]._mlir_type,
         ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
+        return Pointer[_, origin_of(self)](elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     def consume_elements[
         EltHandler: def[idx: Int](var elt: Self.element_types[idx])
     ](deinit self, elt_handler: EltHandler, /):
-        var ptr = UnsafePointer(to=self[0])
+        var ptr = Pointer(to=self[0])
         elt_handler[0](__get_address_as_owned_value(ptr._get_kgen_pointer()))
 
 

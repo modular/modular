@@ -21,7 +21,7 @@ from comm.sync import is_p2p_enabled
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_gpu
-from std.memory.unsafe_pointer import pointer_to_int
+from std.memory.pointer import pointer_to_int
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, coord_to_index_list
 

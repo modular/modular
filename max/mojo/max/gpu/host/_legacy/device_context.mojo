@@ -1386,10 +1386,7 @@ struct DevicePointer[
     # DevicePassable
     # ===------------------------------------------------------------------=== #
 
-    # Kernel-entry ABI type. `Pointer` and its `UnsafePointer` alias are one
-    # representation, and device-argument matching accepts either spelling
-    # (see `Pointer._is_convertible_to_device_type`), so kernels may still
-    # declare their parameters as `UnsafePointer`.
+    # Kernel-entry ABI type.
     comptime device_type: AnyType = Pointer[
         mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]
@@ -1660,10 +1657,7 @@ struct DeviceBuffer[dtype: DType](
     # ===-------------------------------------------------------------------===#
 
     # Implementation of `DevicePassable`
-    # Kernel-entry ABI type. `Pointer` and its `UnsafePointer` alias are one
-    # representation, and device-argument matching accepts either spelling
-    # (see `Pointer._is_convertible_to_device_type`), so kernels may still
-    # declare their parameters as `UnsafePointer`.
+    # Kernel-entry ABI type.
     comptime device_type: AnyType = Pointer[
         mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]

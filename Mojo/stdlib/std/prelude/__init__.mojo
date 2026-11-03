@@ -164,7 +164,6 @@ from std.memory import (
     ImmPointer,
     MutPointer,
     Pointer,
-    UnsafePointer,
 )
 from std.origin import (
     AnyOrigin,

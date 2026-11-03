@@ -24,7 +24,7 @@ from std.builtin.int import index as _index
 from std.builtin.rebind import downcast
 from std.collections._conditional import _ComptimeConditional
 from std.memory import unsafe_stack_allocation as _std_stack_allocation
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from max.gpu.host import DeviceBuffer, DeviceContext, DevicePointer, HostBuffer
 from max.gpu.memory import CacheEviction, Fill, async_copy
 from layout._fillers import BATCH_SIZE

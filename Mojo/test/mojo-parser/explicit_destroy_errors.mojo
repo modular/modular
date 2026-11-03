@@ -362,6 +362,6 @@ struct IndirectAssignLinear(
         pass
 
 
-def testIndirectAssignLinear(p: UnsafePointer[IndirectAssignLinear, MutAnyOrigin]):
+def testIndirectAssignLinear(p: Pointer[IndirectAssignLinear, MutAnyOrigin]):
     # expected-error @+1 {{value abandoned without being explicitly destroyed: use consume()}}
     p[] = IndirectAssignLinear()^
