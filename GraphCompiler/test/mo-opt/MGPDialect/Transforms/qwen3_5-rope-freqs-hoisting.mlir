@@ -43,7 +43,7 @@ module {
     %embed_weight = mo.constant.external [name = "embed_tokens.weight", align = 1, device = #M.device_ref<"cpu", 0>] : !mo.tensor<[248320, 4096], bf16>
     %chain0 = mo.chain.create()
     %embed_sliced = rmo.slice(%embed_weight) [starts = #mosh<ape[0, 0]> : !mosh.ape, stops = #mosh<ape[248320, 4096]> : !mosh.ape, steps = #mosh<ape[1, 1]> : !mosh.ape] : (!mo.tensor<[248320, 4096], bf16>) -> !mo.tensor<[248320, 4096], bf16>
-    %embed_dev, %embed_chain = rmo.mo.transfer[%chain0] %embed_sliced : !mo.tensor<[248320, 4096], bf16> to <"gpu", 0>
+    %embed_dev, %embed_chain = mo.transfer[%chain0] %embed_sliced : !mo.tensor<[248320, 4096], bf16> to <"gpu", 0>
     %ge_zero = rmo.greater_equal(%arg0, %c0_si64) : (!mo.tensor<[total_seq_len], si64, gpu:0>, !mo.tensor<[], si64, gpu:0>) -> !mo.tensor<[total_seq_len], bool, gpu:0>
     %ge_vocab = rmo.greater_equal(%arg0, %vocab_size) : (!mo.tensor<[total_seq_len], si64, gpu:0>, !mo.tensor<[], si64, gpu:0>) -> !mo.tensor<[total_seq_len], bool, gpu:0>
     %lt_vocab = mo.not(%ge_vocab) : !mo.tensor<[total_seq_len], bool, gpu:0>
@@ -72,7 +72,7 @@ module {
     %sin_e = rmo.reshape(%sin) [newShape = #mosh<ape[16, 32, 1]> : !mosh.ape] : (!mo.tensor<[16, 32], f32>) -> !mo.tensor<[16, 32, 1], f32>
     %cos_sin = rmo.concat(%cos_e, %sin_e) [axis = -1] : (!mo.tensor<[16, 32, 1], f32>, !mo.tensor<[16, 32, 1], f32>) -> !mo.tensor<[16, 32, 2], f32>
     %freqs_cis = rmo.reshape(%cos_sin) [newShape = #mosh<ape[16, 64]> : !mosh.ape] : (!mo.tensor<[16, 32, 2], f32>) -> !mo.tensor<[16, 64], f32>
-    %freqs_cis_dev, %freqs_chain = rmo.mo.transfer[%chain0] %freqs_cis : !mo.tensor<[16, 64], f32> to <"gpu", 0>
+    %freqs_cis_dev, %freqs_chain = mo.transfer[%chain0] %freqs_cis : !mo.tensor<[16, 64], f32> to <"gpu", 0>
     %linear:3 = mo.call @qwen3_5_linear_attention_block(%hidden_in, %arg10, %arg13, %arg9, %arg1, %chain0, %chain0) [prefix = "layers.0."] : (!hidden, !conv_state, !recurrent_state, !mo.tensor<[batch_size], ui32, gpu:0>, !mo.tensor<[input_row_offsets_len], ui32, gpu:0>, !chain, !chain) -> (!hidden, !chain, !chain)
     %full:3 = mo.call @qwen3_5_full_attention_block(%linear#0, %c0_ui32, %arg4, %arg5, %arg6, %arg7, %arg8, %freqs_cis_dev, %arg1, %linear#1, %linear#2) [prefix = "layers.3."] : (!hidden, !mo.tensor<[], ui32>, !kv_cache, !mo.tensor<[replica_0_batch_size], ui32, gpu:0>, !mo.tensor<[replica_0_batch_size, replica_0_max_num_pages], ui32, gpu:0>, !mo.tensor<[replica_0_steps_remaining, 2], ui32>, !mo.tensor<[4], si64>, !freqs, !mo.tensor<[input_row_offsets_len], ui32, gpu:0>, !chain, !chain) -> (!hidden, !chain, !chain)
     mo.output %full#0 : !hidden

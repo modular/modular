@@ -26,8 +26,6 @@
 #include "mlir/IR/OpImplementation.h"
 
 using M::KGEN::ParamDeclAttr;
-using M::MO::parseTransferResult;
-using M::MO::printTransferResult;
 using M::MOSH::ShapeAttr;
 
 namespace M::RMO {

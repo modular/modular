@@ -81,7 +81,7 @@ def test_rms_norm_device_transfer() -> None:
     )
 
     # Find transfer ops that move weight to GPU.
-    transfer_ops = find_ops_in_graph(g, "rmo.mo.transfer")
+    transfer_ops = find_ops_in_graph(g, "mo.transfer")
     # Should have at least one transfer for the weight.
     assert len(transfer_ops) >= 1
 

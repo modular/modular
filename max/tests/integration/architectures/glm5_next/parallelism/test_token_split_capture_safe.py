@@ -83,17 +83,15 @@ def _config(devices: list[DeviceRef]) -> Glm5NextConfig:
 def _transfers_to_host(graph: Graph) -> list[str]:
     """Every transfer in ``graph`` whose destination is the host.
 
-    Read off the assembly because ``rmo.mo.transfer`` has no Python op class
-    (it is excluded from ``_core/max_license/modules/dialects/allowlist.txt``,
-    which is also why :func:`~max.graph.ops.transfer_to` stages it through
-    ``Graph._add_op``). Each prints as ``... : <source type> to <"cpu", 0>``;
+    Read off the assembly. Each transfer prints as
+    ``... : <source type> to <"cpu", 0>``;
     the host-to-device direction weight placement stages is the same op with a
     ``gpu`` destination, and is not what this guards against.
     """
     return [
         line.strip()
         for line in str(graph._mlir_op).splitlines()
-        if "rmo.mo.transfer" in line
+        if "mo.transfer[" in line
         and line.rsplit(" to ", 1)[-1].strip().startswith('<"cpu"')
     ]
 

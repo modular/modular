@@ -44,7 +44,7 @@
 #   DeclRefAttrInterface
 #   StructTypeInterface
 #   RMO_ConcatOp                        OptionalAttr, which tblgen generates as
-#   RMO_MOTransferOp                    a nullable mlir::Attribute where these
+#                                       a nullable mlir::Attribute where these
 #                                       bindings generate std::optional
 
 # --- builtin (mlir/IR/Builtin*.td, mlir/Transforms/Passes.td) ---

@@ -895,34 +895,3 @@ void MOCumSumOp::inferMOTypesImpl(
   moResultTypes.push_back(inOutTy);
   moOutputParamDecls.push_back({});
 }
-
-//===----------------------------------------------------------------------===//
-// MOTransferOp
-//===----------------------------------------------------------------------===//
-
-void MOTransferOp::inferMOTypesImpl(
-    MLIRContext *context, MO::GraphOp graphOp, Adaptor operands,
-    std::optional<ValueRange> rmoResults, SmallVectorImpl<Type> &moOperandTypes,
-    SmallVectorImpl<Type> &moResultTypes,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moInputParamDecls,
-    SmallVectorImpl<SmallVector<KGEN::ParamDeclAttr>> &moOutputParamDecls) {
-
-  auto inputType = cast<TensorType>(operands.getInput().getType());
-  moOperandTypes.push_back(inputType);
-  moInputParamDecls.push_back({});
-
-  Type chainType = operands.getInChain().getType();
-  moOperandTypes.push_back(chainType);
-  moInputParamDecls.push_back({});
-
-  // The declared result may be on a different device than the input.
-  TensorType resultType = inputType;
-  if (rmoResults && !rmoResults->empty())
-    resultType = cast<TensorValue>((*rmoResults)[0]).getType();
-
-  moResultTypes.push_back(resultType);
-  moOutputParamDecls.push_back({});
-
-  moResultTypes.push_back(chainType);
-  moOutputParamDecls.push_back({});
-}

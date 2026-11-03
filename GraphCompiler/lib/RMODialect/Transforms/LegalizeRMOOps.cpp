@@ -344,24 +344,6 @@ struct LegalizeRMOMOAnalogue
   }
 };
 
-struct LegalizeTransferOp : public OpRewritePattern<RMO::MOTransferOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RMO::MOTransferOp op,
-                                PatternRewriter &rewriter) const override {
-    // No dynamic dims permitted in RMO at this point: check that explicitly.
-    [[maybe_unused]] TensorType inTy =
-        cast<TensorType>(op.getInput().getType());
-    [[maybe_unused]] TensorType outTy =
-        cast<TensorType>(op.getResult().getType());
-
-    rewriter.replaceOpWithNewOp<MO::TransferOp>(
-        op, op.getInput(), outTy.getDeviceRef(), op.getInChain());
-
-    return success();
-  }
-};
-
 struct LowerRebindTensorShapeOp
     : public OpRewritePattern<RMO::RebindTensorShapeOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -1085,9 +1067,6 @@ struct LegalizeRMOOps
 
     // Benefit 0 so more specific patterns override the default lowering.
     blockPatterns.add<LegalizeRMOMOAnalogue>(context, /*benefit=*/0);
-
-    // Override for rmo.mo.transfer to handle chain and avoid param decls.
-    blockPatterns.add<LegalizeTransferOp>(context);
 
     if (!skipRMORebind)
       blockPatterns.add<LowerRebindTensorShapeOp>(context);

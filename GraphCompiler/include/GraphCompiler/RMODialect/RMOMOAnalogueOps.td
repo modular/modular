@@ -1527,19 +1527,4 @@ def RMO_MOCumSumOp : RMO_MOAnaloguePureTensorOp<"cumsum", [
   }];
 }
 
-def RMO_MOTransferOp : RMO_MOAnalogueOp<"transfer"> {
-  let arguments = (ins
-    MO_Tensor:$input,
-    MO_ParamDecls:$outputParamDecls,
-    MO_Chain:$inChain
-  );
-  let results = (outs MO_Tensor:$result, MO_Chain:$outChain);
-
-  let assemblyFormat = [{
-    `` custom<ParamDecls>($outputParamDecls)
-    `[` $inChain `]` $input `:` qualified(type($input)) `to`
-    custom<TransferResult>(ref(type($input)), type($result)) attr-dict
-  }];
-}
-
 #endif // GENERICML_GRAPHCOMPILER_RMODIALECT_RMOMOANALOGUEOPS_TD
