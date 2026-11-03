@@ -719,28 +719,9 @@ TypedAttr FnOp::getFuncLiteralGenerator(
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
                                        fullSig.getParamListAttrs());
-  if (!bindings || llvm::all_of(bindings, llvm::IsaPred<UnboundAttr>)) {
-    // If all the provided bindings are unbound, return the original generator.
-    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
-    // type dependencies, which results in BindParamsAttr being folded in a
-    // wrong way.
-    //
-    // E.g.,
-    //
-    // def takeClosure[
-    //     origins: OriginSet,
-    //     //,
-    //     f: def() capturing[origins] -> None,
-    // ]():
-    //     pass
-    //
-    // where
-    //
-    // `f: def() capturing[origins]` will be replaced to
-    // `f: def() capturing[  ?    ]`. This will make the type dependency on
-    // `origins` unrecoverable.
+  if (!bindings)
     return unboundGen;
-  }
+
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       unboundGen.getContext(), dischargedBodyConstraints);
   return BindParamsAttr::get(unboundGen.getContext(), unboundGen, bindings,
