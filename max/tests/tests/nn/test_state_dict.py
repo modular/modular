@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Weight
+from max.graph.weights import WeightData
 from max.nn.legacy.layer.layer import Module
 from max.nn.legacy.layer.layer_list import LayerList
 
@@ -115,6 +116,31 @@ class _Leaf(Module):
 
     def __call__(self, x):  # noqa: ANN001
         return x
+
+
+class _RowScale(Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.scale = Weight(
+            "scale", dtype=DType.float32, shape=[2, 1], device=DeviceRef.CPU()
+        )
+
+    def __call__(self, x):  # noqa: ANN001
+        return x
+
+
+def test_load_state_dict_binds_value_without_unit_dims() -> None:
+    """Tests that a value missing only the declared unit dims binds."""
+    module = _RowScale()
+    scale = np.array([1.0, 2.0], dtype=np.float32)
+    module.load_state_dict({"scale": WeightData.from_numpy(scale, "scale")})
+    assert np.from_dlpack(module.state_dict()["scale"]).shape == (2, 1)
+
+    transposed = np.ones((1, 2), dtype=np.float32)
+    with pytest.raises(ValueError, match="different shape"):
+        _RowScale().load_state_dict(
+            {"scale": WeightData.from_numpy(transposed, "scale")}
+        )
 
 
 class _NameOmittingContainer(Module):

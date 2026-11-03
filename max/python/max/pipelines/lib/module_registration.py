@@ -69,6 +69,7 @@ import copy
 import copyreg
 import dataclasses
 import itertools
+import re
 from abc import ABCMeta
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
@@ -156,7 +157,12 @@ from .vision_encoder_cache import (
     VideoEncoderMetrics,
     VisionEncoderMetrics,
 )
-from .weight_transform import CheckpointRole, WeightEntry, WeightTransform
+from .weight_transform import (
+    CheckpointRole,
+    WeightEntry,
+    WeightRenaming,
+    WeightTransform,
+)
 
 __all__ = [
     "DecoderBatchProcessor",
@@ -949,7 +955,7 @@ class ModuleV3DecoderPipelineModel(
     def _load_state_dict(self) -> dict[str, Any]:
         """Loads raw keys when config finalization precedes weight transforms.
 
-        A checkpoint that loads through rules names the decoder's weights.
+        A checkpoint that loads through rules names each module's weights.
         """
         if getattr(
             type(self).model_config_cls, "preserve_checkpoint_keys", False
@@ -958,8 +964,8 @@ class ModuleV3DecoderPipelineModel(
                 name: weight.data() for name, weight in self.weights.items()
             }
             return self._checkpoint
-        if entries := _decoder_weight_entries(type(self), self.adapter):
-            self.weight_naming = {GraphRole.DECODER: tuple(entries)}
+        if naming := _registered_weight_naming(type(self), self.adapter):
+            self.weight_naming = naming
         return super()._load_state_dict()
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
@@ -1286,24 +1292,40 @@ def _vision_spec(
     )
 
 
-def _decoder_weight_entries(
+def _registered_weight_naming(
     pipeline_model: type[ModuleV3DecoderPipelineModel],
     adapter: WeightsAdapter | None,
-) -> list[WeightEntry]:
-    """Returns the entry that names a registered decoder's weights.
+) -> dict[str, tuple[WeightEntry, ...]]:
+    """Returns the entry that names each registered module's weights, by role.
 
-    Empty unless the checkpoint loads through rules into the decoder's own
-    names: a config that keeps the checkpoint's keys transforms them itself,
-    and one that takes the decoder's weights from under a prefix strips it.
+    Empty unless the checkpoint loads through rules into the modules' names:
+    a config that keeps the checkpoint's keys or prepares the weights
+    transforms them itself. A module that takes its weights from under a
+    prefix gets them with the prefix stripped.
     """
     config_cls = pipeline_model.model_config_cls
     if (
         not isinstance(adapter, WeightTransform)
         or getattr(config_cls, "preserve_checkpoint_keys", False)
-        or getattr(config_cls, "weight_prefixes", {}).get(GraphRole.DECODER)
+        or getattr(
+            config_cls, "prepare_weights", DeploymentConfig.prepare_weights
+        )
+        is not DeploymentConfig.prepare_weights
     ):
-        return []
-    return [WeightEntry(CheckpointRole.TARGET, adapter)]
+        return {}
+    roles = [GraphRole.DECODER]
+    if pipeline_model.vision_cls is not None:
+        roles.append(GraphRole.VISION)
+    prefixes = getattr(config_cls, "weight_prefixes", {})
+    naming: dict[str, tuple[WeightEntry, ...]] = {}
+    for role in roles:
+        rules = list(adapter.rules)
+        if prefix := prefixes.get(role):
+            rules.append(WeightRenaming(f"^{re.escape(prefix)}", ""))
+        naming[role] = (
+            WeightEntry(CheckpointRole.TARGET, WeightTransform(rules)),
+        )
+    return naming
 
 
 @dataclass
@@ -1440,7 +1462,19 @@ class RegisteredDecoderBuilder:
         :meth:`checkpoint_weights`.
         """
         del config
-        return _decoder_weight_entries(self.pipeline_model, context.adapter)
+        naming = _registered_weight_naming(self.pipeline_model, context.adapter)
+        return list(naming.get(GraphRole.DECODER, ()))
+
+    def vision_weight_entries(
+        self, context: ModelLoadContext
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the ``VISION`` module's weights.
+
+        Empty when the registration has no ``VISION`` module, or the
+        checkpoint doesn't load through rules into its names.
+        """
+        naming = _registered_weight_naming(self.pipeline_model, context.adapter)
+        return list(naming.get(GraphRole.VISION, ()))
 
     def _state_dict(self, context: ModelLoadContext) -> dict[str, Any]:
         """Returns the checkpoint ``context`` names, as serving loads it."""

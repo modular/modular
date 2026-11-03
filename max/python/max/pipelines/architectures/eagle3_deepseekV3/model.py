@@ -329,7 +329,9 @@ def _target_config(context: ModelLoadContext) -> DeepseekV3Config:
         parse_state_dict_from_weights(
             pipeline_config,
             load_weights(paths),
-            target.weight_adapters.get(weights_format(paths)),
+            target.checkpoint_adapters(
+                pipeline_config.model.huggingface_config
+            ).get(weights_format(paths)),
         ),
         max_seq_len=context.max_seq_len,
         max_batch_total_tokens=context.max_batch_total_tokens,

@@ -2384,7 +2384,7 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
         It compiles as it does when the target serves alone, and its
         callable binds to the target's batching. A target whose ``VISION``
         module is turned off encodes no images, and its batching refuses
-        them.
+        them. A checkpoint that loads through rules names its weights.
         """
         with CompilationTimer("vision model"):
             spec = builder.build_vision(
@@ -2401,6 +2401,11 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
             **self.compiled_modules,
             GraphRole.VISION: vision,
         }
+        if vision_entries := builder.vision_weight_entries(context):
+            self.weight_naming = {
+                **self.weight_naming,
+                GraphRole.VISION: tuple(vision_entries),
+            }
         self._batching.bind_vision_encoder(vision, session)
 
 

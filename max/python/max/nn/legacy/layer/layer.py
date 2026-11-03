@@ -796,6 +796,14 @@ def _array_from_weight_loader(
         if weight.dtype == DType.uint8 and data.dtype == DType.uint8:
             weight._shape = data.shape
             data.shape = Shape(weight._shape)
+        elif [dim for dim in weight.shape if dim != 1] == list(data.shape):
+            # A checkpoint may leave out unit dims, as Quark stores a per-row
+            # scale as [N] where MAX declares [N, 1]. The bytes are the same,
+            # so bind them in the declared shape, as Mach does.
+            data.data = data.to_buffer().view(
+                data.dtype, weight.shape.static_dims
+            )
+            data.shape = Shape(weight._shape)
         else:
             raise ValueError(
                 f"Value provided to weight '{name}' had different shape"

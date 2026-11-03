@@ -34,7 +34,13 @@ from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
-from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import (
+    GraphRole,
+    SupportedArchitecture,
+    TextTokenizer,
+    WeightRenaming,
+    WeightTransform,
+)
 from max.pipelines.lib.decoder_scratch import build_decoder_scratch
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
@@ -45,6 +51,7 @@ from max.pipelines.lib.module_registration import (
     ModuleV3DecoderPipelineModel,
     RegisteredDecoderBuilder,
     _DecoderGraph,
+    _registered_weight_naming,
     bind_decoder_scratch,
     consumes_vision,
     decoder_input_types,
@@ -558,6 +565,54 @@ def test_a_role_takes_the_weights_under_its_prefix() -> None:
     assert role_weights(state, config, GraphRole.DECODER) == {"a": 1}
     assert role_weights(state, config, GraphRole.VISION) == state
     assert role_weights(state, ToyConfig(), GraphRole.DECODER) == state
+
+
+@dataclass(frozen=True)
+class SplitVisionCheckpointConfig(ToyConfig, DeploymentConfig):
+    weight_prefixes: ClassVar[Mapping[str, str]] = {
+        GraphRole.DECODER: "language_model.",
+        GraphRole.VISION: "vision_encoder.",
+    }
+
+
+@dataclass(frozen=True)
+class PreparedCheckpointConfig(SplitVisionCheckpointConfig):
+    def prepare_weights(
+        self, state_dict: Mapping[str, WeightData]
+    ) -> dict[str, WeightData]:
+        return dict(state_dict)
+
+
+def test_rules_name_each_role_as_it_takes_its_weights() -> None:
+    modules = (
+        (GraphRole.DECODER, VisionDecoder),
+        (GraphRole.VISION, ToyVision),
+    )
+    rules = WeightTransform([WeightRenaming(r"^lm\.", "language_model.")])
+    checkpoint = {
+        name: WeightData.from_numpy(np.zeros(1, np.float32), name)
+        for name in ("lm.a", "vision_encoder.b")
+    }
+    cls = module_pipeline_model(
+        SplitVisionCheckpointConfig, modules, ToyVisionBatchProcessor
+    )
+    naming = _registered_weight_naming(cls, rules)
+    adapted = rules.apply_data(checkpoint)
+    for role in (GraphRole.DECODER, GraphRole.VISION):
+        (entry,) = naming[role]
+        named = entry.transform.apply_data(checkpoint)
+        taken = role_weights(adapted, SplitVisionCheckpointConfig(), role)
+        assert taken and {name: named[name] for name in taken} == taken
+    # Speculative decoding builds the modules alone, and names them the same.
+    builder = RegisteredDecoderBuilder(cls)
+    context: Any = SimpleNamespace(adapter=rules)
+    assert builder.weight_entries(context, None) == [*naming[GraphRole.DECODER]]
+    assert builder.vision_weight_entries(context) == [*naming[GraphRole.VISION]]
+
+    prepared = module_pipeline_model(
+        PreparedCheckpointConfig, modules, ToyVisionBatchProcessor
+    )
+    assert _registered_weight_naming(prepared, rules) == {}
 
 
 def test_a_deployment_config_applies_no_runtime_by_default() -> None:
