@@ -42,6 +42,7 @@ from .rowwise_normalization import (
     layer_norm,
     layer_norm_rope_ragged,
     rms_norm_fused_residual_add,
+    rms_norm_residual_add,
     rms_norm_rope,
     rms_norm,
     row_mean_of_squares_qk,
@@ -52,7 +53,6 @@ from nn.topk import _top_k_cpu, top_k, top_k_shape_impl, topk_gpu
 from nn.topk_per_row import TOPK_PER_ROW_MAX_K, topk_per_row_gpu
 from state_space.rms_norm_fused_residual import (
     _rms_norm_fused_residual_cpu_entry,
-    rms_norm_fused_residual,
 )
 from extensibility import (
     Fused,
@@ -1747,8 +1747,8 @@ struct RMSNormResidualAdd:
     single launch, returning both ``output`` and ``intermediate``. This is the
     canonical transformer/mamba pre-norm boundary ``rms_norm(residual + out)``
     where the pre-add value is carried forward as the next block's residual.
-    Reuses the ``state_space`` fused-residual kernel; numerically identical to
-    the unfused ``mo.add`` + ``mo.reduce.rms_norm`` pair.
+    GPUs run the rowwise kernel; the CPU reuses the ``state_space``
+    fused-residual kernel.
     """
 
     @staticmethod
@@ -1822,36 +1822,65 @@ struct RMSNormResidualAdd:
 
             @inline(.always)
             def input_fn[
-                width: Int
+                width: Int, alignment: Int
             ](coords: Coord) {var input_view} -> SIMD[dtype, width]:
                 return rebind[SIMD[dtype, width]](
-                    input_view.load[width=width, element_alignment=width](
+                    input_view.load[width=width, element_alignment=alignment](
                         coords
                     )
                 )
 
             @inline(.always)
             def residual_input_fn[
-                width: Int
+                width: Int, alignment: Int
             ](coords: Coord) {var residual_input_view} -> SIMD[dtype, width]:
                 return rebind[SIMD[dtype, width]](
-                    residual_input_view.load[width=width](coords)
+                    residual_input_view.load[
+                        width=width, element_alignment=alignment
+                    ](coords)
                 )
 
-            rms_norm_fused_residual[
-                target=target,
-                multiply_before_cast=multiply_before_cast,
-            ](
-                input_fn,
-                residual_input_fn,
-                output_fn,
-                residual_output_fn,
-                input.shape().flatten(),
-                gamma.to_tile_tensor[dtype](),
-                epsilon,
-                weight_offset.cast[dtype](),
-                ctx,
-            )
+            # Pass the static row width when known so the Row register-caches
+            # the sum between the reduction and the store; a dynamic width
+            # falls back to streaming.
+            comptime cols = type_of(input)._shape_types[rank - 1].static_value
+
+            comptime if cols != UNKNOWN_VALUE:
+                rms_norm_residual_add[
+                    dtype,
+                    rank,
+                    target=target,
+                    epsilon=epsilon,
+                    weight_offset=weight_offset,
+                    multiply_before_cast=multiply_before_cast,
+                ](
+                    input_fn,
+                    residual_input_fn,
+                    output_fn,
+                    residual_output_fn,
+                    input.shape().flatten(),
+                    ComptimeInt[cols](),
+                    gamma.to_tile_tensor[dtype](),
+                    ctx,
+                )
+            else:
+                rms_norm_residual_add[
+                    dtype,
+                    rank,
+                    target=target,
+                    epsilon=epsilon,
+                    weight_offset=weight_offset,
+                    multiply_before_cast=multiply_before_cast,
+                ](
+                    input_fn,
+                    residual_input_fn,
+                    output_fn,
+                    residual_output_fn,
+                    input.shape().flatten(),
+                    Int(input.shape()[rank - 1].value()),
+                    gamma.to_tile_tensor[dtype](),
+                    ctx,
+                )
         else:
             # CPU path: the migrated CPU kernel takes unified closures that
             # capture the views directly, so it can run the callbacks end to

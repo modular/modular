@@ -180,6 +180,151 @@ def rms_norm[
     ](body, shape, context)
 
 
+def rms_norm_residual_add[
+    dtype: DType,
+    rank: Int,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
+    ResidualInputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, alignment: Int
+        ](Coord, SIMD[dtype, width]) -> None
+    ),
+    OutputResidualFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, alignment: Int
+        ](Coord, SIMD[dtype, width]) -> None
+    ),
+    AxisSizeT: CoordLike,
+    /,
+    target: StaticString,
+    epsilon: Float32,
+    weight_offset: Float32,
+    multiply_before_cast: Bool = True,
+    reduce_dim: Int = rank - 1,
+](
+    input_fn: InputFn,
+    residual_input_fn: ResidualInputFn,
+    output_fn: OutputFn,
+    output_residual_fn: OutputResidualFn,
+    shape: Coord,
+    axis_size: AxisSizeT,
+    gamma: TileTensor[mut=False, dtype, ...],
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
+) raises:
+    """Row-based `rms_norm(input + residual)` that also emits the sum.
+
+    The residual add is fused into the row's load, so the sum is read once,
+    cached, normalized, and stored as the residual output on the way out.
+    """
+    comptime accum = get_accum_type[dtype]()
+    comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
+    comptime assert shape.is_flat, "shape must be flat"
+    comptime simd_width = rowwise.pick_simd_width[
+        ReduceSum[accum, 1], target, 64, dtype, accum
+    ]()
+    var axis_size_accum = Scalar[accum](Int(axis_size))
+
+    @inline(.always)
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx_p: rowwise.Context[params]) {
+        var axis_size,
+        var gamma,
+        var axis_size_accum,
+        var input_fn,
+        var residual_input_fn,
+        var output_fn,
+        var output_residual_fn,
+    }:
+        comptime row_rank = row_coords.rank
+
+        # The add is rounded to `dtype` here, as the unfused add would.
+        @inline(.always)
+        def load[
+            width: Int, alignment: Int
+        ](idx: RowCoord[row_rank]) {
+            var input_fn, var residual_input_fn
+        } -> SIMD[dtype, width]:
+            return input_fn[width, alignment](idx.coord) + residual_input_fn[
+                width, alignment
+            ](idx.coord)
+
+        var row = rowwise.Row[
+            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+        ](row_coords, axis_size, ctx_p, load)
+
+        @inline(.always)
+        def square[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
+            accum, width
+        ]:
+            var tile_accum = tile.cast[accum]()
+            return tile_accum * tile_accum
+
+        var ssq = row.reduce[ReduceSum[accum, params.simd_width]](
+            square, load
+        ).acc
+        var inv_rms = rsqrt(
+            ssq / axis_size_accum + comptime (epsilon.cast[accum]())
+        )
+
+        comptime g_stride = 1 if reduce_dim == rank - 1 else 0
+
+        @inline(.always)
+        def write[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
+            var gamma,
+            var inv_rms,
+            var output_fn,
+            var output_residual_fn,
+            var ctx_p,
+        }:
+            comptime alignment = ctx_p.element_alignment[dtype, width]()
+            var col = Int(idx.coord[reduce_dim])
+            output_residual_fn[width, alignment](idx.coord, tile)
+            var g_raw = strided_load[width, g_stride, alignment=alignment](
+                gamma.ptr_at_offset(Coord(col))
+            )
+            var normed = tile.cast[accum]() * inv_rms.slice[width]()
+
+            comptime if multiply_before_cast:
+                var gamma_with_offset = g_raw.cast[accum]() + comptime (
+                    weight_offset.cast[dtype]().cast[accum]()
+                )
+                var result = (normed * gamma_with_offset).cast[dtype]()
+                output_fn[width, alignment](idx.coord, result)
+            else:
+                var gamma_with_offset = g_raw + comptime (
+                    weight_offset.cast[dtype]()
+                )
+                var result = normed.cast[dtype]() * gamma_with_offset
+                output_fn[width, alignment](idx.coord, result)
+
+        row.elementwise(write, load)
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        target=target,
+        num_phases=2,
+        dtype_size=size_of[dtype](),
+        computationally_expensive=True,
+        pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
+    ](body, shape, context)
+
+
 # ===----------------------------------------------------------------------=== #
 # Row-based rms_norm_rope (the IR litmus test): multiple inputs of
 # differing dtypes (primary input; cos/sin side-loads in cos_sin_dtype; gamma),

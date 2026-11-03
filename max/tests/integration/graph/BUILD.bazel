@@ -52,6 +52,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_matmul_swiglu_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_ir.py",
+    "test_rms_norm_residual_add.py",
     "test_rowwise_reductions.py",
     "test_rowwise_reductions_fuzz.py",
     "test_runtime_source_notes.py",
@@ -1071,6 +1072,23 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/tests/integration/test_common:graph_error_messages_scenario",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_rms_norm_residual_add",
+    srcs = ["test_rms_norm_residual_add.py"],
+    exec_properties = {"test.resources:gpu-memory": "1"},
+    gpu_constraints = ["//:has_gpu"],
+    mojo_deps = ["//max:builtin_kernels"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         requirement("numpy"),
     ],
 )
