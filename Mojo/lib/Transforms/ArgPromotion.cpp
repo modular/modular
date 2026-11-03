@@ -410,8 +410,8 @@ void Graph::doRewrite(const Node *node) {
                                      call->getResultTypes());
     auto calleeSignature =
         FuncType::get(functionType, convs, sigBase.getFnEffects());
-    call.setCalleeAttr(
-        FuncSymbolGenerator::get(call.getCalleeSymbol(), calleeSignature));
+    call.setCalleeAttr(FuncSymbolGenerator::getParamLess(call.getCalleeSymbol(),
+                                                         calleeSignature));
   }
 }
 

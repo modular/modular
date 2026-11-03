@@ -162,7 +162,11 @@ generateInstantiateStub(GeneratorOp func, FuncSymbolAttr symbol,
     ParamDeclareOp::create(b, decl, value);
 
   auto call = CallOp::create(
-      b, FuncSymbolGenerator::get(stubName, sigGen, symbol.getParamValues()),
+      b,
+      FuncSymbolGenerator::get(sigGen.getInputParamTypes(),
+                               FuncSymbolAttr::get(stubName, symbol.getType(),
+                                                   symbol.getParamValues()),
+                               sigGen.getParamListAttrs()),
       entry->getArguments());
   ReturnOp::create(b, call.getResults());
 }

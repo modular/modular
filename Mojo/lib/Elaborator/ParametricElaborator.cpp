@@ -708,8 +708,8 @@ ParametricElaborator::processGeneratorUser(GeneratorUserOpInterface user,
   // symbol reference immediately.
   IRRewriter b{OpBuilder(user)};
   auto newCallee =
-      FuncSymbolGenerator::get(FlatSymbolRefAttr::get(concreteSymName),
-                               calleeSymbol.getInstantiatedType());
+      FuncSymbolGenerator::getParamLess(FlatSymbolRefAttr::get(concreteSymName),
+                                        calleeSymbol.getInstantiatedType());
   user.concretizeCallee(b, newCallee);
   return ElaborationState::advance();
 }

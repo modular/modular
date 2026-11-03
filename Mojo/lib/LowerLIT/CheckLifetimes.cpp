@@ -691,7 +691,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
         GeneratorType::get(info.decl.getSignature().getParamTypes(), fnType,
                            info.decl.getSignature().getParamListAttrs());
     auto sym = FuncSymbolGenerator::dynCast(dtorAttr).getSymbol();
-    return SpecialMemberInfo::available(FuncSymbolGenerator::get(sym, newType));
+    return SpecialMemberInfo::available(
+        FuncSymbolGenerator::getUnbound(sym, newType));
   };
 
   return getSpecialMemberForType(type, this, getDestructor, loc);

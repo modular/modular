@@ -237,22 +237,20 @@ public:
                                  FuncSymbolAttr funcSymbol,
                                  Attribute metadata = {});
 
-  /// Returns a fully bound generator referencing the non-parametric function
-  /// `symbol` of type `type`.
-  static FuncSymbolGenerator get(SymbolRefAttr symbol, FuncType type,
-                                 Attribute metadata = {});
-
   /// Returns a fully bound generator referencing `func`.
   static FuncSymbolGenerator get(FuncOp func);
 
-  /// Returns a generator of type `type` referencing `symbol` with
-  /// `paramValues` bound. An `UnboundAttr` value, or a parameter left off the
-  /// end, binds to the generator's next input parameter.
-  static FuncSymbolGenerator get(SymbolRefAttr symbol,
-                                 FuncTypeGeneratorType type,
-                                 ArrayRef<TypedAttr> paramValues = {});
-  static FuncSymbolGenerator get(StringAttr name, FuncTypeGeneratorType type,
-                                 ArrayRef<TypedAttr> paramValues = {});
+  /// Returns a generator of `type` referencing `symbol` with an empty
+  /// parameter list.
+  static FuncSymbolGenerator getParamLess(SymbolRefAttr symbol, FuncType type,
+                                          Attribute metadata = {});
+
+  /// Returns a generator of `type` referencing `symbol`, with each of the
+  /// callee's parameters bound to a depth-0 index reference for that position.
+  static FuncSymbolGenerator getUnbound(SymbolRefAttr symbol,
+                                        FuncTypeGeneratorType type);
+  static FuncSymbolGenerator getUnbound(StringAttr name,
+                                        FuncTypeGeneratorType type);
 
   /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr`.
   static FuncSymbolGenerator dynCast(Attribute attr);

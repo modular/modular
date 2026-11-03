@@ -1893,56 +1893,37 @@ FuncSymbolGenerator FuncSymbolGenerator::get(ArrayRef<Type> inputParamTypes,
       GeneratorAttr::get(inputParamTypes, funcSymbol, metadata));
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
-                                             FuncType type,
-                                             Attribute metadata) {
+FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
+  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
+  assert(type.getInputParamTypes().empty());
+  return getParamLess(FlatSymbolRefAttr::get(func.getSymNameAttr()),
+                      type.getBody(), type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::getParamLess(SymbolRefAttr symbol,
+                                                      FuncType type,
+                                                      Attribute metadata) {
   auto funcSymbol = FuncSymbolAttr::get(symbol, type, /*paramValues=*/{});
   return get(/*inputParamTypes=*/{}, funcSymbol, metadata);
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
-  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
-  assert(type.getInputParamTypes().empty());
-  return get(FlatSymbolRefAttr::get(func.getSymNameAttr()), type.getBody(),
+FuncSymbolGenerator
+FuncSymbolGenerator::getUnbound(SymbolRefAttr symbol,
+                                FuncTypeGeneratorType type) {
+  // Simply forward the parameters.
+  ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
+  SmallVector<TypedAttr> bodyValues;
+  for (auto [i, paramType] : llvm::enumerate(inputParamTypes))
+    bodyValues.push_back(ParamIndexRefAttr::get(i, paramType));
+
+  return get(inputParamTypes,
+             FuncSymbolAttr::get(symbol, type.getBody(), bodyValues),
              type.getParamListAttrs());
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
-                                             FuncTypeGeneratorType type,
-                                             ArrayRef<TypedAttr> paramValues) {
-  ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
-
-  // The body binds every parameter of the callee. A parameter left unbound
-  // refers to the generator's next input parameter, so specializing the
-  // generator binds it; a bound value moves one scope deeper, into the body.
-  SmallVector<TypedAttr> bodyValues;
-  IndexDepthAdjuster adjuster(1);
-  unsigned nextInput = 0;
-  auto selfRef = [&]() -> TypedAttr {
-    TypedAttr ref =
-        ParamIndexRefAttr::get(nextInput, inputParamTypes[nextInput]);
-    ++nextInput;
-    return ref;
-  };
-  for (TypedAttr value : paramValues) {
-    if (sugarIsa<UnboundAttr>(value)) {
-      if (nextInput == inputParamTypes.size())
-        return {};
-      bodyValues.push_back(selfRef());
-    } else {
-      bodyValues.push_back(cast<TypedAttr>(adjuster.replace(value)));
-    }
-  }
-  while (nextInput < inputParamTypes.size())
-    bodyValues.push_back(selfRef());
-  auto funcSymbol = FuncSymbolAttr::get(symbol, type.getBody(), bodyValues);
-  return get(inputParamTypes, funcSymbol, type.getParamListAttrs());
-}
-
-FuncSymbolGenerator FuncSymbolGenerator::get(StringAttr name,
-                                             FuncTypeGeneratorType type,
-                                             ArrayRef<TypedAttr> paramValues) {
-  return get(FlatSymbolRefAttr::get(name), type, paramValues);
+FuncSymbolGenerator
+FuncSymbolGenerator::getUnbound(StringAttr name, FuncTypeGeneratorType type) {
+  return getUnbound(FlatSymbolRefAttr::get(name), type);
 }
 
 FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {

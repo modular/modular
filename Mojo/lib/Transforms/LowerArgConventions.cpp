@@ -769,7 +769,7 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
                       result.newArgConventions, oldSig.getFnEffects(),
                       oldSig.getMetadata(), oldSig.getArgListAttrs());
     callOp.setCalleeAttr(
-        FuncSymbolGenerator::get(callOp.getCalleeSymbol(), newSig));
+        FuncSymbolGenerator::getParamLess(callOp.getCalleeSymbol(), newSig));
   }
 }
 
