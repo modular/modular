@@ -58,6 +58,7 @@ modular_py_test(
     precompile_mefs = True,
     tags = ["gpu"],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
