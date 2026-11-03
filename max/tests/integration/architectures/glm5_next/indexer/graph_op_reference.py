@@ -35,7 +35,7 @@ Two facts about this layer are load-bearing and easy to lose:
   produces --- reads ``kv_len x (132 + 256)`` bytes per sparse layer per step
   against a pooled cache's ``kv_len / 4 x 132``: 2.9x *worse* than GLM-5.2
   rather than 4x better. See
-  ``.claude/skills/glm-bringup/lanes/pooled-indexer.md``.
+  ``.agents/bringup-logs/glm-5.3-flash/lanes/pooled-indexer.md``.
 
 What this module implements is the compression, the expansion and the tail, plus
 a dense scorer. The compression and the expansion are permanent --- the
