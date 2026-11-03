@@ -20,18 +20,16 @@ from max.pipelines.architectures.gemma4.context import Gemma4Context
 from max.pipelines.architectures.gemma4.memory_planner import (
     Gemma4MemoryPlanner,
 )
-from max.pipelines.architectures.gemma4.model_config import (
-    Gemma4ForConditionalGenerationConfig,
-)
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.gemma4.weight_adapters import (
     gemma4_weight_rules,
 )
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from .batch_processor import Gemma4ModuleV3BatchProcessor
-from .model import Gemma4Model
+from .model_config import Gemma4Config
+from .modules import Gemma4Decoder, Gemma4Vision
+from .registered_batch_processor import Gemma4ModuleV3BatchProcessor
 
 gemma4_modulev3_arch = SupportedArchitecture(
     name="Gemma4ForConditionalGeneration_ModuleV3",
@@ -41,7 +39,7 @@ gemma4_modulev3_arch = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},
-    pipeline_model=Gemma4Model,
+    modules={GraphRole.DECODER: Gemma4Decoder, GraphRole.VISION: Gemma4Vision},
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=Gemma4Tokenizer,
     context_type=Gemma4Context,
@@ -54,7 +52,7 @@ gemma4_modulev3_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     weight_rules=gemma4_weight_rules,
     use_weight_rules=True,
-    config=Gemma4ForConditionalGenerationConfig,
+    config=Gemma4Config,
     tool_parser="gemma4",
     format_spec=gemma4_arch.format_spec,
     reasoning_parser="gemma4",

@@ -35,6 +35,7 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
 
 from .gemma4 import Gemma4TextModel
+from .modules import Gemma4Decoder
 
 if TYPE_CHECKING:
     from max.pipelines.speculative.spec_adapters import VerifyFn
@@ -62,6 +63,9 @@ def verify(
             "A ModuleV3 Gemma 4 target verifies only for a draft that reads"
             f" its last normalized layer. Got {hidden_states.value}."
         )
+    # The registered decoder wraps the language model this calls.
+    if isinstance(target, Gemma4Decoder):
+        target = target.model.language_model
     assert isinstance(target, Gemma4TextModel)
     on_tensors = tensor_compat_verify(partial(_verify, target))
 
