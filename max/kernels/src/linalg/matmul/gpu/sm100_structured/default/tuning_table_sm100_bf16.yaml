@@ -633,3 +633,39 @@ params:
   NUM_CLC_PIPELINE_STAGES: 0
   NUM_SPLIT_K: 16
   NUM_PIPELINE_STAGES: 5
+# The served vocab-weight GEMM has K 5120. These rows hold the measured
+# winners for the M ranges where the wave heuristic's tile loses: a 2-SM
+# 128x256 tile for the small-M range and a 2-SM 256x192 tile with a 2-wide
+# block swizzle for the large-M range. Outside them the heuristic's pick is
+# faster, so the rows stay banded.
+- <<: *defaults
+  M: 264
+  M_END: 385
+  N: 129280
+  K: 5120
+  MMA_M: 128
+  MMA_N: 256
+  CTA_GROUP: 2
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 1
+  RASTERIZE_ORDER: 1
+  SWAP_AB: false
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 2
+  NUM_CLC_PIPELINE_STAGES: 2
+- <<: *defaults
+  M: 513
+  M_END: 577
+  N: 129280
+  K: 5120
+  MMA_M: 256
+  MMA_N: 192
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 2
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 2
+  NUM_CLC_PIPELINE_STAGES: 2
