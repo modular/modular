@@ -27,7 +27,7 @@ from typing import Any
 
 import pytest
 from _mla_sparse_test_utils import paged_kv_from_flat_graph_inputs
-from max import tree
+from max import mlir, tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
@@ -45,6 +45,7 @@ from max.nn.legacy.kernels import (
     mla_prefill_decode_graph,
 )
 from max.nn.legacy.kv_cache import KVCacheQuantizationConfig, MLAKVCacheParams
+from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -254,7 +255,8 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
     operands; the sparse ops take them and route to their ``.nvfp4``
     registrations. Staging checks every op against its registration, so a
     missing or misordered operand fails here. The prefill op carries the
-    convert-once bounds, which the environment overrides.
+    convert-once bounds, which the environment overrides. Neither op takes the
+    leaf's split record.
     """
     monkeypatch.setenv("MODULAR_MLA_NVFP4_PREFILL_CONVERT_RATIO", "37")
     monkeypatch.setenv("MODULAR_MLA_NVFP4_PREFILL_CONVERT_MAX_ROWS", "4096")
@@ -387,6 +389,22 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
         )
         decode = mla_decode_graph(**decode_args, **sparse)
         g.output(prefill, decode)
+
+    mla_ops = [
+        op
+        for op in g._mlir_op.regions[0].blocks[0].operations
+        if op.name == "mo.custom"
+        and mlir.StringAttr(op.attributes["symbol"]).value.startswith("mo.mla.")
+    ]
+    symbols = [mlir.StringAttr(op.attributes["symbol"]).value for op in mla_ops]
+    assert "mo.mla.graph.prefill.decode.paged.sparse.nvfp4" in symbols
+    assert "mo.mla.graph.decode.paged.sparse.nvfp4" in symbols
+    for op in mla_ops:
+        assert not [
+            value
+            for value in op.operands
+            if f"[{MIXED_STEP_SPLIT_SIZE}], ui32" in str(value.type)
+        ], mlir.StringAttr(op.attributes["symbol"]).value
 
     ir = str(g)
     assert '"mo.mla.graph.prefill.decode.paged.sparse.nvfp4"' in ir

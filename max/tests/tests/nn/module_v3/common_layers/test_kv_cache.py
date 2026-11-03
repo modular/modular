@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import pytest
@@ -30,13 +31,19 @@ from max.graph import (
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy import kernels
-from max.nn.legacy.kv_cache import MHAKVCacheParams, SplitKVHeadDims
+from max.nn.legacy.kv_cache import (
+    KVCacheInputsPerDevice,
+    MHAKVCacheParams,
+    SplitKVHeadDims,
+)
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated
 
 
-def _collection(params: MHAKVCacheParams) -> PagedCacheValues:
-    """The ModuleV3 cache over zero tensors shaped like ``params``' inputs."""
+def _per_device(
+    params: MHAKVCacheParams,
+) -> tuple[KVCacheInputsPerDevice[TensorValue, BufferValue], ...]:
+    """One cache per device, over zero tensors shaped like ``params``'."""
     values: list[BufferValue | TensorValue] = []
     for field_type in tree.leaves(params.get_symbolic_inputs()):
         shape = [
@@ -48,9 +55,13 @@ def _collection(params: MHAKVCacheParams) -> PagedCacheValues:
         )
         is_buffer = isinstance(field_type, BufferType)
         values.append(BufferValue(t) if is_buffer else TensorValue(t))
-    per_device = params.unflatten_kv_inputs(iter(values))
+    return params.unflatten_kv_inputs(iter(values))
+
+
+def _collection(params: MHAKVCacheParams) -> PagedCacheValues:
+    """The ModuleV3 cache over zero tensors shaped like ``params``' inputs."""
     mapping = DeviceMapping(DeviceMesh.single(CPU()), (Replicated(),))
-    return PagedCacheValues.from_upstream(per_device, mapping)
+    return PagedCacheValues.from_upstream(_per_device(params), mapping)
 
 
 def test_split_marker_survives_to_graph_values() -> None:
@@ -75,3 +86,28 @@ def test_split_marker_survives_to_graph_values() -> None:
     }
     with pytest.raises(ValueError, match="head dims differ"):
         kernels.store_k_cache_padded(kv_collection=graph_values, **unused)
+
+
+def test_a_device_without_the_split_record_is_refused() -> None:
+    """The record spreads one value per device, so a device that drops it is
+    a mismatch here rather than a field shorter than the replica."""
+    params = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=192,
+        v_head_dim=128,
+        num_layers=2,
+        devices=[DeviceRef.CPU()],
+        page_size=128,
+    )
+    mapping = DeviceMapping(
+        DeviceMesh((CPU(), CPU()), (2,), ("tp",)), (Replicated(),)
+    )
+    with F.lazy():
+        (only,) = _per_device(params)
+        assert only.mixed_step_split is not None
+        with pytest.raises(AssertionError, match="every device of a replica"):
+            PagedCacheValues.from_upstream(
+                [only, dataclasses.replace(only, mixed_step_split=None)],
+                mapping,
+            )

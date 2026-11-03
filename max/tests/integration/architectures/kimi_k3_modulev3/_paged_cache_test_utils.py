@@ -28,6 +28,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import (
+    MIXED_STEP_SPLIT_SIZE,
     PACKED_PAGE_STRIDE,
     KVCacheParams,
     MLAAttnKey,
@@ -154,6 +155,12 @@ def build_paged_cache(
                 )
                 if isinstance(attn_key, MLAAttnKey)
                 else None
+            ),
+            # Every paged leaf declares the record; zeros mean no split.
+            mixed_step_split=Tensor(
+                storage=Buffer.from_numpy(
+                    np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)
+                )
             ),
         )
 

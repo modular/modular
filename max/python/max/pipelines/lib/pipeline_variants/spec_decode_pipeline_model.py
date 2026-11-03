@@ -78,10 +78,6 @@ from max.pipelines.context import (
 from max.pipelines.kv_cache.memory_planner import MemoryPlanner
 from max.pipelines.modeling.types import InputModality, RequestID
 from max.pipelines.speculative import proposers, spec_adapters
-from max.pipelines.speculative._mixed_step_split import (
-    fill_mixed_step_split,
-    mixed_step_split_buffers,
-)
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,
@@ -995,7 +991,6 @@ class _Inputs(UnifiedSpecDecodeInputs):
             ),
             *self.trailing,
             *self.replay_trailing,
-            *self.mixed_step_split,
         )
         if not traced:
             return buffers
@@ -1033,14 +1028,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._prepares_batches = _encodes_in_batching(
             target, draft
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
-        # The same rule the driver declares the records by.
-        self._fills_mixed_step_split = (
-            speculative.mixed_step_split_inputs
-            and spec_adapters.reads_mixed_step_split(self._pairing.adapter_arch)
-        )
-        self._num_draft_tokens = (
-            speculative.draft_width if self._fills_mixed_step_split else 0
-        )
 
     @property
     def _target_prepares_inputs(self) -> bool:
@@ -1163,19 +1150,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             embeddings, indices = self._no_images
             inputs.vision_embeddings = embeddings
             inputs.vision_scatter_indices = indices
-        if self._fills_mixed_step_split:
-            fill_mixed_step_split(
-                self._mixed_step_split_records,
-                replica_batches,
-                self._num_draft_tokens,
-            )
-            inputs.mixed_step_split = self._mixed_step_split_records
         return inputs
-
-    @cached_property
-    def _mixed_step_split_records(self) -> list[Buffer]:
-        """One reused CPU record per device."""
-        return mixed_step_split_buffers(len(self.runtime.devices))
 
     @cached_property
     def _no_images(self) -> tuple[list[Buffer], list[Buffer]]:
@@ -2263,12 +2238,6 @@ def _driver_call(
         # Sizes the draft distributions under draft_proposal="sampled".
         vocab_size=huggingface_config.get_text_config().vocab_size,
         ep_input_types=spec_adapters.ep_input_types(target_arch, target),
-        reads_mixed_step_split=spec_adapters.reads_mixed_step_split(
-            target_arch
-        ),
-        mixed_step_split_on_kv_leaves=spec_adapters.reads_mixed_step_split(
-            target_arch
-        ),
         # A later pipeline stage's boundary comes after the whole signature
         # the model takes unstaged.
         trailing_input_types=[

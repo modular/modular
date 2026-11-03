@@ -10,219 +10,66 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The host rule that cuts a mixed speculative step for split-route ops."""
+"""The mixed-step split record of a spec graph's KV leaves: the draft forwards
+drop it, and the op operand that carries it is a host ``uint32[7]``."""
 
 from __future__ import annotations
 
-from typing import cast
+import dataclasses
+import inspect
+from dataclasses import fields
+from typing import Any, cast
 
 import numpy as np
 import pytest
-from max.driver import Buffer
+from max import mlir, tree
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import _MSA_SPLIT_ARGS_SIZE, _msa_split_args_value
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    Value,
+    ops,
+)
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import (
+    _mixed_step_split_value,
+    flare_mla_decode_ragged,
+    flare_mla_decode_ragged_scaled,
+    flare_mla_prefill_plan,
+    flare_mla_prefill_ragged,
+    mla_prefill_graph,
+)
 from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     MHAKVCacheParams,
+    MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.pipelines.context import TextContext, TokenBuffer
-from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
-    _Inputs,
+from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.pipelines.speculative.block_driver import (
+    Accepted,
+    BlockDriver,
 )
-from max.pipelines.modeling.types import RequestID
-from max.pipelines.speculative._mixed_step_split import (
-    fill_mixed_step_split,
-    mixed_step_decode_width,
-    mixed_step_split_buffers,
-    mixed_step_split_record,
-    mixed_step_split_record_for_contexts,
-)
-from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.driver import SequentialBatch, SequentialDriver
+from max.pipelines.speculative.ragged_token_merger import RaggedTokenMerger
 from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,
-    _mixed_step_split_input_types,
     build_spec_decode_input_types,
     decode_spec_decode_input_values,
+    drop_mixed_step_split,
 )
+from max.pipelines.speculative.spec_target import Verified
+from test_common.mixed_step_split_ops import record_operands
 
-K = 3
-WIDTH = mixed_step_decode_width(K)
-
-
-def _record(widths: list[int], valid: list[int]) -> list[int]:
-    return mixed_step_split_record(widths, valid, WIDTH).tolist()
+_Leaf = KVCacheInputsPerDevice[TensorValue, BufferValue]
 
 
-def test_decode_rows_first_make_the_head_view() -> None:
-    widths = [4, 4, 604]
-    valid = [100, 200, 1_700]
-    assert _record(widths, valid) == [
-        2,
-        8,
-        4,
-        200,
-        604,
-        1_700,
-        1_700,
-    ]
-
-
-def test_decode_rows_last_make_the_tail_view() -> None:
-    widths = [604, 9, 4, 4]
-    valid = [1_700, 50, 100, 200]
-    assert _record(widths, valid) == [
-        2,
-        613,
-        604,
-        1_700,
-        4,
-        200,
-        1_750,
-    ]
-
-
-def test_the_longer_end_run_takes_the_decode_view() -> None:
-    widths = [4, 604, 4, 4]
-    record = _record(widths, [10, 20, 30, 40])
-    # Two trailing decode rows beat one leading one.
-    assert record[0] == 2
-    assert record[4] == WIDTH
-
-
-def test_a_decode_row_after_a_prompt_row_stays_in_the_prefill_view() -> None:
-    record = _record([4, 604, 4, 700], [10, 20, 30, 40])
-    assert record[:2] == [1, 4]
-    assert record[6] == 20 + 30 + 40
-
-
-def test_a_one_token_chunk_rides_the_decode_view() -> None:
-    # A prompt chunk of one token is 1 + K wide, like a verify row.
-    assert _record([4, 4, 300], [1, 2, 3])[0] == 2
-
-
-def test_short_prompt_rows_wider_than_verify_stay_in_the_prefill_view() -> None:
-    assert _record([4, 6, 300], [1, 2, 3])[0] == 1
-
-
-@pytest.mark.parametrize(
-    "widths",
-    [[4, 4, 4], [600, 700], [4, 8], [600, 4, 700]],
-    ids=["all_decode", "all_prompt", "all_spec_width", "decode_in_middle"],
-)
-def test_no_split_gives_zeros(widths: list[int]) -> None:
-    assert _record(widths, [1] * len(widths)) == [0] * _MSA_SPLIT_ARGS_SIZE
-
-
-def test_single_token_decode_rows_split_without_drafts() -> None:
-    record = mixed_step_split_record(
-        [1, 1, 500], [5, 6, 7], mixed_step_decode_width(0)
-    )
-    assert record[:3].tolist() == [2, 2, 1]
-
-
-def test_decode_width_stops_at_the_spec_route() -> None:
-    assert mixed_step_decode_width(3) == 4
-    assert mixed_step_decode_width(7) == 8
-    assert mixed_step_decode_width(15) == 8
-
-
-def test_seven_drafts_put_eight_token_rows_in_the_decode_view() -> None:
-    width = mixed_step_decode_width(7)
-    # Mach order: a chunk with its MAGIC drafts, then verify rows; a
-    # two-token chunk (nine tokens) is one token too wide for the decode view.
-    assert mixed_step_split_record(
-        [607, 8, 8], [700, 40, 50], width
-    ).tolist() == [
-        1,
-        607,
-        607,
-        700,
-        8,
-        50,
-        700,
-    ]
-    assert mixed_step_split_record([8, 8, 9], [1, 2, 3], width)[
-        :2
-    ].tolist() == [2, 16]
-    assert (
-        mixed_step_split_record([8, 8, 8], [1, 2, 3], width).tolist()
-        == [0] * _MSA_SPLIT_ARGS_SIZE
-    )
-
-
-def test_mismatched_lengths_raise() -> None:
-    with pytest.raises(ValueError):
-        mixed_step_split_record([4, 500], [1], WIDTH)
-
-
-def test_record_is_uint32() -> None:
-    assert mixed_step_split_record([4, 500], [1, 2], WIDTH).dtype == np.uint32
-
-
-def test_the_option_is_off_by_default() -> None:
-    field = SpeculativeConfig.model_fields["mixed_step_split_inputs"]
-    assert field.default is False
-
-
-def test_the_spec_declares_no_records_by_default() -> None:
-    spec = SpecDecodeInputTypeSpec(
-        devices=[DeviceRef.GPU(0), DeviceRef.GPU(1)], distributed=True
-    )
-    assert _mixed_step_split_input_types(spec) == []
-
-
-def test_the_spec_declares_one_host_record_per_device() -> None:
-    devices = [DeviceRef.GPU(i) for i in range(8)]
-    spec = SpecDecodeInputTypeSpec(
-        devices=devices,
-        distributed=True,
-        data_parallel_degree=2,
-        mixed_step_split=True,
-    )
-    records = _mixed_step_split_input_types(spec)
-    assert len(records) == len(devices)
-    for record in records:
-        assert record.dtype == DType.uint32
-        assert [int(d) for d in record.shape] == [_MSA_SPLIT_ARGS_SIZE]
-        assert record.device == DeviceRef.CPU()
-
-
-def _row(prompt_len: int, drafts: int) -> TextContext:
-    ctx = TextContext(
-        request_id=RequestID(),
-        max_length=4_096,
-        tokens=TokenBuffer(np.arange(prompt_len, dtype=np.int64)),
-    )
-    ctx.spec_decoding_state.draft_tokens_to_verify = list(range(drafts))
-    return ctx
-
-
-def test_fill_writes_each_replicas_record_on_its_devices() -> None:
-    mixed = [_row(600, K), _row(1, K)]
-    decode_only = [_row(1, K), _row(1, K)]
-    records = mixed_step_split_buffers(4)
-    for buffer in records:
-        buffer.to_numpy()[:] = 99
-    fill_mixed_step_split(records, [mixed, decode_only], K)
-    expected = mixed_step_split_record_for_contexts(mixed, K)
-    assert expected[0] == 1, "the prompt row is the head view"
-    for buffer in records[:2]:
-        assert buffer.to_numpy().tolist() == expected.tolist()
-    for buffer in records[2:]:
-        assert buffer.to_numpy().tolist() == [0] * _MSA_SPLIT_ARGS_SIZE
-
-
-def _decode_graph_spec(
-    *, on_kv_leaves: bool = False
-) -> tuple[SpecDecodeInputTypeSpec, MHAKVCacheParams]:
-    spec = SpecDecodeInputTypeSpec(
-        devices=[DeviceRef.CPU()],
-        distributed=False,
-        mixed_step_split=True,
-        mixed_step_split_on_kv_leaves=on_kv_leaves,
-    )
+def _unified_leaves() -> tuple[list[_Leaf], list[_Leaf]]:
+    """The target and draft leaves a unified spec graph decodes."""
     kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         head_dim=64,
@@ -230,198 +77,336 @@ def _decode_graph_spec(
         devices=[DeviceRef.CPU()],
         n_kv_heads=1,
     )
-    return spec, kv_params
-
-
-def test_the_records_decode_after_a_models_trailing_group() -> None:
-    spec, kv_params = _decode_graph_spec()
-    own = TensorType(DType.int64, [3], device=DeviceRef.CPU())
-    input_types = [
-        *build_spec_decode_input_types(spec, kv_params=kv_params),
-        own,
-        *_mixed_step_split_input_types(spec),
-    ]
-    with Graph("decode", input_types=input_types) as graph:
-        decoded = decode_spec_decode_input_values(
-            graph.inputs, spec, kv_params=kv_params, allow_trailing=True
-        )
-        assert [v.type for v in decoded.trailing] == [own]
-        assert [v.type for v in decoded.mixed_step_split] == list(
-            _mixed_step_split_input_types(spec)
-        )
-
-
-def test_the_records_ride_on_the_target_kv_leaves_only() -> None:
-    spec, kv_params = _decode_graph_spec(on_kv_leaves=True)
     unified = MultiKVCacheParams.from_params(
         {"target": kv_params, "draft": kv_params}
     )
-    input_types = [
-        *build_spec_decode_input_types(spec, kv_params=unified),
-        *_mixed_step_split_input_types(spec),
-    ]
-    with Graph("decode", input_types=input_types) as graph:
+    spec = SpecDecodeInputTypeSpec(devices=[DeviceRef.CPU()], distributed=False)
+    with Graph(
+        "decode",
+        input_types=build_spec_decode_input_types(spec, kv_params=unified),
+    ) as graph:
         decoded = decode_spec_decode_input_values(
             graph.inputs, spec, kv_params=unified
         )
-        (target,) = decoded.kv("target")
-        (draft,) = decoded.kv("draft")
-        assert target.mixed_step_split is decoded.mixed_step_split[0]
-        assert draft.mixed_step_split is None
+        return list(decoded.kv("target")), list(decoded.kv("draft"))
 
 
-def test_declared_records_leave_the_kv_leaves_bare_without_the_opt_in() -> None:
-    """A target that reads the records itself must keep its unsplit ops."""
-    spec, kv_params = _decode_graph_spec()
-    unified = MultiKVCacheParams.from_params(
-        {"target": kv_params, "draft": kv_params}
-    )
-    for params in (kv_params, unified):
-        input_types = [
-            *build_spec_decode_input_types(spec, kv_params=params),
-            *_mixed_step_split_input_types(spec),
-        ]
-        with Graph("decode", input_types=input_types) as graph:
-            decoded = decode_spec_decode_input_values(
-                graph.inputs, spec, kv_params=params
-            )
-            assert len(decoded.mixed_step_split) == 1
-            paths = [("target",), ("draft",)] if params is unified else [()]
-            leaves = [leaf for path in paths for leaf in decoded.kv(*path)]
-            assert leaves
-            assert all(leaf.mixed_step_split is None for leaf in leaves)
+def test_every_kv_leaf_declares_its_record() -> None:
+    for leaves in _unified_leaves():
+        assert leaves
+        assert all(leaf.mixed_step_split is not None for leaf in leaves)
 
 
-@pytest.mark.parametrize("records", [False, True], ids=["off", "on"])
-@pytest.mark.parametrize(
-    "distributed, traced, signal_index",
-    [
-        (False, False, None),
-        (True, False, None),
-        (False, True, None),
-        (True, True, None),
-        (False, True, 2),
-        (True, True, 4),
-    ],
-    ids=[
-        "plain",
-        "distributed",
-        "traced",
-        "distributed_traced",
-        "traced_signals_placed",
-        "distributed_traced_signals_placed",
-    ],
-)
-def test_the_batch_packs_the_records_where_the_graph_declares_them(
-    distributed: bool, traced: bool, signal_index: int | None, records: bool
-) -> None:
-    """The records follow the trailing and replay inputs; a traced graph's
-    signal buffers keep their own place."""
-    devices = [DeviceRef.CPU()]
-    spec = SpecDecodeInputTypeSpec(
-        devices=devices,
-        distributed=distributed,
-        include_signal_buffers=True,
-        trace_owns_signal_buffers=traced,
-        signal_buffer_index=signal_index,
-        mixed_step_split=records,
-    )
-    _, kv_params = _decode_graph_spec()
-    own = TensorType(DType.int64, [3], device=DeviceRef.CPU())
-    replay = TensorType(DType.int64, [2], device=DeviceRef.CPU())
-    declared = [
-        *build_spec_decode_input_types(spec, kv_params=kv_params),
-        own,
-        replay,
-        *_mixed_step_split_input_types(spec),
+def test_dropping_the_records_keeps_other_leaves() -> None:
+    target, draft = _unified_leaves()
+    state = object()
+    kept = drop_mixed_step_split([*target, *draft])
+    assert all(leaf.mixed_step_split is None for leaf in kept)
+    assert [leaf.kv_blocks for leaf in kept] == [
+        leaf.kv_blocks for leaf in [*target, *draft]
     ]
+    assert drop_mixed_step_split({"state": [state]}) == {"state": [state]}
 
-    def buffer() -> Buffer:
-        return Buffer.zeros(shape=[1], dtype=DType.int64)
 
-    signals = [buffer() for _ in devices]
-    split = mixed_step_split_buffers(len(devices)) if records else []
-    inputs = _Inputs(
-        tokens=buffer(),
-        input_row_offsets=buffer(),
-        return_n_logits=buffer(),
-        signal_buffers=signals,
-        host_input_row_offsets=buffer(),
-        data_parallel_splits=buffer(),
-        batch_context_lengths=[buffer() for _ in devices],
-        kv_cache_inputs=cast(
-            "KVCacheInputs[Buffer, Buffer]",
-            {"kv": [buffer() for _ in kv_params.flattened_kv_inputs()]},
+@dataclasses.dataclass
+class _KVOnlyBatch:
+    """The fields of a :class:`SequentialBatch` the propose phase reads
+    before it calls the proposer."""
+
+    kv_collections: list[_Leaf]
+    draft_kv_collections: list[_Leaf]
+    passthrough_kv: dict[str, list[_Leaf]]
+    num_accepted: TensorValue | None = None
+
+
+class _ProposerCalled(Exception):
+    def __init__(self, batch: _KVOnlyBatch) -> None:
+        super().__init__()
+        self.batch = batch
+
+
+class _CapturingProposer:
+    def prefill(self, batch: _KVOnlyBatch, *_: object) -> None:
+        raise _ProposerCalled(batch)
+
+
+def test_the_sequential_draft_sees_no_record() -> None:
+    """Step 0 of the draft runs over the corrected rows, not the verify rows,
+    so neither the target leaves it may read nor its own carry a record."""
+    target, draft = _unified_leaves()
+    batch = _KVOnlyBatch(
+        kv_collections=target,
+        draft_kv_collections=draft,
+        passthrough_kv={"indexer": target},
+    )
+    # Only the propose phase runs, so the driver needs only its proposer.
+    driver = SequentialDriver.__new__(SequentialDriver)
+    vars(driver).update(
+        _proposer=_CapturingProposer(), _draft_proposal="argmax"
+    )
+    with Graph("propose", input_types=[]):
+        with pytest.raises(_ProposerCalled) as called:
+            driver._propose(
+                cast(
+                    "SequentialBatch[TensorValue, BufferValue, Value[Any]]",
+                    batch,
+                ),
+                cast("TensorValue", None),
+                None,
+                cast("TensorValue", None),
+                seed=cast("TensorValue", None),
+                temperature=cast("TensorValue", None),
+                top_k=cast("TensorValue", None),
+                top_p=cast("TensorValue", None),
+            )
+    seen = called.value.batch
+    leaves = [
+        *seen.kv_collections,
+        *seen.draft_kv_collections,
+        *seen.passthrough_kv["indexer"],
+    ]
+    assert all(leaf.mixed_step_split is None for leaf in leaves)
+
+
+def _mla_leaf() -> KVCacheInputsPerDevice[TensorType, BufferType]:
+    """One replica of an MLA cache's symbolic graph inputs."""
+    params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        num_q_heads=1,
+        devices=[DeviceRef.GPU(0)],
+        page_size=64,
+    )
+    return params.get_symbolic_inputs()[0]
+
+
+def test_the_mla_leaf_declares_its_record_last_and_no_mla_op_reads_it() -> None:
+    """An MLA leaf carries the record but ignores it: the decode and prefill
+    ops it feeds take no operand that is the record."""
+    leaf = _mla_leaf()
+    assert leaf.mixed_step_split == TensorType(
+        DType.uint32, [MIXED_STEP_SPLIT_SIZE], device=DeviceRef.CPU()
+    )
+    # The KV ABI appends the record after every field a paged leaf holds, so
+    # it is the last operand of the leaf, not one the MLA ops splice out.
+    assert fields(KVCacheInputsPerDevice)[-1].name == "mixed_step_split"
+    assert [f.name for f in fields(leaf)][-1] == "mixed_step_split"
+    for op in _mla_op_graphs():
+        assert not record_operands(op), mlir.StringAttr(
+            op.attributes["symbol"]
+        ).value
+    # These two builders take operands this test does not build, so their
+    # source stands in: neither names the record.
+    for builder in (mla_prefill_graph, flare_mla_decode_ragged_scaled):
+        assert "mixed_step_split" not in inspect.getsource(builder), (
+            builder.__name__
+        )
+
+
+def _mla_op_graphs() -> list[mlir.Operation]:
+    """Builds the MLA ops the leaf can feed and returns their custom ops."""
+    params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        num_q_heads=1,
+        devices=[DeviceRef.GPU(0)],
+        page_size=64,
+    )
+    gpu = DeviceRef.GPU(0)
+    leaf_types = tree.leaves(params.get_symbolic_inputs())
+    q_type = TensorType(DType.bfloat16, ["total", 1, 576], gpu)
+    offsets_type = TensorType(DType.uint32, ["rows"], gpu)
+    scalar_type = TensorType(DType.int64, ["scalars"], gpu)
+    found: list[mlir.Operation] = []
+    with Graph(
+        "mla_ops",
+        input_types=[
+            *leaf_types,
+            q_type,
+            offsets_type,
+            scalar_type,
+        ],
+    ) as graph:
+        n = len(leaf_types)
+        kv = params.unflatten_kv_inputs(iter(graph.inputs[:n]))[0]
+        q = graph.inputs[n].tensor
+        offsets = graph.inputs[n + 1].tensor
+        layer = ops.constant(0, dtype=DType.uint32, device=DeviceRef.CPU())
+        scalars = graph.inputs[n + 2].tensor
+        flare_mla_decode_ragged(
+            params,
+            q,
+            offsets,
+            kv,
+            layer,
+            MHAMaskVariant.CAUSAL_MASK,
+            1.0,
+            scalars,
+        )
+        flare_mla_prefill_ragged(
+            params,
+            q,
+            q,
+            q,
+            offsets,
+            offsets,
+            offsets,
+            kv,
+            layer,
+            MHAMaskVariant.CAUSAL_MASK,
+            1.0,
+        )
+        flare_mla_prefill_plan(params, offsets, kv, layer, 4096)
+    for op in graph._mlir_op.regions[0].blocks[0].operations:
+        if op.name == "mo.custom" and mlir.StringAttr(
+            op.attributes["symbol"]
+        ).value.startswith(("mo.mla.decode", "mo.mla.prefill")):
+            found.append(op)
+    assert len(found) == 3, [
+        mlir.StringAttr(op.attributes["symbol"]).value for op in found
+    ]
+    return found
+
+
+class _BlockProposer:
+    """A proposer that stops the driver where the draft reads its batch."""
+
+    block_size = 2
+    mask_token_id = 0
+    samples_from_anchor = False
+    supports_zero_draft_rows = False
+
+    def materialize(self, batch: Any, *_: object) -> None:
+        raise _ProposerCalled(batch)
+
+    def embed_block(self, *_: object) -> object:
+        raise AssertionError("materialize stops the driver")
+
+
+def test_the_block_driver_draft_sees_no_record() -> None:
+    """The block draft runs over the committed token, not the verify rows,
+    so the batch the proposer reads must carry no split record."""
+    target, draft = _unified_leaves()
+    proposer = _BlockProposer()
+    driver = BlockDriver.__new__(BlockDriver)
+    vars(driver).update(
+        _proposer=proposer,
+        _verify=lambda batch: Verified(
+            logits=cast("TensorValue", None),
+            hidden=cast("TensorValue", None),
         ),
-        trailing=[buffer()],
-        replay_trailing=[buffer()],
-        draft_tokens=buffer(),
-        seed=buffer(),
-        temperature=buffer(),
-        top_k=buffer(),
-        max_k=buffer(),
-        top_p=buffer(),
-        min_top_p=buffer(),
-        mixed_step_split=split,
-        spec=spec,
+        # The stub accept hands back real-shaped commit lengths, so the
+        # caches build; only the draft forward itself is stopped.
+        _accept=lambda batch, logits, **_: Accepted(
+            num_accepted=ops.constant(
+                np.zeros((1,), dtype=np.int32),
+                dtype=DType.int32,
+                device=DeviceRef.CPU(),
+            ),
+            next_tokens=ops.constant(
+                np.zeros((1,), dtype=np.int64),
+                dtype=DType.int64,
+                device=DeviceRef.CPU(),
+            ),
+            commit_lengths=ops.constant(
+                np.zeros((1,), dtype=np.uint32),
+                dtype=DType.uint32,
+                device=DeviceRef.CPU(),
+            ),
+            is_prefill=ops.constant(
+                np.zeros((1,), dtype=np.bool_),
+                dtype=DType.bool,
+                device=DeviceRef.CPU(),
+            ),
+        ),
+        _bitmask_side_stream=False,
+        _skips_draft_rows=False,
+        _sampled=False,
+        _replica_probs=False,
+        _ctx_at_draft_cache_length=False,
+        block_size=proposer.block_size,
+        merger=RaggedTokenMerger(DeviceRef.CPU()),
+        num_speculative_tokens=proposer.block_size - 1,
+        _vocab_size=None,
+        data_parallel_degree=1,
+        devices=[DeviceRef.CPU()],
     )
-
-    packed = inputs.buffers
-    placed = signals if traced else []
-    assert len(packed) == len(declared) + len(placed)
-    at = len(declared) if signal_index is None else signal_index
-    assert all(
-        got is want
-        for got, want in zip(packed[at : at + len(placed)], placed, strict=True)
-    )
-    first_record = len(declared) - len(split)
-    if at <= first_record:
-        first_record += len(placed)
-    assert all(
-        got is want
-        for got, want in zip(
-            packed[first_record : first_record + len(split)], split, strict=True
+    # A spec without skippable draft keeps _draft_rows off the decoded graph.
+    vars(driver).update(
+        _input_spec=SpecDecodeInputTypeSpec(
+            devices=[DeviceRef.CPU()], distributed=False
         )
     )
-
-
-def test_a_graph_without_its_records_is_refused_at_decode() -> None:
-    spec, kv_params = _decode_graph_spec()
-    input_types = build_spec_decode_input_types(spec, kv_params=kv_params)
-    with Graph("decode", input_types=input_types) as graph:
-        with pytest.raises(ValueError, match="mixed-step split records"):
-            decode_spec_decode_input_values(
-                graph.inputs, spec, kv_params=kv_params
+    with Graph("block", input_types=[]):
+        tokens = ops.constant(
+            np.zeros((1,), dtype=np.int64),
+            dtype=DType.int64,
+            device=DeviceRef.CPU(),
+        )
+        offsets = ops.constant(
+            np.array([0, 1], dtype=np.uint32),
+            dtype=DType.uint32,
+            device=DeviceRef.CPU(),
+        )
+        draft_tokens = ops.constant(
+            np.zeros((1, 1), dtype=np.int64),
+            dtype=DType.int64,
+            device=DeviceRef.CPU(),
+        )
+        with pytest.raises(_ProposerCalled) as called:
+            driver._run(
+                tokens,
+                offsets,
+                draft_tokens,
+                kv_collections=target,
+                draft_kv_collections=draft,
+                passthrough_kv={"indexer": target},
+                return_n_logits=cast("TensorValue", None),
+                seed=cast("TensorValue", None),
+                temperature=cast("TensorValue", None),
+                top_k=cast("TensorValue", None),
+                max_k=cast("TensorValue", None),
+                top_p=cast("TensorValue", None),
+                min_top_p=cast("TensorValue", None),
             )
+    batch = called.value.batch
+    leaves = [
+        *batch.kv_collections,
+        *batch.draft_kv_collections,
+        *batch.passthrough_kv["indexer"],
+    ]
+    assert all(leaf.mixed_step_split is None for leaf in leaves)
 
 
 @pytest.mark.parametrize(
-    "size", [_MSA_SPLIT_ARGS_SIZE - 1, _MSA_SPLIT_ARGS_SIZE + 1]
+    "size", [MIXED_STEP_SPLIT_SIZE - 1, MIXED_STEP_SPLIT_SIZE + 1]
 )
 def test_a_record_of_another_size_is_refused(size: int) -> None:
     record = TensorType(DType.uint32, [size], device=DeviceRef.CPU())
-    with Graph("split_args", input_types=[record]) as graph:
+    with Graph("mixed_step_split", input_types=[record]) as graph:
         with pytest.raises(
-            ValueError, match=f"{_MSA_SPLIT_ARGS_SIZE} elements"
+            ValueError, match=f"{MIXED_STEP_SPLIT_SIZE} elements"
         ):
-            _msa_split_args_value(graph.inputs[0].tensor)
+            _mixed_step_split_value(graph.inputs[0].tensor)
 
 
 @pytest.mark.parametrize(
     "record, field",
     [
         (
-            TensorType(DType.int32, [_MSA_SPLIT_ARGS_SIZE], DeviceRef.CPU()),
+            TensorType(DType.int32, [MIXED_STEP_SPLIT_SIZE], DeviceRef.CPU()),
             "dtype",
         ),
         (
             TensorType(
-                DType.uint32, [1, _MSA_SPLIT_ARGS_SIZE], DeviceRef.CPU()
+                DType.uint32, [1, MIXED_STEP_SPLIT_SIZE], DeviceRef.CPU()
             ),
             "rank",
         ),
         (
-            TensorType(DType.uint32, [_MSA_SPLIT_ARGS_SIZE], DeviceRef.GPU()),
+            TensorType(DType.uint32, [MIXED_STEP_SPLIT_SIZE], DeviceRef.GPU()),
             "device",
         ),
     ],
@@ -430,6 +415,6 @@ def test_a_record_of_another_size_is_refused(size: int) -> None:
 def test_a_record_off_the_host_layout_is_refused(
     record: TensorType, field: str
 ) -> None:
-    with Graph("split_args", input_types=[record]) as graph:
-        with pytest.raises(ValueError, match=f"split_args.{field}"):
-            _msa_split_args_value(graph.inputs[0].tensor)
+    with Graph("mixed_step_split", input_types=[record]) as graph:
+        with pytest.raises(ValueError, match=f"mixed_step_split.{field}"):
+            _mixed_step_split_value(graph.inputs[0].tensor)

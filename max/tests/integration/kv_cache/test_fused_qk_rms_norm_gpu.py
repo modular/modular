@@ -184,6 +184,7 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         scales_page_stride=graph_inputs.scales_page_stride,
         scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        mixed_step_split=graph_inputs.mixed_step_split,
     )
     unfused_inputs = KVCacheInputsPerDevice(
         kv_blocks=cast_tensor_to(
@@ -198,6 +199,7 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         scales_page_stride=graph_inputs.scales_page_stride,
         scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        mixed_step_split=graph_inputs.mixed_step_split,
     )
 
     input_row_offsets = Buffer.from_numpy(np.array([0, seq_len], np.uint32)).to(

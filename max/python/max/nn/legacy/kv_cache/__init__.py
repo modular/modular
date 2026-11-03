@@ -57,6 +57,7 @@ from .cache_params import (
     spec_decode_cache_slack,
 )
 from .input_types import (
+    MIXED_STEP_SPLIT_SIZE,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     PagedCacheValues,
@@ -76,6 +77,7 @@ from .utils import (
 )
 
 __all__ = [
+    "MIXED_STEP_SPLIT_SIZE",
     "PACKED_PAGE_STRIDE",
     "AttnKey",
     "AttnKeyInterface",

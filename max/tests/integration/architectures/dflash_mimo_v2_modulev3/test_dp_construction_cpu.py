@@ -229,7 +229,8 @@ def test_the_tp_signature_declares_no_distributed_group() -> None:
     call = module.driver_call()
     types = call.input_types
     assert not call.driver.input_spec.distributed
-    assert len(types) == 35
+    # Each of the three paged leaves ends with its split record.
+    assert len(types) == 38
     # The single-device graph declares its own signal buffer at the
     # engine's slot; the batch inputs ahead of it are the TP three.
     assert isinstance(types[3], BufferType)

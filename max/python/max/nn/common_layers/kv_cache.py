@@ -100,6 +100,17 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
                 )
             )
 
+        mixed_step_split: Tensor | None = None
+        if per_device[0].mixed_step_split is not None:
+            records: list[TensorLike] = []
+            for device in per_device:
+                record = device.mixed_step_split
+                assert isinstance(record, TensorLike), (
+                    "every device of a replica declares the split record"
+                )
+                records.append(record)
+            mixed_step_split = _wrap(records)
+
         return cls(
             kv_blocks=_wrap([d.kv_blocks for d in per_device]),
             cache_lengths=_wrap([d.cache_lengths for d in per_device]),
@@ -113,6 +124,7 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
             attention_dispatch_metadata=attention_dispatch_metadata,
             mla_num_partitions=mla_num_partitions,
             split_head_dims=per_device[0].split_head_dims,
+            mixed_step_split=mixed_step_split,
         )
 
     def to_graph_values(self) -> _PagedCacheValues:

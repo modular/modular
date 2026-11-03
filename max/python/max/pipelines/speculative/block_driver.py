@@ -82,6 +82,7 @@ from .spec_input_types import (
     SpecDecodeInputTypeSpec,
     draft_probs_rows_name,
     replica_leader_devices,
+    without_mixed_step_split,
 )
 from .spec_target import Verified
 from .spec_width_policy import declares_skippable_draft
@@ -760,8 +761,6 @@ class BlockDriver(
         vocab_size: int | None = None,
         ep_input_types: Sequence[TensorType | BufferType] = (),
         trailing_input_types: Sequence[TensorType | BufferType] = (),
-        reads_mixed_step_split: bool = False,
-        mixed_step_split_on_kv_leaves: bool = False,
     ) -> None:
         super().__init__()
         self._verify = verify
@@ -774,15 +773,6 @@ class BlockDriver(
             include_skippable_draft=declares_skippable_draft(
                 speculative_config
             ),
-            # Only a target whose ops read the records declares them.
-            mixed_step_split=reads_mixed_step_split
-            and speculative_config is not None
-            and speculative_config.mixed_step_split_inputs,
-            # A target that reads them through its KV collection opts in.
-            mixed_step_split_on_kv_leaves=mixed_step_split_on_kv_leaves
-            and reads_mixed_step_split
-            and speculative_config is not None
-            and speculative_config.mixed_step_split_inputs,
         )
         self.devices = self._input_spec.devices
         self.data_parallel_degree = self._input_spec.data_parallel_degree
@@ -1196,6 +1186,8 @@ class BlockDriver(
         if verified.roll_forward is not None:
             verified.roll_forward(batch)
 
+        # The split record describes the verify rows, not the block's.
+        batch = without_mixed_step_split(batch)
         caches = self._block_caches(
             batch, pre_cache_lengths, accepted.commit_lengths
         )

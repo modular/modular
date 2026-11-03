@@ -153,6 +153,7 @@ modular_py_test(
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         "//max/python/max/nn/legacy",
     ],
 )

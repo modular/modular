@@ -79,6 +79,7 @@ from .ragged_token_merger import RaggedTokenMerger, _shape_to_scalar
 from .spec_input_types import (
     SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
+    without_mixed_step_split,
 )
 from .spec_target import Verified
 from .spec_width_policy import declares_skippable_draft
@@ -655,8 +656,6 @@ class SequentialDriver(
         vocab_size: int | None = None,
         ep_input_types: Sequence[TensorType | BufferType] = (),
         trailing_input_types: Sequence[TensorType | BufferType] = (),
-        reads_mixed_step_split: bool = False,
-        mixed_step_split_on_kv_leaves: bool = False,
     ) -> None:
         super().__init__()
         self._verify = verify
@@ -677,15 +676,6 @@ class SequentialDriver(
             include_skippable_draft=declares_skippable_draft(
                 speculative_config
             ),
-            # Only a target whose ops read the records declares them.
-            mixed_step_split=reads_mixed_step_split
-            and speculative_config is not None
-            and speculative_config.mixed_step_split_inputs,
-            # A target that reads them through its KV collection opts in.
-            mixed_step_split_on_kv_leaves=mixed_step_split_on_kv_leaves
-            and reads_mixed_step_split
-            and speculative_config is not None
-            and speculative_config.mixed_step_split_inputs,
         )
         self._skips_draft_rows = proposer.supports_zero_draft_rows
         if draft_proposal == "sampled":
@@ -1242,7 +1232,10 @@ class SequentialDriver(
             and the matching ``[batch_size, vocab_size]`` distributions under
             ``draft_proposal="sampled"`` (``None`` otherwise).
         """
-        batch = replace(batch, num_accepted=num_accepted)
+        # The split record describes the verify rows, not the draft's.
+        batch = without_mixed_step_split(
+            replace(batch, num_accepted=num_accepted)
+        )
         sampled = self._draft_proposal == "sampled"
         with Graph.current.profile_scope("draft_step_0"):
             proposer = self._proposer

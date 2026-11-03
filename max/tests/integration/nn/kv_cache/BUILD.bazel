@@ -25,6 +25,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
@@ -32,6 +33,7 @@ modular_py_test(
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/speculative",
         "//max/tests/integration/test_common:context_utils",
+        "//max/tests/integration/test_common:mixed_step_split_ops",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
@@ -54,7 +56,6 @@ modular_py_test(
         "gpu",
     ],
     deps = [
-        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

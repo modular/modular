@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""A Qwen3.5 graph whose KV collections carry mixed-step split records runs
-its full-attention layers through the split op.
+"""A Qwen3.5 graph hands its KV collections' mixed-step split records to the
+ragged MHA of every full-attention layer.
 
 The records reach the attention through the full-attention block's own
 arguments (the layers share one subgraph), so a record dropped on the way
-leaves every layer on ``mo.mha.ragged.paged``: the graph still builds and runs,
-only slower. The check reads the op names in the built graph.
+leaves every layer on a zeros record: the graph still builds and runs, only
+slower. The check reads the record operand of each ragged MHA op.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ import numpy as np
 import pytest
 from max import tree
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph
 from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
@@ -44,8 +44,9 @@ from max.pipelines.architectures.qwen3_5.state_cache import (
     attn_cache,
     linear_state_regions,
 )
+from test_common.mixed_step_split_ops import record_sources
 
-SPLIT_OP = "mo.mha.ragged.paged.mixed_step_split"
+MHA_OP = "mo.mha.ragged.paged"
 HIDDEN = 64
 HEADS = 4
 KV_HEADS = 2
@@ -101,7 +102,7 @@ def _config(use_subgraphs: bool) -> Qwen3_5Config:
     )
 
 
-def _graph_text(use_subgraphs: bool, with_records: bool) -> str:
+def _record_operands(use_subgraphs: bool, with_records: bool) -> list[str]:
     config = _config(use_subgraphs)
     model = Qwen3_5(config)
     rng = np.random.default_rng(0)
@@ -134,21 +135,18 @@ def _graph_text(use_subgraphs: bool, with_records: bool) -> str:
     cache_params = MultiKVCacheParams.from_params(
         {ATTN_CACHE_KEY: attn, STATE_CACHE_KEY: state_params}
     )
-    record = TensorType(DType.uint32, [7], device=DeviceRef.CPU())
     with Graph(
-        "qwen3_5_mixed_step_split",
-        input_types=[*model.input_types(cache_params), record],
+        "qwen3_5_mixed_step_split", input_types=model.input_types(cache_params)
     ) as graph:
         tokens, row_offsets, return_n_logits, *variadic = graph.inputs
-        kv_tree = cache_params.unflatten_kv_inputs(iter(variadic[1:-1]))
+        kv_tree = cache_params.unflatten_kv_inputs(iter(variadic[1:]))
         assert isinstance(kv_tree, dict)
         kv_collections = tree.leaves(
             kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
         )
-        if with_records:
+        if not with_records:
             kv_collections = [
-                replace(kv, mixed_step_split=variadic[-1].tensor)
-                for kv in kv_collections
+                replace(kv, mixed_step_split=None) for kv in kv_collections
             ]
         state = tree.leaves(
             kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
@@ -163,22 +161,28 @@ def _graph_text(use_subgraphs: bool, with_records: bool) -> str:
                 list(state),
             )
         )
-    # The module holds the subgraph bodies too; the graph prints only its calls.
-    return str(graph._module)
+    # The module holds the subgraph bodies too; the graph holds only its calls.
+    return [
+        source
+        for symbol, source in record_sources(graph._mlir_op.block.owner)
+        if symbol == MHA_OP
+    ]
 
 
 @pytest.mark.parametrize("use_subgraphs", [True, False])
 def test_records_on_the_kv_collections_reach_every_attention_layer(
     use_subgraphs: bool,
 ) -> None:
-    text = _graph_text(use_subgraphs, with_records=True)
+    sources = _record_operands(use_subgraphs, with_records=True)
     # Subgraphs build the shared block once; without them each layer is inlined.
     expected = 1 if use_subgraphs else LAYER_TYPES.count("full_attention")
-    assert text.count(SPLIT_OP) == expected
+    assert sources == ["argument"] * expected
 
 
 @pytest.mark.parametrize("use_subgraphs", [True, False])
-def test_without_records_the_attention_keeps_the_unsplit_op(
+def test_without_records_the_attention_gets_zeros(
     use_subgraphs: bool,
 ) -> None:
-    assert SPLIT_OP not in _graph_text(use_subgraphs, with_records=False)
+    sources = _record_operands(use_subgraphs, with_records=False)
+    assert sources
+    assert set(sources) == {"mo.constant"}

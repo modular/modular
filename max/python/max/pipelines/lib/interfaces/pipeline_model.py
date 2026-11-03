@@ -448,11 +448,6 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     so the buffer tail and the graph signature derive the decision from one
     place. Set by each capable module's ``prepare_initial_token_inputs``."""
 
-    mixed_step_split: list[Buffer] = field(default_factory=list)
-    """One CPU mixed-step split record per device, which a graph declares
-    after every other input; empty unless the graph declares them. Each
-    ``buffers`` appends them last."""
-
     def _spec_decode_tail_buffers(
         self,
         *,

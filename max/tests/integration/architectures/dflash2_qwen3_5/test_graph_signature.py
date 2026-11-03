@@ -20,8 +20,8 @@ mismatch (or, worse, cannot report at all when the count happens to match).
 The graph is built the way a served pairing builds it, over a tiny Qwen3.5
 target and DFlash2 draft, and its inputs are read back by position.
 
-The KV group is seven slots here since MXSERV-527 added ``page_stride``.
-Mach's executors still pin six, so the two disagree until they are updated.
+The KV group is eight slots here: ``page_stride`` and, last, the
+mixed-step split record.
 """
 
 from __future__ import annotations
@@ -72,14 +72,14 @@ def types(fused: FusedGraph) -> list[TensorType | BufferType]:
 def test_slot_count_matches_the_declared_formula(
     types: list[TensorType | BufferType],
 ) -> None:
-    """``15 + 23D`` at ``D = 1``.
+    """``15 + 25D`` at ``D = 1``.
 
-    Five ragged/host inputs, signals, two 7-slot KV leaves,
+    Five ragged/host inputs, signals, two 8-slot KV leaves,
     batch_context_lengths, the eight-entry sampling tail, the bitmask triple,
     then a pool and a row table for each of the three state leaves, the ring
     included. The layer count does not enter.
     """
-    assert len(types) == 15 + 23 * 1
+    assert len(types) == 15 + 25 * 1
 
 
 def test_the_prefix_and_sampling_tail_are_the_canonical_ones(
@@ -98,7 +98,7 @@ def test_the_prefix_and_sampling_tail_are_the_canonical_ones(
     assert types[2].device == cpu and types[3].device == cpu
 
     # draft_tokens .. in_thinking_phase, then the bitmask triple.
-    tail = [(t.dtype, tuple(str(d) for d in t.shape)) for t in types[21:32]]
+    tail = [(t.dtype, tuple(str(d) for d in t.shape)) for t in types[23:34]]
     assert tail == [
         (DType.int64, ("batch_size", "num_steps")),
         (DType.uint64, ("batch_size",)),
@@ -123,13 +123,16 @@ def test_the_prefix_and_sampling_tail_are_the_canonical_ones(
 def test_the_draft_leaf_follows_the_target_leaf(
     types: list[TensorType | BufferType],
 ) -> None:
-    """Slot 13: the draft leaf's blocks, right after the target leaf's seven.
+    """Slot 14: the draft leaf's blocks, right after the target leaf's eight.
 
     Five drafter layers at the drafter's own head geometry. The leaf's
     derivation is checked in ``test_pairing_cache``; this checks the graph
     declares it where Mach's registry looks for it.
     """
-    blocks = types[13]
+    # Each leaf ends with its split record, the target's just before.
+    for record in (types[13], types[21]):
+        assert record == TensorType(DType.uint32, [7], device=DeviceRef.CPU())
+    blocks = types[14]
     assert isinstance(blocks, BufferType)
     assert blocks.dtype == GEOMETRY.dtype
     assert [str(d) for d in blocks.shape[1:]] == [

@@ -29,7 +29,11 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import MLAKVCacheParams, padded_lut_cols
+from max.nn.legacy.kv_cache import (
+    MIXED_STEP_SPLIT_SIZE,
+    MLAKVCacheParams,
+    padded_lut_cols,
+)
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
     kimi_k3_mla_prefill_plan,
@@ -179,6 +183,9 @@ def test_prefill_plan_capture_replays_across_page_boundaries() -> None:
         "page_stride": TensorLayout(DType.int64, [1], CPU()),
         "attention_dispatch_metadata": TensorLayout(DType.int64, [3], device),
         "mla_num_partitions": TensorLayout(DType.int64, [1], CPU()),
+        "mixed_step_split": TensorLayout(
+            DType.uint32, [MIXED_STEP_SPLIT_SIZE], CPU()
+        ),
     }
 
     def plan(
@@ -194,6 +201,7 @@ def test_prefill_plan_capture_replays_across_page_boundaries() -> None:
             page_stride=fields["page_stride"],
             attention_dispatch_metadata=fields["attention_dispatch_metadata"],
             mla_num_partitions=fields["mla_num_partitions"],
+            mixed_step_split=fields["mixed_step_split"],
         )
         result = kimi_k3_mla_prefill_plan(
             kv_params=params,

@@ -45,6 +45,7 @@ mojo_test(
     deps = [
         "//max:builtin_kernels",
         "//max:extensibility",
+        "//max:kv_cache",
         "//max:layout",
         "//max:max_mojo",
         "//max:nn",

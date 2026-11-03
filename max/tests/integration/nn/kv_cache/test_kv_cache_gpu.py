@@ -14,7 +14,6 @@
 import asyncio
 
 import numpy as np
-from max import tree
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -65,5 +64,5 @@ async def _test_kv_cache_gpu() -> None:
     )
     first_device_inputs = kv_inputs[0]
     assert isinstance(first_device_inputs, KVCacheInputsPerDevice)
-    assert len(tree.leaves(first_device_inputs)) == 7
+    assert first_device_inputs.mixed_step_split is not None
     assert first_device_inputs.attention_dispatch_metadata is not None

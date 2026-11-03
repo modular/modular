@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import partial
-from typing import Any, Generic, overload
+from typing import TYPE_CHECKING, Any, Generic, Protocol, overload
 
 from max import tree
 from max.dtype import DType
@@ -30,7 +30,6 @@ from max.graph import (
     Value,
 )
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.kernels import _MSA_SPLIT_ARGS_SIZE
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsPerDevice,
@@ -49,6 +48,8 @@ __all__ = [
     "build_spec_decode_input_types",
     "decode_spec_decode_input_values",
     "decode_spec_decode_tail",
+    "drop_mixed_step_split",
+    "without_mixed_step_split",
 ]
 
 
@@ -108,29 +109,6 @@ class SpecDecodeInputTypeSpec:
     each on the replica's leader device and holding that replica's rows, in
     place of the single device-0 tensor. Requires
     ``enable_sampled_draft_proposal`` and a distributed spec."""
-    mixed_step_split: bool = False
-    """Declare one CPU ``uint32[7]`` mixed-step split record per device after
-    every other input, a model's own trailing group included, so an export
-    without them keeps every other slot. See
-    :mod:`~max.pipelines.speculative._mixed_step_split`."""
-    mixed_step_split_on_kv_leaves: bool = False
-    """Decode each device's record onto the target's KV leaves, where a ragged
-    MHA call picks the split op from it. Set only for a target whose attention
-    reads the records through its KV collection; any other target that
-    declares them reads them from :attr:`SpecDecodeGraphInputs.mixed_step_split`
-    and keeps bare KV leaves. Requires :attr:`mixed_step_split`."""
-
-
-def _mixed_step_split_input_types(
-    spec: SpecDecodeInputTypeSpec,
-) -> list[TensorType]:
-    """Returns the split records' input types: one per device, or none."""
-    if not spec.mixed_step_split:
-        return []
-    return [
-        TensorType(DType.uint32, [_MSA_SPLIT_ARGS_SIZE], device=DeviceRef.CPU())
-        for _ in spec.devices
-    ]
 
 
 def draft_probs_rows_name(replica: int) -> str:
@@ -437,10 +415,6 @@ class SpecDecodeGraphInputs(Generic[_T, _B, _V]):
     """Inputs past the canonical tail, for a model that appends its own
     group. Empty unless the decode allowed trailing."""
 
-    mixed_step_split: list[_T] = field(default_factory=list)
-    """One mixed-step split record per device, last of all. Empty unless the
-    spec declares them."""
-
     def kv(self, *path: str) -> list[KVCacheInputsPerDevice[_T, _B]]:
         """Returns one KV leaf's per-device inputs, addressed by name.
 
@@ -677,17 +651,7 @@ def decode_spec_decode_input_values(
 
     tail = decode_spec_decode_tail(it, spec)
 
-    rest = list(it)
-    num_records = len(_mixed_step_split_input_types(spec))
-    if len(rest) < num_records:
-        raise ValueError(
-            f"unified spec-decode graph has {len(rest)} input(s) after the"
-            f" tail, fewer than its {num_records} mixed-step split records"
-        )
-    trailing = rest[: len(rest) - num_records]
-    mixed_step_split = [value.tensor for value in rest[len(trailing) :]]
-    if mixed_step_split and spec.mixed_step_split_on_kv_leaves:
-        kv_tree = _attach_mixed_step_split(kv_tree, mixed_step_split, devices)
+    trailing = list(it)
     # A leftover means the signature declared a group this decode misses,
     # which positional decoding cannot detect on its own.
     if trailing and not allow_trailing:
@@ -726,38 +690,55 @@ def decode_spec_decode_input_values(
         ep_inputs=ep_inputs,
         leading=leading,
         trailing=trailing,
-        mixed_step_split=mixed_step_split,
     )
 
 
-def _attach_mixed_step_split(
-    kv_tree: Any,
-    records: Sequence[TensorValue],
-    devices: Sequence[DeviceRef],
-) -> Any:
-    """Returns ``kv_tree`` with its device's split record on each target leaf.
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
 
-    A tree with a ``target`` child gets them on that child only. A tree
-    without one is the target's alone, and a draft that shares that leaf reads
-    the record too, so only a draft whose calls ignore it may share the leaf.
+    class _DriverBatch(DataclassInstance, Protocol):
+        """The KV fields that :func:`without_mixed_step_split` reads."""
+
+        @property
+        def kv_collections(self) -> object: ...
+
+        @property
+        def draft_kv_collections(self) -> object: ...
+
+        @property
+        def passthrough_kv(self) -> object: ...
+
+
+_Batch = TypeVar("_Batch", bound="_DriverBatch")
+
+
+_KV = TypeVar("_KV")
+
+
+def drop_mixed_step_split(kv: _KV) -> _KV:
+    """Returns the KV tree ``kv`` without the mixed-step split records.
+
+    The record describes the verify batch's rows; a draft forward runs over
+    other rows, so every leaf a draft can reach drops it. Leaves of another
+    kind, such as recurrent state, pass through.
     """
 
-    def attach(
-        leaf: KVCacheInputsPerDevice[TensorValue, BufferValue],
-    ) -> KVCacheInputsPerDevice[TensorValue, BufferValue]:
-        device = leaf.kv_blocks.device
-        return replace(
-            leaf, mixed_step_split=records[list(devices).index(device)]
-        )
+    def drop(leaf: object) -> object:
+        if isinstance(leaf, KVCacheInputsPerDevice):
+            return replace(leaf, mixed_step_split=None)
+        return leaf
 
-    if not isinstance(kv_tree, Mapping) or "target" not in kv_tree:
-        return tree.map(attach, kv_tree, leaf=KVCacheInputsPerDevice)
-    return {
-        **kv_tree,
-        "target": tree.map(
-            attach, kv_tree["target"], leaf=KVCacheInputsPerDevice
-        ),
-    }
+    return tree.map(drop, kv, leaf=KVCacheInputsPerDevice)
+
+
+def without_mixed_step_split(batch: _Batch) -> _Batch:
+    """Returns ``batch`` with no split record on any KV leaf it holds."""
+    return replace(
+        batch,
+        kv_collections=drop_mixed_step_split(batch.kv_collections),
+        draft_kv_collections=drop_mixed_step_split(batch.draft_kv_collections),
+        passthrough_kv=drop_mixed_step_split(batch.passthrough_kv),
+    )
 
 
 class SpecDecodeGraphSignature:
@@ -838,7 +819,6 @@ class SpecDecodeGraphSignature:
                 leading_input_types=self.leading_input_types(),
             ),
             *self.trailing_input_types(),
-            *_mixed_step_split_input_types(self.input_spec),
         )
 
     @overload

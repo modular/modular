@@ -32,6 +32,9 @@ from max.tree import Tree
 _Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)
 _Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
 
+MIXED_STEP_SPLIT_SIZE = 7
+"""Number of ``uint32`` slots in a KV cache's mixed-step split record."""
+
 
 @tree.kind("split_kv_head_dims")
 @tree.dataclass(frozen=True)
@@ -93,9 +96,11 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     The blocks alone cannot say so: one plane also means an MLA cache. An op
     that does not read this layout must refuse the cache."""
     mixed_step_split: _Tensor | None = None
-    """This device's mixed-step split record (CPU ``uint32[7]``), set on a
-    target leaf of a spec graph that declares the records; an attention op
-    that can split reads it. Never a graph input of its own."""
+    """The batch's mixed-step split record (CPU ``uint32[7]``), slots 2-8 of
+    the replica's host max lengths after ``max_prompt_length`` and
+    ``max_cache_length``. Every paged leaf declares it last; the KV cache
+    manager fills it and the attention ops that can split read it. A draft
+    forward drops it: the record describes the target's rows."""
 
     def __post_init__(self) -> None:
         def verify_rank1_int64_tensor(name: str, t: _Tensor | None) -> None:

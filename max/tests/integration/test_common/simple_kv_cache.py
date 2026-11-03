@@ -42,6 +42,7 @@ from max.nn.legacy.kv_cache import (
     MLAAttnKey,
     padded_lut_cols,
 )
+from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.support.math import ceildiv
 
 
@@ -211,4 +212,8 @@ def paged_kv_cache_inputs(
         )
         if isinstance(attn_key, MLAAttnKey)
         else None,
+        # Every paged leaf declares the record; zeros mean no split.
+        mixed_step_split=Buffer.from_numpy(
+            np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)
+        ),
     )

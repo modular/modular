@@ -62,6 +62,7 @@ from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     padded_lut_cols,
 )
+from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
@@ -199,6 +200,10 @@ class _Cache:
                 ),
                 attention_dispatch_metadata=key.pack_into_buffer(
                     device, max(seq_lens)
+                ),
+                # Every paged leaf declares the record; zeros mean no split.
+                mixed_step_split=Buffer.from_numpy(
+                    np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)
                 ),
             )
             for blocks, device in zip(self.kv_blocks, self.devices, strict=True)

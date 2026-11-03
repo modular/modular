@@ -14,7 +14,6 @@
 
 import numpy as np
 import pytest
-from max import tree
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -56,7 +55,7 @@ async def test_kv_cache_multi_gpu() -> None:
         kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
         for i in range(num_devices):
             kv_inputs_per_device = kv_inputs[i]
-            assert len(tree.leaves(kv_inputs_per_device)) == 7
+            assert kv_inputs_per_device.mixed_step_split is not None
             assert kv_inputs_per_device.attention_dispatch_metadata is not None
 
 

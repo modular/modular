@@ -47,6 +47,7 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     padded_lut_cols,
 )
+from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.nn.legacy.layer import Module
 from max.nn.legacy.sampling import AcceptanceSampler
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
@@ -510,6 +511,10 @@ class PagedTree:
                         draft_key.pack_into_buffer(device, max_cache)
                         if draft_key is not None
                         else None
+                    ),
+                    # Every paged leaf declares the record; zeros mean no split.
+                    mixed_step_split=Buffer.from_numpy(
+                        np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)
                     ),
                 )
             )

@@ -43,7 +43,7 @@ from max.driver import CPU, Accelerator, Buffer, CompletionFlag
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.legacy.comm.allreduce import Signals
-from max.nn.legacy.kv_cache import PACKED_PAGE_STRIDE
+from max.nn.legacy.kv_cache import MIXED_STEP_SPLIT_SIZE, PACKED_PAGE_STRIDE
 from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
 
 CRASHING_LENGTHS = (121, 200)
@@ -136,6 +136,8 @@ def _build() -> Step:
             h(np.array([abs_max_cache], np.uint32)),
             h(np.array([PACKED_PAGE_STRIDE], np.int64)),
             h(np.array([batch, target_width, 1, abs_max_cache], np.int64)),
+            # Each leaf ends with its split record; one row never splits.
+            h(np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)),
             dblocks,
             b(np.array([cached] * batch, np.uint32)),
             b(lut),
@@ -143,6 +145,7 @@ def _build() -> Step:
             h(np.array([abs_max_cache], np.uint32)),
             h(np.array([PACKED_PAGE_STRIDE], np.int64)),
             h(np.array([batch, target_width, 1, abs_max_cache], np.int64)),
+            h(np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)),
             h(np.array([0], np.int32)),
             b(dtv),
             b(np.array([7], np.uint64)),

@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Mixed-step split of ragged MHA (B200).
 
-A mixed step batches decode rows (``1 + K`` tokens each) with prompt rows.
-With a split record on the KV leaf, ``mo.mha.ragged.paged.mixed_step_split``
-cuts the batch into a head and a tail view and runs each on its own route,
-into one output. The oracle: the split output equals each view's rows run
-alone through ``mo.mha.ragged.paged``, bit for bit. A zeros record or a
-malformed one keeps the single launch, so it equals the call without a
-record.
+A mixed step batches decode rows (``1 + K`` tokens each) with prefill rows.
+With a split record on the KV leaf, ``mo.mha.ragged.paged`` cuts the batch
+into a head and a tail view and runs each on its own route, into one output.
+The oracle: the split output equals each view's rows run alone, bit for bit.
+A zeros record or a malformed one keeps the single launch, so it equals the
+call without a record (which sends zeros).
 
-The shape is one full-attention layer on one GPU: depth 256, 24 query heads
-over 4 KV heads, with FP8 or BF16 query and KV.
+The shape is one attention layer on one GPU, 24 query heads over 4 KV heads:
+depth 256 with FP8 or BF16 query and KV, and with BF16 at depth 512 and
+under a sliding-window mask.
 """
 
 from __future__ import annotations
@@ -55,18 +55,23 @@ from max.nn.legacy.kv_cache import (
 )
 from test_common.graph_utils import is_b100_b200
 
-HEAD_DIM = 256
 NUM_Q_HEADS = 24
 NUM_KV_HEADS = 4
 PAGE_SIZE = 128
 NUM_DRAFT_TOKENS = 3
-SCALE = 1.0 / math.sqrt(HEAD_DIM)
 SPLIT_SIZE = 7
 NUM_PAGES = 320
 TORCH_DTYPES = {
     DType.float8_e4m3fn: torch.float8_e4m3fn,
     DType.bfloat16: torch.bfloat16,
 }
+
+
+@dataclass(frozen=True)
+class Shape:
+    kv_dtype: DType
+    head_dim: int = 256
+    local_window_size: int = -1
 
 
 @dataclass(frozen=True)
@@ -100,16 +105,15 @@ def _record(rows: Sequence[Row], head_rows: int) -> np.ndarray:
     )
 
 
-def _build(
-    session: InferenceSession, with_record: bool, kv_dtype: DType
-) -> Model:
+def _build(session: InferenceSession, with_record: bool, shape: Shape) -> Model:
     gpu, cpu = DeviceRef.GPU(), DeviceRef.CPU()
+    kv_dtype, head_dim = shape.kv_dtype, shape.head_dim
     input_types: list[BufferType | TensorType] = [
-        TensorType(kv_dtype, ["total_q", NUM_Q_HEADS, HEAD_DIM], device=gpu),
+        TensorType(kv_dtype, ["total_q", NUM_Q_HEADS, head_dim], device=gpu),
         TensorType(DType.uint32, ["batch_p1"], device=gpu),
         BufferType(
             kv_dtype,
-            ["num_pages", 2, 1, PAGE_SIZE, NUM_KV_HEADS, HEAD_DIM],
+            ["num_pages", 2, 1, PAGE_SIZE, NUM_KV_HEADS, head_dim],
             device=gpu,
         ),
         TensorType(DType.uint32, ["batch"], device=gpu),
@@ -123,13 +127,15 @@ def _build(
     kv_params = MHAKVCacheParams(
         dtype=kv_dtype,
         n_kv_heads=NUM_KV_HEADS,
-        head_dim=HEAD_DIM,
+        head_dim=head_dim,
         num_layers=1,
         page_size=PAGE_SIZE,
         devices=[gpu],
     )
+    sliding = shape.local_window_size > 0
     with Graph(
-        f"mha_mixed_split_{with_record}_{kv_dtype}", input_types=input_types
+        f"mha_mixed_split_{with_record}_{kv_dtype}_{head_dim}_{sliding}",
+        input_types=input_types,
     ) as g:
         q, offsets, blocks, lengths, lut, max_q, max_cache, metadata = g.inputs[
             :8
@@ -152,8 +158,11 @@ def _build(
             input_row_offsets=offsets.tensor,
             kv_collection=cache,
             layer_idx=ops.constant(0, DType.uint32, cpu),
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            scale=SCALE,
+            mask_variant=MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
+            if sliding
+            else MHAMaskVariant.CAUSAL_MASK,
+            scale=1.0 / math.sqrt(head_dim),
+            local_window_size=shape.local_window_size,
             output_dtype=DType.bfloat16,
         )
         g.output(out)
@@ -161,12 +170,13 @@ def _build(
 
 
 class Harness:
-    def __init__(self, kv_dtype: DType) -> None:
+    def __init__(self, shape: Shape) -> None:
         self.device = Accelerator()
-        self.torch_dtype = TORCH_DTYPES[kv_dtype]
+        self.head_dim = shape.head_dim
+        self.torch_dtype = TORCH_DTYPES[shape.kv_dtype]
         session = InferenceSession(devices=[self.device])
-        self.split_model = _build(session, True, kv_dtype)
-        self.plain_model = _build(session, False, kv_dtype)
+        self.split_model = _build(session, True, shape)
+        self.plain_model = _build(session, False, shape)
         generator = torch.Generator(device="cuda").manual_seed(0)
         # One page at a time keeps the float32 staging small.
         self.blocks = torch.empty(
@@ -175,7 +185,7 @@ class Harness:
             1,
             PAGE_SIZE,
             NUM_KV_HEADS,
-            HEAD_DIM,
+            self.head_dim,
             dtype=self.torch_dtype,
             device="cuda",
         )
@@ -186,7 +196,7 @@ class Harness:
                     1,
                     PAGE_SIZE,
                     NUM_KV_HEADS,
-                    HEAD_DIM,
+                    self.head_dim,
                     generator=generator,
                     device="cuda",
                 )
@@ -246,7 +256,7 @@ class Harness:
             torch.randn(
                 sum(r.width for r in rows),
                 NUM_Q_HEADS,
-                HEAD_DIM,
+                self.head_dim,
                 generator=self.generator,
                 device="cuda",
             )
@@ -278,8 +288,14 @@ class Harness:
 
 @pytest.fixture(
     scope="module",
-    params=[DType.float8_e4m3fn, DType.bfloat16],
-    ids=["fp8", "bf16"],
+    params=[
+        Shape(DType.float8_e4m3fn),
+        Shape(DType.bfloat16),
+        Shape(DType.bfloat16, head_dim=512),
+        # Shorter than most rows' prefixes, so the window clips them.
+        Shape(DType.bfloat16, local_window_size=512),
+    ],
+    ids=["fp8", "bf16", "bf16-depth512", "bf16-sliding"],
 )
 def harness(request: pytest.FixtureRequest) -> Harness:
     return Harness(request.param)

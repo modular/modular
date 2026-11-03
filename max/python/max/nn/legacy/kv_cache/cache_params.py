@@ -57,6 +57,7 @@ from max.tensor.sharding import TensorLayout
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
+    MIXED_STEP_SPLIT_SIZE,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     RecurrentLeafInputs,
@@ -580,6 +581,13 @@ def contiguous_page_view_and_stride(
     )
 
 
+def _mixed_step_split_type() -> TensorType:
+    """Returns the type of a paged leaf's mixed-step split record."""
+    return TensorType(
+        DType.uint32, shape=[MIXED_STEP_SPLIT_SIZE], device=DeviceRef.CPU()
+    )
+
+
 def _scales_leaf_id(leaf_id: str) -> str:
     """Returns the id of the leaf holding ``leaf_id``'s quantization scales."""
     return leaf_id + "/scales"
@@ -938,6 +946,9 @@ class KVCacheAssignments:
     max_prompt_length: Buffer
     max_cache_length: Buffer
     batch_characteristics: BatchCharacteristics
+    mixed_step_split: Buffer
+    """The replica's mixed-step split record, a view of its host max lengths
+    after ``max_prompt_length`` and ``max_cache_length``."""
 
 
 @dataclass(frozen=True)
@@ -2081,6 +2092,7 @@ class KVCacheParams(KVCacheParamInterface):
         scales_page_stride: Buffer | None = None,
         attention_dispatch_metadata: Buffer,
         draft_attention_dispatch_metadata: Buffer | None,
+        mixed_step_split: Buffer,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         raise NotImplementedError
 
@@ -2191,6 +2203,7 @@ class KVCacheParams(KVCacheParamInterface):
                             if kv_scales is not None
                             else None
                         ),
+                        mixed_step_split=assignment.mixed_step_split,
                     )
                 )
         return tuple(tp_shards)
@@ -2531,6 +2544,7 @@ class MHAKVCacheParams(KVCacheParams):
                 if self.speculative_method is not None
                 else None,
                 split_head_dims=self._split_head_dims_marker,
+                mixed_step_split=_mixed_step_split_type(),
             )
             for device in devices
         ]
@@ -2551,6 +2565,7 @@ class MHAKVCacheParams(KVCacheParams):
         scales_page_stride: Buffer | None = None,
         attention_dispatch_metadata: Buffer,
         draft_attention_dispatch_metadata: Buffer | None,
+        mixed_step_split: Buffer,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         return KVCacheInputsPerDevice(
             kv_blocks=blocks,
@@ -2565,6 +2580,7 @@ class MHAKVCacheParams(KVCacheParams):
             attention_dispatch_metadata=attention_dispatch_metadata,
             draft_attention_dispatch_metadata=draft_attention_dispatch_metadata,
             split_head_dims=self._split_head_dims_marker,
+            mixed_step_split=mixed_step_split,
         )
 
     @cached_property
@@ -2772,6 +2788,7 @@ class MLAKVCacheParams(KVCacheParams):
                 )
                 if self.speculative_method is not None
                 else None,
+                mixed_step_split=_mixed_step_split_type(),
             )
             for device in devices
         ]
@@ -2792,6 +2809,7 @@ class MLAKVCacheParams(KVCacheParams):
         scales_page_stride: Buffer | None = None,
         attention_dispatch_metadata: Buffer,
         draft_attention_dispatch_metadata: Buffer | None,
+        mixed_step_split: Buffer,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         assert isinstance(target_key, MLAAttnKey)
         assert draft_key is None or isinstance(draft_key, MLAAttnKey)
@@ -2815,6 +2833,7 @@ class MLAKVCacheParams(KVCacheParams):
             )
             if draft_key is not None
             else None,
+            mixed_step_split=mixed_step_split,
         )
 
 

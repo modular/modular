@@ -3937,6 +3937,72 @@ def generic_get_paged_cache_with_scales(
     )
 
 
+@inline(.always)
+def paged_cache_rows(
+    blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
+    page_stride: TileTensor[DType.int64, address_space=.GENERIC, ...],
+    cache_lengths: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    lookup_table: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    split_args: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    first_row: Int,
+    num_rows: Int,
+    max_lengths_slot: Int,
+    out result: PagedKVCacheCollection[
+        blocks.dtype,
+        KVCacheStaticParams(
+            blocks.static_shape[4],
+            blocks.static_shape[5],
+            blocks.static_shape[1] == 1,
+        ),
+        blocks.static_shape[3],
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutUntrackedOrigin,
+    ],
+):
+    """Builds the paged cache over batch rows `[first_row, first_row +
+    num_rows)`, with max lengths from `split_args[max_lengths_slot:+2]`.
+
+    Same type as the `generic_get_paged_cache` collection of the whole batch;
+    only the per-row tables move and the max lengths change. The caller
+    checks that the lookup table and `split_args` (a
+    `kv_cache.mixed_step_split` record) are packed.
+    """
+    var lut_cols = Int(lookup_table.dim[1]())
+    var lengths = split_args.unsafe_ptr().unsafe_offset(max_lengths_slot)
+    return generic_get_paged_cache[
+        blocks.dtype,
+        KVCacheStaticParams(
+            blocks.static_shape[4],
+            blocks.static_shape[5],
+            blocks.static_shape[1] == 1,
+        ),
+        blocks.static_shape[3],
+    ](
+        TileTensor(blocks.unsafe_ptr(), blocks.layout).as_unsafe_any_origin(),
+        TileTensor(page_stride.unsafe_ptr(), page_stride.layout)
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(
+            cache_lengths.unsafe_ptr().unsafe_offset(first_row),
+            row_major(num_rows),
+        )
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(
+            lookup_table.unsafe_ptr().unsafe_offset(first_row * lut_cols),
+            row_major(num_rows, lut_cols),
+        )
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(lengths, row_major(1)).as_imm().as_unsafe_any_origin(),
+        TileTensor(lengths.unsafe_offset(1), row_major(1))
+        .as_imm()
+        .as_unsafe_any_origin(),
+    )
+
+
 def generic_get_paged_cache[
     dtype: DType,
     kv_params: KVCacheStaticParams,

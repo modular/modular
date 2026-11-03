@@ -95,11 +95,12 @@ GRAPH_NAME = "unified_dflash_mimo_v2"
 """The graph-API pairing's graph name, which Mach's block-spec executor binds
 by constant."""
 
-N_INPUTS_1DEV = 35
-"""Inputs at 1 device without the bitmask triple (38 with it): the fused
+N_INPUTS_1DEV = 38
+"""Inputs at 1 device without the bitmask triple (41 with it): the fused
 signature's tokens, offsets, return_n_logits, the self-declared signal
-buffer, the 24 KV leaves (8 per group over 3 groups), the draft tokens, the
-6 sampling tails. The grammar bitmask is off: its host-wait op is GPU-only."""
+buffer, the 27 KV leaf inputs (9 per group over 3 groups, the split
+record last), the draft tokens, the 6 sampling tails. The grammar
+bitmask is off: its host-wait op is GPU-only."""
 
 
 def test_construct_kv_params_builds_a_tree_the_dkv_connector_serves(

@@ -696,6 +696,7 @@ def test_modulev3_input_tree_orders_return_n_logits_before_offsets() -> None:
             "max_cache_length",
             "page_stride",
             "attention_dispatch_metadata",
+            "mixed_step_split",
         )
     ]
     batch = inputs["batch"]

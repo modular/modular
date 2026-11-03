@@ -151,7 +151,8 @@ def test_the_tree_is_the_modulev3_abi(
     staged: tuple[tuple[TensorType | BufferType, ...], int],
 ) -> None:
     """Pins the tokens, logit count and ONE shared row-offsets input, then the
-    two KV groups — 17 inputs at one device. No per-device row offsets and
+    two KV groups, each record ending with its split record — 19 inputs at
+    one device. No per-device row offsets and
     no signal buffers: the graph-API base tree's extras are absent, which is
     why the ``-modulev3`` registry entry binds its own slot map."""
     types, n_devices = staged
@@ -166,9 +167,9 @@ def test_the_tree_is_the_modulev3_abi(
     assert row_offsets.device == DeviceRef.GPU(0), "one shared input"
 
     if n_devices == 1:
-        assert len(types) == 17
+        assert len(types) == 19
         _kv_block(types, 3, layers=2, heads=8)
-        _kv_block(types, 10, layers=2, heads=4)
+        _kv_block(types, 11, layers=2, heads=4)
         # A single-device trace appends no signal buffers: no input is a
         # uint8 buffer the size of one.
         assert not [
@@ -183,20 +184,20 @@ def test_the_tree_is_the_modulev3_abi(
 def test_a_multi_device_trace_appends_the_signals_past_the_kv_tree(
     staged: tuple[tuple[TensorType | BufferType, ...], int],
 ) -> None:
-    """Checks that at two devices the KV groups widen device-major — 14 slots each, the
-    second group opening at 17 — and the trace appends its signal buffers
+    """Checks that at two devices the KV groups widen device-major — 16 slots each, the
+    second group opening at 19 — and the trace appends its signal buffers
     past the KV tree, one per device: the slots the engine wires for an
     entry on ``SIGNAL_BUFFERS_AFTER_INPUTS``."""
     types, n_devices = staged
     if n_devices != 2:
         pytest.skip("the trailing signal run is a multi-device property")
-    assert len(types) == 33
-    # Group 0's two device records, then group 1's at 17.
+    assert len(types) == 37
+    # Group 0's two device records, then group 1's at 19.
     _kv_block(types, 3, layers=2, heads=4)
-    _kv_block(types, 10, layers=2, heads=4)
-    _kv_block(types, 17, layers=2, heads=2)
-    _kv_block(types, 24, layers=2, heads=2)
-    signals = types[31:]
+    _kv_block(types, 11, layers=2, heads=4)
+    _kv_block(types, 19, layers=2, heads=2)
+    _kv_block(types, 27, layers=2, heads=2)
+    signals = types[35:]
     assert len(signals) == 2
     for device, signal in enumerate(signals):
         assert isinstance(signal, BufferType), f"slot {31 + device}"

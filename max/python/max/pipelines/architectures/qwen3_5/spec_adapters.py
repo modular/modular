@@ -591,7 +591,6 @@ _BASE = TargetAdapter(
     check=check,
     trailing_input_types=trailing_input_types,
     extra=extra,
-    reads_mixed_step_split=True,
 )
 # The MTP head reads 3-axis positions past the state tail.
 ADAPTER = replace(

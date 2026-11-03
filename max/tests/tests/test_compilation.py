@@ -765,6 +765,7 @@ class PagedSpec:
     kv_scales: None = None
     attention_dispatch_metadata: TensorLayout | None = None
     mla_num_partitions: None = None
+    mixed_step_split: TensorLayout | None = None
 
     def __tree_flatten__(self) -> tuple[tuple[Any, ...], tuple[str, ...]]:
         names = tuple(f.name for f in fields(self))
@@ -938,6 +939,7 @@ class TestModel:
             attention_dispatch_metadata=_spec_of(
                 declared.attention_dispatch_metadata
             ),
+            mixed_step_split=_spec_of(declared.mixed_step_split),
         )
         x_spec = TensorLayout(
             _F32, ["total_seq_len", hidden], device=DeviceRef.CPU()

@@ -270,10 +270,6 @@ class TargetAdapter:
     """Whether the target's own batch processor prepares every batch of the
     pairing, as it does a distributed one."""
 
-    reads_mixed_step_split: bool = False
-    """Whether the target's attention ops read the mixed-step split records,
-    so its spec graph declares them when the config asks for them."""
-
     signal_buffer_index: int | None = None
     """Where a ModuleV3 target's fused graph takes its signal buffers, on
     every device count, for an engine that binds them there. ``None``

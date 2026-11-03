@@ -331,6 +331,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/tests/integration/test_common:mixed_step_split_ops",
         requirement("numpy"),
     ],
 )

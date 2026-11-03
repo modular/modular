@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pytest
@@ -46,7 +46,6 @@ from max.graph import (
     ops,
 )
 from max.nn.legacy.kernels import (
-    _MSA_SPLIT_ARGS_SIZE,
     _kv_cache_row_offsets_ragged,
     msa_sparse_attention_ragged,
     msa_sparse_indexer,
@@ -57,6 +56,7 @@ from max.nn.legacy.kv_cache import (
     packed_page_stride,
     padded_lut_cols,
 )
+from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from test_common.graph_utils import is_b100_b200
 
 HEAD_DIM = 128
@@ -94,21 +94,13 @@ def _decode_rows(num: int, width: int) -> list[Row]:
     return [Row(int(p), width) for p in prefixes]
 
 
-def _split_record(
-    rows: Sequence[Row], head_rows: int, max_cache_length: int | None = None
-) -> np.ndarray:
-    """Builds the record the host rule fills for a cut after ``head_rows``.
-
-    MAX bounds each view by its rows' largest valid length; Mach passes its
-    staged ``max_cache_length`` for both views.
-    """
+def _split_record(rows: Sequence[Row], head_rows: int) -> np.ndarray:
+    """Builds the record the host rule fills for a cut after ``head_rows``."""
     head, tail = rows[:head_rows], rows[head_rows:]
     head_is_decode = max(r.width for r in head) <= MAX_SPEC_DRAFT
     prefill = tail if head_is_decode else head
 
     def bound(view: Sequence[Row]) -> int:
-        if max_cache_length is not None:
-            return max_cache_length
         return max(r.valid_length for r in view)
 
     return np.array(
@@ -181,7 +173,7 @@ def _build_model(
     if with_split_input:
         input_types.append(
             TensorType(
-                DType.uint32, [_MSA_SPLIT_ARGS_SIZE], device=DeviceRef.CPU()
+                DType.uint32, [MIXED_STEP_SPLIT_SIZE], device=DeviceRef.CPU()
             )
         )
     kv_params = MSAKVCacheParams(
@@ -198,6 +190,8 @@ def _build_model(
         index_cache = _symbolic_cache(values[4:10])
         main_cache = _symbolic_cache(values[10:16])
         split_args = values[17].tensor if with_split_input else None
+        index_cache = replace(index_cache, mixed_step_split=split_args)
+        main_cache = replace(main_cache, mixed_step_split=split_args)
         row_offsets = values[2].tensor
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
         block_indices = msa_sparse_indexer(
@@ -215,7 +209,6 @@ def _build_model(
             init_blocks=INIT_BLOCKS,
             local_blocks=LOCAL_BLOCKS,
             scale=SCALE,
-            split_args=split_args,
         )
         output = msa_sparse_attention_ragged(
             kv_params,
@@ -232,7 +225,6 @@ def _build_model(
             topk=TOPK,
             sparse_block_size=PAGE_SIZE,
             scale=SCALE,
-            split_args=split_args,
         )
         graph.output(block_indices, output)
     return session.load(graph)
@@ -462,7 +454,7 @@ def _assert_split_equals_parts(
     step = harness.step(rows, max_cache_length)
     head_tokens = sum(r.width for r in rows[:head_rows])
     split_indices, split_output = harness.run_split(
-        step, _split_record(rows, head_rows, max_cache_length)
+        step, _split_record(rows, head_rows)
     )
     head_indices, head_output = harness.run_plain(step.subset(0, head_rows))
     tail_indices, tail_output = harness.run_plain(
@@ -583,7 +575,7 @@ def test_a_one_token_chunk_with_seven_drafts_rides_the_decode_view(
 
 
 # Mach's DSpark export: K = 7 drafts plus a 7-token drafter block written per
-# row, and every MSA cache staged at `max_seq_len + K + 1`.
+# row; the ceiling is the leaf's staged `max_cache_length`, not the record's.
 MACH_BLOCK = 7
 MACH_CEILING = 16_384 + 7 + 1
 
@@ -617,7 +609,7 @@ def test_without_a_record_the_widest_verify_rows_take_another_route(
 
 def test_zeros_record_keeps_the_unsplit_route(harness: Harness) -> None:
     _assert_record_keeps_unsplit_route(
-        harness, MIXED_ROWS, np.zeros(_MSA_SPLIT_ARGS_SIZE, dtype=np.uint32)
+        harness, MIXED_ROWS, np.zeros(MIXED_STEP_SPLIT_SIZE, dtype=np.uint32)
     )
 
 

@@ -63,7 +63,6 @@ __all__ = [
     "has_adapter",
     "prepares_every_batch",
     "primary_kv",
-    "reads_mixed_step_split",
     "relaxed_thinking_acceptance",
     "replay_enabled",
     "replay_extra",
@@ -269,11 +268,6 @@ def prepares_every_batch(target_arch: str) -> bool:
     The inputs past the canonical tail count.
     """
     return _adapter(target_arch).prepares_every_batch
-
-
-def reads_mixed_step_split(target_arch: str) -> bool:
-    """Returns whether the target's attention ops read the split records."""
-    return _adapter(target_arch).reads_mixed_step_split
 
 
 def signal_buffer_index(target_arch: str) -> int | None:

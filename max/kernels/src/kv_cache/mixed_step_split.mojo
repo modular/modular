@@ -10,23 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Row-range views of a mixed speculative step for attention graph ops.
+"""The mixed-step split record of a paged KV cache input.
 
-A mixed step batches decode rows with prompt rows, so an op that picks one
-route from its longest row sends the decode rows down the prefill route. A
-host record (`mixed_step_split`, `uint32[MIXED_STEP_SPLIT_SIZE]`) cuts one
-replica batch into a head and a tail view; an op validates it with
-`read_mixed_split`, runs each view through its own route, and keeps the
-unsplit route for any record or operand it cannot use.
+A mixed step batches decode rows with prefill rows, so an op that picks one
+route from its longest row sends the decode rows down the prefill route. The
+KV cache managers fill a host record (`mixed_step_split`,
+`uint32[MIXED_STEP_SPLIT_SIZE]`) for every batch, which cuts one replica batch
+into a head and a tail view; an op validates it with `read_mixed_split`, runs
+each view through its own route, and keeps the unsplit route for any record or
+operand it cannot use.
 """
 
 from max.gpu import block_dim, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 
-from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import TensorLayout, TileTensor
 from layout.tile_tensor import row_major as tt_row_major
-from nn.kv_cache import generic_get_paged_cache
 
 # Widest row the host rules count as a decode row: `1 + K` up to 8.
 comptime MIXED_STEP_DECODE_WIDTH = 8
@@ -100,10 +99,10 @@ def read_mixed_split(
 
     Args:
         split_args: The host record of one replica batch, `uint32[7]`
-            (`mixed_step_split`). It cuts the batch into a head view (rows
-            `[0, r)`) and a tail view (rows `[r, batch)`): [0] head rows `r`
-            (0 = no split), [1] head tokens, [2] head max query length, [3]
-            head max cache length, [4] tail max query length, [5] tail max
+            (the KV cache input `mixed_step_split`). It cuts the batch into a
+            head view (rows `[0, r)`) and a tail view (rows `[r, batch)`):
+            [0] head rows `r` (0 = no split), [1] head tokens, [2] head max
+            query length, [3] head max cache length, [4] tail max query length, [5] tail max
             cache length, [6] total context length of the prefill view.
             Slots 2-5 are the `[1]` max-length operands of the two cache
             views, so they keep the caches' `uint32`.
@@ -246,68 +245,3 @@ def rebase_row_offsets[
         block_dim=128,
     )
     return rebased^
-
-
-@inline(.always)
-def paged_cache_rows(
-    blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
-    page_stride: TileTensor[DType.int64, address_space=.GENERIC, ...],
-    cache_lengths: TileTensor[DType.uint32, address_space=.GENERIC, ...],
-    lookup_table: TileTensor[DType.uint32, address_space=.GENERIC, ...],
-    split_args: TileTensor[DType.uint32, address_space=.GENERIC, ...],
-    first_row: Int,
-    num_rows: Int,
-    max_lengths_slot: Int,
-    out result: PagedKVCacheCollection[
-        blocks.dtype,
-        KVCacheStaticParams(
-            blocks.static_shape[4],
-            blocks.static_shape[5],
-            blocks.static_shape[1] == 1,
-        ),
-        blocks.static_shape[3],
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutUntrackedOrigin,
-    ],
-):
-    """Builds the paged cache over batch rows `[first_row, first_row +
-    num_rows)`, with max lengths from `split_args[max_lengths_slot:+2]`.
-
-    Same type as the `generic_get_paged_cache` collection of the whole batch;
-    only the per-row tables move and the max lengths change. The caller
-    checks that the lookup table and `split_args` are packed.
-    """
-    var lut_cols = Int(lookup_table.dim[1]())
-    var lengths = split_args.unsafe_ptr().unsafe_offset(max_lengths_slot)
-    return generic_get_paged_cache[
-        blocks.dtype,
-        KVCacheStaticParams(
-            blocks.static_shape[4],
-            blocks.static_shape[5],
-            blocks.static_shape[1] == 1,
-        ),
-        blocks.static_shape[3],
-    ](
-        TileTensor(blocks.unsafe_ptr(), blocks.layout).as_unsafe_any_origin(),
-        TileTensor(page_stride.unsafe_ptr(), page_stride.layout)
-        .as_imm()
-        .as_unsafe_any_origin(),
-        TileTensor(
-            cache_lengths.unsafe_ptr().unsafe_offset(first_row),
-            tt_row_major(num_rows),
-        )
-        .as_imm()
-        .as_unsafe_any_origin(),
-        TileTensor(
-            lookup_table.unsafe_ptr().unsafe_offset(first_row * lut_cols),
-            tt_row_major(num_rows, lut_cols),
-        )
-        .as_imm()
-        .as_unsafe_any_origin(),
-        TileTensor(lengths, tt_row_major(1)).as_imm().as_unsafe_any_origin(),
-        TileTensor(lengths.unsafe_offset(1), tt_row_major(1))
-        .as_imm()
-        .as_unsafe_any_origin(),
-    )

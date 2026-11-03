@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Strided operands keep the unsplit route of the mixed-step MHA split (B200).
 
-`mo.mha.ragged.paged.mixed_step_split` runs a batch as two row-range views
+`mo.mha.ragged.paged` with a split record runs a batch as two row-range views
 that are pointer offsets, so it reads its operands as packed. A valid split
 record paired with a strided operand must therefore keep the single launch:
 the output must equal the call with an all-zero record on the same inputs.
 
 A Python graph cannot build such a call (a strided slice is copied into a
-packed tensor before the op runs), so this test calls the op's `execute` with
+packed tensor before the op runs), so this test calls the op's body with
 hand-built strided views. The gaps of each view hold in-range wrong values, so
 a packed read gives wrong results instead of a fault.
 
@@ -37,7 +37,7 @@ from std.memory import bitcast
 from std.sys import align_of
 from std.utils.index import IndexList
 
-from builtin_kernels.attention import Struct_mha_ragged_paged_mixed_step_split
+from builtin_kernels.attention import _execute_mha_ragged_paged
 from extensibility import (
     IOSpec,
     ManagedTensorSlice,
@@ -47,7 +47,7 @@ from extensibility import (
 from extensibility.managed_tensor_slice import _IndexListToTileLayout
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
-from nn.attention.mixed_step_split import MIXED_STEP_SPLIT_SIZE
+from kv_cache.mixed_step_split import MIXED_STEP_SPLIT_SIZE
 
 comptime HEAD_DIM = 256
 comptime NUM_Q_HEADS = 24
@@ -315,22 +315,25 @@ def run_op(
         io_spec=IOSpec.Output, static_spec=OutputSpec
     ](output_d.unsafe_ptr(), (total_q, NUM_Q_HEADS, HEAD_DIM))
 
-    Struct_mha_ragged_paged_mixed_step_split.execute[
-        target="gpu", mask_str="causal"
+    _execute_mha_ragged_paged[
+        target="gpu",
+        mask_str="causal",
+        local_window_size=-1,
+        v_head_dim=-1,
     ](
-        output,
-        q,
-        row_offsets,
-        blocks,
-        page_stride,
-        cache_lengths,
-        lut,
-        max_prompt,
-        max_cache_t,
+        output.to_tile_tensor(),
+        q.to_tile_tensor(),
+        row_offsets.to_tile_tensor(),
+        blocks.to_tile_tensor(),
+        page_stride.to_tile_tensor(),
+        cache_lengths.to_tile_tensor(),
+        lut.to_tile_tensor(),
+        max_prompt.to_tile_tensor(),
+        max_cache_t.to_tile_tensor(),
         UInt32(0),
         Float32(1.0) / sqrt(Float32(HEAD_DIM)),
-        metadata,
-        split_args,
+        metadata.to_tile_tensor(),
+        split_args.to_tile_tensor(),
         ctx,
     )
     var output_h = ctx.enqueue_create_host_buffer[DType.bfloat16](
