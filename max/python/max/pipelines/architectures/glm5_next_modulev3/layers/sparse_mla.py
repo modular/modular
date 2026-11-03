@@ -125,6 +125,47 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
         tail: KPoolTail,
     ) -> Tensor:
         """Runs the absorbed attention over ``x``."""
+        out, _ = self.attend(
+            x,
+            kv_collection,
+            indexer_kv_collection,
+            layer_idx,
+            input_row_offsets,
+            freqs_cis,
+            tail,
+        )
+        return out
+
+    def attend(
+        self,
+        x: Tensor,
+        kv_collection: PagedCacheValues,
+        indexer_kv_collection: PagedCacheValues,
+        layer_idx: Tensor,
+        input_row_offsets: Tensor,
+        freqs_cis: Tensor,
+        tail: KPoolTail,
+        prev_selection: Tensor | None = None,
+        selection_lag: int = 0,
+    ) -> tuple[Tensor, Tensor]:
+        """Returns ``o_proj``'s partial sums and the token selection.
+
+        Args:
+            x: The layer's input rows.
+            kv_collection: The latent cache.
+            indexer_kv_collection: The indexer key cache.
+            layer_idx: This layer's slot in both caches.
+            input_row_offsets: Offsets of each request's rows.
+            freqs_cis: The rotary table.
+            tail: The k-pool tail ring at this layer.
+            prev_selection: A selection to attend over instead of running the
+                indexer, for an MTP draft step that reuses its first step's.
+            selection_lag: Positions between the token ``prev_selection`` was
+                made for and this call's token.
+        """
+        assert prev_selection is not None or selection_lag == 0, (
+            "selection_lag needs a prev_selection to lag"
+        )
         if kv_collection.kv_scales is not None:
             raise ValueError(
                 "An FP8 latent cache with a BF16 kv_b_proj is not reachable: "
@@ -136,14 +177,17 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
         qkv = quant_ops.matmul(x, self.wqkv)
         q_a_out, kv = qkv.split([self.q_lora_rank, self.cache_head_dim], axis=1)
         q_a_normed = self.q_a_layernorm(q_a_out)
-        selection = self.indexer(
-            x,
-            q_a_normed,
-            input_row_offsets,
-            indexer_kv_collection,
-            layer_idx,
-            tail,
-        )
+        if prev_selection is None:
+            selection = self.indexer(
+                x,
+                q_a_normed,
+                input_row_offsets,
+                indexer_kv_collection,
+                layer_idx,
+                tail,
+            )
+        else:
+            selection = prev_selection
 
         xq = quant_ops.matmul(q_a_normed, self.q_b_proj)
         xq = xq.reshape((xq.shape[0], self.n_heads, self.qk_head_dim))
@@ -186,8 +230,9 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
             index_kpool=self.indexer.kpool,
             index_pool_topk=self.indexer.pools_selected,
             index_kpool_select_tail=self.indexer.always_select_tail,
+            selection_lag=selection_lag,
         ).rebind_mapping(xq.mapping)
         attn_out = attn_out.reshape(
             (attn_out.shape[0], self.n_heads * self.v_head_dim)
         )
-        return self.o_proj(attn_out)
+        return self.o_proj(attn_out), selection

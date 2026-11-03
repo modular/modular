@@ -35,7 +35,6 @@ from max.nn.legacy.kv_cache import (
     spec_decode_cache_slack,
 )
 from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.glm5_next.model_config import (
     LINEAR_ATTENTION,
     MLA_KERNEL_LATENT_WIDTH,
@@ -122,6 +121,10 @@ class Glm5NextConfig(DeepseekV3_2Config):
     swiglu_limit: float = 10.0
     """Clamp applied before the activation in every MLP and expert."""
 
+    index_share_for_mtp_iteration: bool = True
+    """Whether the MTP draft's later steps reuse its first step's top-k
+    selection."""
+
     hf_quantization_config: dict[str, Any] | None = None
     quant_scheme: Glm5NextQuantScheme | None = None
     declared_dtype: DType | None = None
@@ -135,14 +138,12 @@ class Glm5NextConfig(DeepseekV3_2Config):
         state_dict: Mapping[str, Any],
         outputs: ModelOutputConfig,
     ) -> Self:
-        """Resolves checkpoint precision and validates the supported output mode."""
-        if (
-            outputs.return_logits is not ReturnLogits.LAST_TOKEN
-            or outputs.return_hidden_states is not ReturnHiddenStates.NONE
-        ):
-            raise NotImplementedError(
-                "GLM-5.3-Flash on ModuleV3 supports only last-token logits without hidden-state outputs"
-            )
+        """Resolves checkpoint precision.
+
+        The decoder returns only the last token's logits, whatever
+        ``outputs`` asks for; the fused MTP graph sets its own outputs.
+        """
+        del outputs
         self.quant_config = self.resolve_quant_scheme(state_dict)
         for name, weight in state_dict.items():
             if name.endswith("e_score_correction_bias"):
@@ -383,6 +384,9 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 MLA_KERNEL_LATENT_WIDTH,
             ),
             swiglu_limit=getattr(text_config, "swiglu_limit", 10.0),
+            index_share_for_mtp_iteration=getattr(
+                text_config, "index_share_for_mtp_iteration", True
+            ),
             hf_quantization_config=resolve_hf_quant_config(
                 huggingface_config, {}
             ),

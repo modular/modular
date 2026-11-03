@@ -337,6 +337,11 @@ def register_all_models() -> None:
             "mtp_glm5_next_draft_arch",
         ),
         _LazyArch(
+            "MTPGlm5NextDraftModel_ModuleV3",
+            ".mtp_glm5_next_modulev3",
+            "mtp_glm5_next_modulev3_draft_arch",
+        ),
+        _LazyArch(
             "MTPGlmMoeDsaDraftModel_ModuleV3",
             ".glm5_1_modulev3",
             "glm5_1_mtp_draft_arch",

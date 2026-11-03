@@ -90,11 +90,14 @@ it is never published.
 """
 
 
+SPEC_STATE_LEAF_ORDER = (*STATE_LEAF_ORDER, VERIFY_RING_LEAF_ID)
+"""Leaf ids a speculative cache declares, in order, as
+:func:`with_verify_ring` appends them."""
+
+
 def leaf_inputs(device: Any, leaf_id: str) -> Any:
     """Returns one device's inputs for ``leaf_id``."""
-    return device.leaves[
-        (*STATE_LEAF_ORDER, VERIFY_RING_LEAF_ID).index(leaf_id)
-    ]
+    return device.leaves[SPEC_STATE_LEAF_ORDER.index(leaf_id)]
 
 
 def has_verify_ring(device: Any) -> bool:

@@ -402,13 +402,14 @@ def spec_decode_architecture(
         batching=_BatchProcessor,
         cascade_pipeline_factory=None,
         supports_device_graph_capture=draft.supports_device_graph_capture,
-        # Nemotron-H, the one recurrent ModuleV3 target, keeps prefix caching
-        # on, as its fused pairing did.
-        # TODO(MXSERV-698): Check that its checkpoints land at the accepted
+        # Recurrent ModuleV3 targets keep prefix caching on, as their fused
+        # pairings did, unless they opt out.
+        # TODO(MXSERV-698): Check that their checkpoints land at the accepted
         # depth, or turn it off here too.
         required_arguments=(
             {**base.required_arguments, "enable_prefix_caching": False}
-            if base.checkpoints_recurrent_state and not modulev3
+            if base.checkpoints_recurrent_state
+            and (not modulev3 or not base.prefix_caching_under_spec)
             else base.required_arguments
         ),
         config=(

@@ -260,6 +260,13 @@ class SupportedArchitecture:
     A prefix hit is safe only where the state that consumed exactly that
     prefix is restored with it."""
 
+    prefix_caching_under_spec: bool = True
+    """Whether a ModuleV3 pairing that speculates over this recurrent target
+    keeps prefix caching on.
+
+    Read only when :attr:`checkpoints_recurrent_state` is set: a graph-API
+    recurrent target always turns it off under speculation."""
+
     context_validators: list[
         Callable[[TextContext | TextAndVisionContext | PixelContext], None]
     ] = field(default_factory=list)

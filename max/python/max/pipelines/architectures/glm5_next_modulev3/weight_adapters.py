@@ -108,6 +108,8 @@ def _squeeze_conv(weight: WeightData) -> WeightData:
 def convert_glm5_next_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig,
+    *,
+    keep_mtp_layer: bool = False,
     **unused_kwargs: object,
 ) -> dict[str, WeightData]:
     """Converts a GLM-5.3-Flash checkpoint to the ModuleV3 weight names.
@@ -116,11 +118,13 @@ def convert_glm5_next_state_dict(
         state_dict: The raw checkpoint weights.
         huggingface_config: The checkpoint's config, read for the layer count
             that identifies the MTP draft layer.
+        keep_mtp_layer: Whether to keep the MTP draft layer, under
+            ``language_model.layers.{num_hidden_layers}.``, for the draft.
         **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
-        The renamed weights. The vision tower and the MTP draft layer are
-        dropped: the graph is text-only and has no draft head.
+        The renamed weights. The vision tower is dropped, since the graph is
+        text-only, and so is the MTP draft layer unless it is kept.
     """
     text_config = getattr(huggingface_config, "text_config", huggingface_config)
     mtp_prefix = f"language_model.layers.{text_config.num_hidden_layers}."
@@ -135,7 +139,7 @@ def convert_glm5_next_state_dict(
         if checkpoint_name.startswith("model.visual."):
             continue
         name = _lm_name(checkpoint_name)
-        if name is None or name.startswith(mtp_prefix):
+        if name is None or (name.startswith(mtp_prefix) and not keep_mtp_layer):
             continue
         weight = value.data()
 
@@ -170,16 +174,14 @@ def convert_registered_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig,
     pipeline_config: PipelineConfig,
-    **kwargs: object,
+    **unused_kwargs: object,
 ) -> dict[str, WeightData]:
     """Adapts the checkpoint and explicitly casts the device-selected mHC weights.
 
     This cast is part of the architecture's precision policy even when the
     generic automatic weight cast is disabled.
     """
-    adapted = convert_glm5_next_state_dict(
-        state_dict, huggingface_config, **kwargs
-    )
+    adapted = convert_glm5_next_state_dict(state_dict, huggingface_config)
     text_config = getattr(huggingface_config, "text_config", huggingface_config)
     scheme = checkpoint_quant_scheme(
         resolve_hf_quant_config(huggingface_config, {}),

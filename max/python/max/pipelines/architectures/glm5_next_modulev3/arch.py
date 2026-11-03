@@ -52,6 +52,14 @@ glm5_next_modulev3_arch = SupportedArchitecture(
     },
     config=Glm5NextConfig,
     memory_planner=Glm5NextMemoryPlanner,
+    checkpoints_recurrent_state=True,
+    # The KDA state checkpoints only at a page boundary, which a step's
+    # accepted drafts move past.
+    prefix_caching_under_spec=False,
+    checkpoint_drafts={"mtp": "MTPGlm5NextDraftModel"},
+    # The graph-API pairing's name, which engines that bind the fused graph
+    # by name already know.
+    spec_decode_graph_names={"mtp": "glm5_next_with_mtp_graph"},
     multi_gpu_supported=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,

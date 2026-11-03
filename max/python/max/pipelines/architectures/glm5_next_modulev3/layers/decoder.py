@@ -32,7 +32,7 @@ from max.tensor.sharding import DeviceMapping, Sharded, auto_reshard
 from ...deepseekV3_2_modulev3.layers.moe import DeepseekV3_2TensorParallelMoE
 from ..model_config import Glm5NextConfig
 
-__all__ = ["Glm5NextDecoderLayer", "write_back"]
+__all__ = ["Glm5NextDecoderLayer", "feed_forward", "write_back"]
 
 
 def write_back(
@@ -54,6 +54,34 @@ def write_back(
     placed = post.cast(dtype).unsqueeze(-1) * y.unsqueeze(1)
     mixed = comb.cast(dtype).transpose(-1, -2) @ streams
     return placed + mixed
+
+
+def feed_forward(
+    mlp: Module[..., Tensor], h: Tensor, comm_buffers: EPCommBuffers | None
+) -> Tensor:
+    """Runs a feed-forward block on the normalized ``h``, replicated out."""
+    replicated = DeviceMapping.replicated(h.mesh)
+    if isinstance(mlp, DeepseekV3_2TensorParallelMoE):
+        # Its experts are split by columns, so every device needs every
+        # row. Its float32 combine is a sum of per-device partials, and
+        # casting it back to bfloat16 needs the sum: let that cast
+        # all-reduce first.
+        with auto_reshard(mode="silent"):
+            y = mlp(h)
+        return y.to(replicated)
+    # The other feed-forward blocks are per token, so each device runs
+    # them over its own share of the rows rather than every device over
+    # all of them. That is also what keeps a device's EP dispatch under
+    # its cap.
+    rows = h.shape[0]
+    h = h.to(DeviceMapping(h.mesh, (Sharded(0),)))
+    if isinstance(mlp, ExpertParallelMoE):
+        y = mlp(h, comm_buffers)
+    else:
+        y = mlp(h)
+    # Gathering the shards back gives a row count the compiler cannot
+    # prove equal to the input's; it is, by construction.
+    return F.rebind(y.to(replicated), [rows, y.shape[1]])
 
 
 def _site(config: Glm5NextConfig) -> HyperConnection:
@@ -108,24 +136,6 @@ class Glm5NextDecoderLayer(Module[..., Tensor]):
         streams = write_back(streams, y.to(replicated), post, comb)
 
         post, comb, h = self.hc_ffn(streams, self.post_attention_layernorm)
-        if isinstance(self.mlp, DeepseekV3_2TensorParallelMoE):
-            # Its experts are split by columns, so every device needs every
-            # row. Its float32 combine is a sum of per-device partials, and
-            # casting it back to bfloat16 needs the sum: let that cast
-            # all-reduce first.
-            with auto_reshard(mode="silent"):
-                y = self.mlp(h)
-            return write_back(streams, y.to(replicated), post, comb)
-        # The other feed-forward blocks are per token, so each device runs
-        # them over its own share of the rows rather than every device over
-        # all of them. That is also what keeps a device's EP dispatch under
-        # its cap.
-        h = h.to(DeviceMapping(h.mesh, (Sharded(0),)))
-        if isinstance(self.mlp, ExpertParallelMoE):
-            y = self.mlp(h, comm_buffers)
-        else:
-            y = self.mlp(h)
-        # Gathering the shards back gives a row count the compiler cannot
-        # prove equal to the streams'; it is, by construction.
-        y = F.rebind(y.to(replicated), [streams.shape[0], y.shape[1]])
-        return write_back(streams, y, post, comb)
+        return write_back(
+            streams, feed_forward(self.mlp, h, comm_buffers), post, comb
+        )

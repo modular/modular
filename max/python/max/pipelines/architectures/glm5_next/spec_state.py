@@ -75,6 +75,7 @@ from .state_cache import (
 
 __all__ = [
     "Glm5NextRecurrentState",
+    "RecurrentStateRollback",
     "deferred_seed_offsets",
     "fold_kda_state_pools",
     "replay_tail_seeds",
@@ -192,20 +193,20 @@ def replay_tail_seeds(
             )
 
 
-class Glm5NextRecurrentState:
-    """The verify's state capture and the accepted-prefix rollback.
+class RecurrentStateRollback:
+    """What a verify captures for the rollback, and the rollback itself.
 
-    Used in this order: :meth:`capturing` around the target's verify,
-    :meth:`roll_forward` once the accepted count is known, then
-    :meth:`capturing_draft` around the draft's first step, which runs its own
-    indexer over the verified window, and :meth:`replay_draft_tail` after it.
-    Rolling forward before the count settles lands the state on a prefix the
-    row never accepted, and seeding the draft's ring before its step has run
-    lets that step seed it again, both silently.
+    A subclass binds the captures to its target's layers around the verify
+    and around the draft's first step; this half reads only what they
+    collected, so the graph-API and ModuleV3 targets share it. Used in this
+    order: the verify, :meth:`roll_forward` once the accepted count is known,
+    the draft's first step, then :meth:`replay_draft_tail`. Rolling forward
+    before the count settles lands the state on a prefix the row never
+    accepted, and seeding the draft's ring before its step has run lets that
+    step seed it again, both silently.
     """
 
-    def __init__(self, target: Glm5Next) -> None:
-        self.target = target
+    def __init__(self) -> None:
         self.kda_captures: list[list[KdaReplayInputs]] = []
         """Per-device, per-KDA-layer conv inputs the verify recorded."""
         self.tail_captures: list[list[KpoolTailReplayInputs]] = []
@@ -213,7 +214,7 @@ class Glm5NextRecurrentState:
         self.draft_tail_captures: list[list[KpoolTailReplayInputs]] = []
         """Per-device tail-seed inputs of the draft's first step."""
         self.num_draft_tokens: Dim | None = None
-        """The verify's draft width ``K``. Set by :meth:`capturing`."""
+        """The verify's draft width ``K``, set when the verify is bound."""
         self.verify_width: TensorValue | None = None
         """The verify width operand the forward and the rollback share.
 
@@ -225,79 +226,17 @@ class Glm5NextRecurrentState:
         which :meth:`roll_forward` builds and :meth:`replay_draft_tail`
         reuses."""
 
-    def _sublayers(self) -> Iterator[object]:
-        for layer in self.target.layers:
-            assert isinstance(layer, Glm5NextDecoderLayer)
-            yield layer.self_attn
-
-    @contextmanager
-    def capturing(
-        self, num_draft_tokens: Dim, row_offsets: Sequence[TensorValue]
-    ) -> Iterator[None]:
-        """Binds the target's state capture for the verify inside.
-
-        Unwound on the way out, so the draft's own forward cannot append to
-        the KDA captures.
-
-        Args:
-            num_draft_tokens: The verify's draft width ``K``.
-            row_offsets: The verified window's offsets on each device.
-        """
-        n_devs = len(row_offsets)
+    def _start_verify(self, num_draft_tokens: Dim, n_devs: int) -> None:
+        """Resets the captures for a verify of width ``num_draft_tokens``."""
         self.kda_captures = [[] for _ in range(n_devs)]
         self.tail_captures = [[] for _ in range(n_devs)]
         self.num_draft_tokens = num_draft_tokens
         self.verify_width = verify_width_operand(num_draft_tokens)
-        seeds = deferred_seed_offsets(num_draft_tokens, row_offsets)
-        self._bind(self.kda_captures, self.verify_width, seeds)
-        try:
-            yield
-        finally:
-            self._bind(None, None, None)
 
-    def _bind(
-        self,
-        kda_captures: list[list[KdaReplayInputs]] | None,
-        verify_width: TensorValue | None,
-        seeds: list[TensorValue] | None,
-    ) -> None:
-        tail_captures = None if seeds is None else self.tail_captures
-        for sublayer in self._sublayers():
-            if isinstance(sublayer, Glm5NextKdaSublayer):
-                sublayer.replay_capture = kda_captures
-                sublayer.verify_width = verify_width
-            else:
-                assert isinstance(sublayer, Glm5NextSparseMLASublayer)
-                sublayer.tail_capture = tail_captures
-                sublayer.tail_seed_offsets = seeds
-
-    @contextmanager
-    def capturing_draft(
-        self,
-        draft_sublayer: Glm5NextSparseMLASublayer,
-        row_offsets: Sequence[TensorValue],
-    ) -> Iterator[None]:
-        """Binds the draft's tail capture for its first step inside.
-
-        That step runs the draft's indexer over the same verified window, so
-        its ring defers to :meth:`replay_draft_tail` like the target's defers
-        to :meth:`roll_forward`.
-
-        Args:
-            draft_sublayer: The draft layer's sparse-MLA sublayer.
-            row_offsets: The verified window's offsets on each device.
-        """
+    def _start_draft(self, n_devs: int) -> None:
+        """Resets the draft's tail captures for its first step."""
         assert self.num_draft_tokens is not None, "draft before verify"
-        self.draft_tail_captures = [[] for _ in row_offsets]
-        draft_sublayer.tail_capture = self.draft_tail_captures
-        draft_sublayer.tail_seed_offsets = deferred_seed_offsets(
-            self.num_draft_tokens, row_offsets
-        )
-        try:
-            yield
-        finally:
-            draft_sublayer.tail_capture = None
-            draft_sublayer.tail_seed_offsets = None
+        self.draft_tail_captures = [[] for _ in range(n_devs)]
 
     def roll_forward(
         self,
@@ -400,3 +339,88 @@ class Glm5NextRecurrentState:
             num_draft_tokens,
             signal_buffers,
         )
+
+
+class Glm5NextRecurrentState(RecurrentStateRollback):
+    """The graph-API target's state capture, bound around its verify.
+
+    Used in this order: :meth:`capturing` around the target's verify,
+    :meth:`roll_forward` once the accepted count is known, then
+    :meth:`capturing_draft` around the draft's first step, which runs its own
+    indexer over the verified window, and :meth:`replay_draft_tail` after it.
+    """
+
+    def __init__(self, target: Glm5Next) -> None:
+        super().__init__()
+        self.target = target
+
+    def _sublayers(self) -> Iterator[object]:
+        for layer in self.target.layers:
+            assert isinstance(layer, Glm5NextDecoderLayer)
+            yield layer.self_attn
+
+    @contextmanager
+    def capturing(
+        self, num_draft_tokens: Dim, row_offsets: Sequence[TensorValue]
+    ) -> Iterator[None]:
+        """Binds the target's state capture for the verify inside.
+
+        Unwound on the way out, so the draft's own forward cannot append to
+        the KDA captures.
+
+        Args:
+            num_draft_tokens: The verify's draft width ``K``.
+            row_offsets: The verified window's offsets on each device.
+        """
+        self._start_verify(num_draft_tokens, len(row_offsets))
+        assert self.verify_width is not None
+        seeds = deferred_seed_offsets(num_draft_tokens, row_offsets)
+        self._bind(self.kda_captures, self.verify_width, seeds)
+        try:
+            yield
+        finally:
+            self._bind(None, None, None)
+
+    def _bind(
+        self,
+        kda_captures: list[list[KdaReplayInputs]] | None,
+        verify_width: TensorValue | None,
+        seeds: list[TensorValue] | None,
+    ) -> None:
+        tail_captures = None if seeds is None else self.tail_captures
+        for sublayer in self._sublayers():
+            if isinstance(sublayer, Glm5NextKdaSublayer):
+                sublayer.replay_capture = kda_captures
+                sublayer.verify_width = verify_width
+            else:
+                assert isinstance(sublayer, Glm5NextSparseMLASublayer)
+                sublayer.tail_capture = tail_captures
+                sublayer.tail_seed_offsets = seeds
+
+    @contextmanager
+    def capturing_draft(
+        self,
+        draft_sublayer: Glm5NextSparseMLASublayer,
+        row_offsets: Sequence[TensorValue],
+    ) -> Iterator[None]:
+        """Binds the draft's tail capture for its first step inside.
+
+        That step runs the draft's indexer over the same verified window, so
+        its ring defers to :meth:`replay_draft_tail` like the target's defers
+        to :meth:`roll_forward`.
+
+        Args:
+            draft_sublayer: The draft layer's sparse-MLA sublayer.
+            row_offsets: The verified window's offsets on each device.
+        """
+        self._start_draft(len(row_offsets))
+        assert self.num_draft_tokens is not None
+        draft_sublayer.tail_capture = self.draft_tail_captures
+        draft_sublayer.tail_seed_offsets = deferred_seed_offsets(
+            self.num_draft_tokens, row_offsets
+        )
+        try:
+            yield
+        finally:
+            draft_sublayer.tail_capture = None
+            draft_sublayer.tail_seed_offsets = None
