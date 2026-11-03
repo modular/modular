@@ -15,7 +15,7 @@
 #include "../Logging/MojoExpressionLogger.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "Logging.h"
-#include "Mojo/MojoTooling/REPLPythonExprUtils.h"
+#include "Mojo/MojoREPL/REPLPythonExprUtils.h"
 #include "MojoDiagnostic.h"
 #include "MojoExpressionParser.h"
 #include "MojoExpressionVariable.h"

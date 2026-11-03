@@ -29,6 +29,7 @@
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/SharedState.h"
+#include "Mojo/MojoREPL/REPL.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/POPDialect/POPTypes.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
@@ -137,6 +138,7 @@ struct MojoTypeSystem::Impl {
     // Configure the parser context.
     parserContext = std::make_unique<MojoParserContext>(
         sourceMgr, &mlirContext, compilationOptions, KGEN::FrontendOptions());
+    replContext = std::make_unique<MojoREPLContext>(*parserContext);
 
     auto targetInfoOr = M::getTargetInfoFor(
         &mlirContext, compilationOptions.targetTriple,
@@ -182,6 +184,7 @@ struct MojoTypeSystem::Impl {
 
   /// The main parser context used for compilation.
   std::unique_ptr<MojoParserContext> parserContext;
+  std::unique_ptr<MojoREPLContext> replContext;
 
   /// The target that this typesystem is associated with. It's available only
   /// for expression evaluation.
@@ -226,6 +229,8 @@ LIT::SharedState &MojoTypeSystem::getSharedState() {
 MojoParserContext &MojoTypeSystem::getParserContext() {
   return *impl->parserContext;
 }
+
+MojoREPLContext &MojoTypeSystem::getREPLContext() { return *impl->replContext; }
 
 TargetInfoAttr MojoTypeSystem::GetTargetInfo() const {
   return impl->targetInfo;

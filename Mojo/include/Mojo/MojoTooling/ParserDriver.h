@@ -17,78 +17,21 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <filesystem>
 #include <memory>
-#include <optional>
-#include <string>
-#include <utility>
-#include <vector>
 
 namespace llvm {
-class SMDiagnostic;
 class SourceMgr;
 } // namespace llvm
 
-namespace M {
-namespace KGEN {
+namespace M::KGEN {
 class CompilationOptions;
 struct FrontendOptions;
 namespace LIT {
 class ASTDecl;
 class SharedState;
-class MojoParserContext;
 } // namespace LIT
-namespace Mojo {
-struct CodeCompletionResult;
-struct SignatureHelpResult;
-} // namespace Mojo
-} // namespace KGEN
-} // namespace M
-
-//===----------------------------------------------------------------------===//
-// MojoParserREPLListener
-//===----------------------------------------------------------------------===//
+} // namespace M::KGEN
 
 namespace M::KGEN::LIT {
-
-/// This class provides a listener for interacting with the parser for REPL
-/// like expressions. It contains various hooks to allow for customizing the
-/// behavior of the parser.
-class MojoParserREPLListener {
-public:
-  virtual ~MojoParserREPLListener() = default;
-
-  //===------------------------------------------------------------------===//
-  // Notifications
-
-  /// The following methods are called by the parser to notify the listener of
-  /// various events during parsing. These can be useful for logging,
-  /// debugging, etc.
-
-  /// Notify the listener that the parser has wrapped the input expression
-  /// into code capable of being parsed. `wrappedExpr` is the fully wrapped
-  /// expression.
-  virtual void notifyWrappedExpr(StringRef wrappedExpr) = 0;
-
-  /// Notify the listener that the parser applied fixes the original input
-  /// expression.
-  virtual void notifyFixedExpr(StringRef fixedExpr) = 0;
-
-  /// Notify the listener that the given set of diagnostics were emitted while
-  /// parsing the wrapped expression.
-  virtual void notifyDiagnostics(ArrayRef<llvm::SMDiagnostic> diagnostics) = 0;
-
-  //===------------------------------------------------------------------===//
-  // Queries
-
-  /// The following methods are called by the parser to query the listener for
-  /// various information. These can be useful for customizing the behavior of
-  /// the parser.
-
-  /// Query the listener to see if a variable with the given name and type
-  /// should be persisted. If this returns true, the variable will be appended
-  /// to the list of fields within the struct passed to the expression
-  /// function.
-  virtual bool shouldPersistVariable(StringRef name, Type type) = 0;
-};
 
 //===----------------------------------------------------------------------===//
 // MojoParserContext
@@ -161,147 +104,6 @@ public:
   /// Returns true if an error occurred during parsing.
   bool wasErrorEmitted() const;
 
-  //===--------------------------------------------------------------------===//
-  // REPL
-
-  /// The following methods provide functionality for interacting with the
-  /// parser context from REPL like environments.
-
-  /// This class provides support for mapping between the input expression to a
-  /// REPL expression, and the generated wrapped expression used during the
-  /// parsing of the REPL expression.
-  class REPLLocMapper {
-  public:
-    class ExprLocMapper;
-
-    ~REPLLocMapper();
-
-    /// Map the given location in the input expression to the wrapped
-    /// expression, or vice versa. Returns an invalid location if the location
-    /// is not mapped.
-    llvm::SMLoc mapLocation(llvm::SMLoc loc) const;
-
-    /// Map the given range in the input expression to the wrapped expression,
-    /// or vice versa. Returns invalid locations in the range if they cannot
-    /// be mapped.
-    /// This handles exclusive ends that don't belong to the underlying buffers.
-    llvm::SMRange mapRange(llvm::SMRange range) const;
-
-    /// Remap the locations in the given diagnostic, returning a newly formed
-    /// diagnostic.
-    llvm::SMDiagnostic mapDiagnostic(const llvm::SMDiagnostic &diag);
-
-  private:
-    REPLLocMapper(llvm::SourceMgr &sourceMgr);
-
-    /// Allow access to the constructor.
-    friend class MojoParserContext;
-
-    /// The source manager used for the REPL.
-    llvm::SourceMgr &sourceMgr;
-
-    /// The mapper used for each expression within the REPL expression.
-    std::vector<std::unique_ptr<ExprLocMapper>> exprMappers;
-  };
-
-  /// This class represents the result of a parsed REPL expression.
-  struct ParsedREPLExpr {
-    /// Return true if the expression was parsed successfully.
-    bool isValid() const { return exprFnDecl; }
-
-    /// The module decl corresponding to the REPL expression. This field is
-    /// always valid.
-    ASTDecl *moduleDecl;
-
-    /// The function decl corresponding to the REPL expression. If the REPL
-    /// expression failed to parse, this will be null.
-    ASTDecl *exprFnDecl;
-  };
-
-  /// Return the location mapper used for REPL expressions.
-  REPLLocMapper &getREPLLocMapper();
-
-  /// The following methods allow for interacting with the parser for REPL
-  /// like expressions, i.e., in environments like Jupyter notebooks.
-  /// `exprFileId` is the buffer id of the expression to parse within the main
-  /// source manager. `replExprFnName` is the name of the function to use for
-  /// wrapping the expression. `replVariables` is a list of pre-existing
-  /// variables to make available to the expression function, these variables
-  /// should be used as `Pointer[Pointer[]]` fields within a struct that is
-  /// passed by reference to the expression function. For example, given the
-  /// following expression:
-  ///
-  ///   print(a)
-  ///
-  /// Where `a` is a pre-existing repl variable with type `Int`, the
-  /// expression wrapper will effectively emulate the following:
-  ///
-  ///   struct ReplContext:
-  ///     var a: Pointer[Pointer[Int]]
-  ///
-  ///   def replExprFn(context&: ReplContext):
-  ///      print(context.a.load().load())
-  ///
-  ParsedREPLExpr
-  parseREPLExpression(MojoParserREPLListener &listener, unsigned exprFileId,
-                      StringRef replExprFnName,
-                      ArrayRef<std::pair<StringRef, Type>> replVariables);
-
-  /// The following methods allow for interacting with the parser for REPL
-  /// like expressions, i.e., in environments like Jupyter notebooks.
-  /// `exprText` is the expression text, and represents a sub-string of the
-  /// buffer with id `exprFileId`.
-  /// `prevReplExpr` is the decl corresponding to the previously parsed REPL
-  /// expression, whose state should be imported into the new REPL expression.
-  ///
-  /// When `parseForLSP` is true, transitive dependencies (decls referenced by
-  /// the expression but not owned by it) are only signature-resolved rather
-  /// than fully body-resolved. This is correct for LSP doc-string code blocks,
-  /// which need type information but never execute the bodies of library
-  /// functions. It must NOT be set for interactive REPL cells or notebook
-  /// cells, which compile and run the generated code.
-  ParsedREPLExpr
-  parseREPLExpression(MojoParserREPLListener &listener, unsigned exprFileId,
-                      StringRef exprText, StringRef replExprFnName,
-                      ArrayRef<std::pair<StringRef, Type>> replVariables,
-                      ASTDecl *prevReplExpr, bool parseForLSP);
-
-  /// Return the code completion results for the given REPL expression.
-  std::vector<KGEN::Mojo::CodeCompletionResult> codeCompleteREPLExpression(
-      StringRef exprText, uint64_t completionPosition,
-      ArrayRef<std::pair<StringRef, Type>> replVariables);
-  /// Return the code completion results for the given REPL expression.
-  /// `replDecl` corresponds to the decl if a previously parsed repl expression.
-  /// Completion results will only consider state before that expression was
-  /// parsed.
-  std::vector<KGEN::Mojo::CodeCompletionResult>
-  codeCompleteREPLExpression(StringRef exprText, uint64_t completionPosition,
-                             ArrayRef<std::pair<StringRef, Type>> replVariables,
-                             ASTDecl *replDecl);
-
-  /// Return a signature help result for the given REPL expression. `replDecl`
-  /// corresponds to the decl of a previously parsed repl expression. Signature
-  /// results will only consider state before that expression was parsed.
-  std::optional<KGEN::Mojo::SignatureHelpResult> signatureHelpREPLExpression(
-      StringRef exprText, uint64_t position,
-      ArrayRef<std::pair<StringRef, Type>> replVariables, ASTDecl *replDecl);
-
-  /// Remove the previously parsed REPL expression. This allows for removing an
-  /// erroneous expression when it is only detected as invalid after it has been
-  /// parsed.
-  void removeLastREPLExpression();
-
-  /// Return if the given variable name is a hidden persistent variable, that
-  /// is generated by the REPL context.
-  static bool isHiddenPersistentVariable(StringRef name);
-
-private:
-  /// Ensure the completion cache is up-to-date for a completion request.
-  /// Collects the target module list, incrementally updates the cache, and
-  /// returns the buffer identifier to use for the completion buffer (derived
-  /// from replDecl's source buffer for correct import resolution).
-  StringRef prepareCompletionCache(ASTDecl *replDecl);
-
 protected:
   /// A struct representing the internal state of the parser.
   struct Impl;
@@ -314,7 +116,6 @@ protected:
 
 namespace M {
 using KGEN::LIT::MojoParserContext;
-using KGEN::LIT::MojoParserREPLListener;
 } // namespace M
 
 #endif // KGEN_MOJOTOOLING_PARSERDRIVER_H

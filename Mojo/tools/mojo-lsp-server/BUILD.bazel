@@ -27,6 +27,7 @@ modular_cc_binary(
         "//Mojo:MojoTooling",
         "//Mojo:ObjectCompiler",
         "//Mojo:Pipeline",
+        "//Mojo:REPLSupport",
         "//Mojo:Support",
         "//Mojo:ToolCommon",
         "//Mojo/tools/common/lsp-protocol",

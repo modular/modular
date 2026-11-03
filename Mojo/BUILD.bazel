@@ -1469,6 +1469,22 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "REPLSupport",
+    srcs = [
+        "lib/REPLSupport/REPLInternals.h",
+        "lib/REPLSupport/REPLPythonExprUtils.cpp",
+        "lib/REPLSupport/REPLSupport.cpp",
+    ],
+    hdrs = [
+        "include/Mojo/MojoREPL/REPL.h",
+        "include/Mojo/MojoREPL/REPLPythonExprUtils.h",
+    ],
+    deps = [
+        ":MojoTooling",
+    ],
+)
+
+modular_cc_library(
     name = "Precompile",
     srcs = glob(["lib/Precompile/*.cpp"]),
     hdrs = glob(["include/Mojo/Precompile/*.h"]),
@@ -1620,6 +1636,7 @@ modular_shared_library(
         ":MojoTooling",
         ":MojoVariantTypeNameParser",
         ":ObjectCompiler",
+        ":REPLSupport",
         ":TransformUtils",
         "//AsyncRT:RuntimeGlobals",
         "//Init",

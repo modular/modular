@@ -41,6 +41,7 @@ class ASTDecl;
 class ASTType;
 class DefASTDecl;
 class MojoParserContext;
+class MojoREPLContext;
 class SharedState;
 class StructASTDecl;
 } // namespace M::KGEN::LIT
@@ -72,6 +73,7 @@ public:
 
   /// Return the Mojo parser context attached to this type system.
   LIT::MojoParserContext &getParserContext();
+  LIT::MojoREPLContext &getREPLContext();
 
   /// Return the target info that corresponds to the current LLDB target, it
   /// might be invalid if it couldn't be computed.

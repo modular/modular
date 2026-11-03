@@ -15,8 +15,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_MOJOTOOLING_REPLPYTHONEXPRUTILS_H
-#define KGEN_MOJOTOOLING_REPLPYTHONEXPRUTILS_H
+#ifndef KGEN_MOJOREPL_REPLPYTHONEXPRUTILS_H
+#define KGEN_MOJOREPL_REPLPYTHONEXPRUTILS_H
 
 #include "Support/ErrorOr.h"
 #include "llvm/ADT/StringRef.h"
@@ -63,4 +63,4 @@ extractPythonSymbolsFromReplExpr(StringRef pythonExpr);
 } // namespace KGEN
 } // namespace M
 
-#endif // KGEN_MOJOTOOLING_REPLPYTHONEXPRUTILS_H
+#endif // KGEN_MOJOREPL_REPLPYTHONEXPRUTILS_H

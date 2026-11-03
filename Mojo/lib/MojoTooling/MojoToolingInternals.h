@@ -59,63 +59,6 @@ struct MojoParserContext::Impl {
 
   /// The main module we are parsing into.
   mlir::OwningOpRef<ModuleOp> module;
-
-  //===--------------------------------------------------------------------===//
-  // REPL State
-  //===--------------------------------------------------------------------===//
-
-  /// The location mapper used for REPL expressions.
-  MojoParserContext::REPLLocMapper replLocMapper;
-
-  /// The decls of each REPL module that have been successfully parsed, mapped
-  /// to the previous REPL module that they replaced.
-  llvm::MapVector<KGEN::LIT::ASTDecl *, KGEN::LIT::ASTDecl *>
-      prevReplModuleDecls;
-  SmallVector<KGEN::LIT::ASTDecl *> replModuleDecls;
-
-  //===--------------------------------------------------------------------===//
-  // REPL Completion Cache
-  //===--------------------------------------------------------------------===//
-
-  /// Cached parser context used for code completion / signature help. Prior
-  /// REPL modules are replayed into this context incrementally so that
-  /// subsequent completion requests don't re-parse the entire history.
-  struct CompletionCache {
-    llvm::SourceMgr sourceMgr;
-    std::unique_ptr<MojoParserContext> context;
-
-    /// The last resolved REPL module in the cached context.
-    KGEN::LIT::ASTDecl *lastResolvedDecl = nullptr;
-
-    /// How many modules from the main context's replModuleDecls have been
-    /// replayed into this cache.
-    size_t replayedModuleCount = 0;
-
-    /// The replDecl that was used to build this cache. If the caller switches
-    /// between REPL mode (nullptr) and notebook mode (specific cell), the
-    /// cache must be invalidated because the target module set changes.
-    KGEN::LIT::ASTDecl *replDeclKey = nullptr;
-
-    /// Number of completion requests served since the last full rebuild.
-    /// Used to bound memory growth from stale completion modules.
-    size_t completionsSinceRebuild = 0;
-
-    explicit CompletionCache(const KGEN::LIT::SharedState &mainState) {
-      // Suppress diagnostics in the completion cache.
-      sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
-      // Copy include directories so import resolution works correctly.
-      sourceMgr.setIncludeDirs(mainState.getSourceMgr().getIncludeDirs());
-      KGEN::FrontendOptions frontendOptions = mainState.frontendOptions;
-      frontendOptions.autoFixItHandler = nullptr;
-      frontendOptions.useMLIRDiagnostics = false;
-      frontendOptions.parserListener = nullptr;
-      frontendOptions.maxNotesPerDiagnostic = 0;
-      context = std::make_unique<MojoParserContext>(
-          sourceMgr, mainState.getContext(), mainState.options,
-          frontendOptions);
-    }
-  };
-  std::unique_ptr<CompletionCache> completionCache;
 };
 
 } // namespace M::KGEN::LIT

@@ -11,7 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "Mojo/MojoTooling/REPLPythonExprUtils.h"
+#include "Mojo/MojoREPL/REPLPythonExprUtils.h"
 #include "Support/FileSystemExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/FormatVariadic.h"

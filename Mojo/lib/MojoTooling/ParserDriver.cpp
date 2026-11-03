@@ -48,8 +48,7 @@ using llvm::SourceMgr;
 MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                               const KGEN::CompilationOptions &options,
                               const FrontendOptions &frontendOptions)
-    : sharedState(sourceMgr, context, options, frontendOptions),
-      replLocMapper(sourceMgr) {
+    : sharedState(sourceMgr, context, options, frontendOptions) {
   // Create the top-level outer decl, which will contain all things we parse.
   module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
   topLevelDecl = &cast<TopLevelModuleASTDecl>(sharedState.declResolver->addDecl(
