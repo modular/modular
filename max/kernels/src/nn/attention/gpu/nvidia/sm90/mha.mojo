@@ -46,7 +46,6 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    IntTuple,
     Layout,
     TensorEngine,
     TileTensor,
@@ -1274,57 +1273,26 @@ def _mha_sm90[
     #
     # Note the ordering of strides:
     # ((1, 3), (0, 2, 4))
-    # alias output_layout = Layout(
-    #     IntTuple(
-    #         IntTuple(num_row_blocks_per_mma, num_m_mmas),
-    #         IntTuple(
-    #             p_frag_simdwidth,
-    #             p_frag_size // (num_row_blocks_per_mma * p_frag_simdwidth),
-    #             num_n_mmas,
-    #         ),
-    #     ),
-    #     IntTuple(
-    #         IntTuple(p_frag_simdwidth, p_frag_size),
-    #         IntTuple(1, 2 * p_frag_simdwidth, num_m_mmas * p_frag_size),
-    #     ),
-    # )
-    # Vectorizing the layout:
-    comptime vec_output_row_shape = IntTuple(num_row_blocks_per_mma, num_m_mmas)
-    comptime p_vec_output_layout = Layout(
-        IntTuple(
-            vec_output_row_shape,
-            IntTuple(
-                p_frag_size // (num_row_blocks_per_mma * frag_simdwidth),
-                num_n_mmas,
-            ),
-        ),
-        IntTuple(
-            IntTuple(frag_simdwidth, p_frag_size),
-            IntTuple(
-                num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * p_frag_size,
-            ),
-        ),
+    #
+    # shape  = ((num_row_blocks_per_mma, num_m_mmas),
+    #           (p_frag_size // (num_row_blocks_per_mma * p_frag_simdwidth),
+    #            num_n_mmas))
+    # stride = ((p_frag_simdwidth, p_frag_size),
+    #           (num_row_blocks_per_mma * p_frag_simdwidth,
+    #            num_m_mmas * p_frag_size))
+    #
+    # The softmax helpers walk the per-warp fragment as `num_rows_per_warp`
+    # rows by `num_cols_{p,output}` columns: the products of the two mode
+    # sub-shapes.
+    comptime num_rows_per_warp = num_row_blocks_per_mma * num_m_mmas
+    comptime p_frag_cols = p_frag_size // (
+        num_row_blocks_per_mma * frag_simdwidth
     )
-    comptime o_vec_output_layout = Layout(
-        IntTuple(
-            vec_output_row_shape,
-            IntTuple(
-                o_frag_size // (num_row_blocks_per_mma * frag_simdwidth),
-                num_n_mmas,
-            ),
-        ),
-        IntTuple(
-            IntTuple(frag_simdwidth, o_frag_size),
-            IntTuple(
-                num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * o_frag_size,
-            ),
-        ),
+    comptime o_frag_cols = o_frag_size // (
+        num_row_blocks_per_mma * frag_simdwidth
     )
-    comptime num_rows_per_warp = p_vec_output_layout[0].size()
-    comptime num_cols_p = p_vec_output_layout[1].size()
-    comptime num_cols_output = o_vec_output_layout[1].size()
+    comptime num_cols_p = p_frag_cols * num_n_mmas
+    comptime num_cols_output = o_frag_cols * num_n_mmas
 
     # Rowwise max and sum for online softmax
     comptime accum_simd_width = simd_width_of[accum_type]()
@@ -1575,18 +1543,11 @@ def _mha_sm90[
         var p_frag = p_frag_buffer.as_unsafe_any_origin()
 
         # Nested TileTensor views over the flat register tiles: the
-        # hand-built nested layouts mirror the legacy `p_vec_output_layout`
-        # / `o_vec_output_layout` IntTuple geometry leaf-for-leaf (pinned by
-        # `test_mha_vec_output_layout_crd2idx_parity`). `frag_cols` is hoisted
-        # to an explicit param: a parameterized alias whose type arguments
-        # perform division trips a KGEN crash when the alias is instantiated
-        # through a function return type.
-        comptime p_frag_cols = p_frag_size // (
-            num_row_blocks_per_mma * frag_simdwidth
-        )
-        comptime o_frag_cols = o_frag_size // (
-            num_row_blocks_per_mma * frag_simdwidth
-        )
+        # hand-built nested layouts encode the fragment geometry above leaf
+        # for leaf (pinned by `test_mha_vec_output_layout_crd2idx_parity`).
+        # `frag_cols` is hoisted to an explicit param: a parameterized alias
+        # whose type arguments perform division trips a KGEN crash when the
+        # alias is instantiated through a function return type.
         comptime _PVecTTLayout = TTLayout[
             Coord[
                 Coord[

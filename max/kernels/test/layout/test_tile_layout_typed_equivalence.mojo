@@ -24,6 +24,7 @@ hide a change in the mode nesting.
 from std.sys import size_of
 from std.testing import TestSuite, assert_equal
 
+from layout import IntTuple, Layout, coord
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_k_major_typed,
@@ -119,6 +120,100 @@ def _check_sf[BM: Int, BK: Int, SF_SCALE_SIZE: Int]() raises:
         String(tile_sf_layout_k_major_typed[BM, BK, SF_SCALE_SIZE].to_layout()),
         String(tile_sf_layout_k_major[BM, BK, SF_SCALE_SIZE]()),
     )
+
+
+def _assert_k_major_offsets[
+    dtype: DType,
+    BM: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle,
+    legacy: Layout,
+]() raises:
+    """Compares the typed and legacy K-major offsets at query coordinates.
+
+    The printed-form check above pins the layout structure; this probes the
+    coordinates kernels actually index. The SM90 attention and MSA Q tiles
+    read the K offsets as `(0, d)` for every swizzle atom `d`, so those are
+    checked exhaustively, plus the corners and the middle of the tile.
+
+    Parameters:
+        dtype: Element data type of the tensor.
+        BM: Size of the M dimension in the tile.
+        BK: Size of the K dimension in the tile.
+        swizzle_mode: Memory access pattern swizzling mode.
+        legacy: The legacy K-major `Layout` for this configuration.
+    """
+    comptime for j in range(BK):
+        comptime expected = legacy(IntTuple(0, j))
+        comptime actual = Int(
+            tile_layout_k_major_typed[dtype, BM, BK, swizzle_mode](coord[0, j])
+        )
+        assert_equal(
+            actual,
+            expected,
+            String(
+                "K-major K-offset divergence at (0, ",
+                j,
+                ") for BM=",
+                BM,
+                " BK=",
+                BK,
+            ),
+        )
+    # Interior and corner probes beyond the K-offset column.
+    comptime expected_10 = legacy(IntTuple(1, 0))
+    comptime actual_10 = Int(
+        tile_layout_k_major_typed[dtype, BM, BK, swizzle_mode](coord[1, 0])
+    )
+    assert_equal(actual_10, expected_10, "K-major offset divergence at (1, 0)")
+
+    comptime expected_mid = legacy(IntTuple(BM // 2, BK // 2))
+    comptime actual_mid = Int(
+        tile_layout_k_major_typed[dtype, BM, BK, swizzle_mode](
+            coord[BM // 2, BK // 2]
+        )
+    )
+    assert_equal(
+        actual_mid, expected_mid, "K-major offset divergence at middle"
+    )
+
+    comptime expected_last = legacy(IntTuple(BM - 1, BK - 1))
+    comptime actual_last = Int(
+        tile_layout_k_major_typed[dtype, BM, BK, swizzle_mode](
+            coord[BM - 1, BK - 1]
+        )
+    )
+    assert_equal(
+        actual_last, expected_last, "K-major offset divergence at last"
+    )
+
+
+def _check_k_major_offsets[
+    dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
+]() raises:
+    """Compares the typed and legacy K-major offsets at query coordinates.
+
+    Parameters:
+        dtype: Element data type of the tensor.
+        BM: Size of the M dimension in the tile.
+        BK: Size of the K dimension in the tile.
+        swizzle_mode: Memory access pattern swizzling mode.
+    """
+    comptime if _k_fits_swizzle[dtype, BK, swizzle_mode]:
+        _assert_k_major_offsets[
+            dtype,
+            BM,
+            BK,
+            swizzle_mode,
+            tile_layout_k_major[dtype, BM, BK, swizzle_mode](),
+        ]()
+
+
+def test_k_major_offsets_match_legacy() raises:
+    _check_k_major_offsets[.bfloat16, 64, 64, TensorMapSwizzle.SWIZZLE_128B]()
+    _check_k_major_offsets[.bfloat16, 64, 128, TensorMapSwizzle.SWIZZLE_128B]()
+    _check_k_major_offsets[.float16, 128, 64, TensorMapSwizzle.SWIZZLE_64B]()
+    _check_k_major_offsets[.bfloat16, 8, 32, TensorMapSwizzle.SWIZZLE_32B]()
 
 
 def test_k_major_and_mn_major_match_legacy() raises:
