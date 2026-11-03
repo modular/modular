@@ -760,6 +760,7 @@ class BlockDriver(
         vocab_size: int | None = None,
         ep_input_types: Sequence[TensorType | BufferType] = (),
         trailing_input_types: Sequence[TensorType | BufferType] = (),
+        reads_mixed_step_split: bool = False,
     ) -> None:
         super().__init__()
         self._verify = verify
@@ -772,6 +773,10 @@ class BlockDriver(
             include_skippable_draft=declares_skippable_draft(
                 speculative_config
             ),
+            # Only a target whose ops read the records declares them.
+            mixed_step_split=reads_mixed_step_split
+            and speculative_config is not None
+            and speculative_config.mixed_step_split_inputs,
         )
         self.devices = self._input_spec.devices
         self.data_parallel_degree = self._input_spec.data_parallel_degree

@@ -1,0 +1,15 @@
+{
+  "target": "msa_mixed_split",
+  "spec": {
+    "decode_rows": 40,
+    "prompt_rows": 2,
+    "decode_first": 1,
+    "k": 0,
+    "shape_seed": 769535131,
+    "ceiling": 1
+  },
+  "verdict": "PASS",
+  "oracle": "memcheck",
+  "detail": "A full 40-row decode view of single-token rows ahead of two prompt rows, every cache staged at the ceiling: the views read only their own rows of q, the block ids, the block table and the caches, and each equals its rows run alone.",
+  "findings": []
+}

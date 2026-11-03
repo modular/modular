@@ -453,6 +453,19 @@ class SpeculativeConfig(ConfigFileModel):
         ),
     )
 
+    mixed_step_split_inputs: bool = Field(
+        default=False,
+        description=(
+            "Declares one mixed-step split record per device (CPU "
+            "``uint32[7]``) after every other input of the fused "
+            "speculative graph, for a target whose attention ops pick one "
+            "route per batch, so a step that mixes decode and prompt rows "
+            "runs the decode rows on the decode kernels. A target that does "
+            "not read the records declares none, and gen_mef refuses that "
+            "export."
+        ),
+    )
+
     @model_validator(mode="after")
     def _validate_draft_proposal(self) -> Self:
         if (

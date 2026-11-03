@@ -188,11 +188,13 @@ under `draft_proposal: sampled`, which switches `sampling_logits_dtype` for the
 whole sampling path. The in-source default is `float32`, so the bfloat16 arm
 only gets covered when it is built explicitly.
 
-| Define          | Target                    | Effect                         |
-|-----------------|---------------------------|--------------------------------|
-| `ttsd_bf16=1`   | `topk_topp_sampling_dist` | bfloat16 logits in             |
-| `ttmp_bf16=1`   | `topk_topp_masked_probs`  | bfloat16 logits in             |
-| `argsort_i64=1` | `argsort`                 | int64 keys instead of float32. |
+| Define          | Target                    | Effect                                    |
+|-----------------|---------------------------|-------------------------------------------|
+| `ttsd_bf16=1`   | `topk_topp_sampling_dist` | bfloat16 logits in                        |
+| `ttmp_bf16=1`   | `topk_topp_masked_probs`  | bfloat16 logits in                        |
+| `argsort_i64=1` | `argsort`                 | int64 keys instead of float32.            |
+| `msas_fp8=1`    | `msa_mixed_split`         | FP8 e4m3 main KV cache                    |
+| `msas_heads=4`  | `msa_mixed_split`         | 4 KV and index heads per device (unsplit) |
 
 The corpus records a spec, not a build config, so a replay entry always runs
 under the in-source default. Alternate configs belong in a live sweep, not the

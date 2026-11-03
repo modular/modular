@@ -384,6 +384,17 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "msa_mixed_split": FuzzTarget(
+        name="msa_mixed_split",
+        bazel_target="//Kernels/test/fuzz:fuzz_msa_mixed_split.mojo.test",
+        binary="bazel-bin/Kernels/test/fuzz/fuzz_msa_mixed_split.mojo.test",
+        description=(
+            "MiniMax-M3 MSA indexer + attention ops with a mixed-step split"
+            " record: each view equals its rows run alone, bit for bit (cut,"
+            " tail rebase, per-view caches); memcheck (view bounds)"
+        ),
+        default_oracle="memcheck",
+    ),
     "msa_prefill": FuzzTarget(
         name="msa_prefill",
         bazel_target="//Kernels/test/fuzz:fuzz_msa_prefill.mojo.test",

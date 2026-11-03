@@ -4000,6 +4000,40 @@ def mla_kpool_ring_close(
     return results[0].tensor, results[1].tensor
 
 
+_MSA_SPLIT_ARGS_SIZE = 7
+"""Number of ``uint32`` slots in the MSA mixed-step split record."""
+
+
+def _msa_split_args_value(split_args: TensorValue | None) -> TensorValue:
+    """Returns the ``msa_split_args`` operand of the MSA ops.
+
+    ``None`` sends zeros, which the ops read as no split, so a caller without a
+    split record runs today's routes.
+    """
+    if split_args is None:
+        return ops.constant(
+            np.zeros(_MSA_SPLIT_ARGS_SIZE, dtype=np.uint32),
+            dtype=DType.uint32,
+            device=DeviceRef.CPU(),
+        )
+    _validate_argument_tensor(
+        "split_args",
+        split_args,
+        dtype=DType.uint32,
+        rank=1,
+        device=DeviceRef.CPU(),
+    )
+    if (
+        isinstance(split_args.shape[0], StaticDim)
+        and int(split_args.shape[0]) != _MSA_SPLIT_ARGS_SIZE
+    ):
+        raise ValueError(
+            f"split_args must have {_MSA_SPLIT_ARGS_SIZE} elements, got"
+            f" {split_args.shape[0]}"
+        )
+    return split_args
+
+
 @_rejects_split_head_dims
 def msa_sparse_indexer(
     kv_params: KVCacheParams,
@@ -4017,6 +4051,7 @@ def msa_sparse_indexer(
     init_blocks: int,
     local_blocks: int,
     scale: float,
+    split_args: TensorValue | None = None,
 ) -> TensorValue:
     """Selects the top-k key *blocks* per token for MiniMax-M3 sparse attention.
 
@@ -4056,6 +4091,11 @@ def msa_sparse_indexer(
         init_blocks: Always-keep leading blocks.
         local_blocks: Always-keep trailing/local blocks.
         scale: QK scale.
+        split_args: Optional mixed-step split record, ``uint32[7]`` on CPU.
+            It cuts the batch into a head and a tail view; the view of decode
+            rows takes the decode routes and the other the prefill route, in
+            one call. ``None`` sends zeros (no split). Only a BF16 or FP8
+            index-K cache with one index head on NVIDIA splits.
 
     Returns:
         Block indices, int32, ``-1``-padded. Prefill: ``[num_index_heads,
@@ -4149,6 +4189,7 @@ def msa_sparse_indexer(
         index_kv_collection.attention_dispatch_metadata,
         layer_idx,
         score_scratch,
+        _msa_split_args_value(split_args),
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
 
@@ -4224,6 +4265,7 @@ def msa_sparse_attention_ragged(
     topk: int,
     sparse_block_size: int,
     scale: float,
+    split_args: TensorValue | None = None,
 ) -> TensorValue:
     """Computes MiniMax-M3 block-sparse attention over the main paged KV cache.
 
@@ -4255,6 +4297,9 @@ def msa_sparse_attention_ragged(
             ``sparse_attention_config.sparse_block_size``. Must equal the
             KV cache page size and the kernel's ``BN``.
         scale: QK scale.
+        split_args: Optional mixed-step split record, the one passed to
+            :func:`msa_sparse_indexer`. ``None`` sends zeros (no split). Only
+            a BF16 or FP8 cache with one KV head on NVIDIA splits.
 
     Returns:
         Output tensor ``[total_q, n_heads, head_dim]`` (prefill) or
@@ -4270,6 +4315,7 @@ def msa_sparse_attention_ragged(
         block_indices=block_indices,
         topk=topk,
         scale=scale,
+        split_args=split_args,
     )
 
     return ops.inplace_custom(
@@ -4308,6 +4354,7 @@ def msa_sparse_attention_ragged_mxfp8(
     topk: int,
     sparse_block_size: int,
     scale: float,
+    split_args: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Computes MiniMax-M3 block-sparse attention, emitting MXFP8 + scales.
 
@@ -4342,6 +4389,8 @@ def msa_sparse_attention_ragged_mxfp8(
             ``sparse_attention_config.sparse_block_size``. Must equal the
             KV cache page size and the kernel's ``BN``.
         scale: QK scale.
+        split_args: Optional mixed-step split record. The op accepts it and
+            keeps the unsplit routes.
 
     Returns:
         The quantized attention output ``[total_q, n_heads, head_dim]``
@@ -4358,6 +4407,7 @@ def msa_sparse_attention_ragged_mxfp8(
         block_indices=block_indices,
         topk=topk,
         scale=scale,
+        split_args=split_args,
     )
 
     # One E8M0 scale per block of the flattened [n_heads * head_dim] row,
@@ -4411,6 +4461,7 @@ def msa_sparse_attention_ragged_mxfp6(
     topk: int,
     scale: float,
     fp6_format: str = "e2m3",
+    split_args: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Computes MiniMax-M3 block-sparse attention, emitting packed MXFP6 + scales.
 
@@ -4441,6 +4492,8 @@ def msa_sparse_attention_ragged_mxfp6(
         topk: Number of gathered KV blocks per token.
         scale: QK scale.
         fp6_format: The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
+        split_args: Optional mixed-step split record. The op accepts it and
+            keeps the unsplit routes.
 
     Returns:
         The quantized attention output ``[total_q, n_heads, head_dim]``
@@ -4457,6 +4510,7 @@ def msa_sparse_attention_ragged_mxfp6(
         block_indices=block_indices,
         topk=topk,
         scale=scale,
+        split_args=split_args,
     )
 
     row_width = input.shape[1] * input.shape[2]
@@ -4503,6 +4557,7 @@ def _msa_sparse_attention_ragged_values(
     block_indices: TensorValue,
     topk: int,
     scale: float,
+    split_args: TensorValue | None,
 ) -> list[Value[Any]]:
     """Validates and builds the shared operand list for the MSA attention ops.
 
@@ -4598,6 +4653,7 @@ def _msa_sparse_attention_ragged_values(
         kv_collection.attention_dispatch_metadata,
         layer_idx,
         block_indices,
+        _msa_split_args_value(split_args),
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     return values

@@ -30,6 +30,7 @@ from max.graph import (
     Value,
 )
 from max.nn.legacy.comm import Signals
+from max.nn.legacy.kernels import _MSA_SPLIT_ARGS_SIZE
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsPerDevice,
@@ -107,6 +108,23 @@ class SpecDecodeInputTypeSpec:
     each on the replica's leader device and holding that replica's rows, in
     place of the single device-0 tensor. Requires
     ``enable_sampled_draft_proposal`` and a distributed spec."""
+    mixed_step_split: bool = False
+    """Declare one CPU ``uint32[7]`` mixed-step split record per device after
+    every other input, a model's own trailing group included, so an export
+    without them keeps every other slot. See
+    :mod:`~max.pipelines.speculative._mixed_step_split`."""
+
+
+def _mixed_step_split_input_types(
+    spec: SpecDecodeInputTypeSpec,
+) -> list[TensorType]:
+    """Returns the split records' input types: one per device, or none."""
+    if not spec.mixed_step_split:
+        return []
+    return [
+        TensorType(DType.uint32, [_MSA_SPLIT_ARGS_SIZE], device=DeviceRef.CPU())
+        for _ in spec.devices
+    ]
 
 
 def draft_probs_rows_name(replica: int) -> str:
@@ -413,6 +431,10 @@ class SpecDecodeGraphInputs(Generic[_T, _B, _V]):
     """Inputs past the canonical tail, for a model that appends its own
     group. Empty unless the decode allowed trailing."""
 
+    mixed_step_split: list[_T] = field(default_factory=list)
+    """One mixed-step split record per device, last of all. Empty unless the
+    spec declares them."""
+
     def kv(self, *path: str) -> list[KVCacheInputsPerDevice[_T, _B]]:
         """Returns one KV leaf's per-device inputs, addressed by name.
 
@@ -649,9 +671,17 @@ def decode_spec_decode_input_values(
 
     tail = decode_spec_decode_tail(it, spec)
 
+    rest = list(it)
+    num_records = len(_mixed_step_split_input_types(spec))
+    if len(rest) < num_records:
+        raise ValueError(
+            f"unified spec-decode graph has {len(rest)} input(s) after the"
+            f" tail, fewer than its {num_records} mixed-step split records"
+        )
+    trailing = rest[: len(rest) - num_records]
+    mixed_step_split = [value.tensor for value in rest[len(trailing) :]]
     # A leftover means the signature declared a group this decode misses,
     # which positional decoding cannot detect on its own.
-    trailing = list(it)
     if trailing and not allow_trailing:
         raise ValueError(
             f"unified spec-decode graph has {len(trailing)} input(s) left over"
@@ -688,6 +718,7 @@ def decode_spec_decode_input_values(
         ep_inputs=ep_inputs,
         leading=leading,
         trailing=trailing,
+        mixed_step_split=mixed_step_split,
     )
 
 
@@ -769,6 +800,7 @@ class SpecDecodeGraphSignature:
                 leading_input_types=self.leading_input_types(),
             ),
             *self.trailing_input_types(),
+            *_mixed_step_split_input_types(self.input_spec),
         )
 
     @overload
