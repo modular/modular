@@ -18,9 +18,6 @@ from kv_cache.types import (
 )
 from layout import (
     DefaultEngine,
-    IntTuple,
-    Layout,
-    UNKNOWN_VALUE,
     Coord,
     Idx,
     TileTensor,
@@ -127,25 +124,20 @@ def do_test[
         scales,
     )
 
-    comptime layout = Layout(
-        IntTuple(layout_block_size, kv_params.head_size),
-        IntTuple(kv_params.num_heads * kv_params.head_size, 1),
-    )
-
     var cache = collection.get_key_cache(1)
     _ = cache.block_paged_ptr[layout_block_size](1, layout_block_size, 0)
 
 
-def test_paged_kv_cache_stride_is_unknown() raises:
-    """Test that PagedKVCache has UNKNOWN stride[0] for view tensor correctness.
+def test_paged_kv_cache_stride_is_runtime() raises:
+    """Test that PagedKVCache keeps stride[0] runtime for view correctness.
 
     PagedKVCache is a 4D view of a 6D parent tensor. The outer stride depends
     on num_layers from the parent tensor, which is unknown at compile time.
-    Setting stride[0] = UNKNOWN_VALUE ensures offset calculations use the
-    runtime stride rather than an incorrect compile-time value.
+    Keeping stride[0] a runtime (Int64) leaf ensures offset calculations use
+    the runtime stride rather than an incorrect compile-time value.
 
-    This is a regression test - previously Layout.row_major() computed stride[0]
-    from just the 4D shape, which was incorrect for view tensors.
+    This is a regression test - previously the row-major layout computed
+    stride[0] from just the 4D shape, which was incorrect for view tensors.
     """
     comptime CacheType = PagedKVCache[
         .float32,
@@ -161,18 +153,19 @@ def test_paged_kv_cache_stride_is_unknown() raises:
         DefaultEngine[element_width=1],
     ]
 
-    # Verify stride[0] is UNKNOWN_VALUE
-    comptime stride_0 = CacheType.blocks_layout.stride[0].value()
+    # Verify stride[0] is a runtime leaf, not a `ComptimeInt`.
+    comptime stride_0_is_static = CacheType.blocks_tt_layout.stride_types[
+        0
+    ].is_static_value
     assert_true(
-        stride_0 == UNKNOWN_VALUE,
-        String("PagedKVCache stride[0] should be UNKNOWN_VALUE (-1), got ")
-        + String(stride_0),
+        not stride_0_is_static,
+        "PagedKVCache stride[0] should be a runtime stride",
     )
 
     # Verify inner strides are still known (enables partial constant folding)
-    comptime stride_1 = CacheType.blocks_layout.stride[1].value()
-    comptime stride_2 = CacheType.blocks_layout.stride[2].value()
-    comptime stride_3 = CacheType.blocks_layout.stride[3].value()
+    comptime stride_1 = CacheType.blocks_tt_layout.stride_types[1].static_value
+    comptime stride_2 = CacheType.blocks_tt_layout.stride_types[2].static_value
+    comptime stride_3 = CacheType.blocks_tt_layout.stride_types[3].static_value
 
     comptime expected_stride_1 = kv_params.num_heads * kv_params.head_size
     comptime expected_stride_2 = kv_params.head_size
@@ -597,7 +590,7 @@ def test_page_stride_overrides_the_packed_distance() raises:
 def main() raises:
     test_page_stride_of_minus_one_keeps_pages_packed()
     test_page_stride_overrides_the_packed_distance()
-    test_paged_kv_cache_stride_is_unknown()
+    test_paged_kv_cache_stride_is_runtime()
     test_paged_kv_cache_offset_correctness()
     test_paged_kv_cache_quantization()
     test_scales_resolve_through_their_own_lookup_table()

@@ -118,7 +118,6 @@ from max.gpu.primitives.grid_controls import (
 )
 from layout import (
     Coord,
-    IntTuple,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -156,7 +155,6 @@ from .conv_utils import (
     get_partition,
     no_conv_simd_compute_fn,
     no_conv_simd_epilogue_fn,
-    reorder_padding,
 )
 from .gpu.amd.dispatch_3d import dispatch_amd_4wave_conv3d
 from .gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
@@ -3002,12 +3000,12 @@ def pack_conv_filter_shape(
 @inline(.always)
 def pack_filter_shape[
     filter_type: DType,
-    input_shape: IntTuple,
-    filter_shape: IntTuple,
-    output_shape: IntTuple,
-    strides: IntTuple,
-    dilations: IntTuple,
-    paddings: IntTuple,
+    input_shape: Coord,
+    filter_shape: Coord,
+    output_shape: Coord,
+    strides: Coord,
+    dilations: Coord,
+    paddings: Coord,
     num_groups: Int,
 ](filter: TileTensor) -> IndexList[filter.flat_rank + 1]:
     """
@@ -3046,23 +3044,20 @@ def pack_filter_shape[
     var F_per_group = F // num_groups
 
     comptime conv_attr = ConvInfoStatic[filter.flat_rank - 2](
-        pad=reorder_padding[filter.flat_rank - 2](IntTuple(paddings)),
-        stride=IntTuple(strides),
-        dilation=IntTuple(dilations),
+        pad=paddings,
+        stride=strides,
+        dilation=dilations,
         num_groups=num_groups,
     )
 
     # TODO: extend to 1D/3D.
-    comptime WO = output_shape[
-        2
-    ].value() if filter.flat_rank == 4 and output_shape[
-        2
-    ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
-    comptime F_NHWC = output_shape[
+    comptime WO = (
+        output_shape.element_types[2].static_value if filter.flat_rank
+        == 4 else UNKNOWN_VALUE
+    )
+    comptime F_NHWC = output_shape.element_types[
         filter.flat_rank - 1
-    ].value() if output_shape[
-        filter.flat_rank - 1
-    ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
+    ].static_value
     comptime micro_kernel_shape = get_micro_kernel_shape[
         filter.flat_rank - 2,
         WO,

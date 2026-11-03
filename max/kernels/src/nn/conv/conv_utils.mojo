@@ -23,7 +23,8 @@ from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 
 from layout import IntTuple, TileTensor, UNKNOWN_VALUE
-from layout.coord import Coord, DynamicCoord, coord
+from layout.coord import Coord, CoordLike, DynamicCoord, coord
+from layout.int_tuple import coord_to_int_tuple
 from linalg.utils import partition_work
 
 
@@ -627,26 +628,50 @@ def append_shape(
 
 
 @inline(.always)
-def reorder_padding[rank: Int](pad: IntTuple) -> IntTuple:
+def _static_flat_int_tuple[t: CoordLike]() -> IntTuple:
+    """Returns a flat `IntTuple` carrying `t`'s compile-time extents.
+
+    A leaf whose type is statically known (a `ComptimeInt`) contributes its
+    value; a runtime leaf (`Scalar`) contributes `UNKNOWN_VALUE`, so a caller
+    never specializes on a value the kernel does not have at compile time.
+
+    Parameters:
+        t: The `CoordLike` type to flatten.
+
+    Returns:
+        The flattened `IntTuple` with `UNKNOWN_VALUE` for runtime leaves.
+    """
+    return coord_to_int_tuple[*t.ParamListType]().flatten()
+
+
+@inline(.always)
+def reorder_padding[rank: Int, t: CoordLike](pad: t) -> IntTuple:
     """Reorders padding entries into `(lower, upper)` pairs per dimension.
 
     Parameters:
         rank: Spatial rank of the convolution (1, 2, or 3), selecting the
             reordering pattern applied to the flattened padding tuple.
+        t: The `CoordLike` type of the padding, in graph-op order: one
+            `(before, after)` pair per spatial dimension.
 
     Args:
-        pad: Padding values in the original layout.
+        pad: Padding in the original layout. Only its type is read: the
+            static extents come from the coordinate's `ComptimeInt` leaves,
+            and a runtime (`Scalar`) leaf stays unknown.
 
     Returns:
         Flattened padding tuple ordered as per-dimension `(lower, upper)` pairs.
     """
+    comptime flat = _static_flat_int_tuple[t]()
     comptime match rank:
         case 1:
-            return IntTuple(pad).flatten()
+            return flat
         case 2:
-            return IntTuple(pad[0], pad[2], pad[1], pad[3])
+            return IntTuple(flat[0], flat[2], flat[1], flat[3])
         case _:
-            return IntTuple(pad[0], pad[2], pad[4], pad[1], pad[3], pad[5])
+            return IntTuple(
+                flat[0], flat[2], flat[4], flat[1], flat[3], flat[5]
+            )
 
 
 struct ConvInfoStatic[rank: Int](Defaultable):
@@ -664,16 +689,36 @@ struct ConvInfoStatic[rank: Int](Defaultable):
     var dilation: IntTuple
     var num_groups: Int
 
-    def __init__(
+    def __init__[
+        pad_t: CoordLike, stride_t: CoordLike, dilation_t: CoordLike
+    ](
         out self,
-        pad: IntTuple,
-        stride: IntTuple,
-        dilation: IntTuple,
+        pad: pad_t,
+        stride: stride_t,
+        dilation: dilation_t,
         num_groups: Int,
     ):
-        self.pad = IntTuple(pad).flatten()
-        self.stride = IntTuple(stride).flatten()
-        self.dilation = IntTuple(dilation).flatten()
+        """Builds the attributes from `Coord` padding, stride, and dilation.
+
+        Static extents come from the coordinates' `ComptimeInt` leaves; a
+        runtime (`Scalar`) leaf stays `UNKNOWN_VALUE`, so the attributes only
+        claim an extent the kernel knows at compile time.
+
+        Parameters:
+            pad_t: The `CoordLike` type of the padding.
+            stride_t: The `CoordLike` type of the stride.
+            dilation_t: The `CoordLike` type of the dilation.
+
+        Args:
+            pad: Padding in graph-op order, reordered to per-dimension
+                `(lower, upper)` pairs.
+            stride: Stride along each spatial dimension.
+            dilation: Dilation along each spatial dimension.
+            num_groups: Number of convolution groups.
+        """
+        self.pad = reorder_padding[Self.rank, pad_t](pad)
+        self.stride = _static_flat_int_tuple[stride_t]()
+        self.dilation = _static_flat_int_tuple[dilation_t]()
         self.num_groups = num_groups
 
     @inline(.always)
@@ -687,11 +732,13 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         self.num_groups = UNKNOWN_VALUE
 
     @inline(.always)
-    def __init__(
+    def __init__[
+        pad_t: CoordLike, stride_t: CoordLike, dilation_t: CoordLike
+    ](
         out self,
-        pad: IntTuple,
-        stride: IntTuple,
-        dilation: IntTuple,
+        pad: pad_t,
+        stride: stride_t,
+        dilation: dilation_t,
         input_c: Int,
         filter_c: Int,
     ):
@@ -703,9 +750,9 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         if input_c != UNKNOWN_VALUE and filter_c != UNKNOWN_VALUE:
             num_groups = input_c // filter_c
 
-        self.pad = reorder_padding[Self.rank](pad)
-        self.stride = IntTuple(stride).flatten()
-        self.dilation = IntTuple(dilation).flatten()
+        self.pad = reorder_padding[Self.rank, pad_t](pad)
+        self.stride = _static_flat_int_tuple[stride_t]()
+        self.dilation = _static_flat_int_tuple[dilation_t]()
         self.num_groups = num_groups
 
     @inline(.always)

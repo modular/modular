@@ -17,7 +17,6 @@ from std.math import align_up
 
 from max.gpu.primitives.cluster import cluster_mask_base
 from max.gpu import block_id_in_cluster
-from max.gpu.host import SwizzleMode
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
@@ -32,7 +31,6 @@ from layout.tensor_core_async import (
 )
 
 from std.utils.coord import Coord, CoordLike, coord
-from std.utils.index import Index, IndexList
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -53,74 +51,6 @@ def _create_mma_desc_k_major[
     comptime SBO = 8 * swizzle_mode.bytes()
     comptime LBO = _CM_ROW_BYTES
     return MMASmemDescriptor.create[SBO, LBO, swizzle_mode](ptr)
-
-
-@fieldwise_init("implicit")
-struct Major(EnumLike, TrivialRegisterPassable):
-    """Selects the major (contiguous) dimension for an MMA operand tile layout.
-
-    Used to configure whether the K dimension or the MN dimension is the
-    innermost (contiguous) axis of the tile in shared memory.
-    """
-
-    var val: Int
-
-    comptime K = Major(0)
-    comptime MN = Major(1)
-
-    # The implicit fieldwise initializer accepts raw values outside the two
-    # named cases, so the enum is not exhaustive.
-    comptime _enum_is_exhaustive = False
-
-    comptime _enum_case_names = ParameterList.of["K".value, "MN".value].values
-    comptime _enum_case_types = TypeList.splat[2, NoneType].values
-
-    def _get_enum_discriminant(self) -> Int:
-        """Return the active case index."""
-        return self.val
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
-        id
-    ]:
-        """Return the payload of case `id`. Major cases carry no payload."""
-        comptime assert False, "Major has no payload"
-
-    def __eq__(self, rhs: Major) -> Bool:
-        return self.val == rhs.val
-
-
-def max_contiguous_tile_shape[
-    rank: Int,
-    //,
-    dtype: DType,
-    tile_shape: IndexList[rank],
-    /,
-    *,
-    major: Major = Major.K,
-    swizzle_mode: SwizzleMode = SwizzleMode.NONE,
-]() -> IntTuple:
-    """Returns the maximum shape of a tile that's contiguous in memory for mma op. This is used to create TMA descriptor.
-    """
-
-    comptime assert rank == 2, "Only 2D tensors are supported!"
-
-    comptime match major:
-        case .K:
-            # Tile shape is (MN, K), max K is based on swizzle.
-            return IntTuple(
-                tile_shape[0], swizzle_mode.bytes() // size_of[dtype]()
-            )
-        case .MN:
-            # Tile shape is (K, MN), max MN is based on swizzle, max K is 8 based on
-            # canonical layout.
-            # The following are rare in practice but worth checking.
-            # TODO: this may not work for swizzle.NONE, need to double-check
-            # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
-            return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
-        case _:
-            comptime assert False, "Invalid major"
 
 
 def _create_mma_desc_pair[

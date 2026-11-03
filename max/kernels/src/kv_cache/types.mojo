@@ -37,8 +37,6 @@ from layout import (
     TensorEngine,
     ComptimeInt,
     Coord,
-    IntTuple,
-    Layout,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -2047,18 +2045,10 @@ struct ContinuousBatchingKVCache[
     # Note: quantization not supported for `ContinuousBatchingKVCache`.
     comptime scale_dtype = DType.float32
     comptime quantization_granularity = 1
-    # Shape is [num_blocks, max_seq_len, num_heads, head_size].
-    comptime blocks_shape = IntTuple(
-        UNKNOWN_VALUE,
-        UNKNOWN_VALUE,
-        Self.kv_params.num_heads,
-        Self.kv_params.head_size,
-    )
-    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
-
-    # Direct TileTensor layout for `blocks_shape` (row-major): leading two dims
-    # are runtime (Int64), inner dims are static. stride[0] is runtime because
-    # it folds in the runtime second dim.
+    # Direct TileTensor layout for the blocks tensor, shaped
+    # [num_blocks, max_seq_len, num_heads, head_size] (row-major): the leading
+    # two dims are runtime (Int64), the inner dims are static. stride[0] is
+    # runtime because it folds in the runtime second dim.
     comptime blocks_tt_layout = InternalLayout[
         shape_types=Coord[
             Int64,
@@ -2770,26 +2760,11 @@ struct PagedKVCache[
     # Shape is [total_num_blocks, page_size, num_heads, head_size].
     # This tensor is a view of a 6D parent tensor with shape
     # [num_blocks, 2, num_layers, page_size, num_heads, head_size].
-    # The outer stride depends on num_layers (unknown), so stride[0] must be
-    # UNKNOWN_VALUE to ensure we use runtime strides for offset calculations.
-    comptime blocks_shape = IntTuple(
-        UNKNOWN_VALUE,
-        Self.page_size,
-        Self.kv_params.num_heads,
-        Self.kv_params.head_size,
-    )
-    comptime blocks_strides = IntTuple(
-        # Runtime value: 2 * num_layers * page_size * num_heads * head_size
-        UNKNOWN_VALUE,
-        Self.kv_params.num_heads * Self.kv_params.head_size,
-        Self.kv_params.head_size,
-        1,
-    )
-    comptime blocks_layout = Layout(Self.blocks_shape, Self.blocks_strides)
+    # The outer stride depends on num_layers (unknown), so stride[0] is a
+    # runtime (Int64) view stride, keeping offset calculations correct.
 
-    # TileTensor layout for blocks, built directly from `blocks_shape` /
-    # `blocks_strides`: leading dim is a runtime view stride (Int64), inner
-    # dims are static.
+    # TileTensor layout for the blocks view: the leading dim is a runtime view
+    # stride (Int64), the inner dims are static.
     comptime blocks_tt_layout = InternalLayout[
         shape_types=Coord[
             Int64,
@@ -4180,15 +4155,6 @@ struct ContinuousBatchingKVCacheCollection[
     comptime scale_dtype: DType = Self.CacheType.scale_dtype
 
     # Shape is [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size].
-    comptime blocks_shape = IntTuple(
-        UNKNOWN_VALUE,
-        UNKNOWN_VALUE,
-        UNKNOWN_VALUE,
-        UNKNOWN_VALUE,
-        Self.kv_params.num_heads,
-        Self.kv_params.head_size,
-    )
-    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
     # Direct row-major TileTensor layout: the four leading dims are runtime
     # (Int64), so every stride that folds one in is also runtime.
     comptime blocks_tt_layout = InternalLayout[
@@ -4363,15 +4329,6 @@ struct PagedKVCacheCollection[
     # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
     # Matrix view is
     # (total_num_blocks, 2, num_layers, page_size) x (num_heads, head_size)
-    comptime blocks_shape = IntTuple(
-        UNKNOWN_VALUE,
-        Self.kv_params.num_planes(),
-        UNKNOWN_VALUE,
-        Self.page_size,
-        Self.kv_params.num_heads,
-        Self.kv_params.head_size,
-    )
-    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
     # Direct row-major TileTensor layout. dims 0 and 2 (total_num_blocks and
     # num_layers) are runtime, so strides[0..1] that fold them in are runtime.
     comptime blocks_tt_layout = InternalLayout[
@@ -4406,15 +4363,6 @@ struct PagedKVCacheCollection[
         Self.CacheType.quantization_granularity,
     )
     # Define scales tensor with shape [total_num_blocks, 2, num_layers, page_size, num_heads, granularity]
-    comptime scales_shape = IntTuple(
-        UNKNOWN_VALUE,  # total_num_blocks
-        Self.kv_params.num_planes(),
-        UNKNOWN_VALUE,  # num_layers
-        Self.page_size,  # page_size
-        Self.kv_params.num_heads,  # num_heads
-        Self.head_dim_granularity,  # scales per token
-    )
-    comptime scales_layout = Layout.row_major(Self.scales_shape)
     # Direct row-major TileTensor layout, mirroring `blocks_tt_layout` but with
     # `head_dim_granularity` as the inner dim. dims 0 and 2 are runtime.
     comptime scales_tt_layout = InternalLayout[

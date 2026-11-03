@@ -34,7 +34,6 @@ from layout import (
     Coord,
     coord,
     Idx,
-    IntTuple,
     DefaultEngine,
     TensorEngine,
     TileTensor,

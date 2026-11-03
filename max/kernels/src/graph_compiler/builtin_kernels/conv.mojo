@@ -27,7 +27,6 @@ import extensibility
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from layout import Coord, TileTensor, coord_to_index_list, row_major
-from layout.int_tuple import coord_to_int_tuple
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
@@ -585,9 +584,9 @@ struct ConvCPU:
             ].static_value
         )  # filter C, RSCF or FRSCf; -1 where dynamic
         comptime conv_attr = ConvInfoStatic[input.rank - 2](
-            coord_to_int_tuple[*static_padding.element_types](),
-            coord_to_int_tuple[*static_strides.element_types](),
-            coord_to_int_tuple[*static_dilations.element_types](),
+            static_padding,
+            static_strides,
+            static_dilations,
             input_shape_val,
             filter_shape_val,
         )
@@ -1373,12 +1372,12 @@ def pack_conv_filter_shape_fn[
     return rebind[IndexList[type_of(filter_buf).rank + 1]](
         pack_filter_shape_conv[
             type_of(filter_buf).dtype,
-            coord_to_int_tuple[*input_shape.element_types](),
-            coord_to_int_tuple[*filter_shape.element_types](),
-            coord_to_int_tuple[*output_shape.element_types](),
-            coord_to_int_tuple[*strides.element_types](),
-            coord_to_int_tuple[*dilations.element_types](),
-            coord_to_int_tuple[*paddings.element_types](),
+            Coord[*input_shape.element_types](),
+            Coord[*filter_shape.element_types](),
+            Coord[*output_shape.element_types](),
+            Coord[*strides.element_types](),
+            Coord[*dilations.element_types](),
+            Coord[*paddings.element_types](),
             num_groups,
         ](filter_buf.to_tile_tensor())
     )

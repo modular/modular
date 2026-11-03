@@ -61,7 +61,6 @@ from layout import (
     coord,
     Coord,
     Idx,
-    IntTuple,
     Layout,
     TensorLayout,
     TMemEngine,
