@@ -114,6 +114,17 @@ TEST(ArchTarget, AArch64MarchAlone) {
   }
 }
 
+// FIXME(#6918): the CPU's default extensions are added after the -march
+// expansion, so "+nosve" does not remove SVE from a CPU that has it.
+TEST(ArchTarget, AArch64MarchNegativeModifierDoesNotOverrideCpuDefaults) {
+  llvm::InitializeAllTargets();
+
+  ErrorOr<TargetInfo> info = M::getMArchTargetInfo(
+      "aarch64-unknown-linux-gnu", "armv9-a+nosve", "neoverse-v1", "");
+  ASSERT_FALSE(info.isError()) << info.getError();
+  EXPECT_THAT(info->features, ::testing::Contains("sve"));
+}
+
 // Without -march, -mcpu sets the CPU and contributes its own extensions.
 TEST(ArchTarget, AArch64McpuAlone) {
   llvm::InitializeAllTargets();
