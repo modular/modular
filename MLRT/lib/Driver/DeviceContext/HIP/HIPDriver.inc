@@ -96,6 +96,12 @@ HIP_OPT_FUNC(hipStreamUpdateCaptureDependencies, Result, hipStream_t,
              hipStreamUpdateCaptureDependenciesFlags)
 HIP_OPT_FUNC(hipGraphAddBatchMemOpNode, Result, hipGraphNode_t *, hipGraph_t,
              const hipGraphNode_t *, size_t, const hipBatchMemOpNodeParams *)
+HIP_OPT_FUNC(hipGraphNodeGetDependentNodes, Result, hipGraphNode_t,
+             hipGraphNode_t *, size_t *)
+HIP_OPT_FUNC(hipGraphRemoveDependencies, Result, hipGraph_t,
+             const hipGraphNode_t *, const hipGraphNode_t *, size_t)
+HIP_OPT_FUNC(hipGraphAddDependencies, Result, hipGraph_t,
+             const hipGraphNode_t *, const hipGraphNode_t *, size_t)
 
 HIP_FUNC(hipGraphInstantiate, Result, hipGraphExec_t *, hipGraph_t, hipGraphNode_t *,
           char *, size_t)
