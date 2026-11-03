@@ -256,6 +256,34 @@ Parameters:
 """
 
 
+comptime null[
+    mut: Bool,
+    //,
+    T: AnyType,
+    origin: Origin[mut=mut] = MutUntrackedOrigin,
+    *,
+    address_space: AddressSpace = .GENERIC,
+] = Optional[Pointer[T, origin, address_space=address_space]]()
+"""An empty `Optional[Pointer[T, origin]]`, equivalent to the C `NULL`.
+
+```mojo
+from std.memory import null
+
+def maybe_write(nullable: Optional[MutPointer[Int, _]]):
+    if case .Some(ptr) = nullable:
+        ptr[] = 42
+
+maybe_write(null[Int])
+```
+
+Parameters:
+    mut: The mutability of the pointer.
+    T: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
+
 # ===-----------------------------------------------------------------------===#
 # Pointer
 # ===-----------------------------------------------------------------------===#

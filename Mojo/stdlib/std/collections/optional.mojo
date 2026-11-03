@@ -297,6 +297,38 @@ struct Optional[T: AnyType](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         Pointer(to=self).unsafe_bitcast[OptionalReg[Self.T]]()[] = optional_reg
 
+    @inline(.always)
+    @implicit
+    def __init__[
+        mut: Bool,
+        U: AnyType,
+        origin: Origin[mut=mut],
+        address_space: AddressSpace,
+        //,
+    ](
+        out self: Optional[
+            Pointer[U, ImmOrigin(origin), address_space=address_space]
+        ],
+        value: Optional[Pointer[U, origin, address_space=address_space]],
+    ):
+        """Implicitly casts an optional mutable pointer to an optional
+        immutable pointer, mirroring the implicit mutable-to-immutable
+        initializer on `Pointer` itself.
+
+        Parameters:
+            mut: The mutability of the source pointer's origin.
+            U: The pointee type.
+            origin: The origin of the source pointer.
+            address_space: The address space of the pointer.
+
+        Args:
+            value: The optional pointer to cast from.
+        """
+        # SAFETY:
+        # The types here only differ in origin however the layout of them
+        # is the exact same and it's always safe to cast to an immutable origin.
+        self = Pointer(to=value).unsafe_bitcast[type_of(self)]()[]
+
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#

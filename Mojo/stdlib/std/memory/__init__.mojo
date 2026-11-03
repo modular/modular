@@ -53,6 +53,7 @@ from .pointer import (
     ImmPointer,
     MutOpaquePointer,
     MutPointer,
+    null,
     OpaquePointer,
     OptionalImmPointer,
     OptionalMutPointer,
