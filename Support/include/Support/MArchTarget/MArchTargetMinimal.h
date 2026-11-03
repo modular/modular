@@ -70,9 +70,10 @@ std::string getHostCPUFeatures();
 /// specifies the specific CPU kind. If only an architecture is specified, the
 /// default CPU for it is used.
 ///
-/// For AArch64 architectures, `-march` specifies the base architecture or
-/// `-mcpu` specifies the specific CPU kind. If only an architecture is
-/// specified, `-mcpu=generic` will be used.
+/// For AArch64 architectures, `-march` specifies the base architecture and
+/// `-mcpu` the specific CPU kind; when both are given, `-march` supplies the
+/// architecture features and `-mcpu` the CPU and its default extensions. If
+/// only an architecture is specified, `-mcpu=generic` will be used.
 ///
 /// `-mtune` will specify the CPU to specifically tune code for.
 ErrorOr<TargetInfo> getMArchTargetInfo(StringRef targetTriple, StringRef march,
