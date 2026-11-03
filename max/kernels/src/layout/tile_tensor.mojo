@@ -696,6 +696,15 @@ trait MutabilityKnown:
     """True if the value can write the storage it refers to."""
 
 
+# TODO(MOCO-4153): Remove once Mojo supports instance type refinement
+trait _TileTensorLike:
+    """Exposes a `TileTensor`'s parameters, which generic code can't read."""
+
+    comptime _dtype: DType
+    comptime _LayoutType: TensorLayout
+    comptime _Engine: TensorEngine
+
+
 struct TileTensor[
     mut: Bool,
     //,
@@ -712,6 +721,7 @@ struct TileTensor[
     MutabilityKnown,
     TrivialRegisterPassable,
     Writable,
+    _TileTensorLike,
 ):
     """A tensor type with trait-based layouts supporting nested and hierarchical
     indexing.
@@ -869,6 +879,10 @@ struct TileTensor[
 
     comptime mutable = Self.mut
     """Whether the tensor can write its storage, per `origin`."""
+
+    comptime _dtype: DType = Self.dtype
+    comptime _LayoutType: TensorLayout = Self.LayoutType
+    comptime _Engine: TensorEngine = Self.Engine
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]

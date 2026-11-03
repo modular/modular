@@ -13,11 +13,18 @@
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import OptionalReg
+from std.sys import CompilationTarget, align_of, size_of
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from std.utils import StaticTuple
 from std.utils.coord import ComptimeInt, Coord, Idx
 
 from max.gpu.host import DefaultDeviceTypeEncoder
+from max.gpu.host._launch_args import (
+    DeviceArgAcceptor,
+    SlotLayout,
+    _acceptor_slot,
+    _declared_slot,
+)
 
 
 # A DevicePassable type whose `_to_device_type` scales the encoded value, so a
@@ -530,6 +537,105 @@ def test_optional_reg_field_encodes_payload() raises:
     assert_true(Bool(buf[].maybe))
     assert_equal(buf[].maybe.value(), 10)
     assert_equal(buf[].tag, 9)
+
+
+struct _AcceptsInt32(DeviceArgAcceptor, TrivialRegisterPassable):
+    """Stands in for a device-only argument type the host can't build, which
+    takes an `Int32` host value."""
+
+    @staticmethod
+    def _accepts_device_arg[ActualT: DevicePassable]() -> Bool:
+        return TypeList.of[Int32]().contains[ActualT]()
+
+    @staticmethod
+    def _device_arg_slot[
+        ActualT: DevicePassable, target: CompilationTarget
+    ]() -> SlotLayout:
+        return SlotLayout.of[Int32, target]()
+
+
+# A register-passable aggregate that is not `DevicePassable`; the validator
+# reaches its fields through the `RegisterPassable` walk.
+@fieldwise_init
+struct _Holder[T: TrivialRegisterPassable](TrivialRegisterPassable):
+    var pad: Int8
+    var held: Self.T
+
+
+# A `DevicePassable` aggregate that encodes field by field; the validator
+# walks its `device_type`.
+@fieldwise_init
+struct _Wrapper[T: TrivialRegisterPassable](
+    DevicePassable, TrivialRegisterPassable
+):
+    comptime device_type: AnyType = Self
+    var inner: Self.T
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "_Wrapper"
+
+
+comptime _target = CompilationTarget.current()
+
+
+def _assert_slot_matches[Host: AnyType, Declared: AnyType]():
+    """Asserts `Host` may fill `Declared` and the slot is `Host`'s own layout.
+    """
+    comptime slot = _declared_slot[Host, Declared, _target]()
+    comptime assert slot
+    comptime assert slot.value().size == size_of[Host]()
+    comptime assert slot.value().align == align_of[Host]()
+
+
+def test_acceptor_slot_asks_the_declared_type() raises:
+    comptime assert _acceptor_slot[_AcceptsInt32, Int32, _target]()
+    comptime assert not _acceptor_slot[_AcceptsInt32, Float32, _target]()
+    # A declared type that is not a `DeviceArgAcceptor` accepts nothing extra.
+    comptime assert not _acceptor_slot[Int32, Int32, _target]()
+
+
+def test_declared_slot_of_same_or_encodable_type() raises:
+    _assert_slot_matches[Int32, Int32]()
+    # `ScaledInt` encodes to `Int32`, so the slot is the declared type's.
+    comptime slot = _declared_slot[ScaledInt, Int32, _target]()
+    comptime assert slot
+    comptime assert slot.value().size == size_of[Int32]()
+    comptime assert not _declared_slot[Int32, Float32, _target]()
+
+
+def test_declared_slot_of_accepted_argument() raises:
+    comptime assert not Int32._is_implicitly_encodable_to[_AcceptsInt32]()
+    _assert_slot_matches[Int32, _AcceptsInt32]()
+    comptime assert not _declared_slot[Float32, _AcceptsInt32, _target]()
+
+
+def test_declared_slot_walks_register_passable_fields() raises:
+    # `_Holder[Int32]` neither encodes to nor is accepted by
+    # `_Holder[_AcceptsInt32]`; its fields pair up under the acceptor rule, and
+    # the slot carries the padding between them.
+    _assert_slot_matches[_Holder[Int32], _Holder[_AcceptsInt32]]()
+    comptime assert not _declared_slot[
+        _Holder[Float32], _Holder[_AcceptsInt32], _target
+    ]()
+
+
+def test_declared_slot_walks_device_passable_fields() raises:
+    comptime assert not _Wrapper[Int32]._is_implicitly_encodable_to[
+        _Wrapper[_AcceptsInt32]
+    ]()
+    _assert_slot_matches[_Wrapper[Int32], _Wrapper[_AcceptsInt32]]()
+    _assert_slot_matches[
+        _Wrapper[_Wrapper[Int32]], _Wrapper[_Wrapper[_AcceptsInt32]]
+    ]()
+    comptime assert not _declared_slot[
+        _Wrapper[Float32], _Wrapper[_AcceptsInt32], _target
+    ]()
 
 
 def main() raises:
