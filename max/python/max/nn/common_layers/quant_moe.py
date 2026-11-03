@@ -874,9 +874,10 @@ class ExpertParallelMoE(QuantizedMoE):
         has_unfused_shared = (
             self.shared_experts is not None and not config.fused_shared_expert
         )
-        # As in the graph-API EP path, split the peer-to-peer dispatch and
-        # combine into launch + wait and run the shared expert in between. It
-        # reads only ``x``, so it overlaps the EP communication.
+        # Split the peer-to-peer dispatch into launch + wait and run the shared
+        # expert in between. It reads only ``x``, so it overlaps the EP
+        # communication. Only the dispatch splits: the combine's launch and
+        # wait have nothing to put between them, so it stays fused.
         overlap_shared_expert = (
             has_unfused_shared
             and not config.use_allreduce
@@ -964,16 +965,11 @@ class ExpertParallelMoE(QuantizedMoE):
                 )
                 for i in range(self.mesh.num_devices)
             ]
-        elif overlap_shared_expert:
-            for i in range(self.mesh.num_devices):
-                batch_mgr.ep_combine_async(down_bundle[i], device_ids[i])
-            combine_results = [
-                batch_mgr.ep_combine_wait(
-                    router_weight_shards[i], device_ids[i]
-                )
-                for i in range(self.mesh.num_devices)
-            ]
         else:
+            # Fused combine: one launch per device instead of the async/wait
+            # pair's two. The split's only benefit is an interleaving window
+            # for work issued before it, and the shared expert it exists for
+            # was issued back before dispatch.
             combine_results = batch_mgr.ep_combine_all(
                 down_bundle, router_weight_shards, device_ids
             )

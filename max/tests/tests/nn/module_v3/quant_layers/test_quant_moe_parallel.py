@@ -449,8 +449,9 @@ def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
     """Peer-to-peer EP runs the shared expert between dispatch launch and wait.
 
     This matches the graph-API EP path for any ``MODULAR_OVERLAP_SHARED_EXPERT``
-    value: the blocking multi-device dispatch and combine would serialize the
-    shared expert behind the EP communication.
+    value: the blocking multi-device dispatch would serialize the shared expert
+    behind the EP communication. Only the dispatch splits; the combine is fused,
+    because nothing runs between its launch and its wait.
     """
     monkeypatch.setenv("MODULAR_OVERLAP_SHARED_EXPERT", overlap_env)
     with F.lazy():
@@ -483,9 +484,14 @@ def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
             ir = str(Graph.current._mlir_op)
 
     assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
-    assert "mo.distributed.ep" not in ir
-    for op in ("dispatch_async", "dispatch_wait", "combine_async"):
+    for op in ("dispatch_async", "dispatch_wait"):
         assert ir.count(f'"ep.{op}') == num_devices, op
+    # One fused multi-device combine op, not a per-device launch + wait pair:
+    # nothing runs between a combine launch and its wait, so the pair is one
+    # extra launch per device per layer.
+    assert '"ep.combine_async' not in ir
+    assert '"ep.combine_wait' not in ir
+    assert ir.count('"mo.distributed.ep.combine"') == 1
     last_launch = ir.rindex('"ep.dispatch_async')
     first_wait = ir.index('"ep.dispatch_wait')
     # The shared expert's gate/up matmul is the only matmul in between: the
