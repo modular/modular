@@ -238,6 +238,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
         opts->FeatureMap[ext] = true;
     }
   };
+  StringRef marchAsWritten = march;
   processExts(march);
   processExts(mcpu);
 
@@ -278,6 +279,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
                  AArch64::parseCpu(mcpu)) {
     triple.setArch(Triple::aarch64, triple.getSubArch());
     opts->CPU = mcpu;
+    getAArch64ArchFeaturesFromMarch(marchAsWritten, opts->FeaturesAsWritten);
 
     // Check for an ARM CPU.
   } else if (ARM::ArchKind armArch = ARM::parseCPUArch(mcpu);
@@ -289,6 +291,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
   } else if (AArch64::parseArch(march)) {
     triple.setArchName(march);
     opts->CPU = "generic";
+    getAArch64ArchFeaturesFromMarch(marchAsWritten, opts->FeaturesAsWritten);
 
     // Check for an ARM arch.
   } else if (ARM::ArchKind armArch = ARM::parseArch(march);
