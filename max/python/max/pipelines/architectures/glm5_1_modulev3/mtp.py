@@ -20,17 +20,21 @@ its proposer reads off the target.
 
 from __future__ import annotations
 
-import copy
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, Weights
+from max.graph.weights import WeightData
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
+    WeightTransform,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,
     ModelOutputConfig,
@@ -42,32 +46,17 @@ from max.pipelines.lib.registration_runtime import ModuleRuntime
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.tensor import default_dtype
 from transformers import AutoConfig
-from transformers.configuration_utils import PretrainedConfig
 
-from ..deepseekV3_2_modulev3 import weight_adapters as target_adapters
 from ..deepseekV3_2_modulev3.deepseekV3_2 import rotary_embedding
 from ..deepseekV3_2_modulev3.nextn import DeepseekV3_2NextN
 from .model_config import Glm5_1Config
+from .weight_adapters import glm5_1_weight_rules
 
 __all__ = [
     "Glm5_1MTP",
     "Glm5_1MTPArchConfig",
-    "convert_mtp_state_dict",
     "mtp_draft_registration",
 ]
-
-_MTP_HEAD_MAP = {
-    "shared_head.norm.": "shared_head_norm.",
-    "enorm.": "enorm.",
-    "hnorm.": "hnorm.",
-    "eh_proj.": "eh_proj.",
-}
-
-_MTP_SHARED = ("embed_tokens.", "shared_head.head.")
-"""The layer's copies of the target's embedding and head, which it reads off
-the target instead."""
-
-_TARGET_FINAL_NORM = "language_model.norm.weight"
 
 
 class Glm5_1MTP(DeepseekV3_2NextN):
@@ -134,49 +123,6 @@ class Glm5_1MTPArchConfig(ArchConfigWithBoundedMaxSeqLen):
         return MultiKVCacheParams.from_params(children)
 
 
-def convert_mtp_state_dict(
-    state_dict: dict[str, Weights],
-    huggingface_config: PretrainedConfig,
-    **kwargs: object,
-) -> dict[str, WeightData]:
-    """Converts the NextN layer's weights out of a GLM-5.x checkpoint.
-
-    The layer converts as one more target layer, so it takes the target's
-    quantization layout and ModuleV3 names. Its copies of the target's
-    embedding and head are left out.
-    """
-    num_layers = huggingface_config.num_hidden_layers
-    # The target conversion drops the layer past the last one; one more layer
-    # keeps it.
-    with_mtp = copy.copy(huggingface_config)
-    with_mtp.num_hidden_layers = num_layers + 1
-    mtp_prefix = f"language_model.layers.{num_layers}."
-
-    converted: dict[str, WeightData] = {}
-    final_norm: WeightData | None = None
-    for name, value in target_adapters.convert_safetensor_state_dict(
-        state_dict, with_mtp, **kwargs
-    ).items():
-        if name == _TARGET_FINAL_NORM:
-            final_norm = value
-        if not name.startswith(mtp_prefix):
-            continue
-        suffix = name[len(mtp_prefix) :]
-        if suffix.startswith(_MTP_SHARED):
-            continue
-        for before, after in _MTP_HEAD_MAP.items():
-            if suffix.startswith(before):
-                converted[f"{after}{suffix[len(before) :]}"] = value
-                break
-        else:
-            converted[f"decoder_layer.{suffix}"] = value
-    # Some checkpoints share the head norm with the target's final norm and
-    # do not emit it under the layer.
-    if "shared_head_norm.weight" not in converted and final_norm is not None:
-        converted["shared_head_norm.weight"] = final_norm
-    return converted
-
-
 def _quantized(state_dict: Mapping[str, WeightData], subtree: str) -> bool:
     """Whether the layer's ``subtree`` ships a quantized ``weight_scale``.
 
@@ -214,7 +160,7 @@ def configure_mtp_draft(
         parse_state_dict_from_weights(
             pipeline_config,
             context.weights,
-            target_adapters.convert_safetensor_state_dict,
+            WeightTransform(glm5_1_weight_rules(context.huggingface_config)),
         ),
         ModelOutputConfig(),
     )

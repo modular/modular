@@ -37,6 +37,7 @@ from .interfaces.pipeline_model import _cast_to_parameter_dtypes
 from .module_registration import construct_module, device_mesh
 from .registration_graph_api import load_graph_api_module
 from .utils import parse_state_dict_from_weights
+from .weight_transform import CheckpointRole, WeightEntry, WeightTransform
 
 if TYPE_CHECKING:
     from max.pipelines.speculative.block_driver import BlockProposer
@@ -274,3 +275,16 @@ class RegisteredDraftBuilder:
         del context, config
         weights, self._weights = self._weights, {}
         return weights
+
+    def weight_entries(
+        self, context: ModelLoadContext, config: object
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the draft's weights.
+
+        Empty unless its checkpoint loads through rules, which then name the
+        draft's own weights and leave out those it shares with its target.
+        """
+        del config
+        if not isinstance(context.adapter, WeightTransform):
+            return []
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]

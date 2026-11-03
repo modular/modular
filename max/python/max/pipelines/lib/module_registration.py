@@ -82,6 +82,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, Type
+from max.graph.weights import WeightsAdapter
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.legacy.comm.ep import EPInit
@@ -155,6 +156,7 @@ from .vision_encoder_cache import (
     VideoEncoderMetrics,
     VisionEncoderMetrics,
 )
+from .weight_transform import CheckpointRole, WeightEntry, WeightTransform
 
 __all__ = [
     "DecoderBatchProcessor",
@@ -945,7 +947,10 @@ class ModuleV3DecoderPipelineModel(
         return models
 
     def _load_state_dict(self) -> dict[str, Any]:
-        """Loads raw keys when config finalization precedes weight transforms."""
+        """Loads raw keys when config finalization precedes weight transforms.
+
+        A checkpoint that loads through rules names the decoder's weights.
+        """
         if getattr(
             type(self).model_config_cls, "preserve_checkpoint_keys", False
         ):
@@ -953,6 +958,8 @@ class ModuleV3DecoderPipelineModel(
                 name: weight.data() for name, weight in self.weights.items()
             }
             return self._checkpoint
+        if entries := _decoder_weight_entries(type(self), self.adapter):
+            self.weight_naming = {GraphRole.DECODER: tuple(entries)}
         return super()._load_state_dict()
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
@@ -1279,6 +1286,26 @@ def _vision_spec(
     )
 
 
+def _decoder_weight_entries(
+    pipeline_model: type[ModuleV3DecoderPipelineModel],
+    adapter: WeightsAdapter | None,
+) -> list[WeightEntry]:
+    """Returns the entry that names a registered decoder's weights.
+
+    Empty unless the checkpoint loads through rules into the decoder's own
+    names: a config that keeps the checkpoint's keys transforms them itself,
+    and one that takes the decoder's weights from under a prefix strips it.
+    """
+    config_cls = pipeline_model.model_config_cls
+    if (
+        not isinstance(adapter, WeightTransform)
+        or getattr(config_cls, "preserve_checkpoint_keys", False)
+        or getattr(config_cls, "weight_prefixes", {}).get(GraphRole.DECODER)
+    ):
+        return []
+    return [WeightEntry(CheckpointRole.TARGET, adapter)]
+
+
 @dataclass
 class RegisteredDecoderBuilder:
     """Constructs a registered ``DECODER`` for a caller that composes modules.
@@ -1402,6 +1429,18 @@ class RegisteredDecoderBuilder:
         del context, config
         weights, self._weights = self._weights, {}
         return weights
+
+    def weight_entries(
+        self, context: ModelLoadContext, config: object
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the built decoder's weights.
+
+        Empty when the checkpoint doesn't load through rules into the
+        decoder's names; the decoder then compiles with
+        :meth:`checkpoint_weights`.
+        """
+        del config
+        return _decoder_weight_entries(self.pipeline_model, context.adapter)
 
     def _state_dict(self, context: ModelLoadContext) -> dict[str, Any]:
         """Returns the checkpoint ``context`` names, as serving loads it."""

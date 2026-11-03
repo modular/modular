@@ -26,7 +26,7 @@ from ..glm5_1.tokenizer import GlmTokenizer
 from ..glm5_1.tool_parser import GlmToolParser  # noqa: F401  registers "glm45"
 from .batch_processor import UnifiedMTPGlm5_2BatchProcessor
 from .model import UnifiedMTPGlm5_2Model
-from .weight_adapters import convert_with_mtp_state_dict
+from .weight_adapters import unified_mtp_glm5_2_weight_rules
 
 unified_mtp_glm5_2_arch = SupportedArchitecture(
     name="UnifiedMTPGlmMoeDsaForCausalLM",
@@ -45,9 +45,8 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     tokenizer=GlmTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_with_mtp_state_dict,
-    },
+    weight_rules=unified_mtp_glm5_2_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=Glm5_1Config,

@@ -18,7 +18,6 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from ..deepseekV3_2_modulev3 import weight_adapters
 from ..deepseekV3_modulev3.memory_planner import (
     DeepseekV3ModuleV3MemoryPlanner,
 )
@@ -30,12 +29,8 @@ from ..glm5_1.tokenizer import GlmTokenizer
 from ..glm5_1.tool_parser import GlmToolParser  # noqa: F401  registers "glm45"
 from .glm5_1 import Glm5_1Decoder
 from .model_config import Glm5_1Config
-from .mtp import (
-    Glm5_1MTP,
-    Glm5_1MTPArchConfig,
-    convert_mtp_state_dict,
-    mtp_draft_registration,
-)
+from .mtp import Glm5_1MTP, Glm5_1MTPArchConfig, mtp_draft_registration
+from .weight_adapters import glm5_1_mtp_weight_rules, glm5_1_weight_rules
 
 glm5_1_modulev3_arch = SupportedArchitecture(
     name="GlmMoeDsaForCausalLM_ModuleV3",
@@ -55,9 +50,8 @@ glm5_1_modulev3_arch = SupportedArchitecture(
     tokenizer=GlmTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    weight_rules=glm5_1_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     supports_nvfp4_kv_cache=True,
@@ -88,7 +82,8 @@ glm5_1_mtp_draft_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={WeightsFormat.safetensors: convert_mtp_state_dict},
+    weight_rules=glm5_1_mtp_weight_rules,
+    use_weight_rules=True,
     config=Glm5_1MTPArchConfig,
     requires_max_batch_context_length=True,
     # The layer reads the same cache layout as the target's.

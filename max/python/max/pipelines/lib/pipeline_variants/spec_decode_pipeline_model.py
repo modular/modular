@@ -1722,15 +1722,14 @@ class SpecDecodePipelineModel(
                 None if _builds_modulev3(pairing.target) else self._weight_loads
             ),
         )
-        draft_paths = _draft_checkpoint(
-            self.pipeline_config
-        ).resolved_weight_paths()
+        draft_checkpoint = _draft_checkpoint(self.pipeline_config)
+        draft_paths = draft_checkpoint.resolved_weight_paths()
         draft_context = replace(
             context,
             weights=load_weights(draft_paths),
-            adapter=pairing.draft.weight_adapters.get(
-                weights_format(draft_paths)
-            ),
+            adapter=pairing.draft.checkpoint_adapters(
+                draft_checkpoint.huggingface_config
+            ).get(weights_format(draft_paths)),
             # A draft without a leaf of its own runs on the target's.
             kv_params=config.kv_params.children.get(
                 "draft", config.kv_params.children["target"]

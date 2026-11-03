@@ -39,6 +39,7 @@ from .interfaces.pipeline_model import PipelineModel
 from .pipeline_executor import PipelineExecutor
 from .registration_graph_api import registered_pipeline_model
 from .tokenizer import TextTokenizer
+from .weight_transform import WeightRule, WeightTransform
 
 if TYPE_CHECKING:
     from max.graph.weights import WeightsAdapter, WeightsFormat
@@ -62,7 +63,6 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
     from .interfaces import ArchConfig
     from .registration_draft import DraftRegistration
-    from .weight_transform import WeightRule
 
 logger = logging.getLogger("max.pipelines")
 
@@ -583,6 +583,28 @@ class SupportedArchitecture:
                 serving,
                 self.batching,
             )
+
+    def checkpoint_adapters(
+        self, huggingface_config: PretrainedConfig
+    ) -> dict[WeightsFormat, WeightsAdapter]:
+        """Returns the adapters a pipeline loads the checkpoint through.
+
+        Args:
+            huggingface_config: The checkpoint's config, which
+                :attr:`weight_rules` reads.
+
+        Raises:
+            ValueError: If :attr:`use_weight_rules` is set without
+                :attr:`weight_rules`.
+        """
+        if not self.use_weight_rules:
+            return self.weight_adapters
+        if self.weight_rules is None:
+            raise ValueError(
+                f"{self.name} sets use_weight_rules but has no weight_rules"
+            )
+        transform = WeightTransform(self.weight_rules(huggingface_config))
+        return {self.default_weights_format: transform}
 
     def draft_architecture(self, method: str, checkpoint_name: str) -> str:
         """Returns the registered draft architecture of a draft checkpoint.

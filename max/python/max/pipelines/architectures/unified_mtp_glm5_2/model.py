@@ -32,6 +32,7 @@ from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _UnifiedSpecDecodeModelMixin,
 )
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.speculative import (
     DraftAliases,
     validate_draft_state_dict,
@@ -106,17 +107,9 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
 
     @override
     def _load_state_dict(self) -> dict[str, Any]:
-        if self.adapter:
-            raw_state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            raw_state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-
+        raw_state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, self.weights, self.adapter
+        )
         self._draft_state_dict = {
             k[len("draft.") :]: v
             for k, v in raw_state_dict.items()
