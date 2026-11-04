@@ -29,6 +29,7 @@ from layout import (
     TileTensor,
     row_major,
 )
+from layout.tile_layout import row_major as tt_row_major
 from std.atomic import Atomic, Ordering
 from std.collections.string.string_span import _get_kgen_string
 from std.math import align_up, ceildiv
@@ -718,8 +719,10 @@ struct TileScheduler[
         # TmemTensor for split-K reduction.
         # Use cta_group=2 to force is_lower_required=True - split-K always
         # needs both upper and lower fragments for the full reduction.
-        comptime accum_layout = Layout.row_major(Self.BM, Self.ROW_SIZE)
-        comptime AccumTmem = TmemTensor[accum_type, accum_layout, cta_group=2]
+        comptime accum_layout = tt_row_major[Self.BM, Self.ROW_SIZE]()
+        comptime AccumTmem = TmemTensor[
+            accum_type, type_of(accum_layout), accum_layout, cta_group=2
+        ]
 
         var local_warp_id = ufloordiv(epilogue_thread_idx, WARP_SIZE)
 

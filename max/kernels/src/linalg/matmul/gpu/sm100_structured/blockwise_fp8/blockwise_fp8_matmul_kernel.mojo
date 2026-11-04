@@ -55,6 +55,7 @@ from layout import (
     TensorEngine,
     TileTensor,
 )
+from layout.tile_layout import row_major as tt_row_major
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -383,9 +384,12 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # Layout-parameterized TMEM tensor for typed accumulator access
-    comptime tmem_accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
+    comptime tmem_accum_layout = tt_row_major[Self.MMA_M, Self.MMA_N]()
     comptime AccumTensor = TmemTensor[
-        Self.accum_type, Self.tmem_accum_layout, cta_group=Self.cta_group
+        Self.accum_type,
+        type_of(Self.tmem_accum_layout),
+        Self.tmem_accum_layout,
+        cta_group=Self.cta_group,
     ]
 
     # ========== Output Pipeline Type ==========

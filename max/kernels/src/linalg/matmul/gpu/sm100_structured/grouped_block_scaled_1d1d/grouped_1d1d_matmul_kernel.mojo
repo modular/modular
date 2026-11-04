@@ -95,6 +95,7 @@ from structured_kernels.tile_types import (
     static_row_major,
 )
 from layout.tile_layout import Layout as TileLayout, _IntToComptimeInt
+from layout.tile_layout import row_major as tt_row_major
 
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -3279,9 +3280,10 @@ struct Grouped1D1DMatmulKernel[
         ) * SF_MN_GROUP_SIZE
         var m_local_base = Int(m_start)
 
-        comptime _accum_tile_layout = Layout.row_major(BM, stageN)
+        comptime _accum_tile_layout = tt_row_major[BM, stageN]()
         comptime AccumTmemArrayLocal = TmemArrayType[
             Self.accum_type,
+            type_of(_accum_tile_layout),
             _accum_tile_layout,
             num_stages,
             cta_group=Self.cta_group,
@@ -3542,7 +3544,8 @@ struct Grouped1D1DMatmulKernel[
             comptime ip_num_stages = num_stages * stageN // ip_stageN
             comptime IpTmemArray = TmemArrayType[
                 Self.accum_type,
-                Layout.row_major(BM, ip_stageN),
+                type_of(tt_row_major[BM, ip_stageN]()),
+                tt_row_major[BM, ip_stageN](),
                 ip_num_stages,
                 cta_group=Self.cta_group,
             ]

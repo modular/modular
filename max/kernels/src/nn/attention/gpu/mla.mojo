@@ -100,6 +100,7 @@ from layout.tile_iterator import TileTensorIter
 from layout.tile_layout import Layout as TileLayout
 from layout.tile_tensor import NullableTileTensor
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
+from layout.coord import coord
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import unsafe_stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -2586,10 +2587,10 @@ def mla_decoding_single_batch[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            coord[2 * num_m_mmas, num_n_mmas],
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.reshape[type_of(output_layout_by_mma_unit)](
@@ -4327,10 +4328,10 @@ def mla_prefill_single_batch[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            coord[2 * num_m_mmas, num_n_mmas],
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.reshape[type_of(reg_output_layout_by_mma_unit)](

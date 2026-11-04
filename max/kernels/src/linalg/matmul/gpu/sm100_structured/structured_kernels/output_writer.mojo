@@ -53,6 +53,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout as TileLayout, upcast, zipped_divide
+from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 from max.gpu.compute.mma import ld_matrix
@@ -594,9 +595,10 @@ struct TileWriter[
     comptime p5_stamp_window = get_defined_bool["P5_STAMP_WINDOW", False]()
 
     # TMEM array type for accumulator tiles
-    comptime accum_tile_layout = Layout.row_major(Self.BM, Self.stageN)
+    comptime accum_tile_layout = tt_row_major[Self.BM, Self.stageN]()
     comptime AccumTmemArray = TmemArrayType[
         Self.accum_type,
+        type_of(Self.accum_tile_layout),
         Self.accum_tile_layout,
         Self.num_stages,
         cta_group=Self.cta_group,

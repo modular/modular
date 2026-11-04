@@ -88,6 +88,7 @@ from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import make_swizzle
 from layout.tile_tensor import stack_allocation
 from layout.tensor_core import get_fragment_size, get_mma_shape
+from layout.coord import coord
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils_gpu import _apple_m5_allow_lossy_f32_attention
 from std.memory import unsafe_stack_allocation
@@ -3394,10 +3395,10 @@ def mha_single_batch[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            coord[2 * num_m_mmas, num_n_mmas],
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
@@ -4071,10 +4072,10 @@ def mha_single_batch_pipelined[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            coord[2 * num_m_mmas, num_n_mmas],
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
@@ -5082,9 +5083,9 @@ def mha_decoding_single_batch[
         comptime if group <= 8:
             _online_softmax_iter_for_mma_output[
                 accum_type,
-                Layout.row_major(num_m_mmas, num_n_mmas),
-                Layout.row_major(num_warps_m, num_warps_n),
-                Layout.row_major(8, 4),
+                coord[num_m_mmas, num_n_mmas],
+                coord[num_warps_m, num_warps_n],
+                coord[8, 4],
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
@@ -5107,9 +5108,9 @@ def mha_decoding_single_batch[
             ]()
             _online_softmax_iter_for_mma_output[
                 accum_type,
-                Layout.row_major(2 * num_m_mmas, num_n_mmas),
-                Layout.row_major(num_warps_m, num_warps_n),
-                Layout.row_major(8, 4),
+                coord[2 * num_m_mmas, num_n_mmas],
+                coord[num_warps_m, num_warps_n],
+                coord[8, 4],
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
@@ -5286,9 +5287,9 @@ def mha_decoding_single_batch[
         # The warp reduction just combines warps; sink contribution is added to rowsum later.
         _online_softmax_iter_for_mma_output_split_warp_reduce[
             accum_type,
-            Layout.row_major(num_m_mmas, num_n_mmas),
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_m_mmas, num_n_mmas],
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             WM,
             WN,
             use_exp2=True,
@@ -5748,9 +5749,9 @@ def mha_decoding_single_batch_pipelined[
 
         _online_softmax_iter_for_mma_output[
             accum_type,
-            Layout.row_major(num_m_mmas, num_n_mmas),
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_m_mmas, num_n_mmas],
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
