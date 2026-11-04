@@ -298,8 +298,8 @@ def _test_atan2[
 
 def _parse_hex(digits: StringSlice) -> UInt64:
     var v: UInt64 = 0
-    for c in digits.codepoint_slices():
-        var d = ord(c)
+    for c in digits.codepoints():
+        var d = Int(c)
         v = v * 16 + UInt64(d - 48 if d <= 57 else d - 55)
     return v
 

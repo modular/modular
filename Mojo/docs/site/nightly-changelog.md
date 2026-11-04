@@ -103,6 +103,20 @@ This version is still a work in progress.
 
 - Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
 
+- `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
+  now raise an `Error` instead of aborting when the string is empty. They also
+  raise when the string holds more than one codepoint; previously they
+  silently returned the first codepoint unless assertions were enabled.
+  Callers must now handle the error with `try` or a `raises` function. On a
+  string literal, both never raise, and a literal that isn't exactly one
+  codepoint is a compile-time error.
+
+  ```mojo
+  var text = String("🔥")
+  var codepoint = ord(text)  # 128293; raises if `text` isn't one codepoint
+  comptime letter = ord("a")  # 97; never raises
+  ```
+
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
   `Movable` only when all of its elements are.
   `Tuple` has a new `init_with` initializer, which constructs each element in

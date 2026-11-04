@@ -2375,7 +2375,7 @@ struct String(
 # ===----------------------------------------------------------------------=== #
 
 
-def ord(s: StringSlice) -> Int:
+def ord(s: StringSpan) raises -> Int:
     """Returns an integer that represents the codepoint of a single-character
     string.
 
@@ -2383,13 +2383,31 @@ def ord(s: StringSlice) -> Int:
     representing the codepoint of that character. For example, `ord("a")`
     returns the integer `97`. This is the inverse of the `chr()` function.
 
+    This overload validates its input at run time. Passing a string literal
+    directly selects the non-raising overload, which validates at compile time.
+
     This function is in the prelude, so you don't need to import it.
 
     Args:
-        s: The input string, which must contain only a single character.
+        s: The input string, which must contain exactly one codepoint.
 
     Returns:
         An integer representing the code point of the given character.
+
+    Raises:
+        Error: If `s` is empty or contains more than one codepoint.
+
+    Examples:
+
+    ```mojo
+    var text = String("🔥")
+    print(ord(text))  # 128293
+
+    try:
+        _ = ord(String("ab"))
+    except e:
+        print(e)  # ord() expected a single codepoint, but got a string of 2 codepoints: 'ab'
+    ```
     """
     return Int(Codepoint.ord(s))
 
@@ -2402,25 +2420,24 @@ def ord(s: StringLiteral[_]) -> Int:
     representing the codepoint of that character. For example, `ord("a")`
     returns the integer `97`. This is the inverse of the `chr()` function.
 
-    Constraints:
-        The literal must contain exactly one codepoint.
-
     Args:
-        s: The input string, which must contain only a single character.
+        s: The input string, which must contain exactly one codepoint.
 
     Returns:
         An integer representing the code point of the given character.
+
+    Constraints:
+        The literal must contain exactly one codepoint. `ord("")` and
+        `ord("ab")` fail to compile.
+
+    Examples:
+
+    ```mojo
+    print(ord("a"))  # 97
+    comptime fire = ord("🔥")  # 128293, usable at compile time
+    ```
     """
-    comptime literal = type_of(s)()
-    # TODO(MOCO-5221): Use a plain `comptime assert` once it is checked before
-    # the fold below. Until then the fold sits in a branch so bad input never
-    # reaches it.
-    comptime if literal.count_codepoints() == 1:
-        return comptime (ord(StringSlice(literal)))
-    else:
-        comptime assert (
-            False
-        ), "ord() expects a string literal containing exactly one character"
+    return Int(Codepoint.ord(s))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2627,7 +2644,7 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
         real_base = base
 
     if real_base <= 10:
-        ord_num_max = ord(String(real_base - 1))
+        ord_num_max = ord("0") + (real_base - 1)
     else:
         ord_num_max = ord("9")
         ord_letter_max = (
@@ -2798,7 +2815,7 @@ def _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
                 was_last_character_underscore = False
             if str_slice[byte=i] != StringSlice("0"):
                 return -1, -1
-    elif ord("1") <= ord(str_slice[byte=start]) <= ord("9"):
+    elif ord("1") <= Int(str_slice.as_bytes()[start]) <= ord("9"):
         return 10, start
     else:
         return -1, -1

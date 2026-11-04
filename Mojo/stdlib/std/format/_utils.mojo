@@ -522,7 +522,7 @@ struct _TotalWritableBytes(Writer):
         self.size += string.byte_length()
 
 
-def _ord_ascii(s: StringSlice) -> UInt8:
+def _ord_ascii(s: StringLiteral[_]) -> UInt8:
     return UInt8(ord(s))
 
 
