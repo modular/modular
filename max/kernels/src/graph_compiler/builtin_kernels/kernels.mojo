@@ -75,7 +75,6 @@ from nn.rope_split_store import (
 )
 from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_ragged,
-    generic_flash_attention_kv_cache_ragged_rel_logits,
     generic_flash_attention_kv_cache_ragged_sink,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
@@ -1932,6 +1931,7 @@ def _unmarshal_mha_decode_dispatch_metadata(
 def _execute_mha_ragged_paged_scalar_args[
     q_dtype: DType,
     output_dtype: DType,
+    MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
     //,
     target: StaticString,
     mask_str: StaticString,
@@ -1966,6 +1966,7 @@ def _execute_mha_ragged_paged_scalar_args[
     mha_decode_dispatch_metadata: TileTensor[
         DType.int64, address_space=.GENERIC, ...
     ],
+    mask_operands: TensorTuple[*MaskIns],
     context: DeviceContext,
     sink_weights: OptionalReg[
         TileTensor[
@@ -1989,6 +1990,9 @@ def _execute_mha_ragged_paged_scalar_args[
         max_cache_length,
     )
     comptime if sink:
+        comptime assert (
+            len(MaskIns) == 0
+        ), "sink attention takes no mask operands"
         generic_flash_attention_kv_cache_ragged_sink[
             target=target,
             mask_str=mask_str,
@@ -2020,84 +2024,8 @@ def _execute_mha_ragged_paged_scalar_args[
             output,
             context,
             decode_dispatch_metadata,
+            mask_operands,
         )
-
-
-@inline(.always)
-def _execute_mha_ragged_paged_rel_logits[
-    q_dtype: DType,
-    output_dtype: DType,
-    //,
-    target: StaticString,
-    local_window_size: Int = -1,
-](
-    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
-    q: TileTensor[q_dtype, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    kv_blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
-    page_stride: TileTensor[
-        mut=False, DType.int64, address_space=.GENERIC, ...
-    ],
-    cache_lengths: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    kv_lookup_table: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    max_prompt_length: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    max_cache_length: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    layer_idx: UInt32,
-    scale: Float32,
-    bias: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
-    mha_decode_dispatch_metadata: TileTensor[
-        DType.int64, address_space=.GENERIC, ...
-    ],
-    context: DeviceContext,
-) raises:
-    comptime assert output.rank == 3
-    comptime assert q.rank == 3
-    comptime assert input_row_offsets.rank == 1
-    comptime assert kv_blocks.rank == 6
-    comptime assert bias.rank == 3
-    var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
-        mha_decode_dispatch_metadata
-    )
-    var kv_collection = generic_get_paged_cache(
-        kv_blocks,
-        page_stride,
-        cache_lengths,
-        kv_lookup_table,
-        max_prompt_length,
-        max_cache_length,
-    )
-    # The helper takes pointer-backed tiles for the row offsets, bias and
-    # cache lengths, so rebuild them over the tiles' data; a non-pointer
-    # storage policy aborts here at run time.
-    generic_flash_attention_kv_cache_ragged_rel_logits[
-        target=target,
-        local_window_size=local_window_size,
-        output_dtype=output_dtype,
-    ](
-        q.as_imm(),
-        TileTensor(
-            ptr=input_row_offsets.unsafe_ptr().as_imm(),
-            layout=input_row_offsets.layout,
-        ),
-        kv_collection,
-        layer_idx,
-        scale,
-        TileTensor(ptr=bias.unsafe_ptr(), layout=bias.layout),
-        TileTensor(ptr=cache_lengths.unsafe_ptr(), layout=cache_lengths.layout),
-        output,
-        context,
-        decode_dispatch_metadata,
-    )
 
 
 # ===-----------------------------------------------------------------------===#

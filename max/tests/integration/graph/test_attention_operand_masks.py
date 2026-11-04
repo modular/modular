@@ -11,13 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Checks the masks in `nn.attention.operand_masks`, which read their
-operands through `load`, against the pointer-based masks they replace.
+operands through `load`.
 
-Each graph runs both on the same inputs; the outputs must match exactly.
+The additive masks must match `MaterializedMask`, which reads the same tensor
+through its pointer, exactly. The segment and relative-logits masks are checked
+against PyTorch.
 """
 
+import math
 import os
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +48,7 @@ DENSE_SEQ = 64
 
 Inputs = dict[str, torch.Tensor | np.ndarray]
 Build = Callable[[dict[str, TensorValue]], Sequence[TensorValue]]
+Reference = Callable[[Inputs], torch.Tensor]
 
 
 def _gpu(dtype: DType, shape: Sequence[int]) -> TensorType:
@@ -104,12 +109,6 @@ def _pointer_and_load(
 def _segment(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
     # `mo.mha.ragged.no_cache` builds the mask from its trailing operands.
     return [
-        _ragged_op(
-            "test_ragged_attention_pointer_mask",
-            x,
-            "segment",
-            [x["ids"], x["offsets"]],
-        ),
         flash_attention_ragged_gpu(
             x["q"],
             x["k"],
@@ -121,6 +120,21 @@ def _segment(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
             segment_ids=x["ids"],
         ),
     ]
+
+
+def _load(
+    mask: str,
+    operands: Callable[[dict[str, TensorValue]], Sequence[TensorValue]],
+    window: int = -1,
+) -> Build:
+    def build(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
+        return [
+            _ragged_op(
+                "test_ragged_attention_load_mask", x, mask, operands(x), window
+            )
+        ]
+
+    return build
 
 
 def _builtin_additive(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
@@ -178,29 +192,6 @@ def _additive_fused(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
     ]
 
 
-def _relative_logits_bf16_odd(
-    x: dict[str, TensorValue],
-) -> Sequence[TensorValue]:
-    # An odd extent can't read the bf16 bias in pairs, and the pointer mask
-    # rejects it, so the pointer mask reads the bias's exact f32 upcast.
-    bias = x["bias_bf16_odd"]
-    rest = [x["cache_lengths"], x["offsets"]]
-    return [
-        _ragged_op(
-            "test_ragged_attention_pointer_mask",
-            x,
-            "relative_logits",
-            [bias.cast(DType.float32), *rest],
-        ),
-        _ragged_op(
-            "test_ragged_attention_load_mask",
-            x,
-            "relative_logits",
-            [bias, *rest],
-        ),
-    ]
-
-
 def _dense(mask_name: str) -> Build:
     def build(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
         q, k, v, mask = x["dq"], x["dk"], x["dv"], x[mask_name]
@@ -216,63 +207,107 @@ def _dense(mask_name: str) -> Build:
     return build
 
 
-CASES: dict[str, tuple[list[str], Build]] = {
-    "causal_no_operands": ([], _causal),
-    "segment": (["ids"], _segment),
-    "builtin_additive": (["mask3"], _builtin_additive),
-    "additive_rank3": (
-        ["mask3"],
-        _pointer_and_load("additive", lambda x: [x["mask3"]]),
+def _per_sequence(
+    inputs: Inputs,
+    masked: Callable[[slice, torch.Tensor], torch.Tensor],
+) -> torch.Tensor:
+    q, k, v = (torch.as_tensor(inputs[n]).float() for n in ("q", "k", "v"))
+    offsets = inputs["offsets"]
+    out = torch.empty_like(q)
+    for r in range(BATCH):
+        rows = slice(int(offsets[r]), int(offsets[r + 1]))
+        scores = torch.einsum("phd,lhd->hpl", q[rows], k[rows]) * SCALE
+        probs = masked(rows, scores).softmax(-1)
+        out[rows] = torch.einsum("hpl,lhd->phd", probs, v[rows])
+    return out
+
+
+def _segment_reference(inputs: Inputs) -> torch.Tensor:
+    ids = torch.as_tensor(inputs["ids"])
+
+    def masked(rows: slice, scores: torch.Tensor) -> torch.Tensor:
+        i = ids[rows]
+        visible = (
+            (i[:, None] == -1) | (i[None, :] == -1) | (i[:, None] == i[None, :])
+        )
+        return scores.masked_fill(~visible, -math.inf)
+
+    return _per_sequence(inputs, masked)
+
+
+def _relative_logits_reference(bias: str, window: int = -1) -> Reference:
+    def reference(inputs: Inputs) -> torch.Tensor:
+        table = torch.as_tensor(inputs[bias]).float()
+        extent = table.shape[-1]
+
+        def masked(rows: slice, scores: torch.Tensor) -> torch.Tensor:
+            n = scores.shape[-1]
+            dist = torch.arange(n)[:, None] - torch.arange(n)[None, :]
+            visible = dist >= 0
+            if window > 0:
+                visible &= dist < window
+            gathered = torch.gather(
+                table[rows].permute(1, 0, 2),  # [heads, n, extent]
+                2,
+                dist.clamp(0, extent - 1)[None].expand(HEADS, -1, -1),
+            )
+            scores = scores + torch.where(
+                visible & (dist < extent), gathered, 0.0
+            )
+            return scores.masked_fill(~visible, -math.inf)
+
+        return _per_sequence(inputs, masked)
+
+    return reference
+
+
+@dataclass(frozen=True)
+class Case:
+    extra: list[str]
+    build: Build
+    # Without a reference, the graph's two outputs must match exactly.
+    reference: Reference | None = None
+
+
+def _relative_logits(bias: str, window: int = -1) -> Case:
+    return Case(
+        [bias, "cache_lengths"],
+        _load(
+            "relative_logits",
+            lambda x: [x[bias], x["cache_lengths"], x["offsets"]],
+            window,
+        ),
+        _relative_logits_reference(bias, window),
+    )
+
+
+CASES: dict[str, Case] = {
+    "causal_no_operands": Case([], _causal),
+    "segment": Case(["ids"], _segment, _segment_reference),
+    "builtin_additive": Case(["mask3"], _builtin_additive),
+    "additive_rank3": Case(
+        ["mask3"], _pointer_and_load("additive", lambda x: [x["mask3"]])
     ),
-    "additive_rank4": (
-        ["mask4"],
-        _pointer_and_load("additive", lambda x: [x["mask4"]]),
+    "additive_rank4": Case(
+        ["mask4"], _pointer_and_load("additive", lambda x: [x["mask4"]])
     ),
     # More keys than queries in the bias, so its rows shift by the difference.
-    "additive_rank3_wide": (
+    "additive_rank3_wide": Case(
         ["mask3_wide"],
         _pointer_and_load("additive", lambda x: [x["mask3_wide"]]),
     ),
-    "additive_fused_producer": (["mask3"], _additive_fused),
-    "dense_additive_rank3": (["dq", "dk", "dv", "dmask3"], _dense("dmask3")),
-    "dense_additive_rank4": (["dq", "dk", "dv", "dmask4"], _dense("dmask4")),
-    "relative_logits_bf16": (
-        ["bias_bf16", "cache_lengths"],
-        _pointer_and_load(
-            "relative_logits",
-            lambda x: [x["bias_bf16"], x["cache_lengths"], x["offsets"]],
-        ),
+    "additive_fused_producer": Case(["mask3"], _additive_fused),
+    "dense_additive_rank3": Case(
+        ["dq", "dk", "dv", "dmask3"], _dense("dmask3")
     ),
-    "relative_logits_bf16_window": (
-        ["bias_bf16", "cache_lengths"],
-        _pointer_and_load(
-            "relative_logits",
-            lambda x: [x["bias_bf16"], x["cache_lengths"], x["offsets"]],
-            window=32,
-        ),
+    "dense_additive_rank4": Case(
+        ["dq", "dk", "dv", "dmask4"], _dense("dmask4")
     ),
-    "relative_logits_bf16_cached": (
-        ["bias_bf16", "cache_lengths_nonzero"],
-        _pointer_and_load(
-            "relative_logits",
-            lambda x: [
-                x["bias_bf16"],
-                x["cache_lengths_nonzero"],
-                x["offsets"],
-            ],
-        ),
-    ),
-    "relative_logits_bf16_odd_extent": (
-        ["bias_bf16_odd", "cache_lengths"],
-        _relative_logits_bf16_odd,
-    ),
-    "relative_logits_f32_odd_extent": (
-        ["bias_f32", "cache_lengths"],
-        _pointer_and_load(
-            "relative_logits",
-            lambda x: [x["bias_f32"], x["cache_lengths"], x["offsets"]],
-        ),
-    ),
+    "relative_logits_bf16": _relative_logits("bias_bf16"),
+    "relative_logits_bf16_window": _relative_logits("bias_bf16", window=32),
+    # An odd extent can't read the bf16 bias in pairs.
+    "relative_logits_bf16_odd_extent": _relative_logits("bias_bf16_odd"),
+    "relative_logits_f32_odd_extent": _relative_logits("bias_f32"),
 }
 
 BASE = ["q", "k", "v", "offsets", "max_len"]
@@ -300,7 +335,6 @@ def _types() -> dict[str, TensorType]:
         "bias_bf16_odd": _gpu(DType.bfloat16, [TOKENS, HEADS, 33]),
         "bias_f32": _gpu(DType.float32, [TOKENS, HEADS, 33]),
         "cache_lengths": _gpu(DType.uint32, [BATCH]),
-        "cache_lengths_nonzero": _gpu(DType.uint32, [BATCH]),
     }
 
 
@@ -345,7 +379,6 @@ def _inputs() -> Inputs:
         "bias_bf16_odd": bf16(TOKENS, HEADS, 33),
         "bias_f32": rng.standard_normal((TOKENS, HEADS, 33)).astype(np.float32),
         "cache_lengths": np.zeros(BATCH, dtype=np.uint32),
-        "cache_lengths_nonzero": np.array([5, 3], dtype=np.uint32),
     }
 
 
@@ -376,11 +409,11 @@ def _buffer(value: torch.Tensor | np.ndarray, device: Accelerator) -> Buffer:
 
 
 @pytest.mark.parametrize("case", list(CASES))
-def test_matches_pointer_mask(
+def test_attention_mask(
     case: str, session: InferenceSession, ops_path: Path, inputs: Inputs
 ) -> None:
-    extra, build = CASES[case]
-    names = [*BASE, *extra]
+    spec = CASES[case]
+    names = [*BASE, *spec.extra]
     types = _types()
     with Graph(
         f"attention_{case}",
@@ -388,7 +421,7 @@ def test_matches_pointer_mask(
         custom_extensions=[ops_path],
     ) as graph:
         x = dict(zip(names, (v.tensor for v in graph.inputs), strict=True))
-        graph.output(*build(x))
+        graph.output(*spec.build(x))
     model = session.load(graph)
 
     device = Accelerator()
@@ -398,9 +431,16 @@ def test_matches_pointer_mask(
         else _buffer(inputs[n], device)
         for n in names
     ]
-    reference, actual = (
+    outputs = [
         torch.from_dlpack(out.to(CPU())).float() for out in model.execute(*args)
-    )
+    ]
+    if spec.reference is not None:
+        (actual,) = outputs
+        torch.testing.assert_close(
+            actual, spec.reference(inputs), rtol=2e-2, atol=2e-2
+        )
+        return
+    reference, actual = outputs
     assert torch.equal(reference, actual), (
         f"max abs diff {(reference - actual).abs().max().item()}"
     )

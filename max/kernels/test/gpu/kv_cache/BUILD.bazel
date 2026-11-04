@@ -117,6 +117,7 @@ _EXTRA_DEPS = {
     "test_pv_mnmajor_mma_spike.mojo": ["//max:max_mojo"],
     "test_qk_kmajor_consumer_spike.mojo": ["//max:max_mojo"],
     "test_qk_kmajor_mma_spike.mojo": ["//max:max_mojo"],
+    "test_mha_rel_logits_ragged_paged.mojo": ["//max:extensibility"],
 }
 
 [

@@ -42,6 +42,7 @@ from extensibility import (
     IOSpec,
     ManagedTensorSlice,
     StaticTensorSpec,
+    TensorTuple,
     get_row_major_tensor_spec_static,
 )
 from extensibility.managed_tensor_slice import _IndexListToTileLayout
@@ -334,6 +335,7 @@ def run_op(
         Float32(1.0) / sqrt(Float32(HEAD_DIM)),
         metadata.to_tile_tensor(),
         split_args.to_tile_tensor(),
+        TensorTuple(),
         ctx,
     )
     var output_h = ctx.enqueue_create_host_buffer[DType.bfloat16](

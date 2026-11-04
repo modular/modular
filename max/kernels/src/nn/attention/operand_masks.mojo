@@ -40,10 +40,6 @@ from nn.attention.mha_mask import (
 )
 from std.builtin.device_passable import DeviceTypeEncoder
 
-# TODO(GEX-4477): Delete `MaterializedMask` and the pointer-based `SegmentMask`
-# and `RelativeLogitsMask` in `mha_mask.mojo` once attention takes its mask from
-# the graph.
-
 
 @inline(.always)
 def aligned_load[

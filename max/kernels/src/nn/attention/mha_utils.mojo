@@ -54,7 +54,6 @@ from nn.attention.mha_mask import (
     MaskName,
     MHAMask,
     NullMask,
-    RelativeLogitsMask,
     SlidingWindowCausalMask,
     SlidingWindowNonCausalMask,
 )
@@ -63,6 +62,9 @@ from std.utils.numerics import min_or_neg_inf
 from max.gpu.primitives.grid_controls import PDLLevel
 from extensibility import Fused, Input, LoadAccess, TensorTuple
 from nn.attention.operand_masks import AdditiveMask
+from nn.attention.operand_masks import (
+    RelativeLogitsMask as OperandRelativeLogitsMask,
+)
 from nn.attention.operand_masks import SegmentMask as OperandSegmentMask
 
 # ===-----------------------------------------------------------------------===#
@@ -833,7 +835,8 @@ def dispatch_mask[
     Args:
         mask_operands: The mask's graph operands: none for the masks that
             read none, the ids and row offsets for `"segment"`, the mask for
-            `"additive"`.
+            `"additive"`, the bias, cache lengths and row offsets for
+            `"relative_logits"`.
         callback_fn: Parametric callback invoked with the resolved mask.
 
     Raises:
@@ -889,54 +892,13 @@ def dispatch_mask[
             return outer_wrapper(OperandSegmentMask[].make(mask_operands))
         case "additive":
             return outer_wrapper(AdditiveMask[].make(mask_operands))
+        case "relative_logits":
+            # Causal visibility unless `local_window_size` is positive.
+            return outer_wrapper(
+                OperandRelativeLogitsMask[local_window_size].make(mask_operands)
+            )
         case _:
             comptime assert False, "Unsupported mask type: " + mask_type
-
-
-@inline(.always)
-def dispatch_relative_logits_mask[
-    dtype: DType,
-    BiasLayout: TensorLayout,
-    bias_origin: ImmOrigin,
-    CacheLengthsLayout: TensorLayout,
-    cache_lengths_origin: ImmOrigin,
-    RowOffsetsLayout: TensorLayout,
-    row_offsets_origin: ImmOrigin,
-    //,
-    local_window_size: Int = -1,
-](
-    bias_nd: ImmTileTensor[dtype, BiasLayout, bias_origin],
-    cache_lengths: ImmTileTensor[
-        .uint32, CacheLengthsLayout, cache_lengths_origin
-    ],
-    input_row_offsets: ImmTileTensor[
-        .uint32, RowOffsetsLayout, row_offsets_origin
-    ],
-    callback_fn: Some[callback_fn_type],
-) raises -> None:
-    """Wrap `bias_nd` in a `RelativeLogitsMask` and invoke `callback_fn`.
-
-    This carries runtime state (the bias table plus the tensors that recover
-    its ragged-flat row), so it lives
-    outside `dispatch_mask`'s zero-arg string dispatch. `local_window_size`
-    picks the visibility mask: `<= 0` (canonically `-1`, the graph-level
-    "no window" value) -> `CausalMask`, else
-    `SlidingWindowCausalMask[local_window_size]`. The mask structs
-    themselves report "no window" as `sliding_window_size() == 0`; this
-    function is where the two conventions meet.
-    """
-    comptime if local_window_size <= 0:
-        return callback_fn(
-            RelativeLogitsMask[visibility=CausalMask()](
-                bias_nd, cache_lengths, input_row_offsets
-            )
-        )
-    else:
-        return callback_fn(
-            RelativeLogitsMask[
-                visibility=SlidingWindowCausalMask[local_window_size]()
-            ](bias_nd, cache_lengths, input_row_offsets)
-        )
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`

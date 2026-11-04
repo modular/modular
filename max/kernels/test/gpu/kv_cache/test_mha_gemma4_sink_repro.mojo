@@ -47,6 +47,7 @@ from kv_cache.types import (
 from layout import Idx, row_major
 from layout._fillers import random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
+from extensibility import TensorTuple
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
 from nn.kv_cache_ragged import generic_flash_attention_kv_cache_ragged
 from nn.attention.mha_mask import CausalMask
@@ -189,6 +190,7 @@ def execute_sink_prefill_repro[
         test_output.device_tensor(),
         ctx_ptr,
         decode_dispatch_metadata,
+        TensorTuple(),
     )
     ctx.synchronize()
 

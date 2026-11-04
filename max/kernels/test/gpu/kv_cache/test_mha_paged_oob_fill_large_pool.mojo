@@ -35,6 +35,7 @@ from max.gpu.host import DeviceContext
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from kv_cache_test_utils import padded_lut_cols
+from extensibility import TensorTuple
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
 from nn.kv_cache_ragged import generic_flash_attention_kv_cache_ragged
 
@@ -133,6 +134,7 @@ def run_case(q_len: Int, cache_len: Int, extra: Int, ctx: DeviceContext) raises:
         out.device_tensor(),
         ctx,
         meta,
+        TensorTuple(),
     )
     ctx.synchronize()
     out.to_host()

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Attention entry points for testing the masks in `nn.attention.operand_masks`
-against the pointer-based masks they replace.
+against `MaterializedMask`, which reads the same tensor through its pointer.
 
 The `mask` string parameter picks the mask; the mask operands are the trailing
 variadic.
@@ -31,13 +31,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 from nn.attention.gpu.mha import flash_attention, flash_attention_ragged
 from nn.attention.mha_mask import CausalMask, MaterializedMask, MHAMask
-from nn.attention.mha_mask import SegmentMask as PointerSegmentMask
-from nn.attention.mha_utils import dispatch_relative_logits_mask
-from nn.attention.operand_masks import (
-    AdditiveMask,
-    RelativeLogitsMask,
-    SegmentMask,
-)
+from nn.attention.operand_masks import AdditiveMask, RelativeLogitsMask
 
 
 @inline(.always)
@@ -115,18 +109,6 @@ struct RaggedAttentionLoadMask:
                     mask_operands,
                     ctx,
                 )
-            case "segment":
-                _ragged_attention[SegmentMask[]](
-                    output,
-                    q,
-                    k,
-                    v,
-                    input_row_offsets,
-                    q_max_seq_len,
-                    scale,
-                    mask_operands,
-                    ctx,
-                )
             case "relative_logits":
                 _ragged_attention[RelativeLogitsMask[window]](
                     output,
@@ -156,8 +138,8 @@ def _imm_tile[
 
 @extensibility.register("test_ragged_attention_pointer_mask")
 struct RaggedAttentionPointerMask:
-    """Ragged attention with the pointer-based mask a mask in
-    `nn.attention.operand_masks` replaces."""
+    """Ragged attention with `MaterializedMask`, which `AdditiveMask`
+    replaces."""
 
     @staticmethod
     def execute[
@@ -216,26 +198,6 @@ struct RaggedAttentionPointerMask:
                             mask_operands[0]
                         )
                     )
-                )
-            case "segment":
-                var ids = mask_operands[0].to_tile_tensor[.int32]()
-                var offsets = mask_operands[1].to_tile_tensor[.uint32]()
-                _run(
-                    PointerSegmentMask(
-                        ids.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-                        offsets.ptr.as_imm().unsafe_origin_cast[
-                            ImmutAnyOrigin
-                        ](),
-                    )
-                )
-            case "relative_logits":
-                dispatch_relative_logits_mask[window](
-                    _imm_tile[type_of(mask_operands[0]).dtype](
-                        mask_operands[0]
-                    ),
-                    _imm_tile[.uint32](mask_operands[1]),
-                    _imm_tile[.uint32](mask_operands[2]),
-                    _run,
                 )
             case _:
                 comptime assert False, "unknown mask: " + mask

@@ -133,7 +133,6 @@ from nn.attention.gpu.mla_index_kpool import (
 )
 
 from .kernels import (
-    _execute_mha_ragged_paged_rel_logits,
     _execute_mha_ragged_paged_scalar_args,
     _unmarshal_mha_decode_dispatch_metadata,
     _unsafe_str_to_coord,
@@ -3245,12 +3244,15 @@ struct Struct_mha_ragged_paged_scalar_args:
     (`kv_cache.mixed_step_split`). On NVIDIA, a valid record runs the decode
     rows and the prefill rows of one replica batch as two views, each on its
     own route, into the one output. Zeros, an invalid record, a strided
-    operand, split head dims or another target keep the single launch.
+    operand, split head dims, mask operands or another target keep the single
+    launch.
     """
 
     @inline(.always)
     @staticmethod
     def execute[
+        MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
+        //,
         target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
@@ -3269,6 +3271,7 @@ struct Struct_mha_ragged_paged_scalar_args:
         scale: Float32,
         mha_decode_dispatch_metadata: Some[Input & Tensor],
         mixed_step_split: Some[Input & Tensor],
+        mask_operands: TensorTuple[*MaskIns],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -3315,6 +3318,7 @@ struct Struct_mha_ragged_paged_scalar_args:
             scale,
             mha_decode_dispatch_metadata.to_tile_tensor[.int64](),
             mixed_step_split.to_tile_tensor[.uint32](),
+            mask_operands,
             context,
         )
 
@@ -3322,6 +3326,7 @@ struct Struct_mha_ragged_paged_scalar_args:
 def _execute_mha_ragged_paged[
     q_dtype: DType,
     output_dtype: DType,
+    MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
     //,
     *,
     target: StaticString,
@@ -3356,12 +3361,18 @@ def _execute_mha_ragged_paged[
     mixed_step_split: TileTensor[
         mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
+    mask_operands: TensorTuple[*MaskIns],
     context: DeviceContext,
 ) raises:
     """Runs `mo.mha.ragged.paged`: split by `mixed_step_split` where the
     record and the operands allow it, else one launch."""
+    # Mask operands are indexed by the whole batch's sequence ids, which a
+    # split view renumbers.
     comptime if (
-        v_head_dim == -1 and is_gpu[target]() and context.target.is_nvidia_gpu()
+        v_head_dim == -1
+        and len(MaskIns) == 0
+        and is_gpu[target]()
+        and context.target.is_nvidia_gpu()
     ):
         if _mha_ragged_mixed_step_split[
             target=target,
@@ -3401,6 +3412,7 @@ def _execute_mha_ragged_paged[
         layer_idx,
         scale,
         mha_decode_dispatch_metadata,
+        mask_operands,
         context,
     )
 
@@ -3515,6 +3527,7 @@ def _mha_ragged_mixed_step_split[
                 MHADecodeDispatchMetadata.from_runtime_values[
                     num_heads, num_heads // kv_heads
                 ](view.rows, view.max_q_len, view.max_cache_len, context),
+                TensorTuple(),
             )
             _ = rebased^
         return True
@@ -3598,84 +3611,9 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
             layer_idx,
             scale,
             mha_decode_dispatch_metadata.to_tile_tensor[.int64](),
+            TensorTuple(),
             context,
             OptionalReg[type_of(sink_weights_tt)](sink_weights_tt),
-        )
-
-
-@extensibility.register("mo.mha.ragged.paged.rel_logits")
-struct Struct_mha_ragged_paged_rel_logits:
-    """Registers the `mo.mha.ragged.paged.rel_logits` graph op.
-
-    Adds a relative-position bias to pre-softmax scores, gathered by
-    `rel_dist = q_pos - k_pos` via `RelativeLogitsMask` rather than
-    materializing a dense `(q, k)` mask.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        target: StaticString,
-        local_window_size: Int = -1,
-    ](
-        output: Some[Output & Tensor],
-        q: Some[Input & Tensor],
-        input_row_offsets: Some[Input & Tensor],
-        kv_blocks: Some[MutableInput & Tensor],
-        page_stride: Some[Input & Tensor],
-        cache_lengths: Some[Input & Tensor],
-        kv_lookup_table: Some[Input & Tensor],
-        max_prompt_length: Some[Input & Tensor],
-        max_cache_length: Some[Input & Tensor],
-        layer_idx: UInt32,
-        scale: Float32,
-        bias: Some[Input & Tensor],
-        mha_decode_dispatch_metadata: Some[Input & Tensor],
-        context: DeviceContext,
-    ) raises:
-        comptime assert conforms_to(type_of(output), TileTensorable)
-        comptime assert conforms_to(type_of(q), TileTensorable)
-        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
-        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
-        comptime assert conforms_to(type_of(page_stride), TileTensorable)
-        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
-        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
-        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
-        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
-        comptime assert conforms_to(type_of(bias), TileTensorable)
-        comptime assert conforms_to(
-            type_of(mha_decode_dispatch_metadata), TileTensorable
-        )
-        comptime out_dtype = type_of(output).dtype
-        comptime assert type_of(output).rank == 3
-        comptime assert type_of(q).rank == 3
-        comptime assert type_of(input_row_offsets).rank == 1
-        comptime assert type_of(kv_blocks).rank == 6
-        comptime assert type_of(page_stride).rank == 1
-        comptime assert type_of(cache_lengths).rank == 1
-        comptime assert type_of(kv_lookup_table).rank == 2
-        comptime assert type_of(max_prompt_length).rank == 1
-        comptime assert type_of(max_cache_length).rank == 1
-        comptime assert type_of(bias).rank == 3
-        comptime assert type_of(mha_decode_dispatch_metadata).rank == 1
-        _execute_mha_ragged_paged_rel_logits[
-            target=target,
-            local_window_size=local_window_size,
-        ](
-            output.to_tile_tensor(),
-            q.to_tile_tensor(),
-            input_row_offsets.to_tile_tensor[.uint32](),
-            kv_blocks.to_tile_tensor(),
-            page_stride.to_tile_tensor[.int64](),
-            cache_lengths.to_tile_tensor[.uint32](),
-            kv_lookup_table.to_tile_tensor[.uint32](),
-            max_prompt_length.to_tile_tensor[.uint32](),
-            max_cache_length.to_tile_tensor[.uint32](),
-            layer_idx,
-            scale,
-            bias.to_tile_tensor[type_of(q).dtype](),
-            mha_decode_dispatch_metadata.to_tile_tensor[.int64](),
-            context,
         )
 
 

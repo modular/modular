@@ -76,12 +76,12 @@ from nn.attention.gpu.nvidia.common import (
     immut_tile_tensor_1d,
 )
 from nn.attention.mha_mask import MHAMask
+from extensibility import Fused, Input, LoadAccess, TensorTuple
 from nn.attention.mha_utils import (
     MHAConfig,
     NullPointer,
     OptionalPointer,
     dispatch_mask,
-    dispatch_relative_logits_mask,
     null_pointer,
     unread_pointer,
 )
@@ -3771,6 +3771,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
 def generic_flash_attention_kv_cache_ragged[
     collection_t: KVCollectionT,
     dtype: DType,
+    MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
     //,
     *,
     target: StaticString,
@@ -3788,6 +3789,7 @@ def generic_flash_attention_kv_cache_ragged[
     output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
+    mask_operands: TensorTuple[*MaskIns],
 ) raises:
     """Dispatches flash attention over a ragged batch against a paged KV cache.
 
@@ -3795,6 +3797,7 @@ def generic_flash_attention_kv_cache_ragged[
         collection_t: The KV cache collection type storing the K and V caches
             for this layer (inferred).
         dtype: Data type of the query tensor (inferred).
+        MaskIns: The mask operand types (inferred).
         target: Target device string for kernel dispatch.
         mask_str: Attention mask name selecting the masking strategy, such as
             "causal", "null", or "sliding_window_causal".
@@ -3817,6 +3820,8 @@ def generic_flash_attention_kv_cache_ragged[
         context: The call context pointer, passed by the graph compiler.
         decode_dispatch_metadata: Precomputed dispatch metadata used to select
             decode kernels for the GPU target.
+        mask_operands: The mask's operands; `dispatch_mask` lists what each
+            mask reads.
     """
 
     @inline(.always)
@@ -3858,6 +3863,7 @@ def generic_flash_attention_kv_cache_ragged[
             output,
             context,
             decode_dispatch_metadata,
+            mask_operands,
         )
 
 
@@ -3927,6 +3933,7 @@ def _launch_flash_attention_with_mask[
 def _flash_attention_dispatch[
     dtype: DType,
     collection_t: KVCollectionT,
+    MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
     //,
     *,
     target: StaticString,
@@ -3944,6 +3951,7 @@ def _flash_attention_dispatch[
     output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
+    mask_operands: TensorTuple[*MaskIns],
     sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
@@ -3975,109 +3983,7 @@ def _flash_attention_dispatch[
     return dispatch_mask[
         mask_str,
         local_window_size,
-    ](_dispatch_flash_attention)
-
-
-@inline(.always)
-def generic_flash_attention_kv_cache_ragged_rel_logits[
-    collection_t: KVCollectionT,
-    dtype: DType,
-    RowOffsetsLayout: TensorLayout,
-    row_offsets_origin: ImmOrigin,
-    BiasLayout: TensorLayout,
-    bias_origin: ImmOrigin,
-    CacheLengthsLayout: TensorLayout,
-    cache_lengths_origin: ImmOrigin,
-    //,
-    *,
-    target: StaticString,
-    local_window_size: Int = -1,
-    output_dtype: DType = dtype,
-](
-    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    input_row_offsets: ImmTileTensor[
-        .uint32, RowOffsetsLayout, row_offsets_origin
-    ],
-    kv_collection: collection_t,
-    layer_idx: UInt32,
-    scale: Float32,
-    bias: ImmTileTensor[dtype, BiasLayout, bias_origin],
-    cache_lengths: ImmTileTensor[
-        .uint32, CacheLengthsLayout, cache_lengths_origin
-    ],
-    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
-    context: DeviceContext,
-    decode_dispatch_metadata: MHADecodeDispatchMetadata,
-) raises:
-    """Flash attention over a ragged batch with a relative-position bias.
-
-    `bias` is gathered by `rel_dist = q_pos - k_pos` inside the kernel via
-    `RelativeLogitsMask`; `local_window_size` picks the visibility mask
-    (`-1` -> global causal). `cache_lengths` is the same tensor used to build
-    `kv_collection`, passed again so the mask can recover each query's
-    ragged-flat row into `bias` (the collection only exposes a per-sequence
-    scalar accessor, not the raw tensor).
-    """
-
-    @inline(.always)
-    def description_fn() {imm} -> String:
-        var desc_parts = List[String]()
-        desc_parts.append(trace_arg("q", q.layout.shape_coord()))
-        desc_parts.append(String(t"scale={scale}"))
-        desc_parts.append(String(t"layer_idx={layer_idx}"))
-        desc_parts.append(
-            String(t"num_heads={collection_t.kv_params.num_heads}")
-        )
-        desc_parts.append(
-            String(t"head_size={collection_t.kv_params.head_size}")
-        )
-        desc_parts.append(String(t"local_window_size={local_window_size}"))
-        desc_parts.append("relative_position_bias=True")
-        return String(";").join(desc_parts)
-
-    comptime name = "mo.mha.ragged." + collection_t.name_str + String(
-        t".rel_logits.nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
-    )
-
-    var k = kv_collection.get_key_cache(Int(layer_idx))
-    var v = kv_collection.get_value_cache(Int(layer_idx))
-
-    comptime assert (
-        input_row_offsets.rank == 1 and cache_lengths.rank == 1
-    ), "Expected rank-1 `input_row_offsets` and `cache_lengths`"
-    comptime assert (
-        bias.rank == 3
-    ), "Expected rank 3 (tokens, heads, extent) for the bias tensor"
-
-    def _dispatch_flash_attention[
-        mask_t: MHAMask
-    ](mask: mask_t) raises {var k, var v, imm}:
-        return _launch_flash_attention_with_mask[
-            target=target,
-            output_dtype=output_dtype,
-        ](
-            q,
-            input_row_offsets,
-            k,
-            v,
-            mask,
-            scale,
-            output,
-            context,
-            decode_dispatch_metadata,
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        name,
-        Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.device().id),
-    ):
-        return dispatch_relative_logits_mask[local_window_size,](
-            bias,
-            cache_lengths,
-            input_row_offsets,
-            _dispatch_flash_attention,
-        )
+    ](mask_operands, _dispatch_flash_attention)
 
 
 @inline(.always)
@@ -4174,6 +4080,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
             output,
             context,
             decode_dispatch_metadata,
+            TensorTuple(),
             OptionalReg[ImmutTileTensor1D[dtype]](
                 immut_tile_tensor_1d(sink_weights)
             ),

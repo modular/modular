@@ -5027,7 +5027,7 @@ def flash_attention_ragged(
     When ``rel_logits`` is set, the kernel gathers an additive
     relative-position bias by ``rel_dist = q_pos - k_pos`` from a
     ``(total_q_tokens, heads, extent)`` table and adds it on every visible
-    position, selecting ``mo.mha.ragged.paged.rel_logits``. This path only
+    position, with ``mask_str = "relative_logits"``. This path only
     supports ``mask_variant`` values ``CAUSAL_MASK`` (with
     ``local_window_size == -1``) and ``SLIDING_WINDOW_CAUSAL_MASK`` (with a
     positive ``local_window_size``); ``sink_weights`` and ``rel_logits`` are
@@ -5158,12 +5158,11 @@ def flash_attention_ragged(
                 f"input's, but got {rel_logits.shape[1]}"
             )
 
-        parameters: dict[str, int | str | DType] = (
-            {"local_window_size": local_window_size}
-            if local_window_size != -1
-            else {}
-        )
-        op_name = "mo.mha.ragged.paged.rel_logits"
+        parameters: dict[str, int | str | DType] = {
+            "mask_str": "relative_logits",
+            "local_window_size": local_window_size,
+        }
+        op_name = "mo.mha.ragged.paged"
     else:
         parameters = _mha_parameters(
             mask_variant, local_window_size=local_window_size
@@ -5182,13 +5181,14 @@ def flash_attention_ragged(
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-    if rel_logits is not None:
-        values.append(rel_logits)
-    elif sink_weights is not None:
+    if sink_weights is not None:
         values.append(sink_weights)
     values.append(dispatch_metadata.tensor)
-    if rel_logits is None and sink_weights is None:
+    if sink_weights is None:
         values.append(_mixed_step_split_value(kv_collection.mixed_step_split))
+    if rel_logits is not None:
+        # The relative-logits mask's operands trail the op's own.
+        values += [rel_logits, kv_collection.cache_lengths, input_row_offsets]
 
     return ops.inplace_custom(
         op_name,
