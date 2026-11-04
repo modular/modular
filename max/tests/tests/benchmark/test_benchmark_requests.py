@@ -1419,22 +1419,15 @@ class TestRequestDriverSelection:
                 task="text-to-image",
             )
 
-    def test_get_request_driver_class_text_gen_videos_sync_rejected(
-        self,
+    @pytest.mark.parametrize("path", ["/v1/videos/sync", "/v1/videos"])
+    def test_get_request_driver_class_text_gen_videos_rejected(
+        self, path: str
     ) -> None:
-        """text-generation + /v1/videos/sync should raise, not return the
+        """text-generation + a video endpoint should raise, not return the
         video driver."""
         with pytest.raises(ValueError, match="Unsupported API URL"):
             get_request_driver_class(
-                "http://localhost:8000/v1/videos/sync",
-                task="text-generation",
-            )
-
-    def test_get_request_driver_class_text_gen_videos_rejected(self) -> None:
-        """text-generation + /v1/videos should raise."""
-        with pytest.raises(ValueError, match="Unsupported API URL"):
-            get_request_driver_class(
-                "http://localhost:8000/v1/videos",
+                f"http://localhost:8000{path}",
                 task="text-generation",
             )
 
