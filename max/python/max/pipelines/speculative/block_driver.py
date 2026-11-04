@@ -48,6 +48,7 @@ from max.graph import (
 from max.nn import Module as ModuleV3
 from max.nn.legacy.kernels import (
     _dspark_draft_sample,
+    _is_amd_gpu,
     _is_sm10x_gpu,
     gumbel_argmax_from_probs,
 )
@@ -1470,13 +1471,21 @@ class BlockDriver(
         # The committed token is ``recovered`` at the accepted count, or
         # ``bonus`` when every proposal was accepted. A prefill row reads 0.
         target_tokens = ops.concat([recovered, bonus], axis=1)
-        gather_idx = ops.where(
-            is_prefill,
-            ops.constant(0, DType.int64, device=device).broadcast_to(
-                ["batch_size"]
-            ),
-            num_accepted.cast(DType.int64),
-        )
+        if _is_amd_gpu():
+            # A prefill row already has zero accepted, so the select is
+            # redundant. AMD drops it to avoid llvm/llvm-project#231154, a dead
+            # SCC def on a cloned S_CMP.
+            # TODO(CLIN-1968): restore the select on AMD once the LLVM pin
+            # carries the fix.
+            gather_idx = num_accepted.cast(DType.int64)
+        else:
+            gather_idx = ops.where(
+                is_prefill,
+                ops.constant(0, DType.int64, device=device).broadcast_to(
+                    ["batch_size"]
+                ),
+                num_accepted.cast(DType.int64),
+            )
         next_tokens = ops.gather_nd(
             target_tokens, ops.unsqueeze(gather_idx, axis=-1), batch_dims=1
         )
