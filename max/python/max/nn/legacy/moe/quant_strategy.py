@@ -505,6 +505,8 @@ class NvMxf4f8Strategy:
         estimated_total_m: TensorValue | None = None,
         activation: GatedActivation | None = None,
         a_row_scales: TensorValue | None = None,
+        max_total_m: int = 0,
+        prefill_dynamic_claim: bool = False,
     ) -> tuple[TensorValue, TensorValue]:
         """Runs the fused quantized grouped matmul + SwiGLU + quant kernel.
 
@@ -535,6 +537,11 @@ class NvMxf4f8Strategy:
                 ``grouped_matmul_blocked_swiglu``.
             a_row_scales: Optional BF16 scale per ``hidden`` row, applied with
                 the expert scale before the SwiGLU. NVFP4 only.
+            max_total_m: Upper bound on ``hidden``'s row count when it is
+                dynamic, or 0; see ``grouped_matmul_blocked_swiglu``.
+            prefill_dynamic_claim: Whether a fused MegaFFN claims its prefill
+                tiles from a shared counter; see
+                ``grouped_matmul_blocked_swiglu``.
 
         Returns:
             Tuple ``(c_packed, c_swiglu_scales)`` matching the chained
@@ -561,6 +568,8 @@ class NvMxf4f8Strategy:
             estimated_total_m=estimated_total_m,
             activation=activation,
             a_row_scales=a_row_scales,
+            max_total_m=max_total_m,
+            prefill_dynamic_claim=prefill_dynamic_claim,
         )
 
 

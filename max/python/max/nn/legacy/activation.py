@@ -91,6 +91,12 @@ class GatedActivation:
     gated_activation_fn: Callable[[TensorValue, int], TensorValue] | None = None
     """Graph-op replacement for the activation, or ``None`` to fuse it."""
 
+    round_to_bf16: bool = False
+    """Whether a fused kernel rounds the activation's output to ``bfloat16``
+    before it quantizes it. A standalone activation kernel writes ``bfloat16``,
+    so a fused kernel needs this to quantize the same values. Only ``"silu"``
+    and ``"swigluoai"`` take it."""
+
     def __post_init__(self) -> None:
         name = self.fused_activation
         if name not in _FUSED_ACTIVATION_CONSTANTS:
@@ -108,6 +114,8 @@ class GatedActivation:
             raise ValueError("swigluoai needs a non-zero alpha and limit")
         if name == "situ" and self.alpha == 0.0:
             raise ValueError("situ needs a non-zero alpha (beta)")
+        if self.round_to_bf16 and name not in ("silu", "swigluoai"):
+            raise ValueError(f"{name} does not take round_to_bf16")
         if self.gated_activation_fn is not None and (
             name != "silu" or self.limit != 0.0
         ):
@@ -129,7 +137,8 @@ class GatedActivation:
                 " into a kernel"
             )
         return {
-            "activation": self.fused_activation,
+            "activation": self.fused_activation
+            + ("_bf16" if self.round_to_bf16 else ""),
             "swiglu_alpha": float(self.alpha),
             "swiglu_limit": float(self.limit),
         }

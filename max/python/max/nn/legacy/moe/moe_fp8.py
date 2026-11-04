@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TypeVar
 
 from max.driver import (
@@ -366,6 +367,19 @@ class MoEQuantized(MoE):
             and self.quant_config is not None
             and self.quant_config.is_nvfp4
             and self.quant_config.can_use_fused_swiglu
+        )
+
+    def _can_fuse_swiglu_nvfp4_without_ep(self) -> bool:
+        """Whether the opt-in sigma-permuted layout feeds the TP expert path.
+
+        The gate-up weight and scales are permuted at graph build (see
+        ``fused_swiglu_layout_without_ep``), so the fused SwiGLU+quant matmul
+        reads them directly, as it does under EP.
+        """
+        return (
+            self._ep_batch_manager is None
+            and self._is_nvfp4
+            and self._can_fuse_swiglu_nvfp4()
         )
 
     def _ep_dispatch_input_scales(self) -> TensorValue | None:
@@ -826,9 +840,17 @@ class MoEQuantized(MoE):
                 *expert_inputs[3:],
             )
 
-        if self._can_fuse_swiglu_interleaved():
+        if (
+            self._can_fuse_swiglu_interleaved()
+            or self._can_fuse_swiglu_nvfp4_without_ep()
+        ):
             assert isinstance(strategy, NvMxf4f8Strategy)
             assert nvfp4 is not None
+            activation = self.activation
+            if self._can_fuse_swiglu_nvfp4_without_ep():
+                # The unfused chain it replaces quantizes the activation after
+                # a BF16 round trip through its SwiGLU kernel's output.
+                activation = dataclasses.replace(activation, round_to_bf16=True)
             gate_up_quant, gate_up_scales = strategy.grouped_matmul_swiglu(
                 self.gate_up_proj,
                 gate_up_scales,
@@ -836,7 +858,9 @@ class MoEQuantized(MoE):
                 input_scales=nvfp4.down_input,
                 expert_inputs=expert_inputs,
                 estimated_total_m=total_m,
-                activation=self.activation,
+                activation=activation,
+                max_total_m=self.max_routed_rows,
+                prefill_dynamic_claim=self.megaffn_prefill_dynamic_claim,
             )
         else:
             gate_up = strategy.grouped_matmul(
