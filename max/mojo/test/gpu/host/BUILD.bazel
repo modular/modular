@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_test")
+load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -126,6 +126,25 @@ mojo_test(
     name = "test_launch_attribute.mojo.test",
     srcs = ["test_launch_attribute.mojo"],
     deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_device_arg_acceptor.mojo.test",
+    srcs = ["test_device_arg_acceptor.mojo"],
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+lit_tests(
+    name = "lit",
+    size = "small",
+    srcs = ["test_device_arg_acceptor_size_mismatch_fail.mojo"],
+    mojo_deps = [
         "//max:max_mojo",
         "@mojo//:std",
     ],
