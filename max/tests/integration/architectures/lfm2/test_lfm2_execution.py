@@ -28,24 +28,33 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import (
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.lfm2 import LFM2, LFM2Config
+from max.pipelines.architectures.lfm2.model_config import (
+    ATTN_CACHE_KEY,
+    CONV_LEAF_ID,
+    STATE_CACHE_KEY,
+)
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache import JengaKVCacheManager
 from max.pipelines.lib import GraphRole, GraphSpec, compile_and_init_graphs
 from max.pipelines.lib.interfaces import BatchProcessorRuntime
-from max.pipelines.lib.module_registration import bind_state_store
 from max.pipelines.lib.registration_graph_api import (
     GraphApiDecoderBatchProcessor,
     _DecoderGraph,
     graph_api_decoder_input_types,
 )
-from max.pipelines.lib.request_state import split_state_outputs
 from test_common.context_utils import create_text_context
 
 _CPU = DeviceRef.CPU()
-# Two state slots, so c can only take the slot a frees.
+_HIDDEN = 32
+_CONV_KERNEL = 3
 _MAX_BATCH_SIZE = 2
 _FIRST_DECODE_TOKEN = 40
 _PROMPTS = {
@@ -55,24 +64,38 @@ _PROMPTS = {
 }
 
 # Each step's batch, in its order: a and b prefill together, decode in both
-# orders, then a finishes and c takes its state slot, prefilling beside b's
-# decode.
+# orders, then a finishes and c prefills beside b's decode in the state rows
+# a freed, which the pool hands out first.
 _SCHEDULE = [["a", "b"], ["b", "a"], ["a", "b"], ["b", "c"], ["c", "b"]]
 
 
-def _kv_params() -> MHAKVCacheParams:
-    return MHAKVCacheParams(
+def _kv_params() -> MultiKVCacheParams:
+    attn = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=1,
         head_dim=16,
         num_layers=1,
         devices=[_CPU],
     )
+    state = RecurrentStateParams(
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=CONV_LEAF_ID,
+                num_layers=2,
+                row_shape=(_HIDDEN, _CONV_KERNEL - 1),
+                dtype=DType.float32,
+            ),
+        ),
+        devices=[_CPU],
+    )
+    return MultiKVCacheParams.from_params(
+        {ATTN_CACHE_KEY: attn, STATE_CACHE_KEY: state}
+    )
 
 
 def _config() -> LFM2Config:
     return LFM2Config(
-        hidden_size=32,
+        hidden_size=_HIDDEN,
         num_attention_heads=2,
         num_key_value_heads=1,
         num_hidden_layers=3,
@@ -93,7 +116,7 @@ def _config() -> LFM2Config:
         clip_qkv=None,
         devices=[_CPU],
         layer_types=["conv", "full_attention", "conv"],
-        conv_L_cache=3,
+        conv_L_cache=_CONV_KERNEL,
     )
 
 
@@ -109,12 +132,7 @@ def _compile(session: InferenceSession, config: LFM2Config) -> Model:
         },
         weight_alignment=1,
     )
-    state_types = LFM2.state_store(
-        config, max_batch_size=_MAX_BATCH_SIZE, devices=[CPU()]
-    ).input_types()
-    input_types = graph_api_decoder_input_types(
-        config.kv_params, [_CPU], state=state_types
-    )
+    input_types = graph_api_decoder_input_types(config.kv_params, [_CPU])
     compiled = compile_and_init_graphs(
         session,
         {
@@ -132,15 +150,13 @@ def _compile(session: InferenceSession, config: LFM2Config) -> Model:
 class _Server:
     """Steps batches through the decoder as the registered pipeline does."""
 
-    def __init__(
-        self, session: InferenceSession, model: Model, config: LFM2Config
-    ) -> None:
+    def __init__(self, model: Model, config: LFM2Config) -> None:
         self._model = model
-        self._kv = PagedKVCacheManager(
+        self._kv = JengaKVCacheManager.create(
             params=config.kv_params,
-            session=session,
-            total_num_pages=8,
+            available_bytes=1 << 20,
             max_batch_size=_MAX_BATCH_SIZE,
+            max_seq_len=config.max_seq_len,
         )
         self._processor = GraphApiDecoderBatchProcessor(
             config,
@@ -153,20 +169,9 @@ class _Server:
                 max_batch_input_tokens=64,
             ),
         )
-        store = bind_state_store(
-            LFM2,
-            config,
-            self._processor,
-            max_batch_size=_MAX_BATCH_SIZE,
-            devices=[CPU()],
-        )
-        assert store is not None
-        self._store = store
         self._processor.bind_input_tree(
             OrderedDict[str, object](
-                graph_api_decoder_input_types(
-                    config.kv_params, [_CPU], state=store.input_types()
-                )
+                graph_api_decoder_input_types(config.kv_params, [_CPU])
             )
         )
         self._steps: dict[str, int] = {}
@@ -185,15 +190,7 @@ class _Server:
         inputs = self._processor.prepare_initial_token_inputs(
             [contexts], kv_cache_inputs=self._kv.runtime_inputs([contexts])
         )
-        outputs = self._model.execute(*inputs.buffers)
-        (logits,), state = split_state_outputs(
-            outputs, ReturnLogits.LAST_TOKEN, ReturnHiddenStates.NONE
-        )
-        state_outputs: list[Buffer] = []
-        for output in state:
-            assert isinstance(output, Buffer)
-            state_outputs.append(output)
-        self._store.update(inputs.request_ids, state_outputs)
+        (logits,) = self._model.execute(*inputs.buffers)
         assert isinstance(logits, Buffer)
         rows = logits.to_numpy()
         # Every request decodes the same tokens whichever batch it is in.
@@ -205,7 +202,6 @@ class _Server:
         return dict(zip(batch, rows, strict=True))
 
     def release(self, ctx: TextContext) -> None:
-        self._store.release(ctx.request_id)
         self._kv.release(ctx)
 
 
@@ -222,7 +218,7 @@ def test_batched_requests_match_running_alone() -> None:
     model = _compile(session, config)
 
     batched: dict[str, list[np.ndarray]] = {name: [] for name in _PROMPTS}
-    server = _Server(session, model, config)
+    server = _Server(model, config)
     contexts = _contexts(list(_PROMPTS))
     for step, names in enumerate(_SCHEDULE):
         logits = server.step({name: contexts[name] for name in names})
@@ -232,7 +228,7 @@ def test_batched_requests_match_running_alone() -> None:
             server.release(contexts["a"])
 
     for name, steps in batched.items():
-        alone = _Server(session, model, config)
+        alone = _Server(model, config)
         (ctx,) = _contexts([name]).values()
         for step, row in enumerate(steps):
             np.testing.assert_allclose(

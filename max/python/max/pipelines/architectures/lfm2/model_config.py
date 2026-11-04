@@ -18,15 +18,36 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
+from max.dtype import DType
+from max.graph import DeviceRef
 from max.graph.weights import WeightData
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
-from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 
 from ..llama3.decoder import Llama3DecoderConfig
 
 DEFAULT_ROPE_THETA = 10000.0
+
+ATTN_CACHE_KEY = "attn"
+STATE_CACHE_KEY = "state"
+"""The two children of an LFM2 cache tree."""
+
+CONV_LEAF_ID = "short_conv/window"
+"""The state leaf holding each conv layer's window of past inputs."""
 
 
 @dataclass(kw_only=True)
@@ -39,10 +60,73 @@ class LFM2Config(Llama3DecoderConfig):
         "bfloat16",
     }
 
+    # TODO(SERVOPT-1607): Llama3Config narrows the KV contract to
+    # KVCacheParams, which MultiKVCacheParams cannot satisfy. Both
+    # suppressions here go when that contract widens.
+    kv_params: MultiKVCacheParams  # type: ignore[assignment]
+    """The cache tree: the attention layers' KV beside the conv state."""
+
     layer_types: list[str] = field(default_factory=list)
     conv_L_cache: int = 3
     conv_bias: bool = False
     norm_eps: float = 1e-5
+
+    @property
+    def attn_kv_params(self) -> KVCacheParams:
+        """The attention child of :attr:`kv_params`."""
+        return self.kv_params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
+
+    @classmethod
+    def construct_kv_params(  # type: ignore[override]  # TODO(SERVOPT-1607)
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
+    ) -> MultiKVCacheParams:
+        """Returns the attention leaf beside the conv state.
+
+        Only the full-attention layers take KV pages, indexed 0, 1, 2, ... in
+        layer order. Each conv layer instead keeps a window of its last
+        ``conv_L_cache - 1`` inputs, a row of the state leaf in the model's
+        compute dtype.
+        """
+        layer_types = list(getattr(huggingface_config, "layer_types", []))
+        num_attention_layers = layer_types.count("full_attention")
+        attn = kv_cache_config.to_params(
+            dtype=cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
+            n_kv_heads=huggingface_config.num_key_value_heads,
+            head_dim=cls.get_head_dim(huggingface_config),
+            num_layers=num_attention_layers,
+            devices=devices,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        )
+        dtype = supported_encoding_dtype(
+            _select_quantization_encoding(
+                pipeline_config.model, cls.DEFAULT_ENCODING
+            )
+        )
+        window = RecurrentStateRegion(
+            leaf_id=CONV_LEAF_ID,
+            num_layers=len(layer_types) - num_attention_layers,
+            row_shape=(
+                huggingface_config.hidden_size,
+                int(getattr(huggingface_config, "conv_L_cache", 3)) - 1,
+            ),
+            dtype=dtype,
+        )
+        state = RecurrentStateParams(
+            regions=(window,),
+            devices=attn.devices,
+            data_parallel_degree=attn.data_parallel_degree,
+        )
+        return MultiKVCacheParams.from_params(
+            {ATTN_CACHE_KEY: attn, STATE_CACHE_KEY: state}
+        )
 
     @staticmethod
     def _get_rope_theta(huggingface_config: AutoConfig) -> float:

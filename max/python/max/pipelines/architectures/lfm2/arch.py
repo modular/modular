@@ -37,6 +37,7 @@ lfm2_arch = SupportedArchitecture(
         "trust_remote_code": True,
     },
     multi_gpu_supported=False,
+    checkpoints_recurrent_state=True,
     weight_rules=lfm2_weight_rules,
     use_weight_rules=True,
     config=LFM2Config,
