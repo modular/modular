@@ -2313,7 +2313,7 @@ struct PackMatmulBShapeFunc:
 
     @inline(.always)
     @staticmethod
-    def execute(b_input: InputTensor) raises:
+    def execute(b_input: Some[Input & Tensor]) raises:
         raise Error("Only meant to be used for shape function!")
 
 

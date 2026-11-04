@@ -3320,31 +3320,46 @@ struct Struct_dspark_draft_sample:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
-        out_dist: OutputTensor[dtype=.float32, rank=2, ...],
-        logits: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=.float32, rank=2, ...],
-        temperature: InputTensor[dtype=.float32, rank=1, ...],
-        seed: InputTensor[dtype=.uint64, rank=1, ...],
+        out_tokens: Some[Output & Tensor],
+        out_dist: Some[Output & Tensor],
+        logits: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
+        temperature: Some[Input & Tensor],
+        seed: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[
             target
         ](), "sampler.dspark_draft_sample is GPU-only"
+        comptime assert conforms_to(type_of(out_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(out_dist), TileTensorable)
+        comptime assert conforms_to(type_of(logits), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        comptime assert conforms_to(type_of(temperature), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime dtype = type_of(logits).dtype
+        comptime assert type_of(out_tokens).dtype == .int64
+        comptime assert type_of(out_dist).dtype == .float32
+        comptime assert type_of(bias).dtype == .float32
+        comptime assert type_of(temperature).dtype == .float32
+        comptime assert type_of(seed).dtype == .uint64
+        comptime assert type_of(out_tokens).rank == 1
+        comptime assert type_of(out_dist).rank == 2
+        comptime assert type_of(logits).rank == 2
+        comptime assert type_of(bias).rank == 2
+        comptime assert type_of(temperature).rank == 1
+        comptime assert type_of(seed).rank == 1
         dspark_draft_sample_gpu(
             ctx,
-            logits.to_tile_tensor[.int64](),
-            bias.to_tile_tensor[.int64](),
-            temperature.to_tile_tensor[.int64]()
-            .as_unsafe_any_origin()
-            .as_imm(),
-            seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
+            logits.to_tile_tensor[dtype](),
+            bias.to_tile_tensor[.float32](),
+            temperature.to_tile_tensor[.float32, mut=False](),
+            seed.to_tile_tensor[.uint64, mut=False](),
             out_tokens.to_tile_tensor[.int64](),
-            out_dist.to_tile_tensor[.int64](),
+            out_dist.to_tile_tensor[.float32](),
         )
 
 
