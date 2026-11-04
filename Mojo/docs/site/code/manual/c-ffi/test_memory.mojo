@@ -30,14 +30,15 @@ def create_buffer(
 
 
 def test_malloc_free() raises:
-    var allocated = create_buffer(c_size_t(16))
-    assert_true(Bool(allocated), "malloc failed")
-    var buf = allocated.value()
-    buf[unsafe_offset=0] = 42
-    buf[unsafe_offset=1] = 7
-    assert_equal(buf[unsafe_offset=0], UInt8(42))
-    assert_equal(buf[unsafe_offset=1], UInt8(7))
-    external_call["free", NoneType](buf.unsafe_bitcast[NoneType]())
+    match create_buffer(c_size_t(16)):
+        case .Some(buf):
+            buf[unsafe_offset=0] = 42
+            buf[unsafe_offset=1] = 7
+            assert_equal(buf[unsafe_offset=0], UInt8(42))
+            assert_equal(buf[unsafe_offset=1], UInt8(7))
+            external_call["free", NoneType](buf.unsafe_bitcast[NoneType]())
+        case .None:
+            raise Error("malloc failed")
 
 
 # --- Context manager that frees C memory automatically ---
@@ -52,9 +53,11 @@ struct CBuffer:
         var allocated = external_call[
             "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
         ](n)
-        if not allocated:
-            raise Error("malloc failed")
-        self.ptr = allocated.value()
+        match allocated:
+            case .Some(ptr):
+                self.ptr = ptr
+            case .None:
+                raise Error("malloc failed")
 
     def __enter__(self) -> Pointer[UInt8, MutUntrackedOrigin]:
         return self.ptr

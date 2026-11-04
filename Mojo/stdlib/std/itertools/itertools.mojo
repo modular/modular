@@ -166,13 +166,11 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         var initial_b_bounds = self._initial_inner_b.bounds()
 
         var lower_bound = a_bounds[0] * initial_b_bounds[0] + b_bounds[0]
-        if not a_bounds[1] or not initial_b_bounds[1]:
-            return (lower_bound, None)
-
-        var upper_bound = a_bounds[1].unsafe_value() * initial_b_bounds[
-            1
-        ].unsafe_value() + b_bounds[1].or_else(0)
-        return (lower_bound, upper_bound)
+        if case .Some(a_upper) = a_bounds[1]:
+            if case .Some(initial_b_upper) = initial_b_bounds[1]:
+                var b_upper = b_bounds[1].or_else(0)
+                return (lower_bound, a_upper * initial_b_upper + b_upper)
+        return (lower_bound, None)
 
 
 @inline(.always)

@@ -134,6 +134,43 @@ def assert_equal[
         )
 
 
+@inline(.always)
+def assert_equal[
+    T: Equatable & Writable,
+    //,
+](
+    lhs: Optional[T],
+    rhs: T,
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that an `Optional` holds a value equal to `rhs`. If it is empty
+    or holds a different value, an Error is raised.
+
+    Parameters:
+        T: The type of the value the `Optional` holds.
+
+    Args:
+        lhs: The `Optional` to check.
+        rhs: The value `lhs` must hold.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if case .Some(value) = lhs:
+        if value == rhs:
+            return
+    raise _assert_cmp_error["`left == right` comparison"](
+        String(lhs),
+        String(rhs),
+        msg=msg,
+        loc=location.or_else(call_location()),
+    )
+
+
 # TODO: Remove the PythonObject, String and List overloads once we have
 # more powerful traits.
 

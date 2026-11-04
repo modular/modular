@@ -894,23 +894,14 @@ struct StringSpan[origin: ImmOrigin](
             i += 1
         var start_bytes = total_bytes - iter.remaining_byte_length()
 
-        if not end_opt:
-            return Self(
-                unsafe_from_utf8=Span[Byte, Self.origin](
-                    unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(
-                        start_bytes
-                    ),
-                    length=total_bytes - start_bytes,
-                )
-            )
-
-        var end_idx = end_opt.unsafe_value()
-        while i < end_idx:
-            if not iter.next():
-                _ = check_slice_bounds(grapheme, i)
-                break
-            i += 1
-        var end_bytes = total_bytes - iter.remaining_byte_length()
+        var end_bytes = total_bytes
+        if case .Some(end_idx) = end_opt:
+            while i < end_idx:
+                if not iter.next():
+                    _ = check_slice_bounds(grapheme, i)
+                    break
+                i += 1
+            end_bytes = total_bytes - iter.remaining_byte_length()
 
         return Self(
             unsafe_from_utf8=Span[Byte, Self.origin](
@@ -1500,10 +1491,10 @@ struct StringSpan[origin: ImmOrigin](
         var iter = self.graphemes()
         var split_bytes = 0
         for _ in range(n):
-            var g = iter.next()
-            if not g:
+            if case .Some(g) = iter.next():
+                split_bytes += g.byte_length()
+            else:
                 break
-            split_bytes += g.unsafe_value().byte_length()
 
         var total = len(self._slice)
         var prefix = Self.Immutable(
@@ -1866,10 +1857,11 @@ struct StringSpan[origin: ImmOrigin](
             substr.as_bytes().as_imm(),
         )
 
-        if not loc:
-            return -1
-
-        return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
+        match loc:
+            case .Some(loc):
+                return Int(loc) - Int(self.unsafe_ptr())
+            case .None:
+                return -1
 
     def rfind(self, substr: StringSpan, start: Int = 0) -> Int:
         """Finds the offset in bytes of the last occurrence of `substr` starting at
@@ -1901,10 +1893,11 @@ struct StringSpan[origin: ImmOrigin](
             substr.as_bytes(),
         )
 
-        if not loc:
-            return -1
-
-        return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
+        match loc:
+            case .Some(loc):
+                return Int(loc) - Int(self.unsafe_ptr())
+            case .None:
+                return -1
 
     @doc_hidden
     @deprecated(use=is_ascii_whitespace)

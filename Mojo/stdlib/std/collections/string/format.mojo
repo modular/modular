@@ -354,17 +354,20 @@ struct _FormatUtils:
                 skip_next = False
                 continue
             if fmt_bytes.unsafe_get(i) == `{`:
-                if not start:
+                if case .Some(start_value) = start:
+                    if i - start_value != 1:
+                        raise Error(l_err)
+                    # python escapes double curlies
+                    entries.append(EntryType(start_value, i, field=False))
+                    start = None
+                else:
                     start = i
-                    continue
-                if i - start.value() != 1:
-                    raise Error(l_err)
-                # python escapes double curlies
-                entries.append(EntryType(start.value(), i, field=False))
-                start = None
                 continue
             elif fmt_bytes.unsafe_get(i) == `}`:
-                if not start:
+                var start_value: Int
+                if case .Some(s) = start:
+                    start_value = s
+                else:
                     # python escapes double curlies
                     if (i + 1) < fmt_len and fmt_bytes.unsafe_get(i + 1) == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
@@ -374,7 +377,6 @@ struct _FormatUtils:
                     # if it is not an escaped one, it is an error
                     raise Error(r_err)
 
-                var start_value = start.value()
                 var current_entry = EntryType(start_value, i, field=NoneType())
 
                 if i - start_value != 1:

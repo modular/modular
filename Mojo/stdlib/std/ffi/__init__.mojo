@@ -454,12 +454,14 @@ struct OwnedDLHandle(Boolable, Movable):
         var ptr = self._handle.get_symbol[NoneType](
             cstr_name=name.as_c_string_span()
         )
-        if not ptr:
-            raise Error(t"symbol not found: {name}")
-        return _DLCallable[return_type, origin_of(self)](
-            ptr.unsafe_value(),
-            Pointer(to=self),
-        )
+        match ptr:
+            case .Some(ptr):
+                return _DLCallable[return_type, origin_of(self)](
+                    ptr,
+                    Pointer(to=self),
+                )
+            case .None:
+                raise Error(t"symbol not found: {name}")
 
     @inline(.always)
     def _get_function[
@@ -555,17 +557,14 @@ struct OwnedDLHandle(Boolable, Movable):
         Returns:
             An optional pointer to the symbol, or `None` if not found.
         """
-        var res = self._handle.get_symbol[result_type](cstr_name=cstr_name)
-        if not res:
-            return None
-        # `_DLHandle` is non-owning, so it can only hand back an untracked
-        # origin. Re-tie the pointer to this owning handle, which is the borrow
-        # `_DLHandle` has no way to express.
-        return (
-            res.unsafe_value()
-            .unsafe_mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
-        )
+        match self._handle.get_symbol[result_type](cstr_name=cstr_name):
+            case .Some(res):
+                # `_DLHandle` is non-owning, so it can only hand back an
+                # untracked origin. Re-tie the pointer to this owning handle,
+                # which is the borrow `_DLHandle` has no way to express.
+                return res.unsafe_mut_cast[mut]().unsafe_origin_cast[origin]()
+            case .None:
+                return None
 
     @inline(.always)
     def call[
@@ -800,12 +799,13 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         """
         var opaque_function_ptr = self.get_symbol[NoneType](cstr_name=cstr_name)
 
-        if not opaque_function_ptr:
-            abort(t"symbol not found: {cstr_name}")
-
-        return Pointer(to=opaque_function_ptr.value()).unsafe_bitcast[
-            result_type
-        ]()[]
+        match opaque_function_ptr:
+            case .Some(opaque_function_ptr):
+                return Pointer(to=opaque_function_ptr).unsafe_bitcast[
+                    result_type
+                ]()[]
+            case .None:
+                abort(t"symbol not found: {cstr_name}")
 
     def get_symbol[
         result_type: AnyType,
@@ -880,7 +880,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             # symbols should specify a nullable pointer as the result_type.
             abort(t"symbol resolved to NULL: {cstr_name}")
 
-        return res.value()
+        return res
 
     @inline(.always)
     def call[

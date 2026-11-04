@@ -51,6 +51,7 @@ query interval data, particularly for finding overlaps.
 
 from std.builtin.string_literal import StaticString
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
+from std.os import abort
 
 import std.format._utils as fmt
 
@@ -413,8 +414,12 @@ struct _IntervalNode[
         Returns:
             The depth of this interval node.
         """
-        var left_depth = self.left().value()[].depth() if self.left() else 0
-        var right_depth = self.right().value()[].depth() if self.right() else 0
+        var left_depth = 0
+        if case .Some(left) = self.left():
+            left_depth = left[].depth()
+        var right_depth = 0
+        if case .Some(right) = self.right():
+            right_depth = right[].depth()
         return 1 + max(left_depth, right_depth)
 
     def __bool__(self) -> Bool:
@@ -515,8 +520,14 @@ struct IntervalTree[
         assert Bool(self._root), "node is not set"
         var rotation_node_nn = rotation_node.value()
         var rotation_right_child = rotation_node_nn[].right()
-        assert Bool(rotation_right_child), "right child is not set"
-        var rotation_right_child_nn = rotation_right_child.value()
+        var rotation_right_child_nn: Pointer[
+            _IntervalNode[Self.T, Self.U], MutUntrackedOrigin
+        ]
+        match rotation_right_child:
+            case .Some(right):
+                rotation_right_child_nn = right
+            case .None:
+                abort("right child is not set")
         rotation_node_nn[].right() = rotation_right_child_nn[].left()
 
         if case .Some(left) = rotation_right_child_nn[].left():
@@ -524,12 +535,13 @@ struct IntervalTree[
 
         rotation_right_child_nn[].parent() = rotation_node_nn[].parent()
 
-        if not rotation_node_nn[].parent():
-            self._root = rotation_right_child
-        elif rotation_node == rotation_node_nn[].parent().value()[].left():
-            rotation_node_nn[].parent().value()[].left() = rotation_right_child
+        if case .Some(parent) = rotation_node_nn[].parent():
+            if rotation_node == parent[].left():
+                parent[].left() = rotation_right_child
+            else:
+                parent[].right() = rotation_right_child
         else:
-            rotation_node_nn[].parent().value()[].right() = rotation_right_child
+            self._root = rotation_right_child
 
         rotation_right_child_nn[].left() = rotation_node
         rotation_node_nn[].parent() = rotation_right_child
@@ -584,8 +596,14 @@ struct IntervalTree[
         assert Bool(self._root), "root node is not set"
         var rotation_node_nn = rotation_node.value()
         var rotation_left_child = rotation_node_nn[].left()
-        assert Bool(rotation_left_child), "left child node is not set"
-        var rotation_left_child_nn = rotation_left_child.value()
+        var rotation_left_child_nn: Pointer[
+            _IntervalNode[Self.T, Self.U], MutUntrackedOrigin
+        ]
+        match rotation_left_child:
+            case .Some(left):
+                rotation_left_child_nn = left
+            case .None:
+                abort("left child node is not set")
         rotation_node_nn[].left() = rotation_left_child_nn[].right()
 
         if case .Some(right) = rotation_left_child_nn[].right():
@@ -593,12 +611,13 @@ struct IntervalTree[
 
         rotation_left_child_nn[].parent() = rotation_node_nn[].parent()
 
-        if not rotation_node_nn[].parent():
-            self._root = rotation_left_child
-        elif rotation_node == rotation_node_nn[].parent().value()[].right():
-            rotation_node_nn[].parent().value()[].right() = rotation_left_child
+        if case .Some(parent) = rotation_node_nn[].parent():
+            if rotation_node == parent[].right():
+                parent[].right() = rotation_left_child
+            else:
+                parent[].left() = rotation_left_child
         else:
-            rotation_node_nn[].parent().value()[].left() = rotation_left_child
+            self._root = rotation_left_child
 
         rotation_left_child_nn[].right() = rotation_node
         rotation_node_nn[].parent() = rotation_left_child
@@ -675,12 +694,13 @@ struct IntervalTree[
             )
 
         new_node[].parent() = parent_node
-        if not parent_node:
-            self._root = new_node
-        elif new_node[] < parent_node.value()[]:
-            parent_node.value()[].left() = new_node
+        if case .Some(parent) = parent_node:
+            if new_node[] < parent[]:
+                parent[].left() = new_node
+            else:
+                parent[].right() = new_node
         else:
-            parent_node.value()[].right() = new_node
+            self._root = new_node
 
         self._insert_fixup(new_node)
 
@@ -708,45 +728,47 @@ struct IntervalTree[
             if node[].parent() == grandparent[].left():
                 # Get uncle node (parent's sibling)
                 var uncle_node = grandparent[].right()
-                if uncle_node and uncle_node.value()[]._is_red:
-                    # Case 1: Uncle is red - recolor parent, uncle and grandparent
-                    parent[]._is_red = False
-                    uncle_node.value()[]._is_red = False
-                    grandparent[]._is_red = True
-                    current_node = parent[].parent()
-                else:
-                    # Case 2: Uncle is black and node is a right child
-                    if current_node == parent[].right():
-                        current_node = node[].parent()
-                        self._left_rotate(current_node)
-                        node = current_node.value()
-                        parent = node[].parent().value()
-                        grandparent = parent[].parent().value()
-                    # Case 3: Uncle is black and node is a left child
-                    parent[]._is_red = False
-                    grandparent[]._is_red = True
-                    self._right_rotate(parent[].parent())
+                match uncle_node:
+                    case .Some(uncle) if uncle[]._is_red:
+                        # Case 1: Uncle is red - recolor parent, uncle and grandparent
+                        parent[]._is_red = False
+                        uncle[]._is_red = False
+                        grandparent[]._is_red = True
+                        current_node = parent[].parent()
+                    case _:
+                        # Case 2: Uncle is black and node is a right child
+                        if current_node == parent[].right():
+                            current_node = parent
+                            self._left_rotate(current_node)
+                            node = parent
+                            parent = node[].parent().value()
+                            grandparent = parent[].parent().value()
+                        # Case 3: Uncle is black and node is a left child
+                        parent[]._is_red = False
+                        grandparent[]._is_red = True
+                        self._right_rotate(parent[].parent())
             else:
                 # Mirror case - parent is right child of grandparent
                 var uncle_node = grandparent[].left()
-                if uncle_node and uncle_node.value()[]._is_red:
-                    # Case 1: Uncle is red - recolor
-                    parent[]._is_red = False
-                    uncle_node.value()[]._is_red = False
-                    grandparent[]._is_red = True
-                    current_node = parent[].parent()
-                else:
-                    # Case 2: Uncle is black and node is a left child
-                    if current_node == parent[].left():
-                        current_node = node[].parent()
-                        self._right_rotate(current_node)
-                        node = current_node.value()
-                        parent = node[].parent().value()
-                        grandparent = parent[].parent().value()
-                    # Case 3: Uncle is black and node is a right child
-                    parent[]._is_red = False
-                    grandparent[]._is_red = True
-                    self._left_rotate(parent[].parent())
+                match uncle_node:
+                    case .Some(uncle) if uncle[]._is_red:
+                        # Case 1: Uncle is red - recolor
+                        parent[]._is_red = False
+                        uncle[]._is_red = False
+                        grandparent[]._is_red = True
+                        current_node = parent[].parent()
+                    case _:
+                        # Case 2: Uncle is black and node is a left child
+                        if current_node == parent[].left():
+                            current_node = parent
+                            self._right_rotate(current_node)
+                            node = parent
+                            parent = node[].parent().value()
+                            grandparent = parent[].parent().value()
+                        # Case 3: Uncle is black and node is a right child
+                        parent[]._is_red = False
+                        grandparent[]._is_red = True
+                        self._left_rotate(parent[].parent())
 
         # Ensure root is black to maintain red-black tree properties
         self._root.value()[]._is_red = False
@@ -816,22 +838,19 @@ struct IntervalTree[
             indent: The current indentation string.
             is_last: Whether this node is the last child of its parent.
         """
-        # Handle empty tree case
-        if not node:
-            return
-
-        writer.write(indent)
-        var next_indent = indent
-        if is_last:
-            writer.write("├─")
-            next_indent += "  "
-        else:
-            writer.write("└─")
-            next_indent += "| "
-        writer.write(node.value()[], "\n")
-        # Recursively draw left and right subtrees
-        self._draw_helper(writer, node.value()[].left(), next_indent, False)
-        self._draw_helper(writer, node.value()[].right(), next_indent, True)
+        if case .Some(node) = node:
+            writer.write(indent)
+            var next_indent = indent
+            if is_last:
+                writer.write("├─")
+                next_indent += "  "
+            else:
+                writer.write("└─")
+                next_indent += "| "
+            writer.write(node[], "\n")
+            # Recursively draw left and right subtrees
+            self._draw_helper(writer, node[].left(), next_indent, False)
+            self._draw_helper(writer, node[].right(), next_indent, True)
 
     @inline(.never)
     def _draw3[w: Writer](self, mut writer: w) raises:
@@ -856,18 +875,17 @@ struct IntervalTree[
 
         while work_list:
             var node, indent, is_last = work_list.pop()
-            if not node:
-                continue
-            writer.write(indent)
-            if is_last:
-                writer.write("├─ ")
-                indent += "   "
-            else:
-                writer.write("└─ ")
-                indent += "|  "
-            writer.write(node.value()[], "\n")
-            work_list.append((node.value()[].left(), indent, False))
-            work_list.append((node.value()[].right(), indent, True))
+            if case .Some(node) = node:
+                writer.write(indent)
+                if is_last:
+                    writer.write("├─ ")
+                    indent += "   "
+                else:
+                    writer.write("└─ ")
+                    indent += "|  "
+                writer.write(node[], "\n")
+                work_list.append((node[].left(), indent, False))
+                work_list.append((node[].right(), indent, True))
 
     @inline(.never)
     def _draw2[w: Writer](self, mut writer: w) raises:
@@ -888,7 +906,7 @@ struct IntervalTree[
             return writer.write("Empty")
 
         # Calculate dimensions needed for the grid
-        var height = self._root.value()[].depth()
+        var height = self.depth()
         var width = 2**height - 1
 
         # Create 2D grid of spaces to hold the tree visualization
@@ -906,37 +924,35 @@ struct IntervalTree[
         while work_list:
             # Recursively fills the grid with node values and connecting branches.
             var node, level, left, right = work_list.pop()
-            if not node:
-                continue
+            if case .Some(node) = node:
+                # Calculate position for current node
+                var mid = (left + right) // 2  # Center point between boundaries
+                var pos_x = mid * 4  # Scale x position for readability
+                var pos_y = level * 3  # Scale y position for branch drawing
 
-            # Calculate position for current node
-            var mid = (left + right) // 2  # Center point between boundaries
-            var pos_x = mid * 4  # Scale x position for readability
-            var pos_y = level * 3  # Scale y position for branch drawing
+                # Draw the current node's value
+                var node_str = String(node[])
+                var start_pos = max(
+                    0, pos_x - node_str.byte_length() // 2
+                )  # Center the node text
+                var i = 0
+                for char in node_str.codepoints():
+                    grid[pos_y][start_pos + i] = String(char)
+                    i += 1
 
-            # Draw the current node's value
-            var node_str = String(node.value()[])
-            var start_pos = max(
-                0, pos_x - node_str.byte_length() // 2
-            )  # Center the node text
-            var i = 0
-            for char in node_str.codepoints():
-                grid[pos_y][start_pos + i] = String(char)
-                i += 1
+                # Add drawing left branch to the worklist.
+                if node[].left():
+                    for y in range(1, 3):
+                        # Draw left branch
+                        grid[pos_y + y][pos_x - 2 * y + 1] = "/"
+                    work_list.append((node[].left(), level + 1, left, mid))
 
-            # Add drawing left branch to the worklist.
-            if node.value()[].left():
-                for y in range(1, 3):
-                    grid[pos_y + y][pos_x - 2 * y + 1] = "/"  # Draw left branch
-                work_list.append((node.value()[].left(), level + 1, left, mid))
-
-            # Add drawing right branch to the worklist.
-            if node.value()[].right():
-                for y in range(1, 3):
-                    grid[pos_y + y][pos_x + 2 * y] = "\\"  # Draw right branch
-                work_list.append(
-                    (node.value()[].right(), level + 1, mid, right)
-                )
+                # Add drawing right branch to the worklist.
+                if node[].right():
+                    for y in range(1, 3):
+                        # Draw right branch
+                        grid[pos_y + y][pos_x + 2 * y] = "\\"
+                    work_list.append((node[].right(), level + 1, mid, right))
 
         # Output the completed grid row by row
         for row in grid:
@@ -950,10 +966,9 @@ struct IntervalTree[
         Returns:
             The depth of the interval tree.
         """
-        if not self._root:
-            return 0
-
-        return self._root.value()[].depth()
+        if case .Some(root) = self._root:
+            return root[].depth()
+        return 0
 
     def transplant(
         mut self,
@@ -966,12 +981,13 @@ struct IntervalTree[
             u: The node to transplant.
             v: The node to transplant to.
         """
-        if not u.value()[].parent():
-            self._root = v
-        elif u == u.value()[].parent().value()[].left():
-            u.value()[].parent().value()[].left() = v
+        if case .Some(parent) = u.value()[].parent():
+            if u == parent[].left():
+                parent[].left() = v
+            else:
+                parent[].right() = v
         else:
-            u.value()[].parent().value()[].right() = v
+            self._root = v
 
         if case .Some(v) = v:
             v[].parent() = u.value()[].parent()
@@ -1013,21 +1029,14 @@ struct IntervalTree[
 
         while work_list:
             var current_node = work_list.pop()
-            if not current_node:
-                continue
-            if current_node.value()[].interval.overlaps(interval):
-                result.append(current_node.value()[].data.copy())
-            if (
-                current_node.value()[].left()
-                and current_node.value()[].left().value()[].interval.start
-                <= interval.end
-            ):
-                work_list.append(current_node.value()[].left())
-            if (
-                current_node.value()[].right()
-                and current_node.value()[].right().value()[].max_end
-                >= interval.start
-            ):
-                work_list.append(current_node.value()[].right())
+            if case .Some(node) = current_node:
+                if node[].interval.overlaps(interval):
+                    result.append(node[].data.copy())
+                if case .Some(left) = node[].left():
+                    if left[].interval.start <= interval.end:
+                        work_list.append(left)
+                if case .Some(right) = node[].right():
+                    if right[].max_end >= interval.start:
+                        work_list.append(right)
 
         return result^

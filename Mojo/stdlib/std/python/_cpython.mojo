@@ -1549,10 +1549,11 @@ def _untracked_symbol[
     Returns:
         An optional pointer to the symbol, or `None` if not found.
     """
-    var ptr = lib.get_symbol[result_type](name)
-    if not ptr:
-        return None
-    return ptr.unsafe_value().unsafe_origin_cast[MutUntrackedOrigin]()
+    match lib.get_symbol[result_type](name):
+        case .Some(ptr):
+            return ptr.unsafe_origin_cast[MutUntrackedOrigin]()
+        case .None:
+            return None
 
 
 @fieldwise_init

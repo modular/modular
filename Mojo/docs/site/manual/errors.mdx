@@ -515,8 +515,8 @@ def panic(msg: String) raises -> Never:
     raise Error(msg)
 
 def get_value_or_panic(maybe: Optional[Int]) raises -> Int:
-    if maybe:
-        return maybe.value()
+    if case .Some(value) = maybe:
+        return value
     # Never substitutes for Int in this branch
     panic("value is missing")
 ```
@@ -844,8 +844,8 @@ def main() raises:
         print(e)
         print("-" * 20)
         var stack_trace = e.get_stack_trace()
-        if stack_trace:
-            print(stack_trace.value())
+        if case .Some(trace) = stack_trace:
+            print(trace)
         else:
             print("No stack trace available")
 ```

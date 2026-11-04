@@ -53,7 +53,7 @@ def test_optional() raises:
     if maybe:
         present = True
     assert_true(present)
-    assert_equal(maybe.value(), 5)
+    assert_equal(maybe, 5)
 
     var empty: Optional[Int] = None
     assert_equal(empty.or_else(0), 0)

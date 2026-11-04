@@ -945,10 +945,11 @@ def platform_map[
     ```
     """
 
-    comptime if CompilationTarget.is_macos() and macos:
-        return materialize[macos.value()]()
-    elif CompilationTarget.is_linux() and linux:
-        return materialize[linux.value()]()
+    comptime target_value = macos if CompilationTarget.is_macos() else (
+        linux if CompilationTarget.is_linux() else None
+    )
+    comptime if case .Some(value) = target_value:
+        return materialize[value]()
     else:
         CompilationTarget.unsupported_target_error[operation=operation]()
 

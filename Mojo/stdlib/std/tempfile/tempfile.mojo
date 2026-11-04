@@ -173,7 +173,11 @@ def mkdtemp(
     rmdir(temp_dir)
     ```
     """
-    var final_dir = Path(dir.value()) if dir else Path(_get_default_tempdir())
+    var final_dir: Path
+    if case .Some(dir) = dir:
+        final_dir = Path(dir)
+    else:
+        final_dir = Path(_get_default_tempdir())
 
     for _ in range(TMP_MAX):
         var dir_name = final_dir / (prefix + _get_random_name() + suffix)
@@ -399,7 +403,11 @@ struct NamedTemporaryFile(Movable, _FieldNicheable):
             If the operation fails.
         """
 
-        var final_dir = dir.value() if dir else _get_default_tempdir()
+        var final_dir: String
+        if case .Some(dir) = dir:
+            final_dir = dir
+        else:
+            final_dir = _get_default_tempdir()
 
         self._delete = delete
         self.name = ""

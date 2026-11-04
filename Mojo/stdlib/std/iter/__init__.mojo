@@ -925,12 +925,11 @@ struct _ChainedIterator[*Ts: Iterator](
 
             var lb, ub = self._iterators[i].bounds()
             final_lb = final_lb + min(lb, Int.MAX - final_lb)
-            if final_ub and ub:
-                final_ub = final_ub.unsafe_value() + min(
-                    ub.unsafe_value(), Int.MAX - final_ub.unsafe_value()
-                )
-            else:
-                final_ub = None
+            match (final_ub, ub):
+                case (.Some(total), .Some(upper)):
+                    final_ub = total + min(upper, Int.MAX - total)
+                case _:
+                    final_ub = None
         return final_lb, final_ub
 
 

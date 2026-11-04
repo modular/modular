@@ -227,10 +227,10 @@ print(foo.or_else(0))
 print(bar.or_else(0))
 
 # Check then access the value
-if foo:
-    print(foo.value())
-if bar:
-    print(bar.value())
+if case .Some(value) = foo:
+    print(value)
+if case .Some(value) = bar:
+    print(value)
 ```
 
 </Panel>

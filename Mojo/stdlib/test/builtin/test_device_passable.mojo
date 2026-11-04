@@ -417,7 +417,7 @@ def test_optional_encodes_engaged_payload() raises:
     var encoder = DefaultDeviceTypeEncoder()
     opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_true(Bool(buf[]))
-    assert_equal(buf[], Optional[Int32](42))
+    assert_equal(buf[], 42)
 
 
 def test_optional_encodes_none() raises:
@@ -436,8 +436,11 @@ def test_optional_reg_encodes_engaged_payload() raises:
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_true(Bool(buf[]))
-    assert_equal(buf[].value(), 42)
+    match buf[]:
+        case .Some(value):
+            assert_equal(value, 42)
+        case .None:
+            raise Error("expected an engaged OptionalReg")
 
 
 def test_optional_reg_encodes_none() raises:
@@ -457,8 +460,11 @@ def test_optional_reg_identity_payload_round_trips() raises:
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_true(Bool(buf[]))
-    assert_equal(buf[].value(), 7)
+    match buf[]:
+        case .Some(value):
+            assert_equal(value, 7)
+        case .None:
+            raise Error("expected an engaged OptionalReg")
 
 
 # A niche-optimized optional (a pointer payload) keeps its layout on both
@@ -472,8 +478,7 @@ def test_optional_niche_payload_round_trips() raises:
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     Optional[P](ptr)._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_true(Bool(buf[]))
-    assert_equal(buf[].value()[], 3)
+    assert_equal(buf[].copied(), 3)
     Optional[P]()._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_false(Bool(buf[]))
 
@@ -534,8 +539,11 @@ def test_optional_reg_field_encodes_payload() raises:
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     box._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_true(Bool(buf[].maybe))
-    assert_equal(buf[].maybe.value(), 10)
+    match buf[].maybe:
+        case .Some(value):
+            assert_equal(value, 10)
+        case .None:
+            raise Error("expected an engaged OptionalReg")
     assert_equal(buf[].tag, 9)
 
 
