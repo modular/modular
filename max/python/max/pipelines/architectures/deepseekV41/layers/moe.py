@@ -237,9 +237,7 @@ class _HostInterleavedExpertWeight(_PackedExpertWeight):
 class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
     """Trunk routed experts quantized NVFP4 (W4A4).
 
-    The per-16 E4M3 block scales are computed from each call's own amax, so
-    :meth:`_grouped` ignores the ``scale_slot`` argument the base pipeline
-    passes.
+    The per-16 E4M3 block scales are computed from each call's own amax.
     """
 
     # The routing weight multiplies GEMM2's output, not its input, so it does
@@ -313,10 +311,11 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
         x: TensorValue,
         a_offsets: TensorValue,
         scale_offsets: TensorValue,
-        scale_slot: TensorValue,
+        slot_rows: TensorValue | None,
         expert_ids: TensorValue,
     ) -> TensorValue:
-        del scale_slot  # NVFP4's block scales need no reslice.
+        if slot_rows is not None:
+            x = ops.gather(x, slot_rows, axis=0)
         assert isinstance(proj, _PackedExpertWeightNvFp4)
         device = x.device
         sf_tensor, input_scale = self._activation_scales(proj, device)
@@ -467,7 +466,6 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
         slot_weight: TensorValue,
         a_offsets: TensorValue,
         scale_offsets: TensorValue,
-        scale_slot: TensorValue,
         expert_ids: TensorValue,
     ) -> TensorValue:
         """The clamped SwiGLU and its NVFP4 quantize in one kernel, then GEMM2.
@@ -488,7 +486,6 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
                 slot_weight,
                 a_offsets,
                 scale_offsets,
-                scale_slot,
                 expert_ids,
             )
         assert self._weight_after_down_proj
@@ -643,11 +640,11 @@ class DeepseekV41Mxfp4RoutedExperts(DeepseekV4RoutedExperts):
         x: TensorValue,
         a_offsets: TensorValue,
         scale_offsets: TensorValue,
-        scale_slot: TensorValue,
+        slot_rows: TensorValue | None,
         expert_ids: TensorValue,
     ) -> TensorValue:
-        # Quantized at group 32 directly; no reslice.
-        del scale_slot
+        if slot_rows is not None:
+            x = ops.gather(x, slot_rows, axis=0)
         quantized, a_scales = mxfp8_grouped_quantize(
             x, a_offsets, scale_offsets, expert_ids
         )
