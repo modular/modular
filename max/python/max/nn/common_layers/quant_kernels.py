@@ -65,6 +65,15 @@ from max.nn.legacy.kernels import (
     moe_fp8_host_usage_stats as _moe_fp8_host_usage_stats,
 )
 from max.nn.legacy.kernels import (
+    mxfp4_dequant as _mxfp4_dequant,
+)
+from max.nn.legacy.kernels import (
+    mxfp8_dequant as _mxfp8_dequant,
+)
+from max.nn.legacy.kernels import (
+    nvfp4_dequant as _nvfp4_dequant,
+)
+from max.nn.legacy.kernels import (
     quantize_dynamic_block_scaled as _quantize_dynamic_block_scaled,
 )
 from max.nn.legacy.kernels import (
@@ -222,6 +231,44 @@ def _nvfp4_interleave_rule(
     return _follow_input_rows(scales)
 
 
+def _nvfp4_dequant_rule(
+    packed_weights: TensorLayout,
+    scales: TensorLayout,
+    tensor_sf: TensorLayout | float = 1.0,
+    out_type: DType = DType.bfloat16,
+) -> list[AxisAssignment]:
+    """Sharding rule for ``nvfp4_dequant``: rows in, rows out.
+
+    Packed weights and (rank-2) scales are both row-major in N, so sharding
+    rows shards the output rows. ``tensor_sf`` is a replicated scalar.
+    """
+    rows = [
+        AxisAssignment((R, R), (R,)),
+        AxisAssignment((Sharded(0), Sharded(0)), (Sharded(0),)),
+    ]
+    if isinstance(tensor_sf, TensorLayout):
+        rows = [
+            AxisAssignment((*row.needed_inputs, R), row.outputs) for row in rows
+        ]
+    return rows
+
+
+def _mx_dequant_rule(
+    weights: TensorLayout,
+    scales: TensorLayout,
+    out_type: DType = DType.bfloat16,
+) -> list[AxisAssignment]:
+    """Sharding rule for ``mxfp4_dequant`` / ``mxfp8_dequant``.
+
+    Pure block scaling, so there is no tensor-wide scale operand: weights and
+    rank-2 scales are both row-major in N and shard together.
+    """
+    return [
+        AxisAssignment((R, R), (R,)),
+        AxisAssignment((Sharded(0), Sharded(0)), (Sharded(0),)),
+    ]
+
+
 def _nvfp4_matmul_rule(
     a: TensorLayout,
     b: TensorLayout,
@@ -344,6 +391,9 @@ block_scales_interleave = F.functional(
 dynamic_block_scaled_matmul = F.functional(
     _dynamic_block_scaled_matmul, rule=_nvfp4_matmul_rule
 )
+nvfp4_dequant = F.functional(_nvfp4_dequant, rule=_nvfp4_dequant_rule)
+mxfp4_dequant = F.functional(_mxfp4_dequant, rule=_mx_dequant_rule)
+mxfp8_dequant = F.functional(_mxfp8_dequant, rule=_mx_dequant_rule)
 dynamic_block_scaled_matmul_amd = F.functional(
     _dynamic_block_scaled_matmul_amd, rule=_mx_matmul_amd_rule
 )

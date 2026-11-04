@@ -324,7 +324,11 @@ class _QuantizerFactory(Protocol):
     """Wraps a native-precision tensor, quantizing it on first use."""
 
     def __call__(
-        self, tensor: Tensor, block_size: tuple[int, int]
+        self,
+        tensor: Tensor,
+        block_size: tuple[int, int],
+        *,
+        report_error: bool = False,
     ) -> QuantAwareTensor: ...
 
 
@@ -377,10 +381,23 @@ def quantized_weight(
 
     There are three cases to consider: no config, a pre-quantized checkpoint,
     and quantize-on-load.
+
+    With ``quant_config.report_error``, a quantize-on-load weight also
+    prints its quantization error when it is quantized (see
+    :class:`~.quant_tensor._Quantizer`).
+
+    Raises:
+        ValueError: If ``quant_config.report_error`` is set but the weight is
+            not quantized on load, so there is no quantization to measure.
     """
     shape = (int(out_dim), int(in_dim))
     if quant_config is None:
         return Tensor.zeros(shape)
+    if quant_config.report_error and not quant_config.quantizes_on_load:
+        raise ValueError(
+            "report_error needs a weight that is quantized on load; "
+            "there is no quantization to measure otherwise"
+        )
 
     registry = _QUANTIZERS if quant_config.quantizes_on_load else _CONTAINERS
     if quant_config.format not in registry:
@@ -406,6 +423,7 @@ def quantized_weight(
         return _QUANTIZERS[quant_config.format](
             Tensor.zeros(shape, dtype=routed_weight_dtype(quant_config)),
             block_size=block_size,
+            report_error=quant_config.report_error,
         )
     return _CONTAINERS[quant_config.format].zeros(shape, block_size=block_size)
 

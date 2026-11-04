@@ -32,7 +32,7 @@ from max.nn.common_layers.quant_linear import (
     QuantizedQKVLinear,
 )
 from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
-from max.nn.legacy.quant_config import WeightSource
+from max.nn.legacy.quant_config import QuantFormat, WeightSource
 from max.tensor import Tensor
 
 
@@ -204,3 +204,88 @@ def test_insert_rejects_half_of_a_fused_group() -> None:
             insert_quantized_linears(qkv, [r"^q_proj$", r"^k_proj$"], config)
         assert type(mlp) is MLP
         assert type(qkv) is QKVLinear
+
+
+def _reports_error(layer: Linear | QuantizedLinear) -> bool:
+    """Whether ``layer``'s weight is a quantizer that reports its error."""
+    assert isinstance(layer, QuantizedLinear)
+    assert isinstance(layer.weight, NVFP4TensorQuantizer)
+    return layer.weight.reports_error
+
+
+def test_report_error_builds_reporting_quantizers() -> None:
+    """With ``report_error`` every inserted quantizer reports; others do not."""
+    with F.lazy():
+        block = _Block()
+        insert_quantized_linears(
+            block,
+            [r"q_proj", r"k_proj"],
+            on_the_fly_config("nvfp4", report_error=True),
+        )
+
+        assert _reports_error(block.q_proj)
+        assert _reports_error(block.k_proj)
+        assert isinstance(block.mlp, Linear)
+
+
+def test_report_error_is_off_by_default() -> None:
+    with F.lazy():
+        block = _Block()
+        insert_quantized_linears(block, [r"q_proj"], on_the_fly_config("nvfp4"))
+        assert not _reports_error(block.q_proj)
+
+
+def test_report_error_covers_the_members_of_fused_groups() -> None:
+    """Gate and up are one matmul but each member still reports."""
+    with F.lazy():
+        mlp = MLP(32, 64)
+        insert_quantized_linears(
+            mlp,
+            [r"^gate_proj$", r"^up_proj$", r"^down_proj$"],
+            on_the_fly_config("nvfp4", report_error=True),
+        )
+
+        assert isinstance(mlp, QuantizedMLP)
+        assert _reports_error(mlp.gate_proj)
+        assert _reports_error(mlp.up_proj)
+        assert _reports_error(mlp.down_proj)
+
+
+def test_report_error_survives_the_compile_rebuild() -> None:
+    """``compile`` rebuilds the module by tree-mapping it; the flag rides along."""
+    with F.lazy():
+        block = _Block()
+        insert_quantized_linears(
+            block, [r"q_proj"], on_the_fly_config("nvfp4", report_error=True)
+        )
+        rebuilt = tree.map(lambda tensor: tensor, block, leaf=Tensor)
+
+        assert _reports_error(rebuilt.q_proj)
+
+
+def test_report_error_rejects_a_format_that_cannot_measure() -> None:
+    """A format without a measuring hook fails before compile, by name."""
+    config = on_the_fly_config("nvfp4", report_error=True)
+    config.format = QuantFormat.BLOCKSCALED_FP8
+    with F.lazy():
+        block = _Block()
+        with pytest.raises(ValueError, match="only implemented for"):
+            insert_quantized_linears(block, [r"q_proj"], config)
+
+
+def test_report_error_reaches_layers_built_from_the_config() -> None:
+    """A layer built straight from ``quant_config`` reports, with no wiring."""
+    config = on_the_fly_config("nvfp4", report_error=True)
+    with F.lazy():
+        mlp = QuantizedMLP(32, 64, quant_config=config)
+
+        assert _reports_error(mlp.gate_proj)
+        assert _reports_error(mlp.up_proj)
+        assert _reports_error(mlp.down_proj)
+
+
+def test_report_error_needs_a_weight_quantized_on_load() -> None:
+    config = on_the_fly_config("nvfp4", report_error=True)
+    config.source = WeightSource.CHECKPOINT
+    with F.lazy(), pytest.raises(ValueError, match="quantized on load"):
+        QuantizedLinear(32, 64, quant_config=config)

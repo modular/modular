@@ -332,6 +332,15 @@ class QuantConfig:
     """Which OCP FP6 encoding an MXFP6 checkpoint holds. Read through
     :attr:`mxfp6_format`, which rejects the question for non-MXFP6 configs."""
 
+    report_error: bool = False
+    """Whether on-the-fly quantizers print their quantization error.
+
+    Only ModuleV3 quantizers read it, and only when ``source`` is
+    :attr:`WeightSource.QUANTIZE`. The graph then also dequantizes each
+    quantized weight and prints its error against the native-precision
+    source, named after the weight.
+    """
+
     @classmethod
     def blockscaled_fp8(
         cls,
