@@ -556,12 +556,33 @@ def gather_variable_rows(
     input_row_offsets: Tensor,
     return_n_logits: Tensor,
     mesh: DeviceMesh,
+    data_parallel_degree: int = 1,
 ) -> tuple[Tensor, Tensor]:
     """Gathers each request's last ``return_n_logits`` rows of ``h``.
 
     Also returns their offsets, ``return_n_logits`` apart, matching the
     graph-API ``deepseek_logits_postprocess``.
+
+    Under data parallelism (``data_parallel_degree > 1``), ``h`` holds each
+    replica's own rows and ``input_row_offsets`` is in each replica's local
+    frame. Each replica gathers from its own rows, and one allgather joins
+    them in replica order, which is global request order, so only the
+    gathered rows cross devices. The offsets then span the joined batch.
     """
+    variable_h = _gather_last_n_rows(
+        h, input_row_offsets, return_n_logits, mesh
+    )
+    if data_parallel_degree > 1:
+        variable_h = F.allgather(variable_h, tensor_axis=0)
+    return variable_h, _variable_row_offsets(variable_h, return_n_logits, mesh)
+
+
+def _gather_last_n_rows(
+    h: Tensor,
+    input_row_offsets: Tensor,
+    return_n_logits: Tensor,
+    mesh: DeviceMesh,
+) -> Tensor:
     # Built on one device and broadcast: per-device ranges that share the
     # symbolic out_dim trip a cross-device rebind (see the graph-API
     # implementation).
@@ -585,10 +606,15 @@ def gather_variable_rows(
         return ops.gather(h, ops.reshape(rows, (-1,)), axis=0)
 
     # The rule-less body gathers each device's own rows.
-    variable_h = F.functional(_body)(
-        h, input_row_offsets, n_range
-    ).rebind_mapping(h.mapping)
-    offsets = F.range(
+    return F.functional(_body)(h, input_row_offsets, n_range).rebind_mapping(
+        h.mapping
+    )
+
+
+def _variable_row_offsets(
+    variable_h: Tensor, return_n_logits: Tensor, mesh: DeviceMesh
+) -> Tensor:
+    return F.range(
         0,
         F.shape_to_tensor(variable_h.shape)[0] + return_n_logits[0],
         return_n_logits[0],
@@ -596,7 +622,6 @@ def gather_variable_rows(
         dtype=DType.int64,
         device=mesh.devices[0],
     )
-    return variable_h, offsets
 
 
 _VerifiedHiddenT = TypeVar("_VerifiedHiddenT")

@@ -37,7 +37,9 @@ from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
-from max.pipelines.speculative.driver import gather_variable_rows
+from max.pipelines.speculative.driver import (
+    gather_variable_rows,
+)
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import (
     DeviceMapping,
@@ -356,16 +358,6 @@ class DeepseekV3_2TextModel(
                 f"return_hidden_states={self.return_hidden_states} is not "
                 "implemented on ModuleV3."
             )
-        if (
-            self.return_logits is ReturnLogits.VARIABLE
-            or self.return_hidden_states is not ReturnHiddenStates.NONE
-        ) and self.config.data_parallel_degree > 1:
-            # Each replica would hold only its own rows; the graph-API model
-            # allgathers them, which is not built here yet.
-            raise NotImplementedError(
-                "VARIABLE logits and hidden-state outputs require "
-                "data_parallel_degree=1 on ModuleV3."
-            )
         if not self.emit_last_token_logits and (
             self.return_logits is not ReturnLogits.VARIABLE
         ):
@@ -387,8 +379,14 @@ class DeepseekV3_2TextModel(
         self, h: Tensor, input_row_offsets: Tensor, return_n_logits: Tensor
     ) -> tuple[Tensor, Tensor]:
         assert self.mesh is not None
+        # Under data parallelism each replica holds only its own rows, and
+        # the vocab-sharded head needs the whole batch on every device.
         variable_h, offsets = gather_variable_rows(
-            h, input_row_offsets, return_n_logits, self.mesh
+            h,
+            input_row_offsets,
+            return_n_logits,
+            self.mesh,
+            data_parallel_degree=self.config.data_parallel_degree,
         )
         return self._project(variable_h), offsets
 

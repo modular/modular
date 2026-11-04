@@ -109,6 +109,31 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_dp_mtp_contracts",
+    # An eight-device CPU mesh builds a lot of graph ops per case.
+    size = "large",
+    srcs = ["test_dp_mtp_contracts.py"],
+    ignore_extra_deps = [
+        # Eager tensors import the MO interpreter; without its compiled ops
+        # the realizations fall back to compiling each graph.
+        "//max/python/max/_interpreter_ops",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
+        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_chat_template",
     srcs = ["test_chat_template.py"],
     data = [
@@ -149,6 +174,7 @@ modular_py_test(
         ["**/test_*.py"],
         exclude = [
             "test_chat_template.py",
+            "test_dp_mtp_contracts.py",
             "test_format_spec.py",
             "test_memory_planner.py",
             "test_modulev3_nvfp4_kv.py",

@@ -31,6 +31,21 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_variable_rows_per_replica",
+    srcs = ["test_variable_rows_per_replica.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+modular_py_test(
     name = "test_spec_decode_architecture",
     srcs = ["test_spec_decode_architecture.py"],
     ignore_extra_deps = [
