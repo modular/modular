@@ -128,6 +128,29 @@ def MojoHAL_DeviceContext_enableAllPeerAccess() abi("C") -> _CString[]:
 
 
 @export
+def MojoHAL_DeviceContext_allPeerAccessEnabled(
+    out_enabled: _OutPtr[Bool],
+) abi("C") -> _CString[]:
+    try:
+        out_enabled[] = DeviceContext.all_peer_access_enabled()
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
+def MojoHAL_DeviceContext_enablePeerAccess(
+    ctx: _DeviceContextBoxPtr,
+    peer: _DeviceContextBoxPtr,
+) abi("C") -> _CString[]:
+    try:
+        ctx[].enable_peer_access(peer[])
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
 def MojoHAL_Device_getApiAndArch(
     out_api: _OutPtr[Pointer[c_char, MutUntrackedOrigin]],
     out_arch: _OutPtr[Pointer[c_char, MutUntrackedOrigin]],

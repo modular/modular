@@ -44,6 +44,7 @@ int32_t MojoHAL_Device_numberOfDevices(const char *api);
 const char *MojoHAL_Device_getApiAndArch(char **out_api, char **out_arch,
                                          int32_t device_id);
 const char *MojoHAL_DeviceContext_enableAllPeerAccess();
+const char *MojoHAL_DeviceContext_allPeerAccessEnabled(bool *out_enabled);
 const char *MojoHAL_DeviceContext_create(MojoHALContextBox **out_ctx,
                                          const char *api, int32_t device_id);
 void MojoHAL_DeviceContext_copy(MojoHALContextBox **out_ctx,
@@ -90,6 +91,8 @@ const char *MojoHAL_DeviceContext_getApi(char **out_api,
 int64_t MojoHAL_DeviceContext_id(MojoHALContextBox *ctx);
 bool MojoHAL_DeviceContext_canAccess(MojoHALContextBox *ctx,
                                      MojoHALContextBox *peer);
+const char *MojoHAL_DeviceContext_enablePeerAccess(MojoHALContextBox *ctx,
+                                                   MojoHALContextBox *peer);
 bool MojoHAL_DeviceContext_isCompatible(MojoHALContextBox *ctx);
 const char *MojoHAL_DeviceContext_isHostUnified(bool *out_unified,
                                                 MojoHALContextBox *ctx);
@@ -233,6 +236,15 @@ ErrorOrSuccess Device::enableAllPeerAccess() {
   if (const char *err = MojoHAL_DeviceContext_enableAllPeerAccess())
     return takeError(err);
   return {};
+}
+
+ErrorOr<bool> Device::allPeerAccessEnabled() {
+  if (AsyncRT::isVirtualDeviceMode())
+    return false;
+  bool enabled = false;
+  if (const char *err = MojoHAL_DeviceContext_allPeerAccessEnabled(&enabled))
+    return takeError(err);
+  return enabled;
 }
 
 ErrorOr<DeviceRef> Device::create(StringRef api, int id) {
@@ -436,6 +448,15 @@ ErrorOr<bool> Device::canAccess(const Device &other) const {
   if (isVirtual() || other.isVirtual())
     return false;
   return MojoHAL_DeviceContext_canAccess(mojoCtx_, other.mojoCtx_);
+}
+
+ErrorOrSuccess Device::enablePeerAccess(const Device &peer) {
+  if (isVirtual() || peer.isVirtual())
+    return virtualDeviceError("peer access");
+  if (const char *err =
+          MojoHAL_DeviceContext_enablePeerAccess(mojoCtx_, peer.mojoCtx_))
+    return takeError(err);
+  return {};
 }
 
 // ===-- DeviceBuffer ----------------------------------------------------=== //

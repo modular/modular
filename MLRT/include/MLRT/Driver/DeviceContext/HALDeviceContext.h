@@ -123,6 +123,7 @@ public:
   static int numberOfDevices(StringRef api);
   /// Unlike legacy, skips devices whose plugin lacks the peer extension.
   static ErrorOrSuccess enableAllPeerAccess();
+  static ErrorOr<bool> allPeerAccessEnabled();
 
   /// Creates a device handle for device `id` of `api`.
   static ErrorOr<DeviceRef> create(StringRef api, int id = 0);
@@ -171,6 +172,7 @@ public:
   ErrorOr<AllocationRange> allocationRange(void *ptr) const;
   /// Whether this device can directly access `other`'s memory.
   ErrorOr<bool> canAccess(const Device &other) const;
+  ErrorOrSuccess enablePeerAccess(const Device &peer);
   /// Answered by the plugin's `host_unified` property; virtual devices
   /// report false.
   ErrorOr<bool> isHostUnified() const;

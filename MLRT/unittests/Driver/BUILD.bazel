@@ -1160,6 +1160,7 @@ modular_cc_test(
     tags = ["gpu"],
     deps = [
         ":TestUtils",
+        "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Buffer",
         "@llvm-project//llvm:Support",
