@@ -1576,15 +1576,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
-    "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct": GenericOracle(
-        model_path="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
-        config_params={
-            "max_length": 1024,
-            "max_batch_size": 128,  # TODO(E2EOPT-48): Remove batch size override.
-            "trust_remote_code": True,
-        },
-        device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
-    ),
     "LiquidAI/LFM2.5-1.2B-Instruct": GenericOracle(
         model_path="LiquidAI/LFM2.5-1.2B-Instruct",
         config_params={"trust_remote_code": True},
