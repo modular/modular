@@ -26,11 +26,10 @@ from std.math import round
 
 from layout import (
     Coord,
-    LTToTTLayout,
-    Layout,
     TileTensor,
     row_major,
 )
+from layout.tile_layout import Layout
 from max.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution, conv_gpu
 from nn.conv.gpu.im2col_matmul_2d import (
@@ -220,14 +219,14 @@ def test_conv2d_im2col_direct[
     output_fn), which also exercises the 4-D NHWC coord-unpack closure.
     """
     print(t"==  {name}  (with_epilogue= {with_epilogue} ) ==")
-    comptime N = Int(input_layout.shape[0])
-    comptime H = Int(input_layout.shape[1])
-    comptime W = Int(input_layout.shape[2])
-    comptime C = Int(input_layout.shape[3])
+    comptime N = input_layout.static_shape[0]
+    comptime H = input_layout.static_shape[1]
+    comptime W = input_layout.static_shape[2]
+    comptime C = input_layout.static_shape[3]
 
-    comptime R = Int(filter_layout.shape[0])
-    comptime S = Int(filter_layout.shape[1])
-    comptime F = Int(filter_layout.shape[3])
+    comptime R = filter_layout.static_shape[0]
+    comptime S = filter_layout.static_shape[1]
+    comptime F = filter_layout.static_shape[3]
 
     comptime pad_h = IndexList[2](pad[0], pad[0])
     comptime pad_w = IndexList[2](pad[1], pad[1])
@@ -235,7 +234,7 @@ def test_conv2d_im2col_direct[
     comptime H_out = (H + pad_h[0] + pad_h[1] - (R - 1) - 1) // stride[0] + 1
     comptime W_out = (W + pad_w[0] + pad_w[1] - (S - 1) - 1) // stride[1] + 1
 
-    comptime output_layout = Layout.row_major(N, H_out, W_out, F)
+    comptime output_layout = row_major[N, H_out, W_out, F]()
 
     var input_size = comptime (input_layout.size())
     var filter_size = comptime (filter_layout.size())
@@ -289,15 +288,9 @@ def test_conv2d_im2col_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var input_tt = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_tt = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
-    )
+    var input_tt = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_tt = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_tt = TileTensor(output_dev.unsafe_ptr(), output_layout)
 
     var handled: Bool
     comptime if with_epilogue:
@@ -373,14 +366,14 @@ def test_conv2d_fused_apple[
     (within bf16 tolerance).
     """
     print(t"== FUSED  {name}  (with_epilogue= {with_epilogue} ) ==")
-    comptime N = Int(input_layout.shape[0])
-    comptime H = Int(input_layout.shape[1])
-    comptime W = Int(input_layout.shape[2])
-    comptime C = Int(input_layout.shape[3])
+    comptime N = input_layout.static_shape[0]
+    comptime H = input_layout.static_shape[1]
+    comptime W = input_layout.static_shape[2]
+    comptime C = input_layout.static_shape[3]
 
-    comptime R = Int(filter_layout.shape[0])
-    comptime S = Int(filter_layout.shape[1])
-    comptime F = Int(filter_layout.shape[3])
+    comptime R = filter_layout.static_shape[0]
+    comptime S = filter_layout.static_shape[1]
+    comptime F = filter_layout.static_shape[3]
 
     comptime pad_h = IndexList[2](pad[0], pad[0])
     comptime pad_w = IndexList[2](pad[1], pad[1])
@@ -388,7 +381,7 @@ def test_conv2d_fused_apple[
     comptime H_out = (H + pad_h[0] + pad_h[1] - (R - 1) - 1) // stride[0] + 1
     comptime W_out = (W + pad_w[0] + pad_w[1] - (S - 1) - 1) // stride[1] + 1
 
-    comptime output_layout = Layout.row_major(N, H_out, W_out, F)
+    comptime output_layout = row_major[N, H_out, W_out, F]()
 
     var input_size = comptime (input_layout.size())
     var filter_size = comptime (filter_layout.size())
@@ -437,15 +430,9 @@ def test_conv2d_fused_apple[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var input_tt = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_tt = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
-    )
+    var input_tt = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_tt = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_tt = TileTensor(output_dev.unsafe_ptr(), output_layout)
 
     var handled: Bool
     comptime if with_epilogue:
@@ -519,14 +506,14 @@ def test_conv2d_gpu_dispatch[
     wiring where an `output_fn` is always supplied. NHWC input, RSCF filter.
     """
     print("== conv_gpu dispatch: ", name, " ==")
-    comptime N = Int(input_layout.shape[0])
-    comptime H = Int(input_layout.shape[1])
-    comptime W = Int(input_layout.shape[2])
-    comptime C = Int(input_layout.shape[3])
+    comptime N = input_layout.static_shape[0]
+    comptime H = input_layout.static_shape[1]
+    comptime W = input_layout.static_shape[2]
+    comptime C = input_layout.static_shape[3]
 
-    comptime R = Int(filter_layout.shape[0])
-    comptime S = Int(filter_layout.shape[1])
-    comptime F = Int(filter_layout.shape[3])
+    comptime R = filter_layout.static_shape[0]
+    comptime S = filter_layout.static_shape[1]
+    comptime F = filter_layout.static_shape[3]
 
     comptime pad_h = IndexList[2](pad[0], pad[0])
     comptime pad_w = IndexList[2](pad[1], pad[1])
@@ -534,7 +521,7 @@ def test_conv2d_gpu_dispatch[
     comptime H_out = (H + pad_h[0] + pad_h[1] - (R - 1) - 1) // stride[0] + 1
     comptime W_out = (W + pad_w[0] + pad_w[1] - (S - 1) - 1) // stride[1] + 1
 
-    comptime output_layout = Layout.row_major(N, H_out, W_out, F)
+    comptime output_layout = row_major[N, H_out, W_out, F]()
 
     var input_size = comptime (input_layout.size())
     var filter_size = comptime (filter_layout.size())
@@ -583,15 +570,9 @@ def test_conv2d_gpu_dispatch[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var input_tt = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_tt = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
-    )
+    var input_tt = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_tt = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_tt = TileTensor(output_dev.unsafe_ptr(), output_layout)
 
     @inline(.always)
     def scale_compute[
@@ -636,8 +617,8 @@ def main() raises:
         # ---- 3x3 stride-1 same-pad: the FLUX VAE common case ----
         # Small, no epilogue.
         test_conv2d_im2col_direct[
-            Layout.row_major(1, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 64),
+            row_major[1, 16, 16, 64](),
+            row_major[3, 3, 64, 64](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -646,8 +627,8 @@ def main() raises:
 
         # Same, with scale-by-2 epilogue (production MOGG shape).
         test_conv2d_im2col_direct[
-            Layout.row_major(1, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 64),
+            row_major[1, 16, 16, 64](),
+            row_major[3, 3, 64, 64](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -656,8 +637,8 @@ def main() raises:
 
         # Larger channel count, batch=1 (FLUX VAE mid-block scale).
         test_conv2d_im2col_direct[
-            Layout.row_major(1, 32, 32, 128),
-            Layout.row_major(3, 3, 128, 128),
+            row_major[1, 32, 32, 128](),
+            row_major[3, 3, 128, 128](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -666,8 +647,8 @@ def main() raises:
 
         # Non-128-aligned channels (the case the SM100 fast path declines).
         test_conv2d_im2col_direct[
-            Layout.row_major(1, 32, 32, 96),
-            Layout.row_major(3, 3, 96, 96),
+            row_major[1, 32, 32, 96](),
+            row_major[3, 3, 96, 96](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -676,8 +657,8 @@ def main() raises:
 
         # fp16 coverage.
         test_conv2d_im2col_direct[
-            Layout.row_major(1, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 64),
+            row_major[1, 16, 16, 64](),
+            row_major[3, 3, 64, 64](),
             DType.float16,
             (1, 1),
             (1, 1),
@@ -686,8 +667,8 @@ def main() raises:
 
         # Channel up-projection 64 -> 128 (asymmetric N).
         test_conv2d_im2col_direct[
-            Layout.row_major(1, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 128),
+            row_major[1, 16, 16, 64](),
+            row_major[3, 3, 64, 128](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -696,8 +677,8 @@ def main() raises:
 
         # stride=2 downsample (VAE encoder side, exercises stride math).
         test_conv2d_im2col_direct[
-            Layout.row_major(1, 32, 32, 64),
-            Layout.row_major(3, 3, 64, 128),
+            row_major[1, 32, 32, 64](),
+            row_major[3, 3, 64, 128](),
             DType.bfloat16,
             (2, 2),
             (1, 1),
@@ -706,8 +687,8 @@ def main() raises:
 
         # batch=2 (coord-unpack across batch).
         test_conv2d_im2col_direct[
-            Layout.row_major(2, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 64),
+            row_major[2, 16, 16, 64](),
+            row_major[3, 3, 64, 64](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -717,24 +698,24 @@ def main() raises:
         # ---- End-to-end conv_gpu dispatch (exercises the Apple branch) ----
         # The FLUX VAE common case through the full dispatch path.
         test_conv2d_gpu_dispatch[
-            Layout.row_major(1, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 64),
+            row_major[1, 16, 16, 64](),
+            row_major[3, 3, 64, 64](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
         ](ctx, "bf16 3x3 s1 same-pad C64->64")
 
         test_conv2d_gpu_dispatch[
-            Layout.row_major(1, 32, 32, 96),
-            Layout.row_major(3, 3, 96, 96),
+            row_major[1, 32, 32, 96](),
+            row_major[3, 3, 96, 96](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
         ](ctx, "bf16 3x3 s1 same-pad C96->96")
 
         test_conv2d_gpu_dispatch[
-            Layout.row_major(2, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 128),
+            row_major[2, 16, 16, 64](),
+            row_major[3, 3, 64, 128](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -743,8 +724,8 @@ def main() raises:
         # 1x1 conv: dispatcher declines, conv_gpu falls through to the naive
         # kernel. End-to-end correctness must still hold via that fallback.
         test_conv2d_gpu_dispatch[
-            Layout.row_major(1, 16, 16, 64),
-            Layout.row_major(1, 1, 64, 64),
+            row_major[1, 16, 16, 64](),
+            row_major[1, 1, 64, 64](),
             DType.bfloat16,
             (1, 1),
             (0, 0),
@@ -753,8 +734,8 @@ def main() raises:
         # ---- Fused online-im2col path (AppleM5MatMul.run_conv) ----
         # Small case (exercises ragged-M / partial-tile bounds at tiny M).
         test_conv2d_fused_apple[
-            Layout.row_major(1, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 64),
+            row_major[1, 16, 16, 64](),
+            row_major[3, 3, 64, 64](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -763,8 +744,8 @@ def main() raises:
 
         # FLUX-VAE common case with the scale-by-2 epilogue (production shape).
         test_conv2d_fused_apple[
-            Layout.row_major(1, 32, 32, 128),
-            Layout.row_major(3, 3, 128, 128),
+            row_major[1, 32, 32, 128](),
+            row_major[3, 3, 128, 128](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -773,8 +754,8 @@ def main() raises:
 
         # Non-128-aligned channels (K=R*S*C not a multiple of 16-friendly N).
         test_conv2d_fused_apple[
-            Layout.row_major(1, 32, 32, 96),
-            Layout.row_major(3, 3, 96, 96),
+            row_major[1, 32, 32, 96](),
+            row_major[3, 3, 96, 96](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -783,8 +764,8 @@ def main() raises:
 
         # stride=2 downsample (stride math in the gather).
         test_conv2d_fused_apple[
-            Layout.row_major(1, 32, 32, 64),
-            Layout.row_major(3, 3, 64, 128),
+            row_major[1, 32, 32, 64](),
+            row_major[3, 3, 64, 128](),
             DType.bfloat16,
             (2, 2),
             (1, 1),
@@ -793,8 +774,8 @@ def main() raises:
 
         # batch=2 (M-decomposition across batch in the gather).
         test_conv2d_fused_apple[
-            Layout.row_major(2, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 64),
+            row_major[2, 16, 16, 64](),
+            row_major[3, 3, 64, 64](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -807,8 +788,8 @@ def main() raises:
         # Correctness must hold -- this is the shape the memory-bound guard used
         # to decline.
         test_conv2d_fused_apple[
-            Layout.row_major(1, 256, 256, 32),
-            Layout.row_major(3, 3, 32, 32),
+            row_major[1, 256, 256, 32](),
+            row_major[3, 3, 32, 32](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -822,8 +803,8 @@ def main() raises:
         # This is the e2e blocker -- the materialised path declined (N<16) and
         # the naive fallback is broken on Metal for this shape.
         test_conv2d_fused_apple[
-            Layout.row_major(1, 256, 256, 128),
-            Layout.row_major(3, 3, 128, 3),
+            row_major[1, 256, 256, 128](),
+            row_major[3, 3, 128, 3](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -834,8 +815,8 @@ def main() raises:
         # bounded write at tiny N -- exercises `_apply_epilogue[bounded]` vs the
         # cast-store path; bf16 out still routes through the epilogue closure).
         test_conv2d_fused_apple[
-            Layout.row_major(1, 256, 256, 128),
-            Layout.row_major(3, 3, 128, 3),
+            row_major[1, 256, 256, 128](),
+            row_major[3, 3, 128, 3](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -844,8 +825,8 @@ def main() raises:
 
         # C_out=1: the single-column N edge (valid_cols=1; only `acol=0` writes).
         test_conv2d_fused_apple[
-            Layout.row_major(1, 64, 64, 128),
-            Layout.row_major(3, 3, 128, 1),
+            row_major[1, 64, 64, 128](),
+            row_major[3, 3, 128, 1](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -855,8 +836,8 @@ def main() raises:
         # C_out=8: half a 16-wide MMA_N tile (valid_cols=8; straddles the 4-wide
         # vectorized store boundary in the bounded epilogue).
         test_conv2d_fused_apple[
-            Layout.row_major(1, 64, 64, 128),
-            Layout.row_major(3, 3, 128, 8),
+            row_major[1, 64, 64, 128](),
+            row_major[3, 3, 128, 8](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -870,8 +851,8 @@ def main() raises:
         # tail; M=17²=289 and N=96 (neither a multiple of 64) make it a ragged-M
         # and ragged-N edge tile.
         test_conv2d_fused_apple[
-            Layout.row_major(1, 17, 17, 20),
-            Layout.row_major(3, 3, 20, 96),
+            row_major[1, 17, 17, 20](),
+            row_major[3, 3, 20, 96](),
             DType.bfloat16,
             (1, 1),
             (1, 1),

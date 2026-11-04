@@ -74,7 +74,6 @@ from layout import (
     row_major,
     coord_to_index_list,
 )
-from layout.layout import *
 from layout.tile_async_copy import copy_dram_to_sram_async_ldmatrix
 from layout.tile_io import (
     copy_local_to_dram,

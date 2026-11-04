@@ -95,7 +95,10 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     opaque_u32,
     llvm_opaque_tid,
 )
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tensor_core_async import (
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
+)
 from nn.attention.gpu.nvidia.common import KVTMATile
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.sys._assembly import inlined_assembly
@@ -3983,18 +3986,18 @@ struct DecodeSM100QKTSS_FP8[
         Self.k_swizzle.bytes(),
     ) // Self.operand_size
     comptime padded_BK = align_up(Self.BK, Self.swizzle_granularity)
-    comptime cg2_a_layout = tile_layout_k_major[
+    comptime cg2_a_layout = tile_layout_k_major_typed[
         Self.operand_type,
         align_up(Self.MMA_M // 2, 8),
         Self.padded_BK,
         Self.q_swizzle,
-    ]()
-    comptime cg2_b_layout = tile_layout_k_major[
+    ]
+    comptime cg2_b_layout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.MMA_N // 2,
         max(Self.K_BK, Self.padded_BK),
         Self.k_swizzle,
-    ]()
+    ]
 
     comptime UMMAInstDesc = UMMAInsDescriptor[Self.mma_kind].create[
         Self.accum_type,
@@ -4049,7 +4052,9 @@ struct DecodeSM100QKTSS_FP8[
             # The pair's non-ws form: one `tcgen05.mma.cta_group::2` over
             # both CTAs' SMEM, issued by the leader's elected lane only.
             bulk_mma[
+                type_of(Self.cg2_a_layout),
                 Self.cg2_a_layout,
+                type_of(Self.cg2_b_layout),
                 Self.cg2_b_layout,
                 num_k_mmas=Self.num_k_mmas,
                 mma_k=Self.MMA_K,
@@ -4098,7 +4103,9 @@ struct DecodeSM100QKTSS_FP8[
         comptime block_k_mmas = Self.num_k_mmas // num_blocks
         comptime if Self.is_cg2:
             bulk_mma[
+                type_of(Self.cg2_a_layout),
                 Self.cg2_a_layout,
+                type_of(Self.cg2_b_layout),
                 Self.cg2_b_layout,
                 num_k_mmas=block_k_mmas,
                 mma_k=Self.MMA_K,
@@ -4414,18 +4421,18 @@ struct DecodeSM100PVSS_FP8[
         Self.v_swizzle.bytes(),
     ) // Self.operand_size
     comptime padded_BK = align_up(Self.BK, Self.swizzle_granularity)
-    comptime cg2_a_layout = tile_layout_k_major[
+    comptime cg2_a_layout = tile_layout_k_major_typed[
         Self.operand_type,
         align_up(Self.MMA_M // 2, 8),
         Self.padded_BK,
         Self.p_swizzle,
-    ]()
-    comptime cg2_b_layout = tile_layout_mn_major[
+    ]
+    comptime cg2_b_layout = tile_layout_mn_major_typed[
         Self.operand_type,
         Self.MMA_N // 2,
         Self.padded_BK,
         Self.v_swizzle,
-    ]()
+    ]
 
     comptime UMMAPVSS = UMMAInsDescriptor[Self.mma_kind].create[
         Self.accum_type,
@@ -4481,7 +4488,9 @@ struct DecodeSM100PVSS_FP8[
             # The pair's non-ws form: one `tcgen05.mma.cta_group::2` over
             # both CTAs' SMEM, issued by the leader's elected lane only.
             bulk_mma[
+                type_of(Self.cg2_a_layout),
                 Self.cg2_a_layout,
+                type_of(Self.cg2_b_layout),
                 Self.cg2_b_layout,
                 num_k_mmas=Self.num_k_mmas,
                 mma_k=Self.MMA_K,

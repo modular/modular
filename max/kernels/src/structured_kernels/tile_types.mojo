@@ -100,7 +100,7 @@ Returns:
 #
 # The key insight: new Layout (from _layout.mojo) has compile-time type
 # parameters (shape_types, stride_types) that are preserved through struct
-# chains, unlike LegacyLayout (from layout.mojo) which uses runtime IntTuple.
+# chains.
 
 # Internal swizzled layout for K-major access with configurable swizzle.
 # This layout is coalesce-equivalent to tile_layout_k_major_typed for the
@@ -280,8 +280,7 @@ comptime static_row_major[dim0: Int, dim1: Int] = Layout[
 ]
 """2D row-major layout with fully static dimensions.
 
-Equivalent to `LegacyLayout.row_major(dim0, dim1)` but using new Layout
-types with rank=2 provable at compile time.
+Equivalent to `row_major[dim0, dim1]()`, with rank=2 provable at compile time.
 """
 
 comptime _StridedLayout[dim0: Int, dim1: Int, stride0: Int] = Layout[

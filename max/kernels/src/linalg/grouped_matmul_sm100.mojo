@@ -62,7 +62,6 @@ from layout import (
     coord,
     Coord,
     Idx,
-    Layout,
     TensorLayout,
     TMemEngine,
     TMem16x256bRegisters,
@@ -73,7 +72,7 @@ from layout import (
     tmem_copy_async,
     tmem_16x256b,
 )
-from layout.tile_tensor import TileTensor, LTToTTLayout
+from layout.tile_tensor import TileTensor
 
 from .utils import partial_simd_load
 from layout.swizzle import Swizzle, make_swizzle
@@ -830,7 +829,8 @@ def multi_stage_store_C[
     num_accum_pipeline_stages: Int,
     /,
     *,
-    c_smem_layout: Layout,
+    c_smem_layout_t: TensorLayout,
+    c_smem_layout: c_smem_layout_t,
     accum_type: DType,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
@@ -875,6 +875,8 @@ def multi_stage_store_C[
             per-store element counts and row stride.
         num_accum_pipeline_stages: Number of accumulator pipeline stages
             used to double-buffer TMEM-to-global-memory C stores.
+        c_smem_layout_t: Type of the C shared-memory output tile stage
+            layout.
         c_smem_layout: Layout of one C shared-memory output tile stage;
             its shape determines the per-stage column width and tile size.
         accum_type: Accumulator dtype loaded from tensor memory before
@@ -951,8 +953,8 @@ def multi_stage_store_C[
     # and output one tile per stage.
     # stage N is 32
     comptime N_dim = 0 if transpose_c else 1
-    comptime stageN = c_smem_layout.shape[N_dim].value()
-    comptime stage_contiguous_size = c_smem_layout.shape[1].value()
+    comptime stageN = c_smem_layout_t.static_shape[N_dim]
+    comptime stage_contiguous_size = c_smem_layout_t.static_shape[1]
     # so num stages is usually 256 by 32 is 8
     # MMA Size will be larger than output tile shape. E.G. MMA_MxMMA_N = (128, 256); OUT_MxOUT_N = (128, 32)
 
@@ -1040,7 +1042,7 @@ def multi_stage_store_C[
             umma_arrive_leader_cta(accum_empty_mbar.unsafe_offset(index))
 
         # Assume double-buffer for shared memory packing
-        comptime c_smem_tile_size = c_smem_layout.size()
+        comptime c_smem_tile_size = c_smem_layout_t.static_product
 
         comptime if has_compute_fn:
             # Round to c_type first so the function sees exactly the values
@@ -1080,7 +1082,7 @@ def multi_stage_store_C[
         # 128B alignment comes from external_memory and aligned buffer offsets.
         var c_smem_tile = TileTensor(
             c_smem_base.unsafe_offset((stage % 2) * c_smem_tile_size),
-            LTToTTLayout[c_smem_layout](),
+            c_smem_layout,
         )
 
         comptime if transpose_c:
@@ -1127,9 +1129,10 @@ def multi_stage_store_C[
 
         var lane = lane_id()
 
-        comptime TMA_BM = c_smem_layout.shape[
-            0
-        ].value() if MMA_M == 256 or cta_group == 1 else BM
+        comptime TMA_BM = (
+            c_smem_layout_t.static_shape[0] if MMA_M == 256
+            or cta_group == 1 else BM
+        )
 
         var elect_one_warp = (
             warp_id == 0 if MMA_M == 256
@@ -1151,7 +1154,7 @@ def multi_stage_store_C[
 
         var n_inbound_size = group_end_idx - UInt32(coord_n)
 
-        comptime M = c_smem_layout.shape[1].value()
+        comptime M = c_smem_layout_t.static_shape[1]
 
         if not has_epilogue_fn and n_inbound_size >= UInt32(stageN):
             if elect_one_warp and lane == 0:
@@ -1205,15 +1208,13 @@ def multi_stage_store_C[
             comptime chunkM = st_matrix_swizzle.bytes() // size_of[c_type]()
             comptime vec_chunkM = chunkM // simd_size
             comptime chunk_num = M // chunkM
-            comptime logical_c_layout = Layout.row_major(
-                chunk_num, stageN, vec_chunkM
-            )
+            comptime logical_c_size = chunk_num * stageN * vec_chunkM
             comptime thread_num = num_output_warps * WARP_SIZE
-            comptime assert logical_c_layout.size() % thread_num == 0, String(
-                t"logical_c_layout.size() must be a multiple of thread_num."
-                t" Got {logical_c_layout.size()}."
+            comptime assert logical_c_size % thread_num == 0, String(
+                t"logical C tile size must be a multiple of thread_num."
+                t" Got {logical_c_size}."
             )
-            comptime value_shape = logical_c_layout.size() // thread_num
+            comptime value_shape = logical_c_size // thread_num
             comptime cN = c_static_N
             # `swizzle` yields offsets into the stage's flat storage.
             var c_smem_flat = c_smem_tile.reshape(row_major[c_smem_tile_size]())
@@ -1337,7 +1338,7 @@ def zero_output_epilogue[
     c_type: DType,
     /,
     *,
-    c_smem_layout: Layout,
+    c_smem_layout: TensorLayout,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
     c_static_N: Int,
@@ -1371,7 +1372,7 @@ def zero_output_epilogue[
     comptime simd_size = simd_width_of[c_type]()
 
     comptime N_dim = 0 if transpose_c else 1
-    comptime stageN = c_smem_layout.shape[N_dim].value()
+    comptime stageN = c_smem_layout.static_shape[N_dim]
     comptime num_stages = MMA_N // stageN if (
         MMA_M == 256 or cta_group == 1
     ) else MMA_N // stageN // 2
@@ -1384,15 +1385,15 @@ def zero_output_epilogue[
     ), "zero_output_epilogue only supports MMA_M == 256 or cta_group == 1"
 
     # `M` here is the tile's contiguous (row) extent, matching
-    # `c_smem_layout.shape[1]` in `multi_stage_store_C`.
-    comptime M = c_smem_layout.shape[1].value()
+    # `c_smem_layout.static_shape[1]` in `multi_stage_store_C`.
+    comptime M = c_smem_layout.static_shape[1]
     comptime chunkM = c_swizzle.bytes() // size_of[c_type]()
     comptime vec_chunkM = chunkM // simd_size
     comptime chunk_num = M // chunkM
-    comptime logical_c_layout = Layout.row_major(chunk_num, stageN, vec_chunkM)
+    comptime logical_c_size = chunk_num * stageN * vec_chunkM
     comptime thread_num = num_output_warps * WARP_SIZE
-    comptime assert logical_c_layout.size() % thread_num == 0
-    comptime value_shape = logical_c_layout.size() // thread_num
+    comptime assert logical_c_size % thread_num == 0
+    comptime value_shape = logical_c_size // thread_num
     comptime cN = c_static_N
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
     var zero_vec = SIMD[c_type, simd_size](0)
@@ -1993,9 +1994,11 @@ def blackwell_tma_umma_warp_specialized_kernel[
                     # path; see `zero_output_epilogue`.
                     zero_output_epilogue[
                         c_type,
-                        c_smem_layout=Layout.row_major(
-                            output_tile_shape.element_types[0].static_value,
-                            output_tile_shape.element_types[1].static_value,
+                        c_smem_layout=type_of(
+                            row_major[
+                                output_tile_shape.element_types[0].static_value,
+                                output_tile_shape.element_types[1].static_value,
+                            ]()
                         ),
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
@@ -2033,11 +2036,13 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 continue
             # WAIT FOR MMA TO FINISH AND STORE RESULT
             # scheduler fetch next work
+            comptime c_smem_layout = row_major[
+                output_tile_shape.element_types[0].static_value,
+                output_tile_shape.element_types[1].static_value,
+            ]()
             multi_stage_store_C[
-                c_smem_layout=Layout.row_major(
-                    output_tile_shape.element_types[0].static_value,
-                    output_tile_shape.element_types[1].static_value,
-                ),
+                c_smem_layout_t=type_of(c_smem_layout),
+                c_smem_layout=c_smem_layout,
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,

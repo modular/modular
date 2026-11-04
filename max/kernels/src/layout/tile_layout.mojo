@@ -61,9 +61,6 @@ from layout.coord import (
     _Flattened,
     _IsNotTuplePredicate,
 )
-from .int_tuple import coord_to_int_tuple
-
-from .layout import Layout as LegacyLayout
 
 
 @inline(.nodebug)
@@ -652,18 +649,6 @@ struct Layout[
             The size of the memory region required by the layout.
         """
         return self[linear_idx_type=linear_idx_type](self.product() - 1) + 1
-
-    @inline(.nodebug)
-    def to_layout(self) -> LegacyLayout:
-        """Converts this mixed layout to a legacy `Layout` using `IntTuple`.
-
-        Returns:
-            A legacy `Layout` with the same shape and stride.
-        """
-        return LegacyLayout(
-            coord_to_int_tuple(self._shape),
-            coord_to_int_tuple(self._stride),
-        )
 
     @inline(.nodebug)
     def reverse(

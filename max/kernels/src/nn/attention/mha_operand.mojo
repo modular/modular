@@ -36,7 +36,6 @@ from kv_cache.types import (
     swizzle_granularity,
 )
 from layout import (
-    Layout,
     DefaultEngine,
     TensorEngine,
     UNKNOWN_VALUE,

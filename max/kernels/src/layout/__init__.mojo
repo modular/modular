@@ -24,6 +24,7 @@ multidimensional data.
   through a buffer of equally shaped tiles.
 """
 from .coord import (
+    UNKNOWN_VALUE,
     _CoordReplaceAt,
     Coord,
     CoordLike,
@@ -32,12 +33,6 @@ from .coord import (
     coord,
     coord_to_index_list,
 )
-from .int_tuple import (
-    UNKNOWN_VALUE,
-    IntTuple,
-    to_index_list,
-)
-from .layout import Layout, LayoutList, composition, print_layout
 from .tile_layout import (
     TensorLayout,
     Layout as MixedLayout,
@@ -54,7 +49,6 @@ from .two_level_layout import (
 from .numpy import from_numpy, to_numpy
 from .tile_tensor import (
     ImmTileTensor,
-    LTToTTLayout,
     MutTileTensor,
     MutabilityKnown,
     TileTensor,

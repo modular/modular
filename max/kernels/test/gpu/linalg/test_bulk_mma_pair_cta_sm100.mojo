@@ -65,9 +65,7 @@ from layout import (
 from layout._fillers import random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core_async import (
-    tile_layout_k_major,
     tile_layout_k_major_typed,
-    tile_layout_mn_major,
     tile_layout_mn_major_typed,
 )
 from layout.tma_async import (
@@ -456,13 +454,14 @@ def bulk_mma_pair_cta_ts_kernel[
     ) if transpose_b else type_of(
         tile_layout_mn_major_typed[ab_type, BN, BK, b_swizzle]
     )
-    # `bulk_mma` derives its per-k-block descriptor offsets from a legacy
-    # `Layout`; this is the same tile layout as `BSmemLayout`.
-    comptime b_mma_layout = tile_layout_k_major[
-        ab_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        ab_type, BN, BK, swizzle_mode=b_swizzle
-    ]()
+    # The two major orders are different layout types, so `bulk_mma` gets the
+    # one matching `transpose_b` per comptime branch below.
+    comptime b_mma_layout_k = tile_layout_k_major_typed[
+        ab_type, BN, BK, b_swizzle
+    ]
+    comptime b_mma_layout_mn = tile_layout_mn_major_typed[
+        ab_type, BN, BK, b_swizzle
+    ]
 
     var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
@@ -674,20 +673,38 @@ def bulk_mma_pair_cta_ts_kernel[
             if elect_one_warp:
                 var elect_val = elect()
 
-                bulk_mma[
-                    b_mma_layout,
-                    mma_k=MMA_K,
-                    num_k_mmas=num_k_mmas,
-                    operand_size=size_of[ab_type](),
-                    cta_group=cta_group,
-                ](
-                    idesc,
-                    tmem_addr,  # A in TMEM at column 0
-                    bdesc_base,
-                    tmem_addr + UInt32(A_TMEM_COLS),  # C after A
-                    UInt32(0) if i == 0 else UInt32(1),
-                    elect_val,
-                )
+                comptime if transpose_b:
+                    bulk_mma[
+                        type_of(b_mma_layout_k),
+                        b_mma_layout_k,
+                        mma_k=MMA_K,
+                        num_k_mmas=num_k_mmas,
+                        operand_size=size_of[ab_type](),
+                        cta_group=cta_group,
+                    ](
+                        idesc,
+                        tmem_addr,  # A in TMEM at column 0
+                        bdesc_base,
+                        tmem_addr + UInt32(A_TMEM_COLS),  # C after A
+                        UInt32(0) if i == 0 else UInt32(1),
+                        elect_val,
+                    )
+                else:
+                    bulk_mma[
+                        type_of(b_mma_layout_mn),
+                        b_mma_layout_mn,
+                        mma_k=MMA_K,
+                        num_k_mmas=num_k_mmas,
+                        operand_size=size_of[ab_type](),
+                        cta_group=cta_group,
+                    ](
+                        idesc,
+                        tmem_addr,  # A in TMEM at column 0
+                        bdesc_base,
+                        tmem_addr + UInt32(A_TMEM_COLS),  # C after A
+                        UInt32(0) if i == 0 else UInt32(1),
+                        elect_val,
+                    )
 
                 if elect_one_thread:
                     mma_arrive_multicast[cta_group](mma_mbar, c_mma_mask)

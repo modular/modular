@@ -85,7 +85,6 @@ from layout.tma_async import (
 )
 from layout import (
     ComptimeInt,
-    Layout,
     RowMajorLayout,
     TensorEngine,
     TileTensor,

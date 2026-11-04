@@ -41,7 +41,6 @@ from max.gpu.sync import schedule_barrier as amd_schedule_barrier
 
 from .amd_helpers import amd_scheduling_hints, compare_equal
 from layout import TensorLayout, TileTensor, coord, row_major, stack_allocation
-from layout.layout import blocked_product
 from linalg.matmul.gpu.amd.matmul_mma import MmaOp
 from structured_kernels.amd_tile_io import (
     RegTileLoader,

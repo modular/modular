@@ -86,7 +86,6 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.layout import *
 from layout.tile_io import (
     copy_local_to_dram,
     copy_local_to_shared,

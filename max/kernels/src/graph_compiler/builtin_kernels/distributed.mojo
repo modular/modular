@@ -69,7 +69,6 @@ from max.gpu.host import DeviceContext, DeviceContextArray
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, row_major
-from layout.int_tuple import UNKNOWN_VALUE
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout as TileLayout
 from extensibility import (
@@ -123,9 +122,7 @@ def _check_uniform_cols[
             inputs.static_specs[i].shape_tuple[last_dim_idx]
         )
         comptime assert (
-            static_cols == UNKNOWN_VALUE
-            or static_cols_i == UNKNOWN_VALUE
-            or static_cols == static_cols_i
+            static_cols < 0 or static_cols_i < 0 or static_cols == static_cols_i
         ), (
             "fused norm collectives require the same column count on every"
             " device; device groups may differ only in rows"
@@ -163,9 +160,7 @@ def _check_uniform_cols[
     comptime for i in range(1, len(Ts)):
         comptime static_cols_i = Ts[i]._shape_types[last_dim_idx].static_value
         comptime assert (
-            static_cols == UNKNOWN_VALUE
-            or static_cols_i == UNKNOWN_VALUE
-            or static_cols == static_cols_i
+            static_cols < 0 or static_cols_i < 0 or static_cols == static_cols_i
         ), (
             "fused norm collectives require the same column count on every"
             " device; device groups may differ only in rows"

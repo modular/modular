@@ -69,7 +69,6 @@ from layout.coord import (
     _Flattened,
     DynamicCoord,
 )
-from .int_tuple import coord_to_int_tuple, _IntTupleToCoordLike
 from .owned_tensor import OwnedTensor
 
 
@@ -5505,30 +5504,3 @@ def flatten_leading[
     return rebind[tensor.ViewType[ResultLayout]](
         tensor.reshape(row_major(merged, tensor.layout.shape[2]()))
     )
-
-
-# ============================================================================
-# LTToTTLayout -- Derive a TileTensor layout type from a legacy Layout
-# ============================================================================
-
-from .int_tuple import product_each as _product_each
-from .layout import Layout as _LegacyLayout
-
-
-comptime LTToTTLayout[lt_layout: _LegacyLayout] = Layout[
-    shape_types=_IntTupleToCoordLike[
-        DType.int64, _product_each(lt_layout.shape)
-    ],
-    stride_types=_IntTupleToCoordLike[
-        DType.int64, _product_each(lt_layout.stride)
-    ],
-]
-"""Derive a TileTensor Layout from a legacy Layout.
-
-Known dimensions become ComptimeInt, UNKNOWN_VALUE dimensions become
-Scalar.  Hierarchical layouts (e.g. from ``tile_to_shape``) are
-collapsed via ``product_each`` so each mode becomes a single value.
-
-Parameters:
-    lt_layout: The legacy Layout to convert.
-"""

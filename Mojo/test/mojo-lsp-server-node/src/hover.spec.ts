@@ -737,13 +737,20 @@ def foo():
       server,
       "test:///test.mojo",
       `
-from layout import IntTuple
+struct Container:
+    var x: Int
+
+    def __init__(out self):
+        self.x = 0
+
+    def __getitem__(self, idx: IntLiteral) -> Int:
+        return self.x + Int(idx)
 
 struct Foo:
-    var t: IntTuple
+    var t: Container
 
     def __init__(out self: Foo):
-        self.t = IntTuple()
+        self.t = Container()
 
 def baz():
     comptime f = Foo()

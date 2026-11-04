@@ -65,9 +65,7 @@ from layout import (
 from layout.coord import ComptimeInt
 from layout.tile_layout import Layout as TileLayout
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_sf_layout_k_major,
+    tile_sf_layout_k_major_typed,
 )
 from layout.tma_async import (
     PipelineState,
@@ -1484,28 +1482,20 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime b_tma_rows = b_desc_shape.element_types[1].static_value
 
     # keep the physical SMEM buffer BM x MMA_N
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=config.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]()
 
-    comptime sfa_smem_layout = tile_sf_layout_k_major[
+    comptime sfa_smem_layout = tile_sf_layout_k_major_typed[
         BM,
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
-    ]()
+    ]
     # Always use the hardware atom layout for SFB so that tcgen05_cp can
     # bulk-copy SMEM→TMEM from the MMA warp (no 4-warp tcgen05_st needed).
     # cp.async scatters data into the correct atom positions on load.
-    comptime sfb_smem_layout = tile_sf_layout_k_major[
+    comptime sfb_smem_layout = tile_sf_layout_k_major_typed[
         align_up(MMA_N, SF_MN_GROUP_SIZE),
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
-    ]()
+    ]
 
     comptime SmemType = B200BlockScaledMatmulSmem[
         a_type,
@@ -1611,10 +1601,10 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     # Verify TileTensor tile sizes match the iterator tile sizes.
     comptime assert (
-        sfa_d0 * sfa_d1 == sfa_smem_layout.size()
+        sfa_d0 * sfa_d1 == sfa_smem_layout.static_product
     ), "SFA TileTensor tile size must match iterator tile size"
     comptime assert (
-        sfb_d0 * sfb_d1 == sfb_smem_layout.size()
+        sfb_d0 * sfb_d1 == sfb_smem_layout.static_product
     ), "SFB TileTensor tile size must match iterator tile size"
 
     comptime num_sf_tiles = config.num_pipeline_stages
@@ -2044,7 +2034,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         config.num_sf_k_tiles,
                         config.k_group_size,
                         config.num_pipeline_stages // config.k_group_size,
-                        sfb_smem_layout.size(),
+                        sfb_smem_layout.static_product,
                     ](
                         work_info,
                         num_iters,
@@ -2065,7 +2055,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         config.num_sf_k_tiles,
                         config.k_group_size,
                         config.num_pipeline_stages // config.k_group_size,
-                        sfb_smem_layout.size(),
+                        sfb_smem_layout.static_product,
                     ](
                         work_info,
                         num_iters,

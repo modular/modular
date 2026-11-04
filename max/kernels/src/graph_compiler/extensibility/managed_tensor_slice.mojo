@@ -508,7 +508,7 @@ def _coord_sentinel_value[*element_types: CoordLike]() -> Coord[*element_types]:
 
     Static components carry their compile-time values; a `Scalar` component
     (a dynamic dim) carries -1, the raw-dims encoding of an unknown dimension,
-    so value consumers see the same sentinel the old IntTuple aliases did.
+    so value consumers see the same sentinel they always have.
     """
     var result = Coord[*element_types]()
     comptime for i in range(Coord[*element_types].rank):
@@ -815,8 +815,7 @@ struct StaticTensorSpec[
             self.address_space,
         }
 
-    # -1 (UNKNOWN_VALUE) when any dim is dynamic, as the old
-    # `product(IntTuple)` reducer returned, rather than multiplying the
+    # -1 (UNKNOWN_VALUE) when any dim is dynamic, rather than multiplying the
     # dynamic dims' -1 through.
     comptime static_size: Int = (
         Self.static_layout.static_product if Coord[

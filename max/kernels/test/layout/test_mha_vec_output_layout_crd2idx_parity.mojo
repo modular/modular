@@ -21,7 +21,7 @@ fragment's view layout is the *nested, non-row-major* `_PVecTTLayout` /
 `_OVecTTLayout` built in `_mha_sm90` in
 `nn/attention/gpu/nvidia/sm90/mha.mojo`.
 
-The mechanical converter `LTToTTLayout` (`layout/tile_tensor.mojo`) is LOSSY
+The mechanical legacy-layout converter was LOSSY
 for these layouts: it `product_each`-collapses both shape AND stride,
 destroying the nested non-contiguous stride structure. So the layout must be
 HAND-BUILT. This test proves the hand-built nested TileTensor layout

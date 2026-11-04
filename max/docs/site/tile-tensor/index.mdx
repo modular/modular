@@ -25,11 +25,9 @@ This section discusses the `TileTensor` abstraction and its related types:
   run-time values. It's used for defining logical coordinates and layout shapes,
   among other things.
 
-The `layout` package also includes the older `IntTuple`-based layout type,
-`layout.Layout`, which the `Coord`-based layout system replaces for tensors.
-`TileTensor` supports layouts with run-time dimensions, nested layouts, and
-the `Coord`-based layout system, which minimizes the memory footprint of the
-layout struct and can help reduce register pressure on GPUs.
+`TileTensor` supports layouts with run-time dimensions and nested layouts.
+The `Coord`-based layout keeps the layout struct small, which helps reduce
+register pressure on GPUs.
 
 - To step through a buffer of equally shaped tiles, such as the stages of a
   pipelined shared-memory buffer, use
@@ -39,7 +37,3 @@ layout struct and can help reduce register pressure on GPUs.
 - To walk the tiles of a 2D tensor, loop over the tile coordinates and call
   `tile()` for each one, as shown in
   [Iterating over tiles](/tile-tensor/tensors/#iterating-over-tiles).
-
-You can also convert a `Coord`-based layout into an `IntTuple`-based layout.
-For more information on the older layout type, see
-[`IntTuple`-based layouts](/layout/layouts/).

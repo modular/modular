@@ -21,7 +21,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import Layout, TileTensor, coord
+from layout import TileTensor, coord
 from layout.tile_layout import Layout as TileLayout, TensorLayout
 from layout.tensor_core_async import _CM_NUM_ROWS, _CM_ROW_BYTES
 

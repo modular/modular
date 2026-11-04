@@ -39,7 +39,6 @@ from layout import (
     Coord,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     coord,
 )
 from layout.tma_async import (
@@ -555,7 +554,7 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 
 
 # Explicit 1D TileTensor layout that lets the compiler prove flat_rank == 1,
-# bypassing the LTToTTLayout comptime alias chain where the compiler can't
+# bypassing the typed-layout alias chain where the compiler can't
 # simplify TypeList[_Flattened[...]].length to 1.
 comptime _1d_tt_layout = InternalLayout[
     shape_types=Coord[Int64].element_types,
@@ -2481,7 +2480,7 @@ struct ContinuousBatchingKVCache[
 
         comptime smem_dim = coord[BN, 1, BK]
         comptime gmem_dim = coord[
-            UNKNOWN_VALUE, Self.kv_params.num_heads, Self.kv_params.head_size
+            -1, Self.kv_params.num_heads, Self.kv_params.head_size
         ]
         return create_split_tma[
             smem_dim,
@@ -2729,7 +2728,7 @@ struct PagedKVCache[
     It is used to access the KVCache blocks for PagedAttention.
 
     Note: This struct represents a 4D view of a 6D `PagedKVCacheCollection`
-    tensor. The compile-time layout has `UNKNOWN_VALUE` for stride[0] because
+    tensor. The compile-time layout has a dynamic stride[0] because
     the actual stride depends on `num_layers` from the parent tensor, which is
     only known at runtime. This ensures offset calculations use the correct
     runtime strides rather than incorrect compile-time values.
@@ -3403,7 +3402,7 @@ struct PagedKVCache[
             )
         comptime smem_dim = coord[BN, 1, BK]
         comptime gmem_dim = coord[
-            UNKNOWN_VALUE, Self.kv_params.num_heads, Self.kv_params.head_size
+            -1, Self.kv_params.num_heads, Self.kv_params.head_size
         ]
         return create_split_tma[
             smem_dim,
@@ -3661,9 +3660,7 @@ struct PagedKVCache[
             padded_depth
         ).unsafe_bitcast[BFloat16]()
         comptime smem_dim = coord[BN, 1, BK]
-        comptime gmem_dim = coord[
-            UNKNOWN_VALUE, Self.kv_params.num_heads, bf16_row_stride
-        ]
+        comptime gmem_dim = coord[-1, Self.kv_params.num_heads, bf16_row_stride]
         tma = create_split_tma[smem_dim, gmem_dim, swizzle_mode](
             ctx, rope_ptr, rows
         )

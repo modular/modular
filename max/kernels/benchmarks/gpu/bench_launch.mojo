@@ -26,15 +26,15 @@ def empty_kernel():
 
 
 def empty_kernel_many_params[
-    layout_1: Layout,
-    layout_2: Layout,
-    layout_3: Layout,
-    layout_4: Layout,
-    layout_5: Layout,
-    layout_6: Layout,
-    layout_7: Layout,
-    layout_8: Layout,
-    layout_9: Layout,
+    layout_1: TensorLayout,
+    layout_2: TensorLayout,
+    layout_3: TensorLayout,
+    layout_4: TensorLayout,
+    layout_5: TensorLayout,
+    layout_6: TensorLayout,
+    layout_7: TensorLayout,
+    layout_8: TensorLayout,
+    layout_9: TensorLayout,
 ]():
     pass
 
@@ -61,15 +61,15 @@ def bench_empty_launch_many_params_caller(
     mut m: Bench, ctx: DeviceContext[]
 ) raises:
     comptime func_alias = empty_kernel_many_params[
-        Layout([1, 2], [3, 3]),
-        Layout([1, 2], [3, 3]),
-        Layout([1, 2], [3, 3]),
-        Layout([1, 2], [3, 3]),
-        Layout([1, 2], [3, 3]),
-        Layout([1, 2], [3, 3]),
-        Layout([1, 2], [3, 3]),
-        Layout([1, 2], [3, 3]),
-        Layout([1, 2], [3, 3]),
+        type_of(MixedLayout(coord[1, 2], coord[3, 3])),
+        type_of(MixedLayout(coord[1, 2], coord[3, 3])),
+        type_of(MixedLayout(coord[1, 2], coord[3, 3])),
+        type_of(MixedLayout(coord[1, 2], coord[3, 3])),
+        type_of(MixedLayout(coord[1, 2], coord[3, 3])),
+        type_of(MixedLayout(coord[1, 2], coord[3, 3])),
+        type_of(MixedLayout(coord[1, 2], coord[3, 3])),
+        type_of(MixedLayout(coord[1, 2], coord[3, 3])),
+        type_of(MixedLayout(coord[1, 2], coord[3, 3])),
     ]
 
     @inline(.always)

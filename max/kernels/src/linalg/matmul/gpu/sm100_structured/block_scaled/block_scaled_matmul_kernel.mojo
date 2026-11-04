@@ -64,9 +64,7 @@ from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Coord
 from layout.tensor_core_async import (
-    tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
-    tile_sf_layout_k_major,
+    tile_sf_layout_k_major_typed,
 )
 
 from std.utils.index import Index, IndexList
@@ -252,39 +250,29 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== Shared Memory Layout Types ==========
 
-    comptime a_smem_layout = tile_layout_k_major_typed[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
-    ].to_layout()
-
-    comptime b_smem_layout = tile_layout_k_major_typed[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ].to_layout() if Self.transpose_b else tile_layout_mn_major_typed[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ].to_layout()
-
     # SF_K_GROUP_SIZE = SF_ATOM_K * vec_sf_size (from fp4_utils)
     comptime SF_K_GROUP_SIZE = SF_ATOM_K * Self.config.vec_sf_size
 
-    comptime sfa_smem_layout = tile_sf_layout_k_major[
+    comptime sfa_smem_layout = tile_sf_layout_k_major_typed[
         Self.BM,
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
-    ]()
+    ]
 
-    comptime sfb_smem_layout = tile_sf_layout_k_major[
+    comptime sfb_smem_layout = tile_sf_layout_k_major_typed[
         align_up(Self.MMA_N, SF_MN_GROUP_SIZE),
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
-    ]()
+    ]
 
     # ========== TMA Load Size Constants ==========
     # Expected bytes for TMA loads (used in expect_bytes)
     comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
     comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
-    comptime sfa_expected_bytes = Self.sfa_smem_layout.size() * size_of[
+    comptime sfa_expected_bytes = Self.sfa_smem_layout.static_product * size_of[
         Self.sfa_dtype
     ]()
-    comptime sfb_expected_bytes = Self.sfb_smem_layout.size() * size_of[
+    comptime sfb_expected_bytes = Self.sfb_smem_layout.static_product * size_of[
         Self.sfb_dtype
     ]()
     comptime input_expected_bytes = Self.cta_group * (

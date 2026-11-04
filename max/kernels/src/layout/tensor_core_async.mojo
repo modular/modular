@@ -34,7 +34,7 @@ Performance features:
 
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
-from std.sys import size_of, bit_width_of
+from std.sys import size_of
 from std.sys._assembly import inlined_assembly
 
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -45,21 +45,14 @@ from max.gpu.compute.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout.coord import Coord, Idx
-from layout.int_tuple import coord_to_int_tuple
+from layout.coord import Coord, CoordLike, Idx
 from layout.tensor_engine import DefaultEngine, _layout_row_major
-from layout import IntTuple, Layout, TileTensor
-from layout.layout import (
-    MakeLayoutList,
-    composition,
-    logical_divide,
-    logical_product,
-    make_layout,
-    right_inverse,
-    tile_to_shape,
-    upcast,
+from layout import TileTensor
+from layout.tile_layout import (
+    Layout as TileLayout,
+    TensorLayout,
+    row_major as tile_row_major,
 )
-from layout.tile_layout import Layout as TileLayout, row_major as tile_row_major
 
 from std.utils import StaticTuple
 from std.utils.coord import Coord
@@ -204,13 +197,10 @@ comptime _CM_NUM_ROWS = 8
 
 
 comptime _CM_ROW_BYTES = 16
-comptime _CM_ROW_BITS = 128
 
 # WGMMA's K dim has 32 bytes.
 comptime WGMMA_K_BYTES = 32
 """Size of WGMMA K dimension in bytes."""
-
-comptime _CM_TILE_STRIDE = IntTuple(1, _CM_ROW_BITS)
 
 
 @inline(.always)
@@ -255,49 +245,28 @@ def warpgroup_fence[
         _warpgroup_fence_operand(accum_flat.load[invariant=False]((Idx[i],)))
 
 
-# constructs core matrix or "minimal dense" layout in bytes as described in file
-# header.
-def _select_k_atom_bits[
-    swizzle_mode: TensorMapSwizzle,
-]() -> Layout:
-    return Layout.row_major(_CM_NUM_ROWS, swizzle_mode.bytes() * 8)
-
-
-def select_k_atom[
+@inline(.never)
+def _check_k_fits_swizzle[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
-]() -> Layout:
-    """Creates a core matrix layout for tensor core operations.
-
-    Constructs the fundamental atomic layout for tensor core operations based on the
-    specified data type and swizzle mode. This layout represents the minimal dense
-    matrix structure that can be efficiently processed by tensor cores.
+    BK: Int,
+]():
+    """Rejects a K extent that does not span a whole number of swizzle atoms.
 
     Parameters:
         dtype: Element data type of the tensor.
         swizzle_mode: Memory access pattern swizzling mode.
+        BK: Size of the K dimension in the tile.
 
-    Returns:
-        `Layout` - A core matrix layout optimized for tensor core operations.
+    Constraints:
+        `BK` must cover a whole number of `swizzle_mode` atoms; the swizzled
+        WGMMA tile cannot be split along K.
     """
-    comptime a = _select_k_atom_bits[swizzle_mode]()
-    return upcast(materialize[a](), bit_width_of[dtype]())
-
-
-def _checked_tile_shape[
-    dtype: DType,
-    swizzle_mode: TensorMapSwizzle,
-    BM: Int,
-    BK: Int,
-]() -> IntTuple:
     comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         comptime k_bytes = BK * size_of[dtype]()
         comptime assert (k_bytes % swizzle_mode.bytes()) == 0, String(
             t"K dim {k_bytes} doesn't match {swizzle_mode}"
         )
-        # swizzled WGMMA cannot be tiled in K if we constraint the layout to 2D.
-
-    return [BM, BK]
 
 
 # Helper: swizzle width in elements for a given dtype and swizzle mode.
@@ -305,18 +274,159 @@ comptime _sw_K[
     dtype: DType, swizzle_mode: TensorMapSwizzle
 ] = swizzle_mode.bytes() // size_of[dtype]()
 
+
+def _outer_k_stride_of[
+    dtype: DType,
+    BM: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle,
+    page_dense: Bool,
+]() -> Int:
+    """Returns the outer K stride of the K-major typed tile layout.
+
+    When `BK == sw_K` (outer K dim has shape 1), the stride is 0 to match the
+    compact layout produced by `tile_to_shape` / `tile_layout_k_major()`. The
+    page-dense form never collapses it: its K atoms are page-contiguous, so
+    crossing one atom row advances a whole page.
+
+    Parameters:
+        dtype: Element data type of the tensor.
+        BM: Size of the M dimension in the tile.
+        BK: Size of the K dimension in the tile.
+        swizzle_mode: Memory access pattern swizzling mode.
+        page_dense: Whether the tile uses the page-dense (chunk-inner) form.
+
+    Returns:
+        The stride, in elements, from one K swizzle atom to the next.
+
+    Constraints:
+        The page-dense form is only defined for `SWIZZLE_128B`.
+    """
+    comptime sw_K = _sw_K[dtype, swizzle_mode]
+    comptime if page_dense:
+        comptime assert (
+            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
+        ), "page_dense k-major layout is only defined for SWIZZLE_128B"
+        return _CM_NUM_ROWS * sw_K
+    else:
+        return 0 if BK == sw_K else BM * sw_K
+
+
+def _outer_m_stride_of[
+    dtype: DType,
+    BM: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle,
+    page_dense: Bool,
+]() -> Int:
+    """Returns the outer M stride of the K-major typed tile layout.
+
+    Follows the same shape-1 rule as `_outer_k_stride_of` in the chunk-outer
+    form; the page-dense form steps over a whole page of K atoms.
+
+    Parameters:
+        dtype: Element data type of the tensor.
+        BM: Size of the M dimension in the tile.
+        BK: Size of the K dimension in the tile.
+        swizzle_mode: Memory access pattern swizzling mode.
+        page_dense: Whether the tile uses the page-dense (chunk-inner) form.
+
+    Returns:
+        The stride, in elements, from one MN swizzle-atom row to the next.
+
+    Constraints:
+        The page-dense form is only defined for `SWIZZLE_128B`.
+    """
+    comptime sw_K = _sw_K[dtype, swizzle_mode]
+    comptime if page_dense:
+        comptime assert (
+            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
+        ), "page_dense k-major layout is only defined for SWIZZLE_128B"
+        return (BK // sw_K) * _CM_NUM_ROWS * sw_K
+    else:
+        return 0 if BM == _CM_NUM_ROWS else _CM_NUM_ROWS * sw_K
+
+
+def _mn_outer_k_stride_of[
+    dtype: DType,
+    mn_dim: Int,
+    k_dim: Int,
+    swizzle_mode: TensorMapSwizzle,
+    page_dense: Bool,
+]() -> Int:
+    """Returns the outer K stride of the MN-major typed tile layout.
+
+    Parameters:
+        dtype: Element data type of the tensor.
+        mn_dim: Size of the MN dimension in the tile.
+        k_dim: Size of the K dimension in the tile.
+        swizzle_mode: Memory access pattern swizzling mode.
+        page_dense: Whether the tile uses the page-dense (chunk-inner) form.
+
+    Returns:
+        The stride, in elements, from one K swizzle atom to the next.
+
+    Constraints:
+        The page-dense form is only defined for `SWIZZLE_128B`.
+    """
+    comptime if page_dense:
+        comptime assert (
+            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
+        ), "page_dense mn-major layout is only defined for SWIZZLE_128B"
+        return _CM_NUM_ROWS * _sw_K[dtype, swizzle_mode]
+    else:
+        return _outer_k_stride_of[dtype, k_dim, mn_dim, swizzle_mode, False]()
+
+
+def _mn_outer_m_stride_of[
+    dtype: DType,
+    mn_dim: Int,
+    k_dim: Int,
+    swizzle_mode: TensorMapSwizzle,
+    page_dense: Bool,
+]() -> Int:
+    """Returns the outer MN stride of the MN-major typed tile layout.
+
+    Parameters:
+        dtype: Element data type of the tensor.
+        mn_dim: Size of the MN dimension in the tile.
+        k_dim: Size of the K dimension in the tile.
+        swizzle_mode: Memory access pattern swizzling mode.
+        page_dense: Whether the tile uses the page-dense (chunk-inner) form.
+
+    Returns:
+        The stride, in elements, from one MN swizzle-atom row to the next.
+
+    Constraints:
+        The page-dense form is only defined for `SWIZZLE_128B`.
+    """
+    comptime if page_dense:
+        comptime assert (
+            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
+        ), "page_dense mn-major layout is only defined for SWIZZLE_128B"
+        return _CM_NUM_ROWS * mn_dim
+    else:
+        return _outer_m_stride_of[dtype, k_dim, mn_dim, swizzle_mode, False]()
+
+
 # Outer stride for the K dimension in tile_layout_k_major_typed.
-# When BK == sw_K (outer K dim has shape 1), the stride is 0 to match
-# the compact layout produced by tile_to_shape / tile_layout_k_major().
 comptime _outer_k_stride[
-    dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
-] = 0 if BK == _sw_K[dtype, swizzle_mode] else BM * _sw_K[dtype, swizzle_mode]
+    dtype: DType,
+    BM: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle,
+    page_dense: Bool = False,
+] = _outer_k_stride_of[dtype, BM, BK, swizzle_mode, page_dense]()
 
 # Outer stride for the M dimension in tile_layout_k_major_typed, following the
 # same shape-1 rule as _outer_k_stride.
 comptime _outer_m_stride[
-    dtype: DType, BM: Int, swizzle_mode: TensorMapSwizzle
-] = 0 if BM == _CM_NUM_ROWS else _CM_NUM_ROWS * _sw_K[dtype, swizzle_mode]
+    dtype: DType,
+    BM: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle,
+    page_dense: Bool = False,
+] = _outer_m_stride_of[dtype, BM, BK, swizzle_mode, page_dense]()
 
 
 comptime tile_layout_k_major_typed[
@@ -324,6 +434,7 @@ comptime tile_layout_k_major_typed[
     BM: Int,
     BK: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    page_dense: Bool = False,
 ] = TileLayout(
     Coord(
         Coord(
@@ -338,11 +449,11 @@ comptime tile_layout_k_major_typed[
     Coord(
         Coord(
             Idx[_sw_K[dtype, swizzle_mode]],
-            Idx[_outer_m_stride[dtype, BM, swizzle_mode]],
+            Idx[_outer_m_stride[dtype, BM, BK, swizzle_mode, page_dense]],
         ),
         Coord(
             Idx[1],
-            Idx[_outer_k_stride[dtype, BM, BK, swizzle_mode]],
+            Idx[_outer_k_stride[dtype, BM, BK, swizzle_mode, page_dense]],
         ),
     ),
 )
@@ -358,6 +469,11 @@ Parameters:
     BM: Size of the M dimension in the tile.
     BK: Size of the K dimension in the tile.
     swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+    page_dense: When `True`, build the page-dense (chunk-inner, row-major
+        atoms) form that `tile_layout_k_major[page_dense=True]()` returns
+        instead of the chunk-outer form; the outer strides are the only
+        difference between the two. `SWIZZLE_128B` only (defaults to
+        `False`).
 """
 
 
@@ -366,16 +482,51 @@ comptime tile_layout_mn_major_typed[
     mn_dim: Int,
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-] = tile_layout_k_major_typed[dtype, k_dim, mn_dim, swizzle_mode].transpose()
+    page_dense: Bool = False,
+] = TileLayout(
+    Coord(
+        Coord(
+            Idx[_sw_K[dtype, swizzle_mode]],
+            Idx[mn_dim // _sw_K[dtype, swizzle_mode]],
+        ),
+        Coord(
+            Idx[_CM_NUM_ROWS],
+            Idx[k_dim // _CM_NUM_ROWS],
+        ),
+    ),
+    Coord(
+        Coord(
+            Idx[1],
+            Idx[
+                _mn_outer_k_stride_of[
+                    dtype, mn_dim, k_dim, swizzle_mode, page_dense
+                ]()
+            ],
+        ),
+        Coord(
+            Idx[_sw_K[dtype, swizzle_mode]],
+            Idx[
+                _mn_outer_m_stride_of[
+                    dtype, mn_dim, k_dim, swizzle_mode, page_dense
+                ]()
+            ],
+        ),
+    ),
+)
 """MN-major typed Layout for tensor core operations.
 
-Equivalent to ``tile_layout_k_major_typed[dtype, k_dim, mn_dim, swizzle_mode].transpose()``.
+Equivalent to ``tile_layout_k_major_typed[dtype, k_dim, mn_dim, swizzle_mode].transpose()``,
+except in the page-dense form, which is the native chunk-inner MN-major tile
+that ``tile_layout_mn_major[page_dense=True]()`` returns (not a transpose).
 
 Parameters:
     dtype: Element data type of the tensor.
     mn_dim: Size of the MN dimension.
     k_dim: Size of the K dimension.
     swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+    page_dense: When `True`, build the page-dense (chunk-inner, row-major
+        atoms) form that `tile_layout_mn_major[page_dense=True]()` returns.
+        `SWIZZLE_128B` only (defaults to `False`).
 """
 
 
@@ -487,292 +638,113 @@ Parameters:
 """
 
 
-def tile_layout_k_major[
+comptime _ModeProduct[mode: CoordLike]: Int = Coord[
+    *mode.ParamListType
+].static_product
+"""The element count of one layout mode, nested or flat."""
+
+
+def wgmma_canonical_strides[
     dtype: DType,
-    BM: Int,
-    BK: Int,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    page_dense: Bool = False,
-]() -> Layout:
-    """Creates a K-major layout for tensor core operations.
+    layout_t: TensorLayout,
+    is_k_major: Bool,
+    swizzle_mode: TensorMapSwizzle,
+]() -> Tuple[Int, Int, Int]:
+    """Returns the canonical descriptor layout's two sub-strides, in elements.
 
-    Constructs a layout optimized for K-major access patterns in tensor core operations,
-    with optional swizzling for improved memory access patterns.
-
-    New code should prefer `tile_layout_k_major_typed`, which builds the same
-    layout as a `TensorLayout` and only falls back to this legacy `Layout` at
-    the boundary of an API that still requires one.
+    The canonical layout an operand descriptor describes is the operand tile
+    tiled by `(8, 16 B)` along K. For a K-major operand that layout follows from
+    the tile geometry and the swizzle mode alone; for an MN-major operand it is
+    the operand tile's own layout. `wgmma_desc_sbo_lbo` turns these into the
+    WGMMA descriptor's 16 B units and applies WGMMA's majorness swap; the SM100
+    descriptor builders take them in elements and do their own swap.
 
     Parameters:
         dtype: Element data type of the tensor.
-        BM: Size of the M dimension in the tile.
-        BK: Size of the K dimension in the tile.
-        swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
-        page_dense: When `True`, return the native chunk-inner (row-major atoms)
-            k-major layout instead of the default chunk-outer form. The two are
-            byte-distinct when `BK` spans more than one swizzle atom
-            (`num_chunks >= 2`); the chunk-inner form lays each page contiguously
-            so one TMA fills it (the SM100 row-major page-fold path, K-side
-            analog of the `tile_layout_mn_major` `page_dense` branch).
-            SWIZZLE_128B only.
+        layout_t: Type of the operand tile's layout, with mode 0 the MN extent
+            and mode 1 the K extent.
+        is_k_major: Whether the operand is K-major (True) or MN-major (False).
+        swizzle_mode: Memory access pattern swizzling mode.
 
     Returns:
-        `Layout` - A K-major layout configured for the specified dimensions and swizzle mode.
+        The canonical mode-0 shape, its second sub-stride and the mode-1 second
+        sub-stride.
+
+    Constraints:
+        An MN-major operand needs two sub-modes per mode, the nesting the
+        descriptor reads its sub-strides from.
     """
-    comptime if page_dense:
-        # Page-dense (chunk-inner, row-major atoms) k-major layout, proven by
-        # `test_qk_kmajor_mma_spike.mojo`. Each `gran`-wide swizzle atom is
-        # innermost (stride 1); atom-rows (the MN/`BM` axis) step by
-        # `num_chunks * _CM_NUM_ROWS * gran` (OUTER); the chunk atoms within an
-        # atom-row step by `_CM_NUM_ROWS * gran` (INNER). Each
-        # `_CM_NUM_ROWS × gran` atom stays dense, so SWIZZLE_128B applies per
-        # atom. Fed through `tile_to_descriptor` + `_create_mma_desc_pair` this
-        # yields SBO = num_chunks*_CM_NUM_ROWS*gran*size_of (=2048 B, the page
-        # stride, double the chunk-outer 1024) and LBO = 16 (unchanged).
-        comptime assert (
-            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
-        ), "page_dense k-major layout is only defined for SWIZZLE_128B"
-        comptime gran = swizzle_mode.bytes() // size_of[dtype]()
-        comptime num_chunks = BK // gran
-        return Layout(
-            [
-                [_CM_NUM_ROWS, BM // _CM_NUM_ROWS],
-                [gran, num_chunks],
-            ],
-            [
-                [gran, num_chunks * _CM_NUM_ROWS * gran],
-                [1, _CM_NUM_ROWS * gran],
-            ],
-        )
-    else:
-        comptime atom = select_k_atom[dtype, swizzle_mode]()
-        comptime new_shape = _checked_tile_shape[dtype, swizzle_mode, BM, BK]()
-        return tile_to_shape(materialize[atom](), new_shape)
-
-
-def tile_sf_layout_k_major[
-    BM: Int,
-    BK: Int,
-    SF_SCALE_SIZE: Int,
-]() -> Layout:
-    """Creates a K-major layout for tensor core scale factors.
-
-    Constructs a layout for K-major access patterns for scale factors.
-
-    Parameters:
-        BM: Size of the M dimension in the tile.
-        BK: Size of the K dimension in the tile.
-        SF_SCALE_SIZE: Number of elements in a scale factor vector.
-
-    Returns:
-        `Layout` - A K-major layout configured for the specified dimensions and scale factor size.
-    """
-
-    comptime SF_ATOM_M = (32, 4)
-    comptime SF_ATOM_K = 4
-    comptime SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-
-    comptime sf_atom = Layout(
-        IntTuple(SF_ATOM_M[0], IntTuple(SF_ATOM_M[1], SF_ATOM_K)),
-        IntTuple(SF_ATOM_M[1] * SF_ATOM_K, IntTuple(1, SF_ATOM_M[1])),
-    )
-    comptime sf_layout = tile_to_shape(
-        sf_atom,
-        [
-            (BM // SF_MN_GROUP_SIZE) * SF_ATOM_M[0],
-            (BK // (SF_ATOM_K * SF_SCALE_SIZE)) * (SF_ATOM_M[1] * SF_ATOM_K),
-        ],
-        IntTuple(2, 1),
-    )
-    return materialize[sf_layout]()
-
-
-def tile_to_descriptor[
-    dtype: DType,
-    layout: Layout,
-    is_k_major: Bool = True,
-]() -> Layout:
-    """Transforms a layout into a WGMMA descriptor-compatible layout.
-
-    Converts a standard layout into a form that can be used with WGMMA descriptors,
-    handling both K-major and MN-major layouts differently.
-
-    Parameters:
-        dtype: Element data type of the tensor.
-        layout: Input layout to transform.
-        is_k_major: Whether the layout is K-major (True) or MN-major (False).
-
-    Returns:
-        `Layout - A transformed layout compatible with WGMMA descriptors.
-    """
-
+    comptime es = size_of[dtype]()
     comptime if is_k_major:
-        # Tile a layout to ((8,m),(T,2)) shape to match the K-major wgmma descriptor
-        comptime T = _CM_ROW_BYTES // size_of[dtype]()
-        comptime tiler = MakeLayoutList(Layout(_CM_NUM_ROWS), Layout(T))
-        return logical_divide(materialize[layout](), materialize[tiler]())
-    else:
-        # We are not using atom layout for MN-major layouts.
-        return materialize[layout]()
+        # Tiling the operand by one core-matrix column (`_CM_NUM_ROWS` rows)
+        # and one 16 B core-matrix row leaves `(8, ...)` in mode 0 with the
+        # swizzle atom as its first sub-stride, and a 16 B row as mode 1's.
+        # An unswizzled tile keeps its own outer K stride there, which is 0
+        # when K is one core matrix wide.
+        comptime BMN = _ModeProduct[layout_t._shape_types[0]]
+        comptime BK = _ModeProduct[layout_t._shape_types[1]]
+        comptime sw_K = swizzle_mode.bytes() // es
+        comptime canonical_K = (
+            BK if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE else sw_K
+        )
+        comptime sub_stride01 = (
+            0 if BMN == _CM_NUM_ROWS else _CM_NUM_ROWS * sw_K
+        )
+        comptime sub_stride11 = (
+            (0 if canonical_K == sw_K else BMN * sw_K) if swizzle_mode
+            == TensorMapSwizzle.SWIZZLE_NONE else _CM_ROW_BYTES // es
+        )
+        return (_CM_NUM_ROWS, sub_stride01, sub_stride11)
+
+    comptime assert (
+        layout_t.rank == 2
+        and layout_t._shape_types[0].__len__() == 2
+        and layout_t._shape_types[1].__len__() == 2
+    ), "an MN-major tile layout should have structure (rank-2, rank-2)."
+    return (
+        layout_t.static_shape[0],
+        layout_t.static_stride[1],
+        layout_t.static_stride[3],
+    )
 
 
-def tile_layout_mn_major[
+def wgmma_desc_sbo_lbo[
     dtype: DType,
-    mn_dim: Int,
-    k_dim: Int,
+    layout_t: TensorLayout,
+    is_k_major: Bool = True,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    page_dense: Bool = False,
-]() -> Layout:
-    """Creates an MN-major layout for tensor core operations.
+]() -> Tuple[Int, Int]:
+    """Returns the (stride, leading) byte offsets of a WGMMA operand descriptor.
 
-    Constructs a unit layout optimized for MN-major access patterns in shared memory,
-    with optional swizzling for improved memory access patterns.
-
-    New code should prefer `tile_layout_mn_major_typed`, which builds the same
-    layout as a `TensorLayout` and only falls back to this legacy `Layout` at
-    the boundary of an API that still requires one.
+    The two offsets are the sub-strides of the canonical descriptor layout, in
+    16 B units: mode 0's second sub-stride is the stride byte offset and mode
+    1's second sub-stride the leading byte offset. An MN-major operand swaps the
+    two when the swizzle is off, per the PTX "asynchronous warpgroup-level
+    majorness" table.
 
     Parameters:
         dtype: Element data type of the tensor.
-        mn_dim: Size of the MN dimension.
-        k_dim: Size of the K dimension.
-        swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
-        page_dense: When `True`, return the native chunk-inner (row-major atoms)
-            layout instead of the transpose-of-k-major (chunk-outer) form. The
-            two are byte-distinct when `k_dim` spans more than one swizzle atom;
-            the chunk-inner form lays each page contiguously so one TMA fills it
-            (the SM100 row-major page-fold path). SWIZZLE_128B only.
+        layout_t: Type of the operand tile's layout, with mode 0 the MN extent
+            and mode 1 the K extent.
+        is_k_major: Whether the operand is K-major (True) or MN-major (False).
+        swizzle_mode: Memory access pattern swizzling mode.
 
     Returns:
-        `Layout` - An MN-major layout configured for the specified dimensions and swizzle mode.
-
-    Note:
-        This returns the "unit" layout; the actual shared memory layout can be a multiple of this unit.
-        Currently only supports SWIZZLE_NONE and SWIZZLE_128B modes.
+        The stride byte offset (SBO) and leading byte offset (LBO).
     """
-
-    comptime if page_dense:
-        # Native (pre-`#73811`) mn-major layout, recovered verbatim from
-        # `fe239ba77a3`. Chunk-inner (row-major atoms): each `row_len`-wide
-        # swizzle atom is innermost (stride 1); the mn axis steps by
-        # `_CM_NUM_ROWS * row_len`; the k axis steps by `row_len` within a core
-        # matrix and `_CM_NUM_ROWS * mn_dim` across core matrices. Each
-        # `_CM_NUM_ROWS × row_len` atom stays dense (NOT the
-        # swizzle-incompatible element-row-contiguous form).
-        comptime assert (
-            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
-        ), "page_dense mn-major layout is only defined for SWIZZLE_128B"
-        comptime row_len = swizzle_mode.bytes() // size_of[dtype]()
-        return Layout(
-            [
-                [row_len, mn_dim // row_len],
-                [_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS],
-            ],
-            [
-                [1, _CM_NUM_ROWS * row_len],
-                [row_len, _CM_NUM_ROWS * mn_dim],
-            ],
-        )
-    else:
-        return tile_layout_k_major[
-            dtype, k_dim, mn_dim, swizzle_mode
-        ]().transpose()
-
-
-def wgmma_c_thread_layout[C: Layout]() -> Layout:
-    """Returns the thread layout component for WGMMA C matrix.
-
-    Generates the first mode of the WGMMA C layout, which maps thread coordinates
-    to linearized indices in the output matrix.
-
-    Parameters:
-        C: The layout of the C matrix.
-
-    Returns:
-        `Layout` - A layout mapping thread coordinates to linearized indices.
-    """
-    return Layout(
-        [4, 8, 4],
-        [comptime (C([0, 2])), comptime (C([1, 0])), comptime (C([16, 0]))],
-    )
-
-
-def wgmma_output_layout[mma_n: Int, C: Layout]() -> Layout:
-    """Returns the output layout component for WGMMA C matrix.
-
-    Generates the second mode of the WGMMA C layout, which maps output vector
-    coordinates to linearized indices in the output matrix.
-
-    Parameters:
-        mma_n: The N dimension of the WGMMA instruction.
-        C: The layout of the C matrix.
-
-    Returns:
-        `Layout` - A layout mapping output vector coordinates to linearized indices.
-    """
-    return Layout(
-        [2, 2, mma_n // 8],
-        [comptime (C([0, 1])), comptime (C([8, 0])), comptime (C([0, 8]))],
-    )
-
-
-def wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
-    """Generates three layouts for mapping WGMMA C matrix coordinates.
-
-    This function creates three layout mappings that are essential for working with WGMMA
-    (Warp Group Matrix Multiply-Accumulate) operations:
-
-    1. A projection layout that maps linearized indices to row coordinates (i)
-    2. A projection layout that maps linearized indices to column coordinates (j)
-    3. A composite layout that maps thread and vector coordinates to linearized indices
-       across multiple MMA tiles
-
-    These layouts are particularly useful for operations like attention masking and
-    matrix multiplication epilogues, where register values need to be mapped to the
-    coordinate system of the C matrix.
-
-    Parameters:
-        mma_m: The M dimension (rows) of a single WGMMA instruction, must be 64.
-        mma_n: The N dimension (columns) of a single WGMMA instruction, must be multiple of 8.
-        C: The layout of the C matrix within a thread block.
-
-    Returns:
-        `List[Layout]` - A list containing three layouts:
-            1. proj_i: Maps linearized indices to row coordinates
-            2. proj_j: Maps linearized indices to column coordinates
-            3. TV_tile_to_idx: Maps thread/vector/tile coordinates to linearized indices
-
-    Note:
-        This function enforces constraints on the WGMMA dimensions and ensures the C matrix
-        dimensions are compatible with the WGMMA instruction size.
-    """
-    comptime err = String(t"C = {C}, mma_m = {mma_m}, mma_n = {mma_n}")
-    comptime assert mma_m == 64, err
-    comptime assert mma_n % 8 == 0, err
-    comptime M = C.shape[0].value()
-    comptime N = C.shape[1].value()
-    comptime assert M % mma_m == 0, err
-    comptime assert N % mma_n == 0, err
-    comptime num_m_mma = M // mma_m
-    comptime num_n_mma = N // mma_n
-    # idx -> col(i, j)
-    comptime inv_c = right_inverse(C)
-    # idx -> col(i, j) -> i
-    comptime proj_i = composition(Layout([M, N], [1, 0]), inv_c)
-    # idx -> col(i, j) -> j
-    comptime proj_j = composition(Layout([M, N], [0, 1]), inv_c)
-    # ((lane_j, lane_i, warp_id), (vec_12, value_i, value_j)) -> idx
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-D.png
-    comptime T_to_idx = wgmma_c_thread_layout[C]()
-    comptime V_to_idx = wgmma_output_layout[mma_n, C]()
-    comptime TV_to_idx = make_layout(T_to_idx, V_to_idx)
-    comptime tiler = Layout.col_major(num_m_mma, num_n_mma)
-    comptime TV_tile_to_idx = logical_product(TV_to_idx, tiler)
-    return [
-        materialize[proj_i](),
-        materialize[proj_j](),
-        materialize[TV_tile_to_idx](),
-    ]
+    comptime canonical = wgmma_canonical_strides[
+        dtype, layout_t, is_k_major, swizzle_mode
+    ]()
+    comptime no_swizzle = swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE
+    comptime es = size_of[dtype]()
+    # Ignore the 4 LSB: descriptor offsets are in 16 B units.
+    comptime sbo = (
+        (canonical[1] if is_k_major or no_swizzle else canonical[2]) * es
+    ) >> 4
+    comptime lbo = (
+        (canonical[2] if is_k_major or no_swizzle else canonical[1]) * es
+    ) >> 4
+    return (sbo, lbo)
 
 
 comptime _st_matrix_frag_elems[c_type: DType] = 16 // size_of[c_type]()
@@ -875,50 +847,6 @@ Parameters:
     num_m_mmas: Number of MMA tiles in the N dimension.
     num_consumer: Number of consumer warp groups.
 """
-
-
-def _wgmma_descriptor[
-    dtype: DType,
-    //,
-    layout: Layout,
-    is_k_major: Bool = True,
-    swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](
-    addr: ImmPointer[Scalar[dtype], address_space=.SHARED, ...]
-) -> WGMMADescriptor[dtype]:
-    # Conform to canonical layout.
-    comptime assert (
-        layout.rank() == 2 and layout[0].rank() == 2 and layout[1].rank() == 2
-    ), "shared memory tile layout should have structure (rank-2, rank-2)."
-
-    comptime shape00 = layout[0].shape[0].value()
-    comptime shape11 = layout[1].shape[1].value()
-    comptime stride01 = layout[0].stride[1].value()
-    comptime stride11 = layout[1].stride[1].value()
-
-    comptime if is_k_major:
-        comptime assert shape00 == 8 and shape11 % 2 == 0, String(
-            t"Tile shape must be ((8, _), (_, multiple of 2)), get {layout}"
-        )
-
-        # Ignore 4 LSB.
-        comptime SBO = (stride01 * size_of[dtype]()) >> 4
-        comptime LBO = (stride11 * size_of[dtype]()) >> 4
-
-        return WGMMADescriptor.create[SBO, LBO, swizzle](addr)
-
-    comptime no_swizzle = swizzle == TensorMapSwizzle.SWIZZLE_NONE
-
-    # Swizzle and non-swizzle modes switch SBO and LBO based on
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=bar%2520sync#asynchronous-warpgroup-level-majorness-supported-by-strides
-    comptime SBO = (
-        (stride01 if no_swizzle else stride11) * size_of[dtype]()
-    ) >> 4
-    comptime LBO = (
-        (stride11 if no_swizzle else stride01) * size_of[dtype]()
-    ) >> 4
-
-    return WGMMADescriptor.create[SBO, LBO, swizzle](addr)
 
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
@@ -1045,7 +973,7 @@ struct TensorCoreAsync[
             scale_c: Scale factor for matrix C. Valid values are 1 or 0 (default: 1).
             scale_a: Scale factor for matrix A. Valid values are 1 or -1 (default: 1).
             scale_b: Scale factor for matrix B. Valid values are 1 or -1 (default: 1).
-            num_k_iters: Number of iterations for the K dimension. This is useful to save computation when we pad shared memory. (default: None which is just `a_smem_layout[1].size() // Int(mma_shape[2])`).
+            num_k_iters: Number of iterations for the K dimension. This is useful to save computation when we pad shared memory. (default: None, which is the A tile's K extent over `mma_shape[2]`).
 
         Args:
             a_smem_tile: Matrix A in shared memory.
@@ -1063,66 +991,46 @@ struct TensorCoreAsync[
         comptime assert _layout_row_major[
             type_of(c_reg_tile).LayoutType
         ](), "Native WGMMA requires contiguous static row-major C registers"
-        comptime a_smem_layout = Layout(
-            coord_to_int_tuple[*type_of(a_smem_tile).LayoutType._shape_types](),
-            coord_to_int_tuple[
-                *type_of(a_smem_tile).LayoutType._stride_types
-            ](),
-        )
-        comptime b_smem_layout = Layout(
-            coord_to_int_tuple[*type_of(b_smem_tile).LayoutType._shape_types](),
-            coord_to_int_tuple[
-                *type_of(b_smem_tile).LayoutType._stride_types
-            ](),
-        )
+        comptime a_smem_layout_t = type_of(a_smem_tile).LayoutType
+        comptime b_smem_layout_t = type_of(b_smem_tile).LayoutType
 
-        comptime BM = a_smem_layout[0].size()
-        comptime BN = b_smem_layout[0].size()
-        comptime BK = a_smem_layout[1].size()
+        comptime BM = _ModeProduct[a_smem_layout_t._shape_types[0]]
+        comptime BN = _ModeProduct[b_smem_layout_t._shape_types[0]]
+        comptime BK = _ModeProduct[a_smem_layout_t._shape_types[1]]
 
         # Canonical layouts conform to WGMMA's layout requirement e.g.
         # K-major layout requires BK = swizzle.bytes() // size_of[T]().
         comptime a_canonical_K = Self.a_swizzle.bytes() // size_of[
             Self.a_type
         ]() if Self.a_swizzle != TensorMapSwizzle.SWIZZLE_NONE else BK
-        comptime a_canonical_layout_flat = tile_layout_k_major[
-            Self.a_type, BM, a_canonical_K, Self.a_swizzle
-        ]()
-        comptime a_canonical_layout = tile_to_descriptor[
-            Self.a_type, a_canonical_layout_flat, True
-        ]()
         comptime b_canonical_K = Self.b_swizzle.bytes() // size_of[
             Self.b_type
         ]() if Self.b_swizzle != TensorMapSwizzle.SWIZZLE_NONE else BK
-        comptime b_canonical_layout_flat = tile_layout_k_major[
-            Self.b_type, BN, b_canonical_K, Self.b_swizzle
-        ]() if Self.transpose_b else b_smem_layout
-        comptime b_canonical_layout = tile_to_descriptor[
-            Self.b_type, b_canonical_layout_flat, Self.transpose_b
-        ]()
 
         # Layout modes are always (MN, K) transpose or not.
         # Note that shape00 may not equal core matrix dim for MN-major layouts.
-        comptime a_shape00 = a_canonical_layout[0].shape[0].value()
-        comptime a_stride01 = a_canonical_layout[0].stride[1].value()
-        comptime a_stride11 = a_canonical_layout[1].stride[1].value()
-        comptime b_shape00 = b_canonical_layout[0].shape[0].value()
-        comptime b_stride01 = b_canonical_layout[0].stride[1].value()
-        comptime b_stride11 = b_canonical_layout[1].stride[1].value()
+        comptime a_canonical = wgmma_canonical_strides[
+            Self.a_type, a_smem_layout_t, True, Self.a_swizzle
+        ]()
+        comptime b_canonical = wgmma_canonical_strides[
+            Self.b_type, b_smem_layout_t, Self.transpose_b, Self.b_swizzle
+        ]()
+        comptime a_shape00 = a_canonical[0]
+        comptime b_shape00 = b_canonical[0]
         comptime assert Int(Self.mma_shape[0]) % a_shape00 == 0
         comptime assert Int(Self.mma_shape[1]) % b_shape00 == 0
 
         # fmt: off
         # Strides between WGMMA tiles
-        comptime a_m_stride = a_stride01 * (Int(Self.mma_shape[0]) // a_shape00) * size_of[Self.a_type]()
-        comptime b_n_stride = b_stride01 * (Int(Self.mma_shape[1]) // b_shape00) * size_of[Self.b_type]()
+        comptime a_m_stride = a_canonical[1] * (Int(Self.mma_shape[0]) // a_shape00) * size_of[Self.a_type]()
+        comptime b_n_stride = b_canonical[1] * (Int(Self.mma_shape[1]) // b_shape00) * size_of[Self.b_type]()
         # K dim is stepped by 2 core matrices.
-        comptime a_k_stride = a_stride11 * 2 * size_of[Self.a_type]()
-        comptime b_k_stride = b_stride11 * 2 * size_of[Self.b_type]()
+        comptime a_k_stride = a_canonical[2] * 2 * size_of[Self.a_type]()
+        comptime b_k_stride = b_canonical[2] * 2 * size_of[Self.b_type]()
 
-        comptime num_m_mmas = a_canonical_layout[0].size() // Int(Self.mma_shape[0]) // num_warp_groups
-        comptime num_n_mmas = b_canonical_layout[0].size() // Int(Self.mma_shape[1])
-        comptime num_k_mmas = num_k_iters.or_else(a_smem_layout[1].size() // Int(Self.mma_shape[2]))
+        comptime num_m_mmas = BM // Int(Self.mma_shape[0]) // num_warp_groups
+        comptime num_n_mmas = BN // Int(Self.mma_shape[1])
+        comptime num_k_mmas = num_k_iters.or_else(BK // Int(Self.mma_shape[2]))
 
         # Number of wgmma per canonical layout. There can be multiple canonical layouts
         # per K dim e.g. BF16 128B swizzle has BK = 64 while input K = 128.
@@ -1130,11 +1038,23 @@ struct TensorCoreAsync[
         comptime b_num_k_mmas_per_tile = b_canonical_K // Int(Self.mma_shape[2]) if Self.transpose_b else num_k_mmas
         # fmt: on
 
-        var a_desc = _wgmma_descriptor[
-            a_canonical_layout, True, Self.a_swizzle
+        comptime a_sbo_lbo = wgmma_desc_sbo_lbo[
+            Self.a_type,
+            a_smem_layout_t,
+            is_k_major=True,
+            swizzle_mode=Self.a_swizzle,
+        ]()
+        comptime b_sbo_lbo = wgmma_desc_sbo_lbo[
+            Self.b_type,
+            b_smem_layout_t,
+            is_k_major=Self.transpose_b,
+            swizzle_mode=Self.b_swizzle,
+        ]()
+        var a_desc = WGMMADescriptor.create[
+            a_sbo_lbo[0], a_sbo_lbo[1], Self.a_swizzle
         ](a_smem_tile.ptr)
-        var b_desc = _wgmma_descriptor[
-            b_canonical_layout, Self.transpose_b, Self.b_swizzle
+        var b_desc = WGMMADescriptor.create[
+            b_sbo_lbo[0], b_sbo_lbo[1], Self.b_swizzle
         ](b_smem_tile.ptr)
 
         comptime if num_warp_groups > 1:
@@ -1150,13 +1070,14 @@ struct TensorCoreAsync[
         comptime for k_mma in range(num_k_mmas):
             comptime scale_d = scale_c if k_mma == 0 else 1
 
-            # Offsets when K is multiple of canonical layouts.
+            # Offsets when K is multiple of canonical layouts. A canonical
+            # layout is one block tile wide and `canonical_K` deep.
             comptime a_offset_bytes = (
                 k_mma // a_num_k_mmas_per_tile
-            ) * a_canonical_layout.size() * size_of[Self.a_type]()
+            ) * BM * a_canonical_K * size_of[Self.a_type]()
             comptime b_offset_bytes = (
                 k_mma // b_num_k_mmas_per_tile
-            ) * b_canonical_layout.size() * size_of[
+            ) * BN * b_canonical_K * size_of[
                 Self.b_type
             ]() if Self.transpose_b else 0
 
@@ -1235,37 +1156,27 @@ struct TensorCoreAsync[
         comptime assert b_smem_tile.all_dims_known
         comptime assert _layout_row_major[type_of(a_frag_tile).LayoutType]()
         comptime assert _layout_row_major[type_of(c_reg_tile).LayoutType]()
-        comptime b_smem_layout = Layout(
-            coord_to_int_tuple[*type_of(b_smem_tile).LayoutType._shape_types](),
-            coord_to_int_tuple[
-                *type_of(b_smem_tile).LayoutType._stride_types
-            ](),
-        )
-        comptime BN = b_smem_layout[0].size()
-        comptime BK = b_smem_layout[1].size()
+        comptime b_smem_layout_t = type_of(b_smem_tile).LayoutType
+        comptime BN = _ModeProduct[b_smem_layout_t._shape_types[0]]
+        comptime BK = _ModeProduct[b_smem_layout_t._shape_types[1]]
         comptime b_canonical_K = Self.b_swizzle.bytes() // size_of[
             Self.b_type
         ]() if Self.b_swizzle != TensorMapSwizzle.SWIZZLE_NONE else BK
-        comptime b_canonical_layout_flat = tile_layout_k_major[
-            Self.b_type, BN, b_canonical_K, Self.b_swizzle
-        ]() if Self.transpose_b else b_smem_layout
-        comptime b_canonical_layout = tile_to_descriptor[
-            Self.b_type, b_canonical_layout_flat, Self.transpose_b
-        ]()
 
         # Layout modes are always (MN, K) transpose or not.
         # Note that shape00 may not equal core matrix dim for MN-major layouts.
-        comptime b_shape00 = b_canonical_layout[0].shape[0].value()
-        comptime b_stride01 = b_canonical_layout[0].stride[1].value()
-        comptime b_stride11 = b_canonical_layout[1].stride[1].value()
+        comptime b_canonical = wgmma_canonical_strides[
+            Self.b_type, b_smem_layout_t, Self.transpose_b, Self.b_swizzle
+        ]()
+        comptime b_shape00 = b_canonical[0]
         comptime assert Int(Self.mma_shape[1]) % b_shape00 == 0, String(
             t"b_shape00 = {b_shape00}, Int(mma_shape[1]) = "
             t"{Int(Self.mma_shape[1])}"
         )
         # fmt: off
-        comptime b_n_stride = b_stride01 * (Int(Self.mma_shape[1]) // b_shape00) * size_of[Self.b_type]()
+        comptime b_n_stride = b_canonical[1] * (Int(Self.mma_shape[1]) // b_shape00) * size_of[Self.b_type]()
         # K dim is stepped by 2 core matrices.
-        comptime b_k_stride = b_stride11 * 2 * size_of[Self.b_type]()
+        comptime b_k_stride = b_canonical[2] * 2 * size_of[Self.b_type]()
         comptime assert b_k_stride > 0
 
         comptime num_n_mmas = BN // Int(Self.mma_shape[1])
@@ -1277,7 +1188,7 @@ struct TensorCoreAsync[
 
         comptime assert b_n_stride > 0 or (
             b_n_stride == 0 and num_n_mmas == 1
-        ), String(t"b_smem_layout = {b_smem_layout}")
+        ), String(t"b_n_stride = {b_n_stride}, num_n_mmas = {num_n_mmas}")
 
         # Vectorize each wgmma's fragment size.
         comptime a_frag_size = Int(Self.mma_shape[0]) * Int(
@@ -1292,15 +1203,21 @@ struct TensorCoreAsync[
         var a_frags = a_frag_tile.vectorize[1, a_frag_size]()
         var c_frags = c_reg_tile.vectorize[1, c_frag_size]()
 
-        var b_desc = _wgmma_descriptor[
-            b_canonical_layout, Self.transpose_b, Self.b_swizzle
+        comptime b_sbo_lbo = wgmma_desc_sbo_lbo[
+            Self.b_type,
+            b_smem_layout_t,
+            is_k_major=Self.transpose_b,
+            swizzle_mode=Self.b_swizzle,
+        ]()
+        var b_desc = WGMMADescriptor.create[
+            b_sbo_lbo[0], b_sbo_lbo[1], Self.b_swizzle
         ](b_smem_tile.ptr)
         comptime layout_b = "col" if Self.transpose_b else "row"
 
         comptime for k_mma in range(num_k_mmas):
             comptime b_offset_bytes = (
                 k_mma // b_num_k_mmas_per_tile
-            ) * b_canonical_layout.size() * size_of[
+            ) * BN * b_canonical_K * size_of[
                 Self.b_type
             ]() if Self.transpose_b else 0
             comptime b_k_mma_offset = (

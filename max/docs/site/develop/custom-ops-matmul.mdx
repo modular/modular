@@ -279,7 +279,7 @@ be the same.
 ### Layouts and `TileTensor`
 
 The `matrix_multiplication` custom operation uses
-[layouts](/api/mojo/layout/layout/) and
+[layouts](/api/mojo/layout/tile_layout/Layout/) and
 [`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/) to
 represent the input and output matrices, so it's helpful to understand a little
 bit about these types before getting started.
@@ -290,14 +290,11 @@ a layout could represent a 2x6, row-major layout:
 
 ```mojo
 var my_layout = row_major[2, 6]()
-print_layout(my_layout)
+print(my_layout)
 ```
 
 ```plaintext
-       0    1    2    3    4    5
-    +----+----+----+----+----+----+
- 0  |  0 |  1 |  2 |  3 |  4 |  5 |
-    +----+----+----+----+----+----+
+((2, 6):(6, 1))
  1  |  6 |  7 |  8 |  9 | 10 | 11 |
     +----+----+----+----+----+----+
 ```

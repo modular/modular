@@ -45,7 +45,6 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,
-    Layout,
     coord,
     TensorEngine,
     TensorLayout,
@@ -471,11 +470,6 @@ struct TileWriter[
     comptime cta_group = Self.opc.cta_group
     comptime num_accum_pipeline_stages = Self.opc.num_stages
     comptime stage_stride_cols = Self.opc.stage_stride_cols
-
-    # Create internal layout from dimensions
-    comptime c_smem_layout = Layout.row_major(
-        Self.c_smem_dim0, Self.c_smem_dim1
-    )
 
     # Type aliases
     comptime TmaOp = TMATensorTile[

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: tile-tensor/layouts.mdx
 
-from layout import Coord, coord, Idx, print_layout, col_major, row_major
+from layout import Coord, coord, Idx, col_major, row_major
 from layout.tile_layout import (
     Layout,
     blocked_product,
@@ -28,7 +28,7 @@ def use_layout_constructor():
         Coord(coord[3, 2], coord[2, 5]),  # shape
         Coord(coord[1, 6], coord[3, 12]),  # strides
     )
-    print_layout(tiled_layout.to_layout())
+    print(tiled_layout)
     print()
 
 
@@ -42,11 +42,11 @@ def use_blocked_product():
     var blocked = blocked_product(tile, tiler)
 
     print("Tile:")
-    print_layout(tile.to_layout())
+    print(tile)
     print("\nTiler:")
-    print_layout(tiler.to_layout())
+    print(tiler)
     print("\nTiled layout:")
-    print_layout(blocked.to_layout())
+    print(blocked)
     print()
 
 
@@ -59,8 +59,8 @@ def use_zipped_divide():
     # start-zipped-divide-example
     var base = row_major[6, 4]()
     var result = zipped_divide[coord[2, 2]](base)
-    print_layout(base.to_layout())
-    print_layout(result.to_layout())
+    print(base)
+    print(result)
     # end-zipped-divide-example
     print(result(coord[1, 1]))
     print(result(coord[1]))
@@ -85,14 +85,14 @@ def use_nested_layouts():
     var nested = row_major_nested(
         Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
     )
-    print_layout(nested.to_layout())
+    print(nested)
 
     # The column-major variant re-nests col-major strides over the same
     # flattened shape: (1, 2, 6, 12), re-nested as ((1, 2), (6, 12)).
     var nested_col = col_major_nested(
         Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
     )
-    print_layout(nested_col.to_layout())
+    print(nested_col)
     # end-nested-layout-example
     print()
 

@@ -24,7 +24,8 @@ time_conv 3x1x1, and the C_out F-padding paths (64/192/320).
 """
 
 from std.random import rand
-from layout import Coord, LTToTTLayout, Layout, TileTensor
+from layout import Coord, TileTensor, row_major
+from layout.tile_layout import Layout
 from max.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution
 from nn.conv.gpu.nvidia.sm100.qslice_conv3d import (
@@ -57,16 +58,16 @@ def test_conv3d_qslice_direct[
         t"test_conv3d_qslice_direct: with_epilogue= {with_epilogue}  pad_h="
         t" {pad_h}  pad_w= {pad_w}"
     )
-    comptime N = Int(input_layout.shape[0])
-    comptime D = Int(input_layout.shape[1])
-    comptime H = Int(input_layout.shape[2])
-    comptime W = Int(input_layout.shape[3])
-    comptime C = Int(input_layout.shape[4])
+    comptime N = input_layout.static_shape[0]
+    comptime D = input_layout.static_shape[1]
+    comptime H = input_layout.static_shape[2]
+    comptime W = input_layout.static_shape[3]
+    comptime C = input_layout.static_shape[4]
 
-    comptime Q = Int(filter_layout.shape[0])
-    comptime R = Int(filter_layout.shape[1])
-    comptime S = Int(filter_layout.shape[2])
-    comptime F = Int(filter_layout.shape[4])
+    comptime Q = filter_layout.static_shape[0]
+    comptime R = filter_layout.static_shape[1]
+    comptime S = filter_layout.static_shape[2]
+    comptime F = filter_layout.static_shape[4]
 
     comptime stride = IndexList[3](1, 1, 1)
     comptime dilation = IndexList[3](1, 1, 1)
@@ -78,7 +79,7 @@ def test_conv3d_qslice_direct[
 
     comptime input_size = input_layout.size()
     comptime filter_size = filter_layout.size()
-    comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
+    comptime output_layout_ = row_major[N, D_out, H_out, W_out, F]()
     comptime output_size = output_layout_.size()
 
     var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
@@ -120,15 +121,9 @@ def test_conv3d_qslice_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var input_tt = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_tt = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
-    )
+    var input_tt = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_tt = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_tt = TileTensor(output_dev.unsafe_ptr(), output_layout_)
 
     comptime if with_epilogue:
 
@@ -197,8 +192,8 @@ def main() raises:
     with DeviceContext() as ctx:
         # Q=2 mid_res shape (small D) via fp32 accumulator.
         test_conv3d_qslice_direct[
-            Layout.row_major(1, 2, 32, 32, 384),
-            Layout.row_major(2, 3, 3, 384, 384),
+            row_major[1, 2, 32, 32, 384](),
+            row_major[2, 3, 3, 384, 384](),
             DType.bfloat16,
             pad_h=1,
             pad_w=1,
@@ -209,8 +204,8 @@ def main() raises:
 
         # Q=3 mid_res shape (D_out=1).
         test_conv3d_qslice_direct[
-            Layout.row_major(1, 3, 32, 32, 384),
-            Layout.row_major(3, 3, 3, 384, 384),
+            row_major[1, 3, 32, 32, 384](),
+            row_major[3, 3, 3, 384, 384](),
             DType.bfloat16,
             pad_h=1,
             pad_w=1,
@@ -219,8 +214,8 @@ def main() raises:
             atol=2e-2,
         ](ctx)
         test_conv3d_qslice_direct[
-            Layout.row_major(1, 3, 32, 32, 384),
-            Layout.row_major(3, 3, 3, 384, 384),
+            row_major[1, 3, 32, 32, 384](),
+            row_major[3, 3, 3, 384, 384](),
             DType.bfloat16,
             pad_h=1,
             pad_w=1,
@@ -231,8 +226,8 @@ def main() raises:
 
         # Q=3 time_conv 3x1x1 shape.
         test_conv3d_qslice_direct[
-            Layout.row_major(1, 3, 16, 16, 192),
-            Layout.row_major(3, 1, 1, 192, 384),
+            row_major[1, 3, 16, 16, 192](),
+            row_major[3, 1, 1, 192, 384](),
             DType.bfloat16,
             pad_h=0,
             pad_w=0,
@@ -243,8 +238,8 @@ def main() raises:
 
         # Q=3 with D_out=4, exercises batch>1 per 2D call.
         test_conv3d_qslice_direct[
-            Layout.row_major(1, 6, 16, 16, 384),
-            Layout.row_major(3, 3, 3, 384, 384),
+            row_major[1, 6, 16, 16, 384](),
+            row_major[3, 3, 3, 384, 384](),
             DType.bfloat16,
             pad_h=1,
             pad_w=1,
@@ -257,8 +252,8 @@ def main() raises:
         # F-padding path (Phase C). C_out pads to 256 internally; the
         # final write strides back to 192-wide user output.
         test_conv3d_qslice_direct[
-            Layout.row_major(1, 3, 16, 16, 192),
-            Layout.row_major(3, 3, 3, 192, 192),
+            row_major[1, 3, 16, 16, 192](),
+            row_major[3, 3, 3, 192, 192](),
             DType.bfloat16,
             pad_h=1,
             pad_w=1,
@@ -267,8 +262,8 @@ def main() raises:
             atol=2e-2,
         ](ctx)
         test_conv3d_qslice_direct[
-            Layout.row_major(1, 3, 16, 16, 192),
-            Layout.row_major(3, 3, 3, 192, 192),
+            row_major[1, 3, 16, 16, 192](),
+            row_major[3, 3, 3, 192, 192](),
             DType.bfloat16,
             pad_h=1,
             pad_w=1,
@@ -280,8 +275,8 @@ def main() raises:
         # C_out=64 — smallest valid F-padding target (64 pads to 128).
         # Exercises the one-tile-wide case.
         test_conv3d_qslice_direct[
-            Layout.row_major(1, 3, 16, 16, 128),
-            Layout.row_major(3, 3, 3, 128, 64),
+            row_major[1, 3, 16, 16, 128](),
+            row_major[3, 3, 3, 128, 64](),
             DType.bfloat16,
             pad_h=1,
             pad_w=1,
@@ -293,8 +288,8 @@ def main() raises:
         # C_out=320 — non-power-of-2 padded target (320 pads to 384).
         # Exercises the 3-tile-wide F-padded write.
         test_conv3d_qslice_direct[
-            Layout.row_major(1, 3, 16, 16, 128),
-            Layout.row_major(3, 3, 3, 128, 320),
+            row_major[1, 3, 16, 16, 128](),
+            row_major[3, 3, 3, 128, 320](),
             DType.bfloat16,
             pad_h=1,
             pad_w=1,
@@ -306,8 +301,8 @@ def main() raises:
         # batch=2 with F-padding — covers the outer batch loop's
         # per-n accumulator offset math under padded_run.
         test_conv3d_qslice_direct[
-            Layout.row_major(2, 3, 16, 16, 192),
-            Layout.row_major(3, 3, 3, 192, 192),
+            row_major[2, 3, 16, 16, 192](),
+            row_major[3, 3, 3, 192, 192](),
             DType.bfloat16,
             pad_h=1,
             pad_w=1,

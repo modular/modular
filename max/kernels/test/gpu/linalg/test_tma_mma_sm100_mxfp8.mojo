@@ -25,12 +25,9 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
-from layout import IntTuple, MixedLayout, TensorLayout
+from layout import MixedLayout, TensorLayout
+from linalg.arch.sm100.mma import mma_desc_sbo_lbo
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_to_descriptor,
-    tile_sf_layout_k_major,
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
     tile_sf_layout_k_major_typed,
@@ -128,13 +125,17 @@ def block_scaled_mxfp8_kernel[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
+    comptime a_smem_layout = tile_layout_k_major_typed[
+        a_type, BM, BK, a_swizzle
+    ]
+    comptime BSmemLayout = type_of(
+        tile_layout_k_major_typed[b_type, BN, BK, b_swizzle]
+    ) if transpose_b else type_of(
+        tile_layout_mn_major_typed[b_type, BN, BK, b_swizzle]
+    )
+    comptime b_smem_layout = MixedLayout[
+        shape_types=BSmemLayout._shape_types,
+        stride_types=BSmemLayout._stride_types,
     ]()
 
     var smem = external_memory[UInt8, address_space=.SHARED, alignment=128]()
@@ -145,12 +146,12 @@ def block_scaled_mxfp8_kernel[
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
 
-    comptime a_scales_smem_layout = tile_sf_layout_k_major[
+    comptime a_scales_smem_layout = tile_sf_layout_k_major_typed[
         BM, BK, MXFP8_SF_VECTOR_SIZE
-    ]()
-    comptime b_scales_smem_layout = tile_sf_layout_k_major[
+    ]
+    comptime b_scales_smem_layout = tile_sf_layout_k_major_typed[
         BN, BK, MXFP8_SF_VECTOR_SIZE
-    ]()
+    ]
 
     comptime a_size = a_smem_layout.size()
     comptime b_size = b_smem_layout.size()
@@ -178,26 +179,15 @@ def block_scaled_mxfp8_kernel[
         a_scales_size
     ).unsafe_bitcast[Scalar[b_scales_type]]()
 
-    var a_smem_tile = TileTensor(
-        a_smem, tile_layout_k_major_typed[a_type, BM, BK, a_swizzle]
-    )
-    comptime BSmemLayout = type_of(
-        tile_layout_k_major_typed[b_type, BN, BK, b_swizzle]
-    ) if transpose_b else type_of(
-        tile_layout_mn_major_typed[b_type, BN, BK, b_swizzle]
-    )
-    comptime b_typed_smem_layout = MixedLayout[
-        shape_types=BSmemLayout._shape_types,
-        stride_types=BSmemLayout._stride_types,
-    ]()
-    var b_smem_tile = TileTensor(b_smem, b_typed_smem_layout)
+    var a_smem_tile = TileTensor(a_smem, a_smem_layout)
+    var b_smem_tile = TileTensor(b_smem, b_smem_layout)
     var a_scales_smem_tile = TileTensor(
         a_scales_smem,
-        tile_sf_layout_k_major_typed[BM, BK, MXFP8_SF_VECTOR_SIZE],
+        a_scales_smem_layout,
     )
     var b_scales_smem_tile = TileTensor(
         b_scales_smem,
-        tile_sf_layout_k_major_typed[BN, BK, MXFP8_SF_VECTOR_SIZE],
+        b_scales_smem_layout,
     )
 
     # Shared memory pointer to hold tensor memory address
@@ -253,20 +243,20 @@ def block_scaled_mxfp8_kernel[
     if thread_idx.x >= 128:
         tmem_addr += 16 << 16  # offset for lane 16
 
-    comptime a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
-    comptime b_canonical_layout = tile_to_descriptor[
-        b_type, b_smem_layout, is_k_major=transpose_b
+    comptime a_sbo_lbo = mma_desc_sbo_lbo[
+        a_type, BMN=BM, BK=BK, swizzle_mode=a_swizzle, is_k_major=True
     ]()
-    comptime aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
-    comptime aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
-    comptime b_stride01 = b_canonical_layout[0].stride[1].value()
-    comptime b_stride11 = b_canonical_layout[1].stride[1].value()
-    comptime bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[
-        b_type
+    comptime b_sbo_lbo = mma_desc_sbo_lbo[
+        b_type,
+        BMN=BN,
+        BK=BK,
+        swizzle_mode=b_swizzle,
+        is_k_major=transpose_b,
     ]()
-    comptime bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[
-        b_type
-    ]()
+    comptime aSBO = a_sbo_lbo[0]
+    comptime aLBO = a_sbo_lbo[1]
+    comptime bSBO = b_sbo_lbo[0]
+    comptime bLBO = b_sbo_lbo[1]
 
     var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
         a_smem_tile.unsafe_ptr()
@@ -330,10 +320,10 @@ def block_scaled_mxfp8_kernel[
 
         if elect_one_thread:
             comptime for i in range(BM // SF_MN_GROUP_SIZE):
-                comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
-                comptime a_scales_offset = a_scales_smem_layout(idx) * size_of[
-                    a_scales_type
-                ]()
+                comptime idx = Coord(Idx[i * SF_ATOM_M[0]], Idx[0])
+                comptime a_scales_offset = Int(
+                    a_scales_smem_layout(idx)
+                ) * size_of[a_scales_type]()
                 var a_scales_tmem_addr = a_scales_tmem_addr_start + UInt32(
                     i * (SF_MN_GROUP_SIZE // 32)
                 )
@@ -349,10 +339,10 @@ def block_scaled_mxfp8_kernel[
                 ](a_scales_tmem_addr, a_scales_desc)
 
             comptime for i in range(BN // SF_MN_GROUP_SIZE):
-                comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
-                comptime b_scales_offset = b_scales_smem_layout(idx) * size_of[
-                    b_scales_type
-                ]()
+                comptime idx = Coord(Idx[i * SF_ATOM_M[0]], Idx[0])
+                comptime b_scales_offset = Int(
+                    b_scales_smem_layout(idx)
+                ) * size_of[b_scales_type]()
                 var b_scales_tmem_addr = b_scales_tmem_addr_start + UInt32(
                     i * (SF_MN_GROUP_SIZE // 32)
                 )
@@ -394,9 +384,13 @@ def block_scaled_mxfp8_kernel[
                     ].update_desc_with_sf_id[UInt32(j)](
                         idesc,
                     )
-                    comptime idx = IntTuple(0, MMA_K * j)
-                    comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
-                    comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
+                    comptime idx = Coord(Idx[0], Idx[MMA_K * j])
+                    comptime a_offset = Int(a_smem_layout(idx)) * size_of[
+                        a_type
+                    ]()
+                    comptime b_offset = Int(b_smem_layout(idx)) * size_of[
+                        b_type
+                    ]()
                     mma(
                         adesc + a_offset,
                         bdesc + b_offset,
@@ -413,9 +407,13 @@ def block_scaled_mxfp8_kernel[
                     ].update_desc_with_sf_id[UInt32(j)](
                         idesc,
                     )
-                    comptime idx = IntTuple(0, MMA_K * j)
-                    comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
-                    comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
+                    comptime idx = Coord(Idx[0], Idx[MMA_K * j])
+                    comptime a_offset = Int(a_smem_layout(idx)) * size_of[
+                        a_type
+                    ]()
+                    comptime b_offset = Int(b_smem_layout(idx)) * size_of[
+                        b_type
+                    ]()
                     mma(
                         adesc + a_offset,
                         bdesc + b_offset,

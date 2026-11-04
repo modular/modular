@@ -20,7 +20,6 @@ from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 from std.sys.intrinsics import masked_load, masked_store
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
-from layout.layout import *
 from layout import TileTensor, Coord, TensorLayout
 from layout.tile_layout import Layout as _NewLayout, row_major
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder

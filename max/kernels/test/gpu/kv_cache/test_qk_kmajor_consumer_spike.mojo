@@ -24,7 +24,7 @@ Q@K' consumer) against a host `S = Q @ Kᵀ` reference, validating that
   * the production `tile_layout_k_major[page_dense=True]` (Slice 1),
   * `smem_descriptor[is_k_major=True, page_dense=True]` (Slice 2), and
   * the accumulator's layout-DERIVED per-MMA_K advance (`b_layout` /
-    `build_mma`'s `b_offset = layout_b(IntTuple(0, mma_k*jj))`, Slice 3)
+    `build_mma`'s `b_offset = layout_b(Coord(0, mma_k*jj))`, Slice 3)
 
 agree end-to-end. `MMA_M = 128 > 64` so the struct auto-selects the NON-ws
 `bulk_mma` path — the same path real single-CTA Q@K' uses (use_ws is False for

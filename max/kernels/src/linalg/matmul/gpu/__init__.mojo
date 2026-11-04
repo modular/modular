@@ -41,7 +41,6 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from std.utils.coord import Coord
 from std.logger import Logger

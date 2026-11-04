@@ -29,7 +29,6 @@ from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     ComptimeInt,
     Idx,
-    Layout,
     RowMajorLayout,
     TileTensor,
     coord,

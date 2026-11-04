@@ -33,7 +33,6 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.memory import async_copy_wait_all
-from layout import Layout
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 
@@ -200,9 +199,6 @@ def gemm_kernel_1[
 
 def run_gemm_kernel_1[
     dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
     BM: Int,
     BN: Int,
 ](
@@ -323,9 +319,6 @@ def gemm_kernel_2[
 
 def run_gemm_kernel_2[
     dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
     BM: Int,
     BN: Int,
 ](
@@ -473,9 +466,6 @@ def gemm_kernel_3[
 
 def run_gemm_kernel_3[
     dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -641,9 +631,6 @@ def gemm_kernel_4[
 
 def run_gemm_kernel_4[
     dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -816,9 +803,6 @@ def gemm_kernel_5[
 
 def run_gemm_kernel_5[
     dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -1007,9 +991,6 @@ def gemm_kernel_6[
 
 def run_gemm_kernel_6[
     dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -1223,9 +1204,6 @@ def matmul_kernel_tc[
 
 def run_gemm_kernel_tc[
     dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
     BM: Int,
     BN: Int,
     BK: Int,

@@ -54,7 +54,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.layout import *
 from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul

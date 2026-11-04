@@ -13,25 +13,26 @@
 
 # DOC: layout/layouts.mdx
 
-from layout import IntTuple, Layout, print_layout
+from layout import Coord, coord, Idx
+from layout.tile_layout import Layout, col_major, row_major
 
 
 def row_and_column_major():
     print("row major and column major")
-    var l2x4row_major = Layout.row_major(2, 4)
-    print_layout(l2x4row_major)
+    var l2x4row_major = row_major[2, 4]()
+    print(l2x4row_major)
     print()
-    var l6x6col_major = Layout.col_major(6, 6)
-    print_layout(l6x6col_major)
+    var l6x6col_major = col_major[6, 6]()
+    print(l6x6col_major)
     print()
 
 
 def coords_to_index():
     print("coordinates to index")
-    var l3x4row_major = Layout.row_major(3, 4)
-    print_layout(l3x4row_major)
+    comptime l3x4row_major = row_major[3, 4]()
+    print(l3x4row_major)
 
-    var coords: IntTuple = [1, 1]
+    var coords = coord[1, 1]
     var idx = l3x4row_major(coords)
     print("index at (1, 1): ", idx)
     print("coordinates at index 7:", l3x4row_major.idx2crd(7))
@@ -40,14 +41,14 @@ def coords_to_index():
 
 def nested_modes():
     print("nested modes")
-    var layout_a = Layout([4, 4], [4, 1])
-    print_layout(layout_a)
+    var layout_a = Layout(coord[4, 4], coord[4, 1])
+    print(layout_a)
     print()
     var layout_b = Layout(
-        [[2, 2], [2, 2]],
-        [[1, 4], [2, 8]],
+        Coord(coord[2, 2], coord[2, 2]),
+        Coord(coord[1, 4], coord[2, 8]),
     )
-    print_layout(layout_b)
+    print(layout_b)
     print()
 
 

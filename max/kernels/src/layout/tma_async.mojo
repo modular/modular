@@ -76,15 +76,11 @@ from layout import (
     Coord,
     CoordLike,
     ComptimeInt,
-    Layout,
     TileTensor,
-    UNKNOWN_VALUE,
-    coord,
     coord,
     Idx,
 )
 from layout.tile_layout import RowMajorLayout, row_major
-from layout.tensor_core_async import tile_layout_k_major
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.utils.static_tuple import StaticTuple
@@ -3459,7 +3455,7 @@ def create_split_tma[
         swizzle_mode,
     ],
 ) raises:
-    """Creates a TMA tensor tile assuming that the first dimension in global memory has `UNKNOWN_VALUE`.
+    """Creates a TMA tensor tile assuming that the first dimension in global memory is dynamic.
 
     This function creates a `TMATensorTile` that optionally splits the last dimension
     of the tensor into multiples of swizzle granularity. This functionality is currently
@@ -3536,7 +3532,7 @@ def create_split_tma[
         swizzle_mode,
     ],
 ) raises:
-    """Creates a TMA tensor tile assuming that the first two dimensions in global memory has `UNKNOWN_VALUE`.
+    """Creates a TMA tensor tile assuming that the first two dimensions in global memory are dynamic.
 
     This function creates a `TMATensorTile` that optionally splits the last dimension
     of the tensor into multiples of swizzle granularity. This functionality is currently
@@ -3831,11 +3827,6 @@ struct RaggedTMA3DTile[
         Self.dtype
     ]()
     """The number of columns that must be copied at a time due to the swizzle size."""
-
-    comptime layout: Layout = tile_layout_k_major[
-        Self.dtype, Self.BM, Self.BN, Self.swizzle_mode
-    ]()
-    """The unswizzled-smem layout copied to/from by this tma op."""
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
