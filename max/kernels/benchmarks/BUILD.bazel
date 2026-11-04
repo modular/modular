@@ -380,6 +380,8 @@ mojo_binary(
             "gpu/bench_squeeze_shape.mojo",
             # Same reason: dedicated `mojo_test` below for the tile op.
             "gpu/bench_tile.mojo",
+            # Dedicated `mojo_test` below, timed on remote B200.
+            "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
         ],
     )
 ]
@@ -423,9 +425,42 @@ mojo_binary(
             "gpu/bench_squeeze_shape.mojo",
             # Same reason: dedicated `mojo_test` below for the tile op.
             "gpu/bench_tile.mojo",
+            # Dedicated `mojo_test` below, timed on remote B200.
+            "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
         ],
     )
 ]
+
+# SM100 BF16 grouped matmul per token tile width at one routed-rows shape
+# (`--test_arg=--counts=...`, `--ids=...`); timed on remote B200.
+mojo_test(
+    name = "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "40",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo.run"],
+)
 
 # `mo.squeeze_shape` / `mo.unsqueeze_shape` through their registered
 # `execute` entry points (gather_scatter.mojo). A `mojo_test` so it can be

@@ -1152,7 +1152,9 @@ def multi_stage_store_C[
             or cta_group == 1 else coord_n_mma_m128
         )
 
-        var n_inbound_size = group_end_idx - UInt32(coord_n)
+        # A stage can start past the group's last row when MMA_N spans
+        # several stages; it then stores nothing.
+        var n_inbound_size = group_end_idx - min(UInt32(coord_n), group_end_idx)
 
         comptime M = c_smem_layout_t.static_shape[1]
 
@@ -1204,6 +1206,12 @@ def multi_stage_store_C[
                 t"Unaligned handling only supports MMA_M == 256 or "
                 t"cta_group == 1. Got {MMA_M} and {cta_group}"
             )
+
+            # Earlier stages' TMA stores may still read the C buffer a later
+            # stage rewrites, and this branch skips their waits.
+            comptime if not has_epilogue_fn:
+                if elect_one_warp and lane == 0:
+                    c_tma_op.wait_group[0]()
 
             comptime chunkM = st_matrix_swizzle.bytes() // size_of[c_type]()
             comptime vec_chunkM = chunkM // simd_size
@@ -1402,7 +1410,7 @@ def zero_output_epilogue[
         # Only the M==256/cta_group==1 coord form is reachable here (asserted
         # above); `coord_n` matches `coord_n_mma_m256` in `multi_stage_store_C`.
         var coord_n = work_tile_coord[1] + stage * stageN
-        var n_inbound_size = group_end_idx - UInt32(coord_n)
+        var n_inbound_size = group_end_idx - min(UInt32(coord_n), group_end_idx)
 
         comptime for v in range(value_shape):
             comptime thread_offset = v * thread_num
@@ -2017,9 +2025,17 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         epilogue_fn=epilogue_fn,
                     )
                 else:
+                    # The work tile spans MMA_N tokens; the store tile only
+                    # its first stage of them.
+                    comptime zero_rows = MMA_N if transpose_c else (
+                        output_tile_shape.element_types[0].static_value
+                    )
                     # c_stride == c_N == expert_m for contiguous row-major C.
                     zero_output[
-                        output_tile_shape=output_tile_shape,
+                        output_tile_shape=coord[
+                            zero_rows,
+                            output_tile_shape.element_types[1].static_value,
+                        ],
                         c_stride=expert_m,
                         c_N=expert_m,
                         ComputeFnType=ComputeFnType,
