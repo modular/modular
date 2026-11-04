@@ -103,6 +103,10 @@ This version is still a work in progress.
 
 - Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
 
+- Added a builtin `filter()`, which takes an iterable and a predicate closure
+  and yields the elements the predicate accepts:
+  `filter(items, lambda (x: Int) -> Bool: x > 0)`.
+
 - `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
   now raise an `Error` instead of aborting when the string is empty. They also
   raise when the string holds more than one codepoint; previously they

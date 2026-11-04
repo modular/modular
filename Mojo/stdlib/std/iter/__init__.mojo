@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Iteration traits and utilities: Iterable, IterableOwned, Iterator,
-enumerate, zip, map.
+enumerate, zip, map, filter.
 
 This package defines the core iteration protocol for Mojo through the
 `Iterable`, `IterableOwned`, and `Iterator` traits. Types that conform to
 these traits can be used with `for` loops and iteration utilities like
-`enumerate()`, `zip()`, and `map()`.
+`enumerate()`, `zip()`, `map()`, and `filter()`.
 
 The iteration protocol consists of three key traits:
 
@@ -755,6 +755,128 @@ def map[
     Returns:
         A map iterator that yields the results of applying `function` to each
         element.
+    """
+    return {iter(iterable^), function^}
+
+
+# ===-----------------------------------------------------------------------===#
+# filter
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _FilterIterator[
+    InnerIteratorType: Iterator,
+    //,
+    Function: def(InnerIteratorType.Element) -> Bool,
+](
+    Copyable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    Iterable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    IterableOwned,
+    Iterator,
+) where conforms_to(
+    InnerIteratorType.Element, Deinitable
+):
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Self.InnerIteratorType
+    var _function: Self.Function
+
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ) and conforms_to(Self.Function, Copyable):
+        return self.copy()
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        while True:
+            var element = next(self._inner)
+            if self._function(element):
+                return element^
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return (0, self._inner.bounds()[1])
+
+
+@inline(.always)
+def filter[
+    origin: ImmOrigin,
+    IterableType: Iterable,
+    //,
+    Function: def(IterableType.IteratorType[origin].Element) -> Bool,
+](
+    ref[origin] iterable: IterableType, var function: Function
+) -> _FilterIterator[Function] where conforms_to(
+    IterableType.IteratorType[origin].Element, Deinitable
+):
+    """Returns an iterator that yields the elements of the input iterable for
+    which `function` returns `True`.
+
+    Parameters:
+        origin: The origin of the iterable.
+        IterableType: The type of the iterable.
+        Function: The type of the predicate.
+
+    Args:
+        iterable: The iterable to filter.
+        function: The predicate that decides whether to keep each element.
+
+    Returns:
+        A filter iterator that yields the elements `function` accepts.
+
+    Examples:
+
+    ```mojo
+    var l = [1, 2, 3, 4]
+
+    # outputs:
+    # 2
+    # 4
+    for elem in filter(l, lambda (x: Int) -> Bool: x % 2 == 0):
+        print(elem)
+    ```
+    """
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
+    # substituted through associated types right.
+    return {
+        rebind_var[_FilterIterator[Function].InnerIteratorType](iter(iterable)),
+        function^,
+    }
+
+
+@inline(.always)
+def filter[
+    IterableType: IterableOwned,
+    //,
+    Function: def(IterableType.IteratorOwnedType.Element) -> Bool,
+](var iterable: IterableType, var function: Function) -> _FilterIterator[
+    Function
+] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable):
+    """Returns an iterator that yields the elements of the input iterable for
+    which `function` returns `True`, consuming the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+        Function: The type of the predicate.
+
+    Args:
+        iterable: The iterable to consume and filter.
+        function: The predicate that decides whether to keep each element.
+
+    Returns:
+        A filter iterator that yields the elements `function` accepts.
     """
     return {iter(iterable^), function^}
 

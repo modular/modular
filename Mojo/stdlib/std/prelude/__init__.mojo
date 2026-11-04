@@ -147,6 +147,7 @@ from std.iter import (
     Iterator,
     StopIteration,
     enumerate,
+    filter,
     iter,
     map,
     next,
