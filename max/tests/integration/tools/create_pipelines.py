@@ -1714,16 +1714,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "allenai/OLMo-2-0425-1B-RLVR1": GenericOracle(
-        model_path="allenai/OLMo-2-0425-1B-RLVR1",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
     "allenai/OLMo-2-1124-7B": GenericOracle(
         model_path="allenai/OLMo-2-1124-7B",
         config_params={
