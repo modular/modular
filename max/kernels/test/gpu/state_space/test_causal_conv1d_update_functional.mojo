@@ -14,11 +14,10 @@
 from std.memory import bitcast
 from std.testing import TestSuite, assert_equal, assert_true
 
-from extensibility import IOSpec, ManagedTensorSlice, StaticTensorSpec
 from layout import MixedLayout, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from state_space.causal_conv1d import enqueue_causal_conv1d_update_gpu
-from state_space.causal_conv1d_ops import CausalConv1DUpdate
+from state_space.causal_conv1d_ops import causal_conv1d_update
 
 
 def _run[
@@ -148,47 +147,16 @@ def _run[
     )
     comptime if registered:
         comptime assert not strided and not alias_state
-        comptime spec3 = StaticTensorSpec[dtype, 3].get_unknown()
-        comptime spec2 = StaticTensorSpec[dtype, 2].get_unknown()
-        comptime spec1 = StaticTensorSpec[dtype, 1].get_unknown()
-        var input_arg = ManagedTensorSlice[
-            io_spec=IOSpec.Input, static_spec=spec3
-        ](input_d.unsafe_ptr(), (batch, channels, seqlen))
-        var previous_arg = ManagedTensorSlice[
-            io_spec=IOSpec.Input, static_spec=spec3
-        ](previous_d.unsafe_ptr(), (batch, channels, state_len))
-        var weights_arg = ManagedTensorSlice[
-            io_spec=IOSpec.Input, static_spec=spec2
-        ](weights_d.unsafe_ptr(), (channels, width))
-        var bias_arg = ManagedTensorSlice[
-            io_spec=IOSpec.Input, static_spec=spec1
-        ](bias_d.unsafe_ptr(), (channels,))
-        var output_arg = ManagedTensorSlice[
-            io_spec=IOSpec.Output, static_spec=spec3
-        ](candidate_output_d.unsafe_ptr(), (batch, channels, seqlen))
-        var state_arg = ManagedTensorSlice[
-            io_spec=IOSpec.Output, static_spec=spec3
-        ](dest_d.unsafe_ptr(), (batch, channels, state_len))
-        if silu_activation:
-            CausalConv1DUpdate["silu"].execute[target="gpu"](
-                output_arg,
-                state_arg,
-                input_arg,
-                previous_arg,
-                weights_arg,
-                bias_arg,
-                ctx,
-            )
-        else:
-            CausalConv1DUpdate["none"].execute[target="gpu"](
-                output_arg,
-                state_arg,
-                input_arg,
-                previous_arg,
-                weights_arg,
-                bias_arg,
-                ctx,
-            )
+        causal_conv1d_update[target="gpu"](
+            candidate_output_tt,
+            dest_tt,
+            input_tt,
+            previous_tt,
+            weights_tt,
+            bias_tt,
+            silu_activation,
+            ctx,
+        )
     else:
         enqueue_causal_conv1d_update_gpu[separate_state=True](
             ctx,
