@@ -345,6 +345,10 @@ This version is still a work in progress.
   clusters) from `max.gpu.host` as its first argument. A cluster launch on a
   GPU without clusters fails to compile; generic code checks
   `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
+  On NVIDIA GPUs, `GridBlockAttributeLaunchConfig` and
+  `ClusterAttributeLaunchConfig` from `max.gpu.host.nvidia` also carry launch
+  attributes, such as the ones `pdl_launch_attributes()` returns for
+  programmatic dependent launch.
 
 - A bare `DeviceContext` is now an unbound parameterized type, not a concrete
   type.

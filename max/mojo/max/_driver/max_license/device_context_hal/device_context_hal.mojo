@@ -50,7 +50,12 @@ from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 from std.memory import unsafe_stack_allocation
 from std.os import abort, getenv
 from std.reflection import call_location, reflect, SourceLocation
-from std.sys import bit_width_of, size_of, CompilationTarget
+from std.sys import (
+    bit_width_of,
+    get_defined_bool,
+    size_of,
+    CompilationTarget,
+)
 from std.sys.info import _TargetType
 from std.sys.info import is_gpu
 from std.time import monotonic
@@ -80,8 +85,12 @@ from max.gpu.host import (
 )
 from ..hal.execution_config import (
     GPUExecutionConfiguration,
-    LaunchAttributeHolderExecutionConfig,
     ConstantMemoryMappingExecutionConfig,
+)
+from max.gpu.host.nvidia import (
+    ClusterAttributeLaunchConfig,
+    GridBlockAttributeLaunchConfig,
+    LaunchAttributeHolderExecutionConfig,
 )
 from std.builtin.variadics import TypeList
 
@@ -91,8 +100,10 @@ from max.gpu.host import (
     Dim,
     GridBlockLaunchConfig,
     LaunchAttribute,
+    LaunchAttributeID,
     default_accelerator,
 )
+from max.gpu.host.compile import _compile_code
 from max.gpu.host import DeviceAttribute
 from max.gpu.host.info import (
     GPUInfo,
@@ -133,14 +144,15 @@ def _check_exec_config_launch_support[
             ContextT.ExecutionConfigType, ClusterExecutionConfig
         ), "cluster launch is not supported on this device"
 
-    # Launch attributes and constant memory held by a config are not plumbed
-    # yet; refuse them rather than drop them.
-    comptime assert not conforms_to(
+    comptime if conforms_to(
         ExecutionConfigType, LaunchAttributeHolderExecutionConfig
-    ), (
-        "HAL DeviceContext.enqueue_function does not support launch"
-        " `attributes`."
-    )
+    ):
+        comptime assert conforms_to(
+            ContextT.ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+        ), "this target does not support launch attributes"
+
+    # Constant memory held by a config is not plumbed yet; refuse it rather
+    # than drop it.
     comptime assert not conforms_to(
         ExecutionConfigType, ConstantMemoryMappingExecutionConfig
     ), (
@@ -501,13 +513,25 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         DeviceSpec.target[Self.device_spec]()
     ].ExecutionConfigType[DeviceRef(Self.device_spec, 0, private=())]
 
+    comptime _plugin_has_clusters = conforms_to(
+        Self._PluginExecutionConfigType, ClusterExecutionConfig
+    )
+    comptime _plugin_has_attributes = conforms_to(
+        Self._PluginExecutionConfigType, LaunchAttributeHolderExecutionConfig
+    )
+
     comptime ExecutionConfigType: ExecutionConfig = (
-        ClusterLaunchConfig if conforms_to(
-            Self._PluginExecutionConfigType, ClusterExecutionConfig
-        ) else GridBlockLaunchConfig
+        (
+            ClusterAttributeLaunchConfig if Self._plugin_has_clusters else GridBlockAttributeLaunchConfig
+        ) if Self._plugin_has_attributes else (
+            ClusterLaunchConfig if Self._plugin_has_clusters else GridBlockLaunchConfig
+        )
     )
     """The launch configuration type with every launch capability this
     device supports.
+
+    On NVIDIA devices it carries launch attributes, and from sm_90 on also
+    thread block clusters, as on the legacy `DeviceContext`.
 
     Generic code checks for a capability with `conforms_to`, for example
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
@@ -1150,6 +1174,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         ExecutionConfigType: GridBlockExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
@@ -1157,18 +1182,24 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self,
         execution_config: ExecutionConfigType,
         *args: *actual_arg_types,
+        host_args: Tuple[*HostArgs] = (),
         location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
 
+        Put capturing closures in `host_args`, after the encoded arguments,
+        as for the keyword overload.
+
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device function.
+            HostArgs: The host-layout types of the trailing arguments.
             func: The function to compile and launch.
             actual_arg_types: The dtypes of the arguments being passed to the function.
 
         Args:
             execution_config: The execution configuration specifying device specific kernel launch arguments.
             args: Variadic arguments which are passed to the `func`.
+            host_args: The trailing arguments passed by host layout.
             location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function`
@@ -1208,12 +1239,30 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_function[func](
-                self._hal_stream()[], execution_config, *args, host_args=()
+                self._hal_stream()[],
+                execution_config,
+                *args,
+                host_args=host_args,
             )
         else:
             var gpu_kernel = self.compile_function[func]()
-            self.enqueue_function(
-                execution_config, gpu_kernel, *args, location=location
+            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
+                _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+                    execution_config.get_grid_dim(), location=call_location()
+                )
+                _check_dim["DeviceContext.enqueue_function", "block_dim"](
+                    execution_config.get_block_dim(), location=call_location()
+                )
+            comptime for idx in range(HostArgs.length):
+                type_of(gpu_kernel)._check_trailing_host[
+                    HostArgs[idx], actual_arg_types.length + idx
+                ]()
+            gpu_kernel._do_call_with_pack_checked(
+                self,
+                execution_config,
+                *args,
+                host_args=host_args,
+                location=location.or_else(call_location()),
             )
 
     @inline(.always)
@@ -2965,6 +3014,60 @@ struct DeviceFunction[
         )
 
     @inline(.always)
+    def _check_pdl_wait[
+        o: ImmOrigin
+    ](imm self, attributes: Span[LaunchAttribute, o]) raises:
+        """Rejects a PDL launch of a kernel that never waits on its predecessor.
+
+        This is the HAL copy of the legacy `DeviceFunction._check_pdl_wait`,
+        which documents what the check covers and what it misses. It is off
+        unless the build passes `-D MAX_CHECK_PDL_WAIT=True`.
+
+        Parameters:
+            o: The origin of `attributes`.
+
+        Args:
+            attributes: The launch attributes of the enqueue being checked.
+
+        Raises:
+            If a PDL launch targets a kernel whose PTX has no
+            `griddepcontrol.wait`.
+        """
+        comptime if (
+            get_defined_bool["MAX_CHECK_PDL_WAIT", False]()
+            and Self._target.is_nvidia_gpu()
+        ):
+            for ref attribute in attributes:
+                # The value is a Boolean in the first word; a caller can pass
+                # the attribute with `False` to switch PDL off for the launch.
+                if (
+                    attribute.id
+                    == LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION
+                    and attribute.value._storage[0] != 0
+                ):
+                    # The loaded function is an object file, so compile the
+                    # kernel to PTX to look for the wait.
+                    var ptx = _compile_code[
+                        Self._wrapped_func,
+                        emission_kind="asm",
+                        target=Self._target,
+                    ]().asm
+                    if "griddepcontrol.wait" not in ptx:
+                        raise Error(
+                            "kernel '",
+                            self._func_info.function_name,
+                            (
+                                "' is launched with the PDL attribute but its"
+                                " PTX has no `griddepcontrol.wait`; bind a"
+                                " non-OFF `pdl_level` in the kernel's"
+                                " instantiation, or call"
+                                " `wait_on_dependent_grids()` before its first"
+                                " read of predecessor output"
+                            ),
+                        )
+                    return
+
+    @inline(.always)
     def _call_closure_checked[
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
         ContextT: _HALFunctionEnqueuer,
@@ -3104,6 +3207,7 @@ struct DeviceFunction[
         comptime _HALHooks = HalPluginForTarget[
             CompilationTarget[_mlir_value=ContextT._target_value]()
         ]
+        _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
         comptime if _HALHooks.Launcher.overrides_grid_block:
             comptime if HostArgs.length != 0:
                 raise Error(
@@ -3120,7 +3224,22 @@ struct DeviceFunction[
                 shared_mem_bytes = (
                     execution_config.get_near_compute_scratchpad_usage()
                 )
-            if shared_mem_bytes != 0 or len(attributes) != 0:
+            var num_attributes = len(attributes)
+            comptime if conforms_to(
+                ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+            ):
+                num_attributes += len(execution_config.get_launch_attributes())
+            var clustered = False
+            comptime if conforms_to(
+                ExecutionConfigType, ClusterExecutionConfig
+            ):
+                var cluster_dim = execution_config.get_cluster_dim()
+                clustered = (
+                    cluster_dim.x() != 1
+                    or cluster_dim.y() != 1
+                    or cluster_dim.z() != 1
+                )
+            if shared_mem_bytes != 0 or num_attributes != 0 or clustered:
                 raise Error(
                     "the active HAL plugin's launcher doesn't take shared"
                     " memory, cluster dims or launch attributes"
@@ -3138,7 +3257,11 @@ struct DeviceFunction[
 
         comptime extra_host_count = HostArgs.length
 
-        _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
+        self._check_pdl_wait(Span(attributes))
+        comptime if conforms_to(
+            ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+        ):
+            self._check_pdl_wait(execution_config.get_launch_attributes())
 
         var shared_mem_bytes: Int = 0
 
@@ -3282,6 +3405,7 @@ struct DeviceFunction[
                 "HAL DeviceContext.enqueue_function does not support"
                 " `constant_memory` mappings."
             )
+        self._check_pdl_wait(Span(attributes))
 
         comptime num_args = Ts.length
         # Function scope so the storage outlives the enqueue; see
@@ -3344,6 +3468,10 @@ struct DeviceFunction[
         location: Optional[SourceLocation] = None,
     ) raises:
         _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
+        comptime if conforms_to(
+            ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+        ):
+            self._check_pdl_wait(execution_config.get_launch_attributes())
 
         comptime num_args = Ts.length
         # Function scope so the storage outlives the enqueue; see

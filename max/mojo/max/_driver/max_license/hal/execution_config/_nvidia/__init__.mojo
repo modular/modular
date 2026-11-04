@@ -18,6 +18,7 @@ from max.gpu.host import (
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
+from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from .. import ConstantMemoryMappingExecutionConfig
 from std.collections.type_dict import TypeDict
 from max.gpu.host import ConstantMemoryMapping, Dim, LaunchAttribute
@@ -85,29 +86,6 @@ comptime _ExecutionConfigDictForTarget = TypeDict[
 comptime ExecutionConfigForTarget[
     target: StaticString
 ] = _ExecutionConfigDictForTarget.get[target]
-
-
-trait LaunchAttributeHolderExecutionConfig(ExecutionConfig):
-    """An `ExecutionConfig` which has the ability to hold CUDA launch attributes.
-    """
-
-    def get_launch_attributes[
-        o: ImmOrigin
-    ](ref[o] self) -> Span[LaunchAttribute, o]:
-        """Gets the launch attributes configured for kernel launch.
-
-        Returns:
-            The configured launch attributes, or `None` if unset.
-        """
-        ...
-
-    def set_launch_attributes(mut self, var attributes: List[LaunchAttribute]):
-        """Sets launch attributes used for kernel launch.
-
-        Args:
-            attributes: Launch attributes to apply, or `None` to clear them.
-        """
-        ...
 
 
 trait _BaseCudaExecutionConfig(

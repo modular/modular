@@ -105,6 +105,11 @@ from ..launch_config import (
     NearComputeGeneralPurposeScratchpadExecutionConfig,
     _supports_cluster_launch,
 )
+from ..nvidia.launch_config import (
+    ClusterAttributeLaunchConfig,
+    GridBlockAttributeLaunchConfig,
+    LaunchAttributeHolderExecutionConfig,
+)
 
 from ._device_context_extras import *
 
@@ -4307,12 +4312,17 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     """`GPUInfo` object for the default accelerator."""
 
     comptime ExecutionConfigType: ExecutionConfig = (
-        ClusterLaunchConfig if _supports_cluster_launch[
+        ClusterAttributeLaunchConfig if _supports_cluster_launch[
             Self.target
-        ]() else GridBlockLaunchConfig
+        ]() else (
+            GridBlockAttributeLaunchConfig if Self.target.is_nvidia_gpu() else GridBlockLaunchConfig
+        )
     )
     """The launch configuration type with every launch capability this target
     supports.
+
+    On NVIDIA targets it carries launch attributes, and from sm_90 on also
+    thread block clusters.
 
     Generic code checks for a capability with `conforms_to`, for example
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
@@ -5805,6 +5815,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         ConfigType: GridBlockExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         func: def(*args: *declared_arg_types) thin -> None,
         *encoded_types: DevicePassable,
@@ -5812,14 +5823,17 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self,
         config: ConfigType,
         *encoded_args: *encoded_types,
+        host_args: Tuple[*HostArgs] = (),
         location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel with a capability-typed launch
         configuration.
 
-        `config` must be a `GridBlockLaunchConfig` or a
-        `ClusterLaunchConfig`. A capability this target lacks, such as
-        clusters, fails to compile:
+        `config` must be a `GridBlockLaunchConfig`, a `ClusterLaunchConfig`,
+        or, on NVIDIA targets, a `GridBlockAttributeLaunchConfig` or a
+        `ClusterAttributeLaunchConfig` from `max.gpu.host.nvidia`. A
+        capability this target lacks, such as clusters or launch attributes,
+        fails to compile:
 
         ```mojo
         from max.gpu.host import ClusterLaunchConfig, DeviceContext, Dim
@@ -5835,10 +5849,14 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
         ```
 
+        Put capturing closures in `host_args`, after the encoded arguments,
+        as for the keyword overload.
+
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device
                 function.
             ConfigType: The launch configuration type.
+            HostArgs: The host-layout types of the trailing arguments.
             func: The function to compile and launch.
             encoded_types: The `DevicePassable` argument types encoded to
                 device layout.
@@ -5847,16 +5865,21 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             config: The launch configuration.
             encoded_args: The variadic `DevicePassable` arguments encoded to
                 device layout.
+            host_args: The trailing arguments passed by host layout.
             location: Source location for the function call.
 
         Raises:
             If the operation fails.
         """
-        comptime assert ConfigType == GridBlockLaunchConfig or (
-            ConfigType == ClusterLaunchConfig
+        comptime assert (
+            ConfigType == GridBlockLaunchConfig
+            or ConfigType == ClusterLaunchConfig
+            or ConfigType == GridBlockAttributeLaunchConfig
+            or ConfigType == ClusterAttributeLaunchConfig
         ), (
-            "this DeviceContext launches only a GridBlockLaunchConfig or a"
-            " ClusterLaunchConfig"
+            "this DeviceContext launches only a GridBlockLaunchConfig,"
+            " ClusterLaunchConfig, GridBlockAttributeLaunchConfig, or"
+            " ClusterAttributeLaunchConfig"
         )
 
         var cluster_dim = OptionalReg[Dim](None)
@@ -5872,12 +5895,23 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ):
             shared_mem_bytes = config.get_near_compute_scratchpad_usage()
 
+        var attributes = List[LaunchAttribute]()
+        comptime if conforms_to(
+            ConfigType, LaunchAttributeHolderExecutionConfig
+        ):
+            comptime assert conforms_to(
+                Self.ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+            ), "this target does not support launch attributes"
+            attributes = List(config.get_launch_attributes())
+
         self.enqueue_function[func](
             *encoded_args,
+            host_args=host_args,
             grid_dim=config.get_grid_dim(),
             block_dim=config.get_block_dim(),
             cluster_dim=cluster_dim,
             shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
             location=location.or_else(call_location()),
         )
 
