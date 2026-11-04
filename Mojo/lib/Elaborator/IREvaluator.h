@@ -196,8 +196,7 @@ struct ImplNode : public ImplNodeBase {
   std::vector<std::pair<Location, ParamNode *>> dependencies;
 
   /// Intra-SCC edges removed by diagnoseAndBreakRecursion to break the cycle.
-  /// Checked in the second pass of completeImplNodeProcessing to propagate
-  /// errors from callee nodes that errored during the first pass.
+  /// Checked by completeSCCProcessing to propagate errors across the SCC.
   std::vector<std::pair<Location, ParamNode *>> sccRemovedDeps;
 
   /// The current downstream node blocking elaboration of this node. E.g. when
