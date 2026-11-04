@@ -234,7 +234,7 @@ def bench_bmm[
 
                 # Epilogue
                 comptime if lambda_fn:
-                    elementwise[pack_size, target="gpu"](
+                    elementwise[pack_size](
                         func,
                         (b, m, n),
                         ctx,

@@ -152,7 +152,6 @@ def fold[
     var dispatch_shape = (N, C, H, W)
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="fold_fn",
     ](fold_fn, dispatch_shape, ctx)
 

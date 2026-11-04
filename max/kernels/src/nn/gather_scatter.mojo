@@ -446,7 +446,6 @@ def gather_sum[
 
         elementwise[
             simd_width=target_simd_width,
-            target=target,
             _trace_description="gather_sum",
         ](
             gather_sum_elementwise_fn,
@@ -1064,7 +1063,6 @@ def _gather_impl[
         if Int(axis) == input_shape.rank - 1:
             elementwise[
                 simd_width=last_axis_width,
-                target=target,
                 _trace_description="gather",
             ](
                 gather_elementwise_fn,
@@ -1074,7 +1072,6 @@ def _gather_impl[
         else:
             elementwise[
                 simd_width=target_simd_width,
-                target=target,
                 _trace_description="gather",
             ](
                 gather_elementwise_fn,
@@ -1593,13 +1590,11 @@ def scatter_nd_generator[
             if vector_safe:
                 elementwise[
                     simd_width=pack,
-                    target=target,
                     _trace_description=trace_description_str,
                 ](update_element_func, iter_shape, context)
             else:
                 elementwise[
                     simd_width=1,
-                    target=target,
                     _trace_description=trace_description_str,
                 ](update_element_func, iter_shape, context)
         else:
@@ -1611,7 +1606,6 @@ def scatter_nd_generator[
 
             elementwise[
                 simd_width=1,
-                target=target,
                 _trace_description=trace_description_str,
             ](update_func, iter_shape, context)
 
@@ -1905,7 +1899,6 @@ def scatter_elements[
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="scatter_elements",
     ](update_func, indices.layout.shape_coord(), ctx)
 
@@ -2234,13 +2227,11 @@ def gather_nd[
     if use_simd:
         elementwise[
             target_simd_width,
-            target=target,
             _trace_description="gather_nd",
         ](gather_nd_elementwise_fn, output.layout.shape_coord(), ctx)
     else:
         elementwise[
             1,
-            target=target,
             _trace_description="gather_nd",
         ](gather_nd_elementwise_fn, output.layout.shape_coord(), ctx)
 
@@ -2319,7 +2310,6 @@ def scatter_set_constant[
     var dispatch_shape = Coord(Int(indices.dim[0]()))
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="scatter_set_constant",
     ](scatter_set_constant_fn, dispatch_shape, ctx)
 
@@ -2405,6 +2395,5 @@ def apply_packed_bitmask[
     var dispatch_shape = Coord(Int(output.dim[0]()), Int(output.dim[1]()))
     elementwise[
         simd_width=simd_width,
-        target=target,
         _trace_description="apply_packed_bitmask",
     ](apply_packed_bitmask_fn, dispatch_shape, ctx)

@@ -2653,7 +2653,6 @@ def _matmul_blockwise_scaled_fp4_common[
             comptime simd_size = 32 // size_of[output_dtype]()
             elementwise[
                 simd_size,
-                target=target,
                 _trace_description="elementwise_fused_qkv_epilogue",
             ](
                 apply_epilogue,
@@ -5300,16 +5299,12 @@ def generic_kv_cache_radd_dispatch[
         comptime compile_target = ctx.target
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[simd_width, target=target](
-            do_radd, a.layout.shape_coord(), ctx
-        )
+        elementwise[simd_width](do_radd, a.layout.shape_coord(), ctx)
     else:
         comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[simd_width, target=target](
-            do_radd, a.layout.shape_coord(), ctx
-        )
+        elementwise[simd_width](do_radd, a.layout.shape_coord(), ctx)
 
 
 def kv_cache_store_ragged[
@@ -5398,9 +5393,9 @@ def kv_cache_store_ragged[
         ]()
     )
 
-    elementwise[
-        simd_width, target=target, _trace_description="kv_cache_store_ragged"
-    ](write_to_cache, input_shape, context)
+    elementwise[simd_width, _trace_description="kv_cache_store_ragged"](
+        write_to_cache, input_shape, context
+    )
 
 
 def kv_cache_store_padded[
@@ -5472,9 +5467,9 @@ def kv_cache_store_padded[
         ]()
     )
 
-    elementwise[
-        simd_width, target=target, _trace_description="kv_cache_store_padded"
-    ](write_to_cache, input_shape, context)
+    elementwise[simd_width, _trace_description="kv_cache_store_padded"](
+        write_to_cache, input_shape, context
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -5603,9 +5598,9 @@ def kv_cache_2m_iadd_dispatch[
             comptime compile_target = ctx.target
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-            elementwise[simd_width, target=target](iadd, elementwise_shape, ctx)
+            elementwise[simd_width](iadd, elementwise_shape, ctx)
     else:
         comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[simd_width, target=target](iadd, elementwise_shape, ctx)
+        elementwise[simd_width](iadd, elementwise_shape, ctx)

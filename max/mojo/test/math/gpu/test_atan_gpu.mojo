@@ -196,7 +196,7 @@ def _test_atan[
         out_span.unsafe_ptr().unsafe_store[width=simd_width](idx, atan(v))
 
     comptime pack = simd_width_of[dtype, target=ctx.target]()
-    elementwise[pack, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack](func, Coord(length), ctx)
 
     var worst = 0
     with in_dev.map_to_host() as ih, out_dev.map_to_host() as oh:
@@ -281,7 +281,7 @@ def _test_atan2[
         out_span.unsafe_ptr().unsafe_store[width=simd_width](idx, atan2(y, x))
 
     comptime pack = simd_width_of[dtype, target=ctx.target]()
-    elementwise[pack, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack](func, Coord(length), ctx)
 
     var worst = 0
     with y_dev.map_to_host() as yh, x_dev.map_to_host() as xh:
@@ -345,7 +345,7 @@ def _test_atan2_reference[
         out_span.unsafe_ptr().unsafe_store[width=simd_width](idx, atan2(y, x))
 
     comptime pack = simd_width_of[dtype, target=ctx.target]()
-    elementwise[pack, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack](func, Coord(length), ctx)
 
     var worst = 0
     with out_dev.map_to_host() as oh:
@@ -655,7 +655,7 @@ def test_tiny_result_bits() raises:
             a.unsafe_ptr().unsafe_store[width=width](i, atan(y))
             b.unsafe_ptr().unsafe_store[width=width](i, atan2(y, x))
 
-        elementwise[4, target="gpu"](func, Coord(n), ctx)
+        elementwise[4](func, Coord(n), ctx)
         with ad.map_to_host() as ah, bd.map_to_host() as bh:
             for i in range(n):
                 assert_equal(bitcast[.uint32, 1](ah[i]), y_bits[i])

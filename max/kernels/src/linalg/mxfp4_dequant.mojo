@@ -267,7 +267,6 @@ def _cast_bf16_to_fp8(
 
     elementwise[
         simd_width_of[input.dtype](),
-        target="gpu",
         _trace_description="mxfp4_dequant_cast",
     ](cast_fn, (num_rows, num_cols), ctx)
 

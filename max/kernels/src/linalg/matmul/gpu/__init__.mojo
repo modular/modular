@@ -2110,7 +2110,6 @@ def _split_k_reduce_impl[
 
     elementwise[
         simd_width,
-        target="gpu",
         _trace_description="matmul_split_k_reduce",
     ](_reduce, (M, N), ctx)
 

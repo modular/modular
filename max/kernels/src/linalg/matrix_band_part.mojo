@@ -161,6 +161,5 @@ def _matrix_band_part_impl[
 
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="matrix_band_part",
     ](func, output.layout.shape_coord(), ctx)

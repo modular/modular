@@ -846,11 +846,11 @@ def moe_finalize[
     # `down` rows are only vector-aligned when the row width is a multiple of
     # `simd_width`; every other shape runs scalar.
     if Int(down.dim(1)) % simd_width == 0:
-        elementwise[
-            simd_width, target=target, _trace_description="mo.moe.finalize"
-        ](finalize, shape, context)
+        elementwise[simd_width, _trace_description="mo.moe.finalize"](
+            finalize, shape, context
+        )
     else:
-        elementwise[1, target=target, _trace_description="mo.moe.finalize"](
+        elementwise[1, _trace_description="mo.moe.finalize"](
             finalize, shape, context
         )
 

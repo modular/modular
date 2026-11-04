@@ -676,6 +676,41 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
 
     # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
+    def device_kind(self) -> TargetDeviceKind:
+        """Returns the kind of device the target is, as its stdlib plugin's
+        hooks declare it.
+
+        Prefer `is_gpu()` and `is_accelerator()` for branching; this is for
+        code that needs the kind itself, such as a diagnostic.
+
+        Returns:
+            The target's device kind.
+        """
+        return Self.stdlib_plugin.device_kind
+
+    @staticmethod
+    def device_kind_label() -> StaticString:
+        """Returns the target's device kind as a label.
+
+        Unlike `device_kind()`, which returns the plugin's `TargetDeviceKind`,
+        this is a string usable as a `StaticString` parameter, such as a trace
+        target.
+
+        Returns:
+            "cpu" for a CPU target and "gpu" for a GPU target.
+        """
+        comptime if Self().is_cpu():
+            return "cpu"
+        elif Self().is_gpu():
+            return "gpu"
+        else:
+            Self.unsupported_target_error[
+                operation="target label",
+                note="target is not a recognized CPU or GPU",
+            ]()
+
+    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
+    @inline(.nodebug)
     def is_cpu(self) -> Bool:
         """Returns True if the target is a recognized general-purpose CPU
         architecture (x86, ARM, or RISC-V), and False otherwise.
@@ -691,20 +726,6 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         # FIXME(MSTDL-3279): Add other host architectures here if they become
         # supported platforms.
         return self.is_x86() or self.is_arm() or self.is_riscv()
-
-    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
-    @inline(.nodebug)
-    def device_kind(self) -> TargetDeviceKind:
-        """Returns the kind of device the target is, as its stdlib plugin's
-        hooks declare it.
-
-        Prefer `is_gpu()` and `is_accelerator()` for branching; this is for
-        code that needs the kind itself, such as a diagnostic.
-
-        Returns:
-            The target's device kind.
-        """
-        return Self.stdlib_plugin.device_kind
 
     # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)

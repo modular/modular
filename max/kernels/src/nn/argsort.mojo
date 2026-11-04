@@ -79,7 +79,7 @@ def _argsort_cpu[
             ),
         )
 
-    elementwise[simd_width_of[indices.dtype](), target="cpu"](
+    elementwise[simd_width_of[indices.dtype]()](
         fill_indices_iota,
         Coord(indices.num_elements()),
         DeviceContext.cpu(),
@@ -496,7 +496,6 @@ def _argsort_gpu[
                 simd_width_of[indices.dtype, target=ctx.target](),
                 simd_width_of[input.dtype, target=ctx.target](),
             ),
-            target="gpu",
             _trace_description="argsort_fill_indices",
         ](fill_indices_iota_no_padding, Coord(n), ctx)
 
@@ -553,7 +552,6 @@ def _argsort_gpu[
     # power of 2, so we set the simdwidth to be 1.
     elementwise[
         simd_width=1,
-        target="gpu",
         _trace_description="argsort_fill_indices_padded",
     ](fill_indices_iota, Coord(pow_2_length), ctx)
 
@@ -567,7 +565,6 @@ def _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     elementwise[
         simd_width=simd_width_of[indices.dtype, target=ctx.target](),
-        target="gpu",
         _trace_description="argsort_extract_indices",
     ](extract_indices, Coord(n), ctx)
 

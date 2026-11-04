@@ -41,7 +41,7 @@
 // CHECK: var [[F0:.*]] = EpilogueStoreFunctor{{[0-9_]*}}[{{.*}}]([[PTR0]], {{.*}})
 // CHECK: var [[BASE0:.*]] = builtin_primitives.primitives.mogg_tensor_init[{{.*}}, False, extensibility.IO.Input, {{.*}}]({{.*}})
 // CHECK: var [[W0:.*]] = [[BASE0]]._bind_to_fused_output([[F0]])
-// CHECK: {{.*}}.MapLowerOneFusedOutput.execute[target = "cpu", has_epilogue_fusion = False]([[W0]], {{.*}})
+// CHECK: {{.*}}.MapLowerOneFusedOutput.execute[has_epilogue_fusion = False]([[W0]], {{.*}})
 
 mo.graph @one_fused(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %c = mo.custom [symbol = "map_lower_one_fused_output", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
@@ -50,8 +50,8 @@ mo.graph @one_fused(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
 
 // Two fused outputs: one functor + bind per output, both bound tensors
 // passed to a single fused execute call.
-// CHECK-DAG: {{.*}}.MapLowerTwoFusedOutputs.execute[target = "cpu", has_epilogue_fusion = False]
-// CHECK-DAG: {{.*}}.MapLowerPartialFusedOutputs.execute[target = "cpu", has_epilogue_fusion = False]
+// CHECK-DAG: {{.*}}.MapLowerTwoFusedOutputs.execute[has_epilogue_fusion = False]
+// CHECK-DAG: {{.*}}.MapLowerPartialFusedOutputs.execute[has_epilogue_fusion = False]
 
 mo.graph @two_fused(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
   %c:2 = mo.custom [symbol = "map_lower_two_fused_outputs", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
@@ -77,7 +77,7 @@ mo.graph @partial_fused(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>
 // CHECK:   var [[FD:.*]] = EpilogueStoreFunctor{{[0-9_]*}}[{{.*}}]([[PTRD]], {{.*}})
 // CHECK:   var [[BASED:.*]] = builtin_primitives.primitives.mogg_tensor_init[{{.*}}, False, extensibility.IO.Input, {{.*}}]({{.*}})
 // CHECK:   var [[WD:.*]] = [[BASED]]._bind_to_fused_output([[FD]])
-// CHECK:   {{.*}}.MapLowerOneFusedOutput.execute[target = "cpu", has_epilogue_fusion = False]([[WD]], {{.*}})
+// CHECK:   {{.*}}.MapLowerOneFusedOutput.execute[has_epilogue_fusion = False]([[WD]], {{.*}})
 
 mo.graph @one_fused_dynamic(%a: !mo.tensor<[batch, 2], f32>) -> !mo.tensor<[batch, 2], f32> {
   %c = mo.custom [symbol = "map_lower_one_fused_output", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[batch, 2], f32>) -> !mo.tensor<[batch, 2], f32>

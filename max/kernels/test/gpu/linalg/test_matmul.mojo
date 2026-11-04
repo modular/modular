@@ -262,7 +262,7 @@ def test[
         )
 
     comptime if lambda_fn:
-        elementwise[pack_size, target="gpu"](
+        elementwise[pack_size](
             func,
             (m, n),
             ctx,

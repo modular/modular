@@ -161,15 +161,12 @@ def merge_ragged_tensors[
 
     elementwise[
         simd_width=kernel_simd_width,
-        target=target,
         _trace_description="merge_ragged_tensors",
     ](merge_fn, c.layout.shape_coord(), ctx)
 
 
 def eagle_prefill_shift_tokens[
-    dtype: DType,
-    //,
-    target: StaticString = "cpu",
+    dtype: DType
 ](
     output: TileTensor[mut=True, dtype, ...],
     tokens: TileTensor[mut=False, dtype, ...],
@@ -207,6 +204,5 @@ def eagle_prefill_shift_tokens[
 
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="eagle_prefill_shift_tokens",
     ](shift_fn, shape, ctx)

@@ -328,12 +328,12 @@ def _rope_split_store_ragged_impl[
     ), "head_size must be divisible by simd_width"
 
     if case .Some(device_ctx) = context:
-        elementwise[simd_width=kernel_simd_width, target=target](
+        elementwise[simd_width=kernel_simd_width](
             rope_split_store_fn, launch_shape, device_ctx
         )
     else:
         comptime if is_cpu[target]():
-            elementwise[simd_width=kernel_simd_width, target=target](
+            elementwise[simd_width=kernel_simd_width](
                 rope_split_store_fn, launch_shape, DeviceContext.cpu()
             )
         else:

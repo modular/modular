@@ -110,6 +110,5 @@ def kv_cache_gather_rows_ragged[
 
     elementwise[
         simd_width,
-        target=target,
         _trace_description="kv_cache_gather_rows_ragged",
     ](copy_row, Coord(num_rows, num_slots, head_dim), ctx)

@@ -346,32 +346,28 @@ def _index_tensor_impl[
     comptime if is_cpu[target]():
         var cpu_ctx = DeviceContext.cpu()
         if use_simd:
-            elementwise[
-                target_simd_width,
-                target=target,
-            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
+            elementwise[target_simd_width,](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cpu_ctx,
+            )
         else:
-            elementwise[
-                1,
-                target=target,
-            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
+            elementwise[1,](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cpu_ctx,
+            )
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
-            elementwise[
-                target_simd_width,
-                target=target,
-            ](
+            elementwise[target_simd_width,](
                 index_tensor_elementwise_fn,
                 output.layout.shape_coord(),
                 cuda_ctx,
             )
         else:
-            elementwise[
-                1,
-                target=target,
-            ](
+            elementwise[1,](
                 index_tensor_elementwise_fn,
                 output.layout.shape_coord(),
                 cuda_ctx,

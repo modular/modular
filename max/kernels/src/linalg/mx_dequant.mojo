@@ -251,6 +251,6 @@ def dequant_mx[
             Int(idx[1]) // _MX_BLOCK,
         )
 
-    elementwise[_MX_BLOCK, target=target, _trace_description="dequant_mx"](
+    elementwise[_MX_BLOCK, _trace_description="dequant_mx"](
         dequant, (num_rows, num_cols), ctx
     )

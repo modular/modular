@@ -173,7 +173,7 @@ def run_rms_norm_fused_residual_add_gpu[
         var residual_add_val = residual_val + result_val
         unfused_intermediate_buf.store(coords, residual_add_val)
 
-    elementwise[simd_width_of[dtype](), target="cpu"](
+    elementwise[simd_width_of[dtype]()](
         sum_fn,
         unfused_intermediate_buf.layout.shape_coord(),
         DeviceContext.cpu(),

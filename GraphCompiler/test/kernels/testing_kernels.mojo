@@ -158,9 +158,7 @@ struct OpaqueToCustomScalarSI32Reg:
 @extensibility.register("opaque_add_to_tensor_si32_reg")
 struct OpaqueAddToTensorSI32Reg:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         outp: OutputTensor[dtype=.int32, rank=1, ...],
         x: MyCustomScalarRegSI32,
         y: MyCustomScalarRegSI32,
@@ -171,9 +169,7 @@ struct OpaqueAddToTensorSI32Reg:
 @extensibility.register("opaque_add_to_tensor_f32_reg")
 struct OpaqueAddToTensorF32:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         outp: OutputTensor[dtype=.float32, rank=1, ...],
         x: MyCustomScalarRegF32,
         y: MyCustomScalarRegF32,
@@ -212,9 +208,7 @@ struct OpaqueToCustomScalarSI32:
 @extensibility.register("opaque_add_to_tensor_si32")
 struct OpaqueAddToTensorSI32:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         outp: OutputTensor[dtype=.int32, rank=1, ...],
         x: MyCustomScalarSI32,
         y: MyCustomScalarSI32,
@@ -225,9 +219,7 @@ struct OpaqueAddToTensorSI32:
 @extensibility.register("opaque_add_to_tensor_si32_raises")
 struct OpaqueAddToTensorSI32Raises:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         outp: OutputTensor[dtype=.int32, rank=1, ...],
         x: MyCustomScalarSI32,
         y: MyCustomScalarSI32,
@@ -539,9 +531,7 @@ struct TraitFusedLoadNegateUnifiedClosure:
 @extensibility.register("trait_fused_load_host_negative")
 struct TraitFusedLoadHostNegative:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
@@ -713,9 +703,9 @@ struct TraitFusedLoadHostClosureNegative:
 @extensibility.register("trait_inplace_increment")
 struct TraitInplaceIncrement:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[MutableInput & TileTensorable], ctx: DeviceContext) raises:
+    def execute(
+        x: Some[MutableInput & TileTensorable], ctx: DeviceContext
+    ) raises:
         comptime assert conforms_to(type_of(x), MutableInput)
         comptime assert conforms_to(type_of(x), TileTensorable)
         var xt = x.to_tile_tensor()
@@ -1503,9 +1493,7 @@ struct TraitFusedStoreUnifiedClosure:
 @extensibility.register("trait_fused_store_host_negative")
 struct TraitFusedStoreHostNegative:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -1780,9 +1768,7 @@ struct TraitTupleThenComputeOutput:
 @extensibility.register("trait_fused_transform_host_negative")
 struct TraitFusedTransformHostNegative:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & _LegacyComputeOutput],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -1813,7 +1799,6 @@ struct FooWithStructParam[flip: Bool]:
     def execute[
         dtype: DType,
         //,
-        target: StaticString,
     ](
         z: OutputTensor[dtype=dtype, ...],
         x: InputTensor[dtype=dtype, ...],
@@ -1877,9 +1862,7 @@ def _matmul[
 @extensibility.register("imposter_matmul")
 struct ImposterMatmul:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: OutputTensor,
         a: InputTensor,
         b: InputTensor,
@@ -1901,9 +1884,7 @@ def imposter_matmul_shape(
 @extensibility.register("print_tensor_spec")
 struct PrintTensorSpecOp:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, x: InputTensor, ctx: DeviceContext) raises:
+    def execute(outp: OutputTensor, x: InputTensor, ctx: DeviceContext) raises:
         print("x.shape =", x._static_shape_tuple)
         print("x.strides =", x._static_strides_tuple)
         print("x.alignment =", x.alignment)
@@ -1924,9 +1905,9 @@ def print_tensor_spec_shape(x: Some[Tensor]) -> IndexList[type_of(x).rank]:
 @extensibility.register("print_tensor")
 struct PrintTensor:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, input: InputTensor, ctx: DeviceContext) raises:
+    def execute(
+        outp: OutputTensor, input: InputTensor, ctx: DeviceContext
+    ) raises:
         print(input)
 
         @inline(.always)
@@ -1939,9 +1920,11 @@ struct PrintTensor:
 @extensibility.register("print_tensor_spec_fused")
 struct PrintTensorSpecFusedOp:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        outp: FusedOutputTensor,
+        x: FusedInputTensor,
+        ctx: DeviceContext,
+    ) raises:
         print("x.shape =", x._static_shape_tuple)
         print("x.strides =", x._static_strides_tuple)
         print("x.alignment =", x.alignment)
@@ -1964,9 +1947,7 @@ def print_tensor_spec_fused_shape(
 @extensibility.register("print_output_shape_strides_fused")
 struct PrintOutputShapeStridesFusedOp:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: FusedOutputTensor,
         x: FusedInputTensor,
         ctx: DeviceContext,
@@ -2107,9 +2088,7 @@ struct AddElementwise:
 @extensibility.register("imposter_add_lhs")
 struct AddFuseLHS:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: FusedInputTensor,
         y: InputTensor,
@@ -2127,9 +2106,7 @@ struct AddFuseLHS:
 @extensibility.register("imposter_add_fuse_inputs")
 struct AddFuseInputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: FusedInputTensor,
         y: FusedInputTensor,
@@ -2149,7 +2126,6 @@ struct AddComputeFusion:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
     ](
         z: _FusedComputeOutputTensor[dtype=dtype, rank=2, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
@@ -2174,7 +2150,7 @@ struct AddComputeFusion:
             else:
                 z._fused_store[element_alignment=alignment](idx, val)
 
-        elementwise[1, target=target](func, z.shape_coord(), ctx)
+        elementwise[1](func, z.shape_coord(), ctx)
 
 
 @extensibility.register_shape_function("imposter_add_compute_fusion")
@@ -2209,7 +2185,6 @@ struct AddFuseOutput:
 struct MatmulFuseOut:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         c: FusedOutputTensor,
@@ -2251,7 +2226,6 @@ struct VariadicInputToOutput:
     def execute[
         dtype: DType,
         size: Int,
-        target: StaticString,
     ](
         output: OutputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
@@ -2311,7 +2285,6 @@ struct VariadicAdd:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -2338,7 +2311,6 @@ struct FusedVariadicInputs:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
         axis: Int,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
@@ -2351,9 +2323,11 @@ struct FusedVariadicInputs:
 @extensibility.register("print_shape_fused")
 struct ElementwisePrintShape:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        ctx: DeviceContext,
+    ) raises:
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
             return rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
@@ -2373,9 +2347,11 @@ def print_shape_fused_shape(x: Some[Tensor]) -> IndexList[type_of(x).rank]:
 @extensibility.register("custom_op_that_raises")
 struct CustomOpThatRaises:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: OutputTensor, x: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        z: OutputTensor,
+        x: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         if x.shape()[0] == 10:
             raise ("input_shape[0] == 10")
 
@@ -2563,20 +2539,16 @@ struct MyCustomScalarReg[dtype: DType](ImplicitlyCopyable, RegisterPassable):
 @extensibility.register("buff_to_my_custom_scalar_reg")
 struct BuffToMyCustomScalarReg:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](x: InputTensor[dtype=.int32, rank=1, ...]) -> MyCustomScalarReg[
-        DType.int32
-    ]:
+    def execute(
+        x: InputTensor[dtype=.int32, rank=1, ...]
+    ) -> MyCustomScalarReg[DType.int32]:
         return MyCustomScalarReg(x[0])
 
 
 @extensibility.register("my_custom_scalar_reg_to_buff")
 struct CustomScalarRegToBuff:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         input: OutputTensor[dtype=.int32, rank=1, ...],
         x: MyCustomScalarReg[.int32],
     ):
@@ -2587,7 +2559,7 @@ struct CustomScalarRegToBuff:
 struct TestCustomOp:
     @staticmethod
     def execute[
-        target: StaticString, dtype: DType, rank: Int
+        dtype: DType, rank: Int
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -2613,7 +2585,7 @@ def test_custom_op_shape(input: Some[Tensor]) -> IndexList[type_of(input).rank]:
 struct TraitMetadataShapeOp:
     @staticmethod
     def execute[
-        target: StaticString, dtype: DType, rank: Int
+        dtype: DType, rank: Int
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -2643,7 +2615,7 @@ def trait_metadata_shape_op_shape[
 struct TraitTensorShapeOp:
     @staticmethod
     def execute[
-        target: StaticString, dtype: DType, rank: Int
+        dtype: DType, rank: Int
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -2673,7 +2645,7 @@ def trait_tensor_shape_op_shape[T: Tensor](input: T) -> IndexList[T.rank]:
 struct TraitReshapeShapeOp:
     @staticmethod
     def execute[
-        target: StaticString, dtype: DType
+        dtype: DType
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         data: InputTensor[dtype=dtype, rank=2, ...],
@@ -2784,7 +2756,6 @@ struct VariadicDeviceContext:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString = "gpu",
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -2831,9 +2802,7 @@ struct PrintVectorSize:
 @extensibility.register("tensor_opaque_tensor_kernel")
 struct TensorOpaqueTensorKernel:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output1: OutputTensor,
         output2: OutputTensor,
         opaque: MyCustomScalarSI32,
@@ -2925,9 +2894,7 @@ def custom_op_with_custom_parameter_shape_func_shape[
 @extensibility.register("custom_op_with_mixed_bound_shape_func")
 struct CustomOpWithMixedBoundShapeFunc:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: OutputTensor[rank=2, ...],
         metadata_only: InputTensor[rank=2, ...],
         value_read: InputTensor[rank=1, ...],
@@ -3152,7 +3119,6 @@ struct UniqueParameters:
         num_heads: Int,
         head_dim: Int,
         page_size: Int,
-        target: StaticString,
     ](
         blocks: InputTensor[dtype=dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3357,7 +3323,7 @@ struct DeviceGraphFill:
                 idx, SIMD[dtype, width](Self._fill_value)
             )
 
-        elementwise[1, target="gpu"](func, output.shape_coord(), ctx)
+        elementwise[1](func, output.shape_coord(), ctx)
 
     @staticmethod
     def build_graph[
@@ -3490,7 +3456,7 @@ struct DeviceGraphIncrement:
             )
             output._fused_store[element_alignment=alignment](idx, val)
 
-        elementwise[1, target="gpu"](func, output.shape_coord(), ctx)
+        elementwise[1](func, output.shape_coord(), ctx)
 
     @staticmethod
     def build_graph[
@@ -3529,9 +3495,11 @@ struct DeviceGraphIncrement:
 @extensibility.register("add_one", type="cpu")
 struct AddOneCPU:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, x: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        outp: OutputTensor,
+        x: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         print("AddOne CPU kernel")
 
         @inline(.always)
@@ -3539,24 +3507,28 @@ struct AddOneCPU:
             var val = rebind[SIMD[outp.dtype, width]](x.load[width](idx)) + 1
             outp._fused_store[element_alignment=alignment](idx, val)
 
-        elementwise[1, target="cpu"](func, outp.shape_coord(), ctx)
+        elementwise[1](func, outp.shape_coord(), ctx)
 
 
 @extensibility.register("gpu_only_kernel", type="gpu")
 struct GpuOnlyKernel:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, x: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        outp: OutputTensor,
+        x: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         pass
 
 
 @extensibility.register("add_one", type="gpu")
 struct AddOneGPU:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, x: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        outp: OutputTensor,
+        x: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         print("AddOne GPU kernel")
 
         @inline(.always)
@@ -3564,7 +3536,7 @@ struct AddOneGPU:
             var val = rebind[SIMD[outp.dtype, width]](x.load[width](idx)) + 1
             outp._fused_store[element_alignment=alignment](idx, val)
 
-        elementwise[1, target="gpu"](func, outp.shape_coord(), ctx)
+        elementwise[1](func, outp.shape_coord(), ctx)
 
 
 # Mixed-lane e2e proof: a trait-bound dense output alongside two legacy
@@ -3574,9 +3546,7 @@ struct AddOneGPU:
 @extensibility.register("trait_mixed_legacy_add")
 struct TraitMixedLegacyAdd:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: InputTensor,
         y: InputTensor,
@@ -3599,9 +3569,7 @@ struct TraitMixedLegacyAdd:
 @extensibility.register("trait_mixed_legacy_out_add")
 struct TraitMixedLegacyOutAdd:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: Some[Input & TileTensorable],
         y: Some[Input & TileTensorable],
@@ -3630,9 +3598,7 @@ struct TraitMixedLegacyOutAdd:
 @extensibility.register("trait_dual_lane_add")
 struct TraitDualLaneAdd:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: Some[Input & TileTensorable],
         y: InputTensor,
@@ -3661,7 +3627,6 @@ struct TraitDualLaneAdd:
 struct MapLowerOneFusedOutput:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](res: FusedOutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
         pass
@@ -3670,9 +3635,11 @@ struct MapLowerOneFusedOutput:
 @extensibility.register("map_lower_one_plain_output")
 struct MapLowerOnePlainOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](res: OutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        res: OutputTensor,
+        a: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         pass
 
 
@@ -3686,9 +3653,10 @@ struct MapLowerGenericContext:
 @extensibility.register("map_lower_no_context")
 struct MapLowerNoContext:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](res: OutputTensor, a: InputTensor,) raises:
+    def execute(
+        res: OutputTensor,
+        a: InputTensor,
+    ) raises:
         pass
 
 
@@ -3749,9 +3717,11 @@ struct MapLowerDeclarativeBinary:
 @extensibility.register("map_lower_inplace_copy")
 struct MapLowerInplaceCopy:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](dst: MutableInputTensor, src: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        dst: MutableInputTensor,
+        src: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         pass
 
 
@@ -3759,7 +3729,6 @@ struct MapLowerInplaceCopy:
 struct MapLowerTwoFusedOutputs:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         res0: FusedOutputTensor,
@@ -3780,7 +3749,6 @@ struct MapLowerVariadicFusedOutput:
         dtype: DType,
         rank: Int,
         size: Int,
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         outputs: FusedOutputVariadicTensors[
@@ -3795,9 +3763,7 @@ struct MapLowerVariadicFusedOutput:
 @extensibility.register("map_lower_two_plain_outputs")
 struct MapLowerTwoPlainOutputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res0: OutputTensor,
         res1: OutputTensor,
         a: InputTensor,
@@ -3810,7 +3776,6 @@ struct MapLowerTwoPlainOutputs:
 struct MapLowerPartialFusedOutputs:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         res0: FusedOutputTensor,
@@ -3828,7 +3793,6 @@ struct MapLowerPartialFusedOutputs:
 struct MapLowerTwoInputsOneFusedOutput:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         res: FusedOutputTensor,
@@ -3844,7 +3808,6 @@ struct MapLowerScalar:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
     ](
         res: OutputTensor,
         a: InputTensor,
@@ -3860,7 +3823,6 @@ struct MapLowerVariadic:
     def execute[
         dtype: DType,
         size: Int,
-        target: StaticString,
     ](
         res: OutputTensor,
         inputs: InputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
@@ -3922,9 +3884,7 @@ struct MapLowerAdd3:
 @extensibility.register("map_lower_two_outputs")
 struct MapLowerTwoOutputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res0: OutputTensor,
         res1: OutputTensor,
         a: InputTensor,
@@ -3980,7 +3940,6 @@ struct MapLowerScale:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
     ](
         res: OutputTensor[dtype=dtype, ...],
         a: InputTensor[dtype=dtype, ...],
@@ -4005,7 +3964,6 @@ struct MapLowerVarSum:
     def execute[
         dtype: DType,
         size: Int,
-        target: StaticString,
     ](
         res: OutputTensor[dtype=dtype, rank=1, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
@@ -4028,9 +3986,7 @@ struct MapLowerVarSum:
 @extensibility.register("map_lower_two_fused_inputs")
 struct MapLowerTwoFusedInputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res: OutputTensor,
         a: FusedInputTensor,
         b: FusedInputTensor,
@@ -4042,9 +3998,7 @@ struct MapLowerTwoFusedInputs:
 @extensibility.register("map_lower_partial_fused_inputs")
 struct MapLowerPartialFusedInputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res: OutputTensor,
         a: FusedInputTensor,
         b: InputTensor,

@@ -136,7 +136,7 @@ def _check[
             idx, math_fn(val)
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     var worst_gpu = 0.0
     var worst_host = 0.0

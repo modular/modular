@@ -130,7 +130,7 @@ def erf_elementwise[
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[simd_width=simd_width_of[DType.float32](), target="gpu"](
+    elementwise[simd_width=simd_width_of[DType.float32]()](
         func, Coord(granularity), ctx
     )
 

@@ -143,7 +143,6 @@ struct MatmulFusedPartialRMSNorm:
 
     @staticmethod
     def execute[
-        target: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
         transpose_b: Bool = True,
@@ -162,7 +161,6 @@ struct MatmulFusedPartialRMSNorm:
         unnormed outputs.
 
         Parameters:
-            target: The target GPU device.
             epsilon: Small constant added to the squared mean before
                 the reciprocal square root for numerical stability.
             weight_offset: Reserved for API consistency with other RMS
@@ -650,7 +648,6 @@ struct FusedMatmulAdd:
     @staticmethod
     def execute[
         transpose_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & Tensor],
@@ -2756,9 +2753,7 @@ struct MatmulSwiGLU:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2793,9 +2788,7 @@ struct MatmulSwiGLUBias:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2838,7 +2831,7 @@ struct CompositeMatmulSwiGLU:
         b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        MatmulSwiGLU.execute[target](output, a, b, ctx)
+        MatmulSwiGLU.execute(output, a, b, ctx)
 
 
 @extensibility.register("mo.composite.matmul_swiglu_bias", type="gpu")
@@ -2853,7 +2846,7 @@ struct CompositeMatmulSwiGLUBias:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        MatmulSwiGLUBias.execute[target](output, a, b, bias, ctx)
+        MatmulSwiGLUBias.execute(output, a, b, bias, ctx)
 
 
 @extensibility.register("mo.lora_sgmv.qkv_expand.ragged")
@@ -3061,10 +3054,9 @@ struct Struct_router_gate_mixed_gemv:
                 idx, a_vec.cast[.float32]()
             )
 
-        elementwise[
-            simd_width_of[DType.bfloat16, target=context.target](),
-            target=target,
-        ](_cast_bf16_to_fp32, Coord(M, Idx[K]), context)
+        elementwise[simd_width_of[DType.bfloat16, target=context.target](),](
+            _cast_bf16_to_fp32, Coord(M, Idx[K]), context
+        )
 
         matmul[transpose_b=True, target=target](
             c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context

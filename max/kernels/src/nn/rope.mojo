@@ -346,12 +346,11 @@ def rope_ragged[
     )
 
     comptime if is_cpu[target]():
-        elementwise[simd_width=kernel_simd_width, target=target](
+        elementwise[simd_width=kernel_simd_width](
             rope_fn, x.layout.shape_coord(), context
         )
     else:
         elementwise[
             simd_width=kernel_simd_width,
-            target=target,
             _trace_description="rope",
         ](rope_fn, x.layout.shape_coord(), context)

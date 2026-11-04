@@ -236,6 +236,6 @@ def dequant_nvfp4[
             Int(idx[1]) // NVFP4_SF_VECTOR_SIZE,
         )
 
-    elementwise[
-        NVFP4_SF_VECTOR_SIZE, target=target, _trace_description="dequant_nvfp4"
-    ](dequant, (num_rows, num_cols), ctx)
+    elementwise[NVFP4_SF_VECTOR_SIZE, _trace_description="dequant_nvfp4"](
+        dequant, (num_rows, num_cols), ctx
+    )

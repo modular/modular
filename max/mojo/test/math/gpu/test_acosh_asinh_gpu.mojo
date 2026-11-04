@@ -218,7 +218,7 @@ def _run[
             result = asinh(val)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, result)
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     var worst = 0
     var worst_x = Scalar[dtype](0)
@@ -339,7 +339,7 @@ def _check_hard_cases[
             result = asinh(val)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, result)
 
-    elementwise[pack_size, target="gpu"](func, Coord(padded), ctx)
+    elementwise[pack_size](func, Coord(padded), ctx)
 
     with out_device.map_to_host() as out_host:
         for i in range(n):
@@ -405,7 +405,7 @@ def _check_log_subnormals[
             idx, _log_accurate(val)
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(padded), ctx)
+    elementwise[pack_size](func, Coord(padded), ctx)
 
     with out_device.map_to_host() as out_host:
         for i in range(n):

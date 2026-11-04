@@ -423,7 +423,7 @@ struct Struct_kv_cache_store_k_scales_paged:
             ]()
         )
 
-        elementwise[simd_width=simd_width, target=target](
+        elementwise[simd_width=simd_width](
             write_scale_to_cache, input_k_scales.shape(), context
         )
 

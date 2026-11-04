@@ -244,7 +244,7 @@ def copy_to_slice[
     def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         buffer_slice_view.store(idx, in_slice.load[width=simd_width](idx))
 
-    elementwise[1, target=target, _trace_description="slice_copy"](
+    elementwise[1, _trace_description="slice_copy"](
         copy,
         buffer_slice_view.layout.shape_coord(),
         context,
@@ -423,7 +423,6 @@ def sliced_add[
 
         elementwise[
             simd_width,
-            target=target,
             _trace_description="slice_add",
         ](
             _sliced_add,
@@ -434,6 +433,4 @@ def sliced_add[
         comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[simd_width, target=target](
-            _sliced_add, c.layout.shape_coord(), ctx
-        )
+        elementwise[simd_width](_sliced_add, c.layout.shape_coord(), ctx)

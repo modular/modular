@@ -687,7 +687,6 @@ def _apply_compute_fn[
 
     elementwise[
         simd_size,
-        target="gpu",
         _trace_description="elementwise_block_scaled_matmul_compute",
     ](apply_compute_fn, (Int(c.dim[0]()), Int(c.dim[1]())), ctx)
 
@@ -960,7 +959,6 @@ def _block_scaled_matmul_with_epilogue[
 
             elementwise[
                 simd_size,
-                target="gpu",
                 _trace_description="elementwise_block_scaled_matmul_compute",
             ](apply_compute_fn_cols, (m, n // period, period - start), ctx)
         else:
@@ -977,7 +975,6 @@ def _block_scaled_matmul_with_epilogue[
 
             elementwise[
                 simd_size,
-                target="gpu",
                 _trace_description="elementwise_block_scaled_matmul_compute",
             ](apply_compute_fn, (m, n), ctx)
         return

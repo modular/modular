@@ -1127,7 +1127,6 @@ def _batched_matmul_gpu_impl[
 
                 elementwise[
                     simd_size,
-                    target="gpu",
                     _trace_description="elementwise_batched_matmul_sm100_epilogue",
                 ](epilogue_wrapper, Coord(batch_size, m, n), ctx)
             elif has_compute_fn:
@@ -1157,7 +1156,6 @@ def _batched_matmul_gpu_impl[
 
                 elementwise[
                     simd_size,
-                    target="gpu",
                     _trace_description="elementwise_batched_matmul_sm100_compute",
                 ](compute_wrapper, Coord(batch_size, m, n), ctx)
 

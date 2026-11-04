@@ -155,12 +155,10 @@ def split[
 
         elementwise[
             simd_width=target_simd_width,
-            target=target,
             _trace_description=trace_description,
         ](elementwise_fn_wrapper, input.layout.shape_coord(), ctx)
     else:
         elementwise[
             simd_width=1,
-            target=target,
             _trace_description=trace_description,
         ](elementwise_fn_wrapper, input.layout.shape_coord(), ctx)

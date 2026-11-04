@@ -2818,7 +2818,6 @@ def foreach[
 
     elementwise[
         simd_width=simd_width,
-        target=target,
         _trace_description=_trace_name,
     ](wrapper, tensor.shape_coord(), ctx)
 

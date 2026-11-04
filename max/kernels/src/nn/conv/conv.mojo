@@ -4562,7 +4562,7 @@ def _conv_miopen[
             )
             filter_frsc_ptr.unsafe_store(out_idx, val)
 
-        elementwise[1, target="gpu"](
+        elementwise[1](
             transpose_fcrs_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
         filter_shape[0] = UInt64(F_dim)
@@ -4597,7 +4597,7 @@ def _conv_miopen[
             )
             filter_frsc_ptr.unsafe_store(out_idx, val)
 
-        elementwise[1, target="gpu"](
+        elementwise[1](
             transpose_rscf_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
 
@@ -4642,7 +4642,7 @@ def _conv_miopen[
             )
             filter_frsc_ptr.unsafe_store(out_idx, val)
 
-        elementwise[1, target="gpu"](
+        elementwise[1](
             transpose_qrscf_to_fqrsc, (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
         )
 
@@ -4898,10 +4898,7 @@ def _conv_miopen[
                 output_tmp.load[width=_width](coords),
             )
 
-        elementwise[
-            simd_width_of[output_type, target=ctx.target](),
-            target="gpu",
-        ](
+        elementwise[simd_width_of[output_type, target=ctx.target](),](
             miopen_epilogue,
             output.layout.shape_coord(),
             ctx,
@@ -4995,7 +4992,7 @@ def _conv_compute_in_place[
             coords, compute_fn(coords, vec)
         )
 
-    elementwise[simd_width_of[output_type](), target="gpu"](
+    elementwise[simd_width_of[output_type]()](
         apply, output.layout.shape_coord(), ctx
     )
 
@@ -5697,7 +5694,7 @@ def conv_gpu[
                     ](coords)
                     epilogue_fn(coords, vec)
 
-                elementwise[simd_width_of[output_type](), target="gpu"](
+                elementwise[simd_width_of[output_type]()](
                     epilogue_wrapper,
                     output.layout.shape_coord(),
                     ctx,

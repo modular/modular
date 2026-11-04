@@ -43,7 +43,6 @@ def test_trace_description_elementwise(ctx: DeviceContext) raises:
     elementwise[
         simd_width=simd_width_of[DType.float32](),
         _trace_description="my_function_with_some_name",
-        target="gpu",
     ](func, Coord(len), ctx)
 
 

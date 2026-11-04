@@ -134,7 +134,7 @@ def run_elementwise[
                 ),
             )
 
-        elementwise[pack_size, target="gpu"](
+        elementwise[pack_size](
             func,
             Coord(dims),
             ctx,

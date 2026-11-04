@@ -36,8 +36,6 @@ from std.utils.coord import Coord
 def apply_penalties_to_logits[
     logit_type: DType,
     penalty_type: DType,
-    //,
-    target: StaticString,
 ](
     logits: TileTensor[mut=True, logit_type, ...],
     compressed_frequency_data: TileTensor[mut=False, .int32, ...],
@@ -59,7 +57,6 @@ def apply_penalties_to_logits[
     Parameters:
         logit_type: Element type of the `logits` tensor (inferred).
         penalty_type: Element type of the per-batch penalty tensors (inferred).
-        target: Target device to dispatch the elementwise kernel to.
 
     Args:
         logits: 2D logits tensor of shape `[batch, vocab]` updated in place
@@ -148,7 +145,6 @@ def apply_penalties_to_logits[
     var dispatch_shape = Coord(Int(compressed_frequency_data.dim[0]()))
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="apply_penalties_to_logits",
     ](apply_penalties_fn, dispatch_shape, ctx)
 
@@ -156,8 +152,6 @@ def apply_penalties_to_logits[
 def apply_masked_penalties_to_logits[
     logit_type: DType,
     penalty_type: DType,
-    //,
-    target: StaticString,
 ](
     logits: TileTensor[mut=True, logit_type, ...],
     packed: TileTensor[mut=False, .int32, ...],
@@ -178,7 +172,6 @@ def apply_masked_penalties_to_logits[
     Parameters:
         logit_type: Element type of `logits` (inferred).
         penalty_type: Element type of the per-row penalty tensors (inferred).
-        target: Target device to dispatch the elementwise kernel to.
 
     Args:
         logits: Masked logits, shape `[rows, vocab]`, updated in place.
@@ -235,7 +228,6 @@ def apply_masked_penalties_to_logits[
     var dispatch_shape = Coord(Int(compressed_frequency_data.dim[0]()))
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="apply_masked_penalties_to_logits",
     ](apply_masked_penalties_fn, dispatch_shape, ctx)
 
@@ -483,6 +475,5 @@ def update_frequency_data[
         var dispatch_shape = Coord(new_tokens.num_elements())
         elementwise[
             simd_width=1,
-            target=target,
             _trace_description="update_frequency_data",
         ](update_frequency_data_fn, dispatch_shape, ctx)

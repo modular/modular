@@ -214,7 +214,7 @@ def run_bmm_and_check_result[
         )
 
     comptime if lambda_fn:
-        elementwise[pack_size, target="gpu"](
+        elementwise[pack_size](
             func,
             (b, m, n),
             ctx,

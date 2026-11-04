@@ -370,9 +370,7 @@ def resize_nearest_neighbor[
 
                     output.store[alignment=alignment](out_coords, values)
 
-                elementwise[width, target=target](
-                    nn_shift, output.layout.shape_coord(), ctx
-                )
+                elementwise[width](nn_shift, output.layout.shape_coord(), ctx)
             else:
 
                 def nn_div[
@@ -391,9 +389,7 @@ def resize_nearest_neighbor[
 
                     output.store[alignment=alignment](out_coords, values)
 
-                elementwise[width, target=target](
-                    nn_div, output.layout.shape_coord(), ctx
-                )
+                elementwise[width](nn_div, output.layout.shape_coord(), ctx)
             return
 
     @inline(.always)
@@ -467,9 +463,7 @@ def resize_nearest_neighbor[
     comptime width = (
         16 // size_of[dtype]() if is_gpu[target]() else simd_width_of[dtype]()
     )
-    elementwise[width, target=target](
-        nn_interpolate, output.layout.shape_coord(), ctx
-    )
+    elementwise[width](nn_interpolate, output.layout.shape_coord(), ctx)
 
 
 @inline(.always)
@@ -732,7 +726,7 @@ def resize_linear_gpu[
         def copy[simd_width: Int, alignment: Int = 1](coords: Coord) {var}:
             output.store(coords, input.load[width=1](coords))
 
-        elementwise[1, target="gpu"](copy, output.layout.shape_coord(), ctx)
+        elementwise[1](copy, output.layout.shape_coord(), ctx)
         return
 
     var scratch = List[DeviceBuffer[dtype]]()
@@ -770,9 +764,7 @@ def resize_linear_gpu[
                 out_buf,
             )
 
-        elementwise[1, target="gpu"](
-            interpolate, out_buf.layout.shape_coord(), ctx
-        )
+        elementwise[1](interpolate, out_buf.layout.shape_coord(), ctx)
 
         in_shape = out_shape
         in_ptr = out_ptr

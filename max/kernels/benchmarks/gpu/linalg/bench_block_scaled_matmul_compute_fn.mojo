@@ -202,7 +202,7 @@ def _run_shape[
                     idx, add2[c_type, width, alignment=alignment](idx, v)
                 )
 
-        elementwise[simd_size, target="gpu"](apply, (m, N), c)
+        elementwise[simd_size](apply, (m, N), c)
 
     plain(ctx)
     closure(ctx)

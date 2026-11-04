@@ -1833,7 +1833,7 @@ def conv_transposed_gpu[
         var vec = output_tmp.load[width=_width, alignment=align](coords)
         elementwise_epilogue(coords, vec)
 
-    elementwise[simd_width_of[output_type](), target="gpu"](
+    elementwise[simd_width_of[output_type]()](
         epilogue_wrapper, output_layout.shape_coord(), ctx
     )
 

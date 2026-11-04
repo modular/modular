@@ -2929,7 +2929,6 @@ def block_scaled_matmul_with_epilogue[
             )
             elementwise[
                 simd_size,
-                target="gpu",
                 _trace_description="elementwise_block_scaled_matmul_epilogue",
             ](value_epilogue_wrapper, (m, n), ctx)
         else:

@@ -546,6 +546,5 @@ def fused_qk_rope_ragged[
 
     elementwise[
         simd_width=kernel_simd_width,
-        target=target,
         _trace_description="fused_qk_rope_ragged",
     ](rope_fn, launch_shape, context)

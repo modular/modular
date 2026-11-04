@@ -210,7 +210,6 @@ def _tile_cpu[
 def _tile_gpu[
     dtype: DType,
     type_repeats: DType,
-    target: StaticString,
 ](
     input: TileTensor[dtype, address_space=.GENERIC, ...],
     repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
@@ -300,19 +299,16 @@ def _tile_gpu[
             if width == full_width:
                 elementwise[
                     simd_width=full_width,
-                    target=target,
                     _trace_description="tile",
                 ](copy_row, output.layout.shape_coord(), ctx)
             else:
                 elementwise[
                     simd_width=1,
-                    target=target,
                     _trace_description="tile",
                 ](copy_row, output.layout.shape_coord(), ctx)
         else:
             elementwise[
                 simd_width=1,
-                target=target,
                 _trace_description="tile",
             ](copy_row, output.layout.shape_coord(), ctx)
     else:
@@ -339,7 +335,6 @@ def _tile_gpu[
 
         elementwise[
             simd_width=1,
-            target=target,
             _trace_description="tile",
         ](copy_element, output.layout.shape_coord(), ctx)
 
@@ -371,7 +366,7 @@ def tile[
     comptime if is_cpu[target]():
         _tile_cpu(input, repeats, output)
     else:
-        _tile_gpu[dtype, type_repeats, target](input, repeats, output, ctx)
+        _tile_gpu[dtype, type_repeats](input, repeats, output, ctx)
 
 
 @inline(.always)

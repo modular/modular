@@ -2316,11 +2316,12 @@ def foreach[
 
     elementwise[
         simd_width=simd_width,
-        target=target,
         _trace_description=_trace_name,
     ](wrapper, tensor.shape_coord(), ctx)
 
 
+# TODO(MSTDL-3356): Remove the dead `target` parameter. The graph compiler
+# lowers `mogg.call.foreach` to this function and must stop passing it first.
 @register_internal("mogg.call.foreach")
 def _foreach[
     Lambda: ImplicitlyCopyable
@@ -2352,7 +2353,6 @@ def _foreach[
     """
     elementwise[
         simd_width=simd_width,
-        target=target,
         _trace_description=_trace_name,
     ](lambda_, shape, ctx)
 
@@ -3079,7 +3079,6 @@ def foreach_out_func[
 
     elementwise[
         simd_width,
-        target=target,
         _trace_description=_trace_name,
     ](out_func_shim, tensor.shape_coord(), ctx)
 

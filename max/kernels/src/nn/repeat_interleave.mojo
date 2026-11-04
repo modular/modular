@@ -290,7 +290,6 @@ def _repeat_interleave_emit_kernel[
 def _repeat_interleave_gpu[
     dtype: DType,
     type_repeats: DType,
-    target: StaticString,
 ](
     input: TileTensor[dtype, ...],
     repeats: TileTensor[type_repeats, ...],
@@ -363,7 +362,7 @@ def _repeat_interleave_gpu[
                 Coord(output_index), input_value
             )
 
-        elementwise[simd_width_of[output.dtype](), target=target](
+        elementwise[simd_width_of[output.dtype]()](
             scalar_func, collapsed_output.layout.shape_coord(), ctx
         )
         return
@@ -460,7 +459,7 @@ def repeat_interleave[
     comptime if is_cpu[target]():
         _repeat_interleave_cpu(input, repeats, axis, output, ctx)
     else:
-        _repeat_interleave_gpu[dtype, type_repeats, target](
+        _repeat_interleave_gpu[dtype, type_repeats](
             input, repeats, axis, output, ctx
         )
 

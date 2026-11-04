@@ -309,7 +309,6 @@ struct Range:
 
         elementwise[
             get_kernel_simd_width[dtype, target](),
-            target=target,
             _trace_description=_trace_name,
         ](body, output.shape().flatten(), ctx)
 
@@ -423,7 +422,6 @@ struct NanCheckRaiseOp:
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString = "",
         label: StaticString = "",
         type_str: StaticString = "",
@@ -3560,7 +3558,7 @@ struct Struct_sampler_apply_penalties:
         comptime assert is_valid_target[target](), "not a valid target"
         comptime penalty_type = type_of(frequency_penalty).dtype
 
-        apply_penalties_to_logits[target=target](
+        apply_penalties_to_logits(
             logits.to_tile_tensor(),
             compressed_frequency_data.to_tile_tensor[.int32](),
             frequency_offsets.to_tile_tensor[.uint32](),
@@ -3622,7 +3620,7 @@ struct Struct_sampler_apply_packed_bitmask_with_penalties:
             fill_value,
             ctx,
         )
-        apply_masked_penalties_to_logits[target=target](
+        apply_masked_penalties_to_logits(
             output.to_tile_tensor[dtype](),
             packed.to_tile_tensor[.int32](),
             compressed_frequency_data.to_tile_tensor[.int32](),
@@ -3725,9 +3723,7 @@ struct EaglePrefillShiftTokens:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         tokens: Some[Input & Tensor],
         offsets: Some[Input & Tensor],
@@ -3742,7 +3738,7 @@ struct EaglePrefillShiftTokens:
         comptime assert type_of(tokens).rank == type_of(output).rank
         comptime assert type_of(offsets).rank == 1
         comptime assert type_of(shift_next_tokens).rank == 1
-        eagle_prefill_shift_tokens[target=target](
+        eagle_prefill_shift_tokens(
             output.to_tile_tensor(),
             tokens.to_tile_tensor[dtype](),
             offsets.to_tile_tensor[.uint32](),
@@ -6304,9 +6300,7 @@ struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         dst: Some[MutableInput & Tensor],
         src: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -6372,9 +6366,7 @@ struct LaunchHostFunc:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         # A mutable input buffer prevents the op from being DCE'd (see
         # `mo.sleep` above; tracked in GEX-3080).
         payload: Some[MutableInput & Tensor],
@@ -6419,9 +6411,7 @@ struct WaitHostValue:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         # A `MutableInput` payload mirrors `mo.launch_host_func` so this op is
         # not DCE'd. Both the CompletionFlag pointer and the expected
         # value encode into 64-bit elements.
@@ -6458,9 +6448,7 @@ struct WaitHostValueWithDep:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         payload: Some[MutableInput & Tensor],
         # `dep` is intentionally unused: it exists only to register a
         # mutation on the buffer so downstream consumers of the same

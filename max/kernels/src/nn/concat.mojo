@@ -1159,11 +1159,11 @@ def _concat_gpu_elementwise[
     # dimension, so all elements belong to the same input and we can safely
     # use vectorized loads/stores (float4 = 128-bit transactions).
     comptime if axis != output.rank - 1:
-        elementwise[4, target="gpu", _trace_description="concat"](
+        elementwise[4, _trace_description="concat"](
             per_output_elem, output.layout.shape_coord(), ctx
         )
     else:
-        elementwise[1, target="gpu", _trace_description="concat"](
+        elementwise[1, _trace_description="concat"](
             per_output_elem, output.layout.shape_coord(), ctx
         )
 
@@ -1555,19 +1555,16 @@ def _fused_concat_gpu_elementwise[
         if _vec_width > 1 and inner_size % _vec_width == 0:
             elementwise[
                 _vec_width,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
         elif inner_size % 4 == 0:
             elementwise[
                 4,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
         else:
             elementwise[
                 1,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
     else:
@@ -1582,13 +1579,11 @@ def _fused_concat_gpu_elementwise[
         if use_simd_width:
             elementwise[
                 simd_width,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
         else:
             elementwise[
                 1,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
 

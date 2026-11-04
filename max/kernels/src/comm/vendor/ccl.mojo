@@ -493,7 +493,6 @@ def allreduce[
 
     elementwise[
         simd_size,
-        target="gpu",
         _trace_description="ccl_epilogue",
     ](epilogue_wrapper, Coord(count), ctx)
     # The free is stream-ordered; keep `scratch` until the epilogue is queued.

@@ -112,4 +112,4 @@ def random_normal[
         var value = four[within_thread].cast[dtype]()
         output_fn[width=1](idx, SIMD[dtype, 1](value))
 
-    elementwise[simd_width=1, target=target](generate, shape, ctx)
+    elementwise[simd_width=1](generate, shape, ctx)

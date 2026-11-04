@@ -2522,7 +2522,6 @@ def blockwise_scaled_fp8_with_epilogue[
                 ](c, a, b, a_scales, b_scales, ctx)
             elementwise[
                 simd_size,
-                target="gpu",
                 _trace_description="elementwise_blockwise_scaled_fp8_epilogue",
             ](value_epilogue_wrapper, Coord(m, n), ctx)
         else:

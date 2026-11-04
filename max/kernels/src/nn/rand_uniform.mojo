@@ -78,7 +78,7 @@ def random_uniform[
 
         output_fn[width=width](idx, values.cast[dtype]().slice[width]())
 
-    elementwise[simd_width=4, target=target](generate, shape, ctx)
+    elementwise[simd_width=4](generate, shape, ctx)
 
 
 def keyed_uniform[
@@ -125,4 +125,4 @@ def keyed_uniform[
         var generator = Random(seed=rebind[UInt64](seed.load((row,))))
         output.store((row,), generator.step_uniform()[0])
 
-    elementwise[simd_width=1, target=target](draw, (rows,), ctx)
+    elementwise[simd_width=1](draw, (rows,), ctx)
