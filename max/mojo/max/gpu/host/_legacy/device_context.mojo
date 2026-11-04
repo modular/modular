@@ -301,32 +301,33 @@ def _raise_checked_impl(
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
 
 
-# Checks that the given `dim` has only positive integers in them.
-def _check_dim[
+# Raises unless every component of `dim` is in `[1, Int32.MAX]`: drivers take
+# launch dims as 32-bit values, so a larger one would be truncated.
+def _check_dim_in_range[
     func_name_for_msg: StringLiteral, dim_name_for_msg: StringLiteral
 ](dim: Dim, *, location: SourceLocation) raises:
-    if dim.x() <= 0:
+    if dim.x() <= 0 or dim.x() > Int(Int32.MAX):
         comptime msg = String(
             func_name_for_msg,
             ": Dim value ",
             dim_name_for_msg,
-            ".x must be a positive number.",
+            ".x must be in [1, Int32.MAX].",
         )
         raise Error(location.prefix(msg))
-    if dim.y() <= 0:
+    if dim.y() <= 0 or dim.y() > Int(Int32.MAX):
         comptime msg = String(
             func_name_for_msg,
             ": Dim value ",
             dim_name_for_msg,
-            ".y must be a positive number.",
+            ".y must be in [1, Int32.MAX].",
         )
         raise Error(location.prefix(msg))
-    if dim.z() <= 0:
+    if dim.z() <= 0 or dim.z() > Int(Int32.MAX):
         comptime msg = String(
             func_name_for_msg,
             ": Dim value ",
             dim_name_for_msg,
-            ".z must be a positive number.",
+            ".z must be in [1, Int32.MAX].",
         )
         raise Error(location.prefix(msg))
 
@@ -2688,10 +2689,10 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceStream.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceStream.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -5281,10 +5282,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -5369,10 +5370,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location.or_else(call_location()),
             )
         else:
-            _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
-            _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
                 block_dim, location=call_location()
             )
 
@@ -5501,10 +5502,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
         comptime plugin = MaxPluginForTarget[Self.target]
@@ -5682,10 +5683,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -5774,10 +5775,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 

@@ -44,7 +44,7 @@ from .device_context import (
     DeviceExternalFunction,
     DeviceFunction,
     HostBuffer,
-    _check_dim,
+    _check_dim_in_range,
     _checked,
     _CString,
     _DeviceBufferPtr,
@@ -1458,10 +1458,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Raises:
             If adding the node fails.
         """
-        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
         dependencies = self._merge_implicit(dependencies^)
@@ -1531,10 +1531,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Raises:
             If adding the node fails.
         """
-        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
         dependencies = self._merge_implicit(dependencies^)
@@ -1648,10 +1648,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -1747,10 +1747,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Raises:
             If compiling the closure or adding the node fails.
         """
-        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
         dependencies = self._merge_implicit(dependencies^)
@@ -1851,10 +1851,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Raises:
             If compiling the closure or adding the node fails.
         """
-        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
+        _check_dim_in_range["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
         dependencies = self._merge_implicit(dependencies^)
