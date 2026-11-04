@@ -1480,6 +1480,8 @@ def _rms_norm_impl[
     gamma: TileTensor[mut=False, dtype, ...],
     ctx: DeviceContext,
 ) raises:
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
 
@@ -1925,6 +1927,7 @@ def apply_qk_rms_norm[
         k_cols: Number of columns of K.
         ctx: Device context (ignored on CPU).
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -2864,6 +2867,8 @@ def group_norm[
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert output.rank == rank, "output.rank must be the same as rank"
     comptime assert (
         rank > 2 and rank < 5

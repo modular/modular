@@ -363,6 +363,8 @@ def tile[
     ctx: DeviceContext,
 ) raises:
     """Tiles `input` into `output` on CPU or GPU."""
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime if is_cpu[target]():
         _tile_cpu(input, repeats, output)
     else:

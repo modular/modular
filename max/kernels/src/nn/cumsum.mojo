@@ -1471,6 +1471,8 @@ def cumsum[
     Raises:
         Error: If the GPU kernel launch fails.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert (
         input.rank == output.rank
     ), "input and output should have the same rank."

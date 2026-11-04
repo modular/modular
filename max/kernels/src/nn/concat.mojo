@@ -834,6 +834,7 @@ def _concat_impl[
     context: DeviceContext,
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"
+    context._comptime_assert_matches_target_is_cpu[target]()
 
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(context)
@@ -1942,6 +1943,7 @@ def fused_concat[
         ctx: Device context used to schedule the work.
     """
     comptime assert is_valid_target[target](), "not a valid target"
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(ctx)

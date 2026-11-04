@@ -355,6 +355,8 @@ def gather_sum[
         ctx: Device context for kernel execution; the compiled builtin
             always supplies the placement device's context.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert input.flat_rank == 2
     comptime assert indices.flat_rank == 2
 

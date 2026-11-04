@@ -425,6 +425,8 @@ def _dual_elementwise_impl[
     shape_1: Coord,
     context: DeviceContext,
 ) raises:
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     @inline(.always)
     def description_fn() {imm} -> String:
         var s0 = trace_arg("shape_0", shape_0)
