@@ -216,6 +216,7 @@ modular_py_test(
     srcs = ["test_export.py"],
     # The architectures ship the FormatSpec documents the test finds.
     ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/beam_modulev3",
         "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/glm5_1",
@@ -237,6 +238,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/beam_modulev3",
         "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/glm5_1",

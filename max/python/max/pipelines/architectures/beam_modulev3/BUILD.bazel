@@ -5,6 +5,7 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "beam_modulev3",
     srcs = glob(["**/*.py"]),
+    data = ["formatspec.json"],
     deps = [
         requirement("transformers"),
         requirement("typing-extensions"),
@@ -25,4 +26,9 @@ modular_py_library(
         "//max/python/max/pipelines/weights",
         "//max/python/max/support",
     ],
+)
+
+exports_files(
+    ["formatspec.json"],
+    visibility = ["//formatspec:__subpackages__"],
 )

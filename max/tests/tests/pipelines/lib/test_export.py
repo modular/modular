@@ -341,6 +341,7 @@ def test_checkpoint_format_spec_is_picked_per_checkpoint() -> None:
 @pytest.mark.parametrize(
     "architecture",
     [
+        "beam_modulev3",
         "deepseekV41",
         "gemma4",
         "glm5_1",

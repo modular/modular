@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Registers Beam (``BeamForCausalLM``) on ModuleV3."""
 
+from pathlib import Path
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
@@ -43,4 +45,5 @@ beam_modulev3_arch = SupportedArchitecture(
     config=BeamConfig,
     memory_planner=BeamMemoryPlanner,
     multi_gpu_supported=True,
+    format_spec=Path(__file__).parent / "formatspec.json",
 )
