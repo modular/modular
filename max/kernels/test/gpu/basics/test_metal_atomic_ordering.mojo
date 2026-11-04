@@ -38,7 +38,6 @@ def _kernel[origin: MutOrigin](counters: MutPointer[Int32, origin]):
     )
 
     var p = counters.unsafe_offset(4)
-    # Plain load: Metal's atomic load lowering is untested.
     var expected = p[]
     while not Atomic[Int32].compare_exchange[
         success_ordering=Ordering.ACQUIRE_RELEASE,

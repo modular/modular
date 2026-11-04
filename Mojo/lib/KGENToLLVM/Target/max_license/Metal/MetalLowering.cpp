@@ -638,7 +638,8 @@ LogicalResult checkAtomicWidth(mlir::Operation *op, KGENDType dtype,
   return success();
 }
 
-// Undocumented; values taken from Apple's `metal` compiler output.
+// Apple's `metal` compiler's `__METAL_MEMORY_ORDER_*` values, numbered like C++
+// `std::memory_order`; 1 (`consume`) has no MSL spelling.
 enum class AIRMemoryOrder : int32_t {
   Relaxed = 0,
   Acquire = 2,
@@ -665,8 +666,8 @@ AIRMemoryOrder toAIRMemoryOrder(POP::AtomicOrdering ordering) {
   llvm_unreachable("unknown atomic ordering");
 }
 
-// metal4_0, not 4.1: the backend honors orders in this pre-4.1 form (M5, macOS
-// 27). Load/store skip this gate; their seq_cst default predates it.
+// Gated on `metal4_0`, not 4.1: the backend already honors these orders there.
+// Load/store are not gated; their seq_cst default predates Metal 4.
 FailureOr<AIRMemoryOrder> mapAtomicOrdering(mlir::Operation *op,
                                             POP::AtomicOrdering ordering,
                                             TargetInfoAttr target) {
@@ -774,13 +775,9 @@ public:
 
     funcName += '.' + opStr + '.' + mangleType(types[0], dtype);
 
-    Value orderInt = LLVM::ConstantOp::create(
-        rewriter, op.getLoc(),
-        rewriter.getIntegerAttr(rewriter.getI32Type(),
-                                static_cast<int32_t>(*order)));
-    Value twoInt = LLVM::ConstantOp::create(
-        rewriter, op.getLoc(),
-        rewriter.getIntegerAttr(rewriter.getI32Type(), 2));
+    Value orderInt = createConstant<int32_t>(rewriter, op.getLoc(),
+                                             static_cast<int32_t>(*order));
+    Value twoInt = createConstant<int32_t>(rewriter, op.getLoc(), 2);
     Value trueVal = LLVM::ConstantOp::create(
         rewriter, op.getLoc(),
         rewriter.getIntegerAttr(rewriter.getI1Type(), 1));
@@ -901,14 +898,11 @@ public:
         LLVM::LLVMPointerType::get(rewriter.getContext()), valueType, one);
     LLVM::StoreOp::create(rewriter, op.getLoc(), adaptor.getCmp(), expectedPtr);
 
-    auto i32Const = [&](int32_t value) -> Value {
-      return LLVM::ConstantOp::create(
-          rewriter, op.getLoc(),
-          rewriter.getIntegerAttr(rewriter.getI32Type(), value));
-    };
-    Value successOrderInt = i32Const(static_cast<int32_t>(*successOrder));
-    Value failureOrderInt = i32Const(static_cast<int32_t>(*failureOrder));
-    Value scopeInt = i32Const(scope);
+    Value successOrderInt = createConstant<int32_t>(
+        rewriter, op.getLoc(), static_cast<int32_t>(*successOrder));
+    Value failureOrderInt = createConstant<int32_t>(
+        rewriter, op.getLoc(), static_cast<int32_t>(*failureOrder));
+    Value scopeInt = createConstant<int32_t>(rewriter, op.getLoc(), scope);
     Value trueVal = LLVM::ConstantOp::create(
         rewriter, op.getLoc(),
         rewriter.getIntegerAttr(rewriter.getI1Type(), 1));
@@ -1043,15 +1037,13 @@ public:
     if (failed(threadScope))
       return failure();
 
-    auto i32Const = [&](int32_t value) {
-      return LLVM::ConstantOp::create(
-          rewriter, op.getLoc(),
-          rewriter.getIntegerAttr(rewriter.getI32Type(), value));
-    };
     SmallVector<Value> operands = {
-        i32Const(static_cast<int32_t>(AIRFenceMemFlags::All)),
-        i32Const(static_cast<int32_t>(*order)),
-        i32Const(static_cast<int32_t>(*threadScope))};
+        createConstant<int32_t>(rewriter, op.getLoc(),
+                                static_cast<int32_t>(AIRFenceMemFlags::All)),
+        createConstant<int32_t>(rewriter, op.getLoc(),
+                                static_cast<int32_t>(*order)),
+        createConstant<int32_t>(rewriter, op.getLoc(),
+                                static_cast<int32_t>(*threadScope))};
 
     AIRIntrinsicName airFunctionName("air.atomic.fence",
                                      /*requiresMangling=*/false);

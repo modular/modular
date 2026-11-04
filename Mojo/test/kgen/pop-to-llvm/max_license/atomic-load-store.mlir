@@ -1,7 +1,6 @@
 // RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
-// Atomic load/store skip the RMW/cmpxchg metal4_0 gate: kernels rely on their
-// seq_cst default on metal3_2 targets.
+// Load/store take seq_cst on metal3_2; kernels rely on that default.
 module attributes {M.target_info = #M.target<triple = "air64-unknown-unknown", arch = "", features = "+metal3_2,+air2_7_0", data_layout = "">} {
   // CHECK-LABEL: @load_seq_cst
   kgen.func @load_seq_cst(%ptr: !kgen.pointer<scalar<si32>>,
