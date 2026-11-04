@@ -845,10 +845,16 @@ def run_v2_v3_comparison(
     cos_dist_threshold: float | None = None,
     kl_div_threshold: float | None = None,
     timeout: int | None = None,
+    config_params_override: Mapping[str, object] | None = None,
 ) -> V2V3ComparisonResult:
-    """Run both V2 and V3, verify each against torch, and compare them directly."""
+    """Run both V2 and V3, verify each against torch, and compare them directly.
+
+    Both arms take the pipeline's ``config_params_override``, each with its
+    own ``prefer_module_v3``.
+    """
 
     fssafe_pipeline = pipeline.replace("/", "_")
+    overrides = dict(config_params_override or {})
 
     # 1. Get torch baseline (shared between V2 and V3).
     if pregenerated_torch_goldens is not None:
@@ -902,7 +908,7 @@ def run_v2_v3_comparison(
         output_path=v2_golden_path,
         reference=torch_results,
         timeout=timeout,
-        config_params_override={"prefer_module_v3": False},
+        config_params_override={**overrides, "prefer_module_v3": False},
     )
 
     print("\n--- Verifying V2 vs Torch ---", flush=True)
@@ -944,7 +950,7 @@ def run_v2_v3_comparison(
         output_path=v3_golden_path,
         reference=torch_results,
         timeout=timeout,
-        config_params_override={"prefer_module_v3": True},
+        config_params_override={**overrides, "prefer_module_v3": True},
     )
 
     print("\n--- Verifying V3 vs Torch ---", flush=True)
@@ -1153,6 +1159,7 @@ def run_compare_v2_v3(
         cos_dist_threshold=config.cos_dist_threshold,
         kl_div_threshold=config.kl_div_threshold,
         timeout=config.timeout,
+        config_params_override=config.config_params_override,
     )
 
 

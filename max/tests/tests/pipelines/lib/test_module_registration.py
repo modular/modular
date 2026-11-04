@@ -74,6 +74,7 @@ from max.pipelines.lib.registration_runtime import (
     ExpertParallelDeploymentConfig,
     ExpertParallelInputs,
     ModuleRuntime,
+    batch_context_length_types,
     ep_input_tree,
     prepare_weights,
     role_weights,
@@ -645,6 +646,37 @@ def test_the_batch_processor_fills_the_optional_inputs_its_graph_takes() -> (
     assert [b.to_numpy()[0] for b in inputs.batch_context_lengths] == [12, 0]
     assert inputs.ep_inputs == (ep_buffer,)
     assert inputs.buffers[-3:] == (*inputs.batch_context_lengths, ep_buffer)
+
+
+def test_the_batch_processor_fills_each_devices_context_length() -> None:
+    lengths = batch_context_length_types(
+        2, devices_per_replica=2, dtype=DType.uint32
+    )
+    assert (
+        lengths == (TensorType(DType.uint32, [1], device=DeviceRef.CPU()),) * 4
+    )
+    processor = _batch_processor(2, page_size=4)
+    processor.bind_input_tree(
+        decoder_input_types(
+            NonCallableMock(get_symbolic_inputs=lambda: (X,)),
+            DeviceRef.CPU(),
+            data_parallel_degree=2,
+            batch_context_lengths=lengths,
+        )
+    )
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1, 2, position=5), _context(3, position=1)], [_context(4)]],
+        kv_cache_inputs=(NonCallableMock(spec=KVCacheInputsPerDevice),),
+    )
+    assert inputs.batch_context_lengths is not None
+    assert [b.dtype for b in inputs.batch_context_lengths] == [DType.uint32] * 4
+    # Each replica's length, on each of its two devices.
+    assert [b.to_numpy()[0] for b in inputs.batch_context_lengths] == [
+        12,
+        12,
+        0,
+        0,
+    ]
 
 
 def test_the_batch_processor_runs_an_empty_batch() -> None:
@@ -1454,6 +1486,54 @@ def test_only_the_first_stage_encodes_images() -> None:
     model._batch_processor.bind_vision_encoder.assert_not_called()
 
 
+class SignalLayoutDecoder(PlainDecoder):
+    """Takes the signal buffers after the batch, as a graph-API graph does."""
+
+    input_layout: ClassVar[tuple[str, ...]] = (
+        "tokens",
+        "input_row_offsets",
+        "return_n_logits",
+        "signals",
+        "kv",
+    )
+
+
+def test_a_decoder_places_its_signal_buffers_by_its_input_layout() -> None:
+    spec = _staged_model(SignalLayoutDecoder, None).graph_specs(StagedConfig())[
+        GraphRole.DECODER
+    ]
+    assert spec.signal_buffer_index == 3
+    plain = _staged_model(PlainDecoder, None).graph_specs(StagedConfig())[
+        GraphRole.DECODER
+    ]
+    assert plain.signal_buffer_index is None
+
+
+@dataclass(frozen=True)
+class ContextLengthConfig(StagedConfig, DeploymentConfig):
+    takes_batch_context_lengths: ClassVar[bool] = True
+
+
+class DeviceContextLengthDecoder(PlainDecoder):
+    device_context_length_dtype: ClassVar[DType] = DType.uint32
+
+
+def test_a_decoder_can_take_a_context_length_per_device() -> None:
+    def lengths(decoder: type[Module[..., Any]]) -> list[object]:
+        spec = _staged_model(decoder, None).graph_specs(ContextLengthConfig())[
+            GraphRole.DECODER
+        ]
+        (inputs,) = spec.input_types
+        assert isinstance(inputs, DecoderGraphInputs)
+        return list(inputs["batch_context_lengths"])
+
+    cpu = DeviceRef.CPU()
+    assert lengths(PlainDecoder) == [TensorType(DType.int32, [1], device=cpu)]
+    assert lengths(DeviceContextLengthDecoder) == [
+        TensorType(DType.uint32, [1], device=cpu)
+    ]
+
+
 def test_a_decoder_without_stages_refuses_one() -> None:
     stage = PipelineStage(0, 2, range(1))
     with pytest.raises(ValueError, match="doesn't build pipeline stages"):
@@ -1597,9 +1677,9 @@ class RuntimeRecordingConfig(ToyConfig, DeploymentConfig):
         return replace(self, runtime=runtime)
 
 
-def test_the_deployment_carries_the_planned_batch_size() -> None:
+def _deployed_model(config: RuntimeRecordingConfig) -> Any:
     cls = module_pipeline_model(
-        RuntimeRecordingConfig, ((GraphRole.DECODER, PlainDecoder),), None
+        type(config), ((GraphRole.DECODER, PlainDecoder),), None
     )
     model: Any = cls.__new__(cls)
     pipeline_config: Any = SimpleNamespace(
@@ -1611,17 +1691,36 @@ def test_the_deployment_carries_the_planned_batch_size() -> None:
         ),
     )
     model.pipeline_config = pipeline_config
-    model.arch_config = RuntimeRecordingConfig()
+    model.arch_config = config
     model.return_logits = ReturnLogits.LAST_TOKEN
     model.return_hidden_states = ReturnHiddenStates.NONE
     model.devices = [CPU()]
     model.max_batch_size = 7
     model.memory_plan = SimpleNamespace(planned_max_batch_total_tokens=64)
-    config = model._create_model_config({})
+    return model
+
+
+def test_the_deployment_carries_the_planned_batch_size() -> None:
+    config = _deployed_model(RuntimeRecordingConfig())._create_model_config({})
     assert isinstance(config, RuntimeRecordingConfig)
     assert config.runtime is not None
     assert config.runtime.max_batch_size == 7
     assert config.runtime.max_batch_total_tokens == 64
+
+
+@dataclass(frozen=True)
+class LayoutRecordingConfig(RuntimeRecordingConfig):
+    def export_records(self, runtime: ModuleRuntime) -> Mapping[str, object]:
+        return {"layout_record": {"replicas": runtime.data_parallel_degree}}
+
+
+def test_the_pipeline_model_publishes_what_the_deployment_records() -> None:
+    model = _deployed_model(LayoutRecordingConfig())
+    model._create_model_config({})
+    assert model.export_records == {"layout_record": {"replicas": 1}}
+    plain = _deployed_model(RuntimeRecordingConfig())
+    plain._create_model_config({})
+    assert plain.export_records == {}
 
 
 def test_bound_token_positions_follow_each_context() -> None:

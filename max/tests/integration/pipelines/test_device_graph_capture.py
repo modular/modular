@@ -298,6 +298,48 @@ def test_replay_guard_abort_reads_the_captured_value_before_refresh(
     assert not capture_model.model.replay_calls
 
 
+def test_replay_guard_names_the_inputs_after_placed_signal_buffers(
+    capture_model: CapturePipelineModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the signal buffers among the engine model's inputs, a replay
+    buffer's name is the engine input's past them, not the signal's."""
+    monkeypatch.setenv(_HOST_INPUT_GUARD_ENV, "abort")
+    model = capture_model.model
+    model.input_metadata = [
+        SimpleNamespace(name=name)
+        for name in (
+            "tokens",
+            "signals",
+            "input_row_offsets",
+            "return_n_logits",
+        )
+    ]
+    signal = Buffer.zeros((1,), dtype=DType.float32)
+    runner = ServeGraphCaptureRunner(
+        model=_compiled_callable([signal], 1, model),
+        kv_params=_mock_kv_params(),
+        warmup_model_inputs=MagicMock(),
+        max_cache_length_upper_bound=10,
+        max_batch_size=1,
+    )
+    key = _gk(num_partitions=1, q_max_seq_len=1)
+    runner._records[_bc(1, 1, 1)] = key
+    captured = MockModelInputs(
+        active_batch_size=1, eos_prob=0.0, return_n_logits=1
+    )
+    runner.graph_entries[key] = (
+        captured.buffers,
+        ModelOutputs(logits=model.output_buffer),
+    )
+    live = MockModelInputs(active_batch_size=1, eos_prob=0.0, return_n_logits=4)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"'return_n_logits' \(index 2\) changed since capture",
+    ):
+        runner.replay(model_inputs=live, batch_characteristics=_bc(1, 1, 1))
+
+
 def test_replay_guard_report_warns_once_and_keeps_replaying(
     capture_model: CapturePipelineModel,
     monkeypatch: pytest.MonkeyPatch,
@@ -542,10 +584,27 @@ def test_release_graph_reaches_the_engine_model_of_a_compiled_callable() -> (
     compiled.engine_model.release_captured_graph.assert_called_once()
 
 
-def test_replay_appends_the_signal_buffers_of_a_compiled_callable() -> None:
+def _compiled_callable(
+    signal_buffers: Sequence[Buffer],
+    signal_buffer_index: int | None,
+    engine_model: object | None = None,
+) -> MagicMock:
+    """A compiled callable that splices its signal buffers into its engine
+    model's inputs as the real one does."""
     compiled = MagicMock(spec=CompiledCallable)
+    compiled.signal_buffers = list(signal_buffers)
+    compiled.signal_buffer_index = signal_buffer_index
+    compiled.engine_inputs.side_effect = lambda buffers: (
+        CompiledCallable.engine_inputs(compiled, buffers)
+    )
+    if engine_model is not None:
+        compiled.engine_model = engine_model
+    return compiled
+
+
+def test_replay_appends_the_signal_buffers_of_a_compiled_callable() -> None:
     signal = Buffer.zeros((1,), dtype=DType.float32)
-    compiled.signal_buffers = [signal]
+    compiled = _compiled_callable([signal], None)
     runner = ServeGraphCaptureRunner(
         model=compiled,
         kv_params=_mock_kv_params(),
@@ -573,6 +632,45 @@ def test_replay_appends_the_signal_buffers_of_a_compiled_callable() -> None:
     assert verify_args[-1] is signal
     assert replay_args[-1] is signal
     assert len(replay_args) == 1 + len(inputs.buffers) + 1
+
+
+def test_capture_and_replay_place_the_signal_buffers_where_the_graph_takes_them() -> (
+    None
+):
+    signal = Buffer.zeros((1,), dtype=DType.float32)
+    compiled = _compiled_callable([signal], 1)
+    compiled.engine_model.capture.return_value = [signal]
+    inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
+
+    @contextmanager
+    def _warmup_ctx(
+        batch_size: int, batch_characteristics: BatchCharacteristics
+    ) -> Iterator[MockModelInputs]:
+        yield inputs
+
+    runner = ServeGraphCaptureRunner(
+        model=compiled,
+        kv_params=_mock_kv_params(probe_lengths=[1]),
+        warmup_model_inputs=_warmup_ctx,
+        max_cache_length_upper_bound=10,
+        max_batch_size=1,
+    )
+    runner.warmup_pre_ready()
+    runner.replay(
+        model_inputs=inputs,
+        batch_characteristics=_bc(1, 1, 1),
+        debug_verify_replay=True,
+    )
+
+    engine_model = compiled.engine_model
+    first, *rest = inputs.buffers
+    for call in (
+        engine_model.capture,
+        engine_model.debug_verify_replay,
+        engine_model.replay,
+    ):
+        # The packed graph key, then the inputs with the signal buffer second.
+        assert list(call.call_args.args[1:]) == [first, signal, *rest]
 
 
 @pytest.mark.parametrize(

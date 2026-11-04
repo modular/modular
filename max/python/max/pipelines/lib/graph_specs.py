@@ -116,6 +116,10 @@ class GraphSpec:
         is_device_graph: Whether to build a device graph.
         auto_cast: Whether a ModuleV3 graph casts a ``float32`` or
             ``bfloat16`` weight to the dtype its parameter declares.
+        signal_buffer_index: Where a ModuleV3 graph takes its signal
+            buffers among its inputs, to match an existing graph's calling
+            convention. ``None`` puts them after the last input, and only on
+            a graph that runs on several devices.
     """
 
     module: Module | ModuleV3[..., Any]
@@ -126,6 +130,7 @@ class GraphSpec:
     custom_extensions: Sequence[Path] = ()
     is_device_graph: bool = False
     auto_cast: bool = False
+    signal_buffer_index: int | None = None
 
     def trace(self, module: GraphModule | None = None) -> Graph:
         """Traces the graph, into ``module`` if given.
@@ -169,6 +174,7 @@ class GraphSpec:
             custom_extensions=self.custom_extensions,
             auto_cast=self.auto_cast,
             is_device_graph=self.is_device_graph,
+            signal_buffer_index=self.signal_buffer_index,
         )
 
 

@@ -22,7 +22,14 @@ the graph signature, batching and execution.
 A registered module class can also set:
 
 - ``graph_name``, the name its graph compiles under (:func:`graph_name`);
-- ``input_layout``, the role field names in a graph's existing input order;
+- ``input_layout``, the role field names in a graph's existing input order.
+  Naming ``signals`` places the allreduce signal buffers there, on one device
+  too, as the graph-API graph that keeps the layout takes them;
+- ``device_context_length_dtype``, when its graph takes
+  :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.batch_context_lengths`
+  as a graph-API graph does. Setting it changes both their count and their
+  dtype: one per device, each replica's on every device of the replica, of
+  that dtype, rather than one ``int32`` per replica;
 - ``lora_targets``, the projections it serves LoRA adapters on
   (:func:`lora_targets`);
 - ``supports_data_parallel``, when it runs one replica per device
@@ -74,6 +81,7 @@ from abc import ABCMeta
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import (
     Any,
     ClassVar,
@@ -422,6 +430,31 @@ def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
     return fields
 
 
+def _signal_buffer_index(
+    input_types: Mapping[str, object], input_layout: Sequence[str] | None
+) -> int | None:
+    """Returns where a ModuleV3 decoder's graph takes its signal buffers.
+
+    A decoder whose ``input_layout`` names ``signals`` takes them there:
+    after the graph inputs of every field before it, a distributed field
+    taking one input per device. Otherwise its compiled graph adds them after
+    the last input, and only on several devices.
+
+    Args:
+        input_types: The graph's input types, keyed by field.
+        input_layout: The decoder's ``input_layout``, if it declares one.
+    """
+    if input_layout is None or "signals" not in input_layout:
+        return None
+    before = input_layout[: list(input_layout).index("signals")]
+    return sum(
+        leaf.mesh.num_devices if isinstance(leaf, TensorLayout) else 1
+        for name in before
+        if name in input_types
+        for leaf in tree.leaves(input_types[name])
+    )
+
+
 def decoder_vision_input_types(
     mesh: DeviceMesh, dtype: DType, hidden_size: int
 ) -> VisionInputs[TensorLayout]:
@@ -562,14 +595,18 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
         """Binds the graph's inputs, and sizes the ones this fills."""
         super().bind_input_tree(input_tree)
         _, self._input_tree_def = tree.flatten(_decoder_fields(input_tree))
-        self._batch_context_lengths = (
-            BatchContextLengths(
-                self.runtime.data_parallel_degree,
+        # One per replica, or one per device of each replica, as declared.
+        lengths = tree.leaves(input_tree.get("batch_context_lengths", ()))
+        self._batch_context_lengths = None
+        if lengths:
+            assert isinstance(lengths[0], TensorType)
+            replicas = self.runtime.data_parallel_degree
+            self._batch_context_lengths = BatchContextLengths(
+                replicas,
                 self.runtime.pipeline_config.model.kv_cache.kv_cache_page_size,
+                devices_per_replica=len(lengths) // max(1, replicas),
+                dtype=lengths[0].dtype,
             )
-            if "batch_context_lengths" in input_tree
-            else None
-        )
 
     def bind_ep_comm_initializer(
         self, initializer: ExpertParallelExchange | None
@@ -980,6 +1017,10 @@ class ModuleV3DecoderPipelineModel(
     """The expert-parallel buffers the decoder takes, under expert
     parallelism."""
 
+    export_records: Mapping[str, object] = MappingProxyType({})
+    """What the completed config records for exporters, by name
+    (:meth:`~max.pipelines.lib.registration_runtime.DeploymentConfig.export_records`)."""
+
     _session: InferenceSession
     _runtime: ModuleRuntime
     _vision_module: Any = None
@@ -1076,7 +1117,9 @@ class ModuleV3DecoderPipelineModel(
         """Finalizes the config, then completes it with the deployment.
 
         The expert-parallel buffers initialize in between, since they depend
-        on the finalized config and the modules read their node ID.
+        on the finalized config and the modules read their node ID. What the
+        completed config records for exporters becomes
+        :attr:`export_records`.
 
         Raises:
             ValueError: If the deployment asks for expert parallelism and the
@@ -1112,7 +1155,8 @@ class ModuleV3DecoderPipelineModel(
             )
         self._runtime = runtime
         if isinstance(config, DeploymentConfig):
-            return config.apply_runtime(runtime)
+            config = config.apply_runtime(runtime)
+            self.export_records = config.export_records(runtime)
         return config
 
     def _decoder_ep_inputs(self, model_config: Any) -> object | None:
@@ -1121,6 +1165,32 @@ class ModuleV3DecoderPipelineModel(
             return None
         assert isinstance(model_config, ExpertParallelDeploymentConfig)
         return ep_input_tree(model_config, self._runtime.ep)
+
+    def _batch_context_length_types(
+        self, model_config: Any
+    ) -> tuple[TensorType, ...] | None:
+        """Returns the decoder's ``batch_context_lengths`` input types.
+
+        One ``int32`` per replica, or for a decoder that sets
+        ``device_context_length_dtype``, one of that dtype per device.
+        ``None`` when its config doesn't take them.
+        """
+        if not (
+            isinstance(model_config, DeploymentConfig)
+            and model_config.takes_batch_context_lengths
+        ):
+            return None
+        replicas = self._data_parallel_degree
+        dtype = getattr(
+            type(self).decoder_cls, "device_context_length_dtype", None
+        )
+        if dtype is None:
+            return batch_context_length_types(replicas)
+        return batch_context_length_types(
+            replicas,
+            devices_per_replica=len(self.devices) // max(1, replicas),
+            dtype=dtype,
+        )
 
     def _decoder_vision_inputs(
         self, model_config: Any
@@ -1247,6 +1317,7 @@ class ModuleV3DecoderPipelineModel(
             state_dict, model_config
         )
         lora_types: list[TensorType] = []
+        input_layout = getattr(decoder_cls, "input_layout", None)
         with F.lazy(), default_dtype(module_default_dtype):
             decoder = self._instantiate_module(model_config)
             if lora_manager is not None:
@@ -1269,11 +1340,8 @@ class ModuleV3DecoderPipelineModel(
                 if hasattr(decoder_cls, "token_position_dtype")
                 else None
             ),
-            batch_context_lengths=(
-                batch_context_length_types(self._data_parallel_degree)
-                if isinstance(model_config, DeploymentConfig)
-                and model_config.takes_batch_context_lengths
-                else None
+            batch_context_lengths=self._batch_context_length_types(
+                model_config
             ),
             ep=self._decoder_ep_inputs(model_config),
             lora=lora_types,
@@ -1284,7 +1352,7 @@ class ModuleV3DecoderPipelineModel(
                 else ()
             ),
             scratch=scratch.input_types if scratch is not None else (),
-            input_layout=getattr(decoder_cls, "input_layout", None),
+            input_layout=input_layout,
         )
         # A stage after the first takes the previous stage's return last.
         if boundary := stage_input_types(stage, ()):
@@ -1309,6 +1377,9 @@ class ModuleV3DecoderPipelineModel(
             graph_name(decoder_cls),
             (decoder_inputs,),
             weights=_cast_to_parameter_dtypes(graph, state_dict),
+            signal_buffer_index=_signal_buffer_index(
+                decoder_inputs, input_layout
+            ),
         )
         if stage is not None and not stage.is_last and stage.trace_only:
             raise_stage_traced(_returned_types(spec))

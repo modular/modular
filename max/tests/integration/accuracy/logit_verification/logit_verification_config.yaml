@@ -890,6 +890,7 @@ logit_verification_pipelines:
   # pipeline: cosine distance + KL divergence only. Needs the private arch, so
   # run via //max_private/minimax_m3:verify_minimax_m3
   # --pipeline=MiniMaxAI/MiniMax-M3-MXFP8. 8 GPUs (ep_size=8, dp=1).
+  # --compare-v2-v3 runs the Graph API model against the ModuleV3 one.
   MiniMaxAI/MiniMax-M3-MXFP8:
     pre_submit_agents: []
     post_submit_agents: []
@@ -900,6 +901,10 @@ logit_verification_pipelines:
     # The public driver cannot register this architecture; the wrapper pulls it
     # into the runfiles the generate_llm_logits child inherits.
     verify_target: //max_private/minimax_m3:verify_minimax_m3
+    # Registers the ModuleV3 MiniMax-M3 as `_ModuleV3` variants beside the
+    # Graph API one, which serves unless prefer_module_v3 is set.
+    config_params_override:
+      custom_architectures: ["minimax_m3_modulev3.variant"]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-ci-prod-artifact-bucket/artifacts/MiniMaxAI_MiniMax-M3-MXFP8_golden/1/f6c729e886f1750f1c569f5d68bfcd300f5e5eca24507047fd11830dadfd9cae/MiniMaxAI_MiniMax-M3-MXFP8_golden.tar.gz"
       json_file: "sglang_MiniMaxAI_MiniMax-M3-MXFP8_float8_e4m3fn_golden.json"

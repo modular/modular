@@ -210,20 +210,6 @@ def _release_graph_capture_outputs_to_borrowed(
     return outputs
 
 
-def _engine_model_and_signal_buffers(
-    model: Model | CompiledCallable[..., Any],
-) -> tuple[Model, list[Buffer]]:
-    """Returns the engine model to capture and the inputs appended to each call.
-
-    A :class:`~max.tensor.compilation.CompiledCallable` (ModuleV3) wraps
-    its engine model and appends its signal buffers to every call, so capture,
-    replay and verification must append them too.
-    """
-    if isinstance(model, CompiledCallable):
-        return model.engine_model, model.signal_buffers
-    return model, []
-
-
 def _pack_model_graph_key(key: AttnKeyInterface) -> int:
     """Maps a capture key to a uint64 for the C++ capture layer."""
     return hash(key) & 0xFFFFFFFFFFFFFFFF
@@ -289,8 +275,11 @@ class ServeGraphCaptureRunner:
         num_speculative_tokens: int = 0,
         widths_by_batch_size: Sequence[Sequence[int]] | None = None,
     ) -> None:
-        self._engine_model, self._signal_buffers = (
-            _engine_model_and_signal_buffers(model)
+        # A ModuleV3 callable adds its signal buffers to every call of its
+        # engine model, so capture, replay and verification add them too.
+        self._compiled = model if isinstance(model, CompiledCallable) else None
+        self._engine_model = (
+            model.engine_model if isinstance(model, CompiledCallable) else model
         )
         self._warmup_model_inputs = warmup_model_inputs
         self._num_speculative_tokens = num_speculative_tokens
@@ -359,6 +348,12 @@ class ServeGraphCaptureRunner:
         """
         self.graph_entries.pop(key, None)
         self._engine_model.release_captured_graph(_pack_model_graph_key(key))
+
+    def _engine_inputs(self, buffers: Sequence[Buffer]) -> list[Buffer]:
+        """Returns ``buffers`` with the signal buffers in their place."""
+        if self._compiled is None:
+            return list(buffers)
+        return self._compiled.engine_inputs(buffers)
 
     def _probe_verify_widths(self, batch_size: int) -> list[int]:
         """Returns the verify widths to capture for ``batch_size``."""
@@ -455,8 +450,7 @@ class ServeGraphCaptureRunner:
                     input_buffers = model_inputs.buffers
                     output_buffers = self._engine_model.capture(
                         _pack_model_graph_key(graph_key),
-                        *input_buffers,
-                        *self._signal_buffers,
+                        *self._engine_inputs(input_buffers),
                     )
                     if not self._is_spec_decode:
                         outputs = ModelOutputs(*output_buffers)
@@ -502,16 +496,24 @@ class ServeGraphCaptureRunner:
 
     @cached_property
     def _host_input_names(self) -> list[str]:
-        """Returns the engine model's input names, by position.
+        """Returns the engine model's input names, by replay buffer position.
 
-        ``captured_inputs`` is the prefix of the model's declared inputs that
-        graph capture recorded -- ``replay`` appends the signal buffers after
-        it -- so positions line up with ``input_metadata`` over that prefix.
+        ``captured_inputs`` holds every engine model input but the signal
+        buffers, which ``replay`` adds where the graph takes them, so their
+        names are left out here for positions to line up.
         """
-        return [
+        names = [
             spec.name or f"<input {index}>"
             for index, spec in enumerate(self._engine_model.input_metadata)
         ]
+        compiled = self._compiled
+        if compiled is not None and compiled.signal_buffers:
+            count = len(compiled.signal_buffers)
+            at = compiled.signal_buffer_index
+            if at is None:
+                at = len(names) - count
+            del names[at : at + count]
+        return names
 
     def _guard_host_input(
         self, index: int, captured: Buffer, live: Buffer
@@ -658,11 +660,10 @@ class ServeGraphCaptureRunner:
             verify_inputs = debug_verify_model_inputs or model_inputs
             self._engine_model.debug_verify_replay(
                 packed_model_graph_key,
-                *verify_inputs.buffers,
-                *self._signal_buffers,
+                *self._engine_inputs(verify_inputs.buffers),
             )
 
         self._engine_model.replay(
-            packed_model_graph_key, *captured_inputs, *self._signal_buffers
+            packed_model_graph_key, *self._engine_inputs(captured_inputs)
         )
         return outputs

@@ -416,6 +416,7 @@ class CompiledCallable(Generic[_P, _R]):
     # ``None`` for a callable built without an initialized model.
     _engine_model: Model | None
     _signal_buffers: list[Buffer]
+    _signal_buffer_index: int | None
 
     def __init__(
         self,
@@ -563,6 +564,35 @@ class CompiledCallable(Generic[_P, _R]):
         """
         return self._signal_buffers
 
+    @property
+    def signal_buffer_index(self) -> int | None:
+        """Returns the input position of :attr:`signal_buffers`.
+
+        ``None`` when the graph takes them after its last input. A caller
+        that drives :attr:`engine_model` directly passes them there, as
+        :meth:`engine_inputs` does.
+        """
+        return self._signal_buffer_index
+
+    def engine_inputs(self, buffers: Sequence[Buffer]) -> list[Buffer]:
+        """Returns the inputs :attr:`engine_model` takes for ``buffers``.
+
+        Args:
+            buffers: One buffer per graph input, as :meth:`execute_raw`
+                takes them, without the signal buffers.
+
+        Returns:
+            ``buffers`` with :attr:`signal_buffers` at
+            :attr:`signal_buffer_index`, or after the last buffer when it is
+            ``None``.
+        """
+        at = (
+            len(buffers)
+            if self.signal_buffer_index is None
+            else self.signal_buffer_index
+        )
+        return [*buffers[:at], *self.signal_buffers, *buffers[at:]]
+
     def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         """Runs the compiled function.
 
@@ -609,16 +639,7 @@ class CompiledCallable(Generic[_P, _R]):
         Returns:
             One buffer per graph output, in graph order.
         """
-        at = (
-            len(buffers)
-            if self._signal_buffer_index is None
-            else self._signal_buffer_index
-        )
-        results = list(
-            self.engine_model(
-                *buffers[:at], *self._signal_buffers, *buffers[at:]
-            )
-        )
+        results = list(self.engine_model(*self.engine_inputs(buffers)))
         _validation_hooks.compiled_call(self.engine_model, buffers, results)
         return results
 
