@@ -557,7 +557,7 @@ def test_decoding[
 # The dispatcher enables fold_q when num_q_heads * q_len <= BM(64) and q_len > 1.
 # Small head groups (num_heads in {8, 16}) at seq_len in {2, 4, 8} exercise the
 # M-dimension fold: BM=64 packs q_len_fold * num_q_heads rows of the same
-# batch element, collapsing grid.y to 1.
+# batch element, collapsing grid_y to 1.
 def test_decoding_fold[
     batch_size: Int,
     num_heads: Int,
@@ -925,7 +925,7 @@ def main() raises:
 
             # fold-path configs.  num_q_heads * q_len <= BM(64) and
             # q_len > 1 triggers fold_q=True in the dispatcher.  BM=64 packs
-            # q_len_fold * num_q_heads M-rows into a single tile, so grid.y=1.
+            # q_len_fold * num_q_heads M-rows into a single tile, so grid_y=1.
             #
             # Fold path is implemented for NVIDIA SM10x only (mla_decode_qkv_fp8
             # struct fold_q comptime branch).  AMD backend does not yet support

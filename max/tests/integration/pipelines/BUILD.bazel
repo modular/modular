@@ -520,6 +520,7 @@ modular_py_test(
             "test_pipeline_config_model_override.py",
             "test_pipeline_config_resolve.py",
             "test_model_manifest.py",
+            "test_mla_sparse_capture_config.py",
             "test_auto_model.py",
             "test_auto_model_images.py",
             "test_auto_pipeline.py",
@@ -591,6 +592,22 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_mla_sparse_capture_config",
+    size = "small",
+    srcs = ["test_mla_sparse_capture_config.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV3_2",
+        "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
+        "//max/python/max/pipelines/architectures/deepseekV3_2_nextn",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "test_attention_dispatch_resolver_gpu",
     size = "medium",
     timeout = "long",
@@ -607,6 +624,7 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max/_kv_cache_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",

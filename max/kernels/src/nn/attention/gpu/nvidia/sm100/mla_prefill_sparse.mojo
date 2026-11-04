@@ -12,15 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 """SM100 (B200) sparse MLA prefill kernel with BF16 KV cache.
 
-BF16-KV variant.  K/V latents are read as BF16 via SWIZZLE_128B gather4 TMA and
-fed directly to the shared QK/SV MMA pipeline.  The dtype-agnostic machinery
-(Q-load prologue, `mma`, `cp_q_from_smem_to_tmem`, `_raw_indices_to_tma_rows`,
-`kv_valid_producer`) is shared with the FP8-KV variant
-(`mla_prefill_sparse_kv_fp8.mojo`) through `MLAPrefillSparseCommon` in
+K/V latents are read as BF16 via SWIZZLE_128B gather4 TMA and fed directly to
+the QK/SV MMA pipeline. The Q-load prologue, `mma`, `cp_q_from_smem_to_tmem`,
+`_raw_indices_to_tma_rows` and `kv_valid_producer` live in
 `mla_prefill_sparse_utils.mojo`.
+
+Built with `-D MLA_SPARSE_PREFILL_DECODE=1` (the `_decode_core` test twins),
+the entry point instead runs the sparse decode kernel through
+`mla_sparse_attention_flat`, so the prefill suites can check the decode
+kernel's prefill route. Production picks the route in the graph instead.
 """
 
-from std.sys import size_of
+from std.sys import get_defined_int, size_of
 from std.utils.static_tuple import StaticTuple
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -104,10 +107,14 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.utils.numerics import min_or_neg_inf
 
 
+from nn.attention.gpu.nvidia.sm100.mla_sparse_attention import (
+    mla_sparse_attention_flat,
+)
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLAPrefillSparseCommon,
     MLASparseConfig,
     MLASparseSharedMemory,
+    sm100_sparse_mla_heads_ok,
     QKMMAOp,
     SVMMAType,
 )
@@ -477,7 +484,16 @@ struct MLAPrefillSparse[
             barrier()
 
             if warpgroup_idx == 0:
-                warpgroup_reg_alloc[144]()
+                # Eight more registers avoid output-address spills and exactly
+                # consume the pool left by the other warpgroup budgets.
+                comptime output_regs = 152 if (
+                    Self.qkv_dtype == DType.bfloat16
+                    and (
+                        Self.config.num_q_heads == 64
+                        or Self.config.num_q_heads == 128
+                    )
+                ) else 144
+                warpgroup_reg_alloc[output_regs]()
 
                 var idx_in_wg = UInt32(thread_idx.x) % UInt32(WARPGROUP_SIZE)
 
@@ -803,7 +819,7 @@ struct MLAPrefillSparse[
                 # [NUM_Q_HEADS_PER_CTA, 64) must NOT dereference it (that would read
                 # past the buffer end when num_q_heads < 64). At head 64/128 the
                 # bound is 64, so every row reads the sink exactly as before (NFC).
-                # Mirrors the per-head sink guard in mla_decode_sparse.mojo.
+                # Mirrors the per-head sink guard in mla_decode_sparse_qkv_fp8.mojo.
                 var sink_row = idx_in_wg % UInt32(64)
                 if attn_sink_ptr and sink_row < UInt32(
                     Self.NUM_Q_HEADS_PER_CTA
@@ -1461,129 +1477,161 @@ def mla_prefill_sparse[
     indices_stride: Int32,
     ctx: DeviceContext,
 ) raises:
-    comptime assert q_depth == config.qk_depth
-    # DSv3.2 absorbed prefill is the only supported shape: qk_depth =
-    # kv_lora_rank (512) + qk_rope_head_dim (64) = 576. The kernel hardcodes
-    # q_smem_depth=192 / q_tmem_depth=384 summing to 576; other depths would
-    # silently mis-stride the TMA copies.
-    comptime assert config.qk_depth == 576
-    # Head count: 128 runs the 2-CTA (cta_group=2) tile; a MULTIPLE OF 8 in
-    # (0, 64] runs the single-CTA (cta_group=1) tile padded to a legal 64-row
-    # MMA M-tile (`tcgen05.mma kind::f16` only permits M in {64, 128}). Real
-    # heads are loaded/stored via num_q_heads; the padded rows [num_q_heads, 64)
-    # are zeroed. The `% 8 == 0` requirement is the SWIZZLE_128B 8-row core
-    # matrix: the manual sub-64 Q sub-copy in `_load_q_prologue` lands the real
-    # box at the padded 64-row swizzle positions only when the box height is a
-    # whole number of core matrices (cf. the `q_tile_rows % 8` assert in the
-    # proven MSA decode Layout-G precedent, msa_1q_layout_g.mojo:110). GLM 5.2
-    # shards its 64 heads to {8, 16, 32}/device (TP {8, 4, 2}); DSv3.2 uses 128
-    # or 64. Counts like 4/2/20 are rejected fail-fast (untested/unsupported).
-    comptime assert config.num_q_heads == 128 or (
-        0 < config.num_q_heads
-        and config.num_q_heads <= 64
-        and config.num_q_heads % 8 == 0
-    ), (
-        "sparse MLA prefill: num_q_heads must be 128 or a multiple of 8 in"
-        " (0, 64] (SWIZZLE_128B 8-row core matrix)"
-    )
-    comptime assert config.num_kv_heads == 1
-    # The output smem buffer is allocated as `qkv_dtype` (it shares the
-    # smem union with Q/K/V). We bitcast it to `output_dtype` at the TMA
-    # store site, which is only sound if the two dtypes have the same
-    # bit width.
-    comptime assert size_of[output_dtype]() == size_of[q_type]()
+    # 1 runs the sparse decode kernel instead (see the module docstring).
+    comptime decode = get_defined_int["MLA_SPARSE_PREFILL_DECODE", 0]()
+    comptime assert decode == 0 or decode == 1
+    comptime if decode != 0:
+        comptime assert q_depth == config.qk_depth
+        comptime assert q_depth == config.input_qk_depth
+        comptime assert config.num_kv_heads == 1
+        comptime assert (
+            config.v_depth == 512
+        ), "the shared core writes 512 latent columns"
+        comptime assert sm100_sparse_mla_heads_ok[
+            config.num_q_heads
+        ](), "sparse MLA heads must be 128 or a multiple of 8 through 64"
+        comptime assert type_of(topk_lengths).flat_rank == 1
+        comptime assert type_of(indices).flat_rank == 1
+        comptime assert topk_lengths.element_size == 1
+        comptime assert indices.element_size == 1
+        comptime assert size_of[output_dtype]() == size_of[q_type]()
+        mla_sparse_attention_flat[
+            num_heads=config.num_q_heads,
+            depth=q_depth,
+            scale_block_size_override=0,
+        ](
+            output,
+            q,
+            kv_cache,
+            indices.ptr.unsafe_mut_cast[True]()
+            .unsafe_bitcast[Int32]()
+            .as_unsafe_any_origin(),
+            Int(indices_stride),
+            topk_lengths,
+            attn_sink_ptr,
+            scale,
+            ctx,
+        )
+    else:
+        comptime assert q_depth == config.qk_depth
+        # DSv3.2 absorbed prefill is the only supported shape: qk_depth =
+        # kv_lora_rank (512) + qk_rope_head_dim (64) = 576. The kernel hardcodes
+        # q_smem_depth=192 / q_tmem_depth=384 summing to 576; other depths would
+        # silently mis-stride the TMA copies.
+        comptime assert config.qk_depth == 576
+        # Head count: 128 runs the 2-CTA (cta_group=2) tile; a MULTIPLE OF 8 in
+        # (0, 64] runs the single-CTA (cta_group=1) tile padded to a legal 64-row
+        # MMA M-tile (`tcgen05.mma kind::f16` only permits M in {64, 128}). Real
+        # heads are loaded/stored via num_q_heads; the padded rows [num_q_heads, 64)
+        # are zeroed. The `% 8 == 0` requirement is the SWIZZLE_128B 8-row core
+        # matrix: the manual sub-64 Q sub-copy in `_load_q_prologue` lands the real
+        # box at the padded 64-row swizzle positions only when the box height is a
+        # whole number of core matrices (cf. the `q_tile_rows % 8` assert in the
+        # proven MSA decode Layout-G precedent, msa_1q_layout_g.mojo:110). GLM 5.2
+        # shards its 64 heads to {8, 16, 32}/device (TP {8, 4, 2}); DSv3.2 uses 128
+        # or 64. Counts like 4/2/20 are rejected fail-fast (untested/unsupported).
+        comptime assert sm100_sparse_mla_heads_ok[config.num_q_heads](), (
+            "sparse MLA prefill: num_q_heads must be 128 or a multiple of 8 in"
+            " (0, 64] (SWIZZLE_128B 8-row core matrix)"
+        )
+        comptime assert config.num_kv_heads == 1
+        # The output smem buffer is allocated as `qkv_dtype` (it shares the
+        # smem union with Q/K/V). We bitcast it to `output_dtype` at the TMA
+        # store site, which is only sound if the two dtypes have the same
+        # bit width.
+        comptime assert size_of[output_dtype]() == size_of[q_type]()
 
-    # num_q_rows == batch_size * q_seq_len
-    var num_q_rows = q_num_matrix_view_rows(q)
+        # num_q_rows == batch_size * q_seq_len
+        var num_q_rows = q_num_matrix_view_rows(q)
 
-    var kv_operand = KVCacheMHAOperand(kv_cache)
+        var kv_operand = KVCacheMHAOperand(kv_cache)
 
-    # CTA pair splits heads at head128 (CTA0 upper, CTA1 lower); a single CTA
-    # loads all heads at head<=64. The box requests the REAL per-CTA head
-    # count so every sub-copy reads only in-bounds GMEM heads (a padded box
-    # makes heads [num_q_heads, 64) a middle-dim OOB region whose TMA never
-    # completes -> deadlock). For num_q_heads < 64 the kernel issues the
-    # depth-tile sub-copies manually at the padded 64-row stride. NFC at
-    # 64/128 (real == padded).
-    var q_tma_op = create_tensor_tile[
-        coord[1, config.num_q_heads // config.cta_group, q_depth],
-        swizzle_mode=config.q_swizzle_mode,
-    ](ctx, q)
+        # CTA pair splits heads at head128 (CTA0 upper, CTA1 lower); a single CTA
+        # loads all heads at head<=64. The box requests the REAL per-CTA head
+        # count so every sub-copy reads only in-bounds GMEM heads (a padded box
+        # makes heads [num_q_heads, 64) a middle-dim OOB region whose TMA never
+        # completes -> deadlock). For num_q_heads < 64 the kernel issues the
+        # depth-tile sub-copies manually at the padded 64-row stride. NFC at
+        # 64/128 (real == padded).
+        var q_tma_op = create_tensor_tile[
+            coord[1, config.num_q_heads // config.cta_group, q_depth],
+            swizzle_mode=config.q_swizzle_mode,
+        ](ctx, q)
 
-    # for 2CTA MMA B_TOPK == 128
-    # we load 64 tokens gathered from different kv blocks for each CTA
-    # Both CTA in the pair load 64 into their peer
-    # so each CTA will have 128 topk tokens
-    var k_tma_op = kv_operand.create_gather4_tma_tile[
-        tile_width=config.qk_depth,
-        tile_stride=config.qk_depth,
-        swizzle_mode=config.k_swizzle_mode,
-        tile_height=config.B_TOPK // config.cta_group,
-    ](ctx)
+        # for 2CTA MMA B_TOPK == 128
+        # we load 64 tokens gathered from different kv blocks for each CTA
+        # Both CTA in the pair load 64 into their peer
+        # so each CTA will have 128 topk tokens
+        var k_tma_op = kv_operand.create_gather4_tma_tile[
+            tile_width=config.qk_depth,
+            tile_stride=config.qk_depth,
+            swizzle_mode=config.k_swizzle_mode,
+            tile_height=config.B_TOPK // config.cta_group,
+        ](ctx)
 
-    # V is loaded with SWIZZLE_128B. With tile_width=V_SMEM_COLS_PER_CTA=
-    # 128 and box_width=64, gather4 produces 2 col-groups per CTA, placed
-    # at smem offsets 0 and B_TOPK*64 respectively. The per-CTA SV MMA
-    # descriptor (descriptor_v) reads this layout via BMN =
-    # V_SMEM_COLS_PER_CTA, BK = B_TOPK/2, MN-major, SWIZZLE_128B (matching
-    # the decode kernel's `DecodeSM100PVSS.descriptor_v_block` pattern).
-    #
-    # tile_stride is the gmem row stride (qk_depth=576). tile_width is
-    # V_SMEM_COLS_PER_CTA = MMA_N / cta_group; each CTA contributes its
-    # slice of V to the cluster MMA, with `col_idx = cta_id *
-    # V_SMEM_COLS_PER_CTA` selecting its V col range.
-    var v_tma_op = kv_operand.create_gather4_tma_tile[
-        tile_width=config.v_depth // 2 // config.cta_group,
-        tile_stride=config.qk_depth,
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-        tile_height=config.B_TOPK // 2,
-    ](ctx)
+        # V is loaded with SWIZZLE_128B. With tile_width=V_SMEM_COLS_PER_CTA=
+        # 128 and box_width=64, gather4 produces 2 col-groups per CTA, placed
+        # at smem offsets 0 and B_TOPK*64 respectively. The per-CTA SV MMA
+        # descriptor (descriptor_v) reads this layout via BMN =
+        # V_SMEM_COLS_PER_CTA, BK = B_TOPK/2, MN-major, SWIZZLE_128B (matching
+        # the decode kernel's `DecodeSM100PVSS.descriptor_v_block` pattern).
+        #
+        # tile_stride is the gmem row stride (qk_depth=576). tile_width is
+        # V_SMEM_COLS_PER_CTA = MMA_N / cta_group; each CTA contributes its
+        # slice of V to the cluster MMA, with `col_idx = cta_id *
+        # V_SMEM_COLS_PER_CTA` selecting its V col range.
+        var v_tma_op = kv_operand.create_gather4_tma_tile[
+            tile_width=config.v_depth // 2 // config.cta_group,
+            tile_stride=config.qk_depth,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+            tile_height=config.B_TOPK // 2,
+        ](ctx)
 
-    # Output viewed 2D as [num_q_rows * num_q_heads, v_depth] so per-cluster
-    # TMA stores address the right head range with a single [row, col] coord.
-    var output_2d = output.reshape(
-        row_major(num_q_rows * config.num_q_heads, config.v_depth)
-    )
+        # Output viewed 2D as [num_q_rows * num_q_heads, v_depth] so per-cluster
+        # TMA stores address the right head range with a single [row, col] coord.
+        var output_2d = output.reshape(
+            row_major(num_q_rows * config.num_q_heads, config.v_depth)
+        )
 
-    var o_tma_op = create_tensor_tile[
-        coord[config.num_q_heads // config.cta_group, config.v_depth],
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-        __desc_shape=coord[config.num_q_heads // config.cta_group, 64],
-    ](ctx, output_2d)
+        var o_tma_op = create_tensor_tile[
+            coord[config.num_q_heads // config.cta_group, config.v_depth],
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+            __desc_shape=coord[config.num_q_heads // config.cta_group, 64],
+        ](ctx, output_2d)
 
-    comptime assert type_of(topk_lengths).flat_rank == 1
-    comptime assert type_of(indices).flat_rank == 1
-    comptime assert topk_lengths.element_size == 1
-    comptime assert indices.element_size == 1
-    comptime kernel = MLAPrefillSparse[
-        KVLUTType=type_of(kv_operand),
-        output_dtype=output_dtype,
-        config=config,
-    ].kernel[
-        type_of(topk_lengths).LayoutType,
-        type_of(indices).LayoutType,
-        type_of(topk_lengths).Engine,
-        type_of(indices).Engine,
-    ]
+        comptime assert type_of(topk_lengths).flat_rank == 1
+        comptime assert type_of(indices).flat_rank == 1
+        comptime assert topk_lengths.element_size == 1
+        comptime assert indices.element_size == 1
+        comptime kernel = MLAPrefillSparse[
+            KVLUTType=type_of(kv_operand),
+            output_dtype=output_dtype,
+            config=config,
+        ].kernel[
+            type_of(topk_lengths).LayoutType,
+            type_of(indices).LayoutType,
+            type_of(topk_lengths).Engine,
+            type_of(indices).Engine,
+        ]
 
-    comptime smem_size = size_of[MLASparseSharedMemory[config]]()
+        comptime smem_size = size_of[MLASparseSharedMemory[config]]()
 
-    ctx.enqueue_function[kernel](
-        q_tma_op,
-        k_tma_op,
-        v_tma_op,
-        o_tma_op,
-        topk_lengths,
-        indices,
-        kv_operand,
-        scale,
-        attn_sink_ptr,
-        indices_stride,
-        grid_dim=(config.cta_group * num_q_rows, 1, 1),
-        block_dim=(config.num_threads, 1, 1),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
-        attributes=pdl_launch_attributes(PDLLevel.ON),
-    )
+        ctx.enqueue_function[kernel](
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            o_tma_op,
+            topk_lengths,
+            indices,
+            kv_operand,
+            scale,
+            attn_sink_ptr,
+            indices_stride,
+            grid_dim=(config.cta_group * num_q_rows, 1, 1),
+            block_dim=(config.num_threads, 1, 1),
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(smem_size)
+            ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )

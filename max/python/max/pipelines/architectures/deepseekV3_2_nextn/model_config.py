@@ -100,6 +100,7 @@ class DeepseekV3_2NextNConfig(DeepseekV3_2Config):
             sparse_indices_stride=sparse_selection_width(
                 mla_kv_params, huggingface_config.index_topk
             ),
+            sparse_physical_indices=True,
         )
 
         # Mirror DeepseekV3_2Config: the indexer K cache is always float8_e4m3fn
@@ -118,12 +119,9 @@ class DeepseekV3_2NextNConfig(DeepseekV3_2Config):
             num_q_heads=huggingface_config.num_attention_heads,
             kvcache_quant_config=indexer_kvcache_quant_config,
         )
-        # No kernel reads the indexer leaf's dispatch metadata, but it is part
-        # of the composite capture key, so it must not move with the context.
         assert isinstance(indexer_kv_params, MLAKVCacheParams)
-        indexer_kv_params = replace(
-            indexer_kv_params,
-            sparse_indices_stride=mla_kv_params.sparse_indices_stride,
+        indexer_kv_params = indexer_kv_params.joining_sparse_dispatch_of(
+            mla_kv_params
         )
 
         return MultiKVCacheParams.from_params(

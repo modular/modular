@@ -13,9 +13,8 @@
 """Sparse MLA decode over a paged FP8 latent cache, as one sweep.
 
 The sweep port of the deleted `gpu/nn/bench_mla_decode_sparse_fp8.mojo`. It
-covers the
-speculative-decode verify: several query positions per sequence, each
-attending its own top-k window. The measured region is the split-K decode and
+covers the speculative-decode verify: several query positions per sequence,
+each attending its own top-k window. The measured region is the split-K decode and
 the combine that reduces its partial outputs.
 
 Runtime axes are `--batch_size`, `--seq_len`, `--cache_len` and `--top_k`,
@@ -25,6 +24,16 @@ BF16 Q reach different kernels and their ratio is the comparison; `-D
 q_dtype=<dtype>` pins it. AMD has no FP8 x BF16 MMA, so it runs FP8 Q only.
 `num_heads` and `page_size` are `-D` defines, as before.
 
+`--num_partitions` is one more axis: 0 keeps the dispatch's split, and a
+positive count forces it into the grid and the kernel alike. `--logical=1`
+also passes each pick's logical key position, which turns on the per-slot
+position mask. `--pdl_pred_ns=<ns>` launches a one-CTA kernel ahead of each
+decode that triggers its PDL successor at entry and then spins that long, so
+the decode's entry wait has a predecessor still running; in the bench loop
+the predecessor is otherwise the previous combine, which triggers only by
+completing. With `-D MLA_STAMP=1` each config dumps the kernel's clock
+stamps before it is timed.
+
 `--index_stride=3` reproduces the old benchmark's gather pattern (it also
 shifted every pick by one key); the default spreads the picks over the window,
 as `bench_dsa_block` does. `--fill=host` and `--page_layout` are as in
@@ -32,6 +41,7 @@ as `bench_dsa_block` does. `--fill=host` and `--page_layout` are as in
 `--throttle_check`, `--json`) are `SweepHarness`'s.
 """
 
+from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import get_defined_int
 
@@ -53,9 +63,14 @@ from bench_sweep import (
     plan_groups,
 )
 from internal_utils import arg_parse
-from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from kv_cache.types import (
+    KVCacheStaticParams,
+    KVCacheT,
+    PagedKVCacheCollection,
+)
 from layout import Coord, Idx, TileTensor, row_major
 from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
+from mla_sweep import dump_stamps, early_trigger_spin, force_split
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
@@ -85,6 +100,8 @@ struct Workspace(Movable):
     var out: DeviceBuffer[DType.bfloat16]
     var indices: DeviceBuffer[DType.int32]
     var row_offsets: DeviceBuffer[DType.uint32]
+    var logical: DeviceBuffer[DType.int32]
+    var logical_lut: DeviceBuffer[DType.uint32]
 
     def __init__(
         out self, ctx: DeviceContext[], footprint: Footprint, on_host: Bool
@@ -101,6 +118,12 @@ struct Workspace(Movable):
         self.row_offsets = ctx.enqueue_create_buffer[DType.uint32](
             footprint["batch"] + 1
         )
+        self.logical = ctx.enqueue_create_buffer[DType.int32](
+            max(1, footprint["logical_slots"])
+        )
+        self.logical_lut = ctx.enqueue_create_buffer[DType.uint32](
+            max(1, footprint["logical_lut"])
+        )
         if on_host:
             fill_uniform_host_rand(self.q_fp8)
             fill_uniform_host_rand(self.q_bf16)
@@ -109,10 +132,19 @@ struct Workspace(Movable):
             fill_uniform(ctx, self.q_bf16, 10)
 
     @staticmethod
-    def require(cfg: Config, mut footprint: Footprint, copies: Int) raises:
+    def require(
+        cfg: Config, mut footprint: Footprint, copies: Int, logical: Bool
+    ) raises:
         var tokens = cfg["batch_size"] * cfg["seq_len"]
         footprint.need("tokens", tokens)
         footprint.need("index_slots", copies * tokens * cfg["top_k"])
+        if logical:
+            footprint.need("logical_slots", tokens * cfg["top_k"])
+            footprint.need(
+                "logical_lut",
+                cfg["batch_size"]
+                * ceildiv(cfg["cache_len"] + cfg["seq_len"], PAGE_SIZE),
+            )
 
     @staticmethod
     def bytes_for(footprint: Footprint) -> Int:
@@ -120,14 +152,23 @@ struct Workspace(Movable):
             footprint["tokens"] * NUM_HEADS * (3 * Q_DEPTH + 2 * V_DEPTH)
             + 4 * footprint["index_slots"]
             + 4 * (footprint["batch"] + 1)
+            + 4 * footprint["logical_slots"]
+            + 4 * footprint["logical_lut"]
         )
 
 
 def _run_name[
     q_dtype: DType
-](batch_size: Int, seq_len: Int, cache_len: Int, top_k: Int) -> String:
+](
+    batch_size: Int,
+    seq_len: Int,
+    cache_len: Int,
+    top_k: Int,
+    num_partitions: Int,
+    logical: Bool,
+) -> String:
     # fmt: off
-    return String(
+    var name = String(
         "mla_decode_sparse_fp8 : ",
         "q_dtype=", q_dtype, ", ",
         "num_heads=", NUM_HEADS, ", ",
@@ -138,6 +179,52 @@ def _run_name[
         "cache_len=", cache_len,
     )
     # fmt: on
+    if num_partitions > 0:
+        name += String(", num_partitions=", num_partitions)
+    if logical:
+        name += ", logical"
+    return name
+
+
+@inline(.always)
+def _decode[
+    cache_t: KVCacheT,
+    q_dtype: DType,
+    //,
+](
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[q_dtype, address_space=.GENERIC, ...],
+    cache: cache_t,
+    row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    scalars: TileTensor[.int64, address_space=.GENERIC, ...],
+    indices: MutPointer[Int32, MutAnyOrigin],
+    top_k: Int,
+    logical: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
+    num_partitions: Int,
+    ctx: DeviceContext,
+) raises:
+    var forced_np = Optional[Int]()
+    if num_partitions > 0:
+        forced_np = num_partitions
+    flare_mla_decoding[
+        rank=3,
+        config=MHAConfig[q_dtype](NUM_HEADS, Q_DEPTH),
+        ragged=True,
+        sparse=True,
+    ](
+        output,
+        q,
+        cache,
+        CausalMask(),
+        row_offsets,
+        Float32(0.125),
+        ctx,
+        scalars,
+        d_indices=indices,
+        indices_stride=top_k,
+        logical_indices=logical,
+        num_partitions_in=forced_np,
+    )
 
 
 def touched_bytes(
@@ -164,7 +251,10 @@ def run_config[
     seq_len: Int,
     cache_len: Int,
     top_k: Int,
+    num_partitions: Int,
     index_stride: Int,
+    logical: Bool,
+    pdl_pred_ns: Int,
     on_host: Bool,
     copies: Int,
 ) raises:
@@ -200,6 +290,34 @@ def run_config[
                 owning=False,
             ),
             table.copy_lut(ctx, copy, batch_size, pages),
+            pages,
+            PAGE_SIZE,
+            False,
+            batch_size,
+            seq_len,
+            cache_len,
+            top_k,
+            on_host,
+            index_stride,
+        )
+    if logical:
+        # A page table whose entry for page `p` is `p` turns the generator's
+        # physical rows into the picks' logical key positions.
+        var lut_entries = batch_size * pages
+        var lut_host = ctx.enqueue_create_host_buffer[DType.uint32](lut_entries)
+        ctx.synchronize()
+        for i in range(lut_entries):
+            lut_host[i] = UInt32(i % pages)
+        var logical_lut = DeviceBuffer[DType.uint32](
+            ctx, ws.logical_lut.unsafe_ptr(), lut_entries, owning=False
+        )
+        ctx.enqueue_copy(logical_lut, lut_host)
+        fill_sparse_indices(
+            ctx,
+            DeviceBuffer[DType.int32](
+                ctx, ws.logical.unsafe_ptr(), slots, owning=False
+            ),
+            logical_lut,
             pages,
             PAGE_SIZE,
             False,
@@ -260,7 +378,14 @@ def run_config[
     var mla_args = MLADispatchScalarArgs[num_heads=NUM_HEADS, is_fp8_kv=True](
         batch_size, cache_len, seq_len, ctx
     )
+    if num_partitions > 0:
+        force_split(ctx, mla_args.gpu_buf, batch_size, seq_len, num_partitions)
     var scalar_args = mla_args.gpu_tile_tensor()
+    var logical_indices = OptionalReg[MutPointer[Int32, MutAnyOrigin]]()
+    if logical:
+        logical_indices = ws.logical.unsafe_ptr().unsafe_origin_cast[
+            MutAnyOrigin
+        ]()
     ctx.synchronize()
     h.timer.lap("config_setup")
 
@@ -268,24 +393,43 @@ def run_config[
     def kernel_launch(
         launch_ctx: DeviceContext[], copy: Int
     ) raises {mut out_tt, imm}:
-        flare_mla_decoding[
-            rank=3,
-            config=MHAConfig[q_dtype](NUM_HEADS, Q_DEPTH),
-            ragged=True,
-            sparse=True,
-        ](
+        comptime if not default_accelerator().is_amd_gpu():
+            if pdl_pred_ns > 0:
+                launch_ctx.enqueue_function[early_trigger_spin](
+                    UInt64(pdl_pred_ns), grid_dim=1, block_dim=32
+                )
+        _decode(
             out_tt,
             q_tt,
             cache_at(launch_ctx, copy),
-            CausalMask(),
             row_offsets_tt,
-            Float32(0.125),
-            launch_ctx,
             scalar_args,
-            d_indices=d_indices.unsafe_offset(copy * slots),
-            indices_stride=top_k,
+            d_indices.unsafe_offset(copy * slots),
+            top_k,
+            logical_indices,
+            num_partitions,
+            launch_ctx,
         )
 
+    @inline(.always)
+    def first_copy(launch_ctx: DeviceContext[]) raises {mut out_tt, imm}:
+        kernel_launch(launch_ctx, 0)
+
+    dump_stamps(
+        ctx,
+        first_copy,
+        String(
+            "b",
+            batch_size,
+            "_s",
+            seq_len,
+            "_c",
+            cache_len,
+            "_np",
+            num_partitions,
+            "_l" if logical else "_n",
+        ),
+    )
     h.first_launch(ctx, kernel_launch)
     var fields = Fields()
     fields.add("kernel", String("mla_decode_sparse_fp8"))
@@ -297,10 +441,22 @@ def run_config[
     fields.add("seq_len", seq_len)
     fields.add("cache_len", cache_len)
     fields.add("index_stride", index_stride)
+    fields.add("num_partitions", num_partitions)
+    fields.add("logical", logical)
+    fields.add("pdl_pred_ns", pdl_pred_ns)
     h.bench(
         ctx,
         kernel_launch,
-        BenchId(_run_name[q_dtype](batch_size, seq_len, cache_len, top_k)),
+        BenchId(
+            _run_name[q_dtype](
+                batch_size,
+                seq_len,
+                cache_len,
+                top_k,
+                num_partitions,
+                logical,
+            )
+        ),
         fields^,
         copies,
     )
@@ -318,7 +474,10 @@ def main() raises:
     # position stops growing.
     sweep.axis("cache_len", "512,1024,2048,4096,8192,16384")
     sweep.axis("top_k", "2048")
+    sweep.axis("num_partitions", "0")
     var index_stride = arg_parse("index_stride", 0)
+    var logical = arg_parse("logical", 0) != 0
+    var pdl_pred_ns = arg_parse("pdl_pred_ns", 0)
     var fill = String(arg_parse("fill", "gpu"))
     var layout = PageLayout.parse(arg_parse("page_layout", "identity"))
     var on_host = fill == "host"
@@ -351,7 +510,7 @@ def main() raises:
                 cfg["cache_len"] + cfg["seq_len"],
                 copies(cfg),
             )
-            Workspace.require(cfg, fp, max(1, copies(cfg)))
+            Workspace.require(cfg, fp, max(1, copies(cfg)), logical)
 
         def bytes(fp: Footprint) raises -> Int:
             return (
@@ -397,7 +556,10 @@ def main() raises:
                             cfg["seq_len"],
                             cfg["cache_len"],
                             cfg["top_k"],
+                            cfg["num_partitions"],
                             index_stride,
+                            logical,
+                            pdl_pred_ns,
                             on_host,
                             copies(cfg),
                         )

@@ -183,6 +183,7 @@ def _combine[
         ragged=ragged,
         warps_per_head=warps_per_head,
         split_parallel=split_parallel,
+        pdl=True,
     ](
         o_accum,
         lse_accum,
@@ -399,6 +400,7 @@ def _combine_heads[
         num_splits=num_splits,
         ragged=False,
         warps_per_head=2,
+        pdl=True,
     ](
         o_tt,
         lse_tt,

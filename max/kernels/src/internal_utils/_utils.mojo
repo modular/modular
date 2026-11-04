@@ -13,7 +13,7 @@
 
 import std.time
 from std.collections import Optional
-from std.math import ceildiv, floor
+from std.math import ceildiv, floor, gcd
 from std.os import getenv
 from std.sys import argv, get_defined_bool, get_defined_string
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -540,3 +540,21 @@ def human_readable_size(size: Int) -> String:
     if size >= KB:
         return String(t"{_pretty_print_float(Float64(size) / KB)}KB")
     return String(t"{size}B")
+
+
+def coprime_multiplier(n: Int) -> Int:
+    """Returns a stride that visits every position of a length-`n` ring.
+
+    A stride that shares a factor with `n` revisits a subset of the ring, so
+    synthetic top-k indices built from it would touch too few distinct keys.
+
+    Args:
+        n: Ring length to be coprime with.
+
+    Returns:
+        The first of 3, 5, 7, 11 and 13 coprime with `n`, else 1.
+    """
+    for m in [3, 5, 7, 11, 13]:
+        if gcd(m, n) == 1:
+            return m
+    return 1

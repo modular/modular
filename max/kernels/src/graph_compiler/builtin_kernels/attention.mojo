@@ -90,6 +90,8 @@ from nn.attention.gpu.mla_graph import (
     mla_decode_branch_fp8,
     mla_decode_branch_bf16,
     mla_graph_takes_decode_branch,
+    mla_sparse_check_topk_lengths,
+    mla_sparse_prefill_on_decode_kernel,
     mla_prefill_decode_graph_fp8,
     mla_prefill_decode_graph_bf16,
     mla_store_ragged_paged,
@@ -4675,6 +4677,7 @@ def _sparse_prefill_indices[
     cache_dtype: DType,
     num_heads: Int,
     physical_indices: Bool,
+    q_dtype: DType = DType.bfloat16,
 ](
     mut scratch: Optional[DeviceBuffer[DType.int32]],
     sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
@@ -4688,9 +4691,11 @@ def _sparse_prefill_indices[
 
     Without the indexer's physical rows only the prefill branch needs a remap;
     the decode kernels look logical indices up. The result is empty when the
-    indexer supplied physical rows or the graph takes the decode branch.
+    indexer supplied physical rows or the batch runs a decode kernel.
     """
-    comptime if not physical_indices:
+    comptime if not physical_indices and not mla_sparse_prefill_on_decode_kernel[
+        q_dtype, cache_dtype, num_heads
+    ]():
         if not mla_graph_takes_decode_branch[
             cache_dtype, num_heads, sparse_mla=True
         ](max_seq_len):
@@ -4823,6 +4828,13 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
             width: Int
         ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        comptime if has_topk_lengths:
+            var required_lengths = Int(input_row_offsets.dim_size(0)) - 1
+            if topk_lengths.dim_size(0) < required_lengths:
+                raise Error(
+                    "topk_lengths does not cover its batch/token domain"
+                )
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
             topk_lengths.unsafe_ptr()
@@ -5212,6 +5224,13 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
             width: Int
         ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        comptime if has_topk_lengths:
+            var required_lengths = Int(input_row_offsets.dim_size(0)) - 1
+            if topk_lengths.dim_size(0) < required_lengths:
+                raise Error(
+                    "topk_lengths does not cover its batch/token domain"
+                )
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
             topk_lengths.unsafe_ptr()
@@ -5668,6 +5687,16 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
 
+        comptime if has_topk_lengths:
+            mla_sparse_check_topk_lengths[
+                cache_dtype, Int(q.static_spec.shape_tuple[1])
+            ](
+                Int(topk_lengths.dim_size(0)),
+                Int(input_row_offsets.dim_size(0)) - 1,
+                Int(q.dim_size(0)),
+                Int(max_prompt_length.unsafe_ptr()[0]),
+            )
+
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
             topk_lengths.unsafe_ptr()
         )
@@ -5690,6 +5719,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 cache_dtype,
                 Int(q.static_spec.shape_tuple[1]),
                 physical_indices,
+                q_dtype=dtype,
             ](
                 scratch_sparse_indices,
                 sparse_indices,
@@ -6080,6 +6110,16 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
 
+        comptime if has_topk_lengths:
+            mla_sparse_check_topk_lengths[
+                cache_dtype, Int(q.static_spec.shape_tuple[1])
+            ](
+                Int(topk_lengths.dim_size(0)),
+                Int(input_row_offsets.dim_size(0)) - 1,
+                Int(q.dim_size(0)),
+                Int(max_prompt_length.unsafe_ptr()[0]),
+            )
+
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
             topk_lengths.unsafe_ptr()
         )
@@ -6259,6 +6299,21 @@ struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+
+        # The prefill-shaped branch reads one length per query token, while
+        # the plain decode branch reads one per sequence, so the buffer must
+        # cover whichever the batch takes. Sparse prefill over an NVFP4
+        # cache that routes to the decode kernel with tile skipping reads
+        # per token too.
+        comptime if has_topk_lengths:
+            mla_sparse_check_topk_lengths[
+                DType.uint8, Int(q.static_spec.shape_tuple[1])
+            ](
+                Int(topk_lengths.dim_size(0)),
+                Int(input_row_offsets.dim_size(0)) - 1,
+                Int(q.dim_size(0)),
+                Int(max_prompt_length.unsafe_ptr()[0]),
+            )
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
             topk_lengths.unsafe_ptr()

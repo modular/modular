@@ -27,12 +27,14 @@ table that differs from the values'.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
 import pytest
 import torch
 from _mla_sparse_test_utils import (
+    make_deepseek_rope,
     paged_kv_from_flat_graph_inputs,
     random_weights,
 )
@@ -55,10 +57,8 @@ from max.nn.legacy.kv_cache import (
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
 )
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.legacy.kv_cache.utils import MLAAttnKey
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 from torch.utils.dlpack import from_dlpack
@@ -76,14 +76,15 @@ _TOPK = 64
 _E2M1_MAGNITUDES = torch.tensor([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0])
 
 
-def _kv_params(dtype: DType) -> MLAKVCacheParams:
+def _kv_params(dtype: DType, num_heads: int = _NUM_HEADS) -> MLAKVCacheParams:
     return MLAKVCacheParams(
         dtype=dtype,
         head_dim=_KV_LORA_RANK + _QK_ROPE_HEAD_DIM,
         num_layers=1,
         page_size=_PAGE_SIZE,
         devices=[DeviceRef.GPU()],
-        num_q_heads=_NUM_HEADS,
+        num_q_heads=num_heads,
+        sparse_physical_indices=True,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.float8_e4m3fn,
             quantization_granularity=16,
@@ -112,37 +113,37 @@ def _dequantize_nvfp4(packed: torch.Tensor, sf: torch.Tensor) -> torch.Tensor:
     ).view(torch.float8_e4m3fn)
 
 
-def _rope(num_tokens: int) -> DeepseekYarnRotaryEmbedding:
-    return DeepseekYarnRotaryEmbedding(
-        dim=_QK_ROPE_HEAD_DIM,
-        n_heads=_NUM_HEADS,
-        theta=10000.0,
-        max_seq_len=2 * (_CACHE_LEN + num_tokens),
-        scaling_params=DeepseekYarnRopeScalingParams(
-            scaling_factor=40.0,
-            original_max_position_embeddings=4096,
-            beta_fast=32,
-            beta_slow=1,
-            mscale=1.0,
-            mscale_all_dim=1.0,
-        ),
-    )
+def _rope(
+    num_tokens: int,
+    num_heads: int = _NUM_HEADS,
+    max_cache_length: int = _CACHE_LEN,
+) -> DeepseekYarnRotaryEmbedding:
+    return make_deepseek_rope(num_heads, 2 * (max_cache_length + num_tokens))
 
 
-def _row_width(dtype: DType) -> int:
+def _row_width(dtype: DType, topk: int = _TOPK) -> int:
     """Slots per index row: an NVFP4 cache's rows also carry scale rows."""
-    return 2 * _TOPK if dtype == DType.uint8 else _TOPK
+    return 2 * topk if dtype == DType.uint8 else topk
 
 
-def _build(dtype: DType, num_tokens: int, prefill_decode: bool) -> Graph:
-    kv_params = _kv_params(dtype)
-    rope = _rope(num_tokens)
+def _build(
+    dtype: DType,
+    num_tokens: int,
+    prefill_decode: bool,
+    num_heads: int = _NUM_HEADS,
+    topk: int = _TOPK,
+    max_cache_length: int = _CACHE_LEN,
+    physical_indices: bool = True,
+) -> Graph:
+    kv_params = _kv_params(dtype, num_heads)
+    kv_params.sparse_physical_indices = physical_indices
+    rope = _rope(num_tokens, num_heads, max_cache_length)
     attn = _attention(kv_params, rope)
     gpu = DeviceRef.GPU()
     input_types = [
         TensorType(
             DType.bfloat16,
-            ["total_tokens", _NUM_HEADS, _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM],
+            ["total_tokens", num_heads, _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM],
             gpu,
         ),
         TensorType(
@@ -151,7 +152,7 @@ def _build(dtype: DType, num_tokens: int, prefill_decode: bool) -> Graph:
             gpu,
         ),
         TensorType(DType.uint32, ["row_offsets_len"], gpu),
-        TensorType(DType.int32, ["total_tokens", _row_width(dtype)], gpu),
+        TensorType(DType.int32, ["total_tokens", _row_width(dtype, topk)], gpu),
         *tree.leaves(kv_params.get_symbolic_inputs()[0]),
     ]
     with Graph(f"mla_sparse_{dtype}", input_types=input_types) as g:
@@ -172,8 +173,8 @@ def _build(dtype: DType, num_tokens: int, prefill_decode: bool) -> Graph:
             scalar_args=kv_collection.attention_dispatch_metadata,
             num_partitions_scalar=kv_collection.mla_num_partitions,
             sparse_indices=rows,
-            physical_indices=True,
-            sparse_indices_stride=_row_width(dtype),
+            physical_indices=physical_indices,
+            sparse_indices_stride=_row_width(dtype, topk),
         )
         freqs_cis = ops.cast(rope.freqs_cis, q.dtype).to(q.device)
         if prefill_decode:
@@ -214,7 +215,7 @@ def _attention(
 ) -> LatentAttentionWithRope:
     attn = LatentAttentionWithRope(
         rope=rope,
-        num_attention_heads=_NUM_HEADS,
+        num_attention_heads=kv_params.num_q_heads,
         num_key_value_heads=1,
         hidden_size=1024,
         kv_params=kv_params,
@@ -269,115 +270,351 @@ def _with_reversed_pages(
     reason="The NVFP4 sparse MLA kernels are SM100-class (B100/B200) only.",
 )
 @pytest.mark.parametrize("prefill_decode", [False, True])
-@pytest.mark.parametrize("permute_scales", [False, True])
+@pytest.mark.parametrize(
+    ("num_heads", "key_tile", "cta_pair", "topk", "partitions"),
+    [
+        (8, 64, 0, 64, 1),
+        (64, 64, 0, 129, 1),
+        (64, 128, 0, 129, 1),
+        (64, 128, 0, 129, 2),
+        (128, 64, 0, 257, 1),
+        (128, 128, 0, 257, 1),
+        (128, 128, 1, 257, 1),
+        (128, 128, 1, 257, 2),
+        (128, 128, 1, 257, 4),
+    ],
+)
 def test_mla_sparse_graph_nvfp4_matches_fp8_dequant(
-    prefill_decode: bool, permute_scales: bool
+    prefill_decode: bool,
+    num_heads: int,
+    key_tile: int,
+    cta_pair: int,
+    topk: int,
+    partitions: int,
+) -> None:
+    _run_nvfp4_graph_case(
+        prefill_decode,
+        (False, True),
+        num_heads,
+        key_tile,
+        cta_pair,
+        topk,
+        partitions,
+    )
+
+
+# `nvfp4_prefill_converts_once` sends a prefill with more than 150 context rows
+# per query token down the sparse decode kernel's direct gather over the packed
+# value and scale rows instead of converting once: 16 query tokens over a 4096
+# row cache is 256 rows per token. Both arms read the same bytes, so the
+# bit-exact NVFP4-vs-FP8 comparison is the route's oracle.
+@pytest.mark.skipif(
+    not is_b100_b200(),
+    reason="The NVFP4 sparse MLA kernels are SM100-class (B100/B200) only.",
+)
+@pytest.mark.parametrize("num_heads", [64, 128])
+def test_mla_sparse_graph_nvfp4_fallback_route(num_heads: int) -> None:
+    _run_nvfp4_graph_case(
+        prefill_decode=True,
+        scale_layouts=(False,),
+        num_heads=num_heads,
+        key_tile=64,
+        cta_pair=0,
+        topk=129,
+        partitions=1,
+        cache_len=4096,
+    )
+
+
+def _run_nvfp4_graph_case(
+    prefill_decode: bool,
+    scale_layouts: Sequence[bool],
+    num_heads: int,
+    key_tile: int,
+    cta_pair: int,
+    topk: int,
+    partitions: int,
+    cache_len: int = _CACHE_LEN,
 ) -> None:
     """The NVFP4 graph reads exactly what an FP8 cache of its bytes holds.
 
     The selected keys are all older than the step's own tokens, which each
     graph writes in its own format. ``prefill_decode`` runs 16 query tokens
     through the combined op's sparse prefill branch; otherwise one token
-    decodes. ``permute_scales`` pages the scales apart from the values, so a
-    kernel that took a token's scale row from its value row would read another
-    token's scales.
+    decodes. Each of ``scale_layouts`` that is true pages the scales apart from
+    the values, so a kernel that took a token's scale row from its value row
+    would read another token's scales; the layouts share the loaded models.
     """
     num_tokens = 16 if prefill_decode else 1
     session = InferenceSession(devices=[Accelerator()])
+    session._set_mojo_define("MLA_SPARSE_BN_QK", key_tile)
+    session._set_mojo_define("MLA_SPARSE_CG2", cta_pair)
+    session._set_mojo_define("MLA_SPARSE_CG2_ROUTE", 0)
+    session._set_mojo_define("MLA_SPARSE_NUM_PARTITIONS", partitions)
     weights = random_weights(
-        _attention(_kv_params(DType.bfloat16), _rope(num_tokens))
+        _attention(
+            _kv_params(DType.bfloat16, num_heads),
+            _rope(num_tokens, num_heads, cache_len),
+        )
     )
     models: dict[DType, Model] = {
         dtype: session.load(
-            _build(dtype, num_tokens, prefill_decode),
+            _build(
+                dtype,
+                num_tokens,
+                prefill_decode,
+                num_heads,
+                topk,
+                max_cache_length=cache_len,
+            ),
             weights_registry=weights,
         )
         for dtype in (DType.uint8, DType.float8_e4m3fn)
     }
 
-    # Staged after every load: precompile_mefs records the loads under
-    # virtual devices, which refuse device buffers.
-    device = Accelerator(0)
-    torch.manual_seed(0)
-    rng = np.random.default_rng(0)
+    for permute_scales in scale_layouts:
+        # Staged after every load: precompile_mefs records the loads under
+        # virtual devices, which refuse device buffers.
+        device = Accelerator(0)
+        torch.manual_seed(0)
+        rng = np.random.default_rng(0)
 
-    nvfp4, table, scales_table = _with_reversed_pages(
-        paged_kv_cache_inputs(
-            _kv_params(DType.uint8), [num_tokens], cache_lengths=[_CACHE_LEN]
-        ),
-        device,
-        permute_scales=permute_scales,
-    )
-    fp8, _, _ = _with_reversed_pages(
-        paged_kv_cache_inputs(
-            _kv_params(DType.float8_e4m3fn),
-            [num_tokens],
-            cache_lengths=[_CACHE_LEN],
-        ),
-        device,
-    )
-    assert nvfp4.kv_scales is not None
-    packed = torch.randint(
-        0, 256, tuple(int(d) for d in nvfp4.kv_blocks.shape), dtype=torch.uint8
-    )
-    # The rope bytes are FP8 values (a random byte could be a NaN).
-    packed[..., -_QK_ROPE_HEAD_DIM:] = (
-        (torch.randn(packed[..., -_QK_ROPE_HEAD_DIM:].shape) * 0.5)
-        .to(torch.float8_e4m3fn)
-        .view(torch.uint8)
-    )
-    # Power-of-two scales keep every `e2m1 * sf` exact in e4m3.
-    sf = torch.pow(
-        2.0,
-        torch.randint(-3, 1, tuple(int(d) for d in nvfp4.kv_scales.shape)),
-    ).to(torch.float8_e4m3fn)
-    # The scales of the tokens in value block `table[0, p]` sit in scale block
-    # `scales_table[0, p]`; the FP8 cache holds the dequantization of each
-    # token's own.
-    sf_of_value_block = sf.clone()
-    for page in range(int(nvfp4.kv_blocks.shape[0]) - 1):
-        sf_of_value_block[table[0, page]] = sf[scales_table[0, page]]
-    nvfp4.kv_blocks = Buffer.from_dlpack(packed).to(device)
-    nvfp4.kv_scales = (
-        Buffer.from_dlpack(sf.view(torch.uint8))
-        .view(DType.float8_e4m3fn)
-        .to(device)
-    )
-    fp8.kv_blocks = (
-        Buffer.from_dlpack(
-            _dequantize_nvfp4(packed, sf_of_value_block).view(torch.uint8)
+        nvfp4, table, scales_table = _with_reversed_pages(
+            paged_kv_cache_inputs(
+                _kv_params(DType.uint8, num_heads),
+                [num_tokens],
+                cache_lengths=[cache_len],
+            ),
+            device,
+            permute_scales=permute_scales,
         )
-        .view(DType.float8_e4m3fn)
-        .to(device)
+        fp8, _, _ = _with_reversed_pages(
+            paged_kv_cache_inputs(
+                _kv_params(DType.float8_e4m3fn, num_heads),
+                [num_tokens],
+                cache_lengths=[cache_len],
+            ),
+            device,
+        )
+        assert nvfp4.kv_scales is not None
+        packed = torch.randint(
+            0,
+            256,
+            tuple(int(d) for d in nvfp4.kv_blocks.shape),
+            dtype=torch.uint8,
+        )
+        # The rope bytes are FP8 values (a random byte could be a NaN).
+        packed[..., -_QK_ROPE_HEAD_DIM:] = (
+            (torch.randn(packed[..., -_QK_ROPE_HEAD_DIM:].shape) * 0.5)
+            .to(torch.float8_e4m3fn)
+            .view(torch.uint8)
+        )
+        # Power-of-two scales keep every `e2m1 * sf` exact in e4m3.
+        sf = torch.pow(
+            2.0,
+            torch.randint(-3, 1, tuple(int(d) for d in nvfp4.kv_scales.shape)),
+        ).to(torch.float8_e4m3fn)
+        # The scales of the tokens in value block `table[0, p]` sit in scale block
+        # `scales_table[0, p]`; the FP8 cache holds the dequantization of each
+        # token's own.
+        sf_of_value_block = sf.clone()
+        for page in range(int(nvfp4.kv_blocks.shape[0]) - 1):
+            sf_of_value_block[table[0, page]] = sf[scales_table[0, page]]
+        nvfp4.kv_blocks = Buffer.from_dlpack(packed).to(device)
+        nvfp4.kv_scales = (
+            Buffer.from_dlpack(sf.view(torch.uint8))
+            .view(DType.float8_e4m3fn)
+            .to(device)
+        )
+        fp8.kv_blocks = (
+            Buffer.from_dlpack(
+                _dequantize_nvfp4(packed, sf_of_value_block).view(torch.uint8)
+            )
+            .view(DType.float8_e4m3fn)
+            .to(device)
+        )
+
+        positions = rng.choice(cache_len, size=topk, replace=False)
+        physical = (
+            table[0, positions // _PAGE_SIZE].astype(np.int64) * _PAGE_SIZE
+            + positions % _PAGE_SIZE
+        ).astype(np.int32)
+        # A scale page holds `num_layers * page_size` rows, and the cache has one
+        # layer.
+        scale_rows = (
+            scales_table[0, positions // _PAGE_SIZE].astype(np.int64)
+            * _PAGE_SIZE
+            + positions % _PAGE_SIZE
+        ).astype(np.int32)
+        rows = {
+            DType.float8_e4m3fn: Buffer.from_numpy(
+                np.tile(physical, (num_tokens, 1))
+            ).to(device),
+            DType.uint8: Buffer.from_numpy(
+                np.tile(np.concatenate([physical, scale_rows]), (num_tokens, 1))
+            ).to(device),
+        }
+        q = Buffer.from_dlpack(
+            (
+                torch.randn(
+                    (
+                        num_tokens,
+                        num_heads,
+                        _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM,
+                    )
+                )
+                * 0.1
+            ).to(torch.bfloat16)
+        ).to(device)
+        kv = Buffer.from_dlpack(
+            (
+                torch.randn((num_tokens, _KV_LORA_RANK + _QK_ROPE_HEAD_DIM))
+                * 0.1
+            ).to(torch.bfloat16)
+        ).to(device)
+        row_offsets = Buffer.from_numpy(
+            np.array([0, num_tokens], dtype=np.uint32)
+        ).to(device)
+
+        outputs = {
+            dtype: from_dlpack(
+                models[dtype].execute(
+                    q, kv, row_offsets, rows[dtype], *tree.leaves(inputs)
+                )[0]
+            )
+            .cpu()
+            .view(torch.int16)
+            .numpy()
+            for dtype, inputs in (
+                (DType.uint8, nvfp4),
+                (DType.float8_e4m3fn, fp8),
+            )
+        }
+        got = outputs[DType.uint8]
+        want = outputs[DType.float8_e4m3fn]
+        assert np.any(want != 0)
+        np.testing.assert_array_equal(got, want)
+
+        # Prefill materializes lengths on the CPU and synchronizes. Serving
+        # captures decode; prefill's eager result is checked above.
+        if prefill_decode:
+            continue
+        inputs = (q, kv, row_offsets, rows[DType.uint8], *tree.leaves(nvfp4))
+        (captured,) = models[DType.uint8].capture(1, *inputs)
+        try:
+            for _ in range(2):
+                models[DType.uint8].replay(1, *inputs)
+                replayed = from_dlpack(captured).cpu().view(torch.int16).numpy()
+                np.testing.assert_array_equal(replayed, got)
+        finally:
+            models[DType.uint8].release_captured_graph(1)
+
+
+@pytest.mark.skipif(
+    not is_b100_b200(),
+    reason="The NVFP4 sparse MLA kernels are SM100-class (B100/B200) only.",
+)
+@pytest.mark.parametrize(
+    ("dtype", "physical_indices", "num_tokens"),
+    [
+        (DType.uint8, True, 1),
+        (DType.float8_e4m3fn, True, 1),
+        (DType.float8_e4m3fn, False, 1),
+        (DType.uint8, True, 6),
+    ],
+)
+@pytest.mark.parametrize("num_heads", [64, 128])
+def test_mla_sparse_native_capture_keys_follow_launches(
+    dtype: DType, physical_indices: bool, num_tokens: int, num_heads: int
+) -> None:
+    """Validates native capture groups against eager launches and outputs."""
+    contexts = (
+        0,
+        128,
+        256 - 2 * num_tokens,
+        256 - num_tokens,
+        256,
+        448,
+        1024,
+        2048,
+        8192,
+        32768,
+    )
+    max_context = max(contexts)
+    topk = 2048
+    params = _kv_params(dtype, num_heads)
+    params.sparse_indices_stride = _row_width(dtype, topk)
+    params.sparse_physical_indices = physical_indices
+    session = InferenceSession(devices=[Accelerator()])
+    torch.manual_seed(0)
+    weights = random_weights(
+        _attention(params, _rope(num_tokens, num_heads, max_context))
+    )
+    model = session.load(
+        _build(
+            dtype,
+            num_tokens,
+            False,
+            num_heads,
+            topk,
+            max_context,
+            physical_indices,
+        ),
+        weights_registry=weights,
     )
 
-    positions = rng.choice(_CACHE_LEN, size=_TOPK, replace=False)
-    physical = (
-        table[0, positions // _PAGE_SIZE].astype(np.int64) * _PAGE_SIZE
-        + positions % _PAGE_SIZE
-    ).astype(np.int32)
-    # A scale page holds `num_layers * page_size` rows, and the cache has one
-    # layer.
-    scale_rows = (
-        scales_table[0, positions // _PAGE_SIZE].astype(np.int64) * _PAGE_SIZE
-        + positions % _PAGE_SIZE
-    ).astype(np.int32)
-    rows = {
-        DType.float8_e4m3fn: Buffer.from_numpy(
-            np.tile(physical, (num_tokens, 1))
-        ).to(device),
-        DType.uint8: Buffer.from_numpy(
-            np.tile(np.concatenate([physical, scale_rows]), (num_tokens, 1))
-        ).to(device),
-    }
+    # Precompile MEFs records loads before device buffers can be allocated.
+    device = Accelerator(0)
+    base = paged_kv_cache_inputs(
+        params, [num_tokens], cache_lengths=[max_context]
+    )
+    if dtype == DType.uint8:
+        assert base.kv_scales is not None
+        packed = torch.randint(
+            0,
+            256,
+            tuple(int(d) for d in base.kv_blocks.shape),
+            dtype=torch.uint8,
+        )
+        packed[..., -_QK_ROPE_HEAD_DIM:] = (
+            (torch.randn(packed[..., -_QK_ROPE_HEAD_DIM:].shape) * 0.5)
+            .to(torch.float8_e4m3fn)
+            .view(torch.uint8)
+        )
+        scales = torch.pow(
+            2.0,
+            torch.randint(-3, 1, tuple(int(d) for d in base.kv_scales.shape)),
+        ).to(torch.float8_e4m3fn)
+        base.kv_blocks = Buffer.from_dlpack(packed).to(device)
+        base.kv_scales = (
+            Buffer.from_dlpack(scales.view(torch.uint8))
+            .view(DType.float8_e4m3fn)
+            .to(device)
+        )
+    else:
+        values = (
+            torch.randn(tuple(int(d) for d in base.kv_blocks.shape)) * 0.5
+        ).to(torch.float8_e4m3fn)
+        base.kv_blocks = (
+            Buffer.from_dlpack(values.view(torch.uint8))
+            .view(DType.float8_e4m3fn)
+            .to(device)
+        )
+    # Cold contexts include freshly written rows. Immutable KV inputs make
+    # those writes deterministic across eager execution and replay.
+    physical = np.tile(
+        np.arange(_PAGE_SIZE, dtype=np.int32), topk // _PAGE_SIZE
+    )
+    selected = (
+        np.concatenate([physical, physical])
+        if dtype == DType.uint8
+        else physical
+    )
+    rows = Buffer.from_numpy(np.tile(selected, (num_tokens, 1))).to(device)
     q = Buffer.from_dlpack(
         (
             torch.randn(
-                (
-                    num_tokens,
-                    _NUM_HEADS,
-                    _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM,
-                )
+                (num_tokens, num_heads, _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM)
             )
             * 0.1
         ).to(torch.bfloat16)
@@ -387,22 +624,56 @@ def test_mla_sparse_graph_nvfp4_matches_fp8_dequant(
             torch.bfloat16
         )
     ).to(device)
-    row_offsets = Buffer.from_numpy(
-        np.array([0, num_tokens], dtype=np.uint32)
-    ).to(device)
+    row_offsets = Buffer.from_numpy(np.array([0, num_tokens], np.uint32)).to(
+        device
+    )
+    groups: dict[MLAAttnKey, list[int]] = {}
+    for context in contexts:
+        key = params.resolve_attn_key(1, num_tokens, context + num_tokens)
+        assert isinstance(key, MLAAttnKey)
+        groups.setdefault(key, []).append(context)
+    assert len(groups) > 1
+    assert any(len(members) > 1 for members in groups.values())
+    inputs = (q, kv, row_offsets, rows, *tree.leaves(base))
+    dispatch_metadata = base.attention_dispatch_metadata
+    partitions = base.mla_num_partitions
+    assert dispatch_metadata is not None
+    assert partitions is not None
 
-    def run(
-        dtype: DType, inputs: KVCacheInputsPerDevice[Buffer, Buffer]
-    ) -> np.ndarray:
-        out = models[dtype].execute(
-            q, kv, row_offsets, rows[dtype], *tree.leaves(inputs)
-        )[0]
-        return from_dlpack(out).cpu().view(torch.int16).numpy()
+    def stage(key: MLAAttnKey, context: int) -> None:
+        # Replay validates device addresses as well as shapes and dtypes.
+        # Serving changes staged values while preserving these allocations.
+        base.cache_lengths.inplace_copy_from(
+            Buffer.from_numpy(np.array([context], np.uint32)).to(device)
+        )
+        dispatch_metadata.inplace_copy_from(
+            key.pack_into_buffer(device, context + num_tokens)
+        )
+        base.max_cache_length.inplace_copy_from(
+            Buffer.from_numpy(np.array([context + num_tokens], np.uint32))
+        )
+        partitions.inplace_copy_from(
+            Buffer.from_numpy(np.array([key.num_partitions], np.int64))
+        )
+        base.max_cache_length.stream.synchronize()
+        partitions.stream.synchronize()
+        device.synchronize()
 
-    got = run(DType.uint8, nvfp4)
-    want = run(DType.float8_e4m3fn, fp8)
-    assert np.any(want != 0)
-    np.testing.assert_array_equal(got, want)
+    for capture_id, (key, members) in enumerate(groups.items(), start=1):
+        stage(key, max(members))
+        (captured,) = model.capture(capture_id, *inputs)
+        try:
+            for context in members:
+                stage(key, context)
+                (eager,) = model.execute(*inputs)
+                want = from_dlpack(eager).cpu().view(torch.int16).numpy().copy()
+                assert np.any(want != 0)
+                model.debug_verify_replay(capture_id, *inputs)
+                model.replay(capture_id, *inputs)
+                got = from_dlpack(captured).cpu().view(torch.int16).numpy()
+                np.testing.assert_array_equal(got, want)
+        finally:
+            model.release_captured_graph(capture_id)
 
 
 @pytest.mark.skipif(
@@ -537,23 +808,30 @@ def test_mla_indexer_nvfp4_rows_follow_the_scales_table() -> None:
     not is_b100_b200(),
     reason="The NVFP4 sparse MLA kernels are SM100-class (B100/B200) only.",
 )
-def test_mla_sparse_prefill_nvfp4_convert_once_gate(
+@pytest.mark.parametrize("num_heads", [8, 64, 128])
+def test_mla_sparse_prefill_nvfp4_routes_to_decode(
     monkeypatch: pytest.MonkeyPatch,
+    num_heads: int,
 ) -> None:
-    """Sparse prefill converts an NVFP4 context to FP8 once when the gate
-    allows, and then matches the NVFP4 kernel bit for bit.
+    """NVFP4 sparse prefill runs the decode kernel on either side of the gate.
 
-    The conversion takes each row's scales through the cache's scales page
-    table, while the NVFP4 kernel reads the index row's scale half. Index rows
-    whose scale half names other tokens' rows tell the two apart: they change
-    the NVFP4 kernel's output and not the conversion's. With 16 query tokens
-    over 316 context rows (one 384-row page set), a ratio of 20 or a 256-row
-    cap sends the step back to the NVFP4 kernel.
+    Sparse prefill over a packed NVFP4 cache at supported head counts runs the
+    token-bounded decode kernel with tile skipping (see
+    `mla_sparse_prefill_on_decode_kernel`): either over the converted FP8 copy
+    (`nvfp4_prefill_converts_once` holds) or over the packed value and scale
+    rows themselves. The two routes dequantize identically, so they agree to
+    bf16 rounding. Only the packed route reads each selection's scale row from
+    the index row's scale half; the conversion takes scales from the cache's
+    pages. Index rows whose scale half names other tokens' rows therefore
+    change the packed route's output and not the converted route's, which
+    tells the routes apart.
     """
     num_tokens = 16
     session = InferenceSession(devices=[Accelerator()])
     weights = random_weights(
-        _attention(_kv_params(DType.bfloat16), _rope(num_tokens))
+        _attention(
+            _kv_params(DType.bfloat16, num_heads), _rope(num_tokens, num_heads)
+        )
     )
 
     def load(ratio: int, max_rows: int) -> Model:
@@ -564,7 +842,12 @@ def test_mla_sparse_prefill_nvfp4_convert_once_gate(
             "MODULAR_MLA_NVFP4_PREFILL_CONVERT_MAX_ROWS", str(max_rows)
         )
         return session.load(
-            _build(DType.uint8, num_tokens, prefill_decode=True),
+            _build(
+                DType.uint8,
+                num_tokens,
+                prefill_decode=True,
+                num_heads=num_heads,
+            ),
             weights_registry=weights,
         )
 
@@ -580,7 +863,9 @@ def test_mla_sparse_prefill_nvfp4_convert_once_gate(
     rng = np.random.default_rng(0)
     inputs, table, scales_table = _with_reversed_pages(
         paged_kv_cache_inputs(
-            _kv_params(DType.uint8), [num_tokens], cache_lengths=[_CACHE_LEN]
+            _kv_params(DType.uint8, num_heads),
+            [num_tokens],
+            cache_lengths=[_CACHE_LEN],
         ),
         device,
         permute_scales=True,
@@ -627,7 +912,7 @@ def test_mla_sparse_prefill_nvfp4_convert_once_gate(
     q = Buffer.from_dlpack(
         (
             torch.randn(
-                (num_tokens, _NUM_HEADS, _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM)
+                (num_tokens, num_heads, _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM)
             )
             * 0.1
         ).to(torch.bfloat16)
@@ -645,15 +930,26 @@ def test_mla_sparse_prefill_nvfp4_convert_once_gate(
         out = models[name].execute(
             q, kv, row_offsets, index, *tree.leaves(inputs)
         )[0]
-        return from_dlpack(out).cpu().view(torch.int16).numpy()
+        return from_dlpack(out).cpu().float().numpy()
 
+    def cosine(got: np.ndarray, want: np.ndarray) -> float:
+        return float(
+            (got * want).sum()
+            / np.sqrt((got * got).sum() * (want * want).sum())
+        )
+
+    # The context is 384 rows over 16 query tokens: only `convert` passes the
+    # gate. `off` turns it off, `low_ratio` allows 20 rows per token, and
+    # `capped` 256 rows, so those three take the packed route.
     want = run("off", rows)
     assert np.any(want != 0)
-    np.testing.assert_array_equal(run("convert", rows), want)
-    # The conversion ran: it ignores the index rows' scale half.
-    np.testing.assert_array_equal(run("convert", probe), want)
-    nvfp4_probe = run("off", probe)
-    assert np.any(nvfp4_probe != want)
-    # Past the ratio or the cap, the NVFP4 kernel runs.
-    np.testing.assert_array_equal(run("low_ratio", probe), nvfp4_probe)
-    np.testing.assert_array_equal(run("capped", probe), nvfp4_probe)
+    for name in ("convert", "low_ratio", "capped"):
+        got = run(name, rows)
+        assert np.any(got != 0)
+        assert cosine(got, want) >= 0.999999, (name, cosine(got, want))
+        assert np.max(np.abs(got - want)) <= 0.05, name
+    converted = run("convert", probe)
+    assert cosine(converted, want) >= 0.999999, cosine(converted, want)
+    assert np.max(np.abs(converted - want)) <= 0.05
+    for name in ("off", "low_ratio", "capped"):
+        assert cosine(run(name, probe), want) < 0.999, name

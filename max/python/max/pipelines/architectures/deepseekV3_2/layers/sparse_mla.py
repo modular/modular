@@ -59,11 +59,9 @@ _SPARSE_PREFILL_SUPPORTED_HEADS_FP8 = (64, 128)
 # GLM 5.2's TP-sharded counts (64 // {8, 4, 2}) route to the combined op over a
 # bfloat16 OR float8_e4m3fn latent cache.  The combined op's prefill arm now
 # takes the sparse-prefill kernel for both cache dtypes: mla_graph.mojo
-# dispatches an FP8 latent cache to mla_sm100_prefill_sparse_fp8 read at unit
-# scale (scale_block_size=0), mirroring the sparse-decode kernel's read of the
-# scale-less FP8 latent cache.  So the absorbed sparse path -- not the dense
-# unabsorbed FP8 prefill (whose extra Q/K/V requantization cost accuracy) --
-# runs for FP8-cache prefill at these head counts.
+# runs an FP8 latent cache on the sparse decode kernel instead, so the absorbed
+# sparse path -- not the dense unabsorbed FP8 prefill (whose extra Q/K/V
+# requantization cost accuracy) -- serves prefill at these head counts.
 _SPARSE_PREFILL_TP_SHARDED_HEADS = (8, 16, 32)
 
 

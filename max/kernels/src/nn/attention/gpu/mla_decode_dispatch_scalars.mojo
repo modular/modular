@@ -37,7 +37,8 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
-    compute_mla_dispatch_scalars_runtime,
+    MLA_SPARSE_KV_FORM_PLAIN,
+    compute_mla_dispatch_key_runtime,
 )
 
 
@@ -72,8 +73,8 @@ def mla_decode_dispatch_scalars(
       captured graph and is a function of `batch_size` and `q_max_seq_len`
       alone. It matches the BF16 arm on a BF16 cache and, at one query
       token with an FP8 cache, the FP8-weight ops.
-    - **CUDA (NVIDIA/SM100):** delegate to the SM100 runtime heuristic
-      `compute_mla_dispatch_scalars_runtime`, which reads the device SM count.
+    - **CUDA (NVIDIA/SM100):** the first three values of
+      `mla_decode_dispatch_key`.
     - **Any other api (e.g. Metal):** raise: there is no MLA decode dispatch
       path for non-HIP/non-CUDA devices, so route them to a clear error rather
       than silently into the SM100 heuristic.
@@ -86,7 +87,7 @@ def mla_decode_dispatch_scalars(
         is_fp8_kv: Whether the KV cache is FP8 (selects the SM100 sub-heuristic).
         ctx: Device context used to read `api()` and the SM count.
         sparse_indices_stride: Selected rows per token for sparse MLA, the
-            sparse index row stride; 0 for dense MLA. Read on HIP only.
+            sparse index row stride; 0 for dense MLA.
 
     Returns:
         The packed `(batch_size, q_max_seq_len, num_partitions)` metadata.
@@ -129,18 +130,91 @@ def mla_decode_dispatch_scalars(
         )
         return (batch_size, q_max_seq_len, np)
     elif ctx.api() == "cuda":
-        # SM100/NVIDIA runtime heuristic (reads the device SM count). CUDA is
-        # the only non-HIP device with an MLA decode dispatch path.
-        return compute_mla_dispatch_scalars_runtime(
+        var key = mla_decode_dispatch_key(
             batch_size,
             max_cache_valid_length,
             q_max_seq_len,
             num_heads,
             is_fp8_kv,
-            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            ctx,
+            sparse_indices_stride=sparse_indices_stride,
         )
+        return (key[0], key[1], key[2])
     else:
         raise Error(
             "mla_decode_dispatch_scalars supports only HIP (AMD) and CUDA"
             " (NVIDIA/SM100) device contexts."
         )
+
+
+def mla_decode_dispatch_key(
+    batch_size: Int,
+    max_cache_valid_length: Int,
+    q_max_seq_len: Int,
+    num_heads: Int,
+    is_fp8_kv: Bool,
+    ctx: DeviceContext,
+    sparse_indices_stride: Int = 0,
+    *,
+    kv_form: Int = MLA_SPARSE_KV_FORM_PLAIN,
+    page_size: Int = 128,
+    fixed_topk: Bool = True,
+    physical_indices: Bool = False,
+    depth: Int = 0,
+) raises -> Tuple[Int, Int, Int, Int]:
+    """Compute the MLA decode dispatch metadata plus its kernel variant.
+
+    Returns `(batch_size, q_max_seq_len, num_partitions, kernel_variant)`. The
+    variant is not packed into the dispatch buffer: it only separates capture
+    keys whose launches share a split count. On CUDA it comes from
+    `compute_mla_dispatch_key_runtime`, which keys a sparse decode
+    on the launch the SM100 dispatch makes (its sparse graph ops do not
+    forward the split). Elsewhere it is 0.
+
+    Args:
+        batch_size: Current decode batch size.
+        max_cache_valid_length: Max valid KV-cache length across the batch.
+        q_max_seq_len: Max query sequence length (1 for decode).
+        num_heads: Number of Q attention heads.
+        is_fp8_kv: Whether the KV cache is FP8.
+        ctx: Device context used to read `api()` and the SM count.
+        sparse_indices_stride: Selected rows per token for sparse MLA, the
+            sparse index row stride; 0 for dense MLA.
+        kv_form: The sparse cache form (`MLA_SPARSE_KV_FORM_*`), read on
+            CUDA only.
+        page_size: The KV cache page size, read on CUDA only.
+        fixed_topk: Whether the sparse decode passes neither per-token top-k
+            lengths nor an attention sink, read on CUDA only.
+        physical_indices: Whether sparse rows are physical, read on CUDA
+            only. NVFP4 always uses physical rows.
+        depth: Logical KV head dimension; zero (unknown) disables the 576-only
+            Layout E records.
+
+    Returns:
+        The dispatch metadata and the kernel variant.
+    """
+    if ctx.api() == "cuda":
+        return compute_mla_dispatch_key_runtime(
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            num_heads,
+            is_fp8_kv,
+            sparse_indices_stride,
+            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            kv_form=kv_form,
+            page_size=page_size,
+            fixed_topk=fixed_topk,
+            physical_indices=physical_indices,
+            depth=depth,
+        )
+    var scalars = mla_decode_dispatch_scalars(
+        batch_size,
+        max_cache_valid_length,
+        q_max_seq_len,
+        num_heads,
+        is_fp8_kv,
+        ctx,
+        sparse_indices_stride=sparse_indices_stride,
+    )
+    return (scalars[0], scalars[1], scalars[2], 0)

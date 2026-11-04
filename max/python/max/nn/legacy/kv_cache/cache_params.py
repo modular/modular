@@ -19,7 +19,7 @@ import logging
 import math
 from collections import OrderedDict
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from functools import cached_property
 from typing import (
@@ -35,9 +35,10 @@ from typing import (
 import numpy as np
 from max import tree
 from max._kv_cache_ops import (
+    MLASparseKVForm,
     mha_decode_num_partitions,
     mha_split_kv_decode_num_partitions,
-    mla_dispatch_args_scalar,
+    mla_dispatch_key,
     multiprocessor_count,
 )
 from max._kv_core import LeafShape
@@ -2595,6 +2596,13 @@ class MHAKVCacheParams(KVCacheParams):
         return SplitKVHeadDims() if self.has_split_head_dims else None
 
 
+# The cache length past which a sparse MLA dispatch key no longer changes,
+# for index strides up to this length: the SM100 split's cache-length rules
+# end at 6144 keys, and its split length is the stride once the cache covers
+# it. AMD's sparse key ignores the cache.
+_SPARSE_MLA_KEY_SATURATION = 8192
+
+
 @dataclass(kw_only=True)
 class MLAKVCacheParams(KVCacheParams):
     """KV cache parameters for multi-latent attention (MLA)."""
@@ -2606,7 +2614,29 @@ class MLAKVCacheParams(KVCacheParams):
     sparse_indices_stride: int | None = None
     """Selected cache rows per token for sparse MLA, the row stride of the
     indexer's selection; ``None`` for dense MLA. AMD sparse decode splits
-    these rows rather than the context, so the dispatch key follows them."""
+    these rows rather than the context. SM100 sparse decode keys follow the
+    selected work and its launch policy at supported head counts."""
+
+    sparse_kv_form: MLASparseKVForm | None = None
+    """The cache form the SM100 sparse dispatch key assumes, one of
+    the :class:`MLASparseKVForm` values; ``None`` derives it from this
+    cache's dtype and scales. A leaf whose key only joins another leaf's
+    capture identity, such as the indexer's, sets that leaf's form."""
+
+    sparse_fixed_topk: bool = True
+    """Whether the sparse decode passes neither per-token top-k lengths nor an
+    attention sink. Either one keeps the 128-head NVIDIA split off its relaxed
+    page floor, so the dispatch key must know."""
+
+    sparse_physical_indices: bool = False
+    """Whether sparse indices already name physical cache rows. NVFP4 always
+    uses physical value and scale rows. Other caches default to logical
+    positions, keeping policies measured for physical rows off that form."""
+
+    sparse_dispatch_head_dim: int | None = None
+    """The MLA row width the sparse dispatch key assumes; ``None`` uses this
+    cache's head dimension. An indexer leaf joining an MLA capture identity
+    copies that MLA leaf's width."""
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -2648,6 +2678,53 @@ class MLAKVCacheParams(KVCacheParams):
         """Returns the spec :class:`MLAAttnKey` packs into."""
         return MLAAttnKey.dispatch_metadata_spec()
 
+    @property
+    def resolved_sparse_kv_form(self) -> MLASparseKVForm:
+        """Returns the sparse cache form the dispatch key passes on."""
+        if self.sparse_kv_form is not None:
+            return self.sparse_kv_form
+        if self.is_nvfp4_kv_cache:
+            return MLASparseKVForm.NVFP4
+        if self.is_fp8_kv_dtype and self.quantized_kv_cache:
+            return MLASparseKVForm.SCALED_FP8
+        return MLASparseKVForm.PLAIN
+
+    @property
+    def resolved_sparse_physical_indices(self) -> bool:
+        """Returns whether the sparse dispatch key assumes physical rows."""
+        return self.is_nvfp4_kv_cache or self.sparse_physical_indices
+
+    @property
+    def resolved_sparse_dispatch_head_dim(self) -> int:
+        """Returns the cache row width the sparse dispatch key assumes."""
+        if self.sparse_dispatch_head_dim is not None:
+            return self.sparse_dispatch_head_dim
+        return self.head_dim
+
+    def joining_sparse_dispatch_of(
+        self, mla: MLAKVCacheParams
+    ) -> MLAKVCacheParams:
+        """Returns these params keyed on another MLA leaf's sparse dispatch.
+
+        No kernel reads an indexer leaf's dispatch metadata, but it is part of
+        the composite capture key, so it must follow the MLA leaf's key rather
+        than move with its own context.
+
+        Args:
+            mla: The MLA leaf whose sparse dispatch fields to copy.
+
+        Returns:
+            A copy of these params with ``mla``'s resolved sparse dispatch.
+        """
+        return replace(
+            self,
+            sparse_indices_stride=mla.sparse_indices_stride,
+            sparse_kv_form=mla.resolved_sparse_kv_form,
+            sparse_fixed_topk=mla.sparse_fixed_topk,
+            sparse_physical_indices=mla.resolved_sparse_physical_indices,
+            sparse_dispatch_head_dim=mla.resolved_sparse_dispatch_head_dim,
+        )
+
     def resolve_attn_key(
         self,
         batch_size: int,
@@ -2674,10 +2751,10 @@ class MLAKVCacheParams(KVCacheParams):
                 max_prompt_length=max_prompt_length,
                 num_partitions=1,
             )
-        # ``mla_dispatch_args_scalar`` may adjust batch_size / max_prompt_length
+        # ``mla_dispatch_key`` may adjust batch_size / max_prompt_length
         # alongside the resolved num_partitions; carry the adjusted values.
-        adj_batch_size, adj_max_prompt_length, num_partitions = (
-            mla_dispatch_args_scalar(
+        adj_batch_size, adj_max_prompt_length, num_partitions, variant = (
+            mla_dispatch_key(
                 batch_size,
                 max_cache_valid_length,
                 max_prompt_length,
@@ -2685,22 +2762,39 @@ class MLAKVCacheParams(KVCacheParams):
                 self.is_fp8_kv_dtype,
                 device,
                 sparse_indices_stride=self.sparse_indices_stride or 0,
+                kv_form=self.resolved_sparse_kv_form,
+                page_size=self.page_size,
+                fixed_topk=self.sparse_fixed_topk,
+                physical_indices=self.resolved_sparse_physical_indices,
+                depth=self.resolved_sparse_dispatch_head_dim,
             )
         )
         return MLAAttnKey(
             batch_size=int(adj_batch_size),
             max_prompt_length=int(adj_max_prompt_length),
             num_partitions=int(num_partitions),
+            kernel_variant=int(variant),
         )
 
     def graph_capture_probe_cache_lengths(
         self, max_cache_length: int, q_max_seq_len: int = 1
     ) -> list[int]:
-        """Returns cache lengths to probe for distinct num_partitions."""
+        """Returns cache lengths to probe for distinct num_partitions.
+
+        A sparse key stops changing once the cache covers both the index
+        stride and the split policy's cache-length rules, so probes stop
+        there and ``max_cache_length`` stands for every longer cache.
+        """
         granularity = 64
+        grid_end = max_cache_length
+        if self.sparse_indices_stride:
+            grid_end = min(
+                grid_end,
+                max(self.sparse_indices_stride, _SPARSE_MLA_KEY_SATURATION) + 1,
+            )
         probe_lengths = (
             [1]
-            + list(range(granularity, max_cache_length, granularity))
+            + list(range(granularity, grid_end, granularity))
             + [max_cache_length]
         )
         return _filter_tiny_cache_lengths(probe_lengths, self.num_draft_tokens)

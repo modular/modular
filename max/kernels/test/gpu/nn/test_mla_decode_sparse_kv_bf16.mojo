@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Correctness tests for MLA_SM100_Decode_Sparse_KV_BF16.
+"""Correctness tests for sparse MLA decode with BF16 Q and cache, which
+run MLA_SM100_Decode_Sparse_QKV_FP8 (Layout G at up to 32 heads).
 
 Covers bit-exact comparison against dense BF16 (`topk == cache_len`,
 sequential page table); real sparse selection with NullMask and
@@ -22,6 +23,8 @@ attention sinks; extra (always-attend) KV; and topk clamping when
 
 from std.math import ceildiv, exp
 from std.random import randn, seed
+from std.collections import OptionalReg
+from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
@@ -244,6 +247,13 @@ def run_bit_exact_vs_dense[
     ](batch_size, cache_len, q_max_seq_len, ctx)
     var scalar_args_sparse_tt = mla_args_sparse.gpu_tile_tensor()
 
+    # Sparse picks its split from its own cost record; bit-exactness needs
+    # the dense split, since the reduction order follows it.
+    comptime sm_count = ctx.default_device_info.sm_count
+    var num_partitions = compute_mla_dispatch_scalars[
+        num_heads=num_heads, is_fp8_kv=False, half_sms=sm_count // 2
+    ](batch_size, cache_len, q_max_seq_len, sm_count)[2]
+
     print("  Launching dense BF16 MLA decode (reference)...")
     flare_mla_decoding[
         rank=3,
@@ -276,6 +286,7 @@ def run_bit_exact_vs_dense[
         scale,
         ctx,
         scalar_args_sparse_tt,
+        num_partitions_in=num_partitions,
         d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -467,6 +478,59 @@ def host_reference_with_attn_sink[
 # ===-----------------------------------------------------------------------===#
 
 
+comptime BREAK_MUST_PASS = 0
+comptime BREAK_MUST_FAIL = 1
+# Pair tile of the BF16 h=128 CTA pair: the leader's keys are slots [0, 32)
+# of every 64-slot tile, the follower's [32, 64).
+comptime PAIR_TILE = 64
+
+
+def _is_pad_slot(slot: Int, logical_pad: Int, logical_pad_half: Int) -> Bool:
+    """Whether a logical cell's slot carries the -1 padding index."""
+    return (
+        logical_pad != 0
+        and slot % logical_pad == logical_pad - 1
+        and (
+            logical_pad_half < 0
+            or (slot % PAIR_TILE) // (PAIR_TILE // 2) == logical_pad_half
+        )
+    )
+
+
+def _check_outcome(
+    name: StringLiteral,
+    bad: Int,
+    nan_count: Int,
+    max_err: Float64,
+    total_checked: Int,
+    break_expect: Int,
+) raises:
+    """Raises unless the cell's outcome is the one `break_expect` names.
+
+    A negative-control cell (`BREAK_MUST_FAIL`) must see an element outside
+    tolerance; every other cell must see none.
+    """
+    if break_expect == BREAK_MUST_FAIL:
+        if bad == 0:
+            print("  UNEXPECTED_PASS:", name, " max_err=", max_err)
+            raise Error("negative-control cell passed")
+        print("  EXPECTED_FAIL:", name, " bad=", bad, " max_err=", max_err)
+        return
+    if nan_count > 0:
+        print("  FAILED: ", nan_count, "NaN values in output")
+        raise Error("NaN in kernel output")
+    if bad > 0:
+        print("  FAILED:", name, " bad=", bad, " max_err=", max_err)
+        raise Error("sparse BF16 decode mismatch")
+    print(
+        "  PASSED: max_err=",
+        max_err,
+        " checked=",
+        total_checked,
+        " elements",
+    )
+
+
 def run_test_sparse_kv_bf16[
     q_type: DType,
     num_heads: Int,
@@ -474,6 +538,9 @@ def run_test_sparse_kv_bf16[
     # Pass token positions and let the kernel decode them through the page
     # table (the graph-op path) instead of precomputed physical rows.
     logical: Bool = False,
+    # Width of the KV row and the absorbed Q as the model stores them: 576
+    # with the rotary tail, 512 for a NoPE model.
+    row_depth: Int = Q_DEPTH,
 ](
     name: StringLiteral,
     batch_size: Int,
@@ -481,6 +548,14 @@ def run_test_sparse_kv_bf16[
     ctx: DeviceContext,
     topk: Int,
     q_max_seq_len: Int = 1,
+    forced_np: Int = 0,
+    # Causal logical cells only: every `logical_pad`-th slot's logical index
+    # is -1 (padding), which the kernel must mask.
+    logical_pad: Int = 0,
+    # Restricts that padding to one half of every pair tile
+    # (`_is_pad_slot`); -1 pads both.
+    logical_pad_half: Int = -1,
+    break_expect: Int = BREAK_MUST_PASS,
 ) raises:
     print(
         t"test: {name}  batch_size: {batch_size}  cache_len: {cache_len} "
@@ -488,12 +563,14 @@ def run_test_sparse_kv_bf16[
         t" {q_max_seq_len}  causal: {use_causal}"
     )
 
+    if logical_pad != 0 and not (logical and use_causal):
+        raise Error("logical_pad needs a causal logical cell")
     var num_keys = cache_len + q_max_seq_len
     var total_q_tokens = batch_size * q_max_seq_len
     comptime scale = Float32(0.125)
 
     comptime kv_params = KVCacheStaticParams(
-        num_heads=KV_NUM_HEADS, head_size=KV_HEAD_SIZE, is_mla=True
+        num_heads=KV_NUM_HEADS, head_size=row_depth, is_mla=True
     )
     comptime kv_dim2 = 1
 
@@ -521,7 +598,7 @@ def run_test_sparse_kv_bf16[
     for i in range(block_elems):
         blocks_host[i] = Scalar[q_type](0)
 
-    var k_total = batch_size * num_keys * Q_DEPTH
+    var k_total = batch_size * num_keys * row_depth
     var k_host = ctx.enqueue_create_host_buffer[q_type](k_total)
     randn(
         k_host.as_span(),
@@ -529,7 +606,7 @@ def run_test_sparse_kv_bf16[
         standard_deviation=0.5,
     )
 
-    var tok_stride = kv_params.head_size  # 576 BF16 elems
+    var tok_stride = kv_params.head_size
 
     # Build shuffled page table so gather4 exercises scatter.
     var lut_size = batch_size * max_pages_per_batch
@@ -566,8 +643,8 @@ def run_test_sparse_kv_bf16[
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
             var base = block_id * page_stride_elems + tok_in_page * tok_stride
-            var k_base = bi * num_keys * Q_DEPTH + t * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var k_base = bi * num_keys * row_depth + t * row_depth
+            for d in range(row_depth):
                 blocks_host[base + d] = k_host[k_base + d]
 
     # Select topk unique tokens PER QUERY TOKEN via deterministic permutation.
@@ -588,21 +665,21 @@ def run_test_sparse_kv_bf16[
             for i in range(topk):
                 selected_tokens[g * topk + i] = (i * mult + 1 + s) % num_keys
 
-    # Build sparse reference K buffer [total_q_tokens, topk, Q_DEPTH] — one
+    # Build sparse reference K buffer [total_q_tokens, topk, row_depth] — one
     # selected-key set per query token.
-    var k_sparse_ref_size = total_q_tokens * topk * Q_DEPTH
+    var k_sparse_ref_size = total_q_tokens * topk * row_depth
     var k_sparse_ref = ctx.enqueue_create_host_buffer[q_type](k_sparse_ref_size)
     for bi in range(batch_size):
         for s in range(q_max_seq_len):
             var g = bi * q_max_seq_len + s
             for i in range(topk):
                 var t = selected_tokens[g * topk + i]
-                var src_base = bi * num_keys * Q_DEPTH + t * Q_DEPTH
-                var dst_base = g * topk * Q_DEPTH + i * Q_DEPTH
-                for d in range(Q_DEPTH):
+                var src_base = bi * num_keys * row_depth + t * row_depth
+                var dst_base = g * topk * row_depth + i * row_depth
+                for d in range(row_depth):
                     k_sparse_ref[dst_base + d] = k_host[src_base + d]
 
-    var q_size = batch_size * q_max_seq_len * num_heads * Q_DEPTH
+    var q_size = batch_size * q_max_seq_len * num_heads * row_depth
     var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
     randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
 
@@ -618,23 +695,25 @@ def run_test_sparse_kv_bf16[
                 var causal_limit = cache_len + s + 1
                 for h in range(num_heads):
                     var q_base = (
-                        b * q_max_seq_len * num_heads * Q_DEPTH
-                        + s * num_heads * Q_DEPTH
-                        + h * Q_DEPTH
+                        b * q_max_seq_len * num_heads * row_depth
+                        + s * num_heads * row_depth
+                        + h * row_depth
                     )
                     var max_s = Float64(min_or_neg_inf[.float32]())
                     var s_buf = List(length=topk, fill=Float64(0))
                     var valid = List(length=topk, fill=False)
                     for i in range(topk):
                         var tok = selected_tokens[g * topk + i]
-                        if tok >= causal_limit:
+                        if tok >= causal_limit or _is_pad_slot(
+                            i, logical_pad, logical_pad_half
+                        ):
                             valid[i] = False
                             s_buf[i] = Float64(min_or_neg_inf[.float32]())
                             continue
                         valid[i] = True
-                        var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                        var k_base = g * topk * row_depth + i * row_depth
                         var dot = Float64(0)
-                        for d in range(Q_DEPTH):
+                        for d in range(row_depth):
                             dot += (
                                 q_host[q_base + d].cast[.float64]()
                                 * k_sparse_ref[k_base + d].cast[.float64]()
@@ -665,7 +744,7 @@ def run_test_sparse_kv_bf16[
                         for i in range(topk):
                             if not valid[i]:
                                 continue
-                            var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                            var k_base = g * topk * row_depth + i * row_depth
                             acc += (
                                 s_buf[i]
                                 * k_sparse_ref[k_base + d].cast[.float64]()
@@ -675,23 +754,23 @@ def run_test_sparse_kv_bf16[
                     _ = s_buf^
     else:
         # Non-causal reference. Each query token attends to its OWN top-k set
-        # (k_sparse_ref is laid out [total_q_tokens, topk, Q_DEPTH]), so we
+        # (k_sparse_ref is laid out [total_q_tokens, topk, row_depth]), so we
         # cannot use the shared-key host_reference helper here.
         for b in range(batch_size):
             for s in range(q_max_seq_len):
                 var g = b * q_max_seq_len + s
                 for h in range(num_heads):
                     var q_base = (
-                        b * q_max_seq_len * num_heads * Q_DEPTH
-                        + s * num_heads * Q_DEPTH
-                        + h * Q_DEPTH
+                        b * q_max_seq_len * num_heads * row_depth
+                        + s * num_heads * row_depth
+                        + h * row_depth
                     )
                     var max_s = Float64(min_or_neg_inf[.float32]())
                     var s_buf = List(length=topk, fill=Float64(0))
                     for i in range(topk):
-                        var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                        var k_base = g * topk * row_depth + i * row_depth
                         var dot = Float64(0)
-                        for d in range(Q_DEPTH):
+                        for d in range(row_depth):
                             dot += (
                                 q_host[q_base + d].cast[.float64]()
                                 * k_sparse_ref[k_base + d].cast[.float64]()
@@ -715,7 +794,7 @@ def run_test_sparse_kv_bf16[
                     for d in range(V_DEPTH):
                         var acc = Float64(0)
                         for i in range(topk):
-                            var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                            var k_base = g * topk * row_depth + i * row_depth
                             acc += (
                                 s_buf[i]
                                 * k_sparse_ref[k_base + d].cast[.float64]()
@@ -756,6 +835,14 @@ def run_test_sparse_kv_bf16[
                     )
     var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
+    # Logical positions for the causal mask, with -1 at the padding slots.
+    var h_logical = ctx.enqueue_create_host_buffer[.int32](total_indices)
+    for idx in range(total_indices):
+        h_logical[idx] = Int32(selected_tokens[idx])
+        if _is_pad_slot(idx % topk, logical_pad, logical_pad_half):
+            h_logical[idx] = -1
+    var logical_device = ctx.enqueue_create_buffer[.int32](total_indices)
+    ctx.enqueue_copy(logical_device, h_logical)
 
     ctx.synchronize()
 
@@ -797,7 +884,7 @@ def run_test_sparse_kv_bf16[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device, row_major(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])
+        q_device, row_major(total_q_tokens, Idx[num_heads], Idx[row_depth])
     )
     var out_tt = TileTensor(
         out_device,
@@ -824,6 +911,14 @@ def run_test_sparse_kv_bf16[
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     var indices_stride = topk
+    var np_ovr = Optional[Int](forced_np) if forced_np > 0 else Optional[Int](
+        None
+    )
+    var logical_ptr: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None
+    if logical_pad != 0:
+        logical_ptr = rebind[MutPointer[Int32, MutAnyOrigin]](
+            logical_device.unsafe_ptr()
+        )
     print(
         "  Launching MLA sparse KV_BF16 decode... topk=",
         topk,
@@ -834,7 +929,7 @@ def run_test_sparse_kv_bf16[
     comptime if use_causal:
         flare_mla_decoding[
             rank=3,
-            config=MHAConfig[q_type](num_heads, Q_DEPTH),
+            config=MHAConfig[q_type](num_heads, row_depth),
             ragged=True,
             sparse=True,
             physical_indices=not logical,
@@ -851,11 +946,13 @@ def run_test_sparse_kv_bf16[
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,
+            num_partitions_in=np_ovr,
+            logical_indices=logical_ptr,
         )
     else:
         flare_mla_decoding[
             rank=3,
-            config=MHAConfig[q_type](num_heads, Q_DEPTH),
+            config=MHAConfig[q_type](num_heads, row_depth),
             ragged=True,
             sparse=True,
             physical_indices=not logical,
@@ -872,6 +969,8 @@ def run_test_sparse_kv_bf16[
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,
+            num_partitions_in=np_ovr,
+            logical_indices=logical_ptr,
         )
     ctx.synchronize()
 
@@ -884,6 +983,7 @@ def run_test_sparse_kv_bf16[
     var max_err = Float64(0)
     var nan_count = 0
     var total_checked = 0
+    var large_errs = 0
     for b in range(batch_size):
         for s in range(q_max_seq_len):
             for h in range(num_heads):
@@ -906,18 +1006,14 @@ def run_test_sparse_kv_bf16[
                         max_err = err
                     total_checked += 1
                     if err > 1e-2:
+                        large_errs += 1
+                    if err > 1e-2 and large_errs <= 5:
                         print(
                             t"  large err b= {b}  s= {s}  h= {h}  d= {d}  got="
                             t" {actual_val}  ref= {ref_val}  err= {err}"
                         )
 
-    if nan_count > 0:
-        print(
-            t"  FAILED:  {nan_count} NaN values in output (max_err over"
-            t" non-NaN: {max_err} )"
-        )
-        raise Error("NaN in kernel output")
-
+    var bad = nan_count
     for b in range(batch_size):
         for s in range(q_max_seq_len):
             for h in range(num_heads):
@@ -930,11 +1026,11 @@ def run_test_sparse_kv_bf16[
                     )
                     var ref_val = ref_host[idx].cast[.float64]()
                     var actual_val = out_host[idx].cast[.float64]()
-                    assert_almost_equal(
-                        actual_val, ref_val, atol=atol, rtol=rtol
-                    )
-
-    print(t"  PASSED: max_err= {max_err}  checked= {total_checked}  elements")
+                    if not isnan(actual_val) and abs(
+                        actual_val - ref_val
+                    ) > atol + rtol * abs(ref_val):
+                        bad += 1
+    _check_outcome(name, bad, nan_count, max_err, total_checked, break_expect)
 
     _ = mla_args
     _ = blocks_device
@@ -943,6 +1039,7 @@ def run_test_sparse_kv_bf16[
     _ = q_device
     _ = out_device
     _ = d_indices_device
+    _ = logical_device
     _ = row_offsets_device
     _ = selected_tokens^
 
@@ -2094,6 +2191,8 @@ def run_test_sparse_kv_bf16_topk_clamping[
     cache_lengths: List[Int],
     topk_per_batch: List[Int],
     ctx: DeviceContext,
+    # One BF16 ulp is 0.0078 in [1, 2); a few-key softmax puts outputs there.
+    rtol: Float64 = 5e-3,
 ) raises:
     """Topk clamping with BF16 KV layout.
 
@@ -2413,7 +2512,6 @@ def run_test_sparse_kv_bf16_topk_clamping[
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
-    var rtol = Float64(5e-3)
     var atol = Float64(5e-3)
     var max_err = Float64(0)
     var nan_count = 0
@@ -2470,12 +2568,286 @@ def run_test_sparse_kv_bf16_topk_clamping[
     _ = row_offsets_device
 
 
+# The BF16 h=128 CTA pair (`MLA_SPARSE_CG2_BF16`): the pair cells below run
+# beside the rest. `MLA_CG2_SLICE_BREAK` (1: the follower gathers the
+# leader's V depth slice; 2: its Z gathers the leader's key half) runs only
+# the negative control, whose pair cells must fail.
+comptime CG2_BF16 = get_defined_int["MLA_SPARSE_CG2_BF16", 1]()
+comptime CG2_SLICE_BREAK = get_defined_int["MLA_CG2_SLICE_BREAK", 0]()
+
+
+def _run_pair_cells(ctx: DeviceContext) raises:
+    """The BF16 h=128 CTA pair's edge cases.
+
+    The pair splits every 64-key tile into the leader's keys (slots
+    [0, 32)) and the follower's ([32, 64)), so each family below lands its
+    last tile with the follower half partial, empty, or holding a single
+    key, alone or under split-K, extra KV, padding and logical indices.
+    """
+    comptime bf16 = DType.bfloat16
+    # Ragged tails: follower half partial (100 = 64 + 32 + 4, 127), empty
+    # (150 = 2 * 64 + 22, 95 = 64 + 31), a single leader key past whole
+    # tiles (65), and a lone partial leader half (20).
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_tail_h128_cl1024_topk100", 1, 1024, ctx, topk=100
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_tail_h128_cl1024_topk127", 1, 1024, ctx, topk=127
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_tail_h128_cl1024_topk150", 1, 1024, ctx, topk=150
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_tail_b2_h128_cl1024_topk95", 2, 1024, ctx, topk=95
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_tail_h128_cl512_topk65", 1, 512, ctx, topk=65
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_tail_h128_cl256_topk20", 1, 256, ctx, topk=20
+    )
+    # Whole tiles: 1, 2, 3 and 16 per CTA.
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_n1_h128_cl1024_topk64", 1, 1024, ctx, topk=64
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_n2_h128_cl1024_topk128", 1, 1024, ctx, topk=128
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_n3_h128_cl1024_topk192", 1, 1024, ctx, topk=192, forced_np=1
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_n16_h128_cl2048_topk1024", 1, 2048, ctx, topk=1024, forced_np=1
+    )
+    run_test_sparse_kv_bf16[bf16, 128, use_causal=True](
+        "pair_causal_b3_h128_cl509_topk73_seq3",
+        3,
+        509,
+        ctx,
+        topk=73,
+        q_max_seq_len=3,
+    )
+    # Split-K: whole tiles per split, a ragged last split, and splits whose
+    # follower halves are partial or empty.
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_np2_h128_cl4096_topk2048", 1, 4096, ctx, topk=2048, forced_np=2
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_np3_b2_h128_cl4096_topk1000",
+        2,
+        4096,
+        ctx,
+        topk=1000,
+        forced_np=3,
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_np4_h128_cl2048_topk300", 1, 2048, ctx, topk=300, forced_np=4
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_np8_h128_cl4096_topk2048", 1, 4096, ctx, topk=2048, forced_np=8
+    )
+    # -1 logical indices in both halves, the leader's only and the
+    # follower's only, then with split-K and two query tokens.
+    run_test_sparse_kv_bf16[bf16, 128, use_causal=True, logical=True](
+        "pair_logical_pad3_b2_h128_cl2048_topk203",
+        2,
+        2048,
+        ctx,
+        topk=203,
+        logical_pad=3,
+    )
+    run_test_sparse_kv_bf16[bf16, 128, use_causal=True, logical=True](
+        "pair_logical_pad2_leader_b2_h128_cl2048_topk203",
+        2,
+        2048,
+        ctx,
+        topk=203,
+        logical_pad=2,
+        logical_pad_half=0,
+    )
+    run_test_sparse_kv_bf16[bf16, 128, use_causal=True, logical=True](
+        "pair_logical_pad2_follower_b2_h128_cl2048_topk203",
+        2,
+        2048,
+        ctx,
+        topk=203,
+        logical_pad=2,
+        logical_pad_half=1,
+    )
+    run_test_sparse_kv_bf16[bf16, 128, use_causal=True, logical=True](
+        "pair_logical_pad3_np3_h128_cl4096_topk1000",
+        1,
+        4096,
+        ctx,
+        topk=1000,
+        forced_np=3,
+        logical_pad=3,
+    )
+    run_test_sparse_kv_bf16[bf16, 128, use_causal=True, logical=True](
+        "pair_logical_pad3_b2_h128_cl2048_topk512_seq2",
+        2,
+        2048,
+        ctx,
+        topk=512,
+        q_max_seq_len=2,
+        logical_pad=3,
+    )
+    run_test_sparse_kv_bf16[bf16, 128, logical=True](
+        "pair_logical_b2_h128_cl1024_topk300", 2, 1024, ctx, topk=300
+    )
+    # Extra KV: tile-aligned, a long main segment that splits, and short
+    # unaligned lists.
+    var ek_cls_a: List[Int] = [256, 384]
+    var ek_topk_a: List[Int] = [64, 64]
+    var ek_ecls_a: List[Int] = [64, 128]
+    var ek_etopk_a: List[Int] = [64, 64]
+    run_test_sparse_kv_bf16_extra_kv[bf16, 128](
+        "pair_extra_kv_b2_h128_variable",
+        ek_cls_a,
+        ek_topk_a,
+        ek_ecls_a,
+        ek_etopk_a,
+        ctx,
+        NullMask(),
+    )
+    var ek_cls_b: List[Int] = [2048]
+    var ek_topk_b: List[Int] = [1300]
+    var ek_ecls_b: List[Int] = [256]
+    var ek_etopk_b: List[Int] = [200]
+    run_test_sparse_kv_bf16_extra_kv[bf16, 128](
+        "pair_extra_kv_h128_topk1300_extra200",
+        ek_cls_b,
+        ek_topk_b,
+        ek_ecls_b,
+        ek_etopk_b,
+        ctx,
+        NullMask(),
+    )
+    var ek_cls_c: List[Int] = [64, 256]
+    var ek_topk_c: List[Int] = [37, 45]
+    var ek_ecls_c: List[Int] = [64, 128]
+    var ek_etopk_c: List[Int] = [20, 24]
+    run_test_sparse_kv_bf16_extra_kv[bf16, 128](
+        "pair_extra_kv_b2_h128_topk_unaligned",
+        ek_cls_c,
+        ek_topk_c,
+        ek_ecls_c,
+        ek_etopk_c,
+        ctx,
+        NullMask(),
+    )
+    var ek_cls_d: List[Int] = [59]
+    var ek_topk_d: List[Int] = [10]
+    var ek_ecls_d: List[Int] = [64]
+    var ek_etopk_d: List[Int] = [10]
+    run_test_sparse_kv_bf16_extra_kv[bf16, 128](
+        "pair_extra_kv_h128_causal_padded",
+        ek_cls_d,
+        ek_topk_d,
+        ek_ecls_d,
+        ek_etopk_d,
+        ctx,
+        CausalMask(),
+    )
+    # Per-batch top-k and clamped near-empty caches.
+    var vt_cls: List[Int] = [1024, 300, 128, 2048]
+    var vt_topk: List[Int] = [200, 70, 32, 1000]
+    run_test_sparse_kv_bf16_variable_topk[bf16, 128](
+        "pair_variable_topk_b4_h128", vt_cls, vt_topk, ctx
+    )
+    var tc_cls_a: List[Int] = [5]
+    var tc_topk_a: List[Int] = [64]
+    run_test_sparse_kv_bf16_topk_clamping[bf16, 128](
+        "pair_topk_clamp_small_cache_h128", tc_cls_a, tc_topk_a, ctx, rtol=1e-2
+    )
+    var tc_cls_b: List[Int] = [0, 256]
+    var tc_topk_b: List[Int] = [64, 64]
+    run_test_sparse_kv_bf16_topk_clamping[bf16, 128](
+        "pair_topk_clamp_mixed_b2_h128", tc_cls_b, tc_topk_b, ctx, rtol=1e-2
+    )
+    # Sinks: the follower's heads are rank * 64 + row.
+    run_test_sparse_kv_bf16_attn_sink[bf16, 128](
+        "pair_attn_sink_b2_h128_cl1024_topk200", 2, 1024, ctx, topk=200
+    )
+    # The NoPE row (DeepSeek V4's 512-wide latent) on the pair and, as its
+    # reference form, unpaired at 64 heads.
+    run_test_sparse_kv_bf16[bf16, 128, row_depth=512](
+        "pair_nope512_b2_h128_cl1024_topk300", 2, 1024, ctx, topk=300
+    )
+    run_test_sparse_kv_bf16[bf16, 64, row_depth=512](
+        "nope512_b2_h64_cl1024_topk300", 2, 1024, ctx, topk=300
+    )
+    run_test_sparse_kv_bf16[bf16, 128, row_depth=512, use_causal=True](
+        "pair_nope512_causal_b2_h128_cl1024_topk300_seq2",
+        2,
+        1024,
+        ctx,
+        topk=300,
+        q_max_seq_len=2,
+    )
+
+
+def _run_pair_negative_control(ctx: DeviceContext) raises:
+    """`MLA_CG2_SLICE_BREAK`: the pair cells must fail, an unpaired one pass.
+
+    Every pair cell's follower half holds keys, so both kinds reach it.
+    """
+    comptime bf16 = DType.bfloat16
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_break_h128_cl2048_topk2048",
+        1,
+        2048,
+        ctx,
+        topk=2048,
+        break_expect=BREAK_MUST_FAIL,
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_break_tail_h128_cl1024_topk100",
+        1,
+        1024,
+        ctx,
+        topk=100,
+        break_expect=BREAK_MUST_FAIL,
+    )
+    run_test_sparse_kv_bf16[bf16, 128](
+        "pair_break_np3_b2_h128_cl4096_topk1000",
+        2,
+        4096,
+        ctx,
+        topk=1000,
+        forced_np=3,
+        break_expect=BREAK_MUST_FAIL,
+    )
+    run_test_sparse_kv_bf16[bf16, 128, use_causal=True, logical=True](
+        "pair_break_logical_pad3_b2_h128_cl2048_topk203",
+        2,
+        2048,
+        ctx,
+        topk=203,
+        logical_pad=3,
+        break_expect=BREAK_MUST_FAIL,
+    )
+    run_test_sparse_kv_bf16[bf16, 64](
+        "pair_break_unpaired_h64_cl2048_topk512",
+        1,
+        2048,
+        ctx,
+        topk=512,
+    )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             seed(42)
+
+            comptime if CG2_SLICE_BREAK != 0:
+                _run_pair_negative_control(ctx)
+                return
+            comptime if CG2_BF16 != 0:
+                _run_pair_cells(ctx)
 
             # Bit-exact vs dense (topk == cache_len).
             run_bit_exact_vs_dense[.bfloat16, 128](
@@ -2506,6 +2878,46 @@ def main() raises:
                 2048,
                 ctx,
                 topk=128,
+            )
+
+            # At most 32 heads run Layout G: half-row softmax at 8 and 16,
+            # full rows at 32, split-K at a long top-k.
+            run_test_sparse_kv_bf16[.bfloat16, 8](
+                "sparse_kv_bf16_b2_h8_cl4096_topk2048",
+                2,
+                4096,
+                ctx,
+                topk=2048,
+            )
+            run_test_sparse_kv_bf16[.bfloat16, 16](
+                "sparse_kv_bf16_b3_h16_cl509_topk73",
+                3,
+                509,
+                ctx,
+                topk=73,
+            )
+            run_test_sparse_kv_bf16[.bfloat16, 32](
+                "sparse_kv_bf16_b1_h32_cl4096_topk2048",
+                1,
+                4096,
+                ctx,
+                topk=2048,
+            )
+            run_test_sparse_kv_bf16[.bfloat16, 8, use_causal=True](
+                "sparse_kv_bf16_causal_b1_h8_cl256_topk64_seq4",
+                1,
+                256,
+                ctx,
+                topk=64,
+                q_max_seq_len=4,
+            )
+            run_test_sparse_kv_bf16[.bfloat16, 16, logical=True](
+                "logical_b3_h16_cl509_topk73_seq6",
+                3,
+                509,
+                ctx,
+                topk=73,
+                q_max_seq_len=6,
             )
 
             # CausalMask.
@@ -2579,6 +2991,13 @@ def main() raises:
                 ctx,
                 topk=64,
             )
+            run_test_sparse_kv_bf16_attn_sink[.bfloat16, 16](
+                "sparse_kv_bf16_attn_sink_b1_h16_cl512_topk64",
+                1,
+                512,
+                ctx,
+                topk=64,
+            )
             run_test_sparse_kv_bf16_attn_sink[.bfloat16, 128](
                 "sparse_kv_bf16_attn_sink_b1_h128_cl512_topk64",
                 1,
@@ -2608,6 +3027,17 @@ def main() raises:
             var ek_etopk_2: List[Int] = [64, 64]
             run_test_sparse_kv_bf16_extra_kv[.bfloat16, 64](
                 "sparse_kv_bf16_extra_kv_b2_h64_variable",
+                ek_cls_2,
+                ek_topk_2,
+                ek_ecls_2,
+                ek_etopk_2,
+                ctx,
+                NullMask(),
+            )
+
+            # DeepSeek V4's shape at TP2: 32 heads, Layout G.
+            run_test_sparse_kv_bf16_extra_kv[.bfloat16, 32](
+                "sparse_kv_bf16_extra_kv_b2_h32_variable",
                 ek_cls_2,
                 ek_topk_2,
                 ek_ecls_2,

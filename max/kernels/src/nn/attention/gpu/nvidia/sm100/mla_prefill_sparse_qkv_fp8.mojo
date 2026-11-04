@@ -17,18 +17,17 @@ Two comptime-selected tiles share this file: head<=64 on a single CTA
 2-CTA cluster (cta_group=2) with CTA-split K + a separate full-V gather (the
 shared-KV simplification is impossible when CTA-split-K@base0 and full-V@base0
 collide).  The cg2 cluster scaffold (grid, cta_id/seq_idx split, tcgen05_alloc
-[cta_group], CTA_MASK multicast, cross-CTA arrive_cluster handshakes) mirrors the
-dequant `mla_prefill_sparse_kv_fp8.mojo`; the compute stays native f8f6f4.  Both
-tiles read V mn-major from a k-major SW64 buffer at BK=b_topk=64.
+[cta_group], CTA_MASK multicast, cross-CTA arrive_cluster handshakes) mirrors
+`mla_prefill_sparse.mojo`; the compute stays native f8f6f4.  Both tiles read V
+mn-major from a k-major SW64 buffer at BK=b_topk=64.
 
 All of Q, K, V, and P are FP8 e4m3; QK^T and P*V run natively on tensor cores
 via `tcgen05.mma.kind::f8f6f4` (KIND_F8F6F4) with NO in-SMEM FP8->BF16 dequant.
-This removes the `convert_k/v_fp8_to_bf16` stage (and its LOCAL register staging)
-of `mla_prefill_sparse_kv_fp8.mojo`, so the kernel spills zero registers by
-construction and holds K/V at 1 byte/element.
+With no convert stage and its local register staging, the kernel spills zero
+registers by construction and holds K/V at 1 byte/element.
 
 Structure (top-k gather, 4-warpgroup layout, launch) mirrors
-`mla_prefill_sparse_kv_fp8.mojo`.  Native-FP8 MMA machinery (single SS QK^T,
+`mla_prefill_sparse.mojo`.  Native-FP8 MMA machinery (single SS QK^T,
 2-atom P*V with V read mn-major from the same k-major KV buffer, FP8 P written to
 a separate SMEM region) mirrors the decode reference `mla_decode_qkv_fp8.mojo`
 (`DecodeSM100QKTSS_FP8` / `DecodeSM100PVSS_FP8`).  Both operand-layout
@@ -49,7 +48,7 @@ match the BF16-KV kernel's unit-scale formulas.  Tensorwise/blockwise scale-fold
 and head=128 (cta_group=2, 2-CTA f8f6f4) are follow-ups.
 """
 
-from std.sys import size_of
+from std.sys import get_defined_int, size_of
 from std.utils.static_tuple import StaticTuple
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -107,6 +106,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     add_ftz,
     mul_ftz,
     st_shared_v4_b32,
+    opaque_u32,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
@@ -132,9 +132,13 @@ from layout.tma_async import (
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
+from nn.attention.gpu.nvidia.sm100.mla_sparse_attention import (
+    mla_sparse_attention_flat,
+)
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLAPrefillSparseCommon,
     MLASparseConfig,
+    sm100_sparse_mla_heads_ok,
 )
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import ld_shared_v4_u32
 from nn.attention.gpu.nvidia.sm100.nvfp4_kv_dequant import (
@@ -203,9 +207,7 @@ struct MLASparseSharedMemoryQKVFP8[
     # mla_decode_utils.mojo's `DecodeSProducerN`/`DecodeSConsumerN` for the
     # analogous decode-side ring this mirrors).  Slot stride follows the
     # SAME `MMA_N // 2` physical-column halving already used (unconditionally,
-    # for both cg1 and cg2) by `O_ATOM_PHYS_COLS` in this file and in the
-    # cg2-capable `mla_prefill_sparse_kv_fp8.mojo` sibling -- both proven
-    # correct by their passing test suites -- and matches
+    # for both cg1 and cg2) by `O_ATOM_PHYS_COLS` in this file, and matches
     # `mla_decode_utils.mojo`'s own `TMEM_S1 - TMEM_S0 == 32` at BN_QK=64.
     # O occupies TMEM cols [0, 256) (2 atoms x O_ATOM_PHYS_COLS=128).  TMEM
     # fits up to (sm100_tmem_cols - S_TMEM_BASE) // S_SLOT_STRIDE = 8 ring
@@ -329,6 +331,9 @@ struct MLAPrefillSparseQKVFP8[
     # NVFP4 index row (`indices_stride` entries) holds `indices_stride / 2` value
     # rows followed by that many scale-pool rows, resolved by the indexer.
     comptime is_nvfp4 = mla_kv_is_nvfp4[Self.KVLUTType]()
+    comptime role_local_k_blocks = (
+        Self.is_cg2 and Self.config.num_q_heads == 128
+    )
     comptime dual_k_producers = Self.is_nvfp4 and not Self.is_cg2
     comptime SMemType = MLASparseSharedMemoryQKVFP8[Self.config, Self.is_nvfp4]
     # One scale group is 16 elements = 8 packed bytes.
@@ -1184,9 +1189,12 @@ struct MLAPrefillSparseQKVFP8[
 
         with PDL():
             var top_k_length = topk_lengths.load[width=1]((seq_idx,))
-            var num_k_blocks = max(
-                ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
-            )
+            # A common bound spills across the paired roles' register budgets.
+            var num_k_blocks = UInt32(0)
+            comptime if not Self.role_local_k_blocks:
+                num_k_blocks = max(
+                    ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
+                )
             var num_kv_rows = kv_lut.num_kv_rows()
             var indices_base = seq_idx * UInt32(indices_stride)
             # An NVFP4 index row is the value rows, then the scale rows.
@@ -1350,6 +1358,13 @@ struct MLAPrefillSparseQKVFP8[
                     warpgroup_reg_alloc[240]()
                 else:
                     warpgroup_reg_alloc[168]()
+                comptime if Self.role_local_k_blocks:
+                    num_k_blocks = max(
+                        ceildiv(
+                            opaque_u32(top_k_length), UInt32(Self.config.B_TOPK)
+                        ),
+                        1,
+                    )
                 Self._softmax_epilogue(
                     p_ptr,
                     kv_ptr,
@@ -1387,6 +1402,13 @@ struct MLAPrefillSparseQKVFP8[
                     warpgroup_reg_dealloc[112]()
                 else:
                     warpgroup_reg_alloc[168]()
+                comptime if Self.role_local_k_blocks:
+                    num_k_blocks = max(
+                        ceildiv(
+                            opaque_u32(top_k_length), UInt32(Self.config.B_TOPK)
+                        ),
+                        1,
+                    )
                 # Only the dual-producer path needs a per-producer barrier id; a
                 # runtime id on the single cg2 producer costs h128 about 6%.
                 var producer = UInt32(0)
@@ -1488,6 +1510,14 @@ struct MLAPrefillSparseQKVFP8[
                     # WG previously had no setmaxnreg call at all and fell
                     # through to the 128-reg launch default.
                     warpgroup_reg_dealloc[80 if Self.is_nvfp4 else 64]()
+                    comptime if Self.role_local_k_blocks:
+                        num_k_blocks = max(
+                            ceildiv(
+                                opaque_u32(top_k_length),
+                                UInt32(Self.config.B_TOPK),
+                            ),
+                            1,
+                        )
                     var local_warp_idx = UInt32(warp_id() - 8)
                     for k in range(num_k_blocks):
                         var buf = k % UInt32(Self.config.num_mbars)
@@ -1548,6 +1578,14 @@ struct MLAPrefillSparseQKVFP8[
                 warpgroup_reg_dealloc[88]()
                 # Only the leader CTA issues the 2SM MMA; it drives both CTAs' TMEM.
                 if cta_id == 0 and warp_idx == 12 and elect_one_sync():
+                    comptime if Self.role_local_k_blocks:
+                        num_k_blocks = max(
+                            ceildiv(
+                                opaque_u32(top_k_length),
+                                UInt32(Self.config.B_TOPK),
+                            ),
+                            1,
+                        )
                     Self._mma(
                         q_ptr,
                         kv_ptr,
@@ -1567,6 +1605,14 @@ struct MLAPrefillSparseQKVFP8[
                     warp_idx == 13
                     and lane_idx < Self.SMemType.NUM_KV_VALID_LANES
                 ):
+                    comptime if Self.role_local_k_blocks:
+                        num_k_blocks = max(
+                            ceildiv(
+                                opaque_u32(top_k_length),
+                                UInt32(Self.config.B_TOPK),
+                            ),
+                            1,
+                        )
                     Self.Common.kv_valid_producer(
                         indices,
                         is_k_valid_ptr,
@@ -2096,130 +2142,174 @@ def mla_prefill_sparse_qkv_fp8[
     indices_stride: Int32,
     ctx: DeviceContext,
 ) raises:
-    comptime assert q_depth == config.input_qk_depth
-    comptime assert config.qk_depth == 576
-    comptime assert (
-        config.input_qk_depth == 576 or config.input_qk_depth == 512
-    ), "sparse MLA prefill supports a 576 (rotary) or 512 (NoPE) row"
-    # head=128 runs the 2-CTA (cta_group=2) f8f6f4 tile; head<=64 runs the
-    # single-CTA shared-KV tile.  The two paths are separate comptime branches
-    # keyed on config.cta_group throughout this file.
-    comptime assert (config.cta_group == 2 and config.num_q_heads == 128) or (
-        config.cta_group == 1
-        and 0 < config.num_q_heads
-        and config.num_q_heads <= 64
-        and config.num_q_heads % 8 == 0
-    ), (
-        "native-fp8 sparse MLA prefill: num_q_heads must be 128 (cta_group=2)"
-        " or a multiple of 8 in (0, 64] (cta_group=1)"
-    )
-    comptime assert config.num_kv_heads == 1
-    comptime assert (
-        not mla_kv_is_nvfp4[KVCacheMHAOperand[cache_t]]()
-        or config.input_qk_depth == config.v_depth + NVFP4_MLA_ROPE_DIM
-    ), "an NVFP4 row is the packed latent (V) followed by FP8 rope dims"
-    # Operands are native FP8; the output is `config.qkv_dtype` (bf16). Q is FP8
-    # (unlike the BF16-KV path where Q stays bf16), so `q_type == FP8_TYPE`.
-    comptime assert q_type == FP8_TYPE
-    comptime assert (
-        cache_t.dtype == FP8_TYPE
-        or mla_kv_is_nvfp4[KVCacheMHAOperand[cache_t]]()
-    ), "the cache must be unit-scale FP8 or packed NVFP4"
-    comptime assert output_dtype == config.qkv_dtype
-    # Unit-scale (scale_block_size == 0) is the DSv3.2 production path: FP8
-    # latents read at scale 1, so kv_scale == v_scale == 1 and the softmax /
-    # output scales match the BF16-KV kernel's unit-scale formulas. Tensorwise
-    # and blockwise scale-fold are a follow-up.
-    comptime assert scale_block_size == 0, (
-        "native-fp8 sparse MLA prefill currently supports scale_block_size == 0"
-        " (unit-scale, the DSv3.2 production path); tensorwise/blockwise"
-        " scale-fold is a follow-up"
-    )
-
-    var num_q_rows = q_num_matrix_view_rows(q)
-    var kv_operand = KVCacheMHAOperand(kv_cache)
-
-    var q_tma_op = create_tensor_tile[
-        coord[1, config.num_q_heads // config.cta_group, q_depth],
-        swizzle_mode=SW64,
-    ](ctx, q)
-
-    comptime Kernel = MLAPrefillSparseQKVFP8[
-        KVLUTType=type_of(kv_operand),
-        output_dtype=output_dtype,
-        config=config,
-    ]
-
-    # k-major SW64 FP8 gather (box_width 64, one col-group per 64 columns of the
-    # row as stored).  The K producer gathers this CTA's B_TOPK/cta_group rows.
-    # The cg2 V producer reuses this SAME descriptor to gather all B_TOPK keys'
-    # per-CTA depth slice.  A packed NVFP4 cache is gathered as whole rows of
-    # int64 words instead, and its cg2 V producer gets a narrower descriptor.
-    var kv_tma_op = kv_operand.create_gather4_tma_tile[
-        tile_width=Kernel.KV_GATHER_TILE_WIDTH,
-        tile_stride=Kernel.KV_GATHER_TILE_WIDTH,
-        swizzle_mode=Kernel.KV_GATHER_SWIZZLE,
-        tile_height=config.B_TOPK,
-        tma_dtype=Kernel.KV_TMA_DTYPE,
-    ](ctx)
-    # Only the cg2 NVFP4 V producer needs its own descriptor; every other
-    # configuration reuses K's (the two types are then identical, but the
-    # compiler sees them as unfolded expressions, hence the rebinds).
-    comptime VTMA = TMATensorTile[
-        Kernel.KV_TMA_DTYPE, Kernel.v_tile_shape, Kernel.v_desc_shape
-    ]
-    var v_tma_op: VTMA
-    comptime if Kernel.is_nvfp4 and Kernel.is_cg2:
-        v_tma_op = rebind[VTMA](
-            kv_operand.create_gather4_tma_tile[
-                tile_width=Kernel.V_GATHER_TILE_WIDTH,
-                tile_stride=Kernel.KV_GATHER_TILE_WIDTH,
-                swizzle_mode=Kernel.KV_GATHER_SWIZZLE,
-                tile_height=config.B_TOPK,
-                tma_dtype=Kernel.KV_TMA_DTYPE,
-            ](ctx)
+    # 1 runs the sparse decode kernel instead, for the `_decode_core` test
+    # twins; production picks the route in the graph.
+    comptime decode = get_defined_int["MLA_SPARSE_PREFILL_DECODE", 0]()
+    comptime assert decode == 0 or decode == 1
+    comptime if decode != 0:
+        comptime assert q_depth == config.input_qk_depth
+        comptime assert config.num_kv_heads == 1
+        comptime assert (
+            config.v_depth == 512
+        ), "the shared core writes 512 latent columns"
+        comptime assert sm100_sparse_mla_heads_ok[
+            config.num_q_heads
+        ](), "sparse MLA heads must be 128 or a multiple of 8 through 64"
+        comptime assert type_of(topk_lengths).flat_rank == 1
+        comptime assert type_of(indices).flat_rank == 1
+        comptime assert topk_lengths.element_size == 1
+        comptime assert indices.element_size == 1
+        comptime assert q_type == FP8_TYPE
+        comptime assert (
+            cache_t.dtype == FP8_TYPE
+            or mla_kv_is_nvfp4[KVCacheMHAOperand[cache_t]]()
+        ), "native FP8 prefill needs unit-scale FP8 or NVFP4 cache"
+        comptime assert output_dtype == config.qkv_dtype
+        comptime assert scale_block_size == 0
+        mla_sparse_attention_flat[
+            num_heads=config.num_q_heads,
+            depth=q_depth,
+            scale_block_size_override=0,
+        ](
+            output,
+            q,
+            kv_cache,
+            indices.ptr.unsafe_mut_cast[True]()
+            .unsafe_bitcast[Int32]()
+            .as_unsafe_any_origin(),
+            Int(indices_stride),
+            topk_lengths,
+            attn_sink_ptr,
+            scale,
+            ctx,
         )
     else:
-        v_tma_op = rebind[VTMA](kv_tma_op)
+        comptime assert q_depth == config.input_qk_depth
+        comptime assert config.qk_depth == 576
+        comptime assert (
+            config.input_qk_depth == 576 or config.input_qk_depth == 512
+        ), "sparse MLA prefill supports a 576 (rotary) or 512 (NoPE) row"
+        # head=128 runs the 2-CTA (cta_group=2) f8f6f4 tile; head<=64 runs the
+        # single-CTA shared-KV tile.  The two paths are separate comptime branches
+        # keyed on config.cta_group throughout this file.
+        comptime assert (
+            config.cta_group == 2 and config.num_q_heads == 128
+        ) or (
+            config.cta_group == 1
+            and 0 < config.num_q_heads
+            and config.num_q_heads <= 64
+            and config.num_q_heads % 8 == 0
+        ), (
+            "native-fp8 sparse MLA prefill: num_q_heads must be 128"
+            " (cta_group=2) or a multiple of 8 in (0, 64] (cta_group=1)"
+        )
+        comptime assert config.num_kv_heads == 1
+        comptime assert (
+            not mla_kv_is_nvfp4[KVCacheMHAOperand[cache_t]]()
+            or config.input_qk_depth == config.v_depth + NVFP4_MLA_ROPE_DIM
+        ), "an NVFP4 row is the packed latent (V) followed by FP8 rope dims"
+        # Operands are native FP8; the output is `config.qkv_dtype` (bf16). Q is FP8
+        # (unlike the BF16-KV path where Q stays bf16), so `q_type == FP8_TYPE`.
+        comptime assert q_type == FP8_TYPE
+        comptime assert (
+            cache_t.dtype == FP8_TYPE
+            or mla_kv_is_nvfp4[KVCacheMHAOperand[cache_t]]()
+        ), "the cache must be unit-scale FP8 or packed NVFP4"
+        comptime assert output_dtype == config.qkv_dtype
+        # Unit-scale (scale_block_size == 0) is the DSv3.2 production path: FP8
+        # latents read at scale 1, so kv_scale == v_scale == 1 and the softmax /
+        # output scales match the BF16-KV kernel's unit-scale formulas. Tensorwise
+        # and blockwise scale-fold are a follow-up.
+        comptime assert scale_block_size == 0, (
+            "native-fp8 sparse MLA prefill currently supports scale_block_size"
+            " == 0 (unit-scale, the DSv3.2 production path);"
+            " tensorwise/blockwise scale-fold is a follow-up"
+        )
 
-    var output_2d = output.reshape(
-        row_major(num_q_rows * config.num_q_heads, config.v_depth)
-    )
-    var o_tma_op = create_tensor_tile[
-        coord[config.num_q_heads // config.cta_group, config.v_depth],
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-        __desc_shape=coord[config.num_q_heads // config.cta_group, 64],
-    ](ctx, output_2d)
+        var num_q_rows = q_num_matrix_view_rows(q)
+        var kv_operand = KVCacheMHAOperand(kv_cache)
 
-    comptime assert type_of(topk_lengths).flat_rank == 1
-    comptime assert type_of(indices).flat_rank == 1
-    comptime assert topk_lengths.element_size == 1
-    comptime assert indices.element_size == 1
-    comptime kernel = Kernel.kernel[
-        type_of(topk_lengths).LayoutType,
-        type_of(indices).LayoutType,
-        type_of(topk_lengths).Engine,
-        type_of(indices).Engine,
-    ]
+        var q_tma_op = create_tensor_tile[
+            coord[1, config.num_q_heads // config.cta_group, q_depth],
+            swizzle_mode=SW64,
+        ](ctx, q)
 
-    comptime smem_size = size_of[Kernel.SMemType]()
+        comptime Kernel = MLAPrefillSparseQKVFP8[
+            KVLUTType=type_of(kv_operand),
+            output_dtype=output_dtype,
+            config=config,
+        ]
 
-    ctx.enqueue_function[kernel](
-        q_tma_op,
-        kv_tma_op,
-        o_tma_op,
-        topk_lengths,
-        indices,
-        kv_operand,
-        scale,
-        attn_sink_ptr,
-        indices_stride,
-        v_tma_op,
-        grid_dim=(config.cta_group * num_q_rows, 1, 1),
-        block_dim=(config.num_threads, 1, 1),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
-        attributes=pdl_launch_attributes(PDLLevel.ON),
-    )
+        # k-major SW64 FP8 gather (box_width 64, one col-group per 64 columns of the
+        # row as stored).  The K producer gathers this CTA's B_TOPK/cta_group rows.
+        # The cg2 V producer reuses this SAME descriptor to gather all B_TOPK keys'
+        # per-CTA depth slice.  A packed NVFP4 cache is gathered as whole rows of
+        # int64 words instead, and its cg2 V producer gets a narrower descriptor.
+        var kv_tma_op = kv_operand.create_gather4_tma_tile[
+            tile_width=Kernel.KV_GATHER_TILE_WIDTH,
+            tile_stride=Kernel.KV_GATHER_TILE_WIDTH,
+            swizzle_mode=Kernel.KV_GATHER_SWIZZLE,
+            tile_height=config.B_TOPK,
+            tma_dtype=Kernel.KV_TMA_DTYPE,
+        ](ctx)
+        # Only the cg2 NVFP4 V producer needs its own descriptor; every other
+        # configuration reuses K's (the two types are then identical, but the
+        # compiler sees them as unfolded expressions, hence the rebinds).
+        comptime VTMA = TMATensorTile[
+            Kernel.KV_TMA_DTYPE, Kernel.v_tile_shape, Kernel.v_desc_shape
+        ]
+        var v_tma_op: VTMA
+        comptime if Kernel.is_nvfp4 and Kernel.is_cg2:
+            v_tma_op = rebind[VTMA](
+                kv_operand.create_gather4_tma_tile[
+                    tile_width=Kernel.V_GATHER_TILE_WIDTH,
+                    tile_stride=Kernel.KV_GATHER_TILE_WIDTH,
+                    swizzle_mode=Kernel.KV_GATHER_SWIZZLE,
+                    tile_height=config.B_TOPK,
+                    tma_dtype=Kernel.KV_TMA_DTYPE,
+                ](ctx)
+            )
+        else:
+            v_tma_op = rebind[VTMA](kv_tma_op)
+
+        var output_2d = output.reshape(
+            row_major(num_q_rows * config.num_q_heads, config.v_depth)
+        )
+        var o_tma_op = create_tensor_tile[
+            coord[config.num_q_heads // config.cta_group, config.v_depth],
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+            __desc_shape=coord[config.num_q_heads // config.cta_group, 64],
+        ](ctx, output_2d)
+
+        comptime assert type_of(topk_lengths).flat_rank == 1
+        comptime assert type_of(indices).flat_rank == 1
+        comptime assert topk_lengths.element_size == 1
+        comptime assert indices.element_size == 1
+        comptime kernel = Kernel.kernel[
+            type_of(topk_lengths).LayoutType,
+            type_of(indices).LayoutType,
+            type_of(topk_lengths).Engine,
+            type_of(indices).Engine,
+        ]
+
+        comptime smem_size = size_of[Kernel.SMemType]()
+
+        ctx.enqueue_function[kernel](
+            q_tma_op,
+            kv_tma_op,
+            o_tma_op,
+            topk_lengths,
+            indices,
+            kv_operand,
+            scale,
+            attn_sink_ptr,
+            indices_stride,
+            v_tma_op,
+            grid_dim=(config.cta_group * num_q_rows, 1, 1),
+            block_dim=(config.num_threads, 1, 1),
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(smem_size)
+            ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )

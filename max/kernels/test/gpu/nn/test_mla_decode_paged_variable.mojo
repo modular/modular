@@ -501,7 +501,7 @@ def run_test_paged_variable_multiq[
     """Test MLA decode with paged KV cache, variable cache lengths, AND
     q_max_seq_len > 1 (multiple query tokens per batch entry).
 
-    This exercises the ragged layout path where block_idx.y iterates over
+    This exercises the ragged layout path where the grid iterates over
     query tokens within a batch entry, testing that:
     - Q row offsets are computed correctly for multi-token decode
     - Output row offsets include the seq_len dimension
@@ -929,8 +929,8 @@ def run_test_paged_variable_ragged_q[
         q_max_seq_len = 4  (the max)
         row_offsets = [0, 1, 4, 6, 10]
 
-    The kernel grid launches grid_dim.y = q_max_seq_len CTAs per batch.
-    CTAs with block_idx.y >= per-batch seq_len early-exit via the ragged
+    The kernel grid launches q_max_seq_len CTAs per batch and head tile.
+    CTAs whose query token >= per-batch seq_len early-exit via the ragged
     guard in OffsetPosition.
 
     This verifies:
@@ -3122,7 +3122,7 @@ def main() raises:
 
                 # -----------------------------------------------------------
                 # Group 12: Multi-Q token tests (q_max_seq_len > 1)
-                # Tests the ragged layout path where block_idx.y iterates
+                # Tests the ragged layout path where the grid iterates
                 # over multiple query tokens per batch entry.  Verifies:
                 # - Q/output row offset arithmetic for multi-token decode
                 # - o_accum_split padded seq dimension in combine kernel
@@ -3152,7 +3152,7 @@ def main() raises:
                 # Group 13: Truly ragged Q — each batch has a DIFFERENT
                 # number of query tokens.
                 # This is the ONLY test that exercises the early-exit path
-                # in OffsetPosition where block_idx.y >= per-batch seq_len,
+                # in OffsetPosition where seq_idx >= per-batch seq_len,
                 # and where num_keys = cache_len + per-batch seq_len (NOT
                 # + q_max_seq_len).
                 # -----------------------------------------------------------

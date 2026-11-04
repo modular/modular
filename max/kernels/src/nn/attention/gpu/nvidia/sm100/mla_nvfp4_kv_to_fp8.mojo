@@ -38,9 +38,10 @@ cache's own scale page table.
 
 from std.math import align_up, ceildiv
 from std.memory import bitcast
+from std.sys import get_defined_int
 
 from max.gpu import WARP_SIZE, block_idx, global_idx, lane_id, thread_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -53,6 +54,10 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import Idx, TileTensor, row_major
+from nn.attention.mha_utils import OptionalPointer
+from nn.attention.gpu.nvidia.sm100.mla_sparse_attention import (
+    mla_sparse_attention,
+)
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_qkv_fp8 import (
     mla_prefill_sparse_qkv_fp8,
 )
@@ -72,12 +77,82 @@ comptime _PACKED_ROW_BYTES = nvfp4_mla_row_bytes[_FP8_ROW_BYTES]()
 comptime _SF_ROW_BYTES = nvfp4_mla_scale_row_bytes[_FP8_ROW_BYTES]()
 comptime _WARPS_PER_BLOCK = 8
 comptime _NO_PAGE = UInt32(0xFFFFFFFF)
-# Slots per remap thread; `top_k` and both strides are multiples of it.
+# Slots per remap thread; only the padded destination stride must align.
 comptime _REMAP_WIDTH = 4
 
 comptime _BytePtr = MutPointer[Scalar[DType.uint8], MutAnyOrigin]
 comptime _U32Ptr = MutPointer[Scalar[DType.uint32], MutAnyOrigin]
 comptime _I32Ptr = MutPointer[Scalar[DType.int32], MutAnyOrigin]
+
+
+@fieldwise_init
+struct NVFP4PrefillWorkspaceView(TrivialRegisterPassable):
+    """Borrows conversion storage; its owner must outlive every graph replay."""
+
+    var fp8: MutPointer[Scalar[DType.float8_e4m3fn], MutUntrackedOrigin]
+    var page_slots: MutPointer[UInt32, MutUntrackedOrigin]
+    var indices: MutPointer[Int32, MutUntrackedOrigin]
+    var fp8_capacity: Int
+    var page_slots_capacity: Int
+    var indices_capacity: Int
+
+
+struct NVFP4PrefillWorkspace(Movable):
+    """Owns reusable conversion storage allocated outside graph recording."""
+
+    var fp8: DeviceBuffer[DType.float8_e4m3fn]
+    var page_slots: DeviceBuffer[DType.uint32]
+    var indices: DeviceBuffer[DType.int32]
+
+    def __init__(
+        out self,
+        fp8_elems: Int,
+        num_blocks: Int,
+        indices_elems: Int,
+        ctx: DeviceContext,
+    ) raises:
+        self.fp8 = ctx.enqueue_create_buffer[DType.float8_e4m3fn](fp8_elems)
+        self.page_slots = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
+        self.indices = ctx.enqueue_create_buffer[DType.int32](indices_elems)
+
+    def view(mut self) -> NVFP4PrefillWorkspaceView:
+        return NVFP4PrefillWorkspaceView(
+            self.fp8.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+            self.page_slots.unsafe_ptr().unsafe_origin_cast[
+                MutUntrackedOrigin
+            ](),
+            self.indices.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+            len(self.fp8),
+            len(self.page_slots),
+            len(self.indices),
+        )
+
+
+def nvfp4_prefill_workspace[
+    cache_t: KVCacheT,
+    //,
+    config: MLASparseConfig,
+](
+    q: TileTensor[address_space=.GENERIC, ...],
+    kv_cache: cache_t,
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    ctx: DeviceContext,
+) raises -> NVFP4PrefillWorkspace:
+    """Allocates conversion storage before capturing a helper invocation."""
+    var batch_size = Int(input_row_offsets.dim(0)) - 1
+    var pages = batch_size * ceildiv(
+        Int(kv_cache.max_context_length()), cache_t.page_size_
+    )
+    var block_rows = Int(kv_cache.get_tma_row(Int32(cache_t.page_size_)))
+    var num_blocks = (
+        kv_cache.num_kv_rows() - cache_t.page_size_
+    ) // block_rows + 1
+    return NVFP4PrefillWorkspace(
+        pages * cache_t.page_size_ * _FP8_ROW_BYTES,
+        num_blocks,
+        Int(q.dim(0)) * align_up(config.indices_stride // 2, config.B_TOPK),
+        ctx,
+    )
 
 
 def nvfp4_prefill_scratch_rows[
@@ -211,9 +286,17 @@ def _remap_kernel[
         if tok >= Int(num_tokens):
             return
         if slot < Int(top_k):
-            var rows = indices.unsafe_offset(
-                tok * Int(src_stride) + slot
-            ).unsafe_load[width=_REMAP_WIDTH, alignment=16]()
+            var rows = SIMD[DType.int32, _REMAP_WIDTH](-1)
+            if Int(
+                src_stride
+            ) % _REMAP_WIDTH == 0 and slot + _REMAP_WIDTH <= Int(top_k):
+                rows = indices.unsafe_offset(
+                    tok * Int(src_stride) + slot
+                ).unsafe_load[width=_REMAP_WIDTH, alignment=16]()
+            else:
+                comptime for j in range(_REMAP_WIDTH):
+                    if slot + j < Int(top_k):
+                        rows[j] = indices[tok * Int(src_stride) + slot + j]
             comptime for j in range(_REMAP_WIDTH):
                 var row = Int(rows[j])
                 if row >= 0:
@@ -227,10 +310,12 @@ def _remap_kernel[
 
 def mla_prefill_sparse_nvfp4_via_fp8[
     cache_t: KVCacheT,
+    SinkType: OptionalPointer,
     //,
     config: MLASparseConfig,
     group: Int,
     q_depth: Int,
+    causal: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[address_space=.GENERIC, ...],
@@ -239,19 +324,25 @@ def mla_prefill_sparse_nvfp4_via_fp8[
     indices_stride: Int,
     topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
-    attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+    attn_sink_ptr: SinkType,
     scale: Float32,
     ctx: DeviceContext,
+    num_partitions_in: Optional[Int] = None,
+    workspace: Optional[NVFP4PrefillWorkspaceView] = None,
 ) raises:
-    """Runs `mla_prefill_sparse_qkv_fp8` on an FP8 copy of the batch's context.
+    """Runs sparse attention on an FP8 copy of the batch's context.
 
     Takes the arguments of the NVFP4 call: `indices` rows are `indices_stride`
     wide, the value rows followed by the scale rows. The caller decides with
-    `nvfp4_prefill_converts_once` whether this beats that call.
+    `nvfp4_prefill_converts_once` whether this beats that call. `causal`
+    requires rows whose valid entries are packed from the query's causal
+    prefix.
 
-    The scratch buffers are allocated on `ctx`'s stream for this call only, as
-    the other prefill temporaries are. Sparse prefill never runs under device
-    graph capture, whose replays are decode or verify steps.
+    Eager calls allocate scratch on `ctx`'s stream. Capture requires a
+    workspace allocated beforehand and retained through graph destruction;
+    replay retains the captured batch, query, and allocation geometry.
+    Capture requires `num_partitions_in=1`, until split accumulator storage is
+    caller-owned. Eager split calls are supported.
     """
     comptime page_size = cache_t.page_size_
     comptime top_k = config.indices_stride // 2
@@ -264,9 +355,6 @@ def mla_prefill_sparse_nvfp4_via_fp8[
     comptime assert (
         q_depth == _FP8_ROW_BYTES
     ), "a GLM/DSv3.2 MLA row is 576 wide"
-    comptime assert (
-        top_k % _REMAP_WIDTH == 0
-    ), "the index remap reads 4 slots at a time"
     debug_assert(
         indices_stride == config.indices_stride,
         "indices_stride must match the config",
@@ -282,17 +370,33 @@ def mla_prefill_sparse_nvfp4_via_fp8[
     # tile with `-1` rather than let the last tile read the next row.
     var dense_stride = align_up(top_k, config.B_TOPK)
 
-    var fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-        num_pages * page_size * _FP8_ROW_BYTES
+    var buffers: NVFP4PrefillWorkspaceView
+    var owned_workspace = Optional[NVFP4PrefillWorkspace](None)
+    if case .Some(supplied) = workspace:
+        buffers = supplied
+    else:
+        var owned = NVFP4PrefillWorkspace(
+            num_pages * page_size * _FP8_ROW_BYTES,
+            num_blocks,
+            num_tokens * dense_stride,
+            ctx,
+        )
+        buffers = owned.view()
+        owned_workspace = Optional[NVFP4PrefillWorkspace](owned^)
+    if (
+        buffers.fp8_capacity < num_pages * page_size * _FP8_ROW_BYTES
+        or buffers.page_slots_capacity < num_blocks
+        or buffers.indices_capacity < num_tokens * dense_stride
+    ):
+        raise Error("NVFP4 prefill workspace is too small for this invocation")
+    var page_slots_buf = DeviceBuffer[DType.uint32](
+        ctx, buffers.page_slots, num_blocks, owning=False
     )
-    var page_slots_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
-    var dense_buf = ctx.enqueue_create_buffer[DType.int32](
-        num_tokens * dense_stride
-    )
-    page_slots_buf.enqueue_fill(_NO_PAGE)
-
-    var fp8_bytes = fp8_buf.unsafe_ptr().unsafe_bitcast[Scalar[DType.uint8]]()
-    var page_slots = page_slots_buf.unsafe_ptr()
+    ctx.enqueue_memset(page_slots_buf, _NO_PAGE)
+    var fp8_ptr = buffers.fp8.as_unsafe_any_origin()
+    var dense_indices = buffers.indices.as_unsafe_any_origin()
+    var fp8_bytes = fp8_ptr.unsafe_bitcast[Scalar[DType.uint8]]()
+    var page_slots = buffers.page_slots.as_unsafe_any_origin()
     var row_offsets = input_row_offsets.ptr.unsafe_mut_cast[
         True
     ]().as_unsafe_any_origin()
@@ -309,7 +413,7 @@ def mla_prefill_sparse_nvfp4_via_fp8[
     var remap_threads = num_tokens * dense_stride // _REMAP_WIDTH
     ctx.enqueue_function[_remap_kernel[page_size]](
         indices,
-        dense_buf.unsafe_ptr(),
+        dense_indices,
         page_slots,
         Int32(indices_stride),
         Int32(top_k),
@@ -322,9 +426,10 @@ def mla_prefill_sparse_nvfp4_via_fp8[
     )
 
     # The FP8 kernel addresses rows through the indices alone, so the scratch
-    # cache borrows the NVFP4 cache's lengths and page table as filler.
+    # cache's page table is filler. Its lengths must be the NVFP4 cache's
+    # real ones: the causal key count and the bound-only softmax read them.
     var scratch_blocks = TileTensor(
-        fp8_buf.unsafe_ptr(),
+        fp8_ptr,
         row_major(
             Int64(num_pages),
             Idx[1],
@@ -352,25 +457,22 @@ def mla_prefill_sparse_nvfp4_via_fp8[
         kv_cache.max_context_length(),
     ).get_key_cache(0)
 
-    mla_prefill_sparse_qkv_fp8[
-        config=config,
-        group=group,
-        q_depth=q_depth,
-        scale_block_size=0,
+    mla_sparse_attention[
+        num_heads=config.num_q_heads, depth=q_depth, causal=causal
     ](
         output,
         q,
         scratch,
-        TileTensor(
-            dense_buf.unsafe_ptr().unsafe_bitcast[UInt32](),
-            row_major(num_tokens * dense_stride),
-        ),
+        dense_indices,
+        dense_stride,
         topk_lengths,
+        input_row_offsets,
         attn_sink_ptr,
         scale,
-        Int32(dense_stride),
+        Int(kv_cache.max_prompt_length()),
+        Int(kv_cache.max_context_length()),
         ctx,
+        num_partitions_in=num_partitions_in,
     )
-    _ = fp8_buf^
     _ = page_slots_buf^
-    _ = dense_buf^
+    _ = owned_workspace^

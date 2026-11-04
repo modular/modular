@@ -50,7 +50,7 @@ the mask types the SM100 native prefill kernel accepts, so the `comptime if`
 guard blocks elaboration of the whole body on a non-AMD build, not just its
 execution (mirrors `test_mla_decode_sparse_kv_fp8_gather.mojo`). The native
 SM100 sparse prefill path is already covered by
-`test_mla_prefill_sparse_kv_fp8.mojo` and friends.
+`test_mla_decode_sparse_skip_masked_tiles.mojo` and friends.
 """
 
 from std.math import ceildiv, exp, isnan
@@ -935,7 +935,7 @@ def main() raises:
     # code does NOT block elaboration of that code on the other arch (only
     # a real if/else does), so the whole body must be nested inside the
     # `comptime if` below. The native SM100 sparse prefill path is already
-    # covered by test_mla_prefill_sparse_kv_fp8.mojo and friends.
+    # covered by test_mla_decode_sparse_skip_masked_tiles.mojo and friends.
     comptime if default_accelerator().is_amd_gpu():
         with DeviceContext() as ctx:
             # GLM-5.3 shape: 8 heads, kv_lora_rank 512, qk_rope 64
