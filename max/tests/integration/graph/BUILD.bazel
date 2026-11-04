@@ -61,6 +61,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_nms.py",
     "test_scatter.py",
     "test_side_stream_host_wait_capture.py",
+    "test_splitk_matmul_device_graph.py",
     "test_tile_based_fusion.py",
     "test_typical_llm_snifftest.py",
 ]
@@ -754,6 +755,24 @@ modular_py_test(
         "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("numpy"),
+    ],
+)
+
+# The SM100 split-K matmul's counter slots and workspace under engine device
+# graph capture: more captures than slots, replayed against eager.
+modular_py_test(
+    name = "test_splitk_matmul_device_graph",
+    srcs = ["test_splitk_matmul_device_graph.py"],
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("torch"),
     ],
 )
 
