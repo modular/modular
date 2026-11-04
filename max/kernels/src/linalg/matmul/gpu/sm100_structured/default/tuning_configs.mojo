@@ -3081,6 +3081,27 @@ def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
             is_small_bn=True,
             batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_mxfp8.yaml]
+        # index: [17]
+        TuningConfigSM100(
+            M=65,
+            M_end=129,
+            N=8192,
+            K=4096,
+            mma_shape=(256, 64, 32),
+            cta_group=2,
+            cluster_shape=(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=False,
+            batch_size=1,
+        ),
         # ----------------END-TUNING-LIST-SM100-MXFP8----------------
     ]
 
