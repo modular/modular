@@ -28,10 +28,9 @@ from ._plugin._impl import HalPluginForTarget
 
 from .buffer import Buffer, BufferView
 from .device import DeviceSpec
-from .extensions.traits import SupportsPeerAccessV1
 from .stream import Stream
 
-from .status import STATUS_SUCCESS, STATUS_UNKNOWN_SYMBOL, HALError
+from .status import STATUS_SUCCESS, HALError
 
 from std.atomic import Atomic
 from std.collections import Dict
@@ -261,21 +260,9 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         """Returns the id of the device this context is bound to."""
         return self._device[].id
 
-    def enable_peer_access(
-        self, peer: Context[Self.device_spec]
-    ) raises HALError where conforms_to(
-        Device[Self.device_spec].Extensions, SupportsPeerAccessV1
-    ):
-        """Makes `peer`'s memory addressable from this context. Idempotent."""
-        var peer_access = self._device[].extensions().peer_access()
-        if not peer_access:
-            raise HALError(
-                STATUS_UNKNOWN_SYMBOL,
-                message="plugin does not export peer access",
-            )
-        peer_access.value().enable_peer_access(
-            self._raw[], self._handle, peer._handle
-        )
+    def raw_driver(self) -> ArcPointer[RawDriver]:
+        """Returns the raw driver backing this context, for extension calls."""
+        return self._raw
 
     def get_dlpack_device(
         self, pinned: Bool

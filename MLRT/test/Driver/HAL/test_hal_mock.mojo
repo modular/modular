@@ -726,13 +726,18 @@ def test_peer_access_mock() raises:
     comptime Ext = type_of(dev0[].extensions())
     comptime if conforms_to(Ext, SupportsPeerAccessV1):
         # The mock exports the peer group but has no peer-capable pair.
-        assert_false(dev0[].can_access_peer(dev1[]))
+        ref ext = dev0[].extensions()
+        var raw = dev0[].raw_driver()
+        assert_true(ext.supports_peer_access())
+        assert_false(
+            ext.can_access_peer(raw[], dev0[].handle(), dev1[].handle())
+        )
         var ctx0 = dev0[].get_context()
         var ctx1 = dev1[].get_context()
         # `assert_raises` does not catch the typed `HALError`.
         var enable_raised = False
         try:
-            ctx0[].enable_peer_access(ctx1[])
+            ext.enable_peer_access(raw[], ctx0[].handle(), ctx1[].handle())
         except e:
             enable_raised = True
             assert_equal(e.status, STATUS_INCOMPATIBLE)

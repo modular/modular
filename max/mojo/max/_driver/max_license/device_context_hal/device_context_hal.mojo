@@ -2418,11 +2418,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         if not (self._driver is peer._driver):
             raise Error("Peer access not implemented")
-        comptime Ext = type_of(self._device[].extensions())
+        comptime Ext = type_of(self._context[].extensions())
         comptime if conforms_to(Ext, SupportsPeerAccessV1):
-            if not self._device[].extensions().peer_access():
-                raise Error("Peer access not implemented")
-            self._context[].enable_peer_access(peer._context[])
+            self._context[].extensions().enable_peer_access(
+                self._context[].raw_driver()[],
+                self._context[].handle(),
+                peer._context[].handle(),
+            )
             var src = Int(self._device[].id)
             var dst = Int(peer._device[].id)
             var state = _PEER_STATE.get_or_create_ptr()
@@ -2460,7 +2462,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     driver[].get_device_dynamic[Optional[Int64](0)](Int64(i))
                 )
                 # A non-vendor `.so` may lack the group; stay a no-op.
-                if not device[].extensions().peer_access():
+                if not device[].extensions().supports_peer_access():
                     return
                 contexts.append(device[].get_context())
             # Concurrent callers may repeat a grant; the plugin treats an
@@ -2469,7 +2471,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 for j in range(count):
                     if i == j:
                         continue
-                    contexts[i][].enable_peer_access(contexts[j][])
+                    contexts[i][].extensions().enable_peer_access(
+                        contexts[i][].raw_driver()[],
+                        contexts[i][].handle(),
+                        contexts[j][].handle(),
+                    )
                     with BlockingScopedLock(state[].lock):
                         state[].record_enabled(i, contexts[i], j, contexts[j])
 
@@ -2772,7 +2778,15 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
             return False
         comptime Ext = type_of(ctx._device[].extensions())
         comptime if conforms_to(Ext, SupportsPeerAccessV1):
-            return ctx._device[].can_access_peer(peer_ctx._device[])
+            return (
+                ctx._device[]
+                .extensions()
+                .can_access_peer(
+                    ctx._device[].raw_driver()[],
+                    ctx._device[].handle(),
+                    peer_ctx._device[].handle(),
+                )
+            )
         else:
             return False
 

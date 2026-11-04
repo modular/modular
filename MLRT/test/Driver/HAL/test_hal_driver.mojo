@@ -62,16 +62,25 @@ def test_peer_access() raises:
     var dev1 = host.accelerator(1)
     comptime Ext = type_of(dev0[].extensions())
     comptime if conforms_to(Ext, SupportsPeerAccessV1):
-        assert_false(dev0[].can_access_peer(dev0[]))
-        var forward = dev0[].can_access_peer(dev1[])
-        assert_equal(forward, dev1[].can_access_peer(dev0[]))
+        ref ext = dev0[].extensions()
+        var raw = dev0[].raw_driver()
+        assert_false(
+            ext.can_access_peer(raw[], dev0[].handle(), dev0[].handle())
+        )
+        var forward = ext.can_access_peer(
+            raw[], dev0[].handle(), dev1[].handle()
+        )
+        assert_equal(
+            forward,
+            ext.can_access_peer(raw[], dev1[].handle(), dev0[].handle()),
+        )
         if not forward:
             print("pair has no peer access; skipping enable")
             return
         var ctx0 = dev0[].get_context()
         var ctx1 = dev1[].get_context()
-        ctx0[].enable_peer_access(ctx1[])
-        ctx0[].enable_peer_access(ctx1[])
+        ext.enable_peer_access(raw[], ctx0[].handle(), ctx1[].handle())
+        ext.enable_peer_access(raw[], ctx0[].handle(), ctx1[].handle())
     else:
         print("extension set has no peer access; skipping")
 
