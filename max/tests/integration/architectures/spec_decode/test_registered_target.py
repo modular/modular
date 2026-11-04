@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any, ClassVar
@@ -21,15 +22,16 @@ from unittest.mock import NonCallableMock
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn import Module
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
+from max.pipelines.lib.graph_specs import GraphSpec
 from max.pipelines.lib.module_registration import (
     DecoderBatchProcessor,
     DecoderModelInputs,
@@ -53,7 +55,6 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 from max.pipelines.speculative import spec_adapters
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 from max.tensor import Tensor
-from max.tensor.compilation import CompiledCallable
 from test_common.context_utils import create_text_context
 from typing_extensions import Self
 
@@ -350,8 +351,8 @@ def test_a_registered_vision_target_pairs_through_the_vision_cache(
 def test_the_pairing_binds_a_registered_targets_compiled_vision(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The pairing compiles the target's VISION module as it compiles
-    serving alone, and binds the callable to the target's batching."""
+    """The pairing builds the target's VISION module as it builds serving
+    alone, and binds the compiled callable to the target's batching."""
     weight = np.array([1, 2], dtype=np.float32)
     monkeypatch.setattr(
         "max.pipelines.lib.module_registration.parse_state_dict_from_weights",
@@ -362,6 +363,18 @@ def test_the_pairing_binds_a_registered_targets_compiled_vision(
         _SpecDecodeModuleV3PipelineModel,
         "load_model",
         lambda self, session: fused,
+    )
+    specs: list[Mapping[str, GraphSpec]] = []
+    vision = SimpleNamespace(engine_model=object())
+
+    def compile_and_init(
+        session: object, roles: Mapping[str, GraphSpec]
+    ) -> Any:
+        specs.append(roles)
+        return {GraphRole.VISION: vision}
+
+    monkeypatch.setattr(
+        spec_decode_pipeline_model, "compile_and_init_graphs", compile_and_init
     )
     model: Any = object.__new__(_SpecDecodeModuleV3VisionCachePipelineModel)
     model.pipeline_config = SimpleNamespace(
@@ -392,22 +405,23 @@ def test_the_pairing_binds_a_registered_targets_compiled_vision(
     batching._takes_images = True
     batching._prepares_batches = False
     model._batch_processor = batching
-    session = InferenceSession(devices=[CPU()])
+    session = object()
 
     assert model.load_model(session) is fused
-    vision = model.compiled_modules[GraphRole.VISION]
-    assert isinstance(vision, CompiledCallable)
+    (roles,) = specs
+    spec = roles[GraphRole.VISION]
+    assert isinstance(spec.module, _Vision)
+    assert tuple(spec.input_types) == (_PIXELS,)
+    assert spec.weights is not None
+    np.testing.assert_array_equal(spec.weights["weight"], weight)
+    assert model.compiled_modules[GraphRole.VISION] is vision
     assert model.compiled_modules[GraphRole.SPEC_DECODER] is fused
+    assert model.vision_model is vision.engine_model
     target_batching = batching._target_batching
     assert isinstance(target_batching, _VisionBatching)
     assert target_batching.bound == (vision, session)
     # The pairing still stages the text itself.
     assert not batching._target_prepares_inputs
-    pixels = Tensor(storage=Buffer.from_numpy(np.array([10, 20], np.float32)))
-    embeddings = vision(pixels)
-    np.testing.assert_array_equal(
-        np.from_dlpack(embeddings.driver_tensor), [11, 22]
-    )
 
 
 class _Slot(Module[[Tensor], Tensor]):
@@ -461,7 +475,8 @@ class _SlotDraft(Module[[Tensor], Tensor]):
 def test_a_draft_shares_the_slot_a_registered_target_wraps() -> None:
     """A registered decoder may hold its language model deeper than the
     slot's own name, and the draft still reads the target's weight."""
-    target, draft = _WrappingDecoder(), _SlotDraft()
+    with F.lazy():
+        target, draft = _WrappingDecoder(), _SlotDraft()
     weight = np.ones(2, dtype=np.float32)
     modules = _Modules(
         target,
