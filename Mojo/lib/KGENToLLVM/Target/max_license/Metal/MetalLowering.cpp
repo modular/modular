@@ -1166,8 +1166,17 @@ public:
   }
 
   /// Apple's GPU compiler rejects `i128`, failing at pipeline creation with
-  /// "Compiler encountered an internal error".
-  bool supportsI128() const override { return false; }
+  /// "Compiler encountered an internal error", and Apple GPUs have no native
+  /// 64-bit float arithmetic.
+  bool supportsDType(KGENDType dtype) const override {
+    // Both 128-bit integer dtypes lower to `i128`, and `f64` has no arithmetic
+    // on the device; every other dtype is supported. The lowerings only ask
+    // about the 2W-bit widening in floor division by a constant, which reaches
+    // `i128` from a 64-bit signed dividend.
+    static constexpr KGENDType kUnsupported[] = {
+        KGENDType::si128, KGENDType::ui128, KGENDType::f64};
+    return !llvm::is_contained(kUnsupported, dtype);
+  }
 
   // This is max only target
   bool isBaseTarget() const override { return false; }
