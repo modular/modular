@@ -356,13 +356,13 @@ def _expert_specs(
     if experts == "stacked":
         for name, out_dim, in_dim in _expert_projections(config):
             yield from _nvfp4_specs(
-                f"{p}.{name}.weight", out_dim, in_dim, "s0", lead=(n,)
+                f"{p}.{name}", out_dim, in_dim, "s0", lead=(n,)
             )
         return
     for e in range(n):
         for name, out_dim, in_dim in _expert_projections(config):
             yield from _nvfp4_specs(
-                f"{p}.{e}.{name}.weight",
+                f"{p}.{e}.{name}",
                 out_dim,
                 in_dim,
                 f"gpu:{e // per}",
@@ -374,8 +374,7 @@ def _checkpoint_specs(
 ) -> list[ParamSpec]:
     """The parameter tree at checkpoint granularity, in module-attribute order.
 
-    Names are the checkpoint's, except the NVFP4 expert leaves (see
-    :func:`to_checkpoint_name`). ``experts="stacked"`` is the fallback
+    Names are the checkpoint's. ``experts="stacked"`` is the fallback
     form with one stacked leaf per expert projection and layer.
     """
     if config.n_routed_experts % n_devices:
@@ -509,8 +508,7 @@ def parameter_specs(
 ) -> list[ParamSpec]:
     """The parameter tree of the stub, in module-attribute order.
 
-    Names are the checkpoint's, except the NVFP4 expert leaves (see
-    :func:`to_checkpoint_name`), the stacked projections
+    Names are the checkpoint's, except the stacked projections
     (:data:`STACKED_PROJECTIONS`, whose pairs share one leaf) and each MoE
     layer's derived uniform dispatch scale (see
     :func:`_derived_global_scale_spec`).
@@ -532,25 +530,6 @@ def unmerged_parameter_specs(
     pair, so the audit runs before the fold.
     """
     return _checkpoint_specs(config, n_devices, experts)
-
-
-_EXPERT_LEAF = re.compile(
-    r"^(?P<head>.*\.experts(?:\.\d+)?\.w\d)\.weight\."
-    r"(?P<leaf>weight|weight_scale|weight_scale_2|input_scale)$"
-)
-
-
-def to_checkpoint_name(name: str) -> str:
-    """Maps a tree path back to its checkpoint tensor name.
-
-    Only the NVFP4 expert leaves differ: they nest under the projection's
-    ``weight``, so ``w1.weight.weight`` is the checkpoint's ``w1.weight``
-    and ``w1.weight.weight_scale`` its ``w1.weight_scale``.
-    """
-    match = _EXPERT_LEAF.match(name)
-    if match is None:
-        return name
-    return f"{match['head']}.{match['leaf']}"
 
 
 class _BlockGroupConfig(Protocol):

@@ -205,7 +205,7 @@ class DecoderLayer(Module[..., Any]):
         for proj in ("w1", "w3", "w2"):
             for rank in range(self.n_devices):
                 local = [
-                    getattr(experts[e], proj).weight
+                    getattr(experts[e], proj)
                     for e in range(rank * per, (rank + 1) * per)
                 ]
                 # The per-rank stack of local experts, as the grouped matmul

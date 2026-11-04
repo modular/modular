@@ -34,7 +34,6 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     build_kv_params,
     kv_cache_config,
     parameter_specs,
-    to_checkpoint_name,
     unmerged_parameter_specs,
 )
 from max.tensor import default_device
@@ -50,7 +49,7 @@ def _config(model: str) -> V41Config:
 
 def _tree(specs: list[ParamSpec]) -> dict[str, ParamSpec]:
     """The tree keyed by checkpoint name."""
-    tree = {to_checkpoint_name(s.name): s for s in specs}
+    tree = {s.name: s for s in specs}
     assert len(tree) == len(specs), "two leaves share a checkpoint name"
     return tree
 

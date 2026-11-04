@@ -482,7 +482,7 @@ def test_pipeline_adapter_accepts_paired_gate_up_scales_under_ep() -> None:
         _pipeline_config(dp=4, ep_size=4, n_devices=4),
     )
     assert _f32_bits(
-        adapted["layers.0.ffn.experts.0.w1.weight.weight_scale_2"].data
+        adapted["layers.0.ffn.experts.0.w1.weight_scale_2"].data
     ) == _bits(1.5)
 
 
@@ -528,7 +528,7 @@ def _gate_scales_state_dict(
     calibrate alike), and every ``w2`` input scale is poisoned one ulp
     above the gate/up maximum, so a scalar that wrongly reduces over it
     fails instead of passing vacuously. The names are the checkpoint's
-    own spellings (the adapter renames them per table A).
+    own spellings, which are also the tree's.
     """
     up = scales if w3 is None else w3
     poison = float(
@@ -660,9 +660,7 @@ def test_the_expert_scales_the_derivation_reduces_stay_in_the_tree() -> None:
             # values the reduction reads, not poison.
             ("w3", value),
         ):
-            name = (
-                f"layers.0.ffn.experts.{expert}.{projection}.weight.input_scale"
-            )
+            name = f"layers.0.ffn.experts.{expert}.{projection}.input_scale"
             assert _f32_bits(out[name].data) == _bits(expected), name
 
 
@@ -686,8 +684,8 @@ def test_convert_weight_data_maps_mxfp4_experts_byte_for_byte() -> None:
             weight.view(np.int8), f"{base}.weight", DType.int8
         )
         state[f"{base}.scale"] = _wd(scale, f"{base}.scale", DType.uint8)
-        raw[f"{base}.weight.weight"] = weight
-        raw[f"{base}.weight.weight_scale"] = scale
+        raw[f"{base}.weight"] = weight
+        raw[f"{base}.weight_scale"] = scale
 
     out = convert_weight_data(state, has_vision=False).state_dict
 

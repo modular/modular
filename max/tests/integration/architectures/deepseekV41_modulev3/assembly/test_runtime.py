@@ -122,10 +122,10 @@ def test_real_module_parameter_tree() -> None:
         text.num_attention_heads * text.head_dim // text.o_groups // 32,
     ]
     for projection in ("w1", "w3", "w2"):
-        prefix = f"layers.0.ffn.experts.0.{projection}.weight"
+        prefix = f"layers.0.ffn.experts.0.{projection}"
         for leaf in ("weight", "weight_scale", "weight_scale_2", "input_scale"):
             assert f"{prefix}.{leaf}" in params
-    assert "layers.0.ffn.routed.experts.0.w1.weight.weight" not in params
+    assert "layers.0.ffn.routed.experts.0.w1.weight" not in params
     # The token map is a graph input the model binds once and the decoder's
     # row count rides its input's extent; this fixture carries no Engram
     # layers, so no table extras.

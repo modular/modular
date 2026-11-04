@@ -65,21 +65,20 @@ _STACKED_PROJECTION_NORMS = {
 # the tree declares; `_relabel` only ever relabels within this set.
 _E8M0 = DType.float8_e8m0fnu
 
-# Rename table A, the only checkpoint-name -> tree-name renames. Each
-# expert projection's leaves nest under its ``weight`` container; an MXFP4
-# expert's ``scale`` is that container's ``weight_scale``.
-_EXPERT_TENSOR = re.compile(
-    r"^(?P<head>.*\.ffn\.experts\.(?P<expert>\d+)\.w[123])"
-    r"\.(?P<kind>weight_scale_2|weight_scale|input_scale|weight|scale)$"
-)
+# Rename table A, the only checkpoint-name -> tree-name rename: an MXFP4
+# expert's ``scale`` is its projection's ``weight_scale``.
+_EXPERT_SCALE = re.compile(r"^(?P<head>.*\.ffn\.experts\.\d+\.w[123])\.scale$")
+
+# A routed expert's packed weight, which an MXFP4 checkpoint stores as ``I8``.
+_EXPERT_WEIGHT = re.compile(r"^.*\.ffn\.experts\.\d+\.w[123]\.weight$")
 
 # The routed experts' static gate/up scalars a derived leaf reduces: the
 # EP dispatch quantizes with one uniform scale per layer, the max of the
-# layer's experts' ``w1`` and ``w3`` ``input_scale`` values (tree names,
-# post-rename) -- both projections read the same dispatched activation,
-# so either one's calibrated range can bind.
+# layer's experts' ``w1`` and ``w3`` ``input_scale`` values -- both
+# projections read the same dispatched activation, so either one's
+# calibrated range can bind.
 _EXPERT_GATE_INPUT_SCALE = re.compile(
-    r"^(?P<layer>layers\.\d+)\.ffn\.experts\.\d+\.w[13]\.weight\.input_scale$"
+    r"^(?P<layer>layers\.\d+)\.ffn\.experts\.\d+\.w[13]\.input_scale$"
 )
 
 _GLOBAL_INPUT_SCALE = "ffn.global_input_scale"
@@ -128,11 +127,10 @@ def to_tree_name(name: str) -> str:
     for nothing: names the tree does not hold are the caller's business
     (see :func:`is_skipped_checkpoint_tensor`).
     """
-    match = _EXPERT_TENSOR.match(name)
+    match = _EXPERT_SCALE.match(name)
     if match is None:
         return name
-    kind = "weight_scale" if match["kind"] == "scale" else match["kind"]
-    return f"{match['head']}.weight.{kind}"
+    return f"{match['head']}.weight_scale"
 
 
 def _as_buffer(data: DLPackArray) -> Buffer:
@@ -685,7 +683,7 @@ def convert_weight_data(
 
     The transform list, as data:
 
-    1. Rename table A on every routed-expert leaf (the only renames).
+    1. Rename table A on every MXFP4 expert scale (the only rename).
     2. Dtype relabel ``uint8`` -> ``float8_e8m0fnu`` on ``F8_E8M0`` scale
        leaves (dense ``.scale`` and the expert ``.weight_scale`` never
        needs it -- the expert scale is ``F8_E4M3``, one byte either way).
@@ -764,7 +762,7 @@ def _rename_checkpoint(
             # The ``.scale`` leaves are E8M0: the dense FP8 compact scales
             # (``wo_a``'s included) and the MXFP4 experts' -- relabel only.
             data = _relabel_dense_scale(name, data)
-        elif data.dtype == DType.int8 and tree_name.endswith(".weight.weight"):
+        elif data.dtype == DType.int8 and _EXPERT_WEIGHT.match(tree_name):
             # MXFP4 experts store their packed E2M1 pairs as ``I8``; the
             # bytes are the tree's ``uint8`` codes.
             data = WeightData(

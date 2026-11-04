@@ -23,6 +23,7 @@ from max.dtype import DType
 from max.graph import TensorValue
 from max.nn import Module
 from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_linear import QuantizedLinear
 from max.nn.common_layers.quant_ops import (
     EPDispatchPayload,
     ep_requires_dispatch_scales,
@@ -47,38 +48,26 @@ from ..model_config import RoutedExpertFormat
 from . import mxfp4_ops, nvfp4_ops
 from .mxfp8_linear import MXFP8Linear, Mxfp8Rows
 
-_ExpertWeight = NVFP4Tensor | MXFP4Tensor
-
-
-class _ExpertLinear(Module[[Tensor], Tensor]):
-    weight: _ExpertWeight
-
-    def __init__(
-        self, in_dim: int, out_dim: int, expert_format: RoutedExpertFormat
-    ) -> None:
-        super().__init__()
-        weight = quant_ops.quantized_weight(
-            out_dim, in_dim, expert_format.weight_quant_config()
-        )
-        assert isinstance(weight, (NVFP4Tensor, MXFP4Tensor))
-        self.weight = weight
-
-    def forward(self, x: Tensor) -> Tensor:
-        raise NotImplementedError("Routed projections use grouped matmuls")
-
 
 class _Expert(Module[[], None]):
-    w1: _ExpertLinear
-    w3: _ExpertLinear
-    w2: _ExpertLinear
+    w1: QuantizedLinear
+    w3: QuantizedLinear
+    w2: QuantizedLinear
 
     def __init__(
         self, hidden_dim: int, moe_dim: int, expert_format: RoutedExpertFormat
     ) -> None:
         super().__init__()
-        self.w1 = _ExpertLinear(hidden_dim, moe_dim, expert_format)
-        self.w3 = _ExpertLinear(hidden_dim, moe_dim, expert_format)
-        self.w2 = _ExpertLinear(moe_dim, hidden_dim, expert_format)
+        quant_config = expert_format.weight_quant_config()
+        self.w1 = QuantizedLinear(
+            hidden_dim, moe_dim, bias=False, quant_config=quant_config
+        )
+        self.w3 = QuantizedLinear(
+            hidden_dim, moe_dim, bias=False, quant_config=quant_config
+        )
+        self.w2 = QuantizedLinear(
+            moe_dim, hidden_dim, bias=False, quant_config=quant_config
+        )
 
     def forward(self) -> None:
         raise NotImplementedError("Experts are evaluated as local groups")
