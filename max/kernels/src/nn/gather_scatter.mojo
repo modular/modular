@@ -644,6 +644,54 @@ def gather_guards[
 
 
 @inline(.always)
+def _vectorizes_last_axis[indices_rank: Int, target: StaticString]() -> Bool:
+    """Whether a gather along the input's last axis runs on SIMD vectors.
+
+    Only the CPU does, and rank-0 indices have no index vector to load.
+    """
+    return is_cpu[target]() and indices_rank > 0
+
+
+@inline(.always)
+def _normalize_and_check_gather_index[
+    dtype: DType, width: SIMDLength, *, target: StaticString
+](
+    raw: SIMD[dtype, width],
+    axis_dim: Int,
+    error_index_ptr: OptionalReg[MutPointer[Int, MutAnyOrigin]],
+    mut normalized: SIMD[DType.int, width],
+) -> Bool:
+    """Wraps negative gather indices and checks them against `axis_dim`.
+
+    On CPU, records the first out-of-bounds raw index in `error_index_ptr` and
+    returns `False`; on GPU a debug assert traps instead.
+    """
+    normalized = _unsafe_normalize_neg_index(raw, axis_dim)
+    var out_of_bounds = normalized.lt(0) | normalized.ge(
+        SIMD[DType.int, width](axis_dim)
+    )
+
+    # Use debug_assert to validate normalized index is within bounds on GPU
+    # and trap, as more detailed checking is costly on GPU.
+    comptime if is_cpu[target]():
+        if any(out_of_bounds):
+            for k in range(Int(width)):
+                if out_of_bounds[k]:
+                    error_index_ptr.value()[] = Int(raw[k])
+                    break
+            return False
+
+    debug_assert[assert_mode="safe"](
+        not any(out_of_bounds),
+        (
+            "Gather index out of bounds. Run on CPU for more"
+            " detailed error checking."
+        ),
+    )
+    return True
+
+
+@inline(.always)
 def gather_elementwise_fn_wrapper[
     input_rank: Int,
     indices_rank: Int,
@@ -704,8 +752,11 @@ def gather_elementwise_fn_wrapper[
             output tensor at given coordinates.
         PrefetchFnType: Function type of the software index-prefetch
             callback.
-        simd_width: SIMD vector width for the elementwise load and store.
-        has_prefetch: Whether to call `prefetch_fn` before each load.
+        simd_width: SIMD vector width for the elementwise load and store. When
+            gathering the input's last axis on CPU the width applies to the
+            indices and the output instead, and the data loads are scalar.
+        has_prefetch: Whether to call `prefetch_fn` before each load (not done
+            on the vectorized last-axis path).
         target: Target backend to execute on, such as "cpu" or "cuda"
             (defaults to "cpu").
         element_alignment: Alignment factor for element loads and stores
@@ -746,6 +797,37 @@ def gather_elementwise_fn_wrapper[
             if j == i + Int(axis):
                 indices_index.replace_dynamic[i](Int64(coords[j].value()))
 
+    # Extent of the gathered axis; a runtime subscript on a `Coord` does not
+    # compile, so this unrolls over the comptime positions.
+    var axis_dim = _coord_get(input_shape, Int(axis))
+
+    # Gathering the input's last axis: the output's last dim is the indices'
+    # last dim, so a vector of output lanes reads a vector of indices and
+    # gathers one input element per lane. The data loads stay scalar; the
+    # index load and the output store are vectorized.
+    comptime if _vectorizes_last_axis[indices_rank, target]():
+        comptime if simd_width > 1:
+            if Int(axis) == input_shape.rank - 1:
+                var lanes = SIMD[DType.int, simd_width]()
+                if not _normalize_and_check_gather_index[target=target](
+                    indices_fn[simd_width](indices_index),
+                    axis_dim,
+                    error_index_ptr,
+                    lanes,
+                ):
+                    return
+                var lane_indices = DynamicCoord[.int64, input_shape.rank]()
+                comptime for i in range(input_shape.rank - 1):
+                    lane_indices.replace_dynamic[i](Int64(coords[i].value()))
+                var out = SIMD[dtype, simd_width]()
+                comptime for k in range(simd_width):
+                    lane_indices.replace_dynamic[input_shape.rank - 1](
+                        Int64(lanes[k])
+                    )
+                    out[k] = input_fn[1, 1](lane_indices)[0]
+                output_fn[simd_width, element_alignment](coords, out)
+                return
+
     # The index we are gathering.
     var data_index = indices_fn[1](indices_index)
 
@@ -754,36 +836,18 @@ def gather_elementwise_fn_wrapper[
 
     comptime skip_factor = indices_shape.rank - 1
 
-    # Extent of the gathered axis; a runtime subscript on a `Coord` does not
-    # compile, so this unrolls over the comptime positions.
-    var axis_dim = _coord_get(input_shape, Int(axis))
-
     # Build the indices for the input. We have replaced in index in 'axis'
     # with an index from the indices tensor. `Coord` subscripts are checked
     # at compile time, so the `comptime if`s skip positions that rank-0
     # indices make out of range; the runtime `axis` test never reaches them.
     comptime for i in range(input_shape.rank):
         if i == Int(axis):
-            var normalized_coords = _unsafe_normalize_neg_index(
-                data_index, axis_dim
-            )
-            data_indices.replace_dynamic[i](Int64(normalized_coords))
-
-            # Do a real bounds check and provide a nice message on CPU.
-            # Use debug_assert to validate normalized index is within bounds
-            # on GPU and trap, as more detailed checking is costly on GPU.
-            comptime if is_cpu[target]():
-                if not (0 <= Int(normalized_coords) < axis_dim):
-                    error_index_ptr.value()[] = Int(data_index)
-                    return  # Early return on bounds error
-
-            debug_assert[assert_mode="safe"](
-                0 <= Int(normalized_coords) < axis_dim,
-                (
-                    "Gather index out of bounds. Run on CPU for more"
-                    " detailed error checking."
-                ),
-            )
+            var normalized_index = SIMD[DType.int, 1]()
+            if not _normalize_and_check_gather_index[target=target](
+                data_index, axis_dim, error_index_ptr, normalized_index
+            ):
+                return  # Early return on bounds error
+            data_indices.replace_dynamic[i](Int64(normalized_index))
         elif i > Int(axis):
             # Skip over any extra indices dimensions. These are essentially new dimensions.
             comptime if i + skip_factor >= 0:
@@ -987,10 +1051,14 @@ def _gather_impl[
                 error_index_ptr,
             )
 
-        # If we are gathering on the last dimension then we have to be scalar.
+        # Gathering the last axis can't vectorize the data loads; see
+        # `gather_elementwise_fn_wrapper`.
+        comptime last_axis_width = target_simd_width if _vectorizes_last_axis[
+            indices_rank, target
+        ]() else 1
         if Int(axis) == input_shape.rank - 1:
             elementwise[
-                simd_width=1,
+                simd_width=last_axis_width,
                 target=target,
                 _trace_description="gather",
             ](
