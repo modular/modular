@@ -15,6 +15,7 @@
 #define KGEN_ELABORATOR_PARAMETRICELABORATOR_H
 
 #include "Cache/CachedTransform.h"
+#include "ElaboratorHelper.h"
 #include "InterpreterCache.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/Interpreter/BytecodeInterpreter.h"
@@ -361,6 +362,9 @@ private:
 
   /// The elaborator config.
   ElaborateGeneratorsOptions config;
+
+  /// What each `comptime for` produced, when `config.printStats` is set.
+  Shared<std::vector<ComptimeForRecord>> comptimeForStats;
 
   /// This is the symbol table of the new module.
   /// Map from name to op + concrete function to implementation node.

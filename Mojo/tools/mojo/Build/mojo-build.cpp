@@ -612,6 +612,9 @@ static int build(const State &subcommandState) {
   LLVMPassTiming llvmTiming;
   llvmTiming.configure(driverOptions, options, timingReport);
 
+  ElaborationStatsReport elaborationStats;
+  elaborationStats.configure(options, timingReport);
+
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
 

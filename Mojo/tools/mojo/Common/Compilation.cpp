@@ -18,6 +18,7 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/Support/Configuration.h"
+#include "Mojo/ToolCommon/ElaborationStats.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Mojo/ToolCommon/PipelineTiming.h"
@@ -335,6 +336,36 @@ void M::LLVMPassTiming::finish() {
     separator = ",";
   }
   os << "\n]";
+}
+
+void M::ElaborationStatsReport::configure(const CompilationOptions &options,
+                                          TimingReportSink &reportSink) {
+  if (!options.elaborationStats)
+    return;
+  enabled = true;
+  sink = &reportSink;
+  KGEN::enableElaborationStats();
+}
+
+void M::ElaborationStatsReport::finish() {
+  if (!enabled)
+    return;
+  enabled = false;
+
+  // One part for each pipeline that elaborated: the host, and each offload
+  // target the compilation cache did not answer.
+  llvm::SmallVector<KGEN::ElaborationStatsPart> parts =
+      KGEN::takeElaborationStats();
+  if (!sink->isJSON()) {
+    for (const KGEN::ElaborationStatsPart &part : parts) {
+      printTimingReportTitle("Elaboration statistics (--elaboration-stats): " +
+                                 part.label,
+                             sink->stream());
+      KGEN::printElaborationStats(sink->stream(), part);
+    }
+    return;
+  }
+  KGEN::writeElaborationStatsJSON(sink->beginMember("elaboration"), parts);
 }
 
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(

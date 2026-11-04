@@ -513,7 +513,11 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
     Option<"loopUnrollingWarnThreshold", "loop-unrolling-warn-threshold",
            "unsigned", "65536",
            "Threshold to warn if a loop is unrolled for too many times, "
-           "default value is 65536, set to 0 to disable the warning.">
+           "default value is 65536, set to 0 to disable the warning.">,
+    Option<"printStats", "print-stats", "bool", "false",
+           "Print to stderr what elaboration produced: each `comptime for` "
+           "loop with its iteration count and the operations its unrolled "
+           "iterations hold.">
   ];
 }
 
