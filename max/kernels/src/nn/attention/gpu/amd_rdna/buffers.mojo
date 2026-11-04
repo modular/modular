@@ -26,7 +26,7 @@ from std.sys import align_of, simd_width_of
 from max.gpu import lane_id, warp_id as get_warp_id
 from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from layout.tensor_core import TiledTensorCore
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from structured_kernels.amd_tile_io import RegTileLoader
 

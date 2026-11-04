@@ -69,7 +69,7 @@ from std.utils import IndexList
 
 from layout import Idx, TensorEngine, TileTensor
 from layout.coord import Coord
-from layout.tile_layout import Layout, TensorLayout
+from layout.layout import Layout, TensorLayout
 
 from linalg.fp4_utils import decode_e2m1_to_f32, NVFP4_SF_VECTOR_SIZE
 

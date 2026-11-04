@@ -54,7 +54,7 @@ from layout import (
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile
 from std.utils.coord import Coord, DynamicCoord
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from std.logger import Logger
 from std.memory import dealloc
 from std.memory.alloc import Alignment, Layout as AllocLayout
@@ -155,7 +155,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
     tensor: TileTensor,
     out result: TileTensor[
         mut=tensor.mut,
-        LayoutType=TileLayout[
+        LayoutType=Layout[
             _shape_types_to_3d[tensor.LayoutType._shape_types](),
             _slice_types[tensor.LayoutType._stride_types, 3](),
         ],
@@ -213,7 +213,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
 
     return type_of(result)(
         tensor.ptr,
-        TileLayout[out_shape_types, out_stride_types](
+        Layout[out_shape_types, out_stride_types](
             Coord[*out_shape_types](shape^), Coord[*out_stride_types](strides^)
         ),
     )
@@ -776,21 +776,21 @@ def batched_matmul_kernel_gpu[
 
     var a = TileTensor(
         a_ptr,
-        TileLayout(
+        Layout(
             (m, Idx[a_tensor.static_shape[2]]),
             Coord[*_slice_types[ATensorType._stride_types, 2]()](),
         ),
     )
     var b = TileTensor(
         b_ptr,
-        TileLayout(
+        Layout(
             Coord[*_slice_types[BTensorType._shape_types, 2]()](),
             Coord[*_slice_types[BTensorType._stride_types, 2]()](),
         ),
     )
     var c = TileTensor(
         c_ptr,
-        TileLayout(
+        Layout(
             (m, Idx[c_tensor.static_shape[2]]),
             Coord[*_slice_types[CTensorType._stride_types, 2]()](),
         ),
@@ -1664,14 +1664,14 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     # subscripting with slices would make both extents dynamic.
     var c_tt = TileTensor(
         c_tensor.ptr_at_offset(Coord(block_idx.z, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(c_tensor.layout.shape[1](), c_tensor.layout.shape[2]()),
             Coord(c_tensor.layout.stride[1](), c_tensor.layout.stride[2]()),
         ),
     )
     var b_scales_tt = TileTensor(
         b_scales_tensor.ptr_at_offset(Coord(block_idx.z, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(
                 b_scales_tensor.layout.shape[1](),
                 b_scales_tensor.layout.shape[2](),
@@ -2120,35 +2120,35 @@ def blockwise_scaled_fp8_matmul_amd_batched_kernel[
     # column stride the loader assumes (host-asserted).
     var c_tt = TileTensor(
         c.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(Int64(M), Idx[N]),
             Coord(Int64(Int(c.dynamic_stride(1))), Idx[1]),
         ),
     )
     var a_tt = TileTensor(
         a.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(Int64(M), Idx[K]),
             Coord(Int64(Int(a.dynamic_stride(1))), Idx[1]),
         ),
     )
     var b_tt = TileTensor(
         b.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(b.layout.shape[1](), b.layout.shape[2]()),
             Coord(b.layout.stride[1](), b.layout.stride[2]()),
         ),
     )
     var a_scales_tt = TileTensor(
         a_scales.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(K_blocks, M_a_scales),
             Coord(a_scales.layout.stride[1](), a_scales.layout.stride[2]()),
         ),
     )
     var b_scales_tt = TileTensor(
         b_scales.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(N_blocks, K_blocks),
             Coord(b_scales.layout.stride[1](), b_scales.layout.stride[2]()),
         ),
@@ -2480,29 +2480,29 @@ def _batched_matmul_dynamic_scaled_fp8_amd_tiled[
         # comptime N/K, b and scales keep the source layout's static parts.
         var c_tt = TileTensor(
             c.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(Coord(Int64(M), Idx[N]), Coord(c_row_stride, Idx[1])),
+            Layout(Coord(Int64(M), Idx[N]), Coord(c_row_stride, Idx[1])),
         )
         var a_tt = TileTensor(
             a.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(Coord(Int64(M), Idx[K]), Coord(a_row_stride, Idx[1])),
+            Layout(Coord(Int64(M), Idx[K]), Coord(a_row_stride, Idx[1])),
         )
         var b_tt = TileTensor(
             b.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(
+            Layout(
                 Coord(b.layout.shape[1](), b.layout.shape[2]()),
                 Coord(b.layout.stride[1](), b.layout.stride[2]()),
             ),
         )
         var a_scales_tt = TileTensor(
             a_scales.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(
+            Layout(
                 Coord(ceildiv(K_rt, BLOCK_SCALE_K), M_a_scales),
                 Coord(a_scales.layout.stride[1](), a_scales.layout.stride[2]()),
             ),
         )
         var b_scales_tt = TileTensor(
             b_scales.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(
+            Layout(
                 Coord(
                     ceildiv(N_rt, BLOCK_SCALE_N), ceildiv(K_rt, BLOCK_SCALE_K)
                 ),

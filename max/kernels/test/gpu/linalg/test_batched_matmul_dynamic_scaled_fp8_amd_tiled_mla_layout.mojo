@@ -43,7 +43,7 @@ from std.utils.numerics import nan
 
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major, Coord
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from linalg.bmm import (
     _batched_matmul_dynamic_scaled_fp8_impl,
     batched_matmul_dynamic_scaled_fp8_naive,
@@ -158,11 +158,11 @@ def run_case[
     # `[M, B, N]`, `a` contiguous `[B, M, K]`, `a_scales` carries padded-M stride.
     var c_disp_tt = TileTensor(
         c_disp_dev,
-        TileLayout((Idx[B], M, Idx[N]), (Idx[N], Idx[B * N], Idx[1])),
+        Layout((Idx[B], M, Idx[N]), (Idx[N], Idx[B * N], Idx[1])),
     )
     var c_naive_tt = TileTensor(
         c_naive_dev,
-        TileLayout((Idx[B], M, Idx[N]), (Idx[N], Idx[B * N], Idx[1])),
+        Layout((Idx[B], M, Idx[N]), (Idx[N], Idx[B * N], Idx[1])),
     )
     var a_tt = TileTensor(a_dev, row_major(Idx[B], M, Idx[K]))
     var b_tt = TileTensor(b_dev, row_major[B, N, K]())

@@ -52,7 +52,7 @@ from structured_kernels.tile_types import (
     create_tma_tile,
 )
 from layout import Coord, TileTensor, coord
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,

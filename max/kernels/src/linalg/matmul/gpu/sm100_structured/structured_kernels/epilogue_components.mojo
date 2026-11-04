@@ -44,7 +44,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import (
+from layout.layout import (
     Layout as InternalLayout,
     TensorLayout,
     blocked_product,

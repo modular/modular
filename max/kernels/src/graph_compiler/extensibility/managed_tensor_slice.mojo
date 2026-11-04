@@ -59,7 +59,7 @@ from layout.coord import (
     crd2idx,
 )
 from layout.tile_io import TileCopier
-from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
+from layout.layout import Layout, TensorLayout, _RowMajor
 
 
 # ===----------------------------------------------------------------------=== #
@@ -166,7 +166,7 @@ def _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
 
 
 # ===----------------------------------------------------------------------=== #
-# TileLayout helper aliases
+# Layout helper aliases
 # ===----------------------------------------------------------------------=== #
 
 comptime _AllScalar[rank: Int] = TypeList.splat[
@@ -174,20 +174,20 @@ comptime _AllScalar[rank: Int] = TypeList.splat[
 ]()
 """A variadic of `rank` Scalar types."""
 
-comptime _UnknownTileLayout[rank: Int] = TileLayout[
+comptime _UnknownTileLayout[rank: Int] = Layout[
     shape_types=_AllScalar[rank],
     stride_types=_AllScalar[rank],
 ]
-"""A fully-dynamic TileLayout where all shape and stride dims are Scalar."""
+"""A fully-dynamic Layout where all shape and stride dims are Scalar."""
 
 
 comptime _RowMajorTileLayout[
     shape_types: TypeList[Trait=CoordLike, ...]
-] = TileLayout[
+] = Layout[
     shape_types=shape_types,
     stride_types=_RowMajor[*shape_types],
 ]
-"""A TileLayout with row-major strides derived from the given shape types."""
+"""A Layout with row-major strides derived from the given shape types."""
 
 comptime _IndexListToCoordLikeTabulator[
     list: IndexList,
@@ -205,29 +205,27 @@ comptime _IndexListToCoordLike[list: IndexList] = TypeList.tabulate[
 Negative values become Scalar, non-negative become ComptimeInt."""
 
 
-comptime _IndexListToTileLayout[
-    shape: IndexList, strides: IndexList
-] = TileLayout[
+comptime _IndexListToTileLayout[shape: IndexList, strides: IndexList] = Layout[
     shape_types=_IndexListToCoordLike[shape],
     stride_types=_IndexListToCoordLike[strides],
 ]
-"""Convert a pair of compile-time IndexLists to a TileLayout.
+"""Convert a pair of compile-time IndexLists to a Layout.
 Negative values (-1) become Scalar, non-negative become ComptimeInt."""
 
 
 comptime _RowMajorCoordTileLayout[
     shape: Coord,
 ] = _RowMajorTileLayout[shape.element_types]
-"""A TileLayout with row-major strides derived from a Coord shape."""
+"""A Layout with row-major strides derived from a Coord shape."""
 
 
 comptime _CoordShapeIndexListStridesToTileLayout[
     shape: Coord, strides: IndexList
-] = TileLayout[
+] = Layout[
     shape_types=shape.element_types,
     stride_types=_IndexListToCoordLike[strides],
 ]
-"""Convert a Coord shape and IndexList strides to a TileLayout."""
+"""Convert a Coord shape and IndexList strides to a Layout."""
 
 
 def get_row_major_tensor_spec_static[
@@ -1308,7 +1306,7 @@ struct ManagedTensorSlice[
         Self.OutFusionTile != _NoOutputFusionTile
     )
 
-    comptime RuntimeLayout = TileLayout[
+    comptime RuntimeLayout = Layout[
         shape_types=Self.static_spec.static_layout._shape_types,
         stride_types=Self.static_spec.static_layout._stride_types,
     ]

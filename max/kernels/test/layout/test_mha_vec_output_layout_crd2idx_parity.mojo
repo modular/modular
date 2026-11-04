@@ -44,7 +44,7 @@ re-derive the nested Coord shape/stride before touching any helper.
 
 from layout import ComptimeInt, Idx
 from layout.coord import Coord
-from layout.tile_layout import Layout as TTLayout
+from layout.layout import Layout as TTLayout
 from std.testing import assert_equal, TestSuite
 
 

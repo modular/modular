@@ -53,7 +53,7 @@ from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
 )
-from layout.tile_layout import (
+from layout.layout import (
     Layout as InternalLayout,
     row_major as tt_row_major,
 )

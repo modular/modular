@@ -66,7 +66,7 @@ from std.memory.alloc import unsafe_alloc
 from comm.sync import enable_p2p
 from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from layout import Coord, TileTensor, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from shmem.ep import (
     ep_combine_async_kernel_api,
     ep_combine_wait_kernel_api,

@@ -40,7 +40,7 @@ from std.bit import log2_floor
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from .coord import Coord, CoordLike
-from .tile_layout import TensorLayout
+from .layout import TensorLayout
 
 # ===-----------------------------------------------------------------------===#
 # Motivation of thread swizzling                                               #

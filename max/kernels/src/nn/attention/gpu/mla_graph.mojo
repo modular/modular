@@ -54,7 +54,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
 from std.utils.index import StaticTuple
@@ -1158,7 +1158,7 @@ def mla_prefill_branch_fp8[
     # qk_rope_head_dim columns of each Q head. The reshape pins the static
     # strides, which `q`'s type may not carry.
     var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
@@ -1854,7 +1854,7 @@ def _amd_sparse_mla_bf16_rows[
         var tokens = min(max_launch_tokens, seq_len - token0)
         var q_rows = TileTensor(
             q.ptr.unsafe_offset(token0 * q_row_stride),
-            TileLayout(
+            Layout(
                 (tokens, Idx[1], Idx[num_heads], Idx[k_cache_dim]),
                 (
                     Idx[q_row_stride],
@@ -1866,7 +1866,7 @@ def _amd_sparse_mla_bf16_rows[
         )
         var output_rows = TileTensor(
             output.ptr.unsafe_offset(token0 * output_row_stride),
-            TileLayout(
+            Layout(
                 (tokens, Idx[1], Idx[num_heads], Idx[kv_latent_dim]),
                 (
                     Idx[output_row_stride],
@@ -2192,7 +2192,7 @@ def mla_decode_branch_fp8[
     # We start by create a view of the input tensor `q` that only contains the
     # first qk_nope_head_dim columns of each Q head.
     var q_nope = q.reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_nope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
@@ -2201,7 +2201,7 @@ def mla_decode_branch_fp8[
     # Then create a view of the mla_decode_input tensor that only contains the
     # first kv_latent_dim columns of each Q head.
     var mla_decode_input_nope = mla_decode_input.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
         )
@@ -2224,7 +2224,7 @@ def mla_decode_branch_fp8[
     # qk_rope_head_dim columns of each Q head. The reshape pins the static
     # strides, which `q`'s type may not carry.
     var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
@@ -2235,7 +2235,7 @@ def mla_decode_branch_fp8[
     var mla_decode_input_rope = mla_decode_input[
         :, :, Idx[kv_latent_dim] :
     ].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
         )
@@ -2288,7 +2288,7 @@ def mla_decode_branch_fp8[
         # View decode input/output as rank-4 [batch,1,heads,depth]; decode has
         # q_seq_len==1 (batch==seq_len), so a size-1 axis, no data movement.
         var q_padded = mla_decode_input.reshape(
-            TileLayout(
+            Layout(
                 (batch_size, Idx[1], Idx[num_heads], Idx[k_cache_dim]),
                 (
                     Idx[num_heads * k_cache_dim],
@@ -2299,7 +2299,7 @@ def mla_decode_branch_fp8[
             )
         )
         var raw_output_padded = raw_output.reshape(
-            TileLayout(
+            Layout(
                 (batch_size, Idx[1], Idx[num_heads], Idx[kv_latent_dim]),
                 (
                     Idx[num_heads * kv_latent_dim],
@@ -2454,7 +2454,7 @@ def mla_decode_branch_fp8[
     # [num_heads, seq_len, v_head_dim], and map directly to
     # [seq_len, num_heads, v_head_dim] physical memory.
     var output_t = output.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[v_head_dim]),
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
         )
@@ -2583,13 +2583,13 @@ def mla_prefill_branch_sparse_fp8[
     )
 
     var q_nope = q.reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_nope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
     )
     var mla_decode_input_nope = mla_decode_input.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
         )
@@ -2602,7 +2602,7 @@ def mla_prefill_branch_sparse_fp8[
     ](mla_decode_input_nope, q_nope, w_uk, w_uk_scale, ctx)
 
     var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
@@ -2610,7 +2610,7 @@ def mla_prefill_branch_sparse_fp8[
     var mla_decode_input_rope = mla_decode_input[
         :, :, Idx[kv_latent_dim] :
     ].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
         )
@@ -2660,7 +2660,7 @@ def mla_prefill_branch_sparse_fp8[
         # View decode input/output as rank-4 [batch,1,heads,depth]; one slot
         # per gathered row (q_seq_len==1), so a size-1 axis, no data movement.
         var q_padded = mla_decode_input.reshape(
-            TileLayout(
+            Layout(
                 (batch_size, Idx[1], Idx[num_heads], Idx[k_cache_dim]),
                 (
                     Idx[num_heads * k_cache_dim],
@@ -2671,7 +2671,7 @@ def mla_prefill_branch_sparse_fp8[
             )
         )
         var raw_output_padded = raw_output.reshape(
-            TileLayout(
+            Layout(
                 (batch_size, Idx[1], Idx[num_heads], Idx[kv_latent_dim]),
                 (
                     Idx[num_heads * kv_latent_dim],
@@ -2826,7 +2826,7 @@ def mla_prefill_branch_sparse_fp8[
             )
 
     var output_t = output.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[v_head_dim]),
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
         )
@@ -3490,7 +3490,7 @@ def mla_prefill_branch_bf16[
     # qk_rope_head_dim columns of each Q head. The reshape pins the static
     # strides, which `q`'s type may not carry.
     var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
@@ -3849,7 +3849,7 @@ def mla_decode_branch_bf16[
     # qk_rope_head_dim columns of each Q head. The reshape pins the static
     # strides, which `q`'s type may not carry.
     var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
@@ -3860,7 +3860,7 @@ def mla_decode_branch_bf16[
     var mla_decode_input_rope = mla_decode_input[
         :, :, Idx[kv_latent_dim] :
     ].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
         )
@@ -3887,7 +3887,7 @@ def mla_decode_branch_bf16[
     # qk_nope_head_dim columns of each Q head. Also transposed to
     # [num_heads, seq_len, qk_nope_head_dim].
     var q_nope_t = q.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[qk_nope_head_dim]),
             (Idx[q_head_dim], Idx[num_heads * q_head_dim], Idx[1]),
         )
@@ -3896,7 +3896,7 @@ def mla_decode_branch_bf16[
     # Then create a view of the mla_decode_input tensor that only contains the
     # first kv_latent_dim columns of each Q head.
     var mla_decode_input_nope = mla_decode_input.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
         )
@@ -3990,7 +3990,7 @@ def mla_decode_branch_bf16[
     # [seq_len, num_heads, kv_latent_dim] physical memory.
     var raw_output_t = TileTensor(
         raw_output_buf,
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[kv_latent_dim], Idx[num_heads * kv_latent_dim], Idx[1]),
         ),
@@ -4000,7 +4000,7 @@ def mla_decode_branch_bf16[
     # [num_heads, seq_len, v_head_dim], and map directly to
     # [seq_len, num_heads, v_head_dim] physical memory.
     var output_t = output.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[v_head_dim]),
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
         )
@@ -4109,13 +4109,13 @@ def mla_prefill_branch_sparse_bf16[
     # Transposed view [num_heads, seq_len, qk_nope_head_dim] of the first
     # qk_nope_head_dim columns of each Q head.
     var q_nope_t = q.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[qk_nope_head_dim]),
             (Idx[q_head_dim], Idx[num_heads * q_head_dim], Idx[1]),
         )
     )
     var mla_decode_input_nope = mla_decode_input.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
         )
@@ -4125,7 +4125,7 @@ def mla_prefill_branch_sparse_bf16[
     ](mla_decode_input_nope, q_nope_t, w_uk, ctx)
 
     var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
@@ -4133,7 +4133,7 @@ def mla_prefill_branch_sparse_bf16[
     var mla_decode_input_rope = mla_decode_input[
         :, :, Idx[kv_latent_dim] :
     ].reshape(
-        TileLayout(
+        Layout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
         )
@@ -4286,13 +4286,13 @@ def mla_prefill_branch_sparse_bf16[
 
     var raw_output_t = TileTensor(
         raw_output_buf,
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[kv_latent_dim], Idx[num_heads * kv_latent_dim], Idx[1]),
         ),
     )
     var output_t = output.reshape(
-        TileLayout(
+        Layout(
             (Idx[num_heads], seq_len, Idx[v_head_dim]),
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
         )

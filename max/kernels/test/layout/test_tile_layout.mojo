@@ -17,7 +17,7 @@ from layout import (
     row_major,
     col_major,
 )
-from layout.tile_layout import (
+from layout.layout import (
     Layout,
     CoalesceLayout,
     blocked_product,

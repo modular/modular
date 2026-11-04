@@ -25,7 +25,7 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from linalg.bmm import (
     _batched_matmul_gpu,
     batched_matmul,

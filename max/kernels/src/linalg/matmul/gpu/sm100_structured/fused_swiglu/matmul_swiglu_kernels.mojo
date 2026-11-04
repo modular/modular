@@ -80,8 +80,8 @@ from structured_kernels.tile_types import (
     static_row_major,
     tma_desc_layout_3d,
 )
-from layout.tile_layout import _IntToComptimeInt
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import _IntToComptimeInt
+from layout.layout import row_major as tt_row_major
 
 from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index

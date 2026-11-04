@@ -19,7 +19,7 @@ from std.memory.alloc import unsafe_alloc
 from std.sys.info import CompilationTarget
 
 from layout import Coord, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from linalg.matmul import matmul
 from linalg.matmul.cpu import matmul as _matmul_cpu
 from linalg.packing import (

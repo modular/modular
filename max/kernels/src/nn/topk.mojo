@@ -50,7 +50,7 @@ from layout import (
     row_major,
 )
 from layout.coord import CoordLike, DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.math import log2
 from std.memory import unsafe_stack_allocation
 from nn.gather_scatter import normalize_neg_index

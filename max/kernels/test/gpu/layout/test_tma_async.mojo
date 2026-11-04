@@ -20,7 +20,7 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Coord, TileTensor, coord, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout._fillers import arange, random
 from layout._host_device_tile_tensor import HostDeviceTileTensor

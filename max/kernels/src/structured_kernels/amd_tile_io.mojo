@@ -88,7 +88,7 @@ from std.utils import IndexList
 from layout import Coord, Idx, TileTensor, TensorLayout
 from layout.coord import crd2idx
 from layout._utils import make_amd_buffer_resource
-from layout.tile_layout import Layout, row_major, col_major
+from layout.layout import Layout, row_major, col_major
 from layout.swizzle import Swizzle
 from layout.tensor_engine import DefaultEngine, TensorEngine
 from layout.tile_tensor import stack_allocation as tt_stack_allocation

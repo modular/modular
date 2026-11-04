@@ -16,7 +16,7 @@ from std.memory.alloc import unsafe_alloc
 from std.sys import align_of
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from linalg.matmul.cpu.default import Inner_matmul_default
 from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
 from linalg.matmul.cpu.neon import Inner_matmul_neon

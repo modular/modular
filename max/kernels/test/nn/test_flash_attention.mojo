@@ -23,7 +23,7 @@ from layout import (
     row_major,
     UNKNOWN_VALUE,
 )
-from layout.tile_layout import RowMajorLayout
+from layout.layout import RowMajorLayout
 from layout.coord import coord_to_index_list
 from std.sys import align_of
 from std.utils.type_list import TypeList

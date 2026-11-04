@@ -70,7 +70,7 @@ from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, row_major
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from extensibility import (
     Fused,
     Input,
@@ -281,7 +281,7 @@ struct DistributedAllReduceSum:
         # on which group a device belongs to.
         comptime InputTile = TileTensor[
             dtype,
-            TileLayout[
+            Layout[
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],
@@ -479,7 +479,7 @@ struct DistributedReduceScatterSum:
         # `reducescatter` does its own group-local slicing internally.
         comptime InputTile = TileTensor[
             dtype,
-            TileLayout[
+            Layout[
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],
@@ -954,7 +954,7 @@ struct DistributedScatter:
         # produce a homogeneous fully-dynamic TileTensor type for Array.
         comptime InputTile = TileTensor[
             dtype,
-            TileLayout[
+            Layout[
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],
@@ -1554,7 +1554,7 @@ struct DistributedReduceScatterRMSNorm:
         # internally.
         comptime InputTensorType = TileTensor[
             dtype,
-            TileLayout[
+            Layout[
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],
@@ -1594,7 +1594,7 @@ struct DistributedReduceScatterRMSNorm:
         comptime SumTensorType = TileTensor[
             mut=True,
             dtype,
-            TileLayout[
+            Layout[
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],
@@ -1864,7 +1864,7 @@ struct DistributedAllGatherRMSNorm:
         # would fail to elaborate.
         comptime InputTensorType = TileTensor[
             dtype,
-            TileLayout[
+            Layout[
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],
@@ -2202,7 +2202,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         # rank; see `DistributedAllGatherRMSNorm`.
         comptime InputTensorType = TileTensor[
             dtype,
-            TileLayout[
+            Layout[
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],
@@ -2743,7 +2743,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         # rank; see `DistributedAllGatherRMSNorm`.
         comptime InputTensorType = TileTensor[
             dtype,
-            TileLayout[
+            Layout[
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],

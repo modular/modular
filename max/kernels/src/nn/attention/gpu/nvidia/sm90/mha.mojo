@@ -52,7 +52,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
-from layout.tile_layout import Layout as TTLayout
+from layout.layout import Layout as TTLayout
 from layout.tensor_engine import DefaultEngine
 from layout.tile_io import copy_sram_to_dram
 from layout.swizzle import make_swizzle

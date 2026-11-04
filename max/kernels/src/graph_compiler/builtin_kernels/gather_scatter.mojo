@@ -37,7 +37,7 @@ from layout import (
     coord_to_index_list,
 )
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from nn.concat import fused_concat
 from nn.gather_scatter import (
     Axis,
@@ -1759,7 +1759,7 @@ struct Transpose:
         out result: InputTensor[
             static_spec=input.static_spec.with_tile_layout[
                 rank,
-                TileLayout[
+                Layout[
                     shape_types=output_static_shape.element_types,
                     stride_types=_TransposeStrideTypes[
                         static_permutations,
@@ -1928,7 +1928,7 @@ struct Slice:
         out result: InputTensor[
             static_spec=input.static_spec.with_tile_layout_and_alignment[
                 rank,
-                TileLayout[
+                Layout[
                     shape_types=output_static_shape.element_types,
                     stride_types=_SliceStrideTypes[
                         rank,
@@ -2446,7 +2446,7 @@ struct Split:
         var output_bufs = StaticTuple[
             TileTensor[
                 dtype,
-                TileLayout[shape_types=shape_types, stride_types=stride_types],
+                Layout[shape_types=shape_types, stride_types=stride_types],
                 MutUntrackedOrigin,
             ],
             len(Outs),

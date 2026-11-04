@@ -78,7 +78,7 @@ from std.memory import unsafe_memcpy
 from nn.concat import concat
 from nn.reshape import reshape
 from nn.slice import slice_as_view
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from extensibility import register_internal
 from extensibility import (
     IOSpec,
@@ -2552,7 +2552,7 @@ def mogg_tensor_create_slice[
     io_spec=input.io_spec,
     static_spec=input.static_spec.with_tile_layout_and_alignment[
         rank,
-        TileLayout[
+        Layout[
             shape_types=output_static_shape.element_types,
             stride_types=_MoggSliceStrideTypes[
                 rank,
@@ -2798,7 +2798,7 @@ def mogg_tensor_create_transpose[
     io_spec=input.io_spec,
     static_spec=input.static_spec.with_tile_layout[
         rank,
-        TileLayout[
+        Layout[
             shape_types=output_static_shape.element_types,
             stride_types=_MoggTransposeStrideTypes[
                 rank,

@@ -42,7 +42,7 @@ from std.testing import assert_equal
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from layout import TensorEngine
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from linalg.fp6_quantization import (
     quantize_mxfp6_amd,
     quantize_mxfp6_lane_group,

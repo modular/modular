@@ -64,7 +64,7 @@ from max.gpu.sync import barrier
 
 from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation
 
 from std.utils import StaticTuple

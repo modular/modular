@@ -47,7 +47,7 @@ from layout.tma_async import (
     TMATensorTileIm2col,
     create_tensor_tile,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.memory import unsafe_stack_allocation
 
 # Core matrix constant from tensor_core_async.mojo
@@ -746,12 +746,6 @@ struct SMemTileArray[
         address_space=.SHARED,
     ]
 
-    # Layout type for constructing tiles
-    comptime TileLayout = Layout[
-        shape_types=Self.shape_types,
-        stride_types=Self.stride_types,
-    ]
-
     # Flattened shape types (leaf scalars only, handles nested Coords).
     comptime _flat_shape_types = _Flattened[*Self.shape_types]
 
@@ -806,7 +800,9 @@ struct SMemTileArray[
         """
         var tile_ptr = self.ptr.unsafe_offset(Self.tile_size * Int(index))
         # Construct layout from shape/stride types (all compile-time known)
-        var layout = Self.TileLayout(
+        var layout = Layout[
+            shape_types=Self.shape_types, stride_types=Self.stride_types
+        ](
             Coord[*Self.shape_types](),
             Coord[*Self.stride_types](),
         )

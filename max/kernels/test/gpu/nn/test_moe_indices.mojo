@@ -16,7 +16,7 @@ from max.gpu.host import DeviceContext, HostBuffer
 from std.collections import Set
 from std.math import align_up, ceildiv
 from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import Layout as MixedLayout
+from layout.layout import Layout as MixedLayout
 from layout._fillers import random
 from nn.moe import moe_create_indices, moe_create_indices_with_slots
 from std.random import random_float64, random_ui64, seed

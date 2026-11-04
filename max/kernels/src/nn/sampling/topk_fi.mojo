@@ -49,7 +49,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.math import align_up, ceildiv, gcd, exp, isfinite
 from std.math.uutils import ufloordiv
 from std.memory import bitcast, unsafe_stack_allocation

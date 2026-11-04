@@ -50,7 +50,7 @@ from std.sys import size_of
 from std.sys.defines import get_defined_int
 
 from layout import Idx, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from shmem.ep_comm import (
     EP_NO_INPUT_SCALES,
     BF16TokenFormat,

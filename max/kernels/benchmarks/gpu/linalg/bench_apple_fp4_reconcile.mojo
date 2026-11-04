@@ -43,7 +43,7 @@ from std.random import random_si64, seed
 from std.time import perf_counter
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.fp4_utils import NVFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize

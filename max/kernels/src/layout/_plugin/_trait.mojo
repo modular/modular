@@ -18,7 +18,7 @@ from std.collections.string.string_span import _get_kgen_string
 from std.memory import AddressSpace
 
 from ..tensor_engine import DefaultEngine, TensorEngine
-from ..tile_layout import TensorLayout
+from ..layout import TensorLayout
 
 
 trait LayoutPluginHooks(Plugin):

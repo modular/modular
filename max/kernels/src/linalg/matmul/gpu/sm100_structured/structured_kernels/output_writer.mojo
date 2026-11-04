@@ -51,8 +51,8 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout, upcast, zipped_divide
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import Layout, upcast, zipped_divide
+from layout.layout import row_major as tt_row_major
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 from max.gpu.compute.mma import ld_matrix
@@ -2520,7 +2520,7 @@ struct TileWriter[
         comptime thread_shape = coord[output_threads // thread_n, thread_n]
 
         # Precompute the split layout from known dimensions
-        comptime split_layout = TileLayout(
+        comptime split_layout = Layout(
             Coord(Idx[TMA_BM], Idx[Self.stageN]),
             Coord(Idx[Self.c_smem_dim1], Idx[1]),
         )

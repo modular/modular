@@ -40,7 +40,7 @@ from comm.sync import enable_p2p
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from shmem.ep import ep_fused_combine_kernel_api
 from shmem.ep_comm import (
     EP_NO_INPUT_SCALES,

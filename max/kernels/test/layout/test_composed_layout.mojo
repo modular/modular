@@ -13,7 +13,7 @@
 
 from layout import Coord, Idx, coord
 from layout.swizzle import ComposedLayout, Swizzle
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.testing import assert_equal
 
 

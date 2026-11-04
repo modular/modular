@@ -14,7 +14,7 @@
 # DOC: layout/layouts.mdx
 
 from layout import Coord, coord, Idx
-from layout.tile_layout import (
+from layout.layout import (
     Layout,
     blocked_product,
     col_major,

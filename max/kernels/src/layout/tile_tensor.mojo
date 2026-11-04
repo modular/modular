@@ -43,7 +43,7 @@ from .tensor_engine import (
     TileIO,
     DefaultEngine,
 )
-from .tile_layout import (
+from .layout import (
     Layout,
     _ModeLeaves,
     _TileKeptLeaves,
@@ -752,7 +752,7 @@ struct TileTensor[
     Example:
 
     ```mojo
-    from layout.tile_layout import row_major
+    from layout.layout import row_major
     from layout import TileTensor
     from layout import Idx
 
@@ -1028,7 +1028,7 @@ struct TileTensor[
 
         ```mojo
         from max.gpu.host import DeviceContext, DeviceBuffer
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
         from layout import Idx
 
@@ -1107,7 +1107,7 @@ struct TileTensor[
 
         ```mojo
         from max.gpu.host import DeviceContext, HostBuffer
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
         from layout import Idx
 
@@ -1521,7 +1521,7 @@ struct TileTensor[
 
         ```mojo
         from layout import TileTensor
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
 
         # 4D tensor: (batch=2, N=8, heads=4, head_dim=16)
         var storage = Array[Float32, 2 * 8 * 4 * 16](fill=0)
@@ -2540,7 +2540,7 @@ struct TileTensor[
 
         ```mojo
         from layout import TileTensor
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
 
         def main():
             var storage = Array[Float32, 4](uninitialized=True)
@@ -2669,7 +2669,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
         from layout.coord import coord
 
@@ -2860,7 +2860,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         var storage = Array[Float32, 16](uninitialized=True)
@@ -3003,7 +3003,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         def main() raises:
@@ -3017,7 +3017,7 @@ struct TileTensor[
         avoid warnings about an unused value:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         var storage = Array[Float32, 3 * 4](uninitialized=True)
@@ -3380,7 +3380,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         comptime layout_3d = row_major[16, 16, 16]()
@@ -3597,7 +3597,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         var storage = Array[Float32, 12](uninitialized=True)
@@ -3659,7 +3659,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
         from layout import Idx, Coord
 
@@ -3757,7 +3757,7 @@ struct TileTensor[
         Examples:
             ```mojo
             from layout import TileTensor
-            from layout.tile_layout import row_major
+            from layout.layout import row_major
             var storage = Array[Float32, 12](uninitialized=True)
             var tensor = TileTensor(Span(storage), row_major[3, 4]())
             var dynamic = tensor.make_dynamic[.int64]()

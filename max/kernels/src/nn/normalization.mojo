@@ -54,7 +54,7 @@ from layout import (
     row_major,
 )
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.memory import ThinAllocation, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level

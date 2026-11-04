@@ -64,7 +64,7 @@ from layout import (
     TensorEngine,
     TileTensor,
 )
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from std.logger import Logger
 
 comptime logger = Logger()

@@ -37,7 +37,7 @@ from std.math import ceildiv
 from std.time import perf_counter
 
 from layout import TileTensor, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from max.gpu.host import DeviceContext
 from nn.conv.conv import conv2d_gpu_naive_nhwc_rscf
 from nn.conv.gpu.im2col_matmul_2d import (

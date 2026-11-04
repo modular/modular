@@ -26,7 +26,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 
 @__name(t"spatial_merge_{dtype}")

@@ -22,7 +22,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import TileTensor, coord
-from layout.tile_layout import Layout as TileLayout, TensorLayout
+from layout.layout import Layout, TensorLayout
 from layout.tensor_core_async import _CM_NUM_ROWS, _CM_ROW_BYTES
 
 from std.utils.coord import Coord, CoordLike, coord
@@ -773,7 +773,7 @@ struct MmaOpSM100_BlockScaled_SS[
             sf_smem: Scale factor tile in shared memory.
             sf_tmem: TMEM column address for scale factors.
         """
-        comptime sf_smem_layout = TileLayout[
+        comptime sf_smem_layout = Layout[
             SFLayoutType._shape_types, SFLayoutType._stride_types
         ]()
 

@@ -32,7 +32,7 @@ from layout import (
     stack_allocation,
 )
 from layout.tile_tensor import ImmTileTensor, MutTileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from max.gpu.primitives import warp
 from max.gpu.primitives.grid_controls import (

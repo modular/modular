@@ -57,7 +57,7 @@ from std.testing import assert_equal, assert_true
 from std.utils.static_tuple import StaticTuple
 
 from layout import Coord, Idx, TileTensor, coord, row_major, stack_allocation
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tmem_engine import (
     TMemEngine,
     TMem16x256bRegisters,
@@ -98,7 +98,7 @@ SM's register file over four 128-thread blocks, which is 128, the most
 registers the ISA lets one `tcgen05` instruction name."""
 
 
-comptime AccumLayout[num_cols: Int] = TileLayout(
+comptime AccumLayout[num_cols: Int] = Layout(
     shape=Coord(Idx[NUM_LANES], Idx[num_cols]),
     stride=Coord(Idx[1], Idx[TMEM_NUM_LANES]),
 )
@@ -113,7 +113,7 @@ comptime AccumTile[num_cols: Int] = TileTensor[
 comptime AccumStorage = TMemStorage[.float32, MutUntrackedOrigin]
 
 # This thread's view of its warp's quadrant: one lane, every column.
-comptime ROW_LAYOUT = TileLayout(
+comptime ROW_LAYOUT = Layout(
     shape=Coord(Idx[1], Idx[NUM_COLS]),
     stride=Coord(Idx[1], Idx[TMEM_NUM_LANES]),
 )
@@ -126,7 +126,7 @@ comptime RowTile = TileTensor[
 
 comptime M64_ROWS = 64
 comptime M64_LANES_PER_WARP = M64_ROWS // NUM_WARPS
-comptime M64_LAYOUT = TileLayout(
+comptime M64_LAYOUT = Layout(
     shape=Coord(Coord(Idx[M64_LANES_PER_WARP], Idx[NUM_WARPS]), Idx[NUM_COLS]),
     stride=Coord(Coord(Idx[1], Idx[WARP_SIZE]), Idx[TMEM_NUM_LANES]),
 )

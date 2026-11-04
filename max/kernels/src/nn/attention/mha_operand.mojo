@@ -40,7 +40,7 @@ from layout import (
     TensorEngine,
     UNKNOWN_VALUE,
 )
-from layout.tile_layout import (
+from layout.layout import (
     Layout as MixedLayout,
     RowMajorLayout,
     TensorLayout,
@@ -54,7 +54,7 @@ from layout.tma_async import (
     create_tma_tile_gather4,
 )
 from layout.tile_tensor import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.coord import Idx, Coord, coord
 from std.math import ceildiv
 

@@ -57,7 +57,7 @@ from std.memory import bitcast
 
 from layout import Coord, Idx, TensorEngine, TileTensor, row_major
 
-from layout.tile_layout import Layout, TensorLayout, col_major
+from layout.layout import Layout, TensorLayout, col_major
 from layout.tile_tensor import stack_allocation
 
 from std.utils import StaticTuple

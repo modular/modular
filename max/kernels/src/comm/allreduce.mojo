@@ -119,7 +119,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_dim,

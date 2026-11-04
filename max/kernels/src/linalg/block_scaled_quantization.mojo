@@ -40,7 +40,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from std.collections import OptionalReg
 from std.logger import Logger
 from max.gpu.primitives import warp

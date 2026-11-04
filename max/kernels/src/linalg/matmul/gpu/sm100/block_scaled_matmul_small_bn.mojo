@@ -63,7 +63,7 @@ from layout import (
     coord,
 )
 from layout.coord import ComptimeInt
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tensor_core_async import (
     tile_sf_layout_k_major_typed,
 )
@@ -1091,7 +1091,7 @@ def _sfb_cpasync_produce_tile[
     # Global memory atom layout: (k_tile, row_in_atom, sub_column) → flat
     # offset within one n_group. Strides: k_tile by K_TILE_ELEMS (512),
     # row by ROW_STRIDE (16), sub_column by SF_ATOM_K (4).
-    comptime sfb_global_atom_layout = TileLayout(
+    comptime sfb_global_atom_layout = Layout(
         Coord(
             Idx[num_sf_k_tiles],
             Idx[SF_ATOM_M[0]],
@@ -1105,7 +1105,7 @@ def _sfb_cpasync_produce_tile[
     )
 
     # SMEM stage layout: pipeline stage offset → flat SMEM element offset.
-    comptime sfb_smem_stage_layout = TileLayout(
+    comptime sfb_smem_stage_layout = Layout(
         Coord(Idx[num_sfb_pipeline_stages * k_group_size]),
         Coord(Idx[sfb_smem_tile_elems]),
     )
@@ -1237,7 +1237,7 @@ def _sfb_cpasync_produce_tile_warpwide[
 
     # Global memory atom layout: (k_tile, row_in_atom, sub_column) → flat
     # offset within one n_group.
-    comptime sfb_global_atom_layout = TileLayout(
+    comptime sfb_global_atom_layout = Layout(
         Coord(
             Idx[num_sf_k_tiles],
             Idx[SF_ATOM_M[0]],
@@ -1251,7 +1251,7 @@ def _sfb_cpasync_produce_tile_warpwide[
     )
 
     # SMEM stage layout: pipeline stage offset → flat SMEM element offset.
-    comptime sfb_smem_stage_layout = TileLayout(
+    comptime sfb_smem_stage_layout = Layout(
         Coord(Idx[num_sfb_pipeline_stages * k_group_size]),
         Coord(Idx[sfb_smem_tile_elems]),
     )
@@ -2484,7 +2484,7 @@ def _create_tma_and_launch[
         Int64(sfa_5d_tensor.dim[2]()),
         Idx[sf_atom_u16],
     )
-    var sfa_4d_layout = TileLayout(
+    var sfa_4d_layout = Layout(
         sfa_4d_shape,
         Coord(
             Int64(sfa_5d_tensor.dynamic_stride(0) // 2),
@@ -2816,11 +2816,11 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 Idx[1],
             )
 
-    var sfa_5d_layout = TileLayout(
+    var sfa_5d_layout = Layout(
         _scales_5d_shape(a_scales_tensor), _scales_5d_stride(a_scales_tensor)
     )
     var sfa_5d_tensor = a_scales_tensor.as_imm().reshape(sfa_5d_layout)
-    var sfb_5d_layout = TileLayout(
+    var sfb_5d_layout = Layout(
         _scales_5d_shape(b_scales_tensor), _scales_5d_stride(b_scales_tensor)
     )
     var sfb_5d_tensor = b_scales_tensor.as_imm().reshape(sfb_5d_layout)

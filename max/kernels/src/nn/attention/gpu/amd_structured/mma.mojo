@@ -31,7 +31,7 @@ from std.utils.numerics import get_accum_type
 from layout import TileTensor
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout import Coord, ComptimeInt, MixedLayout
 from structured_kernels.amd_tile_io import (

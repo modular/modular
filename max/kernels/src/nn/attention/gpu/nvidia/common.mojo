@@ -40,7 +40,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.tile_layout import (
+from layout.layout import (
     Layout as InternalLayout,
 )
 from layout.swizzle import Swizzle

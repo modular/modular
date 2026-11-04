@@ -104,7 +104,7 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import _get_index_type
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,

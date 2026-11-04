@@ -27,10 +27,10 @@ from layout import (
     TileTensor,
 )
 from layout.coord import DynamicCoord
-from layout.tile_layout import RowMajorLayout
+from layout.layout import RowMajorLayout
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import prefetch
-from layout.tile_layout import TensorLayout, row_major
+from layout.layout import TensorLayout, row_major
 from std.memory import (
     unsafe_memcpy,
     unsafe_memset_zero,

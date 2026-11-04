@@ -18,7 +18,7 @@ from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.sys.info import CompilationTarget, simd_width_of
 
 from std.utils._select import _select_register_value as select

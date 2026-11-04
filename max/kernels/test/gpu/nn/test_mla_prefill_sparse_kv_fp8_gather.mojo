@@ -64,7 +64,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_GATHER_VEC,
@@ -372,7 +372,7 @@ def _run_case[
     )
     var q_padded = TileTensor(
         q_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (total_q, Idx[1], Idx[num_heads], Idx[K_CACHE_DIM]),
             (
                 Idx[num_heads * K_CACHE_DIM],
@@ -384,7 +384,7 @@ def _run_case[
     )
     var out_padded = TileTensor(
         out_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (total_q, Idx[1], Idx[num_heads], Idx[KV_LATENT_DIM]),
             (
                 Idx[num_heads * KV_LATENT_DIM],
@@ -426,7 +426,7 @@ def _run_case[
         q_device.unsafe_ptr().unsafe_offset(
             (seq_q_len - 1) * num_heads * K_CACHE_DIM
         ),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[K_CACHE_DIM]),
             (
                 seq_q_len * num_heads * K_CACHE_DIM,
@@ -438,7 +438,7 @@ def _run_case[
     )
     var out_red_padded = TileTensor(
         out_red_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[KV_LATENT_DIM]),
             (
                 Idx[num_heads * KV_LATENT_DIM],

@@ -18,7 +18,7 @@ from std.sys import simd_width_of, size_of
 
 import std.benchmark
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
 from std.testing import assert_false

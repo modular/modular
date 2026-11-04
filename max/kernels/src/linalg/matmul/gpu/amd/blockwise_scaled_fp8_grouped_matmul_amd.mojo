@@ -53,7 +53,7 @@ from max.gpu import (
 from max.gpu.host import DeviceContext
 
 from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type

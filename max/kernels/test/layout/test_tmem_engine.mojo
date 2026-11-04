@@ -24,7 +24,7 @@ Blackwell GPU and live in `max/kernels/test/gpu/layout/test_tmem_engine.mojo`.
 from std.testing import assert_equal, TestSuite
 
 from layout import Coord, Idx, TileTensor
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tmem_engine import TMemEngine, TMemStorage, TMEM_NUM_LANES
 
 comptime NUM_LANES = 128
@@ -40,7 +40,7 @@ def _addr(lane: Int, col: Int) -> UInt32:
 
 comptime BASE_ADDR = _addr(BASE_LANE, BASE_COL)
 
-comptime ACCUM_LAYOUT = TileLayout(
+comptime ACCUM_LAYOUT = Layout(
     shape=Coord(Idx[NUM_LANES], Idx[NUM_COLS]),
     stride=Coord(Idx[1], Idx[TMEM_NUM_LANES]),
 )
@@ -57,7 +57,7 @@ comptime AccumStorage = TMemStorage[.float32, MutAnyOrigin]
 
 comptime NUM_WARPS = 4
 comptime M64_LANES_PER_WARP = 16
-comptime M64_LAYOUT = TileLayout(
+comptime M64_LAYOUT = Layout(
     shape=Coord(Coord(Idx[M64_LANES_PER_WARP], Idx[NUM_WARPS]), Idx[NUM_COLS]),
     stride=Coord(Coord(Idx[1], Idx[32]), Idx[TMEM_NUM_LANES]),
 )

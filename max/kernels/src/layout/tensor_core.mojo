@@ -78,8 +78,8 @@ from max.gpu.compute.mma import (
     ld_matrix,
     mma,
 )
-from layout.tile_layout import (
-    Layout as TileLayout,
+from layout.layout import (
+    Layout,
     col_major,
     row_major,
 )
@@ -1287,7 +1287,7 @@ def _load_matrix_frag[
     comptime ldm_swizzle = swizzle.or_else(Swizzle(0, 0, 1))
     var lane_offset: Int
     comptime if x4_row_major:
-        comptime x4_layout = TileLayout(
+        comptime x4_layout = Layout(
             Coord(Idx[8], Idx[2], Idx[2]),
             Coord(Idx[num_mat_per_row], Idx[1], Idx[8 * num_mat_per_row]),
         )
@@ -1296,7 +1296,7 @@ def _load_matrix_frag[
         ](ldm_swizzle)
         lane_offset = eval_composed[ldmatrix_layout](lane, offset) * simd_size
     else:
-        comptime x4_layout = TileLayout(
+        comptime x4_layout = Layout(
             Coord(Idx[16], Idx[2]),
             Coord(Idx[num_mat_per_row], Idx[1]),
         )

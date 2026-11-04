@@ -59,7 +59,7 @@ from max.gpu.intrinsics import readfirstlane
 from std.testing import assert_equal
 
 from layout import ComptimeInt, Coord, MixedLayout, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 
 from structured_kernels.amd_tile_io import SubTileLoaderLDS_st_8x32

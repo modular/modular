@@ -27,7 +27,7 @@ from layout import (
     coord,
     row_major,
 )
-from layout.tile_layout import Layout as NativeLayout
+from layout.layout import Layout as NativeLayout
 from layout.tensor_engine import DefaultEngine
 from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc

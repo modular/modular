@@ -33,7 +33,7 @@ from .coord import (
     coord,
     coord_to_index_list,
 )
-from .tile_layout import (
+from .layout import (
     TensorLayout,
     Layout as MixedLayout,
     RowMajorLayout,

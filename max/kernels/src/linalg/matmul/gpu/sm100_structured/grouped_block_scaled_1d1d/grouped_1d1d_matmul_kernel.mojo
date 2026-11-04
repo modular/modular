@@ -93,8 +93,8 @@ from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
 )
-from layout.tile_layout import Layout as TileLayout, _IntToComptimeInt
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import Layout, _IntToComptimeInt
+from layout.layout import row_major as tt_row_major
 
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple

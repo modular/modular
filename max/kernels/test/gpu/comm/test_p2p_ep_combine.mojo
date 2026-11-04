@@ -39,7 +39,7 @@ from max.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
 )
 from layout import Coord, TileTensor, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from shmem.ep_comm import (
     EP_NO_INPUT_SCALES,
     EP_NO_ROUTER_WEIGHTS,

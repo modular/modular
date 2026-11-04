@@ -26,7 +26,7 @@ from layout import (
     row_major,
 )
 from layout.coord import Coord, Idx
-from layout.tile_layout import Layout as InternalLayout
+from layout.layout import Layout as InternalLayout
 from layout.tile_tensor import ImmTileTensor, MutTileTensor
 
 from max.gpu import (

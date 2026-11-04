@@ -14,7 +14,7 @@
 # DOC: layout/layouts.mdx
 
 from layout import Coord, coord, Idx
-from layout.tile_layout import Layout, col_major, row_major
+from layout.layout import Layout, col_major, row_major
 
 
 def row_and_column_major():

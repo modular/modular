@@ -32,7 +32,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from layout._fillers import random
 from layout.tile_tensor import stack_allocation
 from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product

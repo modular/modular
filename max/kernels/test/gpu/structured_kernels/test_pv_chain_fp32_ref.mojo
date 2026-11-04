@@ -68,7 +68,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.testing import assert_true
 
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 
 from nn.attention.gpu.amd_structured.mha_mma_op import (

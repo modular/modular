@@ -11,10 +11,10 @@ writing algorithms for handling linear algebra.
 This section discusses the `TileTensor` abstraction and its related types:
 
 - [`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/)
-  is a flexible tensor type that combines a `tile_layout.Layout` and a pointer
+  is a flexible tensor type that combines a `layout.Layout` and a pointer
   to data.
 - The
-  [`tile_layout.Layout`](/api/mojo/layout/tile_layout/Layout/)
+  [`layout.Layout`](/api/mojo/layout/layout/Layout/)
   struct describes an arrangement of data in memory. A *layout* is a function
   that maps a set of logical coordinates (like (*x*, *y*) in a two-dimensional
   array) to a linear index value (such as an offset into a memory buffer).

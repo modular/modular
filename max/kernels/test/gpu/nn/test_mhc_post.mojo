@@ -15,7 +15,7 @@ from std.math import abs, max
 from std.random import randn, random_float64, seed
 
 from layout import Coord, TileTensor, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from max.gpu.host import DeviceAttribute, DeviceContext, default_accelerator
 from nn.mhc import mhc_post, mhc_post_block_size, mhc_post_non_temporal
 from std.testing import assert_raises, assert_true

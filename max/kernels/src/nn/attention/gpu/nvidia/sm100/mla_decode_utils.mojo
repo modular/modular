@@ -55,7 +55,7 @@ from max.gpu.primitives.warp import shuffle_xor, vote
 from max.gpu.compute.mma import _str_iota
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import TileTensor, row_major, Idx, stack_allocation, coord
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tma_async import (
     create_tensor_tile,

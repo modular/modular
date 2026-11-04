@@ -36,7 +36,7 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import stack_allocation
-from layout.tile_layout import Layout as _NewLayout
+from layout.layout import Layout as _NewLayout
 from layout.tile_io import GenericToLocalTileCopier
 from std.collections import OptionalReg
 from std.utils import IndexList

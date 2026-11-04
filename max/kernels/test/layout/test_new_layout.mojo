@@ -19,7 +19,7 @@ from layout import (
     col_major,
     row_major,
 )
-from layout.tile_layout import (
+from layout.layout import (
     Layout,
     ZippedDivideLayout,
     BlockedProductLayout,

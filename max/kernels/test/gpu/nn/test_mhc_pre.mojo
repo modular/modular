@@ -15,7 +15,7 @@ from std.math import abs, exp, max, sqrt
 from std.random import randn, random_float64, random_ui64, seed
 
 from layout import Coord, Idx, ImmTileTensor, TileTensor, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from max.algorithm import sync_parallelize
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext, HostBuffer

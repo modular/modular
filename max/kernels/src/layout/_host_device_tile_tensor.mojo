@@ -15,7 +15,7 @@ from std.memory import Allocation, Layout, dealloc
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 
-from .tile_layout import TensorLayout
+from .layout import TensorLayout
 from .tile_tensor import TileTensor
 
 

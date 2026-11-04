@@ -43,7 +43,7 @@ from std.sys import argv
 from max.gpu.host import DeviceContext, default_accelerator
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_decoding_rows
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_GATHER_VEC,
@@ -216,7 +216,7 @@ def _bench(
 
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[NUM_HEADS], Idx[K_CACHE_DIM]),
             (
                 Idx[NUM_HEADS * K_CACHE_DIM],
@@ -227,7 +227,7 @@ def _bench(
         ),
     )
 
-    var out_layout = TileLayout(
+    var out_layout = Layout(
         (batch_size, Idx[1], Idx[NUM_HEADS], Idx[KV_LATENT_DIM]),
         (
             Idx[NUM_HEADS * KV_LATENT_DIM],

@@ -51,7 +51,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Coord
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from layout.tma_async import TMATensorTile
 from structured_kernels.tile_types import (
     TmaOpType,

@@ -51,7 +51,7 @@ from layout import (
     TensorEngine,
     TileTensor,
 )
-from layout.tile_layout import _IntToComptimeInt
+from layout.layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
     TmaOpType,
     tma_desc_layout_3d,

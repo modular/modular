@@ -54,7 +54,7 @@ from layout import (
     TensorEngine,
     TileTensor,
 )
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple

@@ -28,7 +28,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from std.atomic import Atomic, Ordering
 from std.collections.string.string_span import _get_kgen_string
 from std.math import align_up, ceildiv

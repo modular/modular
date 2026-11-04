@@ -44,7 +44,7 @@ from layout import (
     TensorLayout,
     TileTensor,
 )
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation
 from layout.tensor_core import TiledTensorCore
 from layout.swizzle import Swizzle

@@ -150,7 +150,7 @@ from layout import (
     coord,
     Idx,
 )
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,

@@ -23,7 +23,7 @@ from std.sys import argv
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from std.memory import Pointer
 from std.memory.alloc import unsafe_alloc
 from shmem import *

@@ -19,7 +19,7 @@ from std.math import ceildiv
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from std.logger import Logger
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -758,25 +758,25 @@ def _block_scaled_matmul_with_epilogue[
         comptime sf_k = b_scales.static_shape[1]
         comptime sf_atom = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
         var a_3d = a.reshape(
-            TileLayout(
+            Layout(
                 Coord(Idx[groups], Int64(m), Idx[K_phys]),
                 Coord(Idx[K_phys], Idx[groups * K_phys], Idx[1]),
             )
         )
         var b_3d = b.reshape(
-            TileLayout(
+            Layout(
                 Coord(Idx[groups], Idx[N_g], Idx[K_phys]),
                 Coord(Idx[N_g * K_phys], Idx[K_phys], Idx[1]),
             )
         )
         var c_3d = c.reshape(
-            TileLayout(
+            Layout(
                 Coord(Idx[groups], Int64(m), Idx[N_g]),
                 Coord(Idx[N_g], Idx[groups * N_g], Idx[1]),
             )
         )
         var a_scales_6d = a_scales.reshape(
-            TileLayout(
+            Layout(
                 Coord(
                     Idx[groups],
                     Int64(a_scales.dim[0]()),
@@ -796,7 +796,7 @@ def _block_scaled_matmul_with_epilogue[
             )
         )
         var b_scales_6d = b_scales.reshape(
-            TileLayout(
+            Layout(
                 Coord(
                     Idx[groups],
                     Idx[N_g // SF_MN_GROUP_SIZE],

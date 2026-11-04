@@ -81,7 +81,7 @@ from layout.tile_io import (
     copy_sram_to_dram,
 )
 from layout.tile_iterator import TileTensorIter
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.swizzle import make_swizzle
 from layout.tile_tensor import stack_allocation
 from layout.tensor_core import get_fragment_size, get_mma_shape
@@ -3030,7 +3030,7 @@ def mha_single_batch[
     var q_tile_idx = UInt32(block_idx.x)
 
     # Query global memory iterator
-    comptime q_gmem_tile_layout = TileLayout(
+    comptime q_gmem_tile_layout = Layout(
         Coord(Idx[BM], Idx[BK]), Coord(Idx[num_heads * depth], Idx[1])
     )
     var q_tile_num_rows = min(
@@ -3192,10 +3192,10 @@ def mha_single_batch[
             mask_warp_col += UInt32(BN)
             return
 
-        comptime k_gmem_tile_layout = TileLayout(
+        comptime k_gmem_tile_layout = Layout(
             Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
-        comptime v_gmem_tile_layout = TileLayout(
+        comptime v_gmem_tile_layout = Layout(
             Coord(Idx[BK], Idx[BN]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
         # kv cache gmem has to clip num rows when masked.
@@ -3521,7 +3521,7 @@ def mha_single_batch[
     # The tile keeps its static BM-row shape so the copies distribute threads
     # the same way as the shared-memory source; `q_tile_num_rows` bounds the
     # rows actually stored.
-    comptime output_gmem_layout = TileLayout(
+    comptime output_gmem_layout = Layout(
         Coord(Idx[BM], Idx[depth]), Coord(Idx[num_heads * depth], Idx[1])
     )
     var output_gmem_tile = TileTensor[linear_idx_type=.int32](
@@ -3704,7 +3704,7 @@ def mha_single_batch_pipelined[
     var q_tile_idx = UInt32(block_idx.x)
 
     # Query global memory iterator
-    comptime q_gmem_tile_layout = TileLayout(
+    comptime q_gmem_tile_layout = Layout(
         Coord(Idx[BM], Idx[BK]), Coord(Idx[num_heads * depth], Idx[1])
     )
     var q_tile_num_rows = min(
@@ -3846,10 +3846,10 @@ def mha_single_batch_pipelined[
             mask_warp_col += UInt32(BN)
             return
 
-        comptime k_gmem_tile_layout = TileLayout(
+        comptime k_gmem_tile_layout = Layout(
             Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
-        comptime v_gmem_tile_layout = TileLayout(
+        comptime v_gmem_tile_layout = Layout(
             Coord(Idx[BK], Idx[BN]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
         # kv cache gmem has to clip num rows when masked.
@@ -4168,7 +4168,7 @@ def mha_single_batch_pipelined[
     # The tile keeps its static BM-row shape so the copies distribute threads
     # the same way as the shared-memory source; `q_tile_num_rows` bounds the
     # rows actually stored.
-    comptime output_gmem_layout = TileLayout(
+    comptime output_gmem_layout = Layout(
         Coord(Idx[BM], Idx[depth]), Coord(Idx[num_heads * depth], Idx[1])
     )
     var output_gmem_tile = TileTensor[linear_idx_type=.int32](
@@ -4924,7 +4924,7 @@ def mha_decoding_single_batch[
 
     var q_offset = depth * kv_head_idx * group
 
-    comptime q_gmem_tile_layout = TileLayout(
+    comptime q_gmem_tile_layout = Layout(
         Coord(Idx[BM], Idx[BK]), Coord(Idx[depth], Idx[1])
     )
     var q_gmem_iter = TileTensorIter[
@@ -4977,7 +4977,7 @@ def mha_decoding_single_batch[
         var k_ptr = k.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
-        comptime k_gmem_tile_layout = TileLayout(
+        comptime k_gmem_tile_layout = Layout(
             Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
         var kv_tile_num_rows = min(BN, end - kv_tile_start_row)
@@ -5111,7 +5111,7 @@ def mha_decoding_single_batch[
         var v_ptr = v.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
-        comptime v_gmem_tile_layout = TileLayout(
+        comptime v_gmem_tile_layout = Layout(
             Coord(Idx[BK], Idx[BN]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
         var v_gmem_iter = TileTensorIter[
@@ -5616,7 +5616,7 @@ def mha_decoding_single_batch_pipelined[
 
     var q_offset = depth * kv_head_idx * group
 
-    comptime q_gmem_tile_layout = TileLayout(
+    comptime q_gmem_tile_layout = Layout(
         Coord(Idx[BM], Idx[BK]), Coord(Idx[depth], Idx[1])
     )
     var q_gmem_iter = TileTensorIter[
@@ -5650,7 +5650,7 @@ def mha_decoding_single_batch_pipelined[
         var k_ptr = k.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
-        comptime k_gmem_tile_layout = TileLayout(
+        comptime k_gmem_tile_layout = Layout(
             Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
         var kv_tile_num_rows = min(BN, end - kv_tile_start_row)
@@ -5751,7 +5751,7 @@ def mha_decoding_single_batch_pipelined[
         var v_ptr = v.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
-        comptime v_gmem_tile_layout = TileLayout(
+        comptime v_gmem_tile_layout = Layout(
             Coord(Idx[BK], Idx[BN]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
         var v_gmem_iter = TileTensorIter[

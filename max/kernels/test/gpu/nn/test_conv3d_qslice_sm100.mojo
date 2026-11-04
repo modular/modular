@@ -25,7 +25,7 @@ time_conv 3x1x1, and the C_out F-padding paths (64/192/320).
 
 from std.random import rand
 from layout import Coord, TileTensor, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from max.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution
 from nn.conv.gpu.nvidia.sm100.qslice_conv3d import (

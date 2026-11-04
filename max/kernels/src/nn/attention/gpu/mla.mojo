@@ -95,7 +95,7 @@ from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from layout.tile_async_copy import copy_dram_to_sram_async_ldmatrix
 from layout.tile_iterator import TileTensorIter
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import NullableTileTensor
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from layout.coord import coord
@@ -2246,7 +2246,7 @@ def mla_decoding_single_batch[
     # (BN, BK) like standard mha kernels, we manually set the following
     # layout. This ensures that once Q @ K calculation is complete, the
     # K[:, :nope_dim] tensor stored continuously in the smem.
-    comptime kv_nope_smem_layout = TileLayout(
+    comptime kv_nope_smem_layout = Layout(
         Coord(Idx[BN], Idx[BK]), Coord(Idx[nope_dim], Idx[1])
     )
     var kv_nope_smem_iter = TileTensorIter[
@@ -2341,7 +2341,7 @@ def mla_decoding_single_batch[
 
     var q_offset = depth * BM * q_head_group
 
-    comptime q_gmem_tile_layout = TileLayout(
+    comptime q_gmem_tile_layout = Layout(
         Coord(Idx[BM], Idx[BK]), Coord(Idx[depth], Idx[1])
     )
     var q_gmem_iter = TileTensorIter[q_type, type_of(q_gmem_tile_layout), _](
@@ -2394,7 +2394,7 @@ def mla_decoding_single_batch[
             UInt32(batch_idx), UInt32(kv_tile_start_row), kv_head_idx, 0
         )
 
-        comptime k_gmem_tile_layout = TileLayout(
+        comptime k_gmem_tile_layout = Layout(
             Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
         # kv cache gmem has to clip num rows when masked.
@@ -3930,7 +3930,7 @@ def mla_prefill_single_batch[
     var q_tile_idx = UInt32(block_idx.x)
 
     # Query global memory iterator
-    comptime q_gmem_tile_layout = TileLayout(
+    comptime q_gmem_tile_layout = Layout(
         Coord(Idx[BM], Idx[BK]), Coord(Idx[num_heads * q_depth], Idx[1])
     )
     var q_tile_num_rows = min(
@@ -4078,13 +4078,13 @@ def mla_prefill_single_batch[
         ):
             return
 
-        comptime k_gmem_tile_layout = TileLayout(
+        comptime k_gmem_tile_layout = Layout(
             Coord(Idx[BN], Idx[BK]), Coord(Idx[num_heads * depth], Idx[1])
         )
-        comptime v_gmem_tile_layout = TileLayout(
+        comptime v_gmem_tile_layout = Layout(
             Coord(Idx[BK], Idx[depth]), Coord(Idx[num_heads * depth], Idx[1])
         )
-        comptime k_rope_gmem_tile_layout = TileLayout(
+        comptime k_rope_gmem_tile_layout = Layout(
             Coord(Idx[BN], Idx[BK]),
             Coord(Idx[cache_num_heads * cache_depth], Idx[1]),
         )
@@ -4446,7 +4446,7 @@ def mla_prefill_single_batch[
     # The tile keeps its static BM-row shape so the copies distribute threads
     # the same way as the shared-memory source; `q_tile_num_rows` bounds the
     # rows actually stored.
-    comptime output_gmem_layout = TileLayout(
+    comptime output_gmem_layout = Layout(
         Coord(Idx[BM], Idx[depth]), Coord(Idx[num_heads * depth], Idx[1])
     )
     var output_gmem_tile = TileTensor[linear_idx_type=.int32](

@@ -24,7 +24,7 @@ from std.sys.intrinsics import PrefetchOptions
 
 from linalg.utils import partial_simd_load
 from layout import Coord, Idx, TileTensor, stack_allocation
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from std.memory.unsafe import bitcast
 
 from std.utils.index import Index, IndexList

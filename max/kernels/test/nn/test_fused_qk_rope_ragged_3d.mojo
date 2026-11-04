@@ -24,7 +24,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from std.memory import unsafe_memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_3d_goldens import (
@@ -221,7 +221,7 @@ def test_fused_qk_rope[
     # Offset to last rope_dim elements.
     # Note: This tensor has non-row-major strides (head_dim, 1) to select every
     # rope_dim-th element from the original head_dim-strided buffer.
-    comptime freqs_cis_layout = TileLayout(
+    comptime freqs_cis_layout = Layout(
         Coord(Idx[max_seq_len], Idx[rope_dim]),
         Coord(Idx[head_dim], Idx[1]),
     )

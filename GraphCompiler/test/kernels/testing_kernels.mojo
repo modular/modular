@@ -25,7 +25,7 @@ from extensibility import GridBlockLaunchConfig
 from layout import TensorLayout
 from layout import TileTensor, CoordLike, Coord, DefaultEngine, row_major
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from extensibility import StaticTensorSpec
 from algorithm.reduce_op import ReduceOp
 from max.gpu.host import DeviceContext, DeviceContextArray, Dim
@@ -1041,7 +1041,7 @@ struct TraitTensorTupleAddArray:
         else:
             comptime out_dtype = Outs[0].dtype
             comptime in_dtype = Ins[0].dtype
-            comptime DynamicLayout1D = TileLayout[
+            comptime DynamicLayout1D = Layout[
                 shape_types=DynamicCoord[.int64, 1].element_types,
                 stride_types=DynamicCoord[.int64, 1].element_types,
             ]
@@ -2923,7 +2923,7 @@ struct CustomOpWithStaticStringParams:
         print(foo)
 
 
-comptime _WrapperLayout = TileLayout[
+comptime _WrapperLayout = Layout[
     shape_types=Coord[Int64, Int64].element_types,
     stride_types=Coord[Int64, Int64].element_types,
 ]

@@ -18,25 +18,25 @@ definitions while maintaining performance through compile-time specialization.
 
 Key components:
 
-- [`TensorLayout`](/api/mojo/layout/tile_layout/TensorLayout): Trait
+- [`TensorLayout`](/api/mojo/layout/layout/TensorLayout): Trait
   defining the interface for all mixed layouts.
-- [`Layout`](/api/mojo/layout/tile_layout/Layout): Primary struct
+- [`Layout`](/api/mojo/layout/layout/Layout): Primary struct
   implementing a layout with mixed compile-time and runtime dimensions.
-- [`row_major`](/api/mojo/layout/tile_layout/row_major): Create a
+- [`row_major`](/api/mojo/layout/layout/row_major): Create a
   row-major layout from a shape.
-- [`col_major`](/api/mojo/layout/tile_layout/col_major): Create a
+- [`col_major`](/api/mojo/layout/layout/col_major): Create a
   column-major layout from a shape.
-- [`blocked_product`](/api/mojo/layout/tile_layout/blocked_product):
+- [`blocked_product`](/api/mojo/layout/layout/blocked_product):
   Create a hierarchical blocked layout from block and tiler layouts.
-- [`zipped_divide`](/api/mojo/layout/tile_layout/zipped_divide): Divide
+- [`zipped_divide`](/api/mojo/layout/layout/zipped_divide): Divide
   a layout into inner and outer components by a tile shape.
-- [`coalesce`](/api/mojo/layout/tile_layout/coalesce): Simplify a
+- [`coalesce`](/api/mojo/layout/layout/coalesce): Simplify a
   layout by merging dimensions with contiguous strides.
 
 You can import these APIs from the `layout` package:
 
 ```mojo
-from layout.tile_layout import Layout, TensorLayout, row_major, col_major
+from layout.layout import Layout, TensorLayout, row_major, col_major
 ```
 """
 
@@ -678,7 +678,7 @@ struct Layout[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
 
         var layout = row_major[3, 4]()  # shape (3,4), stride (4,1)
         var transposed = layout.transpose()  # shape (4,3), stride (1,4)
@@ -699,7 +699,7 @@ struct Layout[
 
         Examples:
             ```mojo
-            from layout.tile_layout import row_major
+            from layout.layout import row_major
             var layout = row_major[3, 4]()  # All compile-time
             var dynamic = layout.make_dynamic[.int64]()
             # dynamic has Int64 for all dimensions
@@ -1324,7 +1324,7 @@ def col_major[*idxs: Int]() -> ColMajorLayout[_IntToComptimeInt[*idxs]]:
     Example:
 
     ```mojo
-    from layout.tile_layout import col_major
+    from layout.layout import col_major
 
     var layout = col_major[3, 4]()
     # shape: (3, 4), stride: (1, 3)
@@ -1804,7 +1804,7 @@ def blocked_product[
     Example:
 
     ```mojo
-    from layout.tile_layout import row_major, blocked_product
+    from layout.layout import row_major, blocked_product
 
     # Create a 2x2 block layout
     var block = row_major[2, 2]()
@@ -1899,7 +1899,7 @@ def blocked_product[
     Example:
 
     ```mojo
-    from layout.tile_layout import row_major, blocked_product
+    from layout.layout import row_major, blocked_product
 
     var block = row_major[4]()
     var tiler = row_major[3]()
@@ -2071,7 +2071,7 @@ def upcast[
     Example:
 
     ```mojo
-    from layout.tile_layout import row_major, upcast
+    from layout.layout import row_major, upcast
 
     # 4x8 row-major, strides (8, 1)
     var layout = row_major[4, 8]()
@@ -2314,7 +2314,7 @@ def coalesce[
     Example:
 
     ```mojo
-    from layout.tile_layout import Layout, coalesce, col_major, Idx
+    from layout.layout import Layout, coalesce, col_major, Idx
 
     # A column-major 2x4 layout has contiguous strides -> coalesces to 1D
     var layout = col_major[2, 4]()  # shape (2, 4), stride (1, 2)

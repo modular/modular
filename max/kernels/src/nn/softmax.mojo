@@ -60,7 +60,7 @@ from layout import (
     row_major,
     stack_allocation as tt_stack_allocation,
 )
-from layout.tile_layout import Layout as InternalLayout
+from layout.layout import Layout as InternalLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 

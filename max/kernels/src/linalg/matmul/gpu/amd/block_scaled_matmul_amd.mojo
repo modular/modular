@@ -85,7 +85,7 @@ from layout import (
     TensorEngine,
     TileTensor,
 )
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
 

@@ -52,7 +52,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.math import ceildiv, exp, gcd, isfinite
 from std.memory import bitcast, unsafe_stack_allocation
 from max.runtime.tracing import Trace, TraceLevel, trace_arg

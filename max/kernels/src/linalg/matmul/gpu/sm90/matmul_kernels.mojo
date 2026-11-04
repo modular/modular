@@ -82,7 +82,7 @@ from structured_kernels.tile_types import (
     SMemTileArrayWithLayout,
     SMemTileArray2DRowMajor,
 )
-from layout.tile_layout import Layout as _Layout
+from layout.layout import Layout as _Layout
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )

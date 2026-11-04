@@ -50,7 +50,7 @@ from layout.tma_async import (
     create_tensor_tile,
     create_tma_tile_gather4,
 )
-from layout.tile_layout import RowMajorLayout, Layout as InternalLayout
+from layout.layout import RowMajorLayout, Layout as InternalLayout
 from layout.coord import Coord, DynamicCoord, Idx
 
 from std.collections import OptionalReg

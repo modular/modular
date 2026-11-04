@@ -36,7 +36,7 @@ from layout import (
     TensorEngine,
     TileTensor,
 )
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from std.utils import StaticTuple
 

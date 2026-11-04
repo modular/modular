@@ -33,7 +33,7 @@ from std.random import random_ui64
 from std.testing import assert_equal, assert_true
 
 from layout import Coord, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE, MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (

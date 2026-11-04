@@ -14,7 +14,7 @@
 from std.benchmark import Bench
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Coord, Idx, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from layout._fillers import random
 from matmul_kernels import (
     run_cublas,

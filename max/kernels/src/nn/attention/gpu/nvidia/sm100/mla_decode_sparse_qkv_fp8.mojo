@@ -152,7 +152,7 @@ from layout import (
     TileTensor,
     coord,
 )
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand

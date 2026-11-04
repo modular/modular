@@ -37,7 +37,7 @@ from std.utils.numerics import get_accum_type
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 
 from std.bit import log2_floor
 

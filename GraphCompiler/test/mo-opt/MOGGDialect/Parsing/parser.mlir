@@ -13,7 +13,7 @@
 !InputFusion = !lit.trait<@extensibility::@managed_tensor_slice::@InputFusion>
 !Int = !lit.struct<@std::@builtin::@int::@Int>
 !OutputFusion = !lit.trait<@extensibility::@managed_tensor_slice::@OutputFusion>
-!TensorLayout = !lit.trait<@layout::@tile_layout::@TensorLayout>
+!TensorLayout = !lit.trait<@layout::@layout::@TensorLayout>
 #IOSpec = #lit<symbol@extensibility::@managed_tensor_slice::@IOSpec>
 #ManagedTensorSlice = #lit<symbol@extensibility::@managed_tensor_slice::@ManagedTensorSlice>
 #Origin = #lit<symbol@std::@builtin::@type_aliases::@Origin>

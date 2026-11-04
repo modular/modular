@@ -68,7 +68,7 @@ from layout import (
     tmem_copy_async,
     tmem_16x256b,
 )
-from layout.tile_layout import Layout as TileLayout, upcast, zipped_divide
+from layout.layout import Layout, upcast, zipped_divide
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
@@ -102,7 +102,7 @@ from .utils import ElementwiseEpilogueFn, no_epilogue_fn
 
 comptime logger = Logger()
 
-comptime ACCUM_LAYOUT = TileLayout(
+comptime ACCUM_LAYOUT = Layout(
     shape=coord[TMEM_NUM_LANES, TMEM_NUM_COLS],
     stride=coord[1, TMEM_NUM_LANES],
 )
@@ -1590,7 +1590,7 @@ def multi_stage_reg_epilogue[
                     row_major[TMA_BM * stageN]()
                 )
                 # Dim-0 tiles retain the row-major parent's (stageN, 1) strides.
-                comptime split_layout = TileLayout(
+                comptime split_layout = Layout(
                     Coord(Idx[TMA_BM], Idx[stageN]),
                     Coord(
                         Idx[c_smem_layout_t.static_stride[0]],

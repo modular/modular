@@ -105,7 +105,7 @@ from layout import (
     UNKNOWN_VALUE,
     coord,
 )
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from layout.tma_async import (
     PipelineState,

@@ -48,8 +48,8 @@ from max.gpu.compute.mma import (
 from layout.coord import Coord, CoordLike, Idx
 from layout.tensor_engine import DefaultEngine, _layout_row_major
 from layout import TileTensor
-from layout.tile_layout import (
-    Layout as TileLayout,
+from layout.layout import (
+    Layout,
     TensorLayout,
     row_major as tile_row_major,
 )
@@ -435,7 +435,7 @@ comptime tile_layout_k_major_typed[
     BK: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     page_dense: Bool = False,
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(
             Idx[_CM_NUM_ROWS],
@@ -483,7 +483,7 @@ comptime tile_layout_mn_major_typed[
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     page_dense: Bool = False,
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(
             Idx[_sw_K[dtype, swizzle_mode]],
@@ -598,7 +598,7 @@ comptime tile_sf_layout_k_major_typed[
     BM: Int,
     BK: Int,
     SF_SCALE_SIZE: Int,
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(
             Idx[_SF_ATOM_M0],
@@ -753,7 +753,7 @@ comptime _st_matrix_frag_elems[c_type: DType] = 16 // size_of[c_type]()
 
 comptime st_matrix_n_layout[
     c_type: DType, WG_BN: Int, num_m_mmas: Int, num_consumer: Int
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(Idx[16], Idx[2], Idx[4]),
         Coord(Idx[WG_BN // 16], Idx[num_m_mmas], Idx[num_consumer]),
@@ -795,7 +795,7 @@ Parameters:
 
 comptime st_matrix_m_layout[
     c_type: DType, WG_BM: Int, num_m_mmas: Int, num_consumer: Int
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(Idx[8], Idx[2], Idx[2], Idx[4]),
         Coord(Idx[WG_BM // 16], Idx[num_m_mmas], Idx[num_consumer]),

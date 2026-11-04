@@ -55,7 +55,7 @@ from layout.tma_async import (
     RaggedTMA3DTile,
 )
 from layout import TileTensor
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from layout.swizzle import make_swizzle
 from linalg.arch.sm100.mma import smem_descriptor
 

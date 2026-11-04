@@ -38,7 +38,7 @@ from layout import (
     row_major,
 )
 from layout.swizzle import make_swizzle
-from layout.tile_layout import Layout, UpcastLayout, ZippedDivideLayout
+from layout.layout import Layout, UpcastLayout, ZippedDivideLayout
 from layout.tma_async import TMATensorTile
 from std.utils.coord import Coord, DynamicCoord
 

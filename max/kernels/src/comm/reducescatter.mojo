@@ -23,7 +23,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,

@@ -40,7 +40,7 @@ from max.gpu.host import (
 )
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_bf16_num_partitions,
     amd_sparse_mla_decode_num_partitions,
@@ -345,7 +345,7 @@ def stage_chunks(
         )
         var q_tokens = TileTensor(
             _mp(a.q).unsafe_offset(token0 * num_heads * k_cache_dim),
-            TileLayout(
+            Layout(
                 (tokens, Idx[1], Idx[num_heads], Idx[k_cache_dim]),
                 (
                     Idx[num_heads * k_cache_dim],
@@ -357,7 +357,7 @@ def stage_chunks(
         )
         var out_tokens = TileTensor(
             _mp(a.out).unsafe_offset(token0 * num_heads * kv_latent_dim),
-            TileLayout(
+            Layout(
                 (tokens, Idx[1], Idx[num_heads], Idx[kv_latent_dim]),
                 (
                     Idx[num_heads * kv_latent_dim],

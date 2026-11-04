@@ -80,7 +80,7 @@ from layout import (
     coord,
     Idx,
 )
-from layout.tile_layout import RowMajorLayout, row_major
+from layout.layout import RowMajorLayout, row_major
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.utils.static_tuple import StaticTuple

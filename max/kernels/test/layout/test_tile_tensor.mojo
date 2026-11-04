@@ -21,7 +21,7 @@ from layout import (
     row_major,
     UNKNOWN_VALUE,
 )
-from layout.tile_layout import Layout as TileLayout, blocked_product
+from layout.layout import Layout, blocked_product
 from layout.tile_tensor import (
     _IndexOrSlice,
     _IndexOrSliceLike,
@@ -92,7 +92,7 @@ def test_distribute() raises:
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
     var layout_tensor = TileTensor(
         ptr=ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=data_layout_shape(Idx[4], Idx[4]),
             stride=data_layout_stride(Idx[4], Idx[1]),
         ),
@@ -138,7 +138,7 @@ def test_distribute_with_swizzle() raises:
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
     var layout_tensor = TileTensor[.uint32](
         ptr=ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=data_layout_shape(Idx[4], Idx[4]),
             stride=data_layout_stride(Idx[4], Idx[1]),
         ),
@@ -200,7 +200,7 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
 
     var tensor_no_swizzle = TileTensor[.uint32](
         ptr=ptr_no_swizzle,
-        layout=TileLayout(
+        layout=Layout(
             shape=data_layout_shape(Idx[4], Idx[4]),
             stride=data_layout_stride(Idx[4], Idx[1]),
         ),
@@ -208,7 +208,7 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
 
     var tensor_with_swizzle = TileTensor[.uint32](
         ptr=ptr_with_swizzle,
-        layout=TileLayout(
+        layout=Layout(
             shape=data_layout_shape(Idx[4], Idx[4]),
             stride=data_layout_stride(Idx[4], Idx[1]),
         ),
@@ -721,7 +721,7 @@ def test_distribute_runtime_dims() raises:
     # Create 4x4 tensor with runtime first dim.
     var layout_tensor = TileTensor(
         ptr=ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=Coord(Int(4), Idx[4]),
             stride=Coord(Int(4), Idx[1]),
         ),
@@ -752,7 +752,7 @@ def test_distribute_with_offset_runtime_dims() raises:
     # Create 4x4 tensor with runtime dims.
     var layout_tensor = TileTensor(
         ptr=ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=Coord(Int(4), Idx[4]),
             stride=Coord(Int(4), Idx[1]),
         ),
@@ -911,7 +911,7 @@ def test_load_store_non_trivial_stride() raises:
     var data_ptr: MutPointer[Int32, origin_of(data)] = data.unsafe_ptr()
     var tensor = TileTensor(
         ptr=data_ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=col_major_shape(Idx[2], Idx[3]),
             stride=col_major_stride(Idx[1], Idx[2]),
         ),
@@ -1109,7 +1109,7 @@ def test_setitem_nested_layout() raises:
     var data = Array[Int32, 1024](fill=0)
     var tensor = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16]), Idx[32]),
             Coord(Coord(Idx[1], Idx[64]), Idx[2]),
         ),
@@ -1126,7 +1126,7 @@ def test_num_elements_nested_layout() raises:
     var data = Array[Int32, 1024](fill={})
     var static_nested = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(coord[2, 16], Idx[32]),
             Coord(coord[1, 64], Idx[2]),
         ),
@@ -1136,7 +1136,7 @@ def test_num_elements_nested_layout() raises:
     var tiles = 2
     var runtime_leaf = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16], tiles), Idx[16]),
             Coord(Coord(Idx[1], Idx[32], 512), Idx[2]),
         ),
@@ -1160,7 +1160,7 @@ def test_tile_nested_layout() raises:
     var block_col_stride = 16
     var runtime_blocks = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[4], Idx[3]), Coord(Idx[4], Idx[5])),
             Coord(Coord(row_stride, Idx[80]), Coord(Idx[1], block_col_stride)),
         ),
@@ -1206,14 +1206,14 @@ def test_tile_nested_row_pair_grid() raises:
     var row_pair_stride = 64
     var static_grid = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16], Idx[3]), Coord(Idx[32], Idx[2])),
             Coord(Coord(Idx[1], Idx[64], Idx[2048]), Coord(Idx[2], Idx[1024])),
         ),
     )
     var runtime_grid = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16], row_tiles), Coord(Idx[32], Idx[2])),
             Coord(
                 Coord(Idx[1], row_pair_stride, Int(2048)),
@@ -1258,7 +1258,7 @@ def test_slice_nested_layout() raises:
     var data = Array[Int32, 1024](fill_with=lambda (i: Int) -> Int32: Int32(i))
     var tensor = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16]), Idx[32]),
             Coord(Coord(Idx[1], Idx[64]), Idx[2]),
         ),
@@ -1669,7 +1669,7 @@ def test_copy_from_respects_non_contiguous_layout() raises:
     ] = dst_data.unsafe_ptr()
     var dst = TileTensor(
         ptr=dst_data_ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=padded_shape(Idx[2], Idx[3]),
             stride=padded_stride(Idx[4], Idx[1]),
         ),

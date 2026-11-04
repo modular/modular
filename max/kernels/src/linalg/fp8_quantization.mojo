@@ -42,7 +42,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from layout.tensor_engine import TensorEngine
 from std.logger import Logger
 from std.memory import bitcast

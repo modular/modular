@@ -13,7 +13,7 @@
 # DOC: tile-tensor/layouts.mdx
 
 from layout import Coord, coord, Idx, col_major, row_major
-from layout.tile_layout import (
+from layout.layout import (
     Layout,
     blocked_product,
     col_major_nested,

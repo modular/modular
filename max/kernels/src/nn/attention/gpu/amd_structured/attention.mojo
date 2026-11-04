@@ -34,10 +34,10 @@ from max.gpu import block_idx, lane_id, thread_idx
 from layout import TileTensor
 from layout import row_major
 from layout.swizzle import Swizzle
-from layout.tile_layout import (
+from layout.layout import (
     ComptimeInt,
     Idx,
-    Layout as TileLayout,
+    Layout,
 )
 from layout.coord import Coord
 from structured_kernels.amd_tile_io import RegTileEpilogue, RegTileWriter
@@ -323,7 +323,7 @@ struct Attention[
     comptime _q_stride0 = (
         Self.num_heads * Self.q_depth
     ) if Self._token_strided_rows else Self.q_depth
-    comptime QTileLayout = TileLayout[
+    comptime QTileLayout = Layout[
         Coord[Int64, ComptimeInt[Self.q_depth]].element_types,
         Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
     ]
@@ -331,13 +331,13 @@ struct Attention[
     comptime _output_stride0 = (
         Self.num_heads * Self.output_depth
     ) if Self._token_strided_rows else Self.output_depth
-    comptime OutputTileLayout = TileLayout[
+    comptime OutputTileLayout = Layout[
         Coord[Int64, ComptimeInt[Self.output_depth]].element_types,
         Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
     ]
 
     comptime _kv_stride0 = Self.kv_num_heads * Self.depth
-    comptime KvTileLayout = TileLayout[
+    comptime KvTileLayout = Layout[
         Coord[Int64, ComptimeInt[Self.depth]].element_types,
         Coord[ComptimeInt[Self._kv_stride0], ComptimeInt[1]].element_types,
     ]

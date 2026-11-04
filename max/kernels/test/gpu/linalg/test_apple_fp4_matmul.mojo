@@ -57,7 +57,7 @@ from std.random import random_float64, random_si64, seed
 from max.gpu.host import DeviceContext, HostBuffer
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.fp4_utils import E2M1_TO_FLOAT32, NVFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.apple import enqueue_apple_matmul

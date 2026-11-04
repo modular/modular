@@ -76,7 +76,7 @@ from layout.tile_tensor import TileTensor
 
 from .utils import partial_simd_load
 from layout.swizzle import Swizzle, make_swizzle
-from layout.tile_layout import Layout as TileLayout, col_major as tl_col_major
+from layout.layout import Layout, col_major as tl_col_major
 from layout.tensor_core_async import tile_layout_k_major_typed
 from structured_kernels.tile_types import (
     SMemTileArray2D,
@@ -110,7 +110,7 @@ from .matmul.gpu.sm100_structured.structured_kernels.epilogue_components import 
 from .utils_gpu import MatmulConfig
 from .grouped_matmul_tile_scheduler import TileScheduler
 
-comptime ACCUM_LAYOUT = TileLayout(
+comptime ACCUM_LAYOUT = Layout(
     shape=coord[TMEM_NUM_LANES, TMEM_NUM_COLS],
     stride=coord[1, TMEM_NUM_LANES],
 )
@@ -764,7 +764,7 @@ def stsm_helper[
     # the layout looks like
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-matrix-fragments-shape-16256b
     # but transposed and coalesced by 8 elements.
-    comptime trans_st_matrix_layout = TileLayout(
+    comptime trans_st_matrix_layout = Layout(
         Coord(Idx[8], Idx[2], Idx[2]),
         Coord(Idx[stride0], Idx[8 * stride1], Idx[8 * stride0]),
     )

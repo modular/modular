@@ -32,7 +32,7 @@ from std.math import align_down, ceildiv, divmod
 from max.gpu.host import DeviceContext
 from std.sys import align_of, size_of
 from layout import TensorEngine, TileTensor, Idx
-from layout.tile_layout import Layout, TensorLayout, row_major
+from layout.layout import Layout, TensorLayout, row_major
 from layout.coord import Coord
 from linalg.arch.apple.mma import ConvIm2colParams, MmaOpApple
 from linalg.utils import (

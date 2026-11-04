@@ -33,7 +33,7 @@ from max.gpu.compute.arch.mma_apple import _apple_frag_layout
 from max.gpu.host import DeviceContext
 
 from layout import TileTensor
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 from linalg.arch.apple.mma import MmaOpApple
 
 comptime _N = 16
