@@ -61,6 +61,9 @@ from nn.attention.mha_mask import (
 
 from std.utils.numerics import min_or_neg_inf
 from max.gpu.primitives.grid_controls import PDLLevel
+from extensibility import Fused, Input, LoadAccess, TensorTuple
+from nn.attention.operand_masks import AdditiveMask
+from nn.attention.operand_masks import SegmentMask as OperandSegmentMask
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -775,12 +778,8 @@ def dispatch_mask[
     mask_type: String,
     local_window_size: Int = -1,
 ](callback_fn: Some[callback_fn_type],) raises -> None:
-    """Instantiate an `MHAMask` by name and invoke a callback with it.
-
-    Resolves the mask string to one of the built-in `MHAMask` implementations
-    at compile time and calls `callback_fn` with a concrete mask instance.
-    This lets callers write mask-agnostic kernels while still specialising the
-    generated code per mask type.
+    """Instantiate an `MHAMask` that reads no operands by name and invoke a
+    callback with it.
 
     Parameters:
         mask_type: Name of the mask (e.g. `"causal"`, `"null"`,
@@ -794,8 +793,53 @@ def dispatch_mask[
         callback_fn: Parametric callback invoked with the resolved mask.
 
     Raises:
-        Compile-time assertion error if `mask_type` is unrecognised or if
-        `local_window_size` is inconsistent with the selected mask.
+        Compile-time assertion error if `mask_type` is unrecognised, if it
+        names a mask that reads operands, or if `local_window_size` is
+        inconsistent with the selected mask.
+    """
+    return dispatch_mask[mask_type, local_window_size](
+        TensorTuple(), callback_fn
+    )
+
+
+@inline(.always)
+def dispatch_mask[
+    MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
+    //,
+    mask_type: String,
+    local_window_size: Int = -1,
+](
+    mask_operands: TensorTuple[*MaskIns],
+    callback_fn: Some[callback_fn_type],
+) raises -> None:
+    """Build an `MHAMask` by name from its graph operands and invoke a
+    callback with it.
+
+    Resolves the mask string to one of the built-in `MHAMask` implementations
+    at compile time, builds it with `make` from `mask_operands`, and calls
+    `callback_fn` with it. This lets callers write mask-agnostic kernels
+    while still specialising the generated code per mask type, and lets one
+    kernel take every mask whatever operands it reads.
+
+    Parameters:
+        MaskIns: The mask operand types.
+        mask_type: Name of the mask (e.g. `"causal"`, `"null"`,
+            `"sliding_window_causal"`, `"segment"`). Must match one of the
+            `MaskName` constants.
+        local_window_size: Sliding-window or chunk size for masks that
+            require it. Must be `-1` for masks that ignore it and positive
+            for masks that require it.
+
+    Args:
+        mask_operands: The mask's graph operands: none for the masks that
+            read none, the ids and row offsets for `"segment"`, the mask for
+            `"additive"`.
+        callback_fn: Parametric callback invoked with the resolved mask.
+
+    Raises:
+        Compile-time assertion error if `mask_type` is unrecognised, if the
+        operands don't match the mask, or if `local_window_size` is
+        inconsistent with the selected mask.
     """
 
     @inline(.always)
@@ -805,32 +849,46 @@ def dispatch_mask[
     # TODO: attach string constants to mask types themselves.
     comptime match mask_type:
         case "causal":
-            return outer_wrapper(CausalMask())
+            return outer_wrapper(CausalMask.make(mask_operands))
         case "chunked":
             comptime assert (
                 local_window_size > 0
             ), "You must specify local_window_size for ChunkedMask"
-            return outer_wrapper(ChunkedMask[local_window_size]())
+            return outer_wrapper(
+                ChunkedMask[local_window_size].make(mask_operands)
+            )
         case "null":
-            return outer_wrapper(NullMask())
+            return outer_wrapper(NullMask.make(mask_operands))
         case "sliding_window_causal":
             comptime assert (
                 local_window_size > 0
             ), "You must specify local_window_size for SlidingWindowCausalMask"
-            return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
+            return outer_wrapper(
+                SlidingWindowCausalMask[local_window_size].make(mask_operands)
+            )
         case "sliding_window_noncausal":
             comptime assert local_window_size > 0, (
                 "You must specify local_window_size for"
                 " SlidingWindowNonCausalMask"
             )
             return outer_wrapper(
-                SlidingWindowNonCausalMask[local_window_size]()
+                SlidingWindowNonCausalMask[local_window_size].make(
+                    mask_operands
+                )
             )
         case "chunked_causal":
             comptime assert (
                 local_window_size > 0
             ), "You must specify local_window_size for ChunkedCausalMask"
-            return outer_wrapper(ChunkedCausalMask[local_window_size]())
+            return outer_wrapper(
+                type_of(ChunkedCausalMask[local_window_size]()).make(
+                    mask_operands
+                )
+            )
+        case "segment":
+            return outer_wrapper(OperandSegmentMask[].make(mask_operands))
+        case "additive":
+            return outer_wrapper(AdditiveMask[].make(mask_operands))
         case _:
             comptime assert False, "Unsupported mask type: " + mask_type
 

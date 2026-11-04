@@ -5483,12 +5483,19 @@ def flash_attention_ragged_gpu(
         "max_seq_len", max_seq_len, dtype=DType.uint32, device=DeviceRef.CPU()
     )
 
+    values = [
+        q,
+        k,
+        v,
+        input_row_offsets,
+        max_seq_len,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    parameters: dict[str, int | str | DType]
     if segment_ids is None:
         parameters = _mha_parameters(
             mask_variant, local_window_size=local_window_size
         )
-        op_name = "mo.mha.ragged.no_cache"
-        values = [q, k, v, input_row_offsets, max_seq_len]
     else:
         if mask_variant != MHAMaskVariant.NULL_MASK or local_window_size != -1:
             raise ValueError(
@@ -5513,15 +5520,12 @@ def flash_attention_ragged_gpu(
         segment_ids = segment_ids.rebind(
             [n_tokens], "segment_ids must hold one id per query token"
         )
-        parameters = {}
-        op_name = "mo.mha.ragged.no_cache.segment"
-        values = [q, k, v, input_row_offsets, segment_ids, max_seq_len]
-    values.append(
-        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU())
-    )
+        parameters = {"mask_str": "segment"}
+        # The segment mask's operands trail the op's own.
+        values += [segment_ids, input_row_offsets]
 
     return ops.custom(
-        op_name,
+        "mo.mha.ragged.no_cache",
         values=values,
         out_types=[
             TensorType(

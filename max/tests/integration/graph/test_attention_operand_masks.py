@@ -102,7 +102,14 @@ def _pointer_and_load(
 
 
 def _segment(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
+    # `mo.mha.ragged.no_cache` builds the mask from its trailing operands.
     return [
+        _ragged_op(
+            "test_ragged_attention_pointer_mask",
+            x,
+            "segment",
+            [x["ids"], x["offsets"]],
+        ),
         flash_attention_ragged_gpu(
             x["q"],
             x["k"],
@@ -113,12 +120,31 @@ def _segment(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
             SCALE,
             segment_ids=x["ids"],
         ),
+    ]
+
+
+def _builtin_additive(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
+    q = x["q"]
+    builtin = ops.custom(
+        "mo.mha.ragged.no_cache",
+        device=DeviceRef.GPU(),
+        values=[
+            q,
+            x["k"],
+            x["v"],
+            x["offsets"],
+            x["max_len"],
+            _scale(),
+            x["mask3"],
+        ],
+        out_types=[TensorType(q.dtype, q.shape, device=DeviceRef.GPU())],
+        parameters={"mask_str": "additive"},
+    )[0].tensor
+    return [
         _ragged_op(
-            "test_ragged_attention_load_mask",
-            x,
-            "segment",
-            [x["ids"], x["offsets"]],
+            "test_ragged_attention_pointer_mask", x, "additive", [x["mask3"]]
         ),
+        builtin,
     ]
 
 
@@ -192,6 +218,7 @@ def _dense(mask_name: str) -> Build:
 CASES: dict[str, tuple[list[str], Build]] = {
     "causal_no_operands": ([], _causal),
     "segment": (["ids"], _segment),
+    "builtin_additive": (["mask3"], _builtin_additive),
     "additive_rank3": (
         ["mask3"],
         _pointer_and_load("additive", lambda x: [x["mask3"]]),

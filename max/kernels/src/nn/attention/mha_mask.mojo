@@ -65,6 +65,8 @@ struct MaskName(EnumLike, Equatable, Writable):
     comptime MATERIALIZED = Self("materialized")
     comptime CHUNKED_CAUSAL = Self("chunked_causal")
     comptime CAUSAL_PADDING = Self("causal_padding")
+    comptime SEGMENT = Self("segment")
+    comptime ADDITIVE = Self("additive")
 
     # `MaskName` accepts arbitrary strings, so the enum is not exhaustive.
     comptime _enum_is_exhaustive = False
@@ -78,6 +80,8 @@ struct MaskName(EnumLike, Equatable, Writable):
         "MATERIALIZED".value,
         "CHUNKED_CAUSAL".value,
         "CAUSAL_PADDING".value,
+        "SEGMENT".value,
+        "ADDITIVE".value,
     ].values
 
     comptime _enum_case_types = TypeList.splat[
