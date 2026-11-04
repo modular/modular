@@ -253,6 +253,9 @@ modular_py_test(
         "//max/tests/integration/Inputs/attention_mask_ops",
     ],
     precompile_mefs = True,
+    # Every case compiles two flash-attention kernels; one record action
+    # for all of them runs past the 5 min action budget.
+    precompile_shards = 3,
     tags = [
         "gpu",
     ],
