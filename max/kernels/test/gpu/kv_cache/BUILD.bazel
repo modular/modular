@@ -15,6 +15,7 @@ _GPU_MEMORY = {
     "test_mha_decode_sink_seed.mojo": "2",
     "test_mha_decoding_vs_naive.mojo": "2",
     "test_mha_mixed_ce_tg.mojo": "2",
+    "test_mha_paged_prefill_d64_gqa8_last_wave.mojo": "8",
     "test_paged_sparse_kv_index_remap.mojo": "2",
     "test_sliced_add.mojo": "2",
 }
@@ -54,6 +55,11 @@ _EXTRA_CONSTRAINTS = {
     "test_kv_cache_split_head_store_rope.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_mha_paged_decode_d64_gqa8_32k.mojo": select({
         # Covers the SM100 FA4 workspace split-K combine.
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mha_paged_prefill_d64_gqa8_last_wave.mojo": select({
+        # Covers the SM100 FA4 1Q route for a nearly empty last 2Q wave.
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

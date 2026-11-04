@@ -21,6 +21,7 @@ from std.collections import OptionalReg
 from std.math import ceildiv, clamp, nan
 from std.sys import get_defined_int
 from max.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.host.info import B200
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
@@ -226,6 +227,23 @@ def _ws_g_p_ceiling[
     if raw_grid > WS_SWEEP_MAX_RAW_GRID:
         p = clamp(p, UInt32(1), UInt32(sm_count) // raw_grid)
     return p
+
+
+@inline(.always)
+def _1q_fills_waves_better[
+    sm_count: UInt32
+](raw_grid_2q: UInt32, raw_grid_1q: UInt32, visible_keys: UInt32) -> Bool:
+    """Whether 1Q's grid finishes sooner than 2Q's nearly empty last wave.
+
+    One CTA per SM. Over 32K or more visible keys a 1Q wave takes 0.53-0.54
+    of a 2Q wave (B200, d64); over fewer keys the ratio climbs past 0.6 and
+    2Q's larger tile wins.
+    """
+    return (
+        visible_keys >= 32768
+        and ceildiv(raw_grid_1q, sm_count) * 54
+        < ceildiv(raw_grid_2q, sm_count) * 100
+    )
 
 
 @inline(.always)
@@ -1779,6 +1797,18 @@ def mha_sm100_dispatch[
                         StaticInt[1](), NoPartition[.float32]()
                     )
                     return
+        # The last-wave rule's 1Q/2Q ratio is measured at d64 on B200 only,
+        # and `_visible_keys` is host-safe only for a mask with a known range.
+        comptime one_q_tail_measured = (
+            ctx.default_device_info.compute == B200.compute
+            and config.depth == 64
+            and (
+                MaskType.nonfull_sets[
+                    fa4_config_1q.PairBM_eff(), fa4_config_1q.BN
+                ]()[0]
+                != TileMaskStatus.UNKNOWN_MASK
+            )
+        )
         # An explicit `num_partitions` forces BM < 256. The 2Q arms below launch
         # `StaticInt[1]()` / `NoPartition` unconditionally -- 2Q has NO split-K
         # mechanism at all -- so letting an override fall through there would
@@ -1905,6 +1935,25 @@ def mha_sm100_dispatch[
                     " outside [64, 128])"
                 ),
             )
+            with_fa4_config[fa4_config_1q](
+                StaticInt[1](), NoPartition[.float32]()
+            )
+        elif (
+            not FA4_FORCE_2Q
+            and one_q_tail_measured
+            # Only when every row is a full prompt, so the grid is the work;
+            # a ragged grid's empty CTAs would double under 1Q.
+            and UInt32(num_rows_q) == max_prompt_len_u32 * batch_size
+            and _1q_fills_waves_better[sm_count](
+                raw_grid_2q,
+                _raw_grid[fa4_config_1q](max_prompt_len_u32, batch_size),
+                _visible_keys[
+                    fa4_config_1q.PairBM_eff(),
+                    fa4_config_1q.BN,
+                    KVType.page_size,
+                ](mask, max_cache_valid_length),
+            )
+        ):
             with_fa4_config[fa4_config_1q](
                 StaticInt[1](), NoPartition[.float32]()
             )
