@@ -127,6 +127,7 @@ from .request_state import (
     split_state_outputs,
 )
 from .role_contracts import DecoderInputs, DecoderOutputs, VisionInputs
+from .weight_transform import CheckpointRole, WeightEntry, WeightTransform
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -695,6 +696,19 @@ class GraphApiDecoderPipelineModel(
 
     def _hf_config_for_weights(self) -> AutoConfig | None:
         return self.huggingface_config
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Loads the checkpoint through the architecture's adapter.
+
+        A checkpoint that loads through rules names the decoder's weights.
+        """
+        if isinstance(self.adapter, WeightTransform):
+            self.weight_naming = {
+                GraphRole.DECODER: (
+                    WeightEntry(CheckpointRole.TARGET, self.adapter),
+                )
+            }
+        return super()._load_state_dict()
 
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
         """Loads the graphs with the session used to initialize EP first."""
