@@ -19,7 +19,6 @@ from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from . import weight_adapters
 from .batch_processor import MuseGlimmerBatchProcessor
 from .memory_planner import MuseGlimmerMemoryPlanner
 from .model_config import MuseGlimmerConfig
@@ -31,6 +30,7 @@ from .tokenizer import MuseGlimmerTokenizer
 from .tool_parser import (
     MuseGlimmerToolParser,  # noqa: F401  registers "muse_glimmer"
 )
+from .weight_adapters import muse_glimmer_weight_rules
 
 muse_glimmer_arch = SupportedArchitecture(
     name="MuseGlimmerForConditionalGeneration_ModuleV3",
@@ -47,9 +47,8 @@ muse_glimmer_arch = SupportedArchitecture(
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_registered_state_dict,
-    },
+    weight_rules=muse_glimmer_weight_rules,
+    use_weight_rules=True,
     config=MuseGlimmerConfig,
     batching=MuseGlimmerBatchProcessor,
     memory_planner=MuseGlimmerMemoryPlanner,
