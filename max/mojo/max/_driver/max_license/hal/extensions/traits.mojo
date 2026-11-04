@@ -94,12 +94,13 @@ trait SupportsPeerAccessV1(Deinitable, Movable):
         device: Pointer[DeviceHandle.T, device_origin],
         peer: Pointer[DeviceHandle.T, peer_origin],
     ) raises HALError -> Bool:
-        var group = self.peer_group()
-        if not group:
-            return False
-        return group.value().can_access_peer(
-            driver, rebind[DeviceHandle](device), rebind[DeviceHandle](peer)
-        )
+        if case .Some(group) = self.peer_group():
+            return group.can_access_peer(
+                driver,
+                rebind[DeviceHandle](device),
+                rebind[DeviceHandle](peer),
+            )
+        return False
 
     def enable_peer_access[
         context_origin: ImmOrigin, peer_origin: ImmOrigin, //
@@ -109,15 +110,17 @@ trait SupportsPeerAccessV1(Deinitable, Movable):
         context: Pointer[ContextHandle.T, context_origin],
         peer: Pointer[ContextHandle.T, peer_origin],
     ) raises HALError:
-        var group = self.peer_group()
-        if not group:
+        if case .Some(group) = self.peer_group():
+            group.enable_peer_access(
+                driver,
+                rebind[ContextHandle](context),
+                rebind[ContextHandle](peer),
+            )
+        else:
             raise HALError(
                 STATUS_UNKNOWN_SYMBOL,
                 message="plugin does not export peer access",
             )
-        group.value().enable_peer_access(
-            driver, rebind[ContextHandle](context), rebind[ContextHandle](peer)
-        )
 
 
 trait PeerAccessV1(TrivialRegisterPassable):

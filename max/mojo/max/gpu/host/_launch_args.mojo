@@ -186,9 +186,9 @@ def _fields_slot[
         var align = 1
         comptime for i in range(a_fields.length):
             comptime field = _declared_slot[a_fields[i], d_fields[i], target]()
-            comptime if field:
-                size = align_up(size, field.value().align) + field.value().size
-                align = max(align, field.value().align)
+            comptime if case .Some(slot) = field:
+                size = align_up(size, slot.align) + slot.size
+                align = max(align, slot.align)
             else:
                 return None
         return SlotLayout(align_up(size, align), align)
@@ -280,12 +280,11 @@ def _validate_encodable_arguments[
         # The kernel reads the slot as `declared_arg_type`, but the bytes
         # written are `actual_arg_type.device_type`. Field-wise encodability
         # compares field types, not layouts, so check the layouts agree.
-        comptime if declared_slot:
+        comptime if case .Some(declared) = declared_slot:
             comptime host_args_hint = (
                 ". If the argument's host bytes are already valid on the"
                 " device, pass it via `host_args=` to skip encoding"
             )
-            comptime declared = declared_slot.value()
             comptime device = SlotLayout.of[
                 actual_arg_type.device_type, target
             ]()

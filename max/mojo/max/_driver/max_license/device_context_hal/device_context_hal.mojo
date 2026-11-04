@@ -289,18 +289,18 @@ def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
         API name, or the plugin has no arch for the device.
     """
     var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-    if not maybe_driver[]:
-        raise Error("no accelerator driver plugin is loaded")
-    var driver = maybe_driver[].value()
-    var api = String(driver[].name()).lower()
-    # A plugin listed as a bare path, without a `name@`, is named after its
-    # file, which is no API and so no `--target-accelerator` vendor either.
-    if "/" in api or api.endswith(".so"):
-        raise Error("the accelerator plugin has no API name: ", api)
-    var device = driver[].get_device_dynamic[Optional[Int64](0)](
-        Int64(device_id)
-    )
-    return (api, device[].arch())
+    if case .Some(driver) = maybe_driver[]:
+        var api = String(driver[].name()).lower()
+        # A plugin listed as a bare path, without a `name@`, is named after
+        # its file, which is no API and so no `--target-accelerator` vendor
+        # either.
+        if "/" in api or api.endswith(".so"):
+            raise Error("the accelerator plugin has no API name: ", api)
+        var device = driver[].get_device_dynamic[Optional[Int64](0)](
+            Int64(device_id)
+        )
+        return (api, device[].arch())
+    raise Error("no accelerator driver plugin is loaded")
 
 
 struct _PeerState(Movable):
@@ -365,9 +365,9 @@ def _init_peer_state() -> _PeerState:
     # `_Global` initializers must not raise; no plugin means zero devices.
     try:
         var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-        if not maybe_driver[]:
-            return _PeerState(0)
-        return _PeerState(Int(maybe_driver[].value()[].device_count()))
+        if case .Some(driver) = maybe_driver[]:
+            return _PeerState(Int(driver[].device_count()))
+        return _PeerState(0)
     except:
         return _PeerState(0)
 
@@ -680,14 +680,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             # Shared so peer calls get both contexts from one driver.
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-            if not maybe_driver[]:
+            if case .Some(driver) = maybe_driver[]:
+                self._driver = driver
+            else:
                 # `_Global` init drops the load error; reload to raise it.
                 _ = Driver.create(chosen)
                 raise Error(
                     String(t"failed to load accelerator plugin '{chosen}'")
                 )
-            var driver = maybe_driver[].value()
-            var driver_name = driver[].name()
+            var driver_name = self._driver[].name()
             if not _driver_satisfies_api(String(driver_name), api):
                 raise Error(
                     String(
@@ -695,12 +696,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                         t" {driver_name}"
                     )
                 )
-            var count = Int(driver[].device_count())
+            var count = Int(self._driver[].device_count())
             if device_id < 0 or device_id >= count:
                 raise Error(
                     String(t"device_id {device_id} out of range [0, {count})")
                 )
-            self._driver = driver
             # The spec stays id 0 for typing; the runtime id picks the device.
             self._device = rebind[ArcPointer[_HALDevice[Self.device_spec]]](
                 self._driver[].get_device_dynamic[Optional[Int64](0)](
@@ -844,8 +844,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ctx: DeviceContext.Optional,
     ) -> Optional[DeviceContext.CPU]:
         var cpu_ctx = Optional[DeviceContext.CPU]()
-        if ctx:
-            cpu_ctx = ctx.value().assert_cpu_target()
+        if case .Some(gpu_ctx) = ctx:
+            cpu_ctx = gpu_ctx.assert_cpu_target()
         return cpu_ctx^
 
     # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
@@ -2615,12 +2615,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 return 0
             # Reuse the process-global accelerator driver (loaded once).
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-            if not maybe_driver[]:
-                return 0
-            var driver = maybe_driver[].value()
-            if not _driver_satisfies_api(driver[].name(), api):
-                return 0
-            return Int(driver[].device_count())
+            if case .Some(driver) = maybe_driver[]:
+                if _driver_satisfies_api(driver[].name(), api):
+                    return Int(driver[].device_count())
+            return 0
         except:
             return 0
 
@@ -3866,9 +3864,8 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the wait operation fails.
         """
         # If an event hasn't been recorded yet, there's nothing to wait on
-        if not event._event[]:
-            return
-        self._stream[].wait_for_events(event._event[].value())
+        if case .Some(recorded) = event._event[]:
+            self._stream[].wait_for_events(recorded)
 
     def record_event(self, event: DeviceEvent) raises:
         """Records an event in this stream.
@@ -3939,10 +3936,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         """Returns this stream's native driver-level handle (for example a
         `CUstream`), tied to this borrow of `self` so the owning queue stays
         alive while the handle is in use."""
-        var handle = self._stream[].native_handle()
-        if not handle:
-            raise Error("this device's stream has no native driver handle")
-        return OpaquePointer[origin](unsafe_from_address=Int(handle.value()))
+        if case .Some(handle) = self._stream[].native_handle():
+            return OpaquePointer[origin](unsafe_from_address=Int(handle))
+        raise Error("this device's stream has no native driver handle")
 
     def _hal_stream(
         self,
@@ -4514,9 +4510,8 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
             If synchronization fails.
         """
         # If an event hasn't been recorded yet, there's nothing to wait on
-        if not self._event[]:
-            return
-        self._event[].value().synchronize()
+        if case .Some(recorded) = self._event[]:
+            recorded.synchronize()
 
 
 # ===-----------------------------------------------------------------------===#

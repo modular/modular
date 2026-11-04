@@ -1353,21 +1353,18 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         The edge is unioned in (order is irrelevant: the dependency list is an
         unordered predecessor set).
         """
-        var floor = self._region_floor
-        if not floor:
-            return dependencies^
-
-        var last = self._last_node_id()
-        if last and last.value() > floor.value():
-            # If the lst dependency is named in the dependencies list, then we
-            # don't need to merge. Merging would produce duplicated dependencies
-            # which some graph APIs reject.
-            for dep in dependencies:
-                if dep.id == last.value():
-                    return dependencies^
-            dependencies.append(Self.Node(last.value()))
-        else:
-            dependencies.extend(Span(self._implicit_deps))
+        if case .Some(floor) = self._region_floor:
+            match self._last_node_id():
+                case .Some(last) if last > floor:
+                    # If the lst dependency is named in the dependencies list,
+                    # then we don't need to merge. Merging would produce
+                    # duplicated dependencies which some graph APIs reject.
+                    for dep in dependencies:
+                        if dep.id == last:
+                            return dependencies^
+                    dependencies.append(Self.Node(last))
+                case _:
+                    dependencies.extend(Span(self._implicit_deps))
         return dependencies^
 
     def __deinit__(deinit self):
@@ -2240,7 +2237,8 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         var saved_deps = self._implicit_deps^
         var saved_floor = self._region_floor
         self._implicit_deps = incoming^
-        self._region_floor = Optional(self._last_node_id().or_else(-1))
+        var floor = self._last_node_id().or_else(-1)
+        self._region_floor = Optional(floor)
 
         var result: Self.Node
         try:
@@ -2250,11 +2248,11 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             # no join node. A region that added nothing falls back to an empty
             # node carrying the incoming predecessors, so a downstream consumer
             # still waits for them.
-            var last = self._last_node_id()
-            if last and last.value() > self._region_floor.value():
-                result = Self.Node(last.value())
-            else:
-                result = self.add_empty()
+            match self._last_node_id():
+                case .Some(last) if last > floor:
+                    result = Self.Node(last)
+                case _:
+                    result = self.add_empty()
         finally:
             self._implicit_deps = saved_deps^
             self._region_floor = saved_floor

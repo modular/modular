@@ -63,9 +63,9 @@ def get_safe_task_id(ctx: DeviceContext.Optional) -> OptionalReg[Int]:
         An `OptionalReg` containing the task ID if `ctx` is set and the
         underlying handle is valid, `None` otherwise.
     """
-    if not ctx:
-        return None
-    return get_safe_task_id(ctx.value())
+    if case .Some(device_ctx) = ctx:
+        return get_safe_task_id(device_ctx)
+    return None
 
 
 def _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
@@ -268,13 +268,13 @@ def is_profiling_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
         return True
 
     comptime max_profiling_level = _build_info_asyncrt_max_profiling_level()
-    if not max_profiling_level:
+    comptime if case .Some(max_level) = max_profiling_level:
+        return level <= TraceLevel(
+            (max_level >> (type.value * kProfilingTypeWidthBits))
+            & ((1 << kProfilingTypeWidthBits) - 1)
+        )
+    else:
         return False
-
-    return level <= TraceLevel(
-        (max_profiling_level.value() >> (type.value * kProfilingTypeWidthBits))
-        & ((1 << kProfilingTypeWidthBits) - 1)
-    )
 
 
 @inline(.always)
@@ -372,8 +372,7 @@ def _get_enabled_tracing_systems[level: TraceLevel]() -> List[String]:
     var enabled_systems = List[String]()
 
     # Check AsyncRT profiling
-    var asyncrt_level = _build_info_asyncrt_max_profiling_level()
-    if asyncrt_level and asyncrt_level.value() > 0:
+    if _build_info_asyncrt_max_profiling_level().or_else(0) > 0:
         enabled_systems.append("AsyncRT")
 
     # Check GPU profiling
@@ -831,7 +830,9 @@ struct Trace[
             Self.level <= TraceLevel.OP
             and not _is_gpu_profiler_enabled[Self.category, Self.level]()
         )
-        var color_val = UInt32(Int(self.color.value())) if self.color else 0
+        var color_val = self.color.map(
+            lambda (var c: Color) -> UInt32: UInt32(Int(c))
+        ).or_else(0)
         var bridges: _BridgeState
         if self._name_value.isa[StaticString]():
             bridges = _enter_bridges(
@@ -1012,7 +1013,9 @@ struct Trace[
                 ](
                     message.as_bytes().unsafe_ptr(),
                     message.byte_length(),
-                    UInt32(Int(self.color.value())) if self.color else 0,
+                    self.color.map(
+                        lambda (var c: Color) -> UInt32: UInt32(Int(c))
+                    ).or_else(0),
                 )
 
     @inline(.always)

@@ -2912,23 +2912,18 @@ def _max_dynamic_shared_bytes_for_load[
     target: CompilationTarget
 ](func_attribute: OptionalReg[FuncAttribute]) raises -> Int32:
     """Returns the dynamic shared-memory cap to load with, or -1 for none."""
-    if not func_attribute:
-        return -1
-    if (
-        func_attribute.value().attribute
-        != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-    ):
-        raise Error(
-            "the function attribute '",
-            func_attribute.value().attribute,
-            "' is not currently supported",
-        )
-    # Only CUDA has a per-function cap; elsewhere the value would only split
-    # the function cache.
-    comptime if target.is_nvidia_gpu():
-        return func_attribute.value().value
-    else:
-        return -1
+    if case .Some(attr) = func_attribute:
+        if attr.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES:
+            raise Error(
+                "the function attribute '",
+                attr.attribute,
+                "' is not currently supported",
+            )
+        # Only CUDA has a per-function cap; elsewhere the value would only
+        # split the function cache.
+        comptime if target.is_nvidia_gpu():
+            return attr.value
+    return -1
 
 
 @inline(.never)
@@ -4610,8 +4605,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ctx: DeviceContext.Optional,
     ) -> Optional[DeviceContext.CPU]:
         var cpu_ctx = Optional[DeviceContext.CPU]()
-        if ctx:
-            cpu_ctx = ctx.value().assert_cpu_target()
+        if case .Some(gpu_ctx) = ctx:
+            cpu_ctx = gpu_ctx.assert_cpu_target()
         return cpu_ctx^
 
     # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext

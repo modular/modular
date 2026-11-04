@@ -165,9 +165,10 @@ def test_queue_native_handle() raises:
     var device = driver[].get_device[Int64(0)]()
     var ctx = device[].get_context()
     var queue = ctx[].create_queue()
-    var handle = queue[].native_handle()
-    assert_true(Bool(handle))
-    assert_true(handle.value() != 0)
+    if case .Some(handle) = queue[].native_handle():
+        assert_true(handle != 0)
+    else:
+        raise Error("queue has no native handle")
 
 
 # ===-----------------------------------------------------------------------===#

@@ -73,10 +73,10 @@ def _make_int_list[n: Int](values: Array[Int, n]) -> PythonObject:
 
 def _get_ctx(
     device_context_ptr: PythonObject,
-) raises -> Optional[OpaquePointer[MutUntrackedOrigin]]:
+) raises -> OpaquePointer[MutUntrackedOrigin]:
     var addr = Int(py=device_context_ptr)
     if addr == 0:
-        return None
+        raise Error("Expected a non-null device context pointer.")
     return OpaquePointer[MutUntrackedOrigin](unsafe_from_address=addr)
 
 
@@ -91,8 +91,6 @@ def mha_decode_num_partitions(
     var n_kv_heads = Int(py=n_kv_heads_obj)
     var ctx = _get_ctx(device_context_ptr)
 
-    if not ctx:
-        raise Error("Expected a non-null device context pointer.")
     if batch_size < 1:
         raise Error("batch_size must be positive.")
     if max_cache_valid_length < 0:
@@ -100,7 +98,7 @@ def mha_decode_num_partitions(
     if n_kv_heads < 1:
         raise Error("n_kv_heads must be positive.")
 
-    var device_ctx = DeviceContext(ctx.unsafe_value())
+    var device_ctx = DeviceContext(ctx)
     var num_partitions = mha_decoding_num_partitions(
         batch_size,
         max_cache_valid_length,
@@ -158,10 +156,7 @@ def mha_split_kv_decode_num_partitions(
 def multiprocessor_count(
     device_context_ptr: PythonObject,
 ) raises -> PythonObject:
-    var ctx = _get_ctx(device_context_ptr)
-    if not ctx:
-        raise Error("Expected a non-null device context pointer.")
-    var device_ctx = DeviceContext(ctx.unsafe_value())
+    var device_ctx = DeviceContext(_get_ctx(device_context_ptr))
     var sm_count = device_ctx.device().get_attribute(
         DeviceAttribute.MULTIPROCESSOR_COUNT
     )
@@ -196,8 +191,6 @@ def mla_dispatch_args_scalar(
     var depth = Int(py=depth_obj)
     var ctx = _get_ctx(device_context_ptr)
 
-    if not ctx:
-        raise Error("Expected a non-null device context pointer.")
     if batch_size < 1:
         raise Error("batch_size must be positive.")
     if max_cache_valid_length < 0:
@@ -211,7 +204,7 @@ def mla_dispatch_args_scalar(
     if page_size < 0:
         raise Error("page_size must be non-negative.")
 
-    var device_ctx = DeviceContext(ctx.unsafe_value())
+    var device_ctx = DeviceContext(ctx)
 
     var scalars = mla_decode_dispatch_key(
         batch_size,
