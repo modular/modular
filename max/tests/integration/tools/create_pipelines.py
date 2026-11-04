@@ -1778,9 +1778,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "OpenGVLab/InternVL3-38B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-38B-Instruct"
     ),
-    "OpenGVLab/InternVL3-78B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-78B-Instruct"
-    ),
     "OpenGVLab/InternVL3_5-8B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3_5-8B-Instruct"
     ),
