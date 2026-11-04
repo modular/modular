@@ -10,7 +10,7 @@ package(default_visibility = [
 exports_files(
     ["testdata/vision_metadata.json"],
     visibility = [
-        "//mach/crates/multimodal:__pkg__",
+        "//mach:__subpackages__",
         "//orchestrator/crates/orchestrator:__pkg__",
         "//orchestrator/crates/orchestrator-engine:__pkg__",
     ],
@@ -168,4 +168,14 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
     ],
+)
+
+# Mach's engine-batch and engine-rt tests check their graph contracts against these.
+exports_files(
+    [
+        "testdata/graph_group_kinds.json",
+        "testdata/graph_input_trees.json",
+        "testdata/vision_input_trees.json",
+    ],
+    visibility = ["//mach:__subpackages__"],
 )

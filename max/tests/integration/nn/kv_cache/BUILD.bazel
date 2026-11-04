@@ -67,3 +67,11 @@ modular_py_test(
         requirement("numpy"),
     ],
 )
+
+# Mach's engine-kv tests check its split-KV partitions against this.
+exports_files(
+    [
+        "testdata/split_kv_decode_partitions.csv",
+    ],
+    visibility = ["//mach:__subpackages__"],
+)

@@ -34,3 +34,16 @@ mojo_library(
         "@mojo//:std",
     ],
 )
+
+# Mach's engine-kv tests read these to pin its dispatch against the kernels.
+filegroup(
+    name = "sm100_attention_sources",
+    srcs = glob(["attention/gpu/nvidia/sm100/*.mojo"]),
+    visibility = ["//mach:__subpackages__"],
+)
+
+# Mach's engine-kv tests read this to pin its HIP capture mirror against it.
+exports_files(
+    ["attention/gpu/mha_decode_partition_heuristic.mojo"],
+    visibility = ["//mach:__subpackages__"],
+)
