@@ -37,6 +37,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_mega_ffn_amd_gpu.py",
     "test_mega_ffn_amd_init_memory_gpu.py",
     "test_mega_ffn_amd_mxfp4_gpu.py",
+    "test_attention_operand_masks.py",
     "test_buffer_create_init.py",
     "test_buffer_create_init_gpu.py",
     "test_debug_config.py",
@@ -230,6 +231,39 @@ modular_py_test(
         "//max/python/max/graph",
         requirement("hypothesis"),
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_attention_operand_masks",
+    srcs = ["test_attention_operand_masks.py"],
+    data = ["//max/tests/integration/Inputs/attention_mask_ops"],
+    env = {
+        "ATTENTION_MASK_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/attention_mask_ops)",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    mojo_deps = [
+        "//max:builtin_kernels",
+        "//max/tests/integration/Inputs/attention_mask_ops",
+    ],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
