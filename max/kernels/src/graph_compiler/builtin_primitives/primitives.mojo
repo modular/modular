@@ -15,6 +15,7 @@ from std.logger import Logger
 from std.math import gcd
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
+from std.sys.info import CompilationTarget
 
 from max.algorithm.functional import elementwise
 from algorithm.reduce_op import ReduceOp
@@ -33,7 +34,7 @@ from extensibility import (
 )
 from std.collections import Array
 from max.gpu import block_idx
-from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
 from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,
@@ -492,15 +493,51 @@ def unpack_state_ctx(
 
 
 @inline(.never)
-def unpack_device_ctx(
+def unpack_device_ctx[
+    device_kind: StaticString
+](
     async_ref: AnyAsyncValueRef,
-) -> DeviceContext[]:
+    out result: DeviceContext[
+        CompilationTarget[
+            _mlir_value=(
+                CompilationTarget.current()._mlir_value if device_kind
+                == "cpu" else default_accelerator()._mlir_value
+            )
+        ]()
+    ],
+):
+    """Unpacks the runtime's device context as a `DeviceContext` whose static
+    target matches the graph's device.
+
+    Parameters:
+        device_kind: The device kind of the graph value, either "cpu" or "gpu".
+
+    Args:
+        async_ref: The async value holding the runtime's device context.
+
+    Returns:
+        A non-owning `DeviceContext` for the runtime's context.
+    """
+    comptime assert device_kind == "cpu" or device_kind == "gpu", String(
+        "unsupported device kind '", device_kind, "', expected 'cpu' or 'gpu'"
+    )
     var ptr = external_call[
         "MGP_RT_UnpackDeviceContext",
         _DeviceContextPtr[mut=True],
     ](async_ref.get_handle())
 
-    return DeviceContext(ptr)
+    result = type_of(result)(ptr)
+
+    # The static target comes from the graph's IR while the context comes from
+    # the runtime, so check that the two agree.
+    debug_assert[assert_mode="safe"](
+        (result.api() == "cpu") == (device_kind == "cpu"),
+        "graph expects a '",
+        device_kind,
+        "' DeviceContext but the runtime provided api '",
+        result.api(),
+        "'",
+    )
 
 
 @inline(.never)

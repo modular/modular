@@ -191,8 +191,9 @@ def test_control_flow_subfree_ordering() -> None:
     This test only validates the compilation succeeds - the assertion would
     occur during graph compilation, not execution.
     """
-    # Use CPU and single GPU
-    devices = [CPU(), Accelerator(0)]
+    # Use single GPU and CPU. The GPU comes first because the graph compiler
+    # types a collective's contexts by the first device.
+    devices = [Accelerator(0), CPU()]
 
     # Create dummy input tensors (values don't matter for compilation test)
     combined_inputs = Buffer.from_numpy(np.arange(6).reshape(3, 2)).to(CPU())

@@ -688,11 +688,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def __init__(out self, ctx_ptr: _DeviceContextPtr[mut=True]):
         """Create a Mojo DeviceContext from the opaque device-context handle
         carried by the runtime."""
-        # FIXME(MSTDL-3258): Remove default target assumption rebind/erasure.
-        self = rebind[Self](
-            Self._from_unsafe_cpp_handle(
-                ctx_ptr.unsafe_value().unsafe_bitcast[NoneType]()
-            )
+        self = Self._from_unsafe_cpp_handle(
+            ctx_ptr.unsafe_value().unsafe_bitcast[NoneType]()
         )
 
     @inline(.always)
@@ -705,14 +702,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Args:
             handle: The opaque device-context handle carried by the runtime.
         """
-        # FIXME(MSTDL-3258): Remove default target assumption rebind/erasure.
-        self = rebind[Self](Self._from_unsafe_cpp_handle(handle))
+        self = Self._from_unsafe_cpp_handle(handle)
 
     @staticmethod
     def _from_unsafe_cpp_handle(
         handle: OpaquePointer[MutUntrackedOrigin],
-    ) -> DeviceContext[]:
-        return handle.unsafe_bitcast[DeviceContext[]]()[]
+    ) -> DeviceContext[Self.target]:
+        return handle.unsafe_bitcast[DeviceContext[Self.target]]()[]
 
     # ===-------------------------------------------------------------------===#
     # Factory methods

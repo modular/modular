@@ -91,34 +91,6 @@ static KGEN::LIT::StructType getAsStructType(mlir::Type t) {
   return KGEN::sugarDynCast<KGEN::LIT::StructType>(t);
 }
 
-/// Whether any parameter value of `structType` refers to a parameter of the
-/// enclosing signature, e.g. the unbound target of `DeviceContext`.
-///
-/// TODO(MSTDL-3265): Remove along with `genericTarget` once kernels no longer
-/// take a `target: StaticString` parameter, since every context is then generic
-/// over its target.
-static bool hasSignatureParameterValue(KGEN::LIT::StructType structType) {
-  mlir::AttrTypeWalker walker;
-  // Sugar keeps the written and partly expanded forms alongside the canonical
-  // one, and those can mention parameters, e.g. of the struct's own
-  // declaration, that the canonical form has already resolved. Only the
-  // canonical form says what the argument's type really is. Walking in
-  // pre-order lets this callback skip the other forms before they are visited.
-  constexpr mlir::WalkOrder order = mlir::WalkOrder::PreOrder;
-  walker.addWalk([&](KGEN::SugarAttr sugar) {
-    return walker.walk<order>(sugar.getCanonical()).wasInterrupted()
-               ? mlir::WalkResult::interrupt()
-               : mlir::WalkResult::skip();
-  });
-  walker.addWalk(
-      [](KGEN::ParamDeclRefAttr) { return mlir::WalkResult::interrupt(); });
-  walker.addWalk(
-      [](KGEN::ParamIndexRefAttr) { return mlir::WalkResult::interrupt(); });
-  return llvm::any_of(structType.getParamValues(), [&](mlir::Attribute value) {
-    return walker.walk<order>(value).wasInterrupted();
-  });
-}
-
 /// Extract the IOSpec encoded in the mut/input parameter values of a
 /// ManagedTensorSlice or VariadicTensors struct type.  Returns std::nullopt
 /// when the parameters are not yet bound.
@@ -386,11 +358,8 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
   // --- Device context ---
   // Use root+leaf matching because DeviceContext lives under max::gpu::host
   // (depth varies across package exports).
-  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContext)) {
-    KernelDeclContextPtrAdaptor adaptor;
-    adaptor.genericTarget = hasSignatureParameterValue(structType);
-    return adaptor;
-  }
+  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContext))
+    return KernelDeclContextPtrAdaptor{};
 
   if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContextArray))
     return KernelDeclContextPtrListAdaptor{};
