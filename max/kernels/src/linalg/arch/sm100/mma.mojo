@@ -23,12 +23,7 @@ from max.gpu.compute.arch.tcgen05 import *
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import Layout, TileTensor, coord
 from layout.tile_layout import Layout as TileLayout, TensorLayout
-from layout.tensor_core_async import (
-    _CM_ROW_BYTES,
-    tile_to_descriptor,
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
+from layout.tensor_core_async import _CM_NUM_ROWS, _CM_ROW_BYTES
 
 from std.utils.coord import Coord, CoordLike, coord
 from linalg.fp4_utils import (
@@ -53,21 +48,74 @@ def _create_mma_desc_k_major[
     return MMASmemDescriptor.create[SBO, LBO, swizzle_mode](ptr)
 
 
-def _create_mma_desc_pair[
-    dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
-](
-    ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]
-) -> MMASmemDescriptorPair:
-    # Extract the stride values from the canonical layout
-    # The canonical layout is expected to have at least 2 dimensions
-    comptime stride01 = canonical_layout[0].stride[1].value()
-    comptime stride11 = canonical_layout[1].stride[1].value()
-    comptime SBO = stride01 * size_of[dtype]()
-    comptime LBO = stride11 * size_of[dtype]()
+def mma_desc_sbo_lbo[
+    dtype: DType,
+    *,
+    BMN: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle,
+    is_k_major: Bool,
+    page_dense: Bool = False,
+]() -> Tuple[Int, Int]:
+    """Returns the (stride, leading) byte offsets of an MMA operand descriptor.
 
-    # Create and return the MMA shared memory descriptor
-    # This will be used by the SM100 MMA operations to access shared memory
-    return MMASmemDescriptorPair.create[SBO, LBO, swizzle_mode](ptr)
+    The offsets are the two strides the canonical descriptor layout exposes:
+    the stride of the second sub-mode of mode 0 and of mode 1. They are
+    derived directly from the tile geometry, so no legacy `Layout` has to be
+    built to create a descriptor.
+
+    Parameters:
+        dtype: Element type of the operand.
+        BMN: Block tile size along the M or N dimension.
+        BK: Block tile size along the K dimension.
+        swizzle_mode: Swizzle mode for the shared memory access pattern.
+        is_k_major: When True, the operand is K-major; otherwise MN-major.
+        page_dense: When True, uses the page-dense (row-major atoms) tile.
+
+    Returns:
+        The stride byte offset (SBO) and leading byte offset (LBO).
+    """
+    comptime es = size_of[dtype]()
+    comptime swizzle_bytes = swizzle_mode.bytes()
+    comptime swizzle_k = swizzle_bytes // es
+    comptime is_unswizzled = (swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE)
+
+    comptime if page_dense:
+        comptime if is_k_major:
+            # ((8, BMN/8), (sw_K, BK/sw_K)) with the chunk-outer strides; the
+            # mode-0 sub-stride is one whole chunk (num_chunks * 8 * sw_K).
+            comptime chunk_sbo = (
+                (BK // swizzle_k) * _CM_NUM_ROWS * swizzle_bytes
+            )
+            comptime sbo = 0 if BMN == _CM_NUM_ROWS else chunk_sbo
+            return (sbo, _CM_ROW_BYTES)
+        else:
+            # MN-major page-dense is the transpose of the k-major chunk-inner
+            # layout: mode 0 strides by one 8-row group of MN atoms.
+            comptime sbo = _CM_NUM_ROWS * BMN * es
+            comptime lbo = _CM_NUM_ROWS * swizzle_bytes
+            return (sbo, lbo)
+    else:
+        comptime if is_k_major:
+            comptime sbo = (
+                0 if BMN == _CM_NUM_ROWS else _CM_NUM_ROWS * swizzle_bytes
+            )
+            # A swizzled atom splits its K mode by the 16 B core-matrix row,
+            # so the second piece steps by one row. An unswizzled atom keeps
+            # the tile's outer-K stride, which is 0 when K is one atom wide.
+            comptime unswizzled_lbo = (
+                0 if BK == swizzle_k else BMN * _CM_ROW_BYTES
+            )
+            comptime lbo = (unswizzled_lbo if is_unswizzled else _CM_ROW_BYTES)
+            return (sbo, lbo)
+        else:
+            # MN-major runs the transposed k-major geometry with the extents
+            # swapped, and skips the descriptor tiling of the k-major path.
+            comptime sbo = (
+                0 if BK == _CM_NUM_ROWS else _CM_NUM_ROWS * swizzle_bytes
+            )
+            comptime lbo = 0 if BMN == swizzle_k else BK * swizzle_k * es
+            return (sbo, lbo)
 
 
 @inline(.always)
@@ -105,22 +153,17 @@ def smem_descriptor[
     Returns:
         An `MMASmemDescriptorPair` ready for use with SM100 UMMA instructions.
     """
-    # `page_dense` selects the native chunk-inner (row-major atoms) layout
-    # (SM100 row-major page-fold path) for the corresponding operand frame:
-    # k-major (`is_k_major=True`, K / Q@K') and mn-major (`is_k_major=False`,
-    # V / P@V) each have their own page-dense branch in their `tile_layout_*`.
-    comptime smem_layout = tile_layout_k_major[
-        dtype, BMN, BK, swizzle_mode, page_dense=page_dense
-    ]() if is_k_major else tile_layout_mn_major[
-        dtype, BMN, BK, swizzle_mode, page_dense=page_dense
+    comptime sbo_lbo = mma_desc_sbo_lbo[
+        dtype,
+        BMN=BMN,
+        BK=BK,
+        swizzle_mode=swizzle_mode,
+        is_k_major=is_k_major,
+        page_dense=page_dense,
     ]()
-    comptime canonical_layout = tile_to_descriptor[
-        dtype, smem_layout, is_k_major=is_k_major
-    ]()
-    comptime cl = canonical_layout if is_k_major else canonical_layout.transpose()
-    return _create_mma_desc_pair[
-        canonical_layout=cl, swizzle_mode=swizzle_mode
-    ](ptr)
+    return MMASmemDescriptorPair.create[sbo_lbo[0], sbo_lbo[1], swizzle_mode](
+        ptr
+    )
 
 
 def product[*element_types: CoordLike](t: Coord[*element_types]) -> Int:
