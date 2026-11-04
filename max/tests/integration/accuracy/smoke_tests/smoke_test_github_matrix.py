@@ -202,7 +202,7 @@ def parse_override(raw: str | None) -> list[str]:
 @click.command()
 @click.option(
     "--framework",
-    type=click.Choice(["sglang", "vllm", "max-ci", "max", "mach-ci"]),
+    type=click.Choice(["sglang", "vllm", "max-ci", "mach-ci"]),
     required=True,
 )
 @click.option(
