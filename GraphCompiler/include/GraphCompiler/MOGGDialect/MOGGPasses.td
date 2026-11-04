@@ -201,14 +201,19 @@ def OutlineAsyncRoutines: Pass<"mogg-outline-async-routines", "ModuleOp"> {
 
 def FormGraphBlobs
     : Pass<"mogg-form-graph-blobs", "mlir::ModuleOp"> {
-  let summary = "Fuse sequences of declarative routines into graph blobs.";
+  let summary = "Fuse groups of declarative routines into graph blobs.";
   let description = [{
-    Replaces each sequence of declarative `mogg.routine`s with one routine
-    whose body is a `mogg.graph_blob` holding theirs, so the sequence launches
-    as one device kernel. A routine joins the sequence before it when it reads
-    the sequence's last routine, nothing else reads that routine's results,
-    and both run on one device. The fused routine has every member's operands
-    from outside the sequence and every member's results. Device graphs are
+    Replaces each group of declarative `mogg.routine`s with one routine that
+    runs the members' bodies in order inside a `mogg.graph_blob`, so the group
+    launches as one device kernel. A group holds sequences, where one member
+    reads another's results, and siblings that don't depend on each other. The
+    fused routine reads what the members read from outside the group and
+    returns every member's results.
+
+    Each group runs on one device. It ends at the first member with a result
+    that something outside the group reads, other than another declarative
+    routine on that device or the block's terminator, such as the graph's
+    output, so no path leaves the group and comes back in. Device graphs are
     left alone. Runs before `OutlineRoutines`, which outlines the fused
     routine.
   }];

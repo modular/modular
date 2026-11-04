@@ -11,10 +11,10 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// Fuses sequences of declarative `mogg.routine`s into one routine whose body is
-// a `mogg.graph_blob`, so that each sequence launches as one device kernel. The
-// fused routine has every member's operands and results, and `OutlineRoutines`
-// outlines it like any other.
+// Fuses groups of declarative `mogg.routine`s, sequences and siblings alike,
+// into one routine whose body is a `mogg.graph_blob`, so that each group
+// launches as one device kernel. The fused routine has every member's operands
+// and results, and `OutlineRoutines` outlines it like any other.
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,6 +24,7 @@
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Analysis/TopologicalSortUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/IRMapping.h"
@@ -44,11 +45,19 @@ namespace M::MOGG {
 namespace {
 
 // Whether `routine` can join a blob: its one call is to a declarative kernel,
-// on tensors, named dims and one device context, with no chain and no results
-// whose shape the call computes. `symbols` holds the kernel decls.
-bool canJoinBlob(RoutineOp routine, SymbolTable &symbols) {
-  // No chain, and no results whose shape the call computes.
+// on tensors, named dims and one device context, with no chain and no result
+// with a data-dependent shape, and some output isn't in `invariant`. A routine
+// computing only invariant values runs once at init, and a blob runs on every
+// execution. `symbols` holds the kernel decls.
+bool canJoinBlob(RoutineOp routine, SymbolTable &symbols,
+                 const llvm::DenseSet<Value> &invariant) {
+  // No chain, and no result with a data-dependent shape.
   if (routine.getChain() || !routine.getOutputParamDecls().empty())
+    return false;
+
+  // Some output varies, so a routine with no outputs stays out too.
+  if (llvm::all_of(routine.getOutputs(),
+                   [&](Value value) { return invariant.contains(value); }))
     return false;
 
   // All inputs and outputs are tensors. A buffer, which a kernel updates in
@@ -85,30 +94,10 @@ bool canJoinBlob(RoutineOp routine, SymbolTable &symbols) {
   return decl && decl.getExecuteDevice();
 }
 
-// Whether `next` continues the sequence that ends at `last`: it reads a result
-// of `last`, nothing else reads `last`'s results, and both run on one device.
-// The blob's intermediates then have no reader outside it, so fusing the
-// sequence can't form a cycle with the ops around it.
-//
-// TODO(ehein): Let a blob hold a graph of routines, with branches and fan-out,
-// not just a linear sequence.
-bool extendsSequence(RoutineOp last, RoutineOp next) {
-  if (MO::getDeviceOrDefaultAny(last) != MO::getDeviceOrDefaultAny(next))
-    return false;
-  bool readsLast = false;
-  for (Value result : last.getOutputs()) {
-    for (Operation *user : result.getUsers()) {
-      if (user != next)
-        return false;
-      readsLast = true;
-    }
-  }
-  return readsLast;
-}
-
 // Replaces `members` with one routine whose body is a `mogg.graph_blob` holding
 // their bodies in order. It goes where the last member was, after every input
-// of the sequence.
+// of the blob. Nothing outside the blob reads a member, so every value is still
+// defined before its uses.
 void fuse(ArrayRef<RoutineOp> members) {
   RoutineOp last = members.back();
   MLIRContext *ctx = last.getContext();
@@ -242,21 +231,66 @@ llvm::DenseSet<Value> findInvariantValues(Block &body) {
   return invariant;
 }
 
-// Forms blobs in `block`. A routine computing only `invariant` values stays
-// out: it runs once at init, and a blob runs on every execution.
+// Whether anything but a routine that can join `member`'s blob, or the block's
+// terminator, reads one of its results.
+bool isReadOutside(RoutineOp member, SymbolTable &symbols,
+                   const llvm::DenseSet<Value> &invariant) {
+  Block *block = member->getBlock();
+  auto device = MO::getDeviceOrDefaultAny(member);
+  return llvm::any_of(member->getUsers(), [&](Operation *user) {
+    // A reader nested in a region, such as a `mo.if` branch, is outside: only
+    // routines directly in `block` join its blobs.
+    if (user->getBlock() != block)
+      return true;
+    if (user->hasTrait<OpTrait::IsTerminator>())
+      return false;
+    auto routine = dyn_cast<RoutineOp>(user);
+    return !routine || !canJoinBlob(routine, symbols, invariant) ||
+           MO::getDeviceOrDefaultAny(routine) != device;
+  });
+}
+
+// Forms blobs in `block`, which is in dataflow order, keeping one blob open.
+//
+// Nothing outside the open blob reads its values: the blob ends at the first
+// member with a result that something outside it needs. That result is ready
+// as soon as the blob ends, rather than waiting for later members it doesn't
+// depend on, and no path can leave a blob and come back in, which would make
+// the fused routine wait on itself. The block's terminator, such as the graph's
+// output, doesn't count: it takes its operands only when the whole block ends.
+// Siblings still join one blob, whether or not they share an input.
 void formInBlock(Block &block, SymbolTable &symbols,
                  const llvm::DenseSet<Value> &invariant) {
-  auto isInvariant = [&](Value value) { return invariant.contains(value); };
-  SmallVector<RoutineOp> sequence;
-  // Ends the current sequence, fusing it if it holds more than one routine.
+  SmallVector<RoutineOp> blob;
+  DeviceRefAttr blobDevice;
+  // The values inside the blob: its members' results.
+  llvm::DenseSet<Value> inBlob;
+  // Ends the open blob, fusing it if it holds more than one routine.
   auto close = [&] {
-    if (sequence.size() > 1)
-      fuse(sequence);
-    sequence.clear();
+    if (blob.size() > 1)
+      fuse(blob);
+    blob.clear();
+    inBlob.clear();
   };
+
   for (Operation &op : llvm::make_early_inc_range(block)) {
     auto routine = dyn_cast<RoutineOp>(op);
-    if (!routine) {
+    if (routine && canJoinBlob(routine, symbols, invariant)) {
+      auto device = MO::getDeviceOrDefaultAny(routine);
+      if (!blob.empty() && device != blobDevice)
+        close();
+      blobDevice = device;
+      blob.push_back(routine);
+      inBlob.insert(op.result_begin(), op.result_end());
+      if (isReadOutside(routine, symbols, invariant))
+        close();
+      continue;
+    }
+    // A blob forms within one block and never spans blocks, so control flow
+    // and `mo.parallel` keep working with blobs: the open blob ends here, and
+    // each of their blocks forms its own.
+    if (isa<RegionBranchOpInterface, MO::ParallelOp>(op)) {
+      close();
       for (Region &region : op.getRegions()) {
         for (Block &nested : region) {
           if (sortTopologically(&nested))
@@ -265,16 +299,13 @@ void formInBlock(Block &block, SymbolTable &symbols,
       }
       continue;
     }
-    // A routine with no outputs stays out too.
-    if (!canJoinBlob(routine, symbols) ||
-        llvm::all_of(routine.getOutputs(), isInvariant))
-      continue;
-    if (!sequence.empty() && extendsSequence(sequence.back(), routine)) {
-      sequence.push_back(routine);
-      continue;
-    }
-    close();
-    sequence.push_back(routine);
+    // Holds by construction: `isReadOutside` ended the blob at any member with
+    // a reader that can't join it, including one nested in a region.
+    assert(
+        (op.hasTrait<OpTrait::IsTerminator>() ||
+         llvm::none_of(readValues(op),
+                       [&](Value value) { return inBlob.contains(value); })) &&
+        "an op outside the open blob reads its values");
   }
   close();
 }
@@ -287,7 +318,8 @@ struct FormGraphBlobsPass
     // The kernel decls sit at the top of the module, beside the graphs, so the
     // pass runs on the module rather than on each graph.
     ModuleOp module = getOperation();
-    SymbolTable symbols(module);
+    SymbolTable &symbols =
+        getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
     for (auto graph : module.getOps<MO::GraphOp>()) {
       // A device graph captures each launch as its own node.
       if (graph.getIsDeviceGraph())
