@@ -19,7 +19,14 @@ The layouts and values are transcribed from `<sys/socket.h>`,
 from std.ffi import c_char, c_int
 from std.sys import size_of
 
-from .inet import SockaddrIn, SockaddrIn6, in6_addr, in_addr, in_port_t
+from .inet import (
+    SockaddrIn,
+    SockaddrIn6,
+    SockaddrStorage,
+    in6_addr,
+    in_addr,
+    in_port_t,
+)
 
 comptime sa_family_t = UInt8
 """C `sa_family_t`: the address family (`AF_*`) of a socket address."""
@@ -164,7 +171,7 @@ comptime _SS_PAD2SIZE = (
 
 
 @fieldwise_init
-struct sockaddr_storage(Copyable, Writable):
+struct sockaddr_storage(SockaddrStorage, Writable):
     """C `struct sockaddr_storage`: sized and aligned to hold any address.
 
     Used as the out-parameter for calls that return a peer address
@@ -179,3 +186,13 @@ struct sockaddr_storage(Copyable, Writable):
     var __ss_pad1: Array[c_char, _SS_PAD1SIZE]
     var __ss_align: Int64
     var __ss_pad2: Array[c_char, _SS_PAD2SIZE]
+
+    def __init__(out self):
+        self.ss_len = 0
+        self.ss_family = 0
+        self.__ss_pad1 = Array[c_char, _SS_PAD1SIZE](fill=0)
+        self.__ss_align = 0
+        self.__ss_pad2 = Array[c_char, _SS_PAD2SIZE](fill=0)
+
+    def family(self) -> c_int:
+        return self.ss_family.cast[c_int.dtype]()

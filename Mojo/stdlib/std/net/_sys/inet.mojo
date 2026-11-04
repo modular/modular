@@ -97,3 +97,14 @@ trait SockaddrIn6(Deinitable, ImplicitlyCopyable):
 
     def scope_id(self) -> UInt32:
         ...
+
+
+trait SockaddrStorage(Copyable, Deinitable):
+    """A platform's C `struct sockaddr_storage`."""
+
+    def __init__(out self):
+        """Zeroes the storage."""
+        ...
+
+    def family(self) -> c_int:
+        ...
