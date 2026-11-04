@@ -1177,7 +1177,10 @@ class BenchmarkResult(BaseModel):
             d["lora_metrics"] = self.lora_metrics.to_result_dict()
         # Lightweight steady-state detection diagnostics (no duplicate metric
         # set — scalars only for observability / PERF-2615 telemetry).
-        if self.steady_state_detected is not None:
+        if (
+            self.steady_state_detected is not None
+            or self.steady_state_mode is not None
+        ):
             d["steady_state_detected"] = self.steady_state_detected
             d["steady_state_window_count"] = self.steady_state_window_count
             d["steady_state_mode"] = self.steady_state_mode

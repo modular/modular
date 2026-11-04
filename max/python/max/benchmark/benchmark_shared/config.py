@@ -772,6 +772,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
+    steady_state_filtering: bool = Field(
+        default=True,
+        description="Report metrics over an auto-detected steady-state window, with per-request latency outlier rejection. With --no-steady-state-filtering, report over every successful request instead (after manual filters such as --skip-first-n-requests and --skip-last-n-requests) and with no outlier rejection.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
     chat_warmup_delay_ms: float = Field(
         default=0.0,
         description="Delay between starting chat sessions.",
