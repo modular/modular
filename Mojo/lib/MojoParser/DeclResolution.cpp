@@ -2804,7 +2804,7 @@ LogicalResult AliasASTDecl::resolveSignature(Lexer &lexer) {
   ASTType type;
   if (bodyTypeExpr) {
     IREmitter emitter(sigDecl, EC_Type);
-    type = emitter.emitExprType(bodyTypeExpr, TypeStrictness::kIncomplete);
+    type = emitter.emitExprType(bodyTypeExpr, TypeStrictness::kParametric);
     if (!type)
       return failure();
   }
@@ -2818,26 +2818,9 @@ LogicalResult AliasASTDecl::resolveSignature(Lexer &lexer) {
       return failure();
 
     IREmitter emitter(sigDecl, EC_AliasValue);
-
-    // Parametric aliases become generator types whose *body* type may still
-    // mention unbound / infer-only parameters (e.g. `Origin[mut=mut]` leaves
-    // `_mlir_origin` open). That type annotation maybe dependent on the
-    // parameters of the comptime.
-    ASTType emissionType = type;
-    if (type && type.hasUnboundParameters()) {
-      if (paramSignature.paramDeclAttrs.empty()) {
-        p.emitError(initExpr->getLoc(),
-                    "cannot construct a value with parametric type: ")
-            << type << initExpr->getRange();
-        return failure();
-      }
-      emissionType = {};
-    }
-
     // Emit the value and convert to the expected type if we know it and it is
     // concrete enough to convert into.
-    PValue rhsValue =
-        emitter.emitExprPValue(initExpr, EC_AliasValue, emissionType);
+    PValue rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
     if (!rhsValue)
       return failure();
 

@@ -1410,7 +1410,7 @@ def pack_error[Trait: type_of(AnyType), //, *element_types: Trait]():
     pass
 
 
-# expected-error @+1 {{cannot construct a value with parametric type: 'Origin[mut=_]'}}
+# expected-error @+1 {{'Origin[mut=_]' is not concrete, use '[]' to bind missing parameters}}
 comptime A: Origin = AnyOrigin
 
 
