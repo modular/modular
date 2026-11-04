@@ -159,6 +159,17 @@ indexer's gate is the load-bearing one -- its scorer sizes split-K from the
 batch size, so a request really is decomposed differently depending on its
 neighbours, and its scores pick the blocks attention reads.
 
+`megaffn_nvfp4` adds a contention axis that the other targets lack: every case
+runs alone on an idle GPU, where all CTAs of a persistent kernel start at
+once. Its `spin_*` fields queue a neighbour on a second stream before each
+launch, either an idle kernel holding `spin_sms` SMs or back-to-back 2-CTA
+grouped GEMMs, so clusters start late and land on SMs that earlier clusters
+freed. It checks every launch with the kernel's own arrival-slot audit and a
+byte-exact compare against the unfused chain, under the default `diff`
+oracle. The production failure it was built after (a cross-CTA ordering bug
+in the mirrored scheduler rings) did not reproduce here: treat a green run as
+no evidence about such races, and a red one as a finding.
+
 Targets that fuzz the input value distribution expose a `dist` spec field
 (uniform/normal/sparse/large/all-equal); NaN/Inf specials are reachable but kept
 out of the auto-mix — they drive the `contract` oracle, not `ref`.

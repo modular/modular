@@ -132,6 +132,16 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "megaffn_nvfp4": FuzzTarget(
+        name="megaffn_nvfp4",
+        bazel_target="//Kernels/test/fuzz:fuzz_mega_ffn_nvfp4.mojo.test",
+        binary="bazel-bin/Kernels/test/fuzz/fuzz_mega_ffn_nvfp4.mojo.test",
+        description=(
+            "standalone NVFP4 MegaFFN under SM contention: trap, arrival"
+            " audit and byte-exact compare vs the two-launch chain"
+        ),
+        default_oracle="diff",
+    ),
     "moe_indices": FuzzTarget(
         name="moe_indices",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_moe_indices.mojo.test"),
