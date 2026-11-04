@@ -69,7 +69,6 @@ from kv_cache.types import KVCacheT
 from layout import (
     Coord,
     Idx,
-    Layout,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,

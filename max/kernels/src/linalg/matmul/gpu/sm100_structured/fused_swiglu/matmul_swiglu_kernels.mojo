@@ -68,7 +68,6 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from layout import (
     Coord,
-    Layout,
     RowMajorLayout,
     TensorEngine,
     TileTensor,

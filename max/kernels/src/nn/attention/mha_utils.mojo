@@ -41,7 +41,6 @@ from layout import (
     Coord,
     DefaultEngine,
     ImmTileTensor,
-    Layout,
     TensorLayout,
     TileTensor,
     row_major,

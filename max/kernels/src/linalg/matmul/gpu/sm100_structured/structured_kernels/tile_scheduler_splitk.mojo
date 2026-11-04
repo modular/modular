@@ -23,7 +23,6 @@ from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from layout import (
     Coord,
     Idx,
-    Layout,
     TensorEngine,
     TensorLayout,
     TileTensor,

@@ -49,7 +49,6 @@ from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
-    Layout,
     DefaultEngine,
     TensorLayout,
     TensorEngine,

@@ -32,7 +32,6 @@ from max.gpu.host.info import is_gpu
 from kv_cache.types import KVCacheStaticParams, KVCollectionT
 from layout import (
     Coord,
-    Layout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,

@@ -59,7 +59,6 @@ from layout import (
     DefaultEngine,
     ComptimeInt,
     Coord,
-    Layout,
     RowMajorLayout,
     TensorEngine,
     TensorLayout,

@@ -21,7 +21,6 @@ from max.gpu import WARP_SIZE, thread_idx, warp_id
 from max.gpu.host import DeviceContext
 from layout import (
     Coord,
-    Layout,
     TensorLayout,
     TileTensor,
     row_major,

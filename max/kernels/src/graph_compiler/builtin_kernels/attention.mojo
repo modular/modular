@@ -40,7 +40,6 @@ from kv_cache.paged_sparse_kv_index_remap import (
 from kv_cache.types import KVCacheStaticParams
 from linalg.mx_format import MXFormat
 from layout import (
-    Layout,
     TileTensor,
     RowMajorLayout,
     UNKNOWN_VALUE,

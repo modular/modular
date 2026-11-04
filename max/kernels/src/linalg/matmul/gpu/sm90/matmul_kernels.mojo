@@ -48,7 +48,6 @@ from max.gpu.memory import (
 from layout import (
     Coord,
     Idx,
-    Layout,
     MixedLayout,
     DefaultEngine,
     TensorLayout,
@@ -239,7 +238,8 @@ struct HopperMatmulSM90Kernel[
     a_layout: TensorLayout,
     b_layout: TensorLayout,
     c_layout: TensorLayout,
-    c_smem_layout: Layout,
+    c_smem_rows: Int,
+    c_smem_cols: Int,
     block_tile_shape: Tuple[Int, Int, Int],
     wgmma_shape: Tuple[Int, Int, Int],
     cluster_shape: Tuple[Int, Int, Int],
@@ -273,7 +273,8 @@ struct HopperMatmulSM90Kernel[
         a_layout: Memory layout of the A matrix.
         b_layout: Memory layout of the B matrix.
         c_layout: Memory layout of the C matrix.
-        c_smem_layout: Shared memory layout for the output tile.
+        c_smem_rows: Row count of the output tile's shared memory layout.
+        c_smem_cols: Column count of the output tile's shared memory layout.
         block_tile_shape: Tile dimensions `[M, N, K]` processed by each
             thread block.
         wgmma_shape: Dimensions for each WGMMA instruction `[M, N, K]`.
@@ -367,8 +368,8 @@ struct HopperMatmulSM90Kernel[
         Self.BM,
         Self.BN,
         Self.BK,
-        Self.c_smem_layout.shape[0].value(),  # WG_BM
-        Self.c_smem_layout.shape[1].value(),  # WG_BN
+        Self.c_smem_rows,  # WG_BM
+        Self.c_smem_cols,  # WG_BN
         Self.num_pipeline_stages,
         Self.k_group_size,
         128,  # swizzle_bytes (matches TensorMapSwizzle.SWIZZLE_128B default)

@@ -21,7 +21,6 @@ from std.sys.info import align_of, simd_width_of
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (
-    Layout,
     RowMajorLayout,
     TileTensor,
     UNKNOWN_VALUE,
