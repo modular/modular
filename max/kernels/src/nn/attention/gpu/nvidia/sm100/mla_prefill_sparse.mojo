@@ -49,7 +49,7 @@ from max.gpu.sync import (
     cp_async_bulk_wait_group,
 )
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.primitives.grid_controls import (
     PDL,
@@ -1630,8 +1630,5 @@ def mla_prefill_sparse[
             grid_dim=(config.cta_group * num_q_rows, 1, 1),
             block_dim=(config.num_threads, 1, 1),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_size)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )

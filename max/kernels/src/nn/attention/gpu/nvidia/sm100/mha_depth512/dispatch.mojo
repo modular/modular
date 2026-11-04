@@ -20,7 +20,7 @@ from block_idx.x >> 1.
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from max.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
+from max.gpu.host import DeviceContext, Dim, DeviceBuffer
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
@@ -371,9 +371,6 @@ def mha_sm100_depth512_dispatch[
                         block_dim=(num_threads, 1, 1),
                         cluster_dim=Dim(2, 1, 1),
                         shared_mem_bytes=smem_use,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            UInt32(smem_use)
-                        ),
                         attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
 
@@ -500,9 +497,6 @@ def mha_sm100_depth512_dispatch[
                         block_dim=(num_threads, 1, 1),
                         cluster_dim=Dim(2, 1, 1),
                         shared_mem_bytes=smem_use,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            UInt32(smem_use)
-                        ),
                         attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
 

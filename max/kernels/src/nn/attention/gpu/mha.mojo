@@ -58,7 +58,6 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
 from max.gpu.host import Dim as LaunchDim
-from max.gpu.host import FuncAttribute
 from max.gpu.host.info import A100, H100, GPUInfo, _is_sm10x_gpu
 from max.gpu.memory import (
     async_copy_commit_group,
@@ -1550,9 +1549,6 @@ def flash_attention_dispatch[
                     grid_dim=grid_dim,
                     block_dim=(config.num_threads(), 1, 1),
                     shared_mem_bytes=smem_use,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_use)
-                    ),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
         # FA3 decoding impl only support half precision, while fp32 is supported
@@ -1872,14 +1868,6 @@ def flash_attention_dispatch[
                                         ),
                                         block_dim=(num_threads_S, 1, 1),
                                         shared_mem_bytes=shared_mem_bytes if ctx.target.is_nvidia_gpu() else 0,
-                                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                                            UInt32(
-                                                (
-                                                    ctx.default_device_info.shared_memory_per_multiprocessor
-                                                    - 4096
-                                                ) if ctx.target.is_nvidia_gpu() else 0
-                                            )
-                                        ),
                                         attributes=pdl_launch_attributes(
                                             PDLLevel.ON
                                         ),

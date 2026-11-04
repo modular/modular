@@ -22,7 +22,7 @@ from std.math import ceildiv
 import extensibility
 from extensibility import InputTensor, OutputTensor
 from max.gpu import global_idx, thread_idx
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
 
@@ -74,9 +74,6 @@ def _launch[
         grid_dim=ceildiv(n, BLOCK_THREADS),
         block_dim=BLOCK_THREADS,
         shared_mem_bytes=SMEM_BYTES,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(SMEM_BYTES)
-        ),
     )
 
 

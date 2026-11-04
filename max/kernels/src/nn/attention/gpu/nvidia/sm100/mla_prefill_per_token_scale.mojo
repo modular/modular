@@ -48,7 +48,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceAttribute, DeviceContext
 from max.gpu.compute.arch.tcgen05 import tcgen05_alloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -2268,9 +2268,6 @@ def mla_sm100_prefill_per_token_scale[
             grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
             block_dim=(num_threads, 1, 1),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 

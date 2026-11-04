@@ -44,8 +44,7 @@ from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 
 from std.sys import size_of
 
-from max.gpu.host import DeviceContext, FuncAttribute
-from max.gpu.host.info import B200
+from max.gpu.host import DeviceContext
 from layout.tma_async import create_tensor_tile_im2col
 
 from structured_kernels.tile_types import (
@@ -365,7 +364,6 @@ def _conv2d_fprop_impl[
         act_type, filter_type, out_type, config=config
     ]
     comptime smem_size = size_of[SmemType]()
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     # Instantiate kernel first -- TMA layouts computed from config
     comptime conv_kernel = Conv2dFpropKernel[
@@ -457,9 +455,6 @@ def _conv2d_fprop_impl[
             grid_dim=grid_dim,
             block_dim=(conv_kernel.NUM_THREADS),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     elif has_epilogue_fn:
@@ -474,9 +469,6 @@ def _conv2d_fprop_impl[
             grid_dim=grid_dim,
             block_dim=(conv_kernel.NUM_THREADS),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
@@ -490,9 +482,6 @@ def _conv2d_fprop_impl[
             grid_dim=grid_dim,
             block_dim=(conv_kernel.NUM_THREADS),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
@@ -645,7 +634,6 @@ def conv2d_fprop_with_residual[
         act_type, filter_type, out_type, config=config
     ]
     comptime smem_size = size_of[SmemType]()
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     # Instantiate kernel first -- TMA layouts computed from config
     comptime conv_kernel = Conv2dFpropKernel[
@@ -745,9 +733,6 @@ def conv2d_fprop_with_residual[
             grid_dim=grid_dim,
             block_dim=(conv_kernel.NUM_THREADS),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
@@ -763,9 +748,6 @@ def conv2d_fprop_with_residual[
             grid_dim=grid_dim,
             block_dim=(conv_kernel.NUM_THREADS),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 

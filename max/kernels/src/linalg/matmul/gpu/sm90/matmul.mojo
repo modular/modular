@@ -18,7 +18,7 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
 from layout import (
@@ -700,9 +700,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_size)
-                    ),
                 )
             else:
                 comptime kernel = matmul_kernel_regular[
@@ -735,9 +732,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_size)
-                    ),
                 )
         else:
             var a_tma_op = create_tensor_tile[
@@ -785,9 +779,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_size)
-                    ),
                 )
 
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
@@ -814,9 +805,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(num_threads),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_size)
-            ),
         )
 
 
@@ -1141,9 +1129,6 @@ def warp_specialize_gemm_with_multicasting_splitk[
         ),
         block_dim=(num_threads),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
     )
 
     _ = workspace_data^

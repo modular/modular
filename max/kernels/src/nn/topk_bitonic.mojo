@@ -42,7 +42,7 @@ from max.gpu.primitives.grid_controls import (
 )
 import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
-from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceAttribute, DeviceContext
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.memory import bitcast, unsafe_stack_allocation
 from std.math import ceildiv
@@ -4395,9 +4395,6 @@ def persistent_topk_block_split[
                         grid_dim=total_seq_len,
                         block_dim=_PTOPK_BLOCK,
                         shared_mem_bytes=_HSEL_SMEM_BYTES,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            UInt32(_HSEL_SMEM_BYTES)
-                        ),
                         attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
                     return
@@ -4422,9 +4419,6 @@ def persistent_topk_block_split[
                     grid_dim=total_seq_len,
                     block_dim=_PTOPK_BLOCK,
                     shared_mem_bytes=_HSEL_SMEM_BYTES,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(_HSEL_SMEM_BYTES)
-                    ),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
@@ -4452,9 +4446,6 @@ def persistent_topk_block_split[
                     grid_dim=total_seq_len,
                     block_dim=_PTOPK_BLOCK,
                     shared_mem_bytes=_HSEL_SMEM_BYTES,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(_HSEL_SMEM_BYTES)
-                    ),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
@@ -4479,9 +4470,6 @@ def persistent_topk_block_split[
                 grid_dim=total_seq_len,
                 block_dim=_PTOPK_BLOCK,
                 shared_mem_bytes=_HSEL_SMEM_BYTES,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(_HSEL_SMEM_BYTES)
-                ),
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
             return
@@ -4507,9 +4495,6 @@ def persistent_topk_block_split[
                 grid_dim=total_seq_len,
                 block_dim=_PTOPK_BLOCK,
                 shared_mem_bytes=_HSEL_SMEM_BYTES,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(_HSEL_SMEM_BYTES)
-                ),
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
             return
@@ -4531,9 +4516,6 @@ def persistent_topk_block_split[
             grid_dim=total_seq_len,
             block_dim=_PTOPK_BLOCK,
             shared_mem_bytes=_HSEL_SMEM_BYTES,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(_HSEL_SMEM_BYTES)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         return

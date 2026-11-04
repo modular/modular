@@ -27,7 +27,7 @@ from max.gpu.primitives.cluster import (
     cluster_arrive_relaxed,
     cluster_sync,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu import block_id_in_cluster
@@ -1991,9 +1991,6 @@ def _create_tma_and_launch[
     ](ctx, sfb_4d_tensor)
 
     # Shared memory
-    # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
     comptime SmemType = B200BlockScaledMatmulSmem[
         a_type,
         b_type,
@@ -2086,9 +2083,6 @@ def _create_tma_and_launch[
             32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
         ),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
         attributes=pdl_launch_attributes(pdl_level),
     )
 

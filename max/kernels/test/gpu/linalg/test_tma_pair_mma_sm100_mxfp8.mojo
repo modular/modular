@@ -26,7 +26,7 @@ from max.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync_with_mask,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -745,9 +745,6 @@ def sm100_blockscaled_mxfp8_cta_pair[
         ),
         block_dim=(128),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
     )
 
 

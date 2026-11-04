@@ -41,7 +41,7 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from max.gpu.compute.mma import mma as gpu_mma
-from max.gpu.host import DeviceContext, FuncAttribute, default_accelerator
+from max.gpu.host import DeviceContext, default_accelerator
 from max.gpu.intrinsics import AMDBufferResource, permlane_swap, readfirstlane
 from max.gpu.sync import barrier, s_waitcnt
 from max.gpu.memory import external_memory
@@ -1084,7 +1084,6 @@ def fp8_index[
         comptime smem_use = size_of[
             IndexSmemStorage[dtype, num_heads, depth, BN]
         ]()
-        comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
 
         comptime kernel = fp8_index_kernel[
             dtype,
@@ -1114,9 +1113,6 @@ def fp8_index[
             ),
             block_dim=(16, 8, 1),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_available)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 

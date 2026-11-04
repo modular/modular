@@ -85,7 +85,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_st,
     tcgen05_store_wait,
 )
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import (
     TMADescriptor,
     TensorMapSwizzle,
@@ -1257,7 +1257,4 @@ def ssd_out_sm100(
         grid_dim=min(SMS, items),
         block_dim=THREADS,
         shared_mem_bytes=SMEM_BYTES,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(SMEM_BYTES)
-        ),
     )

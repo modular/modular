@@ -95,7 +95,6 @@ from max.gpu.host import (
     DeviceAttribute,
     DeviceBuffer,
     DeviceContext,
-    FuncAttribute,
 )
 from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import (
@@ -3090,8 +3089,5 @@ def fp8_index_score_sm100_prefill[
         ),
         block_dim=CFG.nthreads,
         shared_mem_bytes=smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_bytes)
-        ),
         attributes=pdl_launch_attributes(PDLLevel.ON),
     )

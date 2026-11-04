@@ -40,7 +40,6 @@ from max.gpu.sync import barrier, schedule_barrier
 from max.gpu.host import (
     DeviceAttribute,
     DeviceContext,
-    FuncAttribute,
     get_gpu_target,
 )
 from max.gpu.host.info import B200
@@ -5253,9 +5252,6 @@ def _enqueue_gemm_mma_cpasync[
             grid_dim=(grid_x, grid_y, batch_size),
             block_dim=TOTAL_THREADS,
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(_MMA_CPASYNC_SMEM_BYTES)
-            ),
             attributes=pdl_launch_attributes(pdl_level),
         )
     elif has_compute_fn:
@@ -5289,9 +5285,6 @@ def _enqueue_gemm_mma_cpasync[
             grid_dim=(grid_x, grid_y, batch_size),
             block_dim=TOTAL_THREADS,
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(_MMA_CPASYNC_SMEM_BYTES)
-            ),
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
@@ -5323,8 +5316,5 @@ def _enqueue_gemm_mma_cpasync[
             grid_dim=(grid_x, grid_y, batch_size),
             block_dim=TOTAL_THREADS,
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(_MMA_CPASYNC_SMEM_BYTES)
-            ),
             attributes=pdl_launch_attributes(pdl_level),
         )

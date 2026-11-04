@@ -36,7 +36,7 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -1056,9 +1056,6 @@ def _mha_sm90_enqueue[
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 

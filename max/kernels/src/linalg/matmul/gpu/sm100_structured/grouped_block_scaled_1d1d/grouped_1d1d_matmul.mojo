@@ -35,7 +35,7 @@ from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from max.gpu.host import DeviceContext, Dim, FuncAttribute
+from max.gpu.host import DeviceContext, Dim
 from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
@@ -334,9 +334,6 @@ def grouped_matmul_block_scaled[
     comptime SmemType = KernelType.SmemType
     comptime smem_size = size_of[SmemType]()
 
-    # B200 SMEM limit
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
     comptime g1_m128_m = (
         64 if not config.AB_swapped else config.output_tile_shape[0]
     )
@@ -562,9 +559,6 @@ def grouped_matmul_block_scaled[
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
@@ -641,8 +635,5 @@ def grouped_matmul_block_scaled[
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
             attributes=pdl_launch_attributes(pdl_level),
         )

@@ -26,7 +26,6 @@ from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     Dim,
-    FuncAttribute,
 )
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from layout import Coord, TensorEngine
@@ -994,9 +993,6 @@ def mha_sm100_dispatch[
                             block_dim=(num_threads, 1, 1),
                             cluster_dim=cluster_dim,
                             shared_mem_bytes=smem_use,
-                            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                                UInt32(smem_use)
-                            ),
                             attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                         )
 
@@ -1172,9 +1168,6 @@ def mha_sm100_dispatch[
                             block_dim=(num_threads, 1, 1),
                             cluster_dim=cluster_dim,
                             shared_mem_bytes=smem_use,
-                            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                                UInt32(smem_use)
-                            ),
                             attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                         )
 

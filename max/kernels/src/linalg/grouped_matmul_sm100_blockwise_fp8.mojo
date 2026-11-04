@@ -27,7 +27,7 @@ from max.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import (
     block_id_in_cluster,
@@ -853,9 +853,6 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
         ),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 
@@ -2919,9 +2916,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
     )
 
 

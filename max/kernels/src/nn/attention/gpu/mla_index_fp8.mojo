@@ -44,7 +44,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 
 from kv_cache.paged_sparse_kv_index_remap import NoRemap, SparseIndexRemap
 from kv_cache.types import (
@@ -1986,7 +1986,6 @@ def _mla_indexer_paged_impl[
             comptime smem_use = size_of[
                 IndexSmemStorage[dtype, num_heads, depth, BN]
             ]()
-            comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
 
             comptime kernel = fp8_index_kernel[
                 dtype,
@@ -2015,9 +2014,6 @@ def _mla_indexer_paged_impl[
                 ),
                 block_dim=(16, 8, 1),
                 shared_mem_bytes=smem_use,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(smem_available)
-                ),
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 

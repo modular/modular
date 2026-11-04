@@ -41,7 +41,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -1619,9 +1619,6 @@ def multistage_gemm_q[
                         grid_dim=adjusted_config.grid_dim(M, N),
                         block_dim=adjusted_config.block_dim(),
                         shared_mem_bytes=adjusted_smem,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            UInt32(adjusted_smem),
-                        ),
                         attributes=pdl_launch_attributes(pdl_level),
                     )
 
@@ -1651,9 +1648,6 @@ def multistage_gemm_q[
         grid_dim=runtime_config.grid_dim(M, N),
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_usage),
-        ),
         attributes=pdl_launch_attributes(pdl_level),
     )
 
@@ -2347,9 +2341,6 @@ def gpu_qint4_repack_Q4_0[
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_usage)
-        ),
     )
 
 
@@ -2442,7 +2433,4 @@ def gpu_qint4_repack_GPTQ[
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
             shared_mem_bytes=smem_usage,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_usage)
-            ),
         )

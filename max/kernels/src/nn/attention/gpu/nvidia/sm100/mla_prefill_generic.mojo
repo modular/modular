@@ -47,7 +47,7 @@ from nn.attention.gpu.nvidia.common import (
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceAttribute, DeviceContext
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
 from max.gpu.sync import barrier
@@ -2894,9 +2894,6 @@ def _mla_prefill_sm100_valid_length_dispatch[
             grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
             block_dim=(num_threads, 1, 1),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
             attributes=pdl_launch_attributes(MLA_PREFILL_PDL_LEVEL),
         )
 

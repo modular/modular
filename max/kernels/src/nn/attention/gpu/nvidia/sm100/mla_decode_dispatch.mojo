@@ -20,7 +20,7 @@ from std.collections import OptionalReg
 from std.math import ceildiv, clamp, gcd
 from std.sys import get_defined_int, size_of
 from std.utils import StaticTuple
-from max.gpu.host import DeviceBuffer, DeviceContext, Dim, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext, Dim
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     ComptimeInt,
@@ -4448,9 +4448,6 @@ def launch_mla_sm100_decode_enqueue_kernel[
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(config.smem_used)
-        ),
         attributes=pdl_launch_attributes(pdl_level),
     )
 
@@ -4556,9 +4553,6 @@ def launch_mla_sm100_decode_native_fp8[
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(config.smem_used)
-        ),
         attributes=pdl_launch_attributes(pdl_level),
     )
 
@@ -4673,9 +4667,6 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config_g.smem_used,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(config_g.smem_used)
-        ),
         attributes=pdl_launch_attributes(pdl_level),
     )
 
@@ -4788,9 +4779,6 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(config.smem_used)
-        ),
         attributes=pdl_launch_attributes(pdl_level),
     )
 
@@ -5118,9 +5106,6 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
                 block_dim=block_dim,
                 cluster_dim=cluster_dim,
                 shared_mem_bytes=sparse_smem_used,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(sparse_smem_used)
-                ),
                 attributes=pdl_launch_attributes(pdl_level),
             )
         else:
@@ -5150,9 +5135,6 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
                 block_dim=block_dim,
                 cluster_dim=cluster_dim,
                 shared_mem_bytes=sparse_smem_used,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(sparse_smem_used)
-                ),
                 attributes=pdl_launch_attributes(pdl_level),
             )
     else:
@@ -5208,8 +5190,5 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             block_dim=block_dim,
             cluster_dim=cluster_dim,
             shared_mem_bytes=sparse_smem_used,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(sparse_smem_used)
-            ),
             attributes=pdl_launch_attributes(pdl_level),
         )

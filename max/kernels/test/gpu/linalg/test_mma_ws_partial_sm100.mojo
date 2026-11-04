@@ -125,7 +125,7 @@ from std.sys import size_of
 
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import (
@@ -866,9 +866,6 @@ def test_ss_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=QK_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(QK_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_full_buf.to_host()
@@ -897,9 +894,6 @@ def test_ss_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=QK_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(QK_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_deg_buf.to_host()
@@ -927,9 +921,6 @@ def test_ss_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=QK_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(QK_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_ms_buf.to_host()
@@ -961,9 +952,6 @@ def test_ss_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=QK_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(QK_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_st_buf.to_host()
@@ -999,9 +987,6 @@ def test_ss_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=QK_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(QK_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_st_ms_buf.to_host()
@@ -1034,9 +1019,6 @@ def test_ss_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=QK_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(QK_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_st_pd_buf.to_host()
@@ -1144,9 +1126,6 @@ def test_ss_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=QK_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(QK_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_nan_buf.to_host()
@@ -1178,9 +1157,6 @@ def test_ss_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=QK_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(QK_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_st_nan_buf.to_host()
@@ -1214,9 +1190,6 @@ def test_ss_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=QK_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(QK_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_st_nan_ms_buf.to_host()
@@ -1527,9 +1500,6 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=NW_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(NW_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_full_buf.to_host()
@@ -1558,9 +1528,6 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=NW_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(NW_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_deg_buf.to_host()
@@ -1590,9 +1557,6 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=NW_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(NW_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_st_deg_buf.to_host()
@@ -1690,9 +1654,6 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=NW_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(NW_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_nan_buf.to_host()
@@ -1722,9 +1683,6 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=NW_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(NW_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_st_nan_buf.to_host()
@@ -1758,9 +1716,6 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=NW_TOTAL_SMEM,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(NW_TOTAL_SMEM)
-        ),
     )
     ctx.synchronize()
     c_st_nan_ms_buf.to_host()
@@ -2124,9 +2079,6 @@ def _ts_launch[
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=TS_TOTAL_SMEM_BYTES,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(TS_TOTAL_SMEM_BYTES)
-        ),
     )
     ctx.synchronize()
     p_out_buf.to_host()

@@ -21,7 +21,7 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import TileTensor, coord, flatten_leading
 from layout.tma_async import create_tensor_tile
@@ -254,8 +254,5 @@ def grouped_matmul_sm90[
         ),
         block_dim=(num_threads),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
     )
     _ = c_desc_scratch^

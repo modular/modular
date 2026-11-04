@@ -66,7 +66,6 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import (
     DeviceContext,
-    FuncAttribute,
     DeviceBuffer,
     Dim as LaunchDim,
     default_accelerator,
@@ -1314,12 +1313,6 @@ def flare_mla_decoding_dispatch[
                     grid_dim=(1, num_blocks_y, batch_size),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(
-                            ctx.default_device_info.shared_memory_per_multiprocessor
-                            - 4096
-                        )
-                    ),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
             else:
@@ -1366,12 +1359,6 @@ def flare_mla_decoding_dispatch[
                     ),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(
-                            ctx.default_device_info.shared_memory_per_multiprocessor
-                            - 4096
-                        )
-                    ),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
 
@@ -3659,9 +3646,6 @@ def flare_mla_prefill_dispatch[
             grid_dim=grid_dim,
             block_dim=(config.num_threads(), 1, 1),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 

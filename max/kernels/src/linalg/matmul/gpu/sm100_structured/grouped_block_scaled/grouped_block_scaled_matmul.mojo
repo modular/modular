@@ -50,8 +50,7 @@ Usage:
 from std.math import align_up
 from std.sys import size_of
 
-from max.gpu.host import DeviceContext, FuncAttribute
-from max.gpu.host.info import B200
+from max.gpu.host import DeviceContext
 from layout import TileTensor, coord
 
 from structured_kernels.tile_types import create_tma_tile
@@ -509,7 +508,6 @@ def _grouped_block_scaled_matmul_impl[
     ctx.synchronize()
 
     # ===== Shared Memory Size =====
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     # Use GroupedBlockScaledSmem which includes SMEM for TMA descriptors
     comptime SmemType = GroupedBlockScaledSmem[
@@ -568,9 +566,6 @@ def _grouped_block_scaled_matmul_impl[
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
         )
     else:
         # 1SM mode: use linear iteration run()
@@ -600,9 +595,6 @@ def _grouped_block_scaled_matmul_impl[
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
         )
 
 
