@@ -59,6 +59,7 @@ from max.tensor.tensor import Tensor
 
 from .collective_ops import (
     allgather,
+    allgather_gated_residual_rms_norm,
     allgather_rms_norm,
     allreduce_rms_norm,
     allreduce_sum,
@@ -215,6 +216,7 @@ __all__ = [
     "acos",
     "add",
     "allgather",
+    "allgather_gated_residual_rms_norm",
     "allgather_rms_norm",
     "allreduce_rms_norm",
     "allreduce_sum",

@@ -617,6 +617,88 @@ def allgather_rms_norm(
         )(t, gamma, _signal_buffers(mesh))
 
 
+def allgather_gated_residual_rms_norm(
+    branch: Tensor,
+    residual: Tensor,
+    post_weight: Tensor,
+    gate: Tensor,
+    norm_weight: Tensor,
+    post_eps: float,
+    norm_eps: float,
+    temperature: float,
+    gate_eps: float,
+    scale_branch: bool,
+) -> tuple[Tensor, Tensor]:
+    """Gathers a branch's columns and joins it to the residual stream.
+
+    See :func:`max.graph.ops.allgather_gated_residual_rms_norm`.
+
+    Args:
+        branch: A ``[rows, cols]`` bfloat16 tensor
+            :class:`~max.tensor.sharding.Sharded` along axis 1 on a
+            one-dimensional mesh of accelerators.
+        residual: The residual stream, replicated on that mesh.
+        post_weight: The branch's scale weight, replicated.
+        gate: The residual gate's logits, replicated.
+        norm_weight: The next pre-norm's weight, replicated.
+        post_eps: The branch norm's epsilon.
+        norm_eps: The next pre-norm's epsilon.
+        temperature: The residual gate's temperature.
+        gate_eps: The floor under the residual coefficient's root.
+        scale_branch: Whether the branch is scaled by ``1 + post_weight``
+            before its norm.
+
+    Returns:
+        ``(stream, normed)``, each replicated.
+    """
+    mesh = branch.mesh
+    if mesh.ndim != 1 or branch.placements[0] != Sharded(1):
+        raise ValueError(
+            "allgather_gated_residual_rms_norm needs a branch sharded along "
+            f"axis 1 on a one-dimensional mesh, got {branch.mapping}."
+        )
+
+    def run(
+        shards: list[Tensor],
+        residuals: list[Tensor],
+        post_weights: list[Tensor],
+        gates: list[Tensor],
+        norm_weights: list[Tensor],
+        signal_buffers: list[BufferValue] | None,
+    ) -> list[tuple[TensorValue, TensorValue]]:
+        if signal_buffers is None:
+            raise ValueError(
+                "allgather_gated_residual_rms_norm runs only on accelerators."
+            )
+        stream, normed = ops.allgather_gated_residual_rms_norm(
+            shards,
+            signal_buffers,
+            residuals,
+            post_weights,
+            gates,
+            norm_weights,
+            post_eps,
+            norm_eps,
+            temperature,
+            gate_eps,
+            scale_branch,
+        )
+        return list(zip(stream, normed, strict=True))
+
+    replicated = DeviceMapping(mesh, (Replicated(),))
+    with ensure_context():
+        return call_on_mesh(
+            run, mesh, (0,), out_specs=[replicated, replicated]
+        )(
+            branch,
+            residual,
+            post_weight,
+            gate,
+            norm_weight,
+            _signal_buffers(mesh),
+        )
+
+
 def _local_split(
     t: Tensor, mesh_axes: Sequence[int], target: Sharded
 ) -> Tensor:

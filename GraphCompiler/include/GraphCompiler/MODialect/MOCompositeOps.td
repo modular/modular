@@ -716,6 +716,49 @@ def MOComposite_DistributedAllGatherRMSNormOp : MO_DistributedOp<"composite.dist
   }];
 }
 
+def MOComposite_DistributedAllGatherGatedResidualRMSNormOp : MO_DistributedOp<"composite.distributed.allgather_gated_residual_rms_norm", [
+  MO_MultiDevice,
+  MO_CompositeOpTrait
+]> {
+  string cppNamespace = MODialect.cppNamespace # "::Composite";
+  let summary = "Fused column AllGather + gated residual boundary across N devices.";
+  let description = [{
+    Gathers each device's column shard of a branch (`[rows, cols / N]`, in
+    rank order) and joins it to that device's residual stream in the same
+    launch, as `gated_residual_rms_norm` does with a whole branch: the
+    branch's weightless norm (after scaling by `1 + postWeight` when
+    `scale_branch`), the gate's mix, and the next pre-norm, scaled by
+    `1 + normWeight`. Returns the new stream (`output`) and its norm
+    (`outNormed`), replicated. One full-world group, bf16 activations.
+  }];
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    Variadic<MO_Tensor>:$residual,
+    Variadic<MO_Tensor>:$postWeight,
+    Variadic<MO_Tensor>:$gate,
+    Variadic<MO_Tensor>:$normWeight,
+    MO_Chain:$inChain,
+    MO_F32ScalarAttr:$post_eps,
+    MO_F32ScalarAttr:$norm_eps,
+    MO_F32ScalarAttr:$temperature,
+    MO_F32ScalarAttr:$gate_eps,
+    BoolAttr:$scale_branch
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$output,
+    Variadic<MO_Tensor>:$outNormed,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)`
+    `{` `post_eps` `=` $post_eps `,` `norm_eps` `=` $norm_eps `,`
+    `temperature` `=` $temperature `,` `gate_eps` `=` $gate_eps `,`
+    `scale_branch` `=` $scale_branch `}` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
 def MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op : MO_DistributedOp<"composite.distributed.allgather_rms_norm_quant_mxfp8", [
   MO_MultiDevice,
   MO_CompositeOpTrait

@@ -515,3 +515,104 @@ def allgather_rms_norm_quant_mxfp6(
     scales = [res.tensor for res in results[2 * num_devices : 3 * num_devices]]
     residual = [res.tensor for res in results[3 * num_devices :]]
     return normed, quant, scales, residual
+
+
+def allgather_gated_residual_rms_norm(
+    inputs: Iterable[TensorValueLike],
+    signal_buffers: Iterable[BufferValueLike],
+    residuals: Iterable[TensorValueLike],
+    post_weights: Iterable[TensorValueLike],
+    gates: Iterable[TensorValueLike],
+    norm_weights: Iterable[TensorValueLike],
+    post_eps: float,
+    norm_eps: float,
+    temperature: float,
+    gate_eps: float,
+    scale_branch: bool,
+) -> tuple[list[TensorValue], list[TensorValue]]:
+    """Gathers a branch's column shards and joins it to the residual stream.
+
+    Each device holds ``[rows, cols / N]``, a contiguous block of a branch's
+    columns in rank order. One launch per device gathers the whole branch
+    ``b`` and computes, as a learned residual gate joins a branch:
+
+    .. code-block:: text
+
+        n = rms_norm(b * (1 + post_weight))       # weightless; scale_branch
+        stream = alpha * residual + beta * n      # float32, rounded once
+        normed = rms_norm(stream) * (1 + norm_weight)
+
+    with ``beta = sigmoid(gate / temperature)`` and
+    ``alpha = sqrt(max(sigmoid(-gate / temperature) * (1 + beta), gate_eps))``.
+    Each step rounds to bfloat16 where that graph does.
+
+    Args:
+        inputs: The branch's column shards, one per device.
+        signal_buffers: Device buffer values used for synchronization.
+        residuals: Each device's incoming residual stream ``[rows, cols]``.
+        post_weights: Each device's branch scale weight ``[cols]``; not read
+            unless ``scale_branch``.
+        gates: Each device's residual gate logits ``[cols]``.
+        norm_weights: Each device's next pre-norm weight ``[cols]``.
+        post_eps: The branch norm's epsilon.
+        norm_eps: The next pre-norm's epsilon.
+        temperature: The residual gate's temperature.
+        gate_eps: The floor under the residual coefficient's root.
+        scale_branch: Whether the branch is scaled by ``1 + post_weight``
+            before its norm.
+
+    Returns:
+        ``(stream, normed)``, each one ``[rows, cols]`` tensor per device.
+
+    Raises:
+        ValueError: If the shards differ in shape, or on any condition
+            :obj:`allgather_rms_norm` rejects.
+    """
+    inputs, signal_buffers, _, devices, num_devices, _ = _validate_ag_rms_norm(
+        inputs, signal_buffers, post_weights, None
+    )
+    if any(t.shape != inputs[0].shape for t in inputs):
+        raise ValueError(
+            "allgather_gated_residual_rms_norm requires equal column shards. "
+            f"Got: {inputs=}"
+        )
+    per_device = [
+        _tensor_values(v)
+        for v in (residuals, post_weights, gates, norm_weights)
+    ]
+    if any(len(v) != num_devices for v in per_device):
+        raise ValueError(
+            "allgather_gated_residual_rms_norm takes one residual and one of "
+            "each weight per device."
+        )
+    rows, cols = inputs[0].shape
+    out_types = [
+        TensorType(
+            dtype=inputs[0].dtype, shape=[rows, cols * num_devices], device=d
+        )
+        for d in devices
+    ]
+    graph = Graph.current
+    in_chain = graph.device_chains.merge_for(devices)
+    *results, out_chain = graph._add_op_generated(
+        mo.CompositeDistributedAllgatherGatedResidualRmsNormOp,
+        out_types,
+        out_types,
+        _ChainType(),
+        inputs,
+        signal_buffers,
+        *per_device,
+        in_chain,
+        _float32_attr(post_eps),
+        _float32_attr(norm_eps),
+        _float32_attr(temperature),
+        _float32_attr(gate_eps),
+        BoolAttr(scale_branch),
+    )
+    graph._update_chain(out_chain)
+    for device in devices:
+        graph.device_chains[device] = out_chain
+    return (
+        [res.tensor for res in results[:num_devices]],
+        [res.tensor for res in results[num_devices:]],
+    )

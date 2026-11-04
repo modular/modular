@@ -100,6 +100,7 @@ M_DeviceRefAttr           # DeviceRefAttr
 M_PrimitiveArrayAttr      # PrimitiveArrayAttr; referenced by ArrayElementsAttr
 
 # --- mo (GraphCompiler/MODialect/**.td) ---
+MOComposite_DistributedAllGatherGatedResidualRMSNormOp # CompositeDistributedAllgatherGatedResidualRmsNormOp
 MOComposite_DistributedAllGatherRMSNormOp            # CompositeDistributedAllgatherRmsNormOp
 MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op  # CompositeDistributedAllgatherRmsNormQuantMxfp8Op
 MOComposite_DistributedAllGatherRMSNormQuantMXFP6Op  # CompositeDistributedAllgatherRmsNormQuantMxfp6Op

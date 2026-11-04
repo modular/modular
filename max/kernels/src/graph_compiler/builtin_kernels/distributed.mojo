@@ -39,6 +39,7 @@ from comm.allgather_rmsnorm import (
     AG_QUANT_ONLY_THRESHOLD,
     _dispatch_ag_norm,
     _dispatch_ag_norm_quant,
+    allgather_gated_residual_rmsnorm,
     allgather_rmsnorm,
 )
 from linalg.block_scaled_quantization import (
@@ -2086,6 +2087,171 @@ struct DistributedAllGatherRMSNorm:
         _launch_device_collective[num_devices](
             launch_fused_ag_norm, dev_ctxs_input.copy()
         )
+
+
+@extensibility.register(
+    "mo.composite.distributed.allgather_gated_residual_rms_norm"
+)
+struct DistributedAllGatherGatedResidualRMSNorm:
+    """Registers `mo.composite.distributed.allgather_gated_residual_rms_norm`.
+    """
+
+    @staticmethod
+    def execute[
+        Streams: TypeList[Trait=Output & Tensor, ...],
+        Normed: TypeList[Trait=Output & Tensor, ...],
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        Sigs: TypeList[Trait=MutableInput & Tensor, ...],
+        Residuals: TypeList[Trait=Input & Tensor, ...],
+        PostWeights: TypeList[Trait=Input & Tensor, ...],
+        Gates: TypeList[Trait=Input & Tensor, ...],
+        NormWeights: TypeList[Trait=Input & Tensor, ...],
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+        post_eps: Float32,
+        norm_eps: Float32,
+        temperature: Float32,
+        gate_eps: Float32,
+        scale_branch: Bool,
+    ](
+        outputs_stream: TensorTuple[*Streams],
+        outputs_normed: TensorTuple[*Normed],
+        inputs: TensorTuple[*Ins],
+        signal_buffers: TensorTuple[*Sigs],
+        residuals: TensorTuple[*Residuals],
+        post_weights: TensorTuple[*PostWeights],
+        gates: TensorTuple[*Gates],
+        norm_weights: TensorTuple[*NormWeights],
+        dev_ctxs_input: DeviceContextArray[_, _],
+    ) raises:
+        """Gathers a branch's column shards and joins it to each device's stream.
+
+        Parameters:
+            Streams: The element types of `outputs_stream` (inferred).
+            Normed: The element types of `outputs_normed` (inferred).
+            Ins: The element types of `inputs` (inferred).
+            Sigs: The element types of `signal_buffers` (inferred).
+            Residuals: The element types of `residuals` (inferred).
+            PostWeights: The element types of `post_weights` (inferred).
+            Gates: The element types of `gates` (inferred).
+            NormWeights: The element types of `norm_weights` (inferred).
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+            post_eps: The branch norm's epsilon.
+            norm_eps: The next pre-norm's epsilon.
+            temperature: The gate's temperature.
+            gate_eps: The floor under the residual coefficient's root.
+            scale_branch: Whether the branch is scaled by `1 + post_weight`
+                before its norm.
+
+        Args:
+            outputs_stream: Per-device new residual stream `[rows, cols]`.
+            outputs_normed: Per-device next pre-norm of it `[rows, cols]`.
+            inputs: Per-device branch column shards `[rows, cols / N]`.
+            signal_buffers: Per-device synchronization buffers.
+            residuals: Per-device incoming residual stream `[rows, cols]`.
+            post_weights: Per-device branch input scale weight `[cols]`.
+            gates: Per-device residual gate logits `[cols]`.
+            norm_weights: Per-device next pre-norm weight `[cols]`.
+            dev_ctxs_input: Device contexts for participating GPUs.
+        """
+        comptime num_devices = len(Ins)
+        comptime dtype = Ins[0].dtype
+        comptime gate_dtype = Gates[0].dtype
+        comptime assert len(Sigs) == num_devices, (
+            "expected one signal buffer per allgather_gated_residual_rms_norm"
+            " input"
+        )
+        _check_tensor_tuple[num_devices, dtype, 2, *Ins]()
+        _check_tensor_tuple[num_devices, dtype, 2, *Streams]()
+        _check_tensor_tuple[num_devices, dtype, 2, *Normed]()
+        _check_tensor_tuple[num_devices, dtype, 2, *Residuals]()
+        _check_tensor_tuple[num_devices, .uint8, 1, *Sigs]()
+        _check_tensor_tuple[num_devices, dtype, 1, *PostWeights]()
+        _check_tensor_tuple[num_devices, gate_dtype, 1, *Gates]()
+        _check_tensor_tuple[num_devices, dtype, 1, *NormWeights]()
+        _check_signal_buffer_size(Int(signal_buffers[0].shape().product()), 0)
+
+        comptime InputTensorType = TileTensor[
+            dtype,
+            TileLayout[
+                shape_types=DynamicCoord[.int64, 2].element_types,
+                stride_types=DynamicCoord[.int64, 2].element_types,
+            ],
+            ImmUntrackedOrigin,
+        ]
+        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
+        comptime for i in range(num_devices):
+            comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[dtype]().make_dynamic[.int64]()
+            )
+
+        def rank_sig[
+            i: Int
+        ]() {imm signal_buffers} -> Pointer[Signal, MutAnyOrigin]:
+            comptime assert conforms_to(
+                type_of(signal_buffers[i]), TileTensorable
+            )
+            return (
+                signal_buffers[i]
+                .to_tile_tensor()
+                .ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
+
+        var rank_sigs = Array[_, num_devices](fill_with_unrolled=rank_sig)
+        _check_uniform_cols[op="allgather_gated_residual_rms_norm"](inputs)
+
+        @inline(.always)
+        def launch[
+            index: Int
+        ]() raises {
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm residuals,
+            imm post_weights,
+            imm gates,
+            imm norm_weights,
+            imm outputs_stream,
+            imm outputs_normed,
+        }:
+            comptime assert conforms_to(
+                type_of(residuals[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(post_weights[index]), TileTensorable
+            )
+            comptime assert conforms_to(type_of(gates[index]), TileTensorable)
+            comptime assert conforms_to(
+                type_of(norm_weights[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(outputs_stream[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(outputs_normed[index]), TileTensorable
+            )
+            allgather_gated_residual_rmsnorm[scale_branch=scale_branch](
+                in_tensors,
+                residuals[index].to_tile_tensor[dtype](),
+                post_weights[index].to_tile_tensor[dtype](),
+                gates[index].to_tile_tensor[gate_dtype](),
+                norm_weights[index].to_tile_tensor[dtype](),
+                outputs_stream[index].to_tile_tensor[dtype](),
+                outputs_normed[index].to_tile_tensor[dtype](),
+                post_eps,
+                norm_eps,
+                temperature,
+                gate_eps,
+                rank_sigs,
+                dev_ctxs_input[index],
+                index,
+            )
+
+        _launch_device_collective[num_devices](launch, dev_ctxs_input.copy())
 
 
 @extensibility.register(

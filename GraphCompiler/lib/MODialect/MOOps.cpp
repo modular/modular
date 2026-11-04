@@ -4857,6 +4857,18 @@ void Composite::DistributedAllGatherRMSNormOp::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// DistributedAllGatherGatedResidualRMSNormOp
+//===----------------------------------------------------------------------===//
+
+void Composite::DistributedAllGatherGatedResidualRMSNormOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  MutableOperandRange signalBuffers = getSignalBuffersMutable();
+
+  for (auto &sig : signalBuffers)
+    effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+//===----------------------------------------------------------------------===//
 // DistributedAllGatherRMSNormQuantMXFP8Op
 //===----------------------------------------------------------------------===//
 

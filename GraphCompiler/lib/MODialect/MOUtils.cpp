@@ -31,6 +31,7 @@ bool M::MO::kernelRequiresSyncLaunch(Operation *op) {
          isa<Composite::DistributedMatmulReduceScatterSumOp>(op) ||
          isa<Composite::DistributedReduceScatterRMSNormOp>(op) ||
          isa<Composite::DistributedAllGatherRMSNormOp>(op) ||
+         isa<Composite::DistributedAllGatherGatedResidualRMSNormOp>(op) ||
          isa<Composite::DistributedAllGatherRMSNormQuantMXFP8Op>(op) ||
          isa<Composite::DistributedAllGatherRMSNormQuantMXFP6Op>(op) ||
          isa<Composite::DistributedAllReduceRMSNormOp>(op) ||

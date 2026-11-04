@@ -215,6 +215,11 @@ _EXTRA_CONSTRAINTS = {
         "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # cp.async.bulk rows and Muse Spark's 8192 channels: B200 only
+    "test_gated_residual_rms_norm.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # The SM100 K-streaming scorer only (tcgen05, TMA).
     "test_index_fp8_sm100_kscale_war.mojo": select({
         "//:b200_gpu": [],
