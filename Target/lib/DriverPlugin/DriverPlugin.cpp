@@ -368,6 +368,9 @@ getArchFromPlugins() {
 
 MODULAR_CXX_EXPORT ErrorOr<std::unique_ptr<CompilationDevice>>
 getCompilationDevice(StringRef api, StringRef arch) {
+  // Virtual-device mode reaches here without having created a real device, so
+  // nothing else has loaded the plugins yet and the API map would be empty.
+  ensurePluginsLoaded();
   DriverImpl *impl = findDriverForApi(api);
   if (!impl)
     return Error("No plugin registered for API: " + api.str());
