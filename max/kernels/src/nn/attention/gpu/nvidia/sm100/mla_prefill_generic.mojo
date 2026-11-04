@@ -48,6 +48,7 @@ from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
 from max.gpu.sync import barrier
@@ -2881,6 +2882,12 @@ def _mla_prefill_sm100_valid_length_dispatch[
         comptime smem_use = cfg.launch_smem_used()
 
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=smem_use,
+                attributes=pdl_launch_attributes(MLA_PREFILL_PDL_LEVEL),
+            ),
             q_tma_op,
             k_nope_tma_op,
             k_rope_tma_op,
@@ -2891,10 +2898,6 @@ def _mla_prefill_sm100_valid_length_dispatch[
             scale,
             UInt32(batch_size),
             pack,
-            grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
-            block_dim=(num_threads, 1, 1),
-            shared_mem_bytes=smem_use,
-            attributes=pdl_launch_attributes(MLA_PREFILL_PDL_LEVEL),
         )
 
     # --- 1Q / 2Q dispatch ---

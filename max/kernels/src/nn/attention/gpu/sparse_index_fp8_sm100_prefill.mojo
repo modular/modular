@@ -96,6 +96,7 @@ from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
 )
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
@@ -3065,6 +3066,16 @@ def fp8_index_score_sm100_prefill[
             ),
         )
     ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=(
+                batch_size,
+                token_blocks,
+                num_key_parts,
+            ),
+            block_dim=CFG.nthreads,
+            shared_mem_bytes=smem_bytes,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        ),
         q_tma,
         k_tma,
         ks_tma,
@@ -3082,12 +3093,4 @@ def fp8_index_score_sm100_prefill[
         Int32(out_row_begin + out_rows),
         Int32(evict_k),
         score_hook,
-        grid_dim=(
-            batch_size,
-            token_blocks,
-            num_key_parts,
-        ),
-        block_dim=CFG.nthreads,
-        shared_mem_bytes=smem_bytes,
-        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

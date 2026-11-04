@@ -21,6 +21,10 @@ from std.math import ceildiv, clamp, gcd
 from std.sys import get_defined_int, size_of
 from std.utils import StaticTuple
 from max.gpu.host import DeviceBuffer, DeviceContext, Dim
+from max.gpu.host.nvidia import (
+    ClusterAttributeLaunchConfig,
+    GridBlockAttributeLaunchConfig,
+)
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     ComptimeInt,
@@ -4437,6 +4441,12 @@ def launch_mla_sm100_decode_enqueue_kernel[
     ) else PDLLevel.OFF
 
     ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=config.smem_used,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         q_tma,
         k_tma,
         o_tma,
@@ -4445,10 +4455,6 @@ def launch_mla_sm100_decode_enqueue_kernel[
         mla_decode_pack,
         scales_ptr,
         scalar_args_buf,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        shared_mem_bytes=config.smem_used,
-        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -4542,6 +4548,12 @@ def launch_mla_sm100_decode_native_fp8[
         config.decoding_warp_split_k or _MLA_PDL_ALWAYS
     ) else PDLLevel.OFF
     ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=config.smem_used,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         q_tma,
         k_tma,
         o_tma,
@@ -4550,10 +4562,6 @@ def launch_mla_sm100_decode_native_fp8[
         mla_decode_pack,
         scales_ptr,
         scalar_args_buf,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        shared_mem_bytes=config.smem_used,
-        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -4656,6 +4664,12 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
         config_g.decoding_warp_split_k or _MLA_PDL_ALWAYS
     ) else PDLLevel.OFF
     ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=config_g.smem_used,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         q_tma,
         k_tma,
         o_tma,
@@ -4664,10 +4678,6 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
         mla_decode_pack,
         scales_ptr,
         scalar_args_buf,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        shared_mem_bytes=config_g.smem_used,
-        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -4765,6 +4775,12 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         config.decoding_warp_split_k or _MLA_PDL_ALWAYS
     ) else PDLLevel.OFF
     ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=config.smem_used,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         q_nope_tma,
         q_rope_tma,
         k_content_tma,
@@ -4776,10 +4792,6 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         mla_decode_pack,
         q_scale_ptr,
         scalar_args_buf,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        shared_mem_bytes=config.smem_used,
-        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -4946,11 +4958,6 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if (
         config_g.decoding_warp_split_k or _MLA_PDL_ALWAYS
     ) else PDLLevel.OFF
-    var cluster_dim: OptionalReg[Dim] = None
-    comptime if config_g.cta_group == 2:
-        # The two head tiles of one token are adjacent CTAs, so a (2, 1, 1)
-        # cluster pairs exactly the CTAs that share an index list.
-        cluster_dim = Dim(2, 1, 1)
     # Extra SMEM beyond config.smem_used (unified-gather native FP8, no
     # cvt_blk_bars -- the second KV buffer + its pipeline are already
     # folded into config.smem_used via native_fp8_unified_gather):
@@ -5080,6 +5087,16 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
                     packed_v_tma.descriptor
                 )
             ctx.enqueue_function[KernelType.kernel_pair](
+                ClusterAttributeLaunchConfig(
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    # The two head tiles of one token are adjacent CTAs, so a
+                    # (2, 1, 1) cluster pairs exactly the CTAs that share an
+                    # index list.
+                    cluster_dim=Dim(2, 1, 1),
+                    shared_mem_bytes=sparse_smem_used,
+                    attributes=pdl_launch_attributes(pdl_level),
+                ),
                 q_tma,
                 KernelType.KTMA(k_sw64_tma.descriptor),
                 packed_v_descriptor,
@@ -5102,14 +5119,15 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
                 kernel_scalar_args,
                 Int32(selection_lag),
                 stamp_addr,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=sparse_smem_used,
-                attributes=pdl_launch_attributes(pdl_level),
             )
         else:
             ctx.enqueue_function[KernelType.kernel](
+                GridBlockAttributeLaunchConfig(
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    shared_mem_bytes=sparse_smem_used,
+                    attributes=pdl_launch_attributes(pdl_level),
+                ),
                 q_tma,
                 KernelType.KTMA(k_sw64_tma.descriptor),
                 o_tma,
@@ -5131,11 +5149,6 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
                 kernel_scalar_args,
                 Int32(selection_lag),
                 stamp_addr,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=sparse_smem_used,
-                attributes=pdl_launch_attributes(pdl_level),
             )
     else:
         # INT64, SWIZZLE_NONE, one box per 576-byte row for the linear front
@@ -5165,6 +5178,12 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             == KernelType.kv_gather4_box_w
         ), "k_tma does not match the kernel's gather descriptor"
         ctx.enqueue_function[KernelType.kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                shared_mem_bytes=sparse_smem_used,
+                attributes=pdl_launch_attributes(pdl_level),
+            ),
             q_tma,
             KernelType.KTMA(k_tma.descriptor),
             o_tma,
@@ -5186,9 +5205,4 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             kernel_scalar_args,
             Int32(selection_lag),
             stamp_addr,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=sparse_smem_used,
-            attributes=pdl_launch_attributes(pdl_level),
         )

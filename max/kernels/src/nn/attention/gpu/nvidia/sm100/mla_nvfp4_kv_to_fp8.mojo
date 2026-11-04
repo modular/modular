@@ -42,6 +42,7 @@ from std.sys import get_defined_int
 
 from max.gpu import WARP_SIZE, block_idx, global_idx, lane_id, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -401,17 +402,24 @@ def mla_prefill_sparse_nvfp4_via_fp8[
         True
     ]().as_unsafe_any_origin()
     ctx.enqueue_function[_convert_pages_kernel[cache_t]](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=num_pages,
+            block_dim=block_threads,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        ),
         kv_cache,
         row_offsets,
         fp8_bytes,
         page_slots,
         Int32(pages_per_seq),
-        grid_dim=num_pages,
-        block_dim=block_threads,
-        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
     var remap_threads = num_tokens * dense_stride // _REMAP_WIDTH
     ctx.enqueue_function[_remap_kernel[page_size]](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=ceildiv(remap_threads, block_threads),
+            block_dim=block_threads,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        ),
         indices,
         dense_indices,
         page_slots,
@@ -420,9 +428,6 @@ def mla_prefill_sparse_nvfp4_via_fp8[
         Int32(dense_stride),
         Int32(num_tokens),
         Int32(num_blocks),
-        grid_dim=ceildiv(remap_threads, block_threads),
-        block_dim=block_threads,
-        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     # The FP8 kernel addresses rows through the indices alone, so the scratch

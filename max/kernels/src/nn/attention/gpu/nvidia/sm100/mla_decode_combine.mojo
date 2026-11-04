@@ -34,6 +34,7 @@ import max.gpu.primitives.warp as warp
 from max.gpu import WARP_SIZE, block_idx, lane_id, warp_id
 from max.gpu.sync import barrier, syncwarp
 from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -1164,10 +1165,12 @@ def launch_mla_combine_kernel_split_parallel[
             has_attn_sink,
         ]
     ](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(_combine_pdl_level[pdl]()),
+        ),
         params,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        attributes=pdl_launch_attributes(_combine_pdl_level[pdl]()),
     )
 
 
@@ -1301,10 +1304,12 @@ def launch_mla_combine_kernel[
             ),
         ]
     ](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(_combine_pdl_level[pdl]()),
+        ),
         params,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        attributes=pdl_launch_attributes(_combine_pdl_level[pdl]()),
     )
 
 

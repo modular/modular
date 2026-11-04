@@ -20,6 +20,7 @@ to half SMEM, TMA store to GMEM.
 from std.math import align_up, ceildiv
 
 from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
@@ -209,7 +210,13 @@ def _blackwell_matmul_swiglu[
         pdl_level=pdl_level,
     ]
 
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=KernelType.NUM_THREADS,
+            shared_mem_bytes=KernelType.total_smem_bytes,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -219,8 +226,4 @@ def _blackwell_matmul_swiglu[
         cluster_dim,
         mnk,
         workspace,
-        grid_dim=grid_dim,
-        block_dim=KernelType.NUM_THREADS,
-        shared_mem_bytes=KernelType.total_smem_bytes,
-        attributes=pdl_launch_attributes(pdl_level),
     )

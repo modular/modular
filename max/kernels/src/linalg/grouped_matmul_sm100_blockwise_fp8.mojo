@@ -27,7 +27,7 @@ from max.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import (
     block_id_in_cluster,
@@ -837,6 +837,15 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
     ]
 
     ctx.enqueue_function[kernel](
+        GridBlockLaunchConfig(
+            grid_dim=(
+                ceildiv(N, BN),
+                ceildiv(max_num_tokens_per_expert, BM),
+                num_active_experts,
+            ),
+            block_dim=(block_dim),
+            shared_mem_bytes=smem_use,
+        ),
         a_tma_op,
         b_tma_op,
         a_offsets.as_unsafe_any_origin(),
@@ -846,13 +855,6 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
         b_scales.as_unsafe_any_origin(),
         Int32(ceildiv(K, BK)),
         host_args=(epilogue_fn,),
-        grid_dim=(
-            ceildiv(N, BN),
-            ceildiv(max_num_tokens_per_expert, BM),
-            num_active_experts,
-        ),
-        block_dim=(block_dim),
-        shared_mem_bytes=smem_use,
     )
 
 
@@ -2898,7 +2900,13 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         Int32(max_num_tokens_per_expert), Int32(N), Int32(K)
     )
 
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel](
+        GridBlockLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
+            block_dim=(32 * 7),
+            shared_mem_bytes=smem_size,
+        ),
         Int32(num_active_experts),
         a_tma_op,
         b_tma_op,
@@ -2912,10 +2920,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         problem_shape,
         a.as_unsafe_any_origin(),
         a_scales.as_unsafe_any_origin(),
-        grid_dim=grid_dim,
-        # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-        block_dim=(32 * 7),
-        shared_mem_bytes=smem_size,
     )
 
 

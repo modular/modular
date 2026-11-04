@@ -25,7 +25,8 @@ from std.sys import (
 )
 
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
@@ -183,6 +184,14 @@ def _small_MN_gemms_impl[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
+                GridBlockAttributeLaunchConfig(
+                    grid_dim=(
+                        ceildiv(m, config.tile_m),
+                        ceildiv(n, config.tile_n),
+                    ),
+                    block_dim=config.num_threads,
+                    attributes=pdl_launch_attributes(pdl_level),
+                ),
                 c,
                 a.as_imm(),
                 b.as_imm(),
@@ -190,12 +199,6 @@ def _small_MN_gemms_impl[
                 Int32(n),
                 Int32(k),
                 host_args=(epilogue_fn,),
-                grid_dim=(
-                    ceildiv(m, config.tile_m),
-                    ceildiv(n, config.tile_n),
-                ),
-                block_dim=config.num_threads,
-                attributes=pdl_launch_attributes(pdl_level),
             )
         elif has_compute_fn:
             comptime kernel = gemv_split_k_compute_fn[
@@ -219,6 +222,14 @@ def _small_MN_gemms_impl[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
+                GridBlockAttributeLaunchConfig(
+                    grid_dim=(
+                        ceildiv(m, config.tile_m),
+                        ceildiv(n, config.tile_n),
+                    ),
+                    block_dim=config.num_threads,
+                    attributes=pdl_launch_attributes(pdl_level),
+                ),
                 c,
                 a.as_imm(),
                 b.as_imm(),
@@ -226,12 +237,6 @@ def _small_MN_gemms_impl[
                 Int32(n),
                 Int32(k),
                 host_args=(compute_fn,),
-                grid_dim=(
-                    ceildiv(m, config.tile_m),
-                    ceildiv(n, config.tile_n),
-                ),
-                block_dim=config.num_threads,
-                attributes=pdl_launch_attributes(pdl_level),
             )
         else:
             comptime kernel = gemv_split_k[
@@ -254,18 +259,20 @@ def _small_MN_gemms_impl[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
+                GridBlockAttributeLaunchConfig(
+                    grid_dim=(
+                        ceildiv(m, config.tile_m),
+                        ceildiv(n, config.tile_n),
+                    ),
+                    block_dim=config.num_threads,
+                    attributes=pdl_launch_attributes(pdl_level),
+                ),
                 c,
                 a.as_imm(),
                 b.as_imm(),
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                grid_dim=(
-                    ceildiv(m, config.tile_m),
-                    ceildiv(n, config.tile_n),
-                ),
-                block_dim=config.num_threads,
-                attributes=pdl_launch_attributes(pdl_level),
             )
 
 
@@ -1579,6 +1586,10 @@ def _vendor_blas_matmul_sm100[
                     b_engine=type_of(b).Engine,
                 ]
                 ctx.enqueue_function[kernel](
+                    GridBlockLaunchConfig(
+                        grid_dim=grid_dim,
+                        block_dim=(BLOCK_DIM, BLOCK_DIM),
+                    ),
                     c,
                     a,
                     b,
@@ -1586,8 +1597,6 @@ def _vendor_blas_matmul_sm100[
                     Int32(n),
                     Int32(k),
                     host_args=(epilogue_fn,),
-                    grid_dim=grid_dim,
-                    block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
             elif has_compute_fn:
                 comptime kernel = matmul_kernel_naive_compute_fn[
@@ -1605,6 +1614,10 @@ def _vendor_blas_matmul_sm100[
                     b_engine=type_of(b).Engine,
                 ]
                 ctx.enqueue_function[kernel](
+                    GridBlockLaunchConfig(
+                        grid_dim=grid_dim,
+                        block_dim=(BLOCK_DIM, BLOCK_DIM),
+                    ),
                     c,
                     a,
                     b,
@@ -1612,8 +1625,6 @@ def _vendor_blas_matmul_sm100[
                     Int32(n),
                     Int32(k),
                     host_args=(compute_fn,),
-                    grid_dim=grid_dim,
-                    block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
             else:
                 comptime kernel = matmul_kernel_naive[
@@ -1630,14 +1641,16 @@ def _vendor_blas_matmul_sm100[
                     b_engine=type_of(b).Engine,
                 ]
                 ctx.enqueue_function[kernel](
+                    GridBlockLaunchConfig(
+                        grid_dim=grid_dim,
+                        block_dim=(BLOCK_DIM, BLOCK_DIM),
+                    ),
                     c,
                     a,
                     b,
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    grid_dim=grid_dim,
-                    block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
         return
 

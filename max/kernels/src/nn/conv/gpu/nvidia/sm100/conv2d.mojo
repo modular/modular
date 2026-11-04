@@ -45,6 +45,7 @@ from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.sys import size_of
 
 from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from layout.tma_async import create_tensor_tile_im2col
 
 from structured_kernels.tile_types import (
@@ -446,43 +447,49 @@ def _conv2d_fprop_impl[
         # compiled against `ComputeFnType` itself, not a device encoding.
         comptime kernel = conv_kernel.run_with_compute_fn[ComputeFnType]
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=(conv_kernel.NUM_THREADS),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
             act_tma_op,
             filter_tma_op,
             out_tma_op,
             cluster_dim,
             mnk,
             host_args=(compute_fn,),
-            grid_dim=grid_dim,
-            block_dim=(conv_kernel.NUM_THREADS),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     elif has_epilogue_fn:
         comptime kernel = conv_kernel.run_with_epilogue_fn[EpilogueFnType]
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=(conv_kernel.NUM_THREADS),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
             act_tma_op,
             filter_tma_op,
             out_tma_op,
             cluster_dim,
             mnk,
             host_args=(epilogue_fn,),
-            grid_dim=grid_dim,
-            block_dim=(conv_kernel.NUM_THREADS),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         comptime kernel = conv_kernel.run
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=(conv_kernel.NUM_THREADS),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
             act_tma_op,
             filter_tma_op,
             out_tma_op,
             cluster_dim,
             mnk,
-            grid_dim=grid_dim,
-            block_dim=(conv_kernel.NUM_THREADS),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -722,6 +729,12 @@ def conv2d_fprop_with_residual[
             EpilogueFnType
         ]
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=(conv_kernel.NUM_THREADS),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
             act_tma_op,
             filter_tma_op,
             out_tma_op,
@@ -730,14 +743,16 @@ def conv2d_fprop_with_residual[
             mnk,
             beta,
             host_args=(epilogue_fn,),
-            grid_dim=grid_dim,
-            block_dim=(conv_kernel.NUM_THREADS),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         comptime kernel = conv_kernel.run_with_residual
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=(conv_kernel.NUM_THREADS),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
             act_tma_op,
             filter_tma_op,
             out_tma_op,
@@ -745,10 +760,6 @@ def conv2d_fprop_with_residual[
             cluster_dim,
             mnk,
             beta,
-            grid_dim=grid_dim,
-            block_dim=(conv_kernel.NUM_THREADS),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 

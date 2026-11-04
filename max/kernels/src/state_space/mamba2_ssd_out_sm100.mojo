@@ -85,7 +85,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_st,
     tcgen05_store_wait,
 )
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import (
     TMADescriptor,
     TensorMapSwizzle,
@@ -1253,8 +1253,10 @@ def ssd_out_sm100(
     )
     var items = slots * (nheads // HP)
     ctx.enqueue_function[ssd_out_sm100_kernel](
+        GridBlockLaunchConfig(
+            grid_dim=min(SMS, items),
+            block_dim=THREADS,
+            shared_mem_bytes=SMEM_BYTES,
+        ),
         params,
-        grid_dim=min(SMS, items),
-        block_dim=THREADS,
-        shared_mem_bytes=SMEM_BYTES,
     )

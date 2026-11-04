@@ -50,7 +50,7 @@ Usage:
 from std.math import align_up
 from std.sys import size_of
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from layout import TileTensor, coord
 
 from structured_kernels.tile_types import create_tma_tile
@@ -541,6 +541,11 @@ def _grouped_block_scaled_matmul_impl[
     comptime if config.cta_group == 2:
         # 2SM mode: use CLC-based run_2sm() for proper cluster synchronization
         ctx.enqueue_function[matmul_kernel.run_2sm](
+            GridBlockLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=num_threads,
+                shared_mem_bytes=smem_size,
+            ),
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,
@@ -563,13 +568,15 @@ def _grouped_block_scaled_matmul_impl[
             problem_sizes,
             Int32(num_groups),
             host_args=(compute_fn,),
-            grid_dim=grid_dim,
-            block_dim=num_threads,
-            shared_mem_bytes=smem_size,
         )
     else:
         # 1SM mode: use linear iteration run()
         ctx.enqueue_function[matmul_kernel.run](
+            GridBlockLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=num_threads,
+                shared_mem_bytes=smem_size,
+            ),
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,
@@ -592,9 +599,6 @@ def _grouped_block_scaled_matmul_impl[
             problem_sizes,
             Int32(num_groups),
             host_args=(compute_fn,),
-            grid_dim=grid_dim,
-            block_dim=num_threads,
-            shared_mem_bytes=smem_size,
         )
 
 

@@ -68,6 +68,7 @@ from std.math import ceildiv, gcd
 from std.math.uutils import udivmod
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.info import _is_sm10x_gpu
 from max.gpu.primitives.grid_controls import (
     PDL,
@@ -452,12 +453,14 @@ def dispatch_qslice_conv3d_sm100[
                 output_type, output_simd_width
             ]
             ctx.enqueue_function[accum_kernel](
+                GridBlockAttributeLaunchConfig(
+                    grid_dim=accum_grid,
+                    block_dim=accum_block,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
+                ),
                 accum_n_ptr,
                 temp_bf16_buf,
                 Int32(per_batch_elems),
-                grid_dim=accum_grid,
-                block_dim=accum_block,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
     # --- 3. Final fp32 → bf16 write to user output (fuse epilogue). ---
@@ -469,6 +472,11 @@ def dispatch_qslice_conv3d_sm100[
             output_type, C_out, EpilogueFnType, output_simd_width
         ]
         ctx.enqueue_function[output_kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=final_grid,
+                block_dim=final_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
             accum_fp32_ptr,
             Int32(batch),
             Int32(D_out),
@@ -476,15 +484,17 @@ def dispatch_qslice_conv3d_sm100[
             Int32(W_out),
             Int32(output_elems),
             host_args=(epilogue_fn,),
-            grid_dim=final_grid,
-            block_dim=final_block,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     elif has_compute_fn:
         comptime output_kernel = _fp32_to_dtype_compute_kernel[
             output_type, C_out, ComputeFnType, output_simd_width
         ]
         ctx.enqueue_function[output_kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=final_grid,
+                block_dim=final_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
             output.ptr,
             accum_fp32_ptr,
             Int32(batch),
@@ -493,21 +503,20 @@ def dispatch_qslice_conv3d_sm100[
             Int32(W_out),
             Int32(output_elems),
             host_args=(compute_fn,),
-            grid_dim=final_grid,
-            block_dim=final_block,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         comptime output_kernel = _fp32_to_dtype_plain_kernel[
             output_type, output_simd_width
         ]
         ctx.enqueue_function[output_kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=final_grid,
+                block_dim=final_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
             output.ptr,
             accum_fp32_ptr,
             Int32(output_elems),
-            grid_dim=final_grid,
-            block_dim=final_block,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     return True

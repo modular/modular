@@ -32,6 +32,7 @@ from max.gpu.primitives.cluster import (
     cluster_sync,
 )
 from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu import block_id_in_cluster, lane_id, warp_id as get_warp_id
@@ -2600,7 +2601,24 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch kernel
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 SFB_LOAD, 1 MMA, 1 Scheduler, 4 EPILOGUE (+1 SFB_READY for 2CTA)
+            block_dim=(
+                32
+                * (
+                    load_warps
+                    + sfb_load_warps
+                    + sfb_ready_warps
+                    + mma_warps
+                    + scheduler_warps
+                    + epilogue_warps
+                )
+            ),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -2615,21 +2633,6 @@ def _create_tma_and_launch[
         Int32(_sfb_k_tiles),
         Int32(N_maybe_swapped),
         host_args=(epilogue_fn, compute_fn),
-        grid_dim=grid_dim,
-        # 1 TMA, 1 SFB_LOAD, 1 MMA, 1 Scheduler, 4 EPILOGUE (+1 SFB_READY for 2CTA)
-        block_dim=(
-            32
-            * (
-                load_warps
-                + sfb_load_warps
-                + sfb_ready_warps
-                + mma_warps
-                + scheduler_warps
-                + epilogue_warps
-            )
-        ),
-        shared_mem_bytes=smem_size,
-        attributes=pdl_launch_attributes(pdl_level),
     )
 
     comptime if enable_profiling:
