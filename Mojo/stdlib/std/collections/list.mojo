@@ -964,6 +964,36 @@ struct List[T: AnyType, /](
         ```
         """
 
+        self._extend(other)
+
+        # `other` only needs to deallocate its underlying buffer and not destroy
+        # its elements as they were moved into `self`.
+        other^._unsafe_assume_destroyed_and_deallocate()
+
+    def extend(mut self, mut other: Self) where conforms_to(Self.T, Movable):
+        """Extends this list by consuming the elements of `other`.
+
+        Args:
+            other: List whose elements will be added in order at the end of this
+                list.
+
+        Examples:
+
+        ```mojo
+        var list: List = ["one", "two", "three"]
+        var more: List = ["four", "five"]
+        list.extend(more) # more's values are consumed
+        # print(more)      # Error: use of initialized value
+        print(list)        # ['one', 'two', 'three', 'four', 'five']
+        print(more)        # []
+        ```
+        """
+        self._extend(other)
+        var old_len = other._len
+        other._len = 0
+        other._annotate_shrink(old_len)
+
+    def _extend(mut self, mut other: Self) where conforms_to(Self.T, Movable):
         var other_len = len(other)
         var final_size = len(self) + other_len
         self._grow_amortized(final_size)
@@ -977,9 +1007,6 @@ struct List[T: AnyType, /](
 
         # Update the size now since all elements have been moved into this list.
         self._len = final_size
-        # `other` only needs to deallocate its underlying buffer and not destroy
-        # its elements as they were moved into `self`.
-        other^._unsafe_assume_destroyed_and_deallocate()
 
     def extend(
         mut self, elements: Span[Self.T, _]
