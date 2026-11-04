@@ -37,6 +37,7 @@ from .layers.index_ops import INDEXER_SCORES_BUDGET_BYTES
 from .model import build_ep_config
 from .model_config import (
     DeepseekV41Config,
+    RoutedExpertFormat,
     dspark_expert_counts,
     forward_rows,
     num_dspark_stages,
@@ -147,7 +148,12 @@ def _dp_ep_config(pipeline_config: Any, text: Any) -> EPConfig | None:
         or pipeline_config.model.data_parallel_degree != n_devices
     ):
         return None
-    return build_ep_config(pipeline_config, text, n_devices)
+    return build_ep_config(
+        pipeline_config,
+        text,
+        n_devices,
+        RoutedExpertFormat.of(pipeline_config.model.huggingface_config),
+    )
 
 
 def _ep_reserve_bytes(pipeline_config: Any, text: Any) -> tuple[int, int]:
@@ -156,10 +162,12 @@ def _ep_reserve_bytes(pipeline_config: Any, text: Any) -> tuple[int, int]:
     The comm buffers are what EP init allocates beside the KV pool. The
     receive pool is the receive-side rows the grouped EP chain holds
     live: the dispatched tokens with their per-block scales and source
-    map, the packed down input the fused gate/up+SwiGLU kernel writes
-    (its epilogue runs the activation and the NVFP4 re-quant, so no bf16
+    map, the quantized down input the fused gate/up+SwiGLU kernel writes
+    (its epilogue runs the activation and the re-quant, so no bf16
     intermediate exists), and the down projection's bf16 output -- all
-    sized for the most rows a device can receive.
+    sized for the most rows a device can receive. Rows and their scales
+    take the dispatch format's width: packed NVFP4 with an E4M3 scale per
+    16 values, or MXFP8 (one byte a value) with an E8M0 scale per 32.
 
     Returns:
         ``(0, 0)`` when the run carries no EP buffers.
@@ -173,7 +181,7 @@ def _ep_reserve_bytes(pipeline_config: Any, text: Any) -> tuple[int, int]:
     n_local_experts = int(config.n_experts) // n_ranks
     inter = int(text.moe_intermediate_size)
     quant_config = config.dispatch_quant_config
-    assert quant_config is not None, "the trunk's dispatch is NVFP4-quantized"
+    assert quant_config is not None, "the trunk's dispatch is quantized"
     assert quant_config.input_scale.block_size is not None
     block = quant_config.input_scale.block_size[1]
     tile_rows = -(
@@ -185,13 +193,13 @@ def _ep_reserve_bytes(pipeline_config: Any, text: Any) -> tuple[int, int]:
         return tile_rows * tile_cols * _SCALE_TILE_BYTES
 
     pool = (
-        # The dispatched rows, NVFP4-packed with their block scales.
+        # The dispatched rows with their block scales.
         rows * fp4_packed_k(hidden, quant_config)
         + scale_bytes(hidden)
         # The source map, one [rows, 2] int32 entry per row.
         + rows * 2 * 4
         # The fused gate/up+SwiGLU kernel's output: the down projection's
-        # NVFP4-packed input rows with their block scales.
+        # quantized input rows with their block scales.
         + rows * fp4_packed_k(inter, quant_config)
         + scale_bytes(inter)
         # The down projection's bf16 output.

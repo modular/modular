@@ -168,7 +168,11 @@ modular_py_test(
     exec_properties = {"test.resources:gpu-memory": "2"},
     gpu_constraints = ["//:b200_gpu"],
     precompile_mefs = True,
-    tags = ["gpu"],
+    # DISTINF-807: slow enough in CI that `//...` should skip it.
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
         "//max/python/max:tree",
         "//max/python/max/driver",

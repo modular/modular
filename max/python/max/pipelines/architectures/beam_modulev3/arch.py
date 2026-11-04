@@ -14,13 +14,16 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .beam import Beam
 from .memory_planner import BeamMemoryPlanner
 from .model_config import BeamConfig
+from .reasoning import BeamReasoningParser  # noqa: F401  registers "beam"
+from .tokenizer import BeamTokenizer
+from .tool_parser import BeamToolParser  # noqa: F401  registers "beam"
 
 beam_modulev3_arch = SupportedArchitecture(
     name="BeamForCausalLM_ModuleV3",
@@ -30,7 +33,9 @@ beam_modulev3_arch = SupportedArchitecture(
     default_encoding=BeamConfig.DEFAULT_ENCODING,
     supported_encodings=BeamConfig.SUPPORTED_ENCODINGS,
     modules={GraphRole.DECODER: Beam},
-    tokenizer=TextTokenizer,
+    tokenizer=BeamTokenizer,
+    reasoning_parser="beam",
+    tool_parser="beam",
     context_type=TextContext,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

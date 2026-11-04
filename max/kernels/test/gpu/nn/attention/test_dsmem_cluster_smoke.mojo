@@ -47,6 +47,7 @@ from max.gpu.host import (
     DeviceContext,
     Dim,
 )
+from max.gpu.host.nvidia import ClusterAttributeLaunchConfig
 from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
@@ -116,16 +117,16 @@ def run_dsmem_test[
     comptime cluster_shape = (P, 1, 1)
     comptime kernel = dsmem_smoke_kernel[P, cluster_shape]
     # `ExecutionConfigType` has no initializer, so rebind the
-    # `ClusterLaunchConfig` it resolves to on this target.
+    # `ClusterAttributeLaunchConfig` it resolves to on this target.
     comptime if use_context_config_type:
-        var config = rebind[DeviceContext[].ExecutionConfigType](
-            ClusterLaunchConfig(
-                grid_dim=(P, 1, 1),
-                block_dim=(32, 1, 1),
-                cluster_dim=Dim(P, 1, 1),
-            )
+        var config = ClusterAttributeLaunchConfig(
+            grid_dim=(P, 1, 1),
+            block_dim=(32, 1, 1),
+            cluster_dim=Dim(P, 1, 1),
         )
-        ctx.enqueue_function[kernel](config, out_dev)
+        ctx.enqueue_function[kernel](
+            rebind[DeviceContext[].ExecutionConfigType](config), out_dev
+        )
     else:
         ctx.enqueue_function[kernel](
             ClusterLaunchConfig(

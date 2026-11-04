@@ -22,7 +22,7 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 from nn.attention.gpu.mla_decode_dispatch_scalars import (
-    mla_decode_dispatch_scalars,
+    mla_decode_dispatch_key,
 )
 from nn.attention.gpu.nvidia.sm100.dispatch import (
     mha_split_kv_decode_num_partitions as _split_kv_decode_num_partitions,
@@ -51,14 +51,17 @@ def PyInit_kv_cache_ops() abi("C") -> PythonObject:
         )
         b.def_function[mla_dispatch_args_scalar](
             "mla_dispatch_args_scalar",
-            docstring="Returns the MLA dispatch metadata scalars.",
+            docstring=(
+                "Returns the MLA dispatch metadata scalars and the kernel"
+                " variant."
+            ),
         )
         return b.finalize()
     except e:
         abort(t"failed to create kv cache op bindings module: {e}")
 
 
-def _make_int_list(values: Array[Int, 3]) -> PythonObject:
+def _make_int_list[n: Int](values: Array[Int, n]) -> PythonObject:
     ref cpython = Python().cpython()
     var result_py_list = cpython.PyList_New(len(values))
     for i in range(len(values)):
@@ -174,6 +177,11 @@ def mla_dispatch_args_scalar(
     is_fp8_kv_obj: PythonObject,
     device_context_ptr: PythonObject,
     sparse_indices_stride_obj: PythonObject,
+    kv_form_obj: PythonObject,
+    page_size_obj: PythonObject,
+    fixed_topk_obj: PythonObject,
+    physical_indices_obj: PythonObject,
+    depth_obj: PythonObject,
 ) raises -> PythonObject:
     var batch_size = Int(py=batch_size_obj)
     var max_cache_valid_length = Int(py=max_cache_valid_length_obj)
@@ -181,6 +189,11 @@ def mla_dispatch_args_scalar(
     var num_heads = Int(py=num_heads_obj)
     var is_fp8_kv = Int(py=is_fp8_kv_obj) != 0
     var sparse_indices_stride = Int(py=sparse_indices_stride_obj)
+    var kv_form = Int(py=kv_form_obj)
+    var page_size = Int(py=page_size_obj)
+    var fixed_topk = Int(py=fixed_topk_obj) != 0
+    var physical_indices = Bool(py=physical_indices_obj)
+    var depth = Int(py=depth_obj)
     var ctx = _get_ctx(device_context_ptr)
 
     if not ctx:
@@ -195,10 +208,12 @@ def mla_dispatch_args_scalar(
         raise Error("num_heads must be positive.")
     if sparse_indices_stride < 0:
         raise Error("sparse_indices_stride must be non-negative.")
+    if page_size < 0:
+        raise Error("page_size must be non-negative.")
 
     var device_ctx = DeviceContext(ctx.unsafe_value())
 
-    var scalars = mla_decode_dispatch_scalars(
+    var scalars = mla_decode_dispatch_key(
         batch_size,
         max_cache_valid_length,
         q_max_seq_len,
@@ -206,10 +221,16 @@ def mla_dispatch_args_scalar(
         is_fp8_kv,
         device_ctx,
         sparse_indices_stride=sparse_indices_stride,
+        kv_form=kv_form,
+        page_size=page_size,
+        fixed_topk=fixed_topk,
+        physical_indices=physical_indices,
+        depth=depth,
     )
-    var result: Array[Int, 3] = [
+    var result: Array[Int, 4] = [
         scalars[0],
         scalars[1],
         scalars[2],
+        scalars[3],
     ]
     return _make_int_list(result)

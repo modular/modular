@@ -105,6 +105,11 @@ from ..launch_config import (
     NearComputeGeneralPurposeScratchpadExecutionConfig,
     _supports_cluster_launch,
 )
+from ..nvidia.launch_config import (
+    ClusterAttributeLaunchConfig,
+    GridBlockAttributeLaunchConfig,
+    LaunchAttributeHolderExecutionConfig,
+)
 
 from ._device_context_extras import *
 
@@ -296,32 +301,33 @@ def _raise_checked_impl(
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
 
 
-# Checks that the given `dim` has only positive integers in them.
-def _check_dim[
+# Raises unless every component of `dim` is in `[1, Int32.MAX]`: drivers take
+# launch dims as 32-bit values, so a larger one would be truncated.
+def _check_dim_in_range[
     func_name_for_msg: StringLiteral, dim_name_for_msg: StringLiteral
 ](dim: Dim, *, location: SourceLocation) raises:
-    if dim.x() <= 0:
+    if dim.x() <= 0 or dim.x() > Int(Int32.MAX):
         comptime msg = String(
             func_name_for_msg,
             ": Dim value ",
             dim_name_for_msg,
-            ".x must be a positive number.",
+            ".x must be in [1, Int32.MAX].",
         )
         raise Error(location.prefix(msg))
-    if dim.y() <= 0:
+    if dim.y() <= 0 or dim.y() > Int(Int32.MAX):
         comptime msg = String(
             func_name_for_msg,
             ": Dim value ",
             dim_name_for_msg,
-            ".y must be a positive number.",
+            ".y must be in [1, Int32.MAX].",
         )
         raise Error(location.prefix(msg))
-    if dim.z() <= 0:
+    if dim.z() <= 0 or dim.z() > Int(Int32.MAX):
         comptime msg = String(
             func_name_for_msg,
             ": Dim value ",
             dim_name_for_msg,
-            ".z must be a positive number.",
+            ".z must be in [1, Int32.MAX].",
         )
         raise Error(location.prefix(msg))
 
@@ -1386,10 +1392,7 @@ struct DevicePointer[
     # DevicePassable
     # ===------------------------------------------------------------------=== #
 
-    # Kernel-entry ABI type. `Pointer` and its `UnsafePointer` alias are one
-    # representation, and device-argument matching accepts either spelling
-    # (see `Pointer._is_convertible_to_device_type`), so kernels may still
-    # declare their parameters as `UnsafePointer`.
+    # Kernel-entry ABI type.
     comptime device_type: AnyType = Pointer[
         mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]
@@ -1660,10 +1663,7 @@ struct DeviceBuffer[dtype: DType](
     # ===-------------------------------------------------------------------===#
 
     # Implementation of `DevicePassable`
-    # Kernel-entry ABI type. `Pointer` and its `UnsafePointer` alias are one
-    # representation, and device-argument matching accepts either spelling
-    # (see `Pointer._is_convertible_to_device_type`), so kernels may still
-    # declare their parameters as `UnsafePointer`.
+    # Kernel-entry ABI type.
     comptime device_type: AnyType = Pointer[
         mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]
@@ -2689,10 +2689,10 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceStream.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceStream.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -4313,12 +4313,17 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     """`GPUInfo` object for the default accelerator."""
 
     comptime ExecutionConfigType: ExecutionConfig = (
-        ClusterLaunchConfig if _supports_cluster_launch[
+        ClusterAttributeLaunchConfig if _supports_cluster_launch[
             Self.target
-        ]() else GridBlockLaunchConfig
+        ]() else (
+            GridBlockAttributeLaunchConfig if Self.target.is_nvidia_gpu() else GridBlockLaunchConfig
+        )
     )
     """The launch configuration type with every launch capability this target
     supports.
+
+    On NVIDIA targets it carries launch attributes, and from sm_90 on also
+    thread block clusters.
 
     Generic code checks for a capability with `conforms_to`, for example
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
@@ -5277,10 +5282,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -5365,10 +5370,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location.or_else(call_location()),
             )
         else:
-            _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
-            _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
                 block_dim, location=call_location()
             )
 
@@ -5497,10 +5502,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
         comptime plugin = MaxPluginForTarget[Self.target]
@@ -5678,10 +5683,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -5770,10 +5775,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -5811,6 +5816,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         ConfigType: GridBlockExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         func: def(*args: *declared_arg_types) thin -> None,
         *encoded_types: DevicePassable,
@@ -5818,14 +5824,17 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self,
         config: ConfigType,
         *encoded_args: *encoded_types,
+        host_args: Tuple[*HostArgs] = (),
         location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel with a capability-typed launch
         configuration.
 
-        `config` must be a `GridBlockLaunchConfig` or a
-        `ClusterLaunchConfig`. A capability this target lacks, such as
-        clusters, fails to compile:
+        `config` must be a `GridBlockLaunchConfig`, a `ClusterLaunchConfig`,
+        or, on NVIDIA targets, a `GridBlockAttributeLaunchConfig` or a
+        `ClusterAttributeLaunchConfig` from `max.gpu.host.nvidia`. A
+        capability this target lacks, such as clusters or launch attributes,
+        fails to compile:
 
         ```mojo
         from max.gpu.host import ClusterLaunchConfig, DeviceContext, Dim
@@ -5841,10 +5850,14 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
         ```
 
+        Put capturing closures in `host_args`, after the encoded arguments,
+        as for the keyword overload.
+
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device
                 function.
             ConfigType: The launch configuration type.
+            HostArgs: The host-layout types of the trailing arguments.
             func: The function to compile and launch.
             encoded_types: The `DevicePassable` argument types encoded to
                 device layout.
@@ -5853,16 +5866,21 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             config: The launch configuration.
             encoded_args: The variadic `DevicePassable` arguments encoded to
                 device layout.
+            host_args: The trailing arguments passed by host layout.
             location: Source location for the function call.
 
         Raises:
             If the operation fails.
         """
-        comptime assert ConfigType == GridBlockLaunchConfig or (
-            ConfigType == ClusterLaunchConfig
+        comptime assert (
+            ConfigType == GridBlockLaunchConfig
+            or ConfigType == ClusterLaunchConfig
+            or ConfigType == GridBlockAttributeLaunchConfig
+            or ConfigType == ClusterAttributeLaunchConfig
         ), (
-            "this DeviceContext launches only a GridBlockLaunchConfig or a"
-            " ClusterLaunchConfig"
+            "this DeviceContext launches only a GridBlockLaunchConfig,"
+            " ClusterLaunchConfig, GridBlockAttributeLaunchConfig, or"
+            " ClusterAttributeLaunchConfig"
         )
 
         var cluster_dim = OptionalReg[Dim](None)
@@ -5878,12 +5896,23 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ):
             shared_mem_bytes = config.get_near_compute_scratchpad_usage()
 
+        var attributes = List[LaunchAttribute]()
+        comptime if conforms_to(
+            ConfigType, LaunchAttributeHolderExecutionConfig
+        ):
+            comptime assert conforms_to(
+                Self.ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+            ), "this target does not support launch attributes"
+            attributes = List(config.get_launch_attributes())
+
         self.enqueue_function[func](
             *encoded_args,
+            host_args=host_args,
             grid_dim=config.get_grid_dim(),
             block_dim=config.get_block_dim(),
             cluster_dim=cluster_dim,
             shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
             location=location.or_else(call_location()),
         )
 

@@ -68,7 +68,6 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from layout import (
     Coord,
-    Layout,
     RowMajorLayout,
     TensorEngine,
     TileTensor,
@@ -82,6 +81,7 @@ from structured_kernels.tile_types import (
     tma_desc_layout_3d,
 )
 from layout.tile_layout import _IntToComptimeInt
+from layout.tile_layout import row_major as tt_row_major
 
 from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index
@@ -535,9 +535,13 @@ def _swiglu_epilogue_gmem[
     comptime is_lower_frag_required = epc.is_lower_frag_required
     comptime num_stages = epc.num_stages
 
-    comptime accum_tile_layout = Layout.row_major(BM, stageN)
+    comptime accum_tile_layout = tt_row_major[BM, stageN]()
     comptime AccumTmemArray = TmemArrayType[
-        accum_type, accum_tile_layout, num_stages, cta_group=cta_group
+        accum_type,
+        type_of(accum_tile_layout),
+        accum_tile_layout,
+        num_stages,
+        cta_group=cta_group,
     ]
     comptime EpilogueApplierType = EpilogueApplier[
         MMA_M,
@@ -934,9 +938,13 @@ def _swiglu_epilogue_smem_tma[
     comptime is_lower_frag_required = epc.is_lower_frag_required
     comptime num_stages = epc.num_stages
 
-    comptime accum_tile_layout = Layout.row_major(BM, stageN)
+    comptime accum_tile_layout = tt_row_major[BM, stageN]()
     comptime AccumTmemArray = TmemArrayType[
-        accum_type, accum_tile_layout, num_stages, cta_group=cta_group
+        accum_type,
+        type_of(accum_tile_layout),
+        accum_tile_layout,
+        num_stages,
+        cta_group=cta_group,
     ]
 
     comptime _is_layout_b_swap = AB_swapped and cta_group == 2 and MMA_M == 128

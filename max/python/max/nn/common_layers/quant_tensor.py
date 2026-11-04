@@ -265,6 +265,69 @@ class NVFP4Tensor(_QuantizedWeight):
             block_size=block_size,
         )
 
+    @classmethod
+    def stacked_zeros(
+        cls,
+        num_experts: int,
+        shape: tuple[int, int],
+        *,
+        scales_per_expert: int = 1,
+        block_size: tuple[int, int] = (1, 16),
+        device: DeviceMapping | None = None,
+    ) -> NVFP4Tensor:
+        """Builds a zero-filled stack of ``num_experts`` weights of ``shape``.
+
+        ``weight`` and ``weight_scale`` gain a leading expert axis on
+        ``device``. The per-tensor scales stay on the host as
+        ``[num_experts]``, or ``[num_experts, scales_per_expert]`` for a fused
+        weight that keeps each part's scale.
+        """
+        rows, cols = int(shape[0]), int(shape[1])
+        block_m, block_k = block_size
+        scalars = (
+            (num_experts, scales_per_expert)
+            if scales_per_expert > 1
+            else (num_experts,)
+        )
+        return cls(
+            weight=Tensor.zeros(
+                (num_experts, rows, cols // 2), dtype=DType.uint8, device=device
+            ),
+            weight_scale=Tensor.zeros(
+                (
+                    num_experts,
+                    _ceildiv(rows, block_m),
+                    _ceildiv(cols, block_k),
+                ),
+                dtype=DType.float8_e4m3fn,
+                device=device,
+            ),
+            weight_scale_2=Tensor.zeros(
+                scalars, dtype=DType.float32, device=CPU()
+            ),
+            input_scale=Tensor.zeros(
+                scalars, dtype=DType.float32, device=CPU()
+            ),
+            block_size=block_size,
+        )
+
+    def local_experts(self, device: int) -> NVFP4Tensor:
+        """``device``'s experts of a stack sharded on its expert axis.
+
+        Unlike :attr:`local_shards`, the per-expert host scales are cut to the
+        same experts.
+        """
+        weight = self.weight.local_shards[device]
+        n = int(weight.shape[0])
+        rows = slice(device * n, (device + 1) * n)
+        return NVFP4Tensor(
+            weight=weight,
+            weight_scale=self.weight_scale.local_shards[device],
+            weight_scale_2=self.weight_scale_2[rows],
+            input_scale=self.input_scale[rows],
+            block_size=self.block_size,
+        )
+
     @property
     def block_size(self) -> tuple[int, int]:
         """Quantization block shape as ``(rows, cols)``."""
@@ -566,6 +629,22 @@ class NVFP4Activation(QTensor):
     data: Tensor
     scales: Tensor
     input_scale: Tensor
+    scales_offset: Tensor
+
+
+@module_dataclass(frozen=True)
+class MXFP8Activation(QTensor):
+    """MXFP8-quantized activation tensor, rows sorted by expert.
+
+    Args:
+        data: ``float8_e4m3fn`` tokens of shape ``[total_tokens, K]``.
+        scales: ``float8_e8m0fnu`` block scales, one per 32 values, in the
+            padded SF-atom layout.
+        scales_offset: Per-expert offset into the padded ``scales``.
+    """
+
+    data: Tensor
+    scales: Tensor
     scales_offset: Tensor
 
 
@@ -903,6 +982,7 @@ QuantAwareTensor: TypeAlias = (
     | MXFP8Quantizer
     | MXFP4Quantizer
     | NVFP4Activation
+    | MXFP8Activation
     | FP8BlockActivation
 )
 
@@ -940,6 +1020,7 @@ __all__ = [
     "FP8BlockTensor",
     "MXFP4Quantizer",
     "MXFP4Tensor",
+    "MXFP8Activation",
     "MXFP8Quantizer",
     "MXFP8Tensor",
     "NVFP4Activation",

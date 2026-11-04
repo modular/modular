@@ -58,7 +58,6 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
 from max.gpu.host import Dim as LaunchDim
-from max.gpu.host import FuncAttribute
 from max.gpu.host.info import A100, H100, GPUInfo, _is_sm10x_gpu
 from max.gpu.memory import (
     async_copy_commit_group,
@@ -69,7 +68,6 @@ from kv_cache.types import KVCacheT
 from layout import (
     Coord,
     Idx,
-    Layout,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -88,6 +86,7 @@ from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import make_swizzle
 from layout.tile_tensor import stack_allocation
 from layout.tensor_core import get_fragment_size, get_mma_shape
+from layout.coord import coord
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils_gpu import _apple_m5_allow_lossy_f32_attention
 from std.memory import unsafe_stack_allocation
@@ -1550,9 +1549,6 @@ def flash_attention_dispatch[
                     grid_dim=grid_dim,
                     block_dim=(config.num_threads(), 1, 1),
                     shared_mem_bytes=smem_use,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_use)
-                    ),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
         # FA3 decoding impl only support half precision, while fp32 is supported
@@ -1872,14 +1868,6 @@ def flash_attention_dispatch[
                                         ),
                                         block_dim=(num_threads_S, 1, 1),
                                         shared_mem_bytes=shared_mem_bytes if ctx.target.is_nvidia_gpu() else 0,
-                                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                                            UInt32(
-                                                (
-                                                    ctx.default_device_info.shared_memory_per_multiprocessor
-                                                    - 4096
-                                                ) if ctx.target.is_nvidia_gpu() else 0
-                                            )
-                                        ),
                                         attributes=pdl_launch_attributes(
                                             PDLLevel.ON
                                         ),
@@ -3394,10 +3382,10 @@ def mha_single_batch[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            coord[2 * num_m_mmas, num_n_mmas],
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
@@ -4071,10 +4059,10 @@ def mha_single_batch_pipelined[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            coord[2 * num_m_mmas, num_n_mmas],
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
@@ -5082,9 +5070,9 @@ def mha_decoding_single_batch[
         comptime if group <= 8:
             _online_softmax_iter_for_mma_output[
                 accum_type,
-                Layout.row_major(num_m_mmas, num_n_mmas),
-                Layout.row_major(num_warps_m, num_warps_n),
-                Layout.row_major(8, 4),
+                coord[num_m_mmas, num_n_mmas],
+                coord[num_warps_m, num_warps_n],
+                coord[8, 4],
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
@@ -5107,9 +5095,9 @@ def mha_decoding_single_batch[
             ]()
             _online_softmax_iter_for_mma_output[
                 accum_type,
-                Layout.row_major(2 * num_m_mmas, num_n_mmas),
-                Layout.row_major(num_warps_m, num_warps_n),
-                Layout.row_major(8, 4),
+                coord[2 * num_m_mmas, num_n_mmas],
+                coord[num_warps_m, num_warps_n],
+                coord[8, 4],
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
@@ -5286,9 +5274,9 @@ def mha_decoding_single_batch[
         # The warp reduction just combines warps; sink contribution is added to rowsum later.
         _online_softmax_iter_for_mma_output_split_warp_reduce[
             accum_type,
-            Layout.row_major(num_m_mmas, num_n_mmas),
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_m_mmas, num_n_mmas],
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             WM,
             WN,
             use_exp2=True,
@@ -5748,9 +5736,9 @@ def mha_decoding_single_batch_pipelined[
 
         _online_softmax_iter_for_mma_output[
             accum_type,
-            Layout.row_major(num_m_mmas, num_n_mmas),
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_m_mmas, num_n_mmas],
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](

@@ -1277,7 +1277,6 @@ def _load_matrix_frag[
     # on __output_width which in turn depends on num_matrices.
     # lane_offset based on x4 will also work because in case of x1 and x2
     # ld_matrix ignores pointers for lane >= 8 and lane >= 16 respectively.
-    comptime ldmatrix_threadmap = Layout.col_major(16, 2)
 
     # 4 submatrices layout
     comptime x4_layout = Layout(

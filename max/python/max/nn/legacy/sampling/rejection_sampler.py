@@ -1229,13 +1229,15 @@ def stochastic_acceptance_sampler(
 
     is_greedy_row = temperature < _GREEDY_TEMPERATURE_EPS
 
-    # On GPU the argmax-proposal verdict samples greedy rows with top_k == 1,
-    # which the fused sampling kernel answers with the row's first argmax (the
-    # token ``ops.argmax`` picks: lowest index on ties, NaN never wins) and
-    # without running its sampling search. Its verdict and bonus for those
-    # rows already are the greedy ones, so no separate full-row argmax runs.
-    # Sampled rows keep their own ``top_k`` and draw exactly as before.
-    greedy_in_kernel = draft_proposal == "argmax" and device != DeviceRef.CPU()
+    # On GPU both verdicts take greedy rows with top_k == 1, which the fused
+    # sampling kernel and the masked-probs kernel answer with the row's first
+    # argmax (the token ``ops.argmax`` picks: lowest index on ties, NaN never
+    # wins) and without running their search. The sampled-proposal verdict
+    # then accepts exactly a matching draft and recovers the argmax from the
+    # residual, so for those rows both verdicts and the bonus already are the
+    # greedy ones and no separate full-row argmax runs. Sampled rows keep
+    # their own ``top_k`` and draw exactly as before.
+    greedy_in_kernel = device != DeviceRef.CPU()
     if greedy_in_kernel:
         top_k = ops.where(
             is_greedy_row,

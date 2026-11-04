@@ -38,7 +38,7 @@ from ._overlay import (
     _DeviceContextPtr,
     _DeviceFunctionPtr,
     _DumpPath,
-    _check_dim,
+    _check_dim_in_range,
     _checked,
 )
 from ._legacy.dim import Dim

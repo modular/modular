@@ -85,6 +85,11 @@
     "status": 302
   },
   {
+    "source": "/docs/std/memory/unsafe_pointer/(.*)",
+    "dest": "/docs/std/memory/pointer/Pointer/",
+    "status": 302
+  },
+  {
     "source": "/docs/(?:stdlib|lib)/?",
     "dest": "/docs/std/",
     "status": 302

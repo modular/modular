@@ -112,8 +112,9 @@ class DecoderInputs(Generic[TensorT, _SignalT]):
 
     A multi-device graph-API decoder takes them, and so does one that sets
     ``always_signal_buffers``. A ModuleV3 decoder never sees them: its
-    compiled graph adds its own. Runtime inputs hold driver buffers;
-    graph-API inputs hold buffer values by default.
+    compiled graph adds its own, where its ``input_layout`` names them.
+    Runtime inputs hold driver buffers; graph-API inputs hold buffer values
+    by default.
     """
 
     kv: Any
@@ -121,7 +122,8 @@ class DecoderInputs(Generic[TensorT, _SignalT]):
 
     batch_context_lengths: tuple[TensorT, ...] | None = None
     """Each data-parallel replica's page-aligned KV context length, a CPU
-    ``int32`` tensor of shape ``[1]`` per replica.
+    ``int32`` tensor of shape ``[1]`` per replica, or one per device for a
+    decoder that sets ``device_context_length_dtype``.
 
     Set when the config sets
     :attr:`~max.pipelines.lib.registration_runtime.DeploymentConfig.takes_batch_context_lengths`,

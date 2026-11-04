@@ -16,7 +16,7 @@
 # from a non-trivial String (via len()) must not prevent the String
 # from being ASAP-destroyed.
 #
-# Note: origin-carrying types like UnsafePointer and Span are
+# Note: origin-carrying types like Pointer and Span are
 # TrivialRegisterPassable and not tracked by CheckLifetimes at all,
 # so the debug lifetime extension cannot affect them.
 

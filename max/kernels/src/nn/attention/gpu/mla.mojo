@@ -66,7 +66,6 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import (
     DeviceContext,
-    FuncAttribute,
     DeviceBuffer,
     Dim as LaunchDim,
     default_accelerator,
@@ -100,6 +99,7 @@ from layout.tile_iterator import TileTensorIter
 from layout.tile_layout import Layout as TileLayout
 from layout.tile_tensor import NullableTileTensor
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
+from layout.coord import coord
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import unsafe_stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -239,11 +239,6 @@ def flare_mla_decoding[
     decoding_warp_split_k: Bool = False,
     per_token_scale_rope_aware: Bool = False,
     sparse: Bool = False,
-    # Sparse-only routing flag: True selects the BF16-rope sparse kernel
-    # (split FP8 nope + BF16 rope). False (default) selects the all-FP8
-    # sparse kernel. This is the production default; True is only used by
-    # internal BF16-rope-kernel tests.
-    rope_aware_kv_sparse: Bool = False,
     # Read-once shared-index MTP fold (KERN-3141): set True (compile-time, from
     # the model's index_share signal) when the folded q positions share one
     # identical topk list, so the sparse fp8 decode gathers it ONCE. False
@@ -259,6 +254,8 @@ def flare_mla_decoding[
     # How the sparse index producer packs each row; SM100 bounds each row by
     # its closed-form valid length. See mla_decode_utils.mojo.
     sparse_row: SparseRowLayout = SparseRowLayout(),
+    *,
+    skip_masked_tiles: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -282,9 +279,8 @@ def flare_mla_decoding[
     # d_indices[batch * indices_stride + token] = physical KV row index.
     d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    # Per-batch topk lengths: when non-null, topk_lengths[batch_idx] gives
-    # the actual number of valid sparse indices for that batch. indices_stride
-    # is the allocation stride (max topk across all batches).
+    # Counts are per batch by default, or per packed query token with
+    # skip_masked_tiles. They bound KV slots, not the query sequence length.
     topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
     attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     # Extra KV: separate always-attend cache. Tokens from extra_k are
@@ -348,10 +344,6 @@ def flare_mla_decoding[
         sparse: Whether to use sparse attention with pre-computed
             physical KV row indices via gather4 TMA (defaults to
             `False`).
-        rope_aware_kv_sparse: Sparse-only routing flag: `True` selects
-            the BF16-rope sparse kernel (split FP8 nope + BF16 rope);
-            `False` selects the all-FP8 sparse kernel (defaults to
-            `False`).
         fold_shared_index: Whether to use the read-once shared-index fold
             that packs folded output/LSE slots into one CTA (defaults to
             `False`).
@@ -369,6 +361,11 @@ def flare_mla_decoding[
         sparse_row: How the sparse index producer packs each row; SM100
             masks the `-1` padding past each row's closed-form valid length
             (defaults to plain top-k, which adds no bound).
+        skip_masked_tiles: Whether each query token stops at the slots its
+            causal key count covers instead of walking the sequence-wide
+            slot count; SM100 only, and requires one query token per CTA.
+            Under it `topk_lengths` holds one count per query token rather
+            than per batch (defaults to `False`).
 
     Args:
         output: Output tensor with shape `[batch, num_heads, depth_v]`
@@ -406,8 +403,9 @@ def flare_mla_decoding[
             q_len)` entries. `None` for non-sparse.
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
-        topk_lengths: Optional per-batch array of actual valid sparse
-            index counts; null means every batch uses `indices_stride`.
+        topk_lengths: Optional valid sparse-slot counts, per batch by
+            default or per packed query token with `skip_masked_tiles`.
+            Null uses `indices_stride`; present arrays must cover that domain.
         attn_sink_ptr: Optional attention-sink scale pointer
             (`float32`); null to disable.
         extra_k: Optional separate always-attend KV cache operand,
@@ -496,11 +494,11 @@ def flare_mla_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=True,
                 sparse=sparse,
-                rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
                 has_extra_k=has_extra_k,
                 physical_indices=physical_indices,
                 sparse_row=sparse_row,
+                skip_masked_tiles=skip_masked_tiles,
             ](
                 output,
                 q,
@@ -541,11 +539,11 @@ def flare_mla_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=False,
                 sparse=sparse,
-                rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
                 has_extra_k=has_extra_k,
                 physical_indices=physical_indices,
                 sparse_row=sparse_row,
+                skip_masked_tiles=skip_masked_tiles,
             ](
                 output,
                 q,
@@ -733,9 +731,6 @@ def flare_mla_decoding_dispatch[
     decoding_warp_split_k: Bool = False,
     per_token_scale_rope_aware: Bool = False,
     sparse: Bool = False,
-    # Sparse-only routing flag: True selects the BF16-rope sparse kernel,
-    # False (default) selects the all-FP8 sparse kernel.
-    rope_aware_kv_sparse: Bool = False,
     # Read-once shared-index MTP fold (KERN-3141); see flare_mla_decoding.
     fold_shared_index: Bool = False,
     # See flare_mla_decoding.
@@ -746,6 +741,8 @@ def flare_mla_decoding_dispatch[
     # How the sparse index producer packs each row; SM100 bounds each row by
     # its closed-form valid length. See mla_decode_utils.mojo.
     sparse_row: SparseRowLayout = SparseRowLayout(),
+    *,
+    skip_masked_tiles: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -821,10 +818,6 @@ def flare_mla_decoding_dispatch[
         sparse: Whether to use sparse attention with pre-computed
             physical KV row indices via gather4 TMA (defaults to
             `False`).
-        rope_aware_kv_sparse: Sparse-only routing flag: `True` selects
-            the BF16-rope sparse kernel (split FP8 nope + BF16 rope);
-            `False` selects the all-FP8 sparse kernel (defaults to
-            `False`).
         fold_shared_index: Whether to use the read-once shared-index fold
             that packs folded output/LSE slots into one CTA (defaults to
             `False`).
@@ -842,6 +835,11 @@ def flare_mla_decoding_dispatch[
         sparse_row: How the sparse index producer packs each row; SM100
             masks the `-1` padding past each row's closed-form valid length
             (defaults to plain top-k, which adds no bound).
+        skip_masked_tiles: Whether each query token stops at the slots its
+            causal key count covers instead of walking the sequence-wide
+            slot count; SM100 only, and requires one query token per CTA.
+            Under it `topk_lengths` holds one count per query token rather
+            than per batch (defaults to `False`).
 
     Args:
         output: Output tensor with shape `[batch, num_heads, depth_v]`
@@ -880,8 +878,9 @@ def flare_mla_decoding_dispatch[
             q_len)` entries. `None` for non-sparse.
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
-        topk_lengths: Optional per-batch array of actual valid sparse
-            index counts; null means every batch uses `indices_stride`.
+        topk_lengths: Optional valid sparse-slot counts, per batch by
+            default or per packed query token with `skip_masked_tiles`.
+            Null uses `indices_stride`; present arrays must cover that domain.
         attn_sink_ptr: Optional attention-sink scale pointer
             (`float32`); null to disable.
         extra_k: Optional separate always-attend KV cache operand,
@@ -997,6 +996,9 @@ def flare_mla_decoding_dispatch[
     # TileTensor always has static shapes for the last two dims.
 
     comptime if _is_sm10x_gpu(ctx.default_device_info):
+        var sm100_num_partitions = num_partitions
+        if case .Some(capture_num_partitions) = num_partitions_in:
+            sm100_num_partitions = Optional[Int](capture_num_partitions)
         if scalar_args_buf.ptr:
             # Capturable path: GPU buffer is pre-computed, compute host-side
             # dispatch args from inputs.
@@ -1021,11 +1023,11 @@ def flare_mla_decoding_dispatch[
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
                 sparse=sparse,
-                rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
                 has_extra_k=has_extra_k,
                 physical_indices=physical_indices,
                 sparse_row=sparse_row,
+                skip_masked_tiles=skip_masked_tiles,
             ](
                 q,
                 k,
@@ -1048,7 +1050,7 @@ def flare_mla_decoding_dispatch[
                 extra_indices_stride=extra_indices_stride,
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
-                num_partitions_in=num_partitions_in,
+                num_partitions_in=sm100_num_partitions,
                 logical_indices=logical_indices,
                 selection_lag=selection_lag,
             )
@@ -1086,11 +1088,11 @@ def flare_mla_decoding_dispatch[
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
                 sparse=sparse,
-                rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
                 has_extra_k=has_extra_k,
                 physical_indices=physical_indices,
                 sparse_row=sparse_row,
+                skip_masked_tiles=skip_masked_tiles,
             ](
                 q,
                 k,
@@ -1118,6 +1120,8 @@ def flare_mla_decoding_dispatch[
                 extra_indices_stride=extra_indices_stride,
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
+                num_partitions_in=sm100_num_partitions,
+                logical_indices=logical_indices,
                 selection_lag=selection_lag,
             )
             _ = local_args^
@@ -1126,6 +1130,9 @@ def flare_mla_decoding_dispatch[
         comptime assert (
             not sparse_row.is_bounded()
         ), "sparse_row row bounds are only implemented for SM100."
+        comptime assert (
+            not skip_masked_tiles
+        ), "skip_masked_tiles is only implemented for SM100."
         if selection_lag != 0:
             raise Error("selection_lag is only implemented for SM100.")
         var batch_size: Int
@@ -1141,10 +1148,6 @@ def flare_mla_decoding_dispatch[
             "Sparse MLA decode is implemented only for SM100 (B200). This"
             " architecture would otherwise silently compute dense attention"
             " over the whole KV cache."
-        )
-        comptime assert not rope_aware_kv_sparse, (
-            "rope_aware_kv_sparse is a sparse-only SM100 routing flag and is"
-            " not honored by this architecture's dense MLA decode path."
         )
         comptime assert not fold_shared_index, (
             "Read-once shared-index fold (fold_shared_index) is implemented"
@@ -1310,12 +1313,6 @@ def flare_mla_decoding_dispatch[
                     grid_dim=(1, num_blocks_y, batch_size),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(
-                            ctx.default_device_info.shared_memory_per_multiprocessor
-                            - 4096
-                        )
-                    ),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
             else:
@@ -1362,12 +1359,6 @@ def flare_mla_decoding_dispatch[
                     ),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(
-                            ctx.default_device_info.shared_memory_per_multiprocessor
-                            - 4096
-                        )
-                    ),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
 
@@ -2586,10 +2577,10 @@ def mla_decoding_single_batch[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            coord[2 * num_m_mmas, num_n_mmas],
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.reshape[type_of(output_layout_by_mma_unit)](
@@ -3655,9 +3646,6 @@ def flare_mla_prefill_dispatch[
             grid_dim=grid_dim,
             block_dim=(config.num_threads(), 1, 1),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
@@ -4327,10 +4315,10 @@ def mla_prefill_single_batch[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            coord[2 * num_m_mmas, num_n_mmas],
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
+            coord[num_warps_m, num_warps_n],
+            coord[8, 4],
             use_exp2=True,
         ](
             output_reg_tile.reshape[type_of(reg_output_layout_by_mma_unit)](

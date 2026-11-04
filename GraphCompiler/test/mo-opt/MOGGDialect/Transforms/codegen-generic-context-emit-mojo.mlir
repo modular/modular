@@ -5,22 +5,21 @@
 // RUN:   --mogg-outline-routines --mogg-emit-mojo -verify-each=false
 // RUN: FileCheck %s < %t/graph.mojo
 
-// A kernel taking `ctx: DeviceContext` and no `target` parameter is
-// handed a CPU-typed context when it runs on the CPU, instead of the default
-// accelerator's.
+// A kernel taking `ctx: DeviceContext` and no `target` parameter is handed the
+// stub's context as is: the stub's own context is generic over its target, so
+// the caller picks it (see `unpack_device_ctx`).
 // CHECK: def {{__[A-Za-z0-9_]+}}({{.*}}: OpaquePointer[MutAnyOrigin], {{.*}}: OpaquePointer[MutAnyOrigin], [[PC:.*]]: {{.*}}DeviceContext) raises:
-// CHECK:   var [[CPU_CTX:.*]] = [[PC]].assert_cpu_target()
-// CHECK:   {{.*}}.MapLowerGenericContext.execute({{.*}}, {{.*}}, [[CPU_CTX]])
+// CHECK-NOT: assert_cpu_target
+// CHECK:   {{.*}}.MapLowerGenericContext.execute({{.*}}, {{.*}}, [[PC]])
 mo.graph @cpu(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %c = mo.custom [symbol = "map_lower_generic_context", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
   mo.output %c : !mo.tensor<[2, 2], f32>
 }
 
-// A bare `ctx: DeviceContext` is generic over its target as well, so it is
-// handed a CPU-typed context too.
+// A bare `ctx: DeviceContext` is generic over its target as well.
 // CHECK: def {{__[A-Za-z0-9_]+}}({{.*}}: OpaquePointer[MutAnyOrigin], {{.*}}: OpaquePointer[MutAnyOrigin], [[PC2:.*]]: {{.*}}DeviceContext) raises:
-// CHECK:   var [[CPU_CTX2:.*]] = [[PC2]].assert_cpu_target()
-// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute[target = "cpu"]({{.*}}, {{.*}}, [[CPU_CTX2]])
+// CHECK-NOT: assert_cpu_target
+// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute[target = "cpu"]({{.*}}, {{.*}}, [[PC2]])
 mo.graph @bare(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %c = mo.custom [symbol = "map_lower_one_plain_output", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
   mo.output %c : !mo.tensor<[2, 2], f32>

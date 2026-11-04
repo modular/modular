@@ -2752,7 +2752,7 @@ void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
 
 /// This function is called when an operation uses a #lit.any.origin origin.
 /// This happens when the operation accesses through (e.g.) an unbound
-/// UnsafePointer.  We don't know what objects may be touched by this access,
+/// Pointer.  We don't know what objects may be touched by this access,
 /// but we want to ensure (for usability sake) that any origin-tracked values
 /// are treated as a use, so they don't get destroyed too early.
 ///

@@ -2323,8 +2323,8 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
 
     auto dictDecl = cast<LIT::StructType>(dictType.mlirType);
     // We know these are all UnboundAttrs created by
-    // StructDeclOp::bindReference. The correct way is to have bindReference
-    // return a GeneratorType.
+    // StructDeclOp::legacyBindReference. The correct way is to have
+    // legacyBindReference return a GeneratorType.
     ArrayRef<TypedAttr> inputUnboundParams = dictDecl.getParamValues();
     if (inputUnboundParams.size() != 1) {
       shared.emitError(arg.loc)

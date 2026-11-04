@@ -252,7 +252,8 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
   Type compatibleVariadicPackType =
       cast<StructASTDecl>(expectedPackType.getDecl(emitter.shared))
           ->getOp()
-          .bindReference(paramBindings);
+          .bindAllReferences(&emitter.shared.getEvaluationContext(),
+                             paramBindings);
   auto compatibleRefType =
       actualRefType.getWithElement(compatibleVariadicPackType);
 
@@ -830,7 +831,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   auto refOrigin = sugarCast<RefType>(destBuffer.getType()).getOrigin();
   processOriginUnionElts(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
     // AnyOrigin is assumed to be ok since it is used for
-    // UnsafePointer etc.  We don't want to track it.
+    // Pointer etc.  We don't want to track it.
     if (sugarIsa<AnyOriginAttr>(origin))
       return;
     // We want to track the fully field sensitive origin, and
@@ -1732,7 +1733,7 @@ static bool shouldEmitParameterCall(RValue callee,
                                     SharedState &shared) {
   auto calleeSig = sugarCast<FnTypeGeneratorType>(callee.getRValueType());
 
-  // If this returns something like an UnsafePointer with an unusual origin,
+  // If this returns something like a Pointer with an unusual origin,
   // materialization will fail, so we can't emit it as a parameter call.
   if (ASTType(calleeSig.getUserResultType())
           .containsUnmaterializableOrigins(shared))

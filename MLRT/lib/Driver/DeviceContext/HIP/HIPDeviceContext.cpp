@@ -28,12 +28,15 @@
 #include "Support/HashUtils.h"
 #include "Support/max_license/Tracy/Tracy.h"
 #include "Support/max_license/Tracy/TracyRocm.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Process.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
@@ -647,7 +650,16 @@ ErrorOr<DeviceContextRef> HIPDevice::createContext() {
   HIP_WITH_DEV_ERR(*this);
 
   hipStream_t stream;
-  HIP_CHECK_ERR(this->hipDriver().hipStreamCreate(&stream, 0));
+  if (DeviceContext::configAsString("hip_main_stream_priority", "") == "high") {
+    int leastPriority = 0;
+    int greatestPriority = 0;
+    HIP_CHECK_ERR(this->hipDriver().hipDeviceGetStreamPriorityRange(
+        &leastPriority, &greatestPriority));
+    HIP_CHECK_ERR(this->hipDriver().hipStreamCreateWithPriority(
+        &stream, 0, greatestPriority));
+  } else {
+    HIP_CHECK_ERR(this->hipDriver().hipStreamCreate(&stream, 0));
+  }
 
   return HIPDeviceContextRef::create(*this, stream);
 }
@@ -1325,6 +1337,140 @@ hipStreamCaptureStatus HIPDeviceStream::getCaptureStatus() const {
   return status;
 }
 
+namespace {
+/// The forks in graphs being captured, and which node continued each fork's
+/// own stream.
+///
+/// A HIP graph does not keep the streams it was captured on. ROCm assigns its
+/// nodes to queues by walking the graph depth first and giving a node's k-th
+/// dependent edge the node's queue plus k, so the first dependent captured
+/// after a fork stays on the fork's queue. A side stream that forks off a node
+/// usually captures its first launch before the forking stream does, which
+/// moves the forking stream's work onto another queue, or onto the side
+/// stream's queue when the offsets wrap. Recording each fork's continuation
+/// lets endCapture put it first again.
+struct CaptureForks {
+  std::mutex mutex;
+  std::atomic<size_t> numPending = 0;
+  /// Per stream another stream forked off, the capture and the node it forked
+  /// from, until the stream's next launch.
+  llvm::DenseMap<hipStream_t, std::pair<unsigned long long, hipGraphNode_t>>
+      pending;
+  /// Per capture, each fork node and the node its own stream launched next.
+  llvm::DenseMap<unsigned long long,
+                 SmallVector<std::pair<hipGraphNode_t, hipGraphNode_t>>>
+      continuations;
+};
+
+/// The capture a stream is recording into and the one node its next launch
+/// will depend on, if there is exactly one.
+struct CaptureFrontier {
+  unsigned long long captureId = 0;
+  hipGraphNode_t node = nullptr;
+};
+} // namespace
+
+static CaptureForks &captureForks() {
+  static CaptureForks forks;
+  return forks;
+}
+
+static CaptureFrontier captureFrontier(const HIPDriver &driver,
+                                       hipStream_t stream) {
+  hipStreamCaptureStatus status =
+      hipStreamCaptureStatus::hipStreamCaptureStatusNone;
+  unsigned long long captureId = 0;
+  hipGraph_t graph = nullptr;
+  const hipGraphNode_t *dependencies = nullptr;
+  size_t numDependencies = 0;
+  if (driver.hipStreamGetCaptureInfo_v2(stream, &status, &captureId, &graph,
+                                        &dependencies, &numDependencies) !=
+          HIPDriver::SUCCESS ||
+      status != hipStreamCaptureStatus::hipStreamCaptureStatusActive)
+    return {};
+  return {captureId, numDependencies == 1 ? dependencies[0] : nullptr};
+}
+
+/// Records that another stream forked off `stream`'s capture frontier.
+static void noteCaptureFork(const HIPDriver &driver, hipStream_t stream) {
+  if (!driver.canReorderGraphEdges())
+    return;
+  CaptureFrontier frontier = captureFrontier(driver, stream);
+  if (!frontier.node)
+    return;
+  CaptureForks &forks = captureForks();
+  std::lock_guard<std::mutex> lock(forks.mutex);
+  auto [it, inserted] =
+      forks.pending.try_emplace(stream, frontier.captureId, frontier.node);
+  if (inserted)
+    ++forks.numPending;
+  else
+    it->second = {frontier.captureId, frontier.node};
+}
+
+/// Records the node `stream` just launched as the continuation of the fork it
+/// has pending, if any.
+static void noteCaptureLaunch(const HIPDriver &driver, hipStream_t stream) {
+  CaptureForks &forks = captureForks();
+  if (forks.numPending.load(std::memory_order_relaxed) == 0)
+    return;
+  std::lock_guard<std::mutex> lock(forks.mutex);
+  auto it = forks.pending.find(stream);
+  if (it == forks.pending.end())
+    return;
+  auto [captureId, fork] = it->second;
+  forks.pending.erase(it);
+  --forks.numPending;
+  CaptureFrontier frontier = captureFrontier(driver, stream);
+  if (frontier.node && frontier.captureId == captureId)
+    forks.continuations[captureId].emplace_back(fork, frontier.node);
+}
+
+/// Puts each fork's continuation first among the fork's dependents in
+/// `graph`, whose capture `captureId` just ended, and drops the capture's
+/// pending forks.
+static ErrorOrSuccess orderCaptureForks(const HIPDriver &driver,
+                                        unsigned long long captureId,
+                                        hipGraph_t graph) {
+  SmallVector<std::pair<hipGraphNode_t, hipGraphNode_t>> continuations;
+  {
+    CaptureForks &forks = captureForks();
+    std::lock_guard<std::mutex> lock(forks.mutex);
+    if (auto it = forks.continuations.find(captureId);
+        it != forks.continuations.end()) {
+      continuations = std::move(it->second);
+      forks.continuations.erase(it);
+    }
+    SmallVector<hipStream_t> stale;
+    for (auto &[stream, fork] : forks.pending)
+      if (fork.first == captureId)
+        stale.push_back(stream);
+    for (hipStream_t stream : stale)
+      forks.pending.erase(stream);
+    forks.numPending -= stale.size();
+  }
+
+  for (auto [fork, next] : continuations) {
+    size_t numDependents = 0;
+    HIP_CHECK_ERR(
+        driver.hipGraphNodeGetDependentNodes(fork, nullptr, &numDependents));
+    SmallVector<hipGraphNode_t, 4> dependents(numDependents);
+    HIP_CHECK_ERR(driver.hipGraphNodeGetDependentNodes(fork, dependents.data(),
+                                                       &numDependents));
+    if (numDependents < 2 || dependents.front() == next ||
+        !llvm::is_contained(dependents, next))
+      continue;
+    SmallVector<hipGraphNode_t, 4> forkNodes(numDependents, fork);
+    HIP_CHECK_ERR(driver.hipGraphRemoveDependencies(
+        graph, forkNodes.data(), dependents.data(), numDependents));
+    llvm::erase(dependents, next);
+    dependents.insert(dependents.begin(), next);
+    HIP_CHECK_ERR(driver.hipGraphAddDependencies(
+        graph, forkNodes.data(), dependents.data(), numDependents));
+  }
+  return success();
+}
+
 ErrorOrSuccess HIPDeviceStream::beginCapture() const {
   hipStreamCaptureStatus status = getCaptureStatus();
   if (status == hipStreamCaptureStatus::hipStreamCaptureStatusActive)
@@ -1349,11 +1495,18 @@ ErrorOr<DeviceGraphRef> HIPDeviceStream::endCapture() {
   HIPDevice &hipDevice = HIPDevice::cast(this->device());
   HIP_WITH_DEV_ERR(hipDevice);
 
+  const bool orderForks = hipDevice.hipDriver().canReorderGraphEdges();
+  const unsigned long long captureId =
+      orderForks ? captureFrontier(hipDevice.hipDriver(), stream_).captureId
+                 : 0;
   hipGraph_t graph = nullptr;
   HIP_CHECK_ERR(hipDevice.hipDriver().hipStreamEndCapture(stream_, &graph));
 
   if (!graph)
     RETURN_ERROR("hipStreamEndCapture returned null graph");
+
+  if (orderForks)
+    RETURN_IF_ERROR(orderCaptureForks(hipDevice.hipDriver(), captureId, graph));
 
   if (logGraphCapture_ != "") {
     static std::atomic<int32_t> graphCaptureCount = 0;
@@ -1438,6 +1591,7 @@ ErrorOrSuccess HIPDeviceFunction::hipCallKernelDirect(
   HIP_CHECK_ERR(moduleFunction_->hipDriver().hipModuleLaunchKernel(
       moduleFunction_->hipFunction(), gridX, gridY, gridZ, blockX, blockY,
       blockZ, sharedMemBytes, stream, args, nullptr));
+  noteCaptureLaunch(moduleFunction_->hipDriver(), stream);
   MAYBE_SYNC(HIPDeviceContext::cast(context()));
   return success();
 }
@@ -2218,6 +2372,7 @@ ErrorOrSuccess HIPDeviceContext::enqueueWaitFor(DeviceContext &ctx) {
 
   DEFINE_OR_RETURN_ERROR(DeviceEventRef, event, ctx.enqueueEvent());
   RETURN_IF_ERROR(enqueueWaitFor(*event));
+  noteCaptureFork(driver_, HIPDeviceContext::cast(ctx).hipStream());
   return success();
 }
 

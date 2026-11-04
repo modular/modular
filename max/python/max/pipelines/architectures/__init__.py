@@ -298,6 +298,11 @@ def register_all_models() -> None:
             ".kimi_k3_modulev3",
             "kimi_k3_modulev3_arch",
         ),
+        _LazyArch(
+            "K3DSparkModel",
+            ".kimi_k3_modulev3.dspark",
+            "k3_dspark_draft_arch",
+        ),
         _LazyArch("LagunaForCausalLM", ".laguna", "laguna_arch"),
         _LazyArch(
             "LagunaForCausalLM_ModuleV3",
@@ -392,6 +397,11 @@ def register_all_models() -> None:
             "MuseSparkForConditionalGeneration_ModuleV3",
             ".muse_spark",
             "muse_spark_arch",
+        ),
+        _LazyArch(
+            "MuseSparkDSparkModel",
+            ".dspark_muse_spark",
+            "muse_spark_dspark_draft_arch",
         ),
         _LazyArch("OlmoForCausalLM", ".olmo", "olmo_arch"),
         _LazyArch("Olmo2ForCausalLM", ".olmo2", "olmo2_arch"),

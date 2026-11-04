@@ -34,6 +34,7 @@ import max.gpu.primitives.warp as warp
 from max.gpu import WARP_SIZE, block_idx, lane_id, warp_id
 from max.gpu.sync import barrier, syncwarp
 from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -42,21 +43,41 @@ from max.gpu.primitives.grid_controls import (
 )
 from layout import TileTensor
 from std.memory import unsafe_stack_allocation
-from std.sys import get_defined_bool
+from std.sys import get_defined_int, size_of
 from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 from nn.attention.mha_utils import OptionalPointer, as_optional_reg
 
 
-# PDL for the MLA decode -> combine chain is always on: both launches attach
-# `pdl_launch_attributes(PDLLevel.ON)` unconditionally and both kernels wait on
-# their predecessors before touching their inputs. They release their own
-# dependents (the W_UV batched matmul) before that wait. Historically this
-# chain was opt-in through the `MLA_DECODE_COMBINE_PDL` define (then: a rare
-# illegal-address abort at context teardown tracked with it). The define cannot
-# be set through the build anyway, because this package is precompiled and
-# `mojo precompile` takes no `-D`, so enabling it was always a source edit.
+# The combine is a PDL dependent of the decode: it waits on dependent grids
+# at entry, before its first global access, and the dispatcher opts every
+# launch in (main's policy, #106899), so `pdl` is True on the production
+# path. Both kernels also release their own dependents (the W_UV batched
+# matmul) on entry, before that wait; the release comment inside the kernels
+# explains why that is safe.
+
+
+# Test-only controls. `MLA_COMBINE_TRIGGER_BREAK=1` triggers the combine's
+# successor at entry, before its wait, so the next decode overlaps a combine
+# still reading the split workspaces. The normal path makes the same release,
+# so the define only duplicates it; it stays so the `_pdl_reuse_break` test
+# variants keep their meaning if the release is ever gated again.
+# `MLA_COMBINE_RAGGED_EXIT_BREAK=1` drops the deferred ragged exit
+# (`early_loads`); 2 drops the non-split decode's ragged exit
+# (`MLA_SM100_Decode_Sparse_QKV_FP8`).
+comptime _MLA_COMBINE_TRIGGER_BREAK = get_defined_int[
+    "MLA_COMBINE_TRIGGER_BREAK", 0
+]()
+comptime _MLA_COMBINE_RAGGED_EXIT_BREAK = get_defined_int[
+    "MLA_COMBINE_RAGGED_EXIT_BREAK", 0
+]()
+
+
+def _combine_pdl_level[pdl: Bool]() -> PDLLevel:
+    comptime if pdl:
+        return PDLLevel.OVERLAP_AT_END
+    return PDLLevel.OFF
 
 
 # ===----------------------------------------------------------------------=== #
@@ -203,6 +224,8 @@ def mla_combine_kernel[
     ragged: Bool = False,
     warps_per_head: Int = 2,
     has_attn_sink: Bool = False,
+    early_loads: Bool = False,
+    canonical_layout: Bool = False,
 ](
     params: CombineParams[
         output_type,
@@ -237,6 +260,12 @@ def mla_combine_kernel[
         has_attn_sink: Whether to apply attention-sink correction to the
             global LSE (defaults to `False`). When true, `attn_sink_ptr`
             must be provided.
+        early_loads: Whether to read the ragged row offsets before
+            `wait_on_dependent_grids()` and issue the partial output and LSE
+            loads before the ragged early exit (defaults to `False`).
+        canonical_layout: Uses the normal launcher's contiguous partial
+            layout and compile-time head stride. Raw calls default to
+            runtime strides.
 
     Args:
         params: The `CombineParams` instance carrying the per-split partial
@@ -245,6 +274,25 @@ def mla_combine_kernel[
             strides used to index the split, batch, sequence, and head
             dimensions.
     """
+    # Reading the row offsets before the wait is sound: every decode CTA waits
+    # on its own predecessor grid before it triggers this one, so the
+    # offsets' writer, which precedes that decode, has completed. Under PDL
+    # most combine CTAs
+    # are placed only after the decode exits, so each serial global load is
+    # an L2 round trip on the critical path: reading the offsets ahead of the
+    # loads that consume them takes one such hop off the chain.
+    comptime early = ragged and early_loads and num_splits <= 8
+    var start_of_seq = 0
+    var batch_seq_len = 0
+    comptime if early:
+        start_of_seq = Int(params.input_row_offsets_ptr[block_idx.y])
+        batch_seq_len = (
+            Int(params.input_row_offsets_ptr[block_idx.y + 1]) - start_of_seq
+        )
+
+    comptime if _MLA_COMBINE_TRIGGER_BREAK != 0:
+        launch_dependent_grids()
+
     # PDL: release the grids that consume the combined output (the W_UV
     # batched matmul) on entry, then wait for the MLA decode kernel.
     # `launch_dependent_grids()` only lets a successor be scheduled; its own
@@ -269,8 +317,8 @@ def mla_combine_kernel[
     comptime heads_per_block = ParamsType.heads_per_block
     comptime assert 8 % warps_per_head == 0, "warps_per_head must divide 8"
 
-    var batch_idx = block_idx.x
-    var seq_idx = block_idx.y
+    var seq_idx = block_idx.x
+    var batch_idx = block_idx.y
     var head_block_idx = block_idx.z
     var warp_idx = warp_id()
     var lane_idx = lane_id()
@@ -279,7 +327,9 @@ def mla_combine_kernel[
     # The grid launches with seq_len = q_max_seq_len, so CTAs with
     # seq_idx >= this batch's actual seq_len must exit early to avoid
     # writing garbage to output locations belonging to other batches.
-    comptime if ragged:
+    # `early` defers the exit past the loads: the accumulators are padded to
+    # q_max_seq_len, so those reads stay in bounds.
+    comptime if ragged and not early:
         var batch_seq_len = Int(
             params.input_row_offsets_ptr[batch_idx + 1]
         ) - Int(params.input_row_offsets_ptr[batch_idx])
@@ -327,7 +377,12 @@ def mla_combine_kernel[
     )
     var oaccum_base = (
         params.out_accum_split_ptr.unsafe_offset(
-            out_row * Int(params.out_accum_stride_head)
+            out_row
+            * (
+                head_dim if canonical_layout else Int(
+                    params.out_accum_stride_head
+                )
+            )
         )
     ).as_imm()
 
@@ -340,15 +395,41 @@ def mla_combine_kernel[
         )
     )
 
+    # Every split's partials, issued together ahead of the ragged exit. They
+    # are volatile because the compiler otherwise sinks them below that exit
+    # (their only use is the store behind it), which puts them back on the
+    # serial chain after the LSE reduction.
+    comptime num_early = num_splits * elems_per_thread if early else 0
+    comptime vec_align = vec_size * size_of[output_type]()
+    var early_datas = Array[SIMD[output_type, vec_size], num_early](
+        fill_with_unrolled=lambda [j: Int]() -> SIMD[
+            output_type, vec_size
+        ]: oaccum_base.unsafe_load[
+            width=vec_size,
+            alignment=vec_align,
+            volatile=True,
+            invariant=False,
+        ](
+            (j // elems_per_thread) * Int(params.out_accum_stride_split)
+            + head_dim_offset
+            + lane_idx * vec_size
+            + (j % elems_per_thread) * (WARP_SIZE * vec_size)
+        )
+    )
+
     # =========================================================================
     # Step 2: Load LSE values and compute global LSE
     # =========================================================================
     # For >32 splits, each thread loads multiple LSE values (FlashMLA pattern).
-    var lse_base = (
-        batch_idx * Int(params.lse_stride_batch)
-        + seq_idx * Int(params.lse_stride_seq)
-        + head_idx
-    )
+    var lse_base: Int
+    comptime if canonical_layout:
+        lse_base = out_row
+    else:
+        lse_base = (
+            batch_idx * Int(params.lse_stride_batch)
+            + seq_idx * Int(params.lse_stride_seq)
+            + head_idx
+        )
 
     comptime num_lse_per_thread = ceildiv(num_splits, WARP_SIZE)
 
@@ -442,14 +523,20 @@ def mla_combine_kernel[
         var is_valid = SIMD[.bool, vec_size](fill=lse_scale != Float32(0))
 
         comptime for i in range(elems_per_thread):
-            var data_f32 = datas[i].cast[.float32]()
+            var data_f32: SIMD[.float32, vec_size]
+            comptime if early:
+                data_f32 = early_datas[split_idx * elems_per_thread + i].cast[
+                    .float32
+                ]()
+            else:
+                data_f32 = datas[i].cast[.float32]()
             var clean_data = is_valid.select(
                 data_f32,
                 SIMD[.float32, vec_size](0),
             )
             result[i] = result[i] + lse_scale * clean_data
 
-            comptime if split_idx < num_splits - 1:
+            comptime if split_idx < num_splits - 1 and not early:
                 var next_offset = (
                     (split_idx + 1) * Int(params.out_accum_stride_split)
                     + head_dim_offset
@@ -457,6 +544,10 @@ def mla_combine_kernel[
                     + i * (WARP_SIZE * vec_size)
                 )
                 datas[i] = oaccum_base.unsafe_load[width=vec_size](next_offset)
+
+    comptime if early and _MLA_COMBINE_RAGGED_EXIT_BREAK != 1:
+        if seq_idx >= batch_seq_len:
+            return
 
     # =========================================================================
     # Step 4: Write final result to output (convert to output_type)
@@ -468,7 +559,8 @@ def mla_combine_kernel[
 
     comptime if ragged:
         # Ragged output: start_of_seq * num_heads + seq_idx * num_heads + head_idx
-        var start_of_seq = Int(params.input_row_offsets_ptr[batch_idx])
+        comptime if not early:
+            start_of_seq = Int(params.input_row_offsets_ptr[batch_idx])
         final_out_row = (
             start_of_seq * Int(params.num_heads)
             + seq_idx * Int(params.num_heads)
@@ -479,7 +571,8 @@ def mla_combine_kernel[
         final_out_row = out_row
 
     var out_ptr = params.output_ptr.unsafe_offset(
-        final_out_row * Int(params.out_stride_row)
+        final_out_row
+        * (head_dim if canonical_layout else Int(params.out_stride_row))
     )
 
     comptime for i in range(elems_per_thread):
@@ -700,8 +793,8 @@ def mla_combine_kernel_split_parallel[
     comptime vec_size = min(max_vec, 8)
     comptime elems_per_thread = head_dim // (WARP_SIZE * vec_size)
 
-    var batch_idx = block_idx.x
-    var seq_idx = block_idx.y
+    var seq_idx = block_idx.x
+    var batch_idx = block_idx.y
     var head_idx = block_idx.z
     var warp_idx = warp_id()
     var lane_idx = lane_id()
@@ -968,6 +1061,7 @@ def launch_mla_combine_kernel_split_parallel[
     num_splits: Int,
     ragged: Bool = False,
     has_attn_sink: Bool = False,
+    pdl: Bool = False,
 ](
     out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
     lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
@@ -1000,6 +1094,9 @@ def launch_mla_combine_kernel_split_parallel[
         has_attn_sink: Whether to apply attention-sink correction to the
             global LSE (defaults to `False`). When true, `attn_sink_ptr`
             must be provided.
+        pdl: Whether to launch with programmatic dependent launch, so the
+            prologue overlaps the producer's tail up to
+            `wait_on_dependent_grids()` (defaults to `False`).
 
     Args:
         out_accum_split: The per-split partial output accumulator tensor of
@@ -1053,8 +1150,9 @@ def launch_mla_combine_kernel_split_parallel[
         head_dim,
     )
 
-    # Grid: one CTA per (batch, seq, head).
-    var grid_dim = (batch_size, seq_len, num_heads)
+    # Grid: one CTA per (seq, batch, head). The token index takes x, the only
+    # axis not capped at 65535.
+    var grid_dim = (seq_len, batch_size, num_heads)
     var block_dim = (num_threads, 1, 1)
 
     ctx.enqueue_function[
@@ -1067,10 +1165,12 @@ def launch_mla_combine_kernel_split_parallel[
             has_attn_sink,
         ]
     ](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(_combine_pdl_level[pdl]()),
+        ),
         params,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1085,6 +1185,8 @@ def launch_mla_combine_kernel[
     ragged: Bool = False,
     warps_per_head: Int = 2,
     has_attn_sink: Bool = False,
+    pdl: Bool = False,
+    early_loads: Bool = False,
 ](
     out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
     lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
@@ -1120,6 +1222,11 @@ def launch_mla_combine_kernel[
         has_attn_sink: Whether to apply attention-sink correction to the
             global LSE (defaults to `False`). When true, `attn_sink_ptr`
             must be provided.
+        pdl: Whether to launch with programmatic dependent launch, so the
+            prologue overlaps the producer's tail up to
+            `wait_on_dependent_grids()` (defaults to `False`).
+        early_loads: Forwarded to `mla_combine_kernel` (defaults to
+            `False`).
 
     Args:
         out_accum_split: The per-split partial output accumulator tensor of
@@ -1175,7 +1282,8 @@ def launch_mla_combine_kernel[
         head_dim,
     )
 
-    var grid_dim = (batch_size, seq_len, ceildiv(num_heads, heads_per_block))
+    # Token index in x; see the split-parallel launcher.
+    var grid_dim = (seq_len, batch_size, ceildiv(num_heads, heads_per_block))
     var block_dim = (num_threads, 1, 1)
 
     ctx.enqueue_function[
@@ -1187,12 +1295,21 @@ def launch_mla_combine_kernel[
             ragged,
             warps_per_head,
             has_attn_sink,
+            early_loads,
+            # This launcher's params always have contiguous strides. Only the
+            # BF16 512-wide two-split cell folds them at compile time, which
+            # keeps every other cell's code unchanged.
+            canonical_layout=(
+                output_type == .bfloat16 and head_dim == 512 and num_splits == 2
+            ),
         ]
     ](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(_combine_pdl_level[pdl]()),
+        ),
         params,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1209,6 +1326,8 @@ def mla_decode_combine_partial_outputs[
     ragged: Bool = False,
     warps_per_head: Int = 2,
     split_parallel: Bool = False,
+    pdl: Bool = False,
+    early_loads: Bool = False,
 ](
     out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
     lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
@@ -1247,6 +1366,11 @@ def mla_decode_combine_partial_outputs[
             threads per block. Used only when `split_parallel` is false.
         split_parallel: Selects the split-parallel combine kernel when true,
             otherwise the main combine kernel (defaults to `False`).
+        pdl: Whether to launch with programmatic dependent launch, so the
+            prologue overlaps the producer's tail up to
+            `wait_on_dependent_grids()` (defaults to `False`).
+        early_loads: Forwarded to the main combine kernel; ignored by the
+            split-parallel kernel (defaults to `False`).
 
     Args:
         out_accum_split: The per-split partial output accumulator tensor of
@@ -1279,6 +1403,7 @@ def mla_decode_combine_partial_outputs[
             num_splits,
             ragged,
             has_attn_sink,
+            pdl,
         ](
             out_accum_split,
             lse_accum_split,
@@ -1299,6 +1424,8 @@ def mla_decode_combine_partial_outputs[
             ragged,
             warps_per_head,
             has_attn_sink,
+            pdl,
+            early_loads,
         ](
             out_accum_split,
             lse_accum_split,

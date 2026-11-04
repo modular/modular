@@ -70,7 +70,43 @@ def test_composed_layout_swizzle_rt() raises:
     assert_equal(comp_layout(5), 40)
 
 
+def test_layout_coord_index() raises:
+    print("== test_layout_coord_index")
+
+    comptime layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
+
+    # Static Coord leaves route through the same crd2idx as IntTuple.
+    comptime for i in range(6):
+        comptime for j in range(2):
+            assert_equal(
+                comptime (layout(coord[i, j])),
+                comptime (layout(IntTuple(i, j))),
+            )
+
+    # Runtime Coord leaves match too.
+    var runtime_layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
+    for i in range(6):
+        for j in range(2):
+            assert_equal(
+                runtime_layout(Coord(i, j)), runtime_layout(IntTuple(i, j))
+            )
+
+
+def test_composed_layout_coord() raises:
+    print("== test_composed_layout_coord")
+
+    var swizzle = Swizzle(1, 0, 2)
+    var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
+    var comp_layout = ComposedLayout(layout^, swizzle)
+
+    for i in range(6):
+        for j in range(2):
+            assert_equal(comp_layout(Coord(i, j)), comp_layout(IntTuple(i, j)))
+
+
 def main() raises:
     test_composed_layout()
     test_composed_layout_swizzle()
     test_composed_layout_swizzle_rt()
+    test_layout_coord_index()
+    test_composed_layout_coord()

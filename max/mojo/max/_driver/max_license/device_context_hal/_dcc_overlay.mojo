@@ -26,7 +26,7 @@ from max._driver.max_license.device_context_hal.device_context_hal import (
     _DeviceContextScopeHAL,
     _DeviceFunctionPtr,
     _DumpPath,
-    _check_dim,
+    _check_dim_in_range,
     _checked,
 )
 from max._driver.max_license.device_context_hal.device_graph_hal import *

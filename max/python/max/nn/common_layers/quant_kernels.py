@@ -56,6 +56,9 @@ from max.nn.legacy.kernels import (
     grouped_matmul_block_scaled as _grouped_matmul_block_scaled,
 )
 from max.nn.legacy.kernels import (
+    grouped_matmul_blocked_swiglu as _grouped_matmul_blocked_swiglu,
+)
+from max.nn.legacy.kernels import (
     grouped_quantize_dynamic_block_scaled as _grouped_quantize_dynamic_block_scaled,
 )
 from max.nn.legacy.kernels import (
@@ -350,6 +353,8 @@ grouped_quantize_dynamic_block_scaled = F.functional(
 grouped_matmul_block_scaled = F.functional(
     _grouped_matmul_block_scaled, rule=_nvfp4_grouped_matmul_rule
 )
+# Per device only: the expert-parallel chain runs it on each rank's rows.
+grouped_matmul_blocked_swiglu = F.functional(_grouped_matmul_blocked_swiglu)
 
 
 def _silu_quantize_fp8(
@@ -460,6 +465,7 @@ __all__ = [
     "grouped_dynamic_scaled_fp8_matmul",
     "grouped_ffn_blockwise_fp8_amd",
     "grouped_matmul_block_scaled",
+    "grouped_matmul_blocked_swiglu",
     "grouped_quantize_dynamic_block_scaled",
     "moe_fp8_host_usage_stats",
     "preshuffle_blockwise_fp8_b",

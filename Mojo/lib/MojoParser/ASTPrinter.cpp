@@ -322,8 +322,8 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
       if (auto def = paramInfo.getDefault(idx)) {
         // Make sure to substitute other parameter values in, e.g. so we can
         // handle things like:
-        //   struct UnsafePointer[type: AnyType,
-        //                        align: Int = _default_alignment[type]()]:
+        //   struct Pointer[type: AnyType,
+        //                  align: Int = _default_alignment[type]()]:
         def = evaluator.getReboundAttribute(def);
         if (isEqualCanon(paramValue, def) &&
             passingKind != PassingKind::PosOnly) {

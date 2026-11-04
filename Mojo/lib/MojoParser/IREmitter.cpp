@@ -399,7 +399,7 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
   }
 
   // We cannot emit a value that contains an origin in its type (e.g. a
-  // StringSpan or UnsafePointer) because the origin will be incorrect -
+  // StringSpan or Pointer) because the origin will be incorrect -
   // referring to immortal compile-time memory.
   if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared)) {
     const ExprNode *expr = value.expr;
@@ -2141,7 +2141,8 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
   }
 
   // Bind the Origin parameters.
-  originType = litStruct.bindReference({mutBool, litOrigin});
+  originType = litStruct.bindAllReferences(&shared.getEvaluationContext(),
+                                           {mutBool, litOrigin});
 
   // If we are referencing an origin parameter, we need to find the
   // Origin it corresponds to and use that. Consider:

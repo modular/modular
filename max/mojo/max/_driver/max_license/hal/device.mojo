@@ -19,8 +19,7 @@ from .plugin import (
     DeviceHandle,
     M_driver_dlpack_device,
 )
-from ._plugin._overlay import HAL_PLUGINS
-from .extensions.traits import SupportsPeerAccessV1
+from ._plugin._impl import HalPluginForTarget
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 
 from std.collections import Array
@@ -87,9 +86,9 @@ struct Device[spec: DeviceSpec](Deinitable, Movable):
     var _self_ref: WeakPointer[Self]
     var id: Int64
 
-    comptime Extensions = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.spec]()
-    ].HookFor[DeviceSpec.target[Self.spec]()].extensions
+    comptime Extensions = HalPluginForTarget[
+        DeviceSpec.target[Self.spec]()
+    ].extensions
 
     # SAFETY: this field is immutably shared across the HAL
     # object graph, and must not be mutated without
@@ -166,18 +165,28 @@ struct Device[spec: DeviceSpec](Deinitable, Movable):
         """Queries a numeric device attribute by its CUDA-style ID."""
         return self._raw[].get_device_attribute(self._handle, attribute)
 
-    def can_access_peer(
-        self, peer: Device[Self.spec]
-    ) raises HALError -> Bool where conforms_to(
-        Self.Extensions, SupportsPeerAccessV1
-    ):
-        """Returns whether this device can access `peer` once enabled."""
-        var peer_access = self._extensions.peer_access()
-        if not peer_access:
-            return False
-        return peer_access.value().can_access_peer(
-            self._raw[], self._handle, peer._handle
-        )
+    def handle[
+        origin: Origin, //
+    ](ref[origin] self) -> Pointer[DeviceHandle.T, origin]:
+        """Returns the raw device handle, tying its origin back to `self`.
+
+        Accessing `self._handle` directly hands out a `DeviceHandle` whose
+        origin is untracked, so it keeps nothing alive.
+
+        Parameters:
+            origin: The origin of the borrow of `self`, inferred at the call
+                site.
+
+        Returns:
+            The device handle carrying `self`'s origin.
+        """
+        return self._handle.unsafe_mut_cast[origin.mut]().unsafe_origin_cast[
+            origin
+        ]()
+
+    def raw_driver(self) -> ArcPointer[RawDriver]:
+        """Returns the raw driver backing this device, for extension calls."""
+        return self._raw
 
     def get_dlpack_device(
         self, pinned: Bool

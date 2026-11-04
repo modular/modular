@@ -40,7 +40,6 @@ from max.gpu.sync import barrier, schedule_barrier
 from max.gpu.host import (
     DeviceAttribute,
     DeviceContext,
-    FuncAttribute,
     get_gpu_target,
 )
 from max.gpu.host.info import B200
@@ -3300,132 +3299,155 @@ def _gemv_gpu_dispatch_impl[
                     _one_row_per_warp()
 
         case GEMVAlgorithm.GemvKernel:
-            comptime if transpose_b:
-                logger.info("Executing: GEMV_KERNEL (with transpose)")
 
+            @inline(.always)
+            def _enqueue_unswapped() raises {imm}:
                 comptime if has_epilogue_fn:
                     comptime kernel = gemv_kernel_epilogue_fn[
                         c_type,
-                        b_type,
                         a_type,
+                        b_type,
                         EpilogueFnType,
-                        transpose_b=transpose_b,
                         pdl_level=pdl_level,
                     ]
                     ctx.enqueue_function[kernel](
                         c.to_device_buffer(ctx),
-                        b.to_device_buffer(ctx),
                         a.to_device_buffer(ctx),
-                        Int32(n),
+                        b.to_device_buffer(ctx),
                         Int32(m),
+                        Int32(n),
                         Int32(k),
                         host_args=(epilogue_fn,),
-                        grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                        grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                         block_dim=warp_size * WARPS_PER_BLOCK,
                         attributes=pdl_launch_attributes(pdl_level),
                     )
                 elif has_compute_fn:
                     comptime kernel = gemv_kernel_compute_fn[
                         c_type,
-                        b_type,
                         a_type,
+                        b_type,
                         ComputeFnType,
-                        transpose_b=transpose_b,
                         pdl_level=pdl_level,
                     ]
                     ctx.enqueue_function[kernel](
                         c.to_device_buffer(ctx),
-                        b.to_device_buffer(ctx),
                         a.to_device_buffer(ctx),
-                        Int32(n),
+                        b.to_device_buffer(ctx),
                         Int32(m),
+                        Int32(n),
                         Int32(k),
                         host_args=(compute_fn,),
-                        grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                        grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                         block_dim=warp_size * WARPS_PER_BLOCK,
                         attributes=pdl_launch_attributes(pdl_level),
                     )
                 else:
                     comptime kernel = gemv_kernel[
                         c_type,
-                        b_type,
                         a_type,
-                        transpose_b=transpose_b,
+                        b_type,
                         pdl_level=pdl_level,
                     ]
                     ctx.enqueue_function[kernel](
                         c.to_device_buffer(ctx),
-                        b.to_device_buffer(ctx),
                         a.to_device_buffer(ctx),
-                        Int32(n),
+                        b.to_device_buffer(ctx),
                         Int32(m),
+                        Int32(n),
                         Int32(k),
-                        grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                        grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                         block_dim=warp_size * WARPS_PER_BLOCK,
                         attributes=pdl_launch_attributes(pdl_level),
+                    )
+
+            comptime if transpose_b:
+                # The swapped launch below turns a GEVM (m == 1) into a GEMV
+                # and is valid only then: with m > 1 the kernel would read only
+                # row 0 of `a` and write only the first n elements of `c`,
+                # leaving rows 1..m-1 uninitialized. n == 1 covers every
+                # m > 1 shape that selects this kernel, so it takes the
+                # unswapped launch; a wider n is a mis-routed dispatch and
+                # raises rather than silently running a wrong kernel.
+                if m == 1:
+                    logger.info("Executing: GEMV_KERNEL (with transpose)")
+
+                    comptime if has_epilogue_fn:
+                        comptime kernel = gemv_kernel_epilogue_fn[
+                            c_type,
+                            b_type,
+                            a_type,
+                            EpilogueFnType,
+                            transpose_b=transpose_b,
+                            pdl_level=pdl_level,
+                        ]
+                        ctx.enqueue_function[kernel](
+                            c.to_device_buffer(ctx),
+                            b.to_device_buffer(ctx),
+                            a.to_device_buffer(ctx),
+                            Int32(n),
+                            Int32(m),
+                            Int32(k),
+                            host_args=(epilogue_fn,),
+                            grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                            block_dim=warp_size * WARPS_PER_BLOCK,
+                            attributes=pdl_launch_attributes(pdl_level),
+                        )
+                    elif has_compute_fn:
+                        comptime kernel = gemv_kernel_compute_fn[
+                            c_type,
+                            b_type,
+                            a_type,
+                            ComputeFnType,
+                            transpose_b=transpose_b,
+                            pdl_level=pdl_level,
+                        ]
+                        ctx.enqueue_function[kernel](
+                            c.to_device_buffer(ctx),
+                            b.to_device_buffer(ctx),
+                            a.to_device_buffer(ctx),
+                            Int32(n),
+                            Int32(m),
+                            Int32(k),
+                            host_args=(compute_fn,),
+                            grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                            block_dim=warp_size * WARPS_PER_BLOCK,
+                            attributes=pdl_launch_attributes(pdl_level),
+                        )
+                    else:
+                        comptime kernel = gemv_kernel[
+                            c_type,
+                            b_type,
+                            a_type,
+                            transpose_b=transpose_b,
+                            pdl_level=pdl_level,
+                        ]
+                        ctx.enqueue_function[kernel](
+                            c.to_device_buffer(ctx),
+                            b.to_device_buffer(ctx),
+                            a.to_device_buffer(ctx),
+                            Int32(n),
+                            Int32(m),
+                            Int32(k),
+                            grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                            block_dim=warp_size * WARPS_PER_BLOCK,
+                            attributes=pdl_launch_attributes(pdl_level),
+                        )
+                elif n == 1:
+                    logger.info("Executing: GEMV_KERNEL (n == 1, unswapped)")
+                    _enqueue_unswapped()
+                else:
+                    # Unreachable from gemv_gpu's selection, where every
+                    # m > 1 arm requires an aligned K and picks a split-K or
+                    # vector kernel instead; only a direct
+                    # gemv_gpu_dispatch call can land here.
+                    raise Error(
+                        t"GEMV_KERNEL transpose_b launch requires m == 1 or "
+                        t"n == 1, got m={m}, n={n}, k={k}, dtype={c_type}"
                     )
             else:
                 logger.info("Executing: GEMV_KERNEL (no transpose)")
-
-                comptime if has_epilogue_fn:
-                    comptime kernel = gemv_kernel_epilogue_fn[
-                        c_type,
-                        a_type,
-                        b_type,
-                        EpilogueFnType,
-                        pdl_level=pdl_level,
-                    ]
-                    ctx.enqueue_function[kernel](
-                        c.to_device_buffer(ctx),
-                        a.to_device_buffer(ctx),
-                        b.to_device_buffer(ctx),
-                        Int32(m),
-                        Int32(n),
-                        Int32(k),
-                        host_args=(epilogue_fn,),
-                        grid_dim=ceildiv(m, WARPS_PER_BLOCK),
-                        block_dim=warp_size * WARPS_PER_BLOCK,
-                        attributes=pdl_launch_attributes(pdl_level),
-                    )
-                elif has_compute_fn:
-                    comptime kernel = gemv_kernel_compute_fn[
-                        c_type,
-                        a_type,
-                        b_type,
-                        ComputeFnType,
-                        pdl_level=pdl_level,
-                    ]
-                    ctx.enqueue_function[kernel](
-                        c.to_device_buffer(ctx),
-                        a.to_device_buffer(ctx),
-                        b.to_device_buffer(ctx),
-                        Int32(m),
-                        Int32(n),
-                        Int32(k),
-                        host_args=(compute_fn,),
-                        grid_dim=ceildiv(m, WARPS_PER_BLOCK),
-                        block_dim=warp_size * WARPS_PER_BLOCK,
-                        attributes=pdl_launch_attributes(pdl_level),
-                    )
-                else:
-                    comptime kernel = gemv_kernel[
-                        c_type,
-                        a_type,
-                        b_type,
-                        pdl_level=pdl_level,
-                    ]
-
-                    ctx.enqueue_function[kernel](
-                        c.to_device_buffer(ctx),
-                        a.to_device_buffer(ctx),
-                        b.to_device_buffer(ctx),
-                        Int32(m),
-                        Int32(n),
-                        Int32(k),
-                        grid_dim=ceildiv(m, WARPS_PER_BLOCK),
-                        block_dim=warp_size * WARPS_PER_BLOCK,
-                        attributes=pdl_launch_attributes(pdl_level),
-                    )
+                _enqueue_unswapped()
 
         case GEMVAlgorithm.GevmKernel:
             logger.info("Executing: GEVM_KERNEL")
@@ -5230,9 +5252,6 @@ def _enqueue_gemm_mma_cpasync[
             grid_dim=(grid_x, grid_y, batch_size),
             block_dim=TOTAL_THREADS,
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(_MMA_CPASYNC_SMEM_BYTES)
-            ),
             attributes=pdl_launch_attributes(pdl_level),
         )
     elif has_compute_fn:
@@ -5266,9 +5285,6 @@ def _enqueue_gemm_mma_cpasync[
             grid_dim=(grid_x, grid_y, batch_size),
             block_dim=TOTAL_THREADS,
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(_MMA_CPASYNC_SMEM_BYTES)
-            ),
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
@@ -5300,8 +5316,5 @@ def _enqueue_gemm_mma_cpasync[
             grid_dim=(grid_x, grid_y, batch_size),
             block_dim=TOTAL_THREADS,
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(_MMA_CPASYNC_SMEM_BYTES)
-            ),
             attributes=pdl_launch_attributes(pdl_level),
         )

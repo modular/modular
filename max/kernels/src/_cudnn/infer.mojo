@@ -80,7 +80,7 @@ def _get_dylib_function[
 # conv.mojo destroys the tensor descriptors on last use.
 comptime AnyOpaquePointer = OpaquePointer[AnyOrigin[mut=True]]
 
-# This is for calls that have two levels of nesting i.e. 3 UnsafePointers.
+# This is for calls that have two levels of nesting i.e. 3 Pointers.
 # `type` doesn't do anything here, it's just for descriptive purposes, allowing
 # the ability to pass the descriptive pointer names below
 comptime DoubleNestedPointer[type: AnyType] = Pointer[

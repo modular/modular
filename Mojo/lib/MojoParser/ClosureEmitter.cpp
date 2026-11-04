@@ -90,7 +90,8 @@ static VarDeclOp emitInitializerCall(ASTDecl &declScope,
                                      Location location, StructDeclOp structDecl,
                                      ArrayRef<TypedAttr> paramArgs,
                                      ArrayRef<CValue> args, StringRef name) {
-  LIT::StructType boundType = structDecl.bindReference(paramArgs);
+  LIT::StructType boundType = structDecl.bindAllReferences(
+      &declScope.getShared().getEvaluationContext(), paramArgs);
   VarDeclOp var =
       VarDeclOp::create(builder, location, boundType, name,
                         declScope.mangleParamName(name), VarDeclKind::Var);
@@ -334,7 +335,7 @@ createStruct(SharedState &shared, ModuleASTDecl &moduleDecl, StringAttr name,
       cast<StructASTDecl>(shared.declResolver->addFullyResolvedDecl(
           &*declOp, name, loc, &moduleDecl));
 
-  structDecl.setSelfType(StructASTDecl::computeSelfType(declOp));
+  structDecl.setSelfType(structDecl.computeSelfType());
   return {structDecl, declOp};
 }
 
@@ -416,7 +417,8 @@ createDeviceTypeStruct(SharedState &shared, ModuleASTDecl &moduleDecl,
       llvm::map_to_vector(structParams, [](ParamDeclAttr param) -> TypedAttr {
         return ParamDeclRefAttr::get(param);
       });
-  return deviceStructOp.bindReference(structBindings);
+  return deviceStructOp.bindAllReferences(&shared.getEvaluationContext(),
+                                          structBindings);
 }
 
 /// Given a signature of a function, create a FuncType by inserting a closure
@@ -882,7 +884,8 @@ ClosureEmitter::getInflatedClosureForFnSymbol(IREmitter &emitter, SMLoc loc,
         return declOp;
       });
 
-  return inflatedDeclOp.bindReference(bindings);
+  return inflatedDeclOp.bindAllReferences(&shared.getEvaluationContext(),
+                                          bindings);
 }
 
 bool ClosureEmitter::isInflatedClosureForFnSymbol(PValue fnSymbol,
@@ -1716,8 +1719,8 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
   for (auto [index, fieldDecl] : llvm::enumerate(concreteFieldDecls))
     addFieldOpAndDecl(fieldDecl.getName(), selfBoundFieldTypes[index], structOp,
                       structDecl, structBuilder, *shared.declResolver);
-  LIT::StructType closureStructType =
-      structOp.bindReference(selfRefParamValues);
+  LIT::StructType closureStructType = structOp.bindAllReferences(
+      &shared.getEvaluationContext(), selfRefParamValues);
   PromotedClosureSelfArg selfArg{closureStructType, ArgConvention::ImmMem};
   DefASTDecl *promotedCallDecl = liftClosureIntoMethod(
       nestedFnDecl, structDecl, selfArg, concreteFieldDecls,
@@ -1962,8 +1965,8 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
   if (methodImpls.contains(ClosureMethod::COPY))
     generateIsTrivialSpecialAlias("__copy_ctor_is_trivial", isTrivial, shared,
                                   structDecl, getCopyParent());
-  LIT::StructType boundClosureStructType =
-      structOp.bindReference(concreteStructBindings);
+  LIT::StructType boundClosureStructType = structOp.bindAllReferences(
+      &shared.getEvaluationContext(), concreteStructBindings);
   TypedAttr typeParamAttr =
       TypeParamAttr::get(boundClosureStructType, kgenStructType, traitType);
   if (capturesEncodable) {
@@ -2681,7 +2684,8 @@ PValue ClosureEmitter::createParamClosureExtensionType(
         return declOp;
       });
 
-  StructType extType = extDeclOp.bindReference(bindings);
+  StructType extType =
+      extDeclOp.bindAllReferences(&shared.getEvaluationContext(), bindings);
   return PValue(TypeParamAttr::get(extType, StructMetaType::get(extType)));
 }
 
@@ -2707,7 +2711,8 @@ static void populateDevicePassableTypeName(FnOp implementation,
       "StringLiteral", structDecl, structDecl.getLoc());
   StructDeclOp strLitDecl =
       cast<StructASTDecl>(strLitType.getDecl(shared))->getOp();
-  Type boundStrLitType = strLitDecl.bindReference({closureName});
+  Type boundStrLitType = strLitDecl.bindAllReferences(
+      &shared.getEvaluationContext(), {closureName});
   CValue literalValue = emitter.emitConstructorCall(
       ASTType(boundStrLitType),
       CallOperands(CallSyntax::kTypeCall, &loc, EC_CallArgValue));

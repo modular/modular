@@ -225,8 +225,6 @@ constexpr llvm::StringLiteral kStructDeviceContext =
     "max.gpu.host.DeviceContext";
 constexpr llvm::StringLiteral kStructDeviceContextArray =
     "max.gpu.host.DeviceContextArray";
-/// `DeviceContext.assert_cpu_target()`: this context as a `DeviceContext.CPU`.
-constexpr llvm::StringLiteral kFnAssertCpuTarget = "assert_cpu_target";
 /// `DeviceContext.assert_default_target()`: this context as a
 /// `DeviceContext[]`. TODO(DRIV-655): Remove along with its uses.
 constexpr llvm::StringLiteral kFnAssertDefaultTarget = "assert_default_target";

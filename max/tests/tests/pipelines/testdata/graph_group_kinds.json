@@ -1,6 +1,7 @@
 [
   "batch_context",
   "conv_states",
+  "decoder_inputs",
   "decoder_outputs",
   "ep_payload",
   "eplb_profile",

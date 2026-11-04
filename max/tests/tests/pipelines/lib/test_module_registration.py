@@ -24,6 +24,7 @@ from unittest.mock import NonCallableMock
 import numpy as np
 import pytest
 from max import tree
+from max._artifact.value_types import treedef_to_json
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -31,6 +32,7 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData, WeightsFormat
 from max.nn import Module
 from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.graph_groups import DecoderGraphInputs, VisionMerge
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
@@ -72,6 +74,7 @@ from max.pipelines.lib.registration_runtime import (
     ExpertParallelDeploymentConfig,
     ExpertParallelInputs,
     ModuleRuntime,
+    batch_context_length_types,
     ep_input_tree,
     prepare_weights,
     role_weights,
@@ -210,33 +213,33 @@ def _arch(**kwargs: Any) -> SupportedArchitecture:
     )
 
 
-def _toy_input_types(**extra: Any) -> dict[str, object]:
-    return {
-        "tokens": X,
-        "input_row_offsets": X,
-        "return_n_logits": X,
-        "kv": {"a": X, "b": X},
+def _toy_input_types(**extra: Any) -> DecoderGraphInputs:
+    return DecoderGraphInputs(
+        tokens=X,
+        input_row_offsets=X,
+        return_n_logits=X,
+        kv={"a": X, "b": X},
         **extra,
-    }
+    )
 
 
 def test_the_graph_feeds_each_field_and_keeps_weight_names() -> None:
     decoder = ToyDecoder(ToyConfig())
     names = [name for name, _ in decoder.parameters]
-    adapter = _DecoderGraph(decoder, _toy_input_types())
+    adapter = _DecoderGraph(decoder)
 
     assert [name for name, _ in adapter.parameters] == names == ["scale.weight"]
 
     run = adapter.compile(
-        X, X, X, X, X, weights={"scale.weight": np.full(2, 2, np.float32)}
+        _toy_input_types(), weights={"scale.weight": np.full(2, 2, np.float32)}
     )
     tokens, offsets, n_logits, kv_a, kv_b = (
         Buffer.from_numpy(np.full(2, value, np.float32))
         for value in (1, 2, 3, 4, 5)
     )
-    outputs = run(tokens, offsets, n_logits, kv_a, kv_b)
+    (logits,) = run.execute_raw(tokens, offsets, n_logits, kv_a, kv_b)
     np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor),
+        np.from_dlpack(logits),
         np.full(2, 1 * 2 + 2 * 10 + 3 * 100 + 4 * 1000 - 5, np.float32),
     )
 
@@ -244,35 +247,144 @@ def test_the_graph_feeds_each_field_and_keeps_weight_names() -> None:
 def test_the_graph_binds_lora_inputs_rather_than_reading_them_as_kv() -> None:
     decoder = ToyDecoder(ToyConfig())
     manager = NonCallableMock(spec=LoRAManagerV3)
-    adapter = _DecoderGraph(
-        decoder, _toy_input_types(lora=(X, X)), lora_manager=manager
-    )
+    adapter = _DecoderGraph(decoder, lora_manager=manager)
 
     # The LoRA weight adapter nests the checkpoint's keys under `model.`.
     assert [name for name, _ in adapter.parameters] == ["model.scale.weight"]
     run = adapter.compile(
-        X,
-        X,
-        X,
-        X,
-        X,
-        X,
-        X,
+        _toy_input_types(lora=(X, X)),
         weights={"model.scale.weight": np.full(2, 2, np.float32)},
     )
     tokens, offsets, n_logits, kv_a, kv_b, lora_a, lora_b = (
         Buffer.from_numpy(np.full(2, value, np.float32))
         for value in (1, 2, 3, 4, 5, 6, 7)
     )
-    outputs = run(tokens, offsets, n_logits, kv_a, kv_b, lora_a, lora_b)
+    (logits,) = run.execute_raw(
+        tokens, offsets, n_logits, kv_a, kv_b, lora_a, lora_b
+    )
     np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor),
+        np.from_dlpack(logits),
         np.full(2, 1 * 2 + 2 * 10 + 3 * 100 + 4 * 1000 - 5, np.float32),
     )
     (bound_model, lora_inputs), _ = manager.bind_inputs.call_args
     # Compiling traces a copy of the module, so the bound decoder is the copy.
     assert type(bound_model) is ToyDecoder
     assert len(lora_inputs) == 2
+
+
+class EchoDecoder(PlainDecoder):
+    """Returns its inputs, so each output shows which input fed it."""
+
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        assert inputs.vision is not None
+        return DecoderOutputs(
+            next_token_logits=inputs.tokens,
+            logits=inputs.vision.embeddings,
+            logit_offsets=inputs.input_row_offsets,
+            hidden_states=inputs.vision.scatter_indices,
+            state=inputs.state,
+        )
+
+
+def test_the_graph_names_its_inputs_and_outputs_in_buffer_order() -> None:
+    types = decoder_input_types(
+        NonCallableMock(
+            get_symbolic_inputs=lambda: (
+                KVCacheInputsPerDevice(_KV_BLOCKS, X, X, X, X, X),
+            )
+        ),
+        DeviceRef.CPU(),
+        vision=VisionInputs(embeddings=X, scatter_indices=X),
+        state=(X,),
+    )
+    run = _DecoderGraph(
+        EchoDecoder(ToyConfig()), return_hidden_states=ReturnHiddenStates.LAST
+    ).compile(types)
+
+    # An exported graph records both trees, which name every buffer.
+    treedef_to_json(run.in_tree)
+    (root,) = run.in_tree.children[0].children
+    assert root.meta == (DecoderGraphInputs, None)
+    assert root.child_keys == (
+        "tokens",
+        "vision",
+        "input_row_offsets",
+        "return_n_logits",
+        "kv",
+        "state",
+    )
+    vision = root.children[1]
+    assert vision.meta == (VisionMerge, None)
+    assert vision.child_keys == ("image_embeddings", "image_token_indices")
+    leaf = {"kind": "leaf"}
+    assert treedef_to_json(run.out_tree) == {
+        "kind": "tuple",
+        "children": [
+            {
+                "kind": "node",
+                "type": "decoder_outputs",
+                "keys": ["logits", "hidden_states"],
+                "children": [
+                    {
+                        "kind": "node",
+                        "type": "logits",
+                        "keys": [
+                            "next_token_logits",
+                            "logits",
+                            "logit_offsets",
+                        ],
+                        "children": [leaf, leaf, leaf],
+                    },
+                    {
+                        "kind": "node",
+                        "type": "hidden_states",
+                        "keys": ["last"],
+                        "children": [{"kind": "tuple", "children": [leaf]}],
+                    },
+                ],
+            },
+            {
+                "kind": "node",
+                "type": "request_state",
+                "keys": ["state"],
+                "children": [{"kind": "tuple", "children": [leaf]}],
+            },
+        ],
+    }
+
+    # The batch's buffers and the graph's outputs keep the role's order.
+    tokens = Buffer.from_numpy(np.array([0], np.int64))
+    offsets = Buffer.from_numpy(np.array([3, 4], np.uint32))
+    n_logits = Buffer.from_numpy(np.array([4], np.int64))
+    embeddings, indices, kv_buffer, state = (
+        Buffer.from_numpy(np.full(2, value, np.float32))
+        for value in (1, 2, 5, 6)
+    )
+    kv = KVCacheInputsPerDevice(
+        kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer, kv_buffer
+    )
+    processor = _batch_processor(1)
+    processor.bind_input_tree(types)
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1)]], kv_cache_inputs=(kv,)
+    )
+    inputs.tokens, inputs.input_row_offsets = tokens, offsets
+    inputs.return_n_logits, inputs.state = n_logits, (state,)
+    inputs.vision_embeddings = [embeddings]
+    inputs.vision_scatter_indices = [indices]
+    assert inputs.buffers == (
+        tokens,
+        embeddings,
+        indices,
+        offsets,
+        n_logits,
+        *tree.leaves(kv),
+        state,
+    )
+    assert [
+        int(np.from_dlpack(output)[0])
+        for output in run.execute_raw(*inputs.buffers)
+    ] == [0, 1, 3, 2, 6]
 
 
 def test_decoder_inputs_take_the_canonical_order() -> None:
@@ -301,7 +413,7 @@ def test_optional_decoder_inputs_take_their_canonical_place() -> None:
     types = decoder_input_types(
         kv_params,
         DeviceRef.CPU(),
-        vision=NonCallableMock(spec=VisionInputs),
+        vision=VisionInputs(embeddings=X, scatter_indices=X),
         batch_context_lengths=(X,),
         ep=NonCallableMock(),
         lora=(X,),
@@ -534,6 +646,37 @@ def test_the_batch_processor_fills_the_optional_inputs_its_graph_takes() -> (
     assert [b.to_numpy()[0] for b in inputs.batch_context_lengths] == [12, 0]
     assert inputs.ep_inputs == (ep_buffer,)
     assert inputs.buffers[-3:] == (*inputs.batch_context_lengths, ep_buffer)
+
+
+def test_the_batch_processor_fills_each_devices_context_length() -> None:
+    lengths = batch_context_length_types(
+        2, devices_per_replica=2, dtype=DType.uint32
+    )
+    assert (
+        lengths == (TensorType(DType.uint32, [1], device=DeviceRef.CPU()),) * 4
+    )
+    processor = _batch_processor(2, page_size=4)
+    processor.bind_input_tree(
+        decoder_input_types(
+            NonCallableMock(get_symbolic_inputs=lambda: (X,)),
+            DeviceRef.CPU(),
+            data_parallel_degree=2,
+            batch_context_lengths=lengths,
+        )
+    )
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1, 2, position=5), _context(3, position=1)], [_context(4)]],
+        kv_cache_inputs=(NonCallableMock(spec=KVCacheInputsPerDevice),),
+    )
+    assert inputs.batch_context_lengths is not None
+    assert [b.dtype for b in inputs.batch_context_lengths] == [DType.uint32] * 4
+    # Each replica's length, on each of its two devices.
+    assert [b.to_numpy()[0] for b in inputs.batch_context_lengths] == [
+        12,
+        12,
+        0,
+        0,
+    ]
 
 
 def test_the_batch_processor_runs_an_empty_batch() -> None:
@@ -990,6 +1133,7 @@ def _target_context(started: list[EPConfig], *, ep_size: int) -> Any:
         huggingface_config=_HF_CONFIG,
         return_logits=ReturnLogits.VARIABLE,
         return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+        target_layer_ids=(3, 7),
         start_ep=started.append,
     )
 
@@ -1017,6 +1161,7 @@ def test_a_composed_decoder_completes_its_config_as_serving_does(
     assert config.outputs == ModelOutputConfig(
         return_logits=ReturnLogits.VARIABLE,
         return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+        target_layer_ids=(3, 7),
     )
     # Expert parallelism starts through the caller, which shares it.
     assert started == [_EP]
@@ -1202,6 +1347,7 @@ def _staged_model(
         model=SimpleNamespace(pipeline_stage=stage, data_parallel_degree=1)
     )
     model.pipeline_config = pipeline_config
+    model.return_hidden_states = ReturnHiddenStates.NONE
     model._lora_manager = None
     model._batch_processor = None
     model.max_batch_size = 1
@@ -1243,21 +1389,21 @@ def test_a_later_stage_starts_from_the_boundary_with_its_own_weights() -> None:
     spec = model.graph_specs(StagedConfig(layers=stage.layers))[
         GraphRole.DECODER
     ]
+    (inputs,) = spec.input_types
+    assert isinstance(inputs, DecoderGraphInputs)
     # The boundary comes after every other input.
-    assert len(spec.input_types) == 5
-    assert spec.input_types[-1] == X
+    assert list(inputs)[-1] == "stage_boundary"
+    assert inputs["stage_boundary"] == (X,)
     assert set(spec.weights) == {"layer_1.weight"}
     run = spec.module.compile(*spec.input_types, weights=spec.weights)
-    outputs = run(
+    (logits,) = run.execute_raw(
         Buffer.from_numpy(np.zeros(1, np.int64)),
         Buffer.from_numpy(np.array([0, 1], np.uint32)),
         Buffer.from_numpy(np.ones(1, np.int64)),
         Buffer.from_numpy(np.full(2, 4, np.float32)),
         Buffer.from_numpy(np.full(2, 5, np.float32)),
     )
-    np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 15)
-    )
+    np.testing.assert_array_equal(np.from_dlpack(logits), np.full(2, 15))
 
 
 def test_the_bound_inputs_keep_a_nested_stage_boundary_last() -> None:
@@ -1316,7 +1462,7 @@ def test_the_next_stage_takes_the_tree_the_last_one_returned() -> None:
         StagedConfig(layers=stage.layers)
     )[GraphRole.DECODER]
     run = spec.module.compile(*spec.input_types, weights=spec.weights)
-    outputs = run(
+    (logits,) = run.execute_raw(
         Buffer.from_numpy(np.zeros(1, np.int64)),
         Buffer.from_numpy(np.array([0, 1], np.uint32)),
         Buffer.from_numpy(np.ones(1, np.int64)),
@@ -1324,9 +1470,7 @@ def test_the_next_stage_takes_the_tree_the_last_one_returned() -> None:
         Buffer.from_numpy(np.full(2, 5, np.float32)),
         Buffer.from_numpy(np.full(2, 7, np.float32)),
     )
-    np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 22)
-    )
+    np.testing.assert_array_equal(np.from_dlpack(logits), np.full(2, 22))
 
 
 def test_only_the_first_stage_encodes_images() -> None:
@@ -1340,6 +1484,54 @@ def test_only_the_first_stage_encodes_images() -> None:
     models = model.load_graphs(InferenceSession(devices=[CPU()]))
     assert list(models) == [GraphRole.DECODER]
     model._batch_processor.bind_vision_encoder.assert_not_called()
+
+
+class SignalLayoutDecoder(PlainDecoder):
+    """Takes the signal buffers after the batch, as a graph-API graph does."""
+
+    input_layout: ClassVar[tuple[str, ...]] = (
+        "tokens",
+        "input_row_offsets",
+        "return_n_logits",
+        "signals",
+        "kv",
+    )
+
+
+def test_a_decoder_places_its_signal_buffers_by_its_input_layout() -> None:
+    spec = _staged_model(SignalLayoutDecoder, None).graph_specs(StagedConfig())[
+        GraphRole.DECODER
+    ]
+    assert spec.signal_buffer_index == 3
+    plain = _staged_model(PlainDecoder, None).graph_specs(StagedConfig())[
+        GraphRole.DECODER
+    ]
+    assert plain.signal_buffer_index is None
+
+
+@dataclass(frozen=True)
+class ContextLengthConfig(StagedConfig, DeploymentConfig):
+    takes_batch_context_lengths: ClassVar[bool] = True
+
+
+class DeviceContextLengthDecoder(PlainDecoder):
+    device_context_length_dtype: ClassVar[DType] = DType.uint32
+
+
+def test_a_decoder_can_take_a_context_length_per_device() -> None:
+    def lengths(decoder: type[Module[..., Any]]) -> list[object]:
+        spec = _staged_model(decoder, None).graph_specs(ContextLengthConfig())[
+            GraphRole.DECODER
+        ]
+        (inputs,) = spec.input_types
+        assert isinstance(inputs, DecoderGraphInputs)
+        return list(inputs["batch_context_lengths"])
+
+    cpu = DeviceRef.CPU()
+    assert lengths(PlainDecoder) == [TensorType(DType.int32, [1], device=cpu)]
+    assert lengths(DeviceContextLengthDecoder) == [
+        TensorType(DType.uint32, [1], device=cpu)
+    ]
 
 
 def test_a_decoder_without_stages_refuses_one() -> None:
@@ -1469,16 +1661,12 @@ def test_the_graph_hands_the_decoder_its_workspace() -> None:
     workspace = BufferType(DType.float32, [1, 2], device=DeviceRef.CPU())
     types = _toy_input_types(scratch=(workspace,))
     types["kv"] = (X,)
-    run = _DecoderGraph(ScratchReader(ToyConfig()), types).compile(
-        X, X, X, X, workspace
-    )
-    outputs = run(
+    run = _DecoderGraph(ScratchReader(ToyConfig())).compile(types)
+    (logits,) = run.execute_raw(
         *(Buffer.from_numpy(np.full(2, 1, np.float32)) for _ in range(4)),
         Buffer.from_numpy(np.full((1, 2), 2, np.float32)),
     )
-    np.testing.assert_array_equal(
-        np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 3)
-    )
+    np.testing.assert_array_equal(np.from_dlpack(logits), np.full(2, 3))
 
 
 @dataclass(frozen=True)
@@ -1489,9 +1677,9 @@ class RuntimeRecordingConfig(ToyConfig, DeploymentConfig):
         return replace(self, runtime=runtime)
 
 
-def test_the_deployment_carries_the_planned_batch_size() -> None:
+def _deployed_model(config: RuntimeRecordingConfig) -> Any:
     cls = module_pipeline_model(
-        RuntimeRecordingConfig, ((GraphRole.DECODER, PlainDecoder),), None
+        type(config), ((GraphRole.DECODER, PlainDecoder),), None
     )
     model: Any = cls.__new__(cls)
     pipeline_config: Any = SimpleNamespace(
@@ -1503,17 +1691,36 @@ def test_the_deployment_carries_the_planned_batch_size() -> None:
         ),
     )
     model.pipeline_config = pipeline_config
-    model.arch_config = RuntimeRecordingConfig()
+    model.arch_config = config
     model.return_logits = ReturnLogits.LAST_TOKEN
     model.return_hidden_states = ReturnHiddenStates.NONE
     model.devices = [CPU()]
     model.max_batch_size = 7
     model.memory_plan = SimpleNamespace(planned_max_batch_total_tokens=64)
-    config = model._create_model_config({})
+    return model
+
+
+def test_the_deployment_carries_the_planned_batch_size() -> None:
+    config = _deployed_model(RuntimeRecordingConfig())._create_model_config({})
     assert isinstance(config, RuntimeRecordingConfig)
     assert config.runtime is not None
     assert config.runtime.max_batch_size == 7
     assert config.runtime.max_batch_total_tokens == 64
+
+
+@dataclass(frozen=True)
+class LayoutRecordingConfig(RuntimeRecordingConfig):
+    def export_records(self, runtime: ModuleRuntime) -> Mapping[str, object]:
+        return {"layout_record": {"replicas": runtime.data_parallel_degree}}
+
+
+def test_the_pipeline_model_publishes_what_the_deployment_records() -> None:
+    model = _deployed_model(LayoutRecordingConfig())
+    model._create_model_config({})
+    assert model.export_records == {"layout_record": {"replicas": 1}}
+    plain = _deployed_model(RuntimeRecordingConfig())
+    plain._create_model_config({})
+    assert plain.export_records == {}
 
 
 def test_bound_token_positions_follow_each_context() -> None:

@@ -236,14 +236,16 @@ struct AllReduceAlgorithm(EnumLike, TrivialRegisterPassable, Writable):
                 writer.write("lamport")
 
 
-@fieldwise_init
-struct AllReduceTuningConfig(CommTuningConfig, TrivialRegisterPassable):
+struct AllReduceTuningConfig(CommTuningConfig, RegisterPassable):
     """
     Parameters:
         ngpus: Number of GPUs for running allreduce.
         num_bytes: Total number of input bytes supported by the config.
         sm_version: SM version (as string).
         num_blocks: Number of thread blocks for running allreduce.
+        allreduce_num_blocks: Thread blocks for the plain allreduce only, or
+            None to use `num_blocks`. The fused collectives that read this
+            table keep `num_blocks`.
     """
 
     var ngpus: Int
@@ -251,6 +253,24 @@ struct AllReduceTuningConfig(CommTuningConfig, TrivialRegisterPassable):
     var sm_version: StaticString
     var num_blocks: Int
     var algorithm: AllReduceAlgorithm
+    var allreduce_num_blocks: Optional[Int]
+
+    def __init__(
+        out self,
+        *,
+        ngpus: Int,
+        num_bytes: Int,
+        sm_version: StaticString,
+        num_blocks: Int,
+        algorithm: AllReduceAlgorithm,
+        allreduce_num_blocks: Optional[Int] = None,
+    ):
+        self.ngpus = ngpus
+        self.num_bytes = num_bytes
+        self.sm_version = sm_version
+        self.num_blocks = num_blocks
+        self.algorithm = algorithm
+        self.allreduce_num_blocks = allreduce_num_blocks
 
     def get_num_blocks(self) -> Int:
         return self.num_blocks
@@ -412,12 +432,17 @@ comptime allreduce_tuning_table = Table(
             num_blocks=512,
             algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
+        # 8xB200 bf16 2-stage: the plain allreduce at 384 blocks beats 512 by
+        # 10-20% from 16MB to 1GB (426 vs 511 us at 128MB) and ties it at
+        # 4-8MB. The fused allreduce + RMSNorm keeps 512: at 384 its bf16
+        # output runs 2-11% slower from 64MB to 256MB.
         AllReduceTuningConfig(
             ngpus=8,
             num_bytes=(2 * GB),
             sm_version="sm_100a",
             num_blocks=512,
             algorithm=AllReduceAlgorithm.TWO_STAGE,
+            allreduce_num_blocks=384,
         ),
         # default for sm103 (B300, encoded with ngpus=-1, num_bytes=-1)
         AllReduceTuningConfig(
@@ -2106,6 +2131,8 @@ def allreduce[
     var dispatch_config = dispatch_select_comm_config[
         group_size, sm_version, allreduce_tuning_table
     ](num_bytes)
+    if case .Some(allreduce_num_blocks) = dispatch_config.allreduce_num_blocks:
+        dispatch_config.num_blocks = allreduce_num_blocks
 
     if case .Some(max_num_blocks) = _max_num_blocks:
         dispatch_config.num_blocks = max_num_blocks

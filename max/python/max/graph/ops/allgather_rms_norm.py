@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from max._core.dialects import mo
-from max._core.dialects.builtin import IntegerAttr, IntegerType
+from max._core.dialects.builtin import BoolAttr, IntegerAttr, IntegerType
 from max.dtype import DType
 
 from ..dim import Dim, StaticDim
@@ -146,6 +146,8 @@ def allgather_rms_norm(
     epsilon: float,
     weight_offset: float = 0.0,
     group_size: int | None = None,
+    axis: int = 0,
+    round_offset_gamma: bool = False,
 ) -> tuple[list[TensorValue], list[TensorValue]]:
     """Fused all-gather + RMSNorm across devices (bf16 in/out).
 
@@ -179,6 +181,12 @@ def allgather_rms_norm(
             all-gather group. Defaults to all devices (a full-world collective).
             Under TP-within-DP this is the TP degree, so each replica gathers
             only within its own group.
+        axis: The gathered axis: ``0`` for row shards, ``1`` for column
+            shards of equal shape, concatenated in rank order. Column shards
+            always run the fused kernel.
+        round_offset_gamma: Whether ``gamma + weight_offset`` is rounded to
+            the input dtype before the float32 multiply, as a norm that
+            scales by a stored ``1 + w`` does. Always runs the fused kernel.
 
     Returns:
         A tuple ``(normed, residual)`` of two lists, each with one tensor per
@@ -186,10 +194,23 @@ def allgather_rms_norm(
         ``residual[i]`` is the raw gathered tensor itself (the residual stream).
         Both are the gathered shape of the device's own group, replicated across
         that group.
+
+    Raises:
+        ValueError: If ``axis`` is not 0 or 1, if column shards differ in
+            rows, or on any condition the fused kernel cannot honor.
     """
     inputs, signal_buffers, gammas, devices, num_devices, group_size = (
         _validate_ag_rms_norm(inputs, signal_buffers, gammas, group_size)
     )
+    if axis not in (0, 1):
+        raise ValueError(
+            f"allgather_rms_norm gathers axis 0 or 1. Got: {axis=}"
+        )
+    if axis == 1 and any(t.shape[0] != inputs[0].shape[0] for t in inputs):
+        raise ValueError(
+            "allgather_rms_norm over columns requires the same rows in every "
+            f"shard. Got: {inputs=}"
+        )
     input_dtype = inputs[0].dtype
     graph = Graph.current
 
@@ -201,11 +222,11 @@ def allgather_rms_norm(
     for dev_idx, device in enumerate(devices):
         group_start = (dev_idx // group_size) * group_size
         group_inputs = inputs[group_start : group_start + group_size]
-        gathered_dim = group_inputs[0].shape[0]
+        gathered_dim = group_inputs[0].shape[axis]
         for t in group_inputs[1:]:
-            gathered_dim = gathered_dim + t.shape[0]
+            gathered_dim = gathered_dim + t.shape[axis]
         full_shape = list(group_inputs[0].shape)
-        full_shape[0] = gathered_dim
+        full_shape[axis] = gathered_dim
         normed_types.append(
             TensorType(dtype=input_dtype, shape=full_shape, device=device)
         )
@@ -227,6 +248,8 @@ def allgather_rms_norm(
         _float32_attr(epsilon),
         _float32_attr(weight_offset),
         IntegerAttr(IntegerType(64), group_size),
+        IntegerAttr(IntegerType(64), axis),
+        BoolAttr(round_offset_gamma),
     )
 
     graph._update_chain(out_chain)
@@ -245,6 +268,7 @@ def allgather_rms_norm_quant_mxfp8(
     epsilon: float,
     weight_offset: float = 0.0,
     group_size: int | None = None,
+    gather_quant_only: bool = False,
 ) -> tuple[
     list[TensorValue], list[TensorValue], list[TensorValue], list[TensorValue]
 ]:
@@ -265,6 +289,14 @@ def allgather_rms_norm_quant_mxfp8(
         epsilon: Numerical stability epsilon for RMSNorm.
         weight_offset: Constant offset added to ``gammas``.
         group_size: Devices per independent gather group; defaults to all.
+        gather_quant_only: When every group gathers at least ~1024 rows,
+            norms and quantizes only each device's own row shard and gathers
+            just ``quantized`` and ``scales``, about half the bytes of the
+            bfloat16 residual; below that the default runs. Each shard is
+            normed with its owner's gamma, so it requires the same ``gammas``
+            on every device of a group. ``normed`` and ``residual`` then hold
+            valid values only in each device's own rows, so set it only when
+            every consumer reads nothing else of them.
 
     Returns:
         ``(normed, quantized, scales, residual)``, each a per-device list.
@@ -341,6 +373,7 @@ def allgather_rms_norm_quant_mxfp8(
         _float32_attr(epsilon),
         _float32_attr(weight_offset),
         IntegerAttr(IntegerType(64), group_size),
+        BoolAttr(gather_quant_only),
     )
 
     graph._update_chain(out_chain)

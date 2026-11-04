@@ -104,6 +104,9 @@ from max.nn.legacy.kernels import (
     store_k_scale_cache_ragged as _store_k_scale_cache_ragged,
 )
 from max.nn.legacy.kernels import (
+    store_mla_latent_ragged as _store_mla_latent_ragged,
+)
+from max.nn.legacy.kernels import (
     store_v_cache_ragged as _store_v_cache_ragged,
 )
 from max.tensor import Tensor
@@ -230,6 +233,7 @@ rope_ragged = F.functional(_rope_ragged)
 quantize_dynamic_scaled_float8 = F.functional(_quantize_dynamic_scaled_float8)
 store_k_cache_ragged = F.functional(_store_k_cache_ragged)
 store_k_scale_cache_ragged = F.functional(_store_k_scale_cache_ragged)
+store_mla_latent_ragged = F.functional(_store_mla_latent_ragged)
 store_v_cache_ragged = F.functional(_store_v_cache_ragged)
 fused_qk_ragged_rope = F.functional(_fused_qk_ragged_rope)
 fused_chunked_qkv_rope_store_ragged = F.functional(
@@ -336,5 +340,6 @@ __all__ = [
     "stack_device_shards",
     "store_k_cache_ragged",
     "store_k_scale_cache_ragged",
+    "store_mla_latent_ragged",
     "store_v_cache_ragged",
 ]

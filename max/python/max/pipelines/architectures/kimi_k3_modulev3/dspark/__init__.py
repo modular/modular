@@ -10,24 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Kimi-K3 DSpark draft, a ModuleV3 block drafter."""
 
-"""Smoke test for MLA_SM100_Decode_Sparse_KV_BF16.
+from .arch import k3_dspark_draft_arch
+from .config import K3DSparkDraftConfig, parse_k3_dspark_config
+from .dspark import K3DSpark, tensor_parallel_k3_dspark
+from .proposer import K3DSparkProposer, k3_dspark_block_proposer
 
-Type-level test that monomorphizes the kernel struct against its containers
-(TMA descriptors, OffsetPosition, pipelines).  Full correctness coverage
-lives in `test_mla_decode_sparse_kv_bf16.mojo`.
-"""
-
-from max.gpu.host import DeviceContext, default_accelerator
-
-from nn.attention.gpu.nvidia.sm100.mla_decode_sparse_kv_bf16 import (
-    MLA_SM100_Decode_Sparse_KV_BF16,
-)
-
-
-def main() raises:
-    comptime if not default_accelerator().is_nvidia_gpu():
-        return
-
-    _ = DeviceContext()
-    print("MLA_SM100_Decode_Sparse_KV_BF16 struct compiled.")
+__all__ = [
+    "K3DSpark",
+    "K3DSparkDraftConfig",
+    "K3DSparkProposer",
+    "k3_dspark_block_proposer",
+    "k3_dspark_draft_arch",
+    "parse_k3_dspark_config",
+    "tensor_parallel_k3_dspark",
+]

@@ -26,6 +26,8 @@ Three checks:
    since a multi-replica deployment can legitimately miss, unless
    ``--needle-strict-cache-hits`` says the deployment is expected to serve
    every reload (a KV connector behind a deliberately small GPU pool).
+   ``--needle-settle-seconds`` pauses before each follow-up so a tier that
+   saves asynchronously has stored the previous turn first.
 2. ``needle_recall``: a cache-served turn that loses the needle is replayed
    fresh after a prefix-cache reset. Recall on the replay means reusing the
    prefix changed the answer (FAIL); a miss on the replay too is the model.
@@ -258,6 +260,8 @@ class NeedlePrefixCacheScenario(BaseScenario):
             active = [c for c in convs if c.alive]
             if not active:
                 break
+            if turn > 0:
+                await asyncio.sleep(config.needle_settle_seconds)
             await self._advance(client, config, active, turn, timeout)
 
         results = [

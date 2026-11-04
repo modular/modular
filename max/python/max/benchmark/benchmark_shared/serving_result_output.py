@@ -758,6 +758,12 @@ def print_benchmark_summary(
             (label, value)
             for label, value in (
                 ("Server startup time (s):", diag.server_startup_time),
+                (
+                    "Steady-state filtering:",
+                    "disabled"
+                    if diag.steady_state_mode == "disabled"
+                    else None,
+                ),
                 ("Steady-state detected:", diag.steady_state_detected),
                 ("Steady-state windows:", diag.steady_state_window_count),
                 ("Outliers rejected:", diag.num_outliers_rejected),

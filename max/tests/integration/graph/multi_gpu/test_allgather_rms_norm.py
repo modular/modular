@@ -379,7 +379,10 @@ def test_grouped_allgather_rms_norm_separation() -> None:
 
 
 def _mxfp8_graph(
-    signals: Signals, rows_per_device: list[int], group_size: int | None
+    signals: Signals,
+    rows_per_device: list[int],
+    group_size: int | None,
+    gather_quant_only: bool = False,
 ) -> Graph:
     devices = signals.devices
     num_devices = len(devices)
@@ -412,6 +415,7 @@ def _mxfp8_graph(
             epsilon=EPS,
             weight_offset=WEIGHT_OFFSET,
             group_size=group_size,
+            gather_quant_only=gather_quant_only,
         )
         # `normed, residual` first, in that order, so `_check` applies verbatim
         # to the output prefix.
@@ -524,6 +528,104 @@ def test_allgather_rms_norm_quant_mxfp8_execution(
         # Non-vacuity: an all-zero quant buffer would pass a shape check.
         assert np.count_nonzero(quant) > quant.size // 2
         assert len(np.unique(scales)) >= 4
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip",
+    reason="The MXFP8 quantize rides the CDNA4 path; skip elsewhere.",
+)
+@pytest.mark.parametrize(
+    "rows_per_device, group_size, quant_only_runs",
+    [
+        ([258, 257, 257, 256], None, True),
+        ([512, 512, 512, 512], 2, True),
+        ([255, 255, 255, 255], None, False),
+        ([2, 2, 2, 2], None, False),
+    ],
+)
+def test_allgather_rms_norm_quant_mxfp8_gather_quant_only(
+    rows_per_device: list[int], group_size: int | None, quant_only_runs: bool
+) -> None:
+    """Gathering only the MXFP8 pair keeps every byte a consumer reads.
+
+    Runs the default op and the ``gather_quant_only`` op on the same inputs,
+    with a distinct gamma per device so the two arms are told apart: the
+    quant-only arm norms each shard with its OWNER's gamma, the default norms
+    every row with the receiver's. So where the arm runs (1024+ gathered rows
+    per group), each gathered block of ``quantized``/``scales`` must equal the
+    owner's own default output and differ from the receiver's, and
+    ``normed``/``residual`` must match on the device's own rows. Below that,
+    and on the fused path, every output must match in full.
+    """
+    num_gpus = len(rows_per_device)
+    if num_gpus > accelerator_count():
+        pytest.skip(f"Not enough GPUs ({num_gpus}).")
+    gs = group_size or num_gpus
+
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
+    host = CPU()
+    devices = [Accelerator(n) for n in range(num_gpus)]
+    session = InferenceSession(devices=[host, *devices])
+    reference = session.load(_mxfp8_graph(signals, rows_per_device, group_size))
+    quant_only = session.load(
+        _mxfp8_graph(
+            signals, rows_per_device, group_size, gather_quant_only=True
+        )
+    )
+
+    tensor_inputs, gamma_inputs, _, _ = _inputs_and_gammas(
+        rows_per_device, devices, signed=True
+    )
+    want = list(
+        reference.execute(*tensor_inputs, *gamma_inputs, *signals.buffers())
+    )
+    got = list(
+        quant_only.execute(*tensor_inputs, *gamma_inputs, *signals.buffers())
+    )
+
+    def raw(buf: object) -> np.ndarray:
+        return cast(Buffer, buf).copy(device=CPU()).view(DType.uint8).to_numpy()
+
+    def bf16(buf: object) -> np.ndarray:
+        return _from_device_bf16(cast(Buffer, buf))
+
+    nd = num_gpus
+    for dev in range(nd):
+        group_start = (dev // gs) * gs
+        starts = np.cumsum(
+            [0] + rows_per_device[group_start : group_start + gs]
+        )
+        own = slice(starts[dev - group_start], starts[dev - group_start + 1])
+        for slot, name, read in (
+            (0, "normed", bf16),
+            (1, "residual", bf16),
+            (2, "quantized", raw),
+            (3, "scales", raw),
+        ):
+            got_d = read(got[slot * nd + dev])
+            want_d = read(want[slot * nd + dev])
+            if not quant_only_runs:
+                assert np.array_equal(got_d, want_d), f"device {dev} {name}"
+                continue
+            assert np.array_equal(got_d[own], want_d[own]), (
+                f"device {dev} {name} differs on its own rows"
+            )
+            if slot < 2:
+                continue
+            for owner in range(group_start, group_start + gs):
+                if owner == dev:
+                    continue
+                k = owner - group_start
+                rows = slice(starts[k], starts[k + 1])
+                owner_rows = read(want[slot * nd + owner])[rows]
+                assert np.array_equal(got_d[rows], owner_rows), (
+                    f"device {dev} {name}: rows from device {owner} are not"
+                    " the owner's"
+                )
+                assert not np.array_equal(got_d[rows], want_d[rows]), (
+                    f"device {dev} {name}: rows from device {owner} match the"
+                    " receiver's norm, so the quant-only arm did not run"
+                )
 
 
 def _mxfp6_graph(

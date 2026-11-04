@@ -33,7 +33,7 @@ from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from max.gpu import block_dim, global_idx, thread_idx
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
@@ -236,9 +236,6 @@ def _copy_tile[
         grid_dim=1,
         block_dim=32,
         shared_mem_bytes=smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_bytes)
-        ),
     )
     var host = ctx.enqueue_create_host_buffer[cache_t.dtype](BN * BK)
     ctx.enqueue_copy(host, out)

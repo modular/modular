@@ -80,7 +80,6 @@ from max.gpu.sync import barrier
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
-    FuncAttribute,
     default_accelerator,
 )
 from max.gpu.memory import (
@@ -181,8 +180,8 @@ def _rowmajor_fold_spike_kernel[
     ), "SWIZZLE_128B: innermost box dim must be gran*dtype = 128 bytes"
 
     # Two BN x head_size buffers (32 KB each at bf16) exceed the 48 KB static
-    # shared-memory limit, so place them in DYNAMIC shared memory (opted-in via
-    # FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES at launch). The base is
+    # shared-memory limit, so place them in DYNAMIC shared memory (opted-in by
+    # the launch's `shared_mem_bytes`). The base is
     # 1024 B-aligned so every 1 KB swizzle-atom offset is itself 1024 B-aligned
     # (matching the per-atom swizzle tile). The tiny barrier stays static.
     var smem_base = external_memory[
@@ -454,9 +453,6 @@ def run_spike[
         grid_dim=1,
         block_dim=32,
         shared_mem_bytes=dyn_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(dyn_smem_bytes)
-        ),
     )
 
     var mismatch_host = ctx.enqueue_create_host_buffer[.uint32](1)

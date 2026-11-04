@@ -40,6 +40,7 @@ from max.graph import Module as GraphModule
 from max.nn import Module as ModuleV3
 from max.nn.legacy import Module
 from max.nn.legacy.graph_groups import HiddenStates, Logits
+from max.nn.module import InputType
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable, StagedGraph
 from max.tensor.sharding import TensorLayout
@@ -103,8 +104,8 @@ class GraphSpec:
         name: The graph's name. Graphs in one group need distinct names.
         input_types: The graph's input types: a sequence, or a named tree
             such as a module's ``input_tree`` whose leaves are the inputs in
-            order. A ModuleV3 graph takes a sequence, one type per argument
-            of its ``forward``.
+            order. A ModuleV3 graph takes a sequence, one type or tree of
+            types per argument of its ``forward``.
         weights: The weight values, keyed by name. Defaults to the module's
             :meth:`~max.nn.legacy.Module.state_dict` once traced, or a ModuleV3
             module's own parameters.
@@ -115,16 +116,21 @@ class GraphSpec:
         is_device_graph: Whether to build a device graph.
         auto_cast: Whether a ModuleV3 graph casts a ``float32`` or
             ``bfloat16`` weight to the dtype its parameter declares.
+        signal_buffer_index: Where a ModuleV3 graph takes its signal
+            buffers among its inputs, to match an existing graph's calling
+            convention. ``None`` puts them after the last input, and only on
+            a graph that runs on several devices.
     """
 
     module: Module | ModuleV3[..., Any]
     name: str
-    input_types: Sequence[Type[Any]] | Mapping[str, object]
+    input_types: Sequence[tree.Tree[InputType]] | Mapping[str, object]
     weights: Mapping[str, DLPackArray] | None = None
     group: str | None = None
     custom_extensions: Sequence[Path] = ()
     is_device_graph: bool = False
     auto_cast: bool = False
+    signal_buffer_index: int | None = None
 
     def trace(self, module: GraphModule | None = None) -> Graph:
         """Traces the graph, into ``module`` if given.
@@ -168,6 +174,7 @@ class GraphSpec:
             custom_extensions=self.custom_extensions,
             auto_cast=self.auto_cast,
             is_device_graph=self.is_device_graph,
+            signal_buffer_index=self.signal_buffer_index,
         )
 
 
@@ -375,7 +382,7 @@ def _has_kind(treedef: tree.TreeDef, cls: type) -> bool:
 
 
 def _input_signature(
-    input_types: Sequence[Type[Any]] | Mapping[str, object],
+    input_types: Sequence[tree.Tree[InputType]] | Mapping[str, object],
 ) -> tuple[list[TensorLayout], tree.TreeDef]:
     """Returns the input layouts and call structure of a role's callable.
 
@@ -402,7 +409,7 @@ def _input_signature(
 def graph_callable(
     compiled: CompiledModel,
     model: Model,
-    input_types: Sequence[Type[Any]] | Mapping[str, object],
+    input_types: Sequence[tree.Tree[InputType]] | Mapping[str, object],
     output_types: tree.Tree[Type[Any]],
 ) -> CompiledCallable[..., Any]:
     """Wraps a graph compiled and initialized elsewhere as a callable.

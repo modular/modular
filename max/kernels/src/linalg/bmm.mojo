@@ -37,7 +37,7 @@ from max.gpu import (
     block_idx,
     global_idx,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import A100, is_cpu, is_valid_target
 from max.gpu.primitives.grid_controls import PDLLevel
@@ -1203,9 +1203,6 @@ def _batched_matmul_gpu_impl[
             grid_dim=(grid_dim[0], grid_dim[1], batch_size),
             block_dim=kernels.ampere_128x128_4.block_dim(),
             shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(kernels.ampere_128x128_4.shared_mem_usage())
-            ),
         )
     elif has_static_NK and ctx.target.is_amd_gpu() and transpose_b:
 
@@ -2032,9 +2029,6 @@ def _bmm_sm100_blockwise_scaled_fp8_impl[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 

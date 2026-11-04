@@ -13,7 +13,7 @@
 
 """Numerical E2E test for the native-FP8 sparse MLA prefill kernel.
 
-Mirrors `test_mla_prefill_sparse_kv_fp8.mojo` (SAME fp64 reference, SAME
+Mirrors the deleted FP8-cache sibling test (SAME fp64 reference, SAME
 verification gates and LOCKED tolerances) but drives
 `mla_prefill_sparse_qkv_fp8`, where Q, K, V, and P are ALL FP8 e4m3 and QK^T /
 P*V run natively via `tcgen05.mma.kind::f8f6f4` (no FP8->BF16 dequant).
@@ -94,7 +94,7 @@ def _coprime_multiplier(n: Int) -> Int:
 
 
 # ===-----------------------------------------------------------------------===#
-# Host-side reference (identical algebra to test_mla_prefill_sparse_kv_fp8).
+# Host-side reference (identical algebra to the deleted sibling test).
 # ===-----------------------------------------------------------------------===#
 
 
@@ -521,7 +521,7 @@ def run_test_prefill_sparse_qkv_fp8[
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
-    # Verification gates: IDENTICAL to test_mla_prefill_sparse_kv_fp8.mojo.
+    # Verification gates: identical to the deleted sibling test.
     # DO NOT loosen. Native FP8 adds Q and P quantization; some cases may
     # exceed these — report honestly rather than widen.
     var max_err = Float64(0)
@@ -1113,6 +1113,14 @@ def main() raises:
             # GLM TP8 head count at the native row.
             run_test_prefill_sparse_qkv_fp8[8, 64, row_depth=512](
                 "b1_s1_h8_kv256_topk64_qkv_fp8_nope512", 1, 1, 256, ctx
+            )
+            run_test_prefill_sparse_qkv_fp8[128, 256, row_depth=512](
+                "b1_s4_h128_kv512_valid129_qkv_fp8_nope512",
+                1,
+                4,
+                512,
+                ctx,
+                valid_topk=129,
             )
 
             # ---------------- head=64 (cta_group=1) ----------------

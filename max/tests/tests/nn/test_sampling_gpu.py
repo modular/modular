@@ -1021,6 +1021,64 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
         )
 
 
+def test_sampled_greedy_row_takes_first_argmax() -> None:
+    """A sampled-mode ``temperature==0`` row is the greedy verdict.
+
+    The target maximum is tied between tokens 1 and 3 and the request asks
+    for no top-k, so the verdict must reduce the row to its first argmax
+    itself: drafts equal to token 1 are accepted, everything else recovers to
+    token 1, the bonus is token 1, and no seed changes any of it.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+
+    vocab_size = 6
+    num_steps = 3
+    batch_size = 2
+
+    logits = np.full(
+        (batch_size * (num_steps + 1), vocab_size), -5.0, dtype=np.float32
+    )
+    logits[:, 1] = 10.0
+    logits[:, 3] = 10.0
+    logits[:, 4] = 9.5
+    draft_tokens_np = np.array([[1, 1, 3], [3, 3, 1]], dtype=np.int64)
+    draft_probs_np = np.ones((batch_size, num_steps), dtype=np.float32)
+    temperature_np = np.zeros(batch_size, dtype=np.float32)
+
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device),
+            draft_proposal="sampled",
+            vocab_size=vocab_size,
+        )
+    )
+
+    def _run(seed: int) -> tuple[npt.NDArray[Any], ...]:
+        outs = model.execute(
+            *_sampled_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                temperature_np,
+                draft_probs_np,
+                seed=seed,
+            )
+        )
+        return tuple(cast(Buffer, o).to_numpy().copy() for o in outs)
+
+    base = _run(1)
+    for seed in (2, 3):
+        for got, expected in zip(_run(seed), base, strict=True):
+            np.testing.assert_array_equal(got, expected)
+
+    np.testing.assert_array_equal(base[0], [2, 0])
+    np.testing.assert_array_equal(base[1], [[1, 1, 1], [1, 1, 1]])
+    np.testing.assert_array_equal(base[2], [[1], [1]])
+
+
 def test_sampled_zeroed_distribution_matches_argmax() -> None:
     """A row with no draft distribution must degrade to argmax-mode behavior.
 

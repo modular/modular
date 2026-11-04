@@ -44,8 +44,10 @@ def mojo_sweep_benchmark(
         deps,
         gpu_memory,
         arm_axes = {},
+        arms = {},
         args = [],
         build_test = True,
+        test_arms = True,
         copts = [],
         enable_assertions = False,
         exec_properties = {},
@@ -77,10 +79,15 @@ def mojo_sweep_benchmark(
             `define -> values` dict matching the benchmark's `arm_enabled`
             calls. A define keeps its `sweep_` prefix in `-D` and loses it in
             the arm tag.
+        arms: Further arms named outright, as a `tag -> defines` dict, for
+            points that are not a product of axes, such as a kernel's A/B
+            knobs. Each define is passed with `-D` as written.
         args: Test arguments; `--tag=<arm tag>` is appended to each arm
             target so its `SWEEPTIME` and JSON lines are told apart.
         build_test: Whether to create `<name>.test`, a build test covering
-            the combined target and every arm.
+            the combined target and, with `test_arms`, every arm.
+        test_arms: Whether the build test covers the arm targets too. Turn it
+            off for a sweep with more arms than presubmit should compile.
         copts: Extra compile options; the arm's `-D` pins are appended.
         enable_assertions: Off by default: assertions slow the measured loop,
             and not every kernel runs with them on.
@@ -118,7 +125,15 @@ def mojo_sweep_benchmark(
     targets.append(name + ".run")
 
     stem = name[:-len(".mojo")] if name.endswith(".mojo") else name
-    for defines, tag in _arm_points(arm_axes):
+    points = _arm_points(arm_axes) + [
+        (defines, tag)
+        for tag, defines in arms.items()
+    ]
+    tags_seen = [tag for _, tag in points]
+    if len(tags_seen) != len(set(tags_seen)):
+        fail("arms {} repeat an arm tag of arm_axes {}".format(arms, arm_axes))
+    arm_targets = []
+    for defines, tag in points:
         arm_copts = list(copts)
         for define in defines:
             arm_copts += ["-D", define]
@@ -136,11 +151,11 @@ def mojo_sweep_benchmark(
             target_compatible_with = target_compatible_with,
             **kwargs
         )
-        targets.append(arm_name)
+        arm_targets.append(arm_name)
 
     if build_test:
         _build_test(
             name = name + ".test",
             tags = tags,
-            targets = targets,
+            targets = targets + (arm_targets if test_arms else []),
         )

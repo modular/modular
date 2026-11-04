@@ -1424,6 +1424,179 @@ def test_build_text_generation_result_concurrency_one_falls_back() -> None:
     assert result.text_data.completed == 50
 
 
+def test_build_text_generation_result_filtering_disabled_uses_skip_counts() -> (
+    None
+):
+    """With filtering disabled, a run detection would accept uses the trim path.
+
+    The caller's skip counts apply, no outliers are rejected, and the
+    diagnostics report ``"disabled"`` rather than a failed detection.
+    """
+    outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=200.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=10,
+        skip_last_n_requests=5,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        steady_state_filtering=False,
+    )
+
+    assert result.steady_state_mode == "disabled"
+    assert result.steady_state_detected is None
+    assert result.steady_state_window_count is None
+    assert result.steady_state_warning is None
+    assert result.num_outliers_rejected is None
+    assert result.text_data is not None
+    assert result.text_data.completed == 185
+    assert result.to_result_dict()["steady_state_mode"] == "disabled"
+
+
+def test_build_text_generation_result_filtering_disabled_keeps_all_requests() -> (
+    None
+):
+    """Requests the detector would drop are kept when filtering is disabled.
+
+    A reply that arrives in one chunk has no per-chunk TPOT, so detection
+    treats it as invalid and leaves it out of the window, and a TTFT outlier
+    is rejected inside the window. Neither happens with filtering disabled.
+    """
+    outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
+    for i in range(10):
+        single_chunk = _make_stable_request_func_output(50.0 + i + 0.5)
+        single_chunk.itl = []
+        single_chunk.tpot = []
+        outputs.append(single_chunk)
+    # Spread TTFTs so the outlier rejection's MAD is nonzero.
+    for i, output in enumerate(outputs):
+        output.ttft = 0.05 + 0.001 * (i % 5)
+    ttft_outlier = _make_stable_request_func_output(100.5)
+    ttft_outlier.ttft = 10.0
+    ttft_outlier.latency = 11.0
+    outputs.append(ttft_outlier)
+    outputs.sort(key=lambda o: o.request_submit_time or 0.0)
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+
+    def build(steady_state_filtering: bool) -> BenchmarkResult:
+        return build_text_generation_result(
+            outputs=outputs,
+            benchmark_duration=211.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=None,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+            steady_state_filtering=steady_state_filtering,
+        )
+
+    filtered = build(steady_state_filtering=True)
+    unfiltered = build(steady_state_filtering=False)
+
+    assert filtered.text_data is not None
+    assert unfiltered.text_data is not None
+    assert filtered.steady_state_detected is True
+    assert filtered.text_data.completed <= 201
+    assert filtered.text_data.ttft_ms is not None
+    assert filtered.text_data.ttft_ms.mean < 60.0
+    assert unfiltered.text_data.completed == 211
+    assert unfiltered.text_data.ttft_ms is not None
+    assert unfiltered.text_data.ttft_ms.mean == pytest.approx(
+        statistics.mean(o.ttft for o in outputs) * 1000.0
+    )
+
+
+def _make_failed_request_func_output(submit_time: float) -> RequestFuncOutput:
+    return RequestFuncOutput(
+        success=False,
+        latency=0.0,
+        ttft=0.0,
+        prompt_len=10,
+        error="No text content captured from the response",
+        request_submit_time=submit_time,
+    )
+
+
+@pytest.mark.parametrize("steady_state_filtering", [True, False])
+def test_build_text_generation_result_excludes_failures(
+    steady_state_filtering: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Failed requests leave the metrics alike with or without filtering.
+
+    They are excluded from the metric set but kept in ``request_records``,
+    and they don't shift which requests the steady-state window selects.
+    """
+    outputs: list[RequestFuncOutput] = []
+    for i in range(200):
+        outputs.append(_make_stable_request_func_output(float(i)))
+        if i % 50 == 10:
+            outputs.append(_make_failed_request_func_output(i + 0.5))
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+
+    with caplog.at_level(logging.WARNING):
+        result = build_text_generation_result(
+            outputs=outputs,
+            benchmark_duration=200.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=None,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+            steady_state_filtering=steady_state_filtering,
+        )
+
+    assert any(
+        "Excluding 4 failed requests" in r.message for r in caplog.records
+    )
+    assert result.text_data is not None
+    assert result.text_data.failures == 0
+    if steady_state_filtering:
+        assert result.steady_state_detected is True
+        assert result.text_data.completed == result.steady_state_window_count
+    else:
+        assert result.text_data.completed == 200
+    records = result.text_data.request_records
+    assert len(records) == 204
+    failed = [r for r in records if not r.success]
+    assert len(failed) == 4
+    assert not any(r.measured for r in failed)
+
+
+def test_build_text_generation_result_all_failed_still_counts_failures() -> (
+    None
+):
+    """With no successful request, failures are kept and still counted."""
+    outputs = [_make_failed_request_func_output(float(i)) for i in range(5)]
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=5.0,
+        tokenizer=_make_tokenizer_mock(tokens_per_output=5),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=32,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        steady_state_filtering=False,
+    )
+
+    assert result.text_data is not None
+    assert result.text_data.failures == 5
+    assert result.text_data.completed == 0
+
+
 def test_build_text_generation_result_with_outlier_inputs() -> None:
     """Synthetic run: stable-phase requests with realistic spread + extreme TTFT outliers.
 

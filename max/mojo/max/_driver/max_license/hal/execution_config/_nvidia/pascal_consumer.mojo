@@ -13,8 +13,8 @@
 """Execution config placeholder for NVIDIA Pascal consumer GPUs (GTX 1060, GTX 1080 Ti)."""
 
 from max.gpu.host import ConstantMemoryMapping, Dim, LaunchAttribute
+from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from . import (
-    LaunchAttributeHolderExecutionConfig,
     _CudaExecutionConfigDelegator,
     _BaseCudaExecutionConfig,
     _BaseCudaExecutionConfiguration,

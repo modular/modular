@@ -103,9 +103,13 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "InklingForConditionalGeneration": ".inkling.spec_adapters",
     "KimiK25ForConditionalGeneration": ".kimik2_5.spec_adapters",
     "KimiK3ForConditionalGeneration": "kimi_k3_spec",
+    "KimiK3ForConditionalGeneration_ModuleV3": (
+        ".kimi_k3_modulev3.dspark.spec_adapters"
+    ),
     "LlamaForCausalLM": ".llama3.spec_adapters",
     "MiMoV2ForCausalLM": ".mimo_v2.spec_adapters",
     "MiMoV2ForCausalLM_ModuleV3": ".mimo_v2_modulev3.spec_adapters",
+    "MuseSparkForConditionalGeneration_ModuleV3": ".muse_spark.spec_adapters",
     "NemotronHForCausalLM": ".nemotron_h_modulev3.spec_adapters",
     "Qwen3_5ForCausalLM": ".qwen3_5.spec_adapters",
     "Qwen3_5ForConditionalGeneration": ".qwen3_5.spec_adapters",

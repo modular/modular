@@ -19,7 +19,6 @@ from layout import (
     RowMajorLayout,
     TileTensor,
     row_major,
-    Layout,
     UNKNOWN_VALUE,
 )
 from layout.tile_layout import Layout as TileLayout, blocked_product

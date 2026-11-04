@@ -156,9 +156,11 @@ def build_spec_decode_input_types(
     [draft_probs_full, or one per replica], seed,
     temperature, top_k,
     max_k, top_p, min_top_p, [in_thinking_phase],
-    [draft_slot_ids, draft_block_offsets], [bitmask triple]. Bracketed
+    [draft_slot_ids, draft_block_offsets], [bitmask triple], [ep]. Bracketed
     groups are gated by the spec flags; the tail mirrors
-    ``UnifiedSpecDecodeInputs._spec_decode_tail_buffers``.
+    ``UnifiedSpecDecodeInputs._spec_decode_tail_buffers``. The EP inputs
+    sit beside the distributed group, or after the tail for a target whose
+    attention isn't data-parallel.
 
     ``leading_input_types`` sits ahead of ``tokens`` rather than past the
     tail. A model needs it when a non-spec-decode graph for the same target
@@ -239,6 +241,8 @@ def build_spec_decode_input_types(
         all_input_types.extend(ep_input_types)
 
     all_input_types.extend(spec_decode_tail_input_types(spec, device_ref))
+    if not spec.distributed:
+        all_input_types.extend(ep_input_types)
 
     return tuple(all_input_types)
 
@@ -650,6 +654,8 @@ def decode_spec_decode_input_values(
         ep_inputs = [take() for _ in range(num_ep_inputs)]
 
     tail = decode_spec_decode_tail(it, spec)
+    if not spec.distributed:
+        ep_inputs = [take() for _ in range(num_ep_inputs)]
 
     trailing = list(it)
     # A leftover means the signature declared a group this decode misses,

@@ -27,7 +27,7 @@ from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor, row_major
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.memory.alloc import Layout as AllocLayout
 from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
 from max.gpu.host import HIP

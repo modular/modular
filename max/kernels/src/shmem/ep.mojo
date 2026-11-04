@@ -586,9 +586,6 @@ def ep_dispatch_wait_kernel_api[
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
             shared_mem_bytes=Int(smem_size),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_size
-            ),
         )
 
 

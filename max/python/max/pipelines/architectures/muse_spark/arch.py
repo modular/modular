@@ -40,7 +40,7 @@ muse_spark_arch = SupportedArchitecture(
     context_type=TextAndVisionContext,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_registered_state_dict,
     },
@@ -49,4 +49,6 @@ muse_spark_arch = SupportedArchitecture(
     memory_planner=MuseSparkMemoryPlanner,
     supports_overlap_scheduler=True,
     supports_device_graph_capture=False,
+    # The name Mach finds the fused DSpark graph by.
+    spec_decode_graph_names={"dspark": "UnifiedDSparkMuseSparkModule"},
 )

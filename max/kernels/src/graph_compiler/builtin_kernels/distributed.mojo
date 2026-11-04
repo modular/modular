@@ -35,7 +35,12 @@ from comm.allreduce_residual_rmsnorm import (
     _dispatch_ar_norm,
     allreduce_residual_rmsnorm,
 )
-from comm.allgather_rmsnorm import _dispatch_ag_norm, _dispatch_ag_norm_quant
+from comm.allgather_rmsnorm import (
+    AG_QUANT_ONLY_THRESHOLD,
+    _dispatch_ag_norm,
+    _dispatch_ag_norm_quant,
+    allgather_rmsnorm,
+)
 from linalg.block_scaled_quantization import (
     quantize_mx_amd,
     quantize_mxfp8_lane_group,
@@ -61,6 +66,7 @@ from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, row_major
 from layout.int_tuple import UNKNOWN_VALUE
@@ -1783,6 +1789,8 @@ struct DistributedAllGatherRMSNorm:
         epsilon: Float32,
         weight_offset: Float32,
         group_size: Int = 0,
+        gather_axis: Int = 0,
+        round_offset_gamma: Bool = False,
     ](
         outputs_normed: TensorTuple[*Normed],
         outputs_residual: TensorTuple[*Residuals],
@@ -1813,6 +1821,9 @@ struct DistributedAllGatherRMSNorm:
                 number of devices. Equal to `num_devices` for a full-world
                 collective. The builder always sets it; the `0` attribute
                 default is not a usable value.
+            gather_axis: 0 to gather row shards, 1 column shards.
+            round_offset_gamma: Whether `gamma + weight_offset` is rounded to
+                `dtype` before the f32 multiply.
 
         Args:
             outputs_normed: Per-device normed output (the group's gathered
@@ -1888,6 +1899,56 @@ struct DistributedAllGatherRMSNorm:
                 inputs[i].to_tile_tensor[dtype]().make_dynamic[.int64]()
             )
         _check_uniform_cols[op="allgather_rms_norm"](inputs)
+
+        # The two-launch fallback below gathers rows and folds the offset in
+        # f32, so these modes always fuse.
+        comptime if gather_axis == 1 or round_offset_gamma:
+
+            @inline(.always)
+            def launch_fused[
+                index: Int
+            ]() raises {
+                imm in_tensors,
+                imm rank_sigs,
+                imm dev_ctxs_input,
+                imm gammas,
+                imm outputs_normed,
+                imm outputs_residual,
+            }:
+                comptime assert conforms_to(
+                    type_of(outputs_normed[index]), TileTensorable
+                )
+                comptime assert conforms_to(
+                    type_of(outputs_residual[index]), TileTensorable
+                )
+                comptime assert conforms_to(
+                    type_of(gammas[index]), TileTensorable
+                )
+                # The same PDL level the row-gather dispatch takes.
+                comptime pdl_level = (
+                    PDLLevel.ON if num_devices == 2 else PDLLevel.OFF
+                )
+                allgather_rmsnorm[
+                    group_size=group_size,
+                    pdl_level=pdl_level,
+                    gather_cols=gather_axis == 1,
+                    round_offset_gamma=round_offset_gamma,
+                ](
+                    in_tensors,
+                    outputs_normed[index].to_tile_tensor[dtype](),
+                    outputs_residual[index].to_tile_tensor[dtype](),
+                    gammas[index].to_tile_tensor[dtype](),
+                    epsilon,
+                    weight_offset.cast[dtype](),
+                    rank_sigs,
+                    dev_ctxs_input[index],
+                    index,
+                )
+
+            _launch_device_collective[num_devices](
+                launch_fused, dev_ctxs_input.copy()
+            )
+            return
 
         # `allgather`'s world-view output array holds every device's own
         # `group_size` output windows. Every slot has to name a real window,
@@ -2053,6 +2114,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         epsilon: Float32,
         weight_offset: Float32,
         group_size: Int = 0,
+        gather_quant_only: Bool = False,
     ](
         outputs_normed: TensorTuple[*Normed],
         outputs_quant: TensorTuple[*Quant],
@@ -2083,6 +2145,16 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
             weight_offset: Gamma offset, shared by every device.
             group_size: Devices per independent all-gather group; see
                 `DistributedAllGatherRMSNorm`.
+            gather_quant_only: When every group gathers at least
+                `AG_QUANT_ONLY_THRESHOLD` bytes of bf16 rows (~1024 rows), norm
+                and quantize only this device's row shard and gather just the
+                MXFP8 values and scales, about half the bytes of the bf16
+                residual; below it the extra scales gather costs more than the
+                bytes save. Each shard is normed with its owner's gamma, so the
+                result matches the default only when every device in a group
+                holds the same gamma. `outputs_normed` and `outputs_residual`
+                then hold valid rows only for this device's shard. The fused
+                path is unchanged.
 
         Args:
             outputs_normed: Per-device normed output (the group's gathered
@@ -2369,19 +2441,194 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                     dev_ctxs_input[index], quant_buf, scale_buf, normed_buf
                 )
 
-            _dispatch_ag_norm_quant[group_size=group_size](
-                in_tensors,
-                normed_buf,
-                sum_buf,
-                gamma_tensor,
-                epsilon,
-                weight_offset.cast[dtype](),
-                rank_sigs,
-                dev_ctxs_input[index],
-                mx_epilogue,
-                two_launch_with_quant,
-                my_rank=index,
-            )
+            @inline(.always)
+            def two_launch_quant_only() raises {imm}:
+                comptime QuantPtrType = MutPointer[
+                    Scalar[quant_dtype], MutUntrackedOrigin
+                ]
+                comptime ScalePtrType = MutPointer[
+                    Scalar[scales_dtype], MutUntrackedOrigin
+                ]
+                comptime QuantViewType = type_of(
+                    TileTensor(
+                        rebind[QuantPtrType](quant_buf.ptr),
+                        row_major(cols_rt, cols_rt),
+                    )
+                )
+                comptime ScaleViewType = type_of(
+                    TileTensor(
+                        rebind[ScalePtrType](scale_buf.ptr),
+                        row_major(cols_rt, scale_cols),
+                    )
+                )
+                var quant_views = Array[
+                    QuantViewType, num_devices * group_size
+                ](uninitialized=True)
+                var scale_views = Array[
+                    ScaleViewType, num_devices * group_size
+                ](uninitialized=True)
+                var quant_shards = Array[QuantViewType, num_devices](
+                    uninitialized=True
+                )
+                var scale_shards = Array[ScaleViewType, num_devices](
+                    uninitialized=True
+                )
+                var my_row_off = 0
+                comptime for d in range(num_devices):
+                    comptime d_group_start = ualign_down(d, group_size)
+                    comptime assert conforms_to(
+                        type_of(outputs_quant[d]), TileTensorable
+                    )
+                    comptime assert conforms_to(
+                        type_of(outputs_scale[d]), TileTensorable
+                    )
+                    var q_base = rebind[QuantPtrType](
+                        outputs_quant[d].to_tile_tensor[quant_dtype]().ptr
+                    )
+                    var s_base = rebind[ScalePtrType](
+                        outputs_scale[d].to_tile_tensor[scales_dtype]().ptr
+                    )
+                    var row_off = 0
+                    comptime for i in range(group_size):
+                        var len_i = (
+                            Int(in_tensors[d_group_start + i].num_elements())
+                            // cols_rt
+                        )
+                        quant_views[d * group_size + i] = TileTensor(
+                            q_base.unsafe_offset(row_off * cols_rt),
+                            row_major(len_i, cols_rt),
+                        )
+                        scale_views[d * group_size + i] = TileTensor(
+                            s_base.unsafe_offset(row_off * scale_cols),
+                            row_major(len_i, scale_cols),
+                        )
+                        comptime if d_group_start + i == d:
+                            quant_shards[d] = quant_views[d * group_size + i]
+                            scale_shards[d] = scale_views[d * group_size + i]
+                            comptime if d == index:
+                                my_row_off = row_off
+                        row_off += len_i
+
+                var my_rows = Int(in_tensors[index].num_elements()) // cols_rt
+                var my_in = TileTensor(
+                    in_tensors[index].ptr, row_major(my_rows, cols_rt)
+                )
+                var my_sum = TileTensor(
+                    sum_buf.ptr.unsafe_offset(my_row_off * cols_rt),
+                    row_major(my_rows, cols_rt),
+                )
+                var my_normed = TileTensor(
+                    normed_buf.ptr.unsafe_offset(my_row_off * cols_rt),
+                    row_major(my_rows, cols_rt),
+                )
+
+                @inline(.always)
+                def norm_input_fn[
+                    width: Int
+                ](coords: Coord) {var my_in, var my_sum} -> SIMD[dtype, width]:
+                    var val = my_in.load[
+                        width=width, alignment=align_of[dtype]()
+                    ](coords)
+                    my_sum.store[alignment=align_of[dtype]()](coords, val)
+                    return val
+
+                @inline(.always)
+                def norm_output_fn[
+                    width: SIMDLength, alignment: Int
+                ](coords: Coord, val: SIMD[dtype, width]) {
+                    var my_normed
+                } -> None:
+                    my_normed.store[alignment=alignment](coords, val)
+
+                rms_norm_gpu[
+                    2,
+                    epsilon=epsilon,
+                    weight_offset=weight_offset,
+                    multiply_before_cast=True,
+                ](
+                    norm_input_fn,
+                    norm_output_fn,
+                    my_in.layout.shape_coord(),
+                    gamma_tensor,
+                    dev_ctxs_input[index],
+                    dispatch_rows=rows_rt,
+                )
+
+                quantize_mx_amd(
+                    dev_ctxs_input[index],
+                    quant_shards[index],
+                    scale_shards[index],
+                    my_normed,
+                )
+
+                allgather[
+                    dtype=quant_dtype, ngpus=num_devices, group_size=group_size
+                ](
+                    quant_shards,
+                    quant_views,
+                    rank_sigs,
+                    dev_ctxs_input[index],
+                    index,
+                )
+                allgather[
+                    dtype=scales_dtype,
+                    ngpus=num_devices,
+                    group_size=group_size,
+                ](
+                    scale_shards,
+                    scale_views,
+                    rank_sigs,
+                    dev_ctxs_input[index],
+                    index,
+                )
+
+            @inline(.always)
+            def two_launch_gated() raises {imm}:
+                var min_group_rows = rows_rt
+                comptime for g in range(num_devices // group_size):
+                    var group_rows = 0
+                    comptime for i in range(group_size):
+                        group_rows += (
+                            Int(in_tensors[g * group_size + i].num_elements())
+                            // cols_rt
+                        )
+                    min_group_rows = min(min_group_rows, group_rows)
+                if (
+                    min_group_rows * cols_rt * size_of[dtype]()
+                    >= AG_QUANT_ONLY_THRESHOLD
+                ):
+                    two_launch_quant_only()
+                else:
+                    two_launch_with_quant()
+
+            comptime if gather_quant_only:
+                _dispatch_ag_norm_quant[group_size=group_size](
+                    in_tensors,
+                    normed_buf,
+                    sum_buf,
+                    gamma_tensor,
+                    epsilon,
+                    weight_offset.cast[dtype](),
+                    rank_sigs,
+                    dev_ctxs_input[index],
+                    mx_epilogue,
+                    two_launch_gated,
+                    my_rank=index,
+                )
+            else:
+                _dispatch_ag_norm_quant[group_size=group_size](
+                    in_tensors,
+                    normed_buf,
+                    sum_buf,
+                    gamma_tensor,
+                    epsilon,
+                    weight_offset.cast[dtype](),
+                    rank_sigs,
+                    dev_ctxs_input[index],
+                    mx_epilogue,
+                    two_launch_with_quant,
+                    my_rank=index,
+                )
 
         _launch_device_collective[num_devices](
             launch_fused_ag_norm_quant, dev_ctxs_input.copy()

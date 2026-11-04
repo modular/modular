@@ -721,6 +721,12 @@ def MOComposite_DistributedAllGatherRMSNormOp : MO_DistributedOp<"composite.dist
     contiguous groups that gather independently (TP-within-DP), so each output
     is its group's tensor. It must be at least 2 and divide the device count.
     The builder always sets it; the `0` default is not usable.
+
+    `gather_axis` 1 gathers column shards (`[rows, cols / group_size]` each,
+    in rank order) instead of row shards. `round_offset_gamma` rounds
+    `gamma + weight_offset` to the input dtype before the f32 multiply, as a
+    norm that scales by a stored `1 + w` does. Either one always runs the
+    fused kernel.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -729,7 +735,9 @@ def MOComposite_DistributedAllGatherRMSNormOp : MO_DistributedOp<"composite.dist
     MO_Chain:$inChain,
     MO_F32ScalarAttr:$epsilon,
     MO_F32ScalarAttr:$weight_offset,
-    DefaultValuedAttr<I64Attr, "0">:$group_size
+    DefaultValuedAttr<I64Attr, "0">:$group_size,
+    DefaultValuedAttr<I64Attr, "0">:$gather_axis,
+    DefaultValuedAttr<BoolAttr, "false">:$round_offset_gamma
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -739,7 +747,9 @@ def MOComposite_DistributedAllGatherRMSNormOp : MO_DistributedOp<"composite.dist
   let assemblyFormat = [{
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
-    (` ` `[` `group_size` `=` $group_size^ `]`)? attr-dict `:`
+    (` ` `[` `group_size` `=` $group_size^ `]`)?
+    (` ` `[` `gather_axis` `=` $gather_axis^ `]`)?
+    (` ` `[` `round_offset_gamma` `=` $round_offset_gamma^ `]`)? attr-dict `:`
     functional-type(operands, results)
   }];
 }
@@ -758,6 +768,13 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op : MO_DistributedOp<"comp
     interleave and NOT the preshuffled atom order `block_scaled_matmul_amd_preb`
     requires). Quantized from the bf16 written to `output`, so byte-identical
     to a standalone quantize. Same `group_size` contract.
+
+    When `gather_quant_only` is true and every group gathers at least ~1024
+    rows, each device norms and quantizes only its own row shard with its own
+    `gamma`, and the group gathers just `outQuant` and `outScale`; this
+    matches the default only when every device in a group holds the same
+    `gamma`. `output` and `outResidual` then hold valid values only in the
+    device's own rows, so consumers may read nothing else of them.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -766,7 +783,8 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op : MO_DistributedOp<"comp
     MO_Chain:$inChain,
     MO_F32ScalarAttr:$epsilon,
     MO_F32ScalarAttr:$weight_offset,
-    DefaultValuedAttr<I64Attr, "0">:$group_size
+    DefaultValuedAttr<I64Attr, "0">:$group_size,
+    DefaultValuedAttr<BoolAttr, "false">:$gather_quant_only
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -778,7 +796,8 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op : MO_DistributedOp<"comp
   let assemblyFormat = [{
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
-    (` ` `[` `group_size` `=` $group_size^ `]`)? attr-dict `:`
+    (` ` `[` `group_size` `=` $group_size^ `]`)?
+    (` ` `[` `gather_quant_only` `=` $gather_quant_only^ `]`)? attr-dict `:`
     functional-type(operands, results)
   }];
 }

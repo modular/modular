@@ -28,7 +28,7 @@ from max.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync_with_mask,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import (
     block_id_in_cluster,
@@ -886,9 +886,6 @@ def test_bulk_mma_pair_cta[
             ),
             block_dim=(128),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_size)
-            ),
         )
     else:
         comptime kernel = bulk_mma_pair_cta_kernel[
@@ -917,9 +914,6 @@ def test_bulk_mma_pair_cta[
             ),
             block_dim=(128),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_size)
-            ),
         )
 
     comptime if not transpose_b:

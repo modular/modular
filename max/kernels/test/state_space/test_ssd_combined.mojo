@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import (
-    Layout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -67,10 +66,6 @@ def run_ssd_combined[
     var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # output: (batch, dim, seqlen)
     var output_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))

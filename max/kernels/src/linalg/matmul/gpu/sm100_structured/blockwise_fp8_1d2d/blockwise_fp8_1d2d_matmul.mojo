@@ -32,7 +32,7 @@ Usage:
 
 from std.sys import size_of
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import B200
 from layout import TileTensor, coord, flatten_leading
 from structured_kernels.tile_types import create_tma_tile
@@ -135,9 +135,6 @@ def grouped_matmul_1d2d_blockwise_fp8[
     ]
     comptime smem_size = size_of[SmemType]()
 
-    # B200 SMEM limit
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
     # Instantiate kernel type -- layout params derived from caller's TileTensors
     # so types match by construction in enqueue_function.
     comptime KernelType = BlockwiseFP8_1D2DMatmulKernel[
@@ -201,6 +198,11 @@ def grouped_matmul_1d2d_blockwise_fp8[
     comptime epilogue_warps = 4
 
     ctx.enqueue_function[kernel](
+        GridBlockLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
+            shared_mem_bytes=smem_size,
+        ),
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,
@@ -211,12 +213,6 @@ def grouped_matmul_1d2d_blockwise_fp8[
         c_device,
         Int32(num_active_experts),
         UInt32(K),
-        grid_dim=grid_dim,
-        block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
     )
 
 

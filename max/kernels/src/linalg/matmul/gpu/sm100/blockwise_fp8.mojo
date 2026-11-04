@@ -21,7 +21,7 @@ from std.sys import align_of, size_of
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, lane_id, warp_id as get_warp_id
 from max.gpu.memory import external_memory
@@ -923,6 +923,11 @@ def _matmul_sm100_blockwise_scaled_fp8_impl[
     ]
 
     ctx.enqueue_function[kernel](
+        GridBlockLaunchConfig(
+            grid_dim=(ceildiv(Int(N), BN), ceildiv(Int(M), BM)),
+            block_dim=(block_dim),
+            shared_mem_bytes=smem_use,
+        ),
         a_tma_op,
         b_tma_op,
         c_kernel,
@@ -930,10 +935,4 @@ def _matmul_sm100_blockwise_scaled_fp8_impl[
         b_scales_kernel,
         Int32(ceildiv(Int(K), BK)),
         host_args=(epilogue_fn, compute_fn),
-        grid_dim=(ceildiv(Int(N), BN), ceildiv(Int(M), BM)),
-        block_dim=(block_dim),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )

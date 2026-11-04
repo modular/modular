@@ -149,6 +149,13 @@ yet: it imports the module you point at and reads its `ARCHITECTURES` list.
 
 ## Testing Guidelines
 
+Invoke the `presubmit-test-policy` skill before adding a test here. Committed
+layer and function tests are surface checks that don't compile the graph.
+Numerics belong in Mojo kernel tests, and a committed compiling or GPU
+function test must meet the skill's exception bar. Development-time
+compilation and reference comparisons are encouraged; leave them out of the
+PR.
+
 ### Unit Tests
 
 - Graph API tests: `//max/tests/integration/graph`

@@ -29,6 +29,7 @@ modular_py_library(
         "layers/indexer.py",
         "layers/mhc.py",
         "layers/moe.py",
+        "layers/mxfp4_ops.py",
         "layers/mxfp8_linear.py",
         "layers/norm.py",
         "layers/nvfp4_ops.py",

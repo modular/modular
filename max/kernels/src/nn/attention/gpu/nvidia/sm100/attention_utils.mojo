@@ -41,11 +41,12 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
 )
 from max.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
 from layout import (
+    Coord,
     Idx,
-    IntTuple,
     Layout,
     TensorEngine,
     TileTensor,
+    coord,
     row_major,
 )
 from layout.tensor_core_async import (
@@ -239,6 +240,46 @@ def opaque_u32(x: UInt32) -> UInt32:
         constraints="=r,r",
         has_side_effect=True,
     ](x)
+
+
+@inline(.always)
+def opaque_i64(x: Int64) -> Int64:
+    """Returns `x` through a side-effecting move, so it is computed before
+    the next barrier and held in registers across it."""
+    return inlined_assembly[
+        "mov.b64 $0, $1;", Int64, constraints="=l,l", has_side_effect=True
+    ](x)
+
+
+@inline(.always)
+def opaque_nonneg_i32(x: Int32) -> Int32:
+    """Returns a non-negative `x` re-derived as `max(x, 0)` in opaque PTX.
+
+    A value computed before a warp-role split and used by several roles is
+    one live range across every role, so ptxas can give it a stack slot that
+    a role's loop reloads. A plain `mov` does not help: ptxas coalesces the
+    copy with its source. `max` is an identity only for `x >= 0`, which
+    ptxas cannot prove, so the result starts a new live range in the
+    calling role's registers.
+    """
+    return inlined_assembly[
+        "max.s32 $0, $1, 0;",
+        Int32,
+        constraints="=r,r",
+        has_side_effect=True,
+    ](x)
+
+
+@inline(.always)
+def opaque_split_bound(x: Int) -> Int:
+    """Returns a non-negative split bound re-derived in opaque PTX.
+
+    The same live-range break as `opaque_nonneg_i32`, for the key counts and
+    slot offsets a split-K decode computes before the warp-role split and
+    every role reads: a sparse slot count or a slot offset fits the 32 bits
+    the identity needs.
+    """
+    return Int(opaque_nonneg_i32(Int32(x)))
 
 
 @inline(.always)
@@ -1047,7 +1088,7 @@ struct SM100TensorAccumulator[
             # Offset both A and B operands by k_offset.
             # B (smem) offset: move by k_offset rows of the descriptor.
             comptime b_byte_offset = (
-                Self.b_layout(IntTuple(0, k_offset)) * Self.operand_size
+                Self.b_layout(coord[0, k_offset]) * Self.operand_size
             )
             var scale: UInt32
 
@@ -1099,7 +1140,7 @@ struct SM100TensorAccumulator[
             else:
                 # A (smem) offset: move by k_offset rows of the descriptor.
                 comptime a_byte_offset = (
-                    Self.a_layout(IntTuple(0, k_offset)) * Self.operand_size
+                    Self.a_layout(coord[0, k_offset]) * Self.operand_size
                 )
                 var a_ = rebind[MMASmemDescriptorPair](a) + UInt32(
                     a_byte_offset
@@ -1387,9 +1428,7 @@ def _build_mma[
             # Absolute first block initializes the accumulator from c_scale ($3).
             mma += "setp.ne.b32 %ps, $3, 0;\n"
         else:
-            var b_offset = (
-                layout_b(IntTuple(0, mma_k * jj)) * operand_size
-            ) >> 4
+            var b_offset = (layout_b(Coord(0, mma_k * jj)) * operand_size) >> 4
             if a_tmem:
                 var a_offset = a_stride * jj
                 mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
@@ -1399,7 +1438,7 @@ def _build_mma[
             elif partial:
                 # SS-partial interleaving: A descriptor, then B descriptor.
                 var a_offset = (
-                    layout_a(IntTuple(0, mma_k * jj)) * operand_size
+                    layout_a(Coord(0, mma_k * jj)) * operand_size
                 ) >> 4
                 mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
                 mma += "mov.b64 %rda, {%ra, $8};\n"
@@ -1408,7 +1447,7 @@ def _build_mma[
             else:
                 # SS-full interleaving: both `add`s first, then both `mov`s.
                 var a_offset = (
-                    layout_a(IntTuple(0, mma_k * jj)) * operand_size
+                    layout_a(Coord(0, mma_k * jj)) * operand_size
                 ) >> 4
                 mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
                 mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
@@ -1451,6 +1490,7 @@ def bulk_mma[
     num_k_mmas: Int,
     mma_k: Int,
     operand_size: Int,
+    k_start: Int = 0,
     cta_group: Int = 1,
 ](
     idesc: UMMAInsDescriptor[kind],
@@ -1472,6 +1512,8 @@ def bulk_mma[
             contract over.
         mma_k: K-dimension tile size per MMA block, in elements.
         operand_size: Size in bytes of the A and B operand elements.
+        k_start: Absolute K-block index of the first block in this tile
+            (defaults to 0).
         cta_group: Number of cooperating CTAs, 1 or 2 (defaults to 1).
 
     Args:
@@ -1494,6 +1536,7 @@ def bulk_mma[
         operand_size=operand_size,
         mma_k=mma_k,
         num_k_mmas=num_k_mmas,
+        k_start=k_start,
         cta_group=cta_group,
     )
 
@@ -1899,7 +1942,7 @@ def bulk_mma_ws_ts[
     # Full-tile TS, warp-specialized. `a` is a single TMEM base ($7); `_build_mma`
     # computes each k-tile's column offset in-PTX (`add.s32 %ra, $7, k*stride`),
     # so the old per-tile operand ladder is gone.
-    comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
+    comptime assert num_k_mmas >= 1
     comptime layout_b = tile_layout_k_major[
         b_dtype, b_BMN, b_BK, b_swizzle
     ]() if b_is_k_major else tile_layout_mn_major[

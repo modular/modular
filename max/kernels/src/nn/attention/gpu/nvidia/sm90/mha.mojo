@@ -36,7 +36,7 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -46,9 +46,9 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    Layout,
     TensorEngine,
     TileTensor,
+    coord,
     row_major,
     stack_allocation,
 )
@@ -1056,9 +1056,6 @@ def _mha_sm90_enqueue[
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 
@@ -1298,7 +1295,7 @@ def _mha_sm90[
     comptime accum_simd_width = simd_width_of[accum_type]()
     comptime row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
 
-    comptime mma_thread_layout = Layout.row_major(8, 4)
+    comptime mma_thread_shape = coord[8, 4]
 
     # Handle sink_weights
     var sink_weights_ptr = Optional[
@@ -1903,7 +1900,7 @@ def _mha_sm90[
             # threads layout by warp
             frag_simdwidth,
             1,
-            mma_thread_layout,
+            mma_thread_shape,
             use_exp2=True,
         ](vectorize_p_reg_tile(), rowmax, init_rowmax=SinkType.is_null)
 
@@ -1913,7 +1910,7 @@ def _mha_sm90[
         var attention_rowsum = _rowsum[
             type_of(rowsum_buffer.layout),
             frag_simdwidth,
-            mma_thread_layout,
+            mma_thread_shape,
         ](vectorize_p_reg_tile())
 
         # Add sink weight contribution to rowsum
@@ -1993,7 +1990,7 @@ def _mha_sm90[
                     # threads layout by warp
                     frag_simdwidth,
                     1,
-                    mma_thread_layout,
+                    mma_thread_shape,
                     use_exp2=True,
                 ](vectorize_p_reg_tile(), rowmax, new_q)
 
@@ -2021,7 +2018,7 @@ def _mha_sm90[
                     var score_frag_rowsum = _rowsum[
                         type_of(rowsum_buffer.layout),
                         frag_simdwidth,
-                        mma_thread_layout,
+                        mma_thread_shape,
                     ](vectorize_p_reg_tile())
                     rowmax.copy_from(score_frag_rowmax)
                     elementwise_reciprocal(rowsum, score_frag_rowsum)
@@ -2067,7 +2064,7 @@ def _mha_sm90[
                     var score_frag_rowsum = _rowsum[
                         type_of(rowsum_buffer.layout),
                         frag_simdwidth,
-                        mma_thread_layout,
+                        mma_thread_shape,
                     ](vectorize_p_reg_tile())
 
                     _online_softmax_correction[use_exp2=True](

@@ -61,7 +61,8 @@ from linalg.arch.sm100.mma import smem_descriptor
 
 from max.gpu.globals import WARP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
 from max.gpu.sync import barrier
@@ -2083,6 +2084,12 @@ def _mla_prefill_sm100_valid_length_dispatch[
     comptime assert smem_use <= fa4_config.sm100_smem_carveout
 
     ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
+            block_dim=(num_threads, 1, 1),
+            shared_mem_bytes=smem_use,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        ),
         q_tma_op,
         k_nope_tma_op,
         k_rope_tma_op,
@@ -2093,11 +2100,4 @@ def _mla_prefill_sm100_valid_length_dispatch[
         scale,
         UInt32(batch_size),
         pack,
-        grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
-        block_dim=(num_threads, 1, 1),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
-        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

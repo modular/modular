@@ -33,7 +33,6 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max.driver import float32_to_bfloat16_as_uint16
-from max.pipelines.context.exceptions import InputError
 from PIL import Image, ImageOps
 
 IMAGE_START, IMAGE, IMAGE_NEW_LINE, IMAGE_END = range(4)
@@ -149,29 +148,36 @@ class DeepseekV41ImageProcessor:
 
 
 def expand_image_spans(
-    token_ids: Sequence[int], grids: Sequence[ImageGrid], image_token_id: int
+    token_ids: Sequence[int],
+    grids: Sequence[ImageGrid],
+    image_token_id: int,
+    image_positions: Sequence[int],
 ) -> tuple[npt.NDArray[np.int64], list[int]]:
-    """Grows each ``image_token_id`` placeholder into its image span.
+    """Grows the image token at each image position into its image span.
+
+    Any other ``image_token_id`` in ``token_ids`` stays a single token.
+
+    Args:
+        token_ids: The tokenized prompt.
+        grids: One grid per image, in the same order as the positions.
+        image_token_id: The placeholder's token id.
+        image_positions: Ascending token positions of the image tokens that
+            stand for the images.
 
     Returns:
         The expanded ids and the start position of each image's span.
-
-    Raises:
-        InputError: If the placeholder count differs from the image count.
     """
-    markers = sum(1 for t in token_ids if t == image_token_id)
-    if markers != len(grids):
-        raise InputError(
-            f"The prompt has {markers} image placeholder(s) but {len(grids)}"
-            " image(s) were given."
-        )
-    ids: list[int] = []
+    ids = np.asarray(token_ids, dtype=np.int64)
+    pieces: list[npt.NDArray[np.int64]] = []
     starts: list[int] = []
-    remaining = iter(grids)
-    for token in token_ids:
-        if token != image_token_id:
-            ids.append(token)
-            continue
-        starts.append(len(ids))
-        ids.extend([image_token_id] * next(remaining).num_tokens)
-    return np.array(ids, dtype=np.int64), starts
+    cursor = 0
+    length = 0
+    for position, grid in zip(image_positions, grids, strict=True):
+        pieces.append(ids[cursor:position])
+        length += position - cursor
+        starts.append(length)
+        pieces.append(np.full(grid.num_tokens, image_token_id, np.int64))
+        length += grid.num_tokens
+        cursor = position + 1
+    pieces.append(ids[cursor:])
+    return np.concatenate(pieces), starts

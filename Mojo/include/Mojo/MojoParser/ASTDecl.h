@@ -990,8 +990,8 @@ public:
   LogicalResult resolveSignature(Lexer &lexer) override;
   LogicalResult resolveBody(Lexer &lexer) override;
 
-  /// Compute the `Self` type represented by a struct declaration operation.
-  static Type computeSelfType(StructDeclOp structOp);
+  /// Compute the `Self` type represented by this struct declaration.
+  Type computeSelfType() const;
 
   /// Return this struct's parameter declarations in signature order.
   ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }

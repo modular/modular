@@ -27,10 +27,14 @@ token-sequential kernel. The K3 memory planner still reserves the chunk
 workspaces host-side (see ``memory_planner.py``); KERN-3869 tracks moving
 them into graph-planned buffers.
 
-Still scoped out: the speculative-decoding ``replay_capture`` machinery.
-``kda_decode`` alone is correct for both decode and prefill batches -- the
-chunk op is the same recurrence restructured, not a different one -- so the
-routing is a performance matter, never a correctness one.
+The speculative-decoding VERIFY arm: when a binding is set on the layer
+(see :class:`KdaVerifyBinding`), the conv runs
+``gated_delta_conv1d_verify_fwd``, which leaves the live window unwritten
+and keeps a copy of its input for the conv replay, and the recurrence runs
+``kda_verify_ring``, which reads the live pool without writing it and
+records each token's update in the ring. A width-0 window (no drafts)
+commits both live pools itself, the same arithmetic the plain forward uses,
+so one graph serves every step. Outside a verify the layer is unchanged.
 
 Both gate-lower-bound arms V2 supports are kept (not scoped out): the
 "original" arm (``gate_lower_bound is None``, the kernel's own per-head
@@ -43,19 +47,21 @@ rather than silently running the wrong gate.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import NamedTuple
 
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferValue, TensorType, TensorValue, ops
 from max.nn import Linear, Module
 from max.nn.common_layers.mesh_axis import TP
+from max.nn.legacy.state_space import gated_delta_conv1d_verify_fwd
 from max.nn.legacy.state_space.kimi_delta import (
     STATE_LAYOUT,
     KdaGateMode,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
+from max.tensor.sharding.action import PerShard
 
 from .norm import KimiRMSNormGated, kimi_rms_norm_gated
 from .short_conv import kimi_short_conv_qkv
@@ -80,8 +86,9 @@ def _kda_decode(
     *,
     gate_mode: KdaGateMode,
     out_type: TensorType,
+    pin_fma: bool,
 ) -> TensorValue:
-    values: list[Any] = [
+    values: list[TensorValue | BufferValue] = [
         TensorValue(q),
         TensorValue(k),
         TensorValue(v),
@@ -97,8 +104,73 @@ def _kda_decode(
     local_out_type = TensorType(
         out_type.dtype, out_type.shape, device=TensorValue(q).device
     )
+    parameters: dict[str, bool | int | str] = {
+        "gate_mode": gate_mode,
+        "beta_mode": "logits",
+        "state_layout": STATE_LAYOUT,
+    }
+    if pin_fma:
+        # The speculative verify-ring and fold kernels spell every
+        # multiply-add as an explicit `fma`; pinning here makes a plain
+        # decode land on the same state bit for bit, so a rolled-back verify
+        # equals the decode it interrupted.
+        parameters["pin_fma"] = True
     out = ops.inplace_custom(
         "kda_decode",
+        device=TensorValue(q).device,
+        values=values,
+        out_types=[local_out_type],
+        parameters=parameters,
+    )[0]
+    assert isinstance(out, TensorValue)
+    return out
+
+
+kda_decode = F.functional(_kda_decode)
+
+
+def _kda_verify_ring(
+    q: Tensor,
+    k: Tensor,
+    v: Tensor,
+    raw_gate: Tensor,
+    beta_logits: Tensor,
+    a_log: Tensor,
+    dt_bias: Tensor,
+    input_row_offsets: Tensor,
+    state_pool: Tensor,
+    recurrent_row_id: Tensor,
+    ring_pool: Tensor | PerShard[Tensor],
+    ring_row_id: Tensor | PerShard[Tensor],
+    verify_width: TensorValue,
+    *,
+    gate_mode: KdaGateMode,
+    out_type: TensorType,
+) -> TensorValue:
+    # The dispatch delivers each device its own entry of a `PerShard`, so
+    # what reaches the op body is always one device's tensors.
+    assert isinstance(ring_pool, Tensor)
+    assert isinstance(ring_row_id, Tensor)
+    values: list[TensorValue | BufferValue] = [
+        TensorValue(q),
+        TensorValue(k),
+        TensorValue(v),
+        TensorValue(raw_gate),
+        TensorValue(beta_logits),
+        TensorValue(a_log),
+        TensorValue(dt_bias),
+        ops.cast(TensorValue(input_row_offsets), DType.int32),
+        BufferValue(state_pool),
+        ops.cast(TensorValue(recurrent_row_id), DType.int32),
+        BufferValue(ring_pool),
+        ops.cast(TensorValue(ring_row_id), DType.int32),
+        verify_width,
+    ]
+    local_out_type = TensorType(
+        out_type.dtype, out_type.shape, device=TensorValue(q).device
+    )
+    out = ops.inplace_custom(
+        "kda_verify_ring",
         device=TensorValue(q).device,
         values=values,
         out_types=[local_out_type],
@@ -112,7 +184,112 @@ def _kda_decode(
     return out
 
 
-kda_decode = F.functional(_kda_decode)
+kda_verify_ring = F.functional(_kda_verify_ring)
+
+
+def _kimi_short_conv_qkv_verify(
+    x_qkv_ragged: Tensor,
+    conv_weight: Tensor,
+    conv_pool: Tensor,
+    conv_row_id: Tensor,
+    input_row_offsets: Tensor,
+    verify_width: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    """Runs the verify form of :func:`.short_conv.kimi_short_conv_qkv`.
+
+    Kept here rather than in ``short_conv.py`` so the plain form stays the
+    V2 port alone. Same fp32 working dtype and the same raw fp32 output (the
+    caller applies ``silu`` per q/k/v slice); the kernel writes the live
+    window only at a verify width of zero, and with drafts it returns the
+    copy of its input the conv replay replays over instead.
+    """
+    conv, window = gated_delta_conv1d_verify_fwd(
+        qkv_input_ragged=ops.cast(TensorValue(x_qkv_ragged), DType.float32),
+        conv_weight=ops.cast(TensorValue(conv_weight), DType.float32),
+        conv_state=BufferValue(conv_pool),
+        slot_idx=TensorValue(conv_row_id),
+        input_row_offsets=TensorValue(input_row_offsets),
+        verify_width=verify_width,
+        rollback=False,
+    )
+    return conv, window
+
+
+kimi_short_conv_qkv_verify = F.functional(_kimi_short_conv_qkv_verify)
+
+
+def _record_conv_replay(
+    binding: KdaVerifyBinding, window: Tensor, conv_weight: Tensor
+) -> None:
+    """Appends this layer's per-device conv replay inputs to the capture.
+
+    The conv op already ran once per device, so the joined window and the
+    weight each hold one shard per device; the replay re-runs each device's
+    own shard over its own pool rows. Call order is layer order, which is
+    the order the replay's per-layer row tables read.
+    """
+    windows = window.local_shards
+    weights = conv_weight.local_shards
+    assert len(windows) == len(weights) == len(binding.captures), (
+        f"the verify captured {len(windows)} windows and {len(weights)}"
+        f" weights across {len(binding.captures)} devices"
+    )
+    for device, (shard_window, shard_weight) in enumerate(
+        zip(windows, weights, strict=True)
+    ):
+        binding.captures[device].append(
+            KdaConvReplayInputs(
+                qkv_window=TensorValue(shard_window),
+                conv_weight=TensorValue(shard_weight),
+            )
+        )
+
+
+class KdaConvReplayInputs(NamedTuple):
+    """One KDA layer's conv inputs the conv replay re-runs.
+
+    Satisfies the conv replay's
+    :class:`~max.pipelines.speculative.gated_delta_rollback.ConvReplayInputs`
+    protocol; the recurrent replay needs nothing per layer -- the ring's
+    records carry the whole update. Graph values rather than the shard
+    tensors, so a capture is replay-ready wherever it lands.
+    """
+
+    qkv_window: TensorValue
+    """``[batch_size * (1 + K), conv_dim]`` copy the verify's conv kept."""
+
+    conv_weight: TensorValue
+    """``[conv_dim, conv_kernel_size]`` depthwise weights, fp32 casts."""
+
+
+class KdaVerifyBinding:
+    """One verify's ring, width and capture, bound to a KDA layer.
+
+    Set on each KDA layer by ``kimi_k3_modulev3.spec_state``'s
+    ``capturing`` context and unwound on the way out, so a forward outside
+    a verify -- the base graph's, or the draft's -- never sees it. A plain
+    holder rather than bare module attributes: the ring tensors would be
+    swept up as module parameters, while a holder the module tree carries
+    as one static value keeps them invisible.
+
+    One binding per layer: the ring row id is the layer's own. The capture
+    lists are shared with every other KDA layer's binding, one list per
+    device, and each layer appends its own entry in call order.
+    """
+
+    __slots__ = ("captures", "ring_pool", "ring_row_id", "verify_width")
+
+    def __init__(
+        self,
+        verify_width: TensorValue,
+        ring_pool: Tensor | PerShard[Tensor],
+        ring_row_id: Tensor | PerShard[Tensor],
+        captures: list[list[KdaConvReplayInputs]],
+    ) -> None:
+        self.verify_width = verify_width
+        self.ring_pool = ring_pool
+        self.ring_row_id = ring_row_id
+        self.captures = captures
 
 
 class KimiK3KDAAttention(
@@ -127,6 +304,8 @@ class KimiK3KDAAttention(
         head_dim: int,
         conv_kernel_size: int,
         gate_lower_bound: float | None,
+        *,
+        pin_fma: bool = False,
     ) -> None:
         """Builds the KDA attention.
 
@@ -139,6 +318,10 @@ class KimiK3KDAAttention(
             gate_lower_bound: ``config.kda_gate_lower_bound``. Published K3 sets
             -5.0; ``None`` selects the kernel's own per-head gate instead.
             Any OTHER value raises -- see the module docstring.
+            pin_fma: Whether the ``kda_decode`` op pins its multiply-adds as
+            explicit ``fma``s, the bit-identity a speculative build's
+            verify-ring and fold kernels need; plain serving keeps the
+            kernel's default, which only AMD ever unpins.
         """
         super().__init__()
         if gate_lower_bound is not None and gate_lower_bound != -5.0:
@@ -149,6 +332,7 @@ class KimiK3KDAAttention(
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.gate_lower_bound = gate_lower_bound
+        self.pin_fma = pin_fma
         inner = num_heads * head_dim
 
         # One merged q/k/v projection: three separate GEMMs followed by an
@@ -176,6 +360,13 @@ class KimiK3KDAAttention(
         self.o_norm = KimiRMSNormGated(head_dim, eps=_KIMI_O_NORM_EPS)
         self.o_proj = Linear(in_dim=inner, out_dim=hidden_size, bias=False)
 
+    verify_binding: KdaVerifyBinding | None = None
+    """The verify's ring, width and capture, or ``None`` outside a verify.
+
+    Bound per layer by ``spec_state``'s ``capturing`` context; see
+    :class:`KdaVerifyBinding`.
+    """
+
     def forward(
         self,
         x: Tensor,
@@ -200,10 +391,12 @@ class KimiK3KDAAttention(
             input_row_offsets: ``[batch_size + 1]`` exclusive prefix sums.
 
             Under TP, both pools are sharded on axis 1 like the heads they hold.
+            A verify's ring (``verify_binding``) is sharded the same way.
 
         Returns:
             ``[total_seq_len, hidden_size]``.
         """
+        binding = self.verify_binding
         total_seq_len = x.shape[0]
         inner = self.num_heads * self.head_dim
         mesh = self.conv_weight.mesh
@@ -211,9 +404,25 @@ class KimiK3KDAAttention(
         tp_size = mesh.axis_size(TP) if tp_active else 1
 
         qkv = self.qkv_proj(x)
-        qkv = kimi_short_conv_qkv(
-            qkv, self.conv_weight, conv_pool, conv_row_id, input_row_offsets
-        )
+        if binding is None:
+            qkv = kimi_short_conv_qkv(
+                qkv, self.conv_weight, conv_pool, conv_row_id, input_row_offsets
+            )
+        else:
+            # The replay re-runs the conv over the same fp32 operands the
+            # verify's own cast produced, so it repeats the verify's
+            # arithmetic rather than rounding a bf16 weight twice.
+            conv_weight = self.conv_weight.cast(DType.float32)
+            conv_out, window = kimi_short_conv_qkv_verify(
+                qkv,
+                conv_weight,
+                conv_pool,
+                conv_row_id,
+                input_row_offsets,
+                binding.verify_width,
+            )
+            _record_conv_replay(binding, window, conv_weight)
+            qkv = conv_out
         if tp_active:
             # Custom ops have no sharding rule, so their outputs need their
             # placement restated. `split` keeps the shards local; slicing
@@ -277,20 +486,40 @@ class KimiK3KDAAttention(
             [1, total_seq_len, heads_per_device, self.head_dim],
             device=x.mesh.devices[0] if x.is_distributed else x.device,
         )
-        o = kda_decode(
-            q,
-            k,
-            v,
-            kernel_raw_gate,
-            beta_logits,
-            kernel_a_log,
-            kernel_dt_bias,
-            input_row_offsets,
-            state_pool,
-            recurrent_row_id,
-            gate_mode=gate_mode,
-            out_type=out_type,
-        )
+        if binding is None:
+            o = kda_decode(
+                q,
+                k,
+                v,
+                kernel_raw_gate,
+                beta_logits,
+                kernel_a_log,
+                kernel_dt_bias,
+                input_row_offsets,
+                state_pool,
+                recurrent_row_id,
+                gate_mode=gate_mode,
+                out_type=out_type,
+                pin_fma=self.pin_fma,
+            )
+        else:
+            o = kda_verify_ring(
+                q,
+                k,
+                v,
+                kernel_raw_gate,
+                beta_logits,
+                kernel_a_log,
+                kernel_dt_bias,
+                input_row_offsets,
+                state_pool,
+                recurrent_row_id,
+                binding.ring_pool,
+                binding.ring_row_id,
+                binding.verify_width,
+                gate_mode=gate_mode,
+                out_type=out_type,
+            )
         if tp_active:
             o = o.rebind_mapping(NamedMapping(o.mesh, (None, None, TP, None)))
         elif mesh.num_devices > 1:

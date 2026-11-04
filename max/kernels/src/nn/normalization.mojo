@@ -892,6 +892,7 @@ def rms_norm_gpu[
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
     ctx: DeviceContext,
+    dispatch_rows: Optional[Int] = None,
 ) raises:
     # `shape` arrives as a `Coord`, with statically-known outer dims encoded in
     # its type, and the lambdas are `Coord`-form all the way down to the
@@ -971,13 +972,15 @@ def rms_norm_gpu[
     comptime sm_count = ctx.default_device_info.sm_count
     comptime warp_per_row_rows_per_block = 8
     var warp_per_row_min_grid = 3 * sm_count
+    var select_rows = dispatch_rows.or_else(rows)
     var warp_per_row_region = (
-        ceildiv(rows, warp_per_row_rows_per_block) >= warp_per_row_min_grid
+        ceildiv(select_rows, warp_per_row_rows_per_block)
+        >= warp_per_row_min_grid
     )
     # Conservative floor: below one block per SM, chunking can't raise
     # occupancy and only reassociates the mean-of-squares reduction (the real
     # crossover is higher and width-dependent; this sits safely below it).
-    var enough_rows_to_chunk = rows >= sm_count
+    var enough_rows_to_chunk = select_rows >= sm_count
 
     var grid_dim = rows
     var block_dim = min(
@@ -1209,7 +1212,7 @@ def rms_norm_gpu[
             # below ~8x the CU count).
             comptime sw_wide = simd_width * 2
             comptime widen_ok = sm_version == "CDNA4"
-            var enough_rows = rows >= 8 * sm_count
+            var enough_rows = select_rows >= 8 * sm_count
             if widen_ok and enough_rows and cols % sw_wide == 0:
                 _launch_warp_tiling[sw_wide, 1]()
             elif not enough_rows_to_chunk:

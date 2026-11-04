@@ -59,7 +59,6 @@ from layout import (
     DefaultEngine,
     ComptimeInt,
     Coord,
-    Layout,
     RowMajorLayout,
     TensorEngine,
     TensorLayout,
@@ -77,6 +76,7 @@ from structured_kernels.tile_types import (
     tma_desc_layout_3d_explicit_inner,
 )
 from layout.tile_layout import _IntToComptimeInt
+from layout.tile_layout import row_major as tt_row_major
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
@@ -706,9 +706,12 @@ struct BlackwellMatmulSM100Kernel[
     comptime Tmem = TmemAllocation[Self.opc.cta_group]
 
     # Layout-parameterized TMEM tensor for type-safe accumulator access
-    comptime accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
+    comptime accum_layout = tt_row_major[Self.MMA_M, Self.MMA_N]()
     comptime AccumTensor = TmemTensor[
-        Self.accum_type, Self.accum_layout, cta_group=Self.cta_group
+        Self.accum_type,
+        type_of(Self.accum_layout),
+        Self.accum_layout,
+        cta_group=Self.cta_group,
     ]
 
     # ========== Output Tile Pipeline Type ==========
@@ -1018,7 +1021,9 @@ struct BlackwellMatmulSM100Kernel[
             k_start: Starting K iteration (for init_c determination).
         """
         # Get typed accumulator tensor from TMEM stage
-        var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
+        var accum = tmem_stage.tensor[
+            Self.accum_type, type_of(Self.accum_layout), Self.accum_layout
+        ]()
 
         if elect_one_sync():
             # Build the A/B MMA SMEM descriptors once from the j=0 tile, then

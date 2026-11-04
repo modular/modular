@@ -282,11 +282,6 @@ struct KernelDeclTileTensorAdaptor {
 };
 
 struct KernelDeclContextPtrAdaptor {
-  /// The context's target is a parameter of the signature, as in
-  /// `DeviceContext`, so the caller picks it by the static type of the
-  /// context it passes. Otherwise the context is the default accelerator's.
-  bool genericTarget = false;
-
   bool operator==(const KernelDeclContextPtrAdaptor &) const { return true; }
 };
 
@@ -425,12 +420,6 @@ struct KernelDeclOperandAdaptor {
                underlyingType) ||
            std::holds_alternative<KernelDeclContextPtrListAdaptor>(
                underlyingType);
-  }
-
-  /// A single `DeviceContext` whose target the callee leaves generic.
-  bool isGenericTargetContextType() const {
-    const auto *t = std::get_if<KernelDeclContextPtrAdaptor>(&underlyingType);
-    return t && t->genericTarget;
   }
 
   bool isVariadicContextType() const {

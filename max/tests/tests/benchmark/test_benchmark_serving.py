@@ -212,6 +212,13 @@ def test_parse_args_pre_parses_concurrency_and_request_rate_sweeps() -> None:
     assert cfg.request_rate[1] == pytest.approx(2.5)
 
 
+def test_parse_args_steady_state_filtering_defaults_on() -> None:
+    """--no-steady-state-filtering turns off the default steady-state window."""
+    assert parse_args(["--model", "myorg/model"]).steady_state_filtering
+    cfg = parse_args(["--model", "myorg/model", "--no-steady-state-filtering"])
+    assert cfg.steady_state_filtering is False
+
+
 def test_benchmark_serving_help(capsys: pytest.CaptureFixture[str]) -> None:
     """Test the benchmark serving help function."""
     # Mock sys.argv to simulate running with --help flag

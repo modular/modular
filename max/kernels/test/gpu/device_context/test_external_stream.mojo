@@ -16,7 +16,7 @@ from max.gpu import global_idx
 from max.gpu.host import DeviceContext, DeviceStream, default_accelerator
 from max.gpu.host import HIP
 from max.gpu.host import CUDA
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.testing import assert_equal
 
 

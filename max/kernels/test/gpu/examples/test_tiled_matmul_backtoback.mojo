@@ -25,7 +25,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.memory import external_memory
 from layout import (
     Coord,
@@ -543,9 +543,6 @@ def multistage_b2b_gemm[
             grid_dim=config.grid_dim(Int(D.dim[0]())),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
     except e:
         abort(String(e))

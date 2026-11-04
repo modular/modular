@@ -416,27 +416,26 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         ]
         mesh = self.routed_expert_down_proj.weight.mesh
         expert_parallel = EP in mesh.axis_names and mesh.axis_size(EP) > 1
-        if mesh.num_devices > 1 and not expert_parallel:
-            # Each device's share -- its [gate_r; up_r] rows, or its slice of
-            # the down's K axis -- comes straight out of the host's per-expert
-            # buffers, with no host or device temporary.
-            axis, spec = (
-                (0, (None, TP, None)) if gate_up else (-1, (None, None, TP))
-            )
+        shape = [self.num_experts, -1, int(parts[0].shape[-1])]
+        if gate_up and mesh.num_devices > 1 and not expert_parallel:
+            # Each device's [gate_r; up_r] rows come straight out of the
+            # host's per-expert buffers, with no host or device temporary.
             with ensure_context():
                 shards = [
-                    shard.reshape([self.num_experts, -1, int(shard.shape[-1])])
-                    for shard in shard_and_stack(parts, mesh.devices, axis=axis)
+                    shard.reshape(shape)
+                    for shard in shard_and_stack(parts, mesh.devices, axis=0)
                 ]
                 return Tensor.from_shard_values(
-                    shards, NamedMapping(mesh, spec)
+                    shards, NamedMapping(mesh, (None, TP, None))
                 )
-        stacked = F.stack(parts).reshape(
-            [self.num_experts, -1, int(parts[0].shape[-1])]
-        )
-        if expert_parallel:
-            return stacked.to(NamedMapping(mesh, (EP, None, None)))
-        return stacked.to(mesh.devices[0])
+        # The down's TP share is a column block of every row, which
+        # shard_and_stack copies to each device one row at a time: hours for
+        # the full model, where stacking on the host first takes minutes.
+        stacked = F.stack(parts).reshape(shape)
+        if mesh.num_devices == 1:
+            return stacked.to(mesh.devices[0])
+        spec = (EP, None, None) if expert_parallel else (None, None, TP)
+        return stacked.to(NamedMapping(mesh, spec))
 
     def forward(
         self,

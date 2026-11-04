@@ -537,8 +537,9 @@ def allgather_rms_norm(
     gamma: Tensor,
     epsilon: float,
     weight_offset: float = 0.0,
+    round_offset_gamma: bool = False,
 ) -> tuple[Tensor, Tensor]:
-    """All-gathers a tensor along axis 0 and RMS-normalizes the result.
+    """All-gathers a 2D tensor and RMS-normalizes the result.
 
     Fuses :func:`allgather` over every device of a one-dimensional mesh with
     an RMS norm of the gathered rows, in one collective launch (see
@@ -547,11 +548,13 @@ def allgather_rms_norm(
 
     Args:
         t: A ``[rows, cols]`` bfloat16 tensor that is
-            :class:`~max.tensor.sharding.Sharded` along axis 0 on a
-            one-dimensional mesh.
+            :class:`~max.tensor.sharding.Sharded` along axis 0 or 1 on
+            a one-dimensional mesh.
         gamma: The norm weight, replicated on the mesh of ``t``.
         epsilon: The norm epsilon.
         weight_offset: A constant added to ``gamma``.
+        round_offset_gamma: Whether ``gamma + weight_offset`` is rounded to
+            the input dtype before the multiply.
 
     Returns:
         A pair ``(normed, gathered)``, each
@@ -559,11 +562,14 @@ def allgather_rms_norm(
         gathered tensor, and the gathered tensor itself.
     """
     mesh = t.mesh
-    if mesh.ndim != 1 or t.placements[0] != Sharded(0):
+    placement = t.placements[0] if mesh.ndim == 1 else None
+    if t.rank != 2 or placement not in (Sharded(0), Sharded(1)):
         raise ValueError(
-            "allgather_rms_norm needs a tensor sharded along axis 0 on a "
-            f"one-dimensional mesh, got {t.mapping}."
+            "allgather_rms_norm needs a 2D tensor sharded along axis 0 or 1 "
+            f"on a one-dimensional mesh, got {t.mapping}."
         )
+    assert isinstance(placement, Sharded)
+    axis = placement.axis
 
     def run(
         shards: list[Tensor],
@@ -577,12 +583,14 @@ def allgather_rms_norm(
                 gammas,
                 epsilon=epsilon,
                 weight_offset=weight_offset,
+                axis=axis,
+                round_offset_gamma=round_offset_gamma,
             )
         else:
             values = [TensorValue(shard) for shard in shards]
             home = values[0].device
             full = ops.concat(
-                [v if v.device == home else v.to(home) for v in values], 0
+                [v if v.device == home else v.to(home) for v in values], axis
             )
             gathered = [
                 full if v.device == home else full.to(v.device) for v in values
@@ -590,10 +598,13 @@ def allgather_rms_norm(
             normed = [
                 ops.rms_norm(
                     g,
-                    w,
+                    TensorValue(w) + weight_offset,
                     epsilon,
-                    weight_offset,
                     multiply_before_cast=True,
+                )
+                if round_offset_gamma
+                else ops.rms_norm(
+                    g, w, epsilon, weight_offset, multiply_before_cast=True
                 )
                 for g, w in zip(gathered, gammas, strict=True)
             ]

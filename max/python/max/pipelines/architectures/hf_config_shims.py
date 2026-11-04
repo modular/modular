@@ -1239,3 +1239,76 @@ class MuseSparkHFConfig(_MuseGlimmerSubHFConfig):
 
 AutoConfig.register("muse_spark", MuseSparkHFConfig, exist_ok=True)
 AutoConfig.register("muse_spark_text", _MuseSparkTextHFConfig, exist_ok=True)
+
+
+class _K3DSparkHFConfig(PretrainedConfig):
+    """The Kimi K3 DSpark drafter's config (``model_type: k3_dspark``).
+
+    The drafter's model type, which no transformers release ships. The
+    drafter is only ever a ``--draft-model``, so the config is read for its
+    fields alone; the architecture module (``kimi_k3_modulev3.dspark``) is
+    imported lazily, after this config has already loaded.
+    """
+
+    model_type = "k3_dspark"
+
+    def __init__(
+        self, max_position_embeddings: int = 262144, **kwargs: Any
+    ) -> None:
+        self.max_position_embeddings = max_position_embeddings
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+
+
+AutoConfig.register("k3_dspark", _K3DSparkHFConfig, exist_ok=True)
+
+
+class MuseSparkDSparkHFConfig(PretrainedConfig):
+    """Muse Spark's DSpark drafter (``model_type: muse_spark_dspark``).
+
+    The published config is flat. The properties present it in the
+    speculators layout ``DSparkSpeculatorsDraftConfig`` parses; the stored
+    fields are kept as published.
+    """
+
+    model_type = "muse_spark_dspark"
+    speculators_model_type = "dspark"
+
+    @property
+    def transformer_layer_config(self) -> dict[str, Any]:
+        """The draft layers' geometry, as the speculators layout nests it."""
+        keys = (
+            "vocab_size",
+            "hidden_size",
+            "intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "head_dim",
+            "rms_norm_eps",
+            "hidden_act",
+            "layer_types",
+            "sliding_window",
+            "max_position_embeddings",
+        )
+        return {
+            **{key: getattr(self, key) for key in keys},
+            "rope_parameters": {
+                "rope_type": "default",
+                "rope_theta": self.rope_theta,
+            },
+        }
+
+    @property
+    def aux_hidden_state_layer_ids(self) -> list[int]:
+        """The tapped layers in vLLM's convention.
+
+        Id ``j`` is the input of target layer ``j``, so one past each layer
+        whose output is read.
+        """
+        return [i + 1 for i in self.dflash_config["target_layer_ids"]]
+
+
+AutoConfig.register("muse_spark_dspark", MuseSparkDSparkHFConfig, exist_ok=True)

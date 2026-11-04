@@ -16,7 +16,7 @@ from std.ffi import _DLHandle
 
 from ..plugin import RawDriver
 from ..plugins import ContextHandle, DeviceHandle, HALPluginConstructable
-from ..status import HALError
+from ..status import STATUS_UNKNOWN_SYMBOL, HALError
 
 
 trait HALExtensions(Deinitable, HALPluginConstructable, Movable):
@@ -35,7 +35,9 @@ trait HALExtensions(Deinitable, HALPluginConstructable, Movable):
     ```mojo
     comptime Ext = type_of(device.extensions())
     comptime if conforms_to(Ext, SupportsPeerAccessV1):
-        var peer_access = device.extensions().peer_access()
+        var ok = device.extensions().can_access_peer(
+            device.raw_driver()[], device.handle(), peer.handle()
+        )
     ```
     """
 
@@ -70,16 +72,52 @@ trait GraphCaptureV1:
 trait SupportsPeerAccessV1(Deinitable, Movable):
     """Capability: device-to-device memory access (`M_driver_peer.h`).
 
-    See `CUDAHALExtensions` in `cuda.mojo` for an implementation.
-
-    `peer_access()` returns `None` for plugins without peer support, such as
-    `CPUPlugin.so` in a CUDA build.
+    Vendors set `PeerGroup` and implement only `peer_group()`, as
+    `CUDAHALExtensions` does. It is None for plugins without peer support,
+    such as `CPUPlugin.so` in a CUDA build.
     """
 
-    comptime PeerAccessTy: PeerAccessV1
+    comptime PeerGroup: PeerAccessV1
 
-    def peer_access(self) -> OptionalReg[Self.PeerAccessTy]:
+    def peer_group(self) -> OptionalReg[Self.PeerGroup]:
+        """Returns the loaded peer symbols, or None when the plugin has none."""
         ...
+
+    def supports_peer_access(self) -> Bool:
+        return Bool(self.peer_group())
+
+    def can_access_peer[
+        device_origin: ImmOrigin, peer_origin: ImmOrigin, //
+    ](
+        self,
+        driver: RawDriver,
+        device: Pointer[DeviceHandle.T, device_origin],
+        peer: Pointer[DeviceHandle.T, peer_origin],
+    ) raises HALError -> Bool:
+        var group = self.peer_group()
+        if not group:
+            return False
+        return group.value().can_access_peer(
+            driver, rebind[DeviceHandle](device), rebind[DeviceHandle](peer)
+        )
+
+    def enable_peer_access[
+        context_origin: ImmOrigin, peer_origin: ImmOrigin, //
+    ](
+        self,
+        driver: RawDriver,
+        context: Pointer[ContextHandle.T, context_origin],
+        peer: Pointer[ContextHandle.T, peer_origin],
+    ) raises HALError:
+        var group = self.peer_group()
+        if not group:
+            raise HALError(
+                STATUS_UNKNOWN_SYMBOL,
+                message="plugin does not export peer access",
+            )
+        group.value().enable_peer_access(
+            driver, rebind[ContextHandle](context), rebind[ContextHandle](peer)
+        )
 
 
 trait PeerAccessV1(TrivialRegisterPassable):

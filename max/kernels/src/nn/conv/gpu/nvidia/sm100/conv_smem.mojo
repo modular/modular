@@ -27,7 +27,6 @@ SMEM Organization:
 """
 
 
-from layout import Layout
 from std.utils.index import IndexList
 from layout.tensor_core_async import tile_layout_k_major_typed
 
@@ -113,7 +112,6 @@ struct Conv2dSmem[
     ].static_product
 
     # Output tiles use row-major layout
-    comptime out_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
 
     # ========== Tile Storage ==========
     # Reuse StandardTileStorage from matmul (same structure)

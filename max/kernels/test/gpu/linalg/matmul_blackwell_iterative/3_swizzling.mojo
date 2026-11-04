@@ -18,7 +18,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu import block_idx, lane_id, thread_idx, warp_id
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -384,9 +384,6 @@ def blackwell_kernel_3[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 

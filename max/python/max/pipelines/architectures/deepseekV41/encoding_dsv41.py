@@ -44,10 +44,12 @@ V4.1 changes relative to V4:
    of appending the assistant generation header.
 """
 
-from typing import Any, Dict, List, Union, Optional, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Union, Optional, Tuple
 import copy
+import itertools
 import json
 import re
+import uuid
 
 # ============================================================
 # Special Tokens
@@ -348,7 +350,7 @@ def _extract_image(block: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _process_image_blocks(
-    blocks: List[Any], image_placeholder: str = IMAGE_PLACEHOLDER
+    blocks: List[Any], image_text: Callable[[], str]
 ) -> Tuple[List[Any], List[Dict[str, Any]]]:
     """Replace image blocks and collect their records in one ordered traversal."""
     new_blocks: List[Any] = []
@@ -358,58 +360,38 @@ def _process_image_blocks(
             new_blocks.append(block)
             continue
         if _is_image_block(block):
-            new_blocks.append({"type": "text", "text": image_placeholder})
+            new_blocks.append({"type": "text", "text": image_text()})
             images.append(_extract_image(block))
         elif block.get("type") == "tool_result" and isinstance(block.get("content"), list):
             block = copy.copy(block)
             block["content"], nested_images = _process_image_blocks(
-                block["content"], image_placeholder)
+                block["content"], image_text)
             new_blocks.append(block)
             images.extend(nested_images)
-        elif block.get("type") == "text":
-            text = block.get("text") or ""
-            if IMAGE_PLACEHOLDER in text:
-                raise ValueError(
-                    f"Text block contains image placeholder '{IMAGE_PLACEHOLDER}': "
-                    f"'{text[:100]}'. Images should be separate content blocks."
-                )
-            new_blocks.append(block)
         else:
             new_blocks.append(block)
     return new_blocks, images
 
 
-def _validate_no_image_sp_tokens(msg: Dict[str, Any]) -> None:
-    """Reject user-supplied image placeholder tokens in textual fields."""
-    content = msg.get("content")
-    if isinstance(content, str) and IMAGE_PLACEHOLDER in content:
-        raise ValueError(
-            f"Message content contains image special token '{IMAGE_PLACEHOLDER}'. "
-            "Images should be provided as image content blocks."
-        )
-    reasoning_content = msg.get("reasoning_content")
-    if isinstance(reasoning_content, str) and IMAGE_PLACEHOLDER in reasoning_content:
-        raise ValueError(
-            f"reasoning_content contains image special token '{IMAGE_PLACEHOLDER}'"
-        )
-
-
 def process_image_messages(
     messages: List[Dict[str, Any]],
+    image_text: Callable[[], str] = lambda: IMAGE_PLACEHOLDER,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Normalize image blocks and return their records in prompt order."""
+    """Normalize image blocks and return their records in message order.
+
+    ``image_text`` supplies the text each image block becomes, once per block.
+    """
     processed: List[Dict[str, Any]] = []
     images: List[Dict[str, Any]] = []
     for msg in messages:
         msg = copy.deepcopy(msg)
-        _validate_no_image_sp_tokens(msg)
 
         if isinstance(msg.get("content"), list) and "content_blocks" not in msg:
             msg["content_blocks"] = msg.pop("content")
 
         if msg.get("content_blocks"):
             msg["content_blocks"], message_images = _process_image_blocks(
-                msg["content_blocks"])
+                msg["content_blocks"], image_text)
             images.extend(message_images)
             if not isinstance(msg.get("content"), str):
                 texts = [
@@ -846,19 +828,24 @@ def encode_messages(
     """Encode text or multimodal messages into the DeepSeek-V4.1 prompt format.
 
     Text-only calls return the prompt string. When return_multi_modal_data is
-    true, the result is ``(prompt, media_data)``.
+    true, the result is ``(prompt, media_data)``: ``media_data["images"]``
+    holds the image records in prompt order and ``media_data["image_slots"]``
+    the :class:`ImageSlot` of each placeholder the encoder inserted. Any other
+    placeholder in the prompt came from caller text.
     """
-    # Validate before merging can discard message-level textual fields.
-    for msg in (context or []) + messages:
-        _validate_no_image_sp_tokens(msg)
-
-    # Collect images only after tool results are in their final prompt order.
     context = merge_tool_messages(context or [])
     messages = merge_tool_messages(messages)
-    messages = sort_tool_results_by_call_order(context + messages)[len(context):]
+    # Image blocks are numbered in message order, before tool results move
+    # into call order, and each renders as a marker carrying its number. The
+    # marker is random, so caller text cannot forge one.
+    marker = f"\uFDD0DSV41_IMAGE_{uuid.uuid4().hex}_"
+    numbers = itertools.count()
     processed_context, _ = process_image_messages(context) if context else ([], [])
-    processed_messages, images = process_image_messages(messages)
-    prompt = _encode_messages_text(
+    processed_messages, images = process_image_messages(
+        messages, lambda: f"{marker}{next(numbers)}{_IMAGE_MARKER_END}")
+    processed_messages = sort_tool_results_by_call_order(
+        processed_context + processed_messages)[len(processed_context):]
+    marked_prompt = _encode_messages_text(
         processed_messages,
         thinking_mode=thinking_mode,
         context=processed_context if processed_context else None,
@@ -866,9 +853,48 @@ def encode_messages(
         add_default_bos_token=add_default_bos_token,
         reasoning_effort=reasoning_effort,
     )
+    if images:
+        prompt, slots = _replace_image_markers(marked_prompt, marker, len(images))
+        images = [images[slot.image_index] for slot in slots]
+    else:
+        prompt, slots = marked_prompt, []
     if return_multi_modal_data:
-        return prompt, {"images": images}
+        return prompt, {"images": images, "image_slots": slots}
     return prompt
+
+
+class ImageSlot(NamedTuple):
+    """An image placeholder the encoder inserted for an image block."""
+
+    offset: int
+    """Character offset of the placeholder in the prompt."""
+    image_index: int
+    """Position of the image block among the input's image blocks."""
+
+
+_IMAGE_MARKER_END = "\uFDD1"
+
+
+def _replace_image_markers(
+    marked: str, marker: str, image_count: int
+) -> Tuple[str, List[ImageSlot]]:
+    """Replace numbered image markers with the placeholder, recording each slot."""
+    pattern = re.compile(re.escape(marker) + "([0-9]+)" + _IMAGE_MARKER_END)
+    parts: List[str] = []
+    slots: List[ImageSlot] = []
+    length = 0
+    cursor = 0
+    for match in pattern.finditer(marked):
+        text = marked[cursor:match.start()]
+        parts += [text, IMAGE_PLACEHOLDER]
+        length += len(text)
+        slots.append(ImageSlot(length, int(match.group(1))))
+        length += len(IMAGE_PLACEHOLDER)
+        cursor = match.end()
+    parts.append(marked[cursor:])
+    if sorted(slot.image_index for slot in slots) != list(range(image_count)):
+        raise ValueError("Every image block must render exactly once")
+    return "".join(parts), slots
 
 
 def load_cases(input_file: str) -> List[Dict[str, Any]]:

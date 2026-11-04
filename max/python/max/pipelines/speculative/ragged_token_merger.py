@@ -17,6 +17,7 @@ __all__ = [
     "RaggedTokenMerger",
     "compute_host_merged_offsets",
     "ragged_token_merger",
+    "shape_to_scalar",
 ]
 
 from max.dtype import DType
@@ -48,6 +49,17 @@ def _shape_to_scalar(
         device=device,
     )[0]
     return x_gpu
+
+
+def shape_to_scalar(
+    x: Dim, device: DeviceRef, dtype: DType = DType.int64
+) -> TensorValue:
+    """Converts a symbolic dimension to a device scalar.
+
+    For callers outside this package; the private name stays for the
+    in-tree users that predate it.
+    """
+    return _shape_to_scalar(x, device, dtype)
 
 
 def ragged_token_merger(device: DeviceRef) -> Graph:

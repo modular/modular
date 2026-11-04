@@ -26,7 +26,7 @@ struct HIPExtensionFunctions(RawPluginComponent):
 struct HIPHALExtensions(HALExtensions, SupportsPeerAccessV1):
     """`HALExtensions` implementation for AMD HIP backends."""
 
-    comptime PeerAccessTy = RawPluginPeerAccess
+    comptime PeerGroup = RawPluginPeerAccess
     var _peer: OptionalReg[RawPluginPeerAccess]
 
     def __init__(
@@ -34,5 +34,5 @@ struct HIPHALExtensions(HALExtensions, SupportsPeerAccessV1):
     ) raises HALError:
         self._peer = RawPluginPeerAccess.load(lib, so_path)
 
-    def peer_access(self) -> OptionalReg[Self.PeerAccessTy]:
+    def peer_group(self) -> OptionalReg[Self.PeerGroup]:
         return self._peer

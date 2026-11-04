@@ -177,6 +177,14 @@ class MHAAttnKey(AttnKey):
 class MLAAttnKey(AttnKey):
     """Decode dispatch metadata for multi-latent attention (MLA)."""
 
+    kernel_variant: int = 0
+    """Tells apart SM100 sparse launches with the same partition count.
+
+    Values 0, 1, and 2 select single-CTA 64-key, paired 128-key, and
+    single-CTA 128-key launches, respectively. This is part of the capture
+    identity only; :meth:`pack_into` does not write it.
+    """
+
     @classmethod
     def dispatch_metadata_spec(cls) -> DispatchMetadataSpec:
         """MLA decode kernels read three ints, on the accelerator."""

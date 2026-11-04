@@ -48,6 +48,9 @@
   phase totals, so analysis joins on fields rather than parsing names. Under
   `bazel test` a relative path lands in the test's undeclared outputs.
 
+`bench_graph` times a launch replayed from a captured device graph instead,
+for kernels shorter than their launch latency.
+
 `SWEEPINFO` and `SWEEPTIME` lines and the `Bench` report are printed as
 before; `sweeptime.py` sums `SWEEPTIME` lines across processes.
 
@@ -64,7 +67,12 @@ from std.time import perf_counter_ns
 
 from internal_utils import arg_parse
 from max.benchmark import bencher_iter_custom
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceGraph,
+    DeviceGraphBuilder,
+)
 
 from .backend import SweepBackend
 from .driver import Config, Footprint
@@ -501,6 +509,67 @@ struct SweepHarness(Movable):
         self._ensure_flush(ctx)
         self._bench_flushed(ctx, launch, bench_id, fields^, measures)
 
+    def bench_graph[
+        LaunchFn: def(DeviceContext[]) raises -> None
+    ](
+        mut self,
+        ctx: DeviceContext[],
+        launch: LaunchFn,
+        bench_id: BenchId,
+        var fields: Fields,
+        repeats: Int,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Measures `launch` captured `repeats` times into one device graph,
+        and records it.
+
+        Every iteration replays the graph, and the reported time is that of
+        one launch, so a kernel shorter than its launch latency is timed the
+        way a captured model step runs it. The replays read the same inputs
+        back to back, so the cache is warm whatever `--l2` says. `repeats`
+        of 0 times eager launches through `bench` instead.
+        """
+        if repeats <= 0:
+            self.bench(ctx, launch, bench_id, fields^, measures)
+            return
+        fields.add("graph_repeats", repeats)
+
+        def build(
+            mut builder: DeviceGraphBuilder,
+        ) raises {imm launch, imm repeats}:
+            with builder.recording_context() as rec:
+                for _ in range(repeats):
+                    launch(rec)
+
+        var graph = DeviceGraph.create(ctx, build)
+        graph.replay()
+        ctx.synchronize()
+
+        @inline(.always)
+        def replay(launch_ctx: DeviceContext[], i: Int) raises {imm graph}:
+            _ = launch_ctx
+            _ = i
+            graph.replay()
+
+        if self.policy.target_time_s > 0:
+            self._bench_target_time(
+                ctx,
+                replay,
+                bench_id,
+                fields^,
+                measures,
+                launches_per_call=repeats,
+            )
+            return
+
+        @inline(.always)
+        def bench_func(mut b: Bencher) raises {imm}:
+            bencher_iter_custom(b, replay, ctx)
+            b.elapsed //= repeats
+
+        bench_charged(self.m, self.timer, bench_func, bench_id, measures)
+        self._record(fields, measures)
+
     def _bench_target_time[
         LaunchFn: def(DeviceContext[], Int) raises -> None
     ](
@@ -510,6 +579,7 @@ struct SweepHarness(Movable):
         bench_id: BenchId,
         var fields: Fields,
         measures: List[ThroughputMeasure],
+        launches_per_call: Int = 1,
     ) raises:
         """Measures `launch` for `--target_time` through one calibration batch.
 
@@ -522,6 +592,9 @@ struct SweepHarness(Movable):
         exists to measure -- and the measured batch is sized from its rate to
         last the target. Only the measured batch counts; counting the
         calibration instead would put the clock ramp inside the mean.
+
+        A call that runs `launches_per_call` launches, such as a graph
+        replay, reports the time of one launch.
         """
         comptime _CALIBRATION_SHARE = 0.25
         var target_ns = Int(self.policy.target_time_s * 1e9)
@@ -554,6 +627,7 @@ struct SweepHarness(Movable):
         @inline(.always)
         def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, launch, ctx)
+            b.elapsed //= launches_per_call
 
         self.m.bench_function(
             bench_func, bench_id, measures, fixed_iterations=iters

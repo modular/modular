@@ -244,8 +244,27 @@ def _builds_module(
     ) and ("build_module" in vars(builder))
 
 
+def _k3_variant_mismatches_draft(
+    arch_name: str, draft_arch: str | None
+) -> bool:
+    """Returns whether a Kimi K3 variant cannot pair with ``draft_arch``.
+
+    Only the ModuleV3 K3 adapter drives the ``K3DSparkModel`` drafter, and
+    only the graph-API K3 serves every other draft. Config resolution may
+    already have renamed the draft to the graph-API K3's own architecture,
+    so the routing keys on the ModuleV3 drafter's name, not on the raw one.
+    """
+    if draft_arch is None:
+        return False
+    if arch_name == "KimiK3ForConditionalGeneration_ModuleV3":
+        return draft_arch != "K3DSparkModel"
+    if arch_name == "KimiK3ForConditionalGeneration":
+        return draft_arch == "K3DSparkModel"
+    return False
+
+
 def _target_architecture(
-    name: str, prefer_module_v3: bool = False
+    name: str, prefer_module_v3: bool = False, draft_arch: str | None = None
 ) -> SupportedArchitecture | None:
     """Returns the variant of the named target that builds its module.
 
@@ -256,6 +275,8 @@ def _target_architecture(
     for prefer in (prefer_module_v3, not prefer_module_v3):
         arch = ARCH_LOOKUP.find(name, prefer_module_v3=prefer)
         if arch is not None and arch.pipeline_model is not None:
+            if _k3_variant_mismatches_draft(arch.name, draft_arch):
+                continue
             if _builds_module(arch):
                 return arch
     return None
@@ -360,7 +381,7 @@ def spec_decode_architecture(
         return None
     # The target first, so a target that can't pair never imports its
     # draft's architecture.
-    base = _target_architecture(target, prefer_module_v3)
+    base = _target_architecture(target, prefer_module_v3, draft_arch)
     if base is None:
         return None
     # A registered decoder pairs only as the variant serving selects: its
@@ -456,7 +477,13 @@ class _Pairing:
         method = speculative.speculative_method
         assert method is not None
         target = _target_architecture(
-            target_arch, pipeline_config.runtime.prefer_module_v3
+            target_arch,
+            pipeline_config.runtime.prefer_module_v3,
+            (
+                draft_model.huggingface_config.architectures[0]
+                if draft_model is not None
+                else None
+            ),
         )
         assert target is not None
         draft_arch = (
@@ -927,7 +954,8 @@ class _Inputs(UnifiedSpecDecodeInputs):
     batch_context_lengths: list[Buffer] = field(default_factory=list)
     """Each device's context length, under a distributed signature."""
     ep_inputs: tuple[Buffer, ...] = ()
-    """Expert parallelism's buffers, under a distributed signature."""
+    """Expert parallelism's buffers: beside the distributed inputs, or past
+    the tail of a signature that isn't distributed."""
     trailing: list[Buffer] = field(default_factory=list)
     """Host inputs the target's call takes past the canonical tail."""
     replay_trailing: list[Buffer] = field(default_factory=list)
@@ -989,6 +1017,7 @@ class _Inputs(UnifiedSpecDecodeInputs):
             *self._spec_decode_tail_buffers(
                 include_in_thinking_phase=spec.include_in_thinking_phase,
             ),
+            *(() if spec.distributed else self.ep_inputs),
             *self.trailing,
             *self.replay_trailing,
         )
@@ -1028,6 +1057,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._prepares_batches = _encodes_in_batching(
             target, draft
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
+        self._ep_comm_initializer: EPCommInitializer | None = None
 
     @property
     def _target_prepares_inputs(self) -> bool:
@@ -1053,8 +1083,9 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         """Hands expert parallelism's buffers to the target's batching.
 
         Only a target whose batching takes them, as the pipeline model's own
-        wiring does.
+        wiring does. A signature that isn't distributed takes them from here.
         """
+        self._ep_comm_initializer = initializer
         bind = getattr(self._target_batching, "bind_ep_comm_initializer", None)
         if bind is not None:
             bind(initializer)
@@ -1146,6 +1177,9 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             [ctx for batch in replica_batches for ctx in batch],
             self.runtime.devices,
         )
+        initializer = self._ep_comm_initializer
+        if initializer is not None and not config.input_spec.distributed:
+            inputs.ep_inputs = tuple(initializer.model_inputs())
         if config.input_spec.enable_vision and not self._takes_images:
             embeddings, indices = self._no_images
             inputs.vision_embeddings = embeddings

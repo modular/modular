@@ -2307,6 +2307,9 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_own_runs_short_of_hint.assert_not_called()
     mock_metrics.dkv_split_loads.assert_not_called()
     mock_metrics.dkv_overlapped_peer_lookups.assert_not_called()
+    mock_metrics.dkv_peer_writeback_blocks.assert_not_called()
+    mock_metrics.dkv_peer_writeback_blocks_evicted.assert_not_called()
+    mock_metrics.dkv_peer_writeback_blocks_dropped.assert_not_called()
     mock_metrics.dkv_hinted_lookups.assert_not_called()
     mock_metrics.dkv_hinted_lookup_latency.assert_not_called()
     assert "dkv_prepare_load_degraded" not in metrics.to_log_extra()
@@ -2388,6 +2391,43 @@ def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
     assert extra["dkv_overlapped_peer_lookups"] == 4
     assert extra["dkv_hinted_lookups"] == 5
     assert extra["dkv_hinted_lookup_avg_ms"] == 2.5
+
+
+def test_dkv_peer_writeback_counters_reach_the_log_and_the_counters() -> None:
+    """The peer-load write-back's queued and evicted blocks publish beside
+    the split-load counters, so the switch's effect is visible."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_peer_writeback_blocks=6,
+        dkv_peer_writeback_blocks_evicted=2,
+        dkv_peer_writeback_blocks_dropped=3,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_peer_writeback_blocks.assert_called_once_with(6)
+    mock_metrics.dkv_peer_writeback_blocks_evicted.assert_called_once_with(2)
+    mock_metrics.dkv_peer_writeback_blocks_dropped.assert_called_once_with(3)
+    extra = metrics.to_log_extra()
+    assert extra["dkv_peer_writeback_blocks"] == 6
+    assert extra["dkv_peer_writeback_blocks_evicted"] == 2
+    assert extra["dkv_peer_writeback_blocks_dropped"] == 3
 
 
 _DKV_ORPHAN_FIELDS = {

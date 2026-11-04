@@ -50,7 +50,12 @@ from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 from std.memory import unsafe_stack_allocation
 from std.os import abort, getenv
 from std.reflection import call_location, reflect, SourceLocation
-from std.sys import bit_width_of, size_of, CompilationTarget
+from std.sys import (
+    bit_width_of,
+    get_defined_bool,
+    size_of,
+    CompilationTarget,
+)
 from std.sys.info import _TargetType
 from std.sys.info import is_gpu
 from std.time import monotonic
@@ -67,7 +72,7 @@ from ..hal import (
     get_device_spec,
 )
 from ..hal._machine import DeviceRef, DeviceSpec
-from ..hal._plugin._overlay import HAL_PLUGINS
+from ..hal._plugin._impl import HalPluginForTarget
 from ..hal._plugin._trait import HalLaunchOptions
 from ..hal.event import EVENT_FLAG_CPU_VISIBLE
 from ..hal.extensions.traits import SupportsPeerAccessV1
@@ -80,8 +85,12 @@ from max.gpu.host import (
 )
 from ..hal.execution_config import (
     GPUExecutionConfiguration,
-    LaunchAttributeHolderExecutionConfig,
     ConstantMemoryMappingExecutionConfig,
+)
+from max.gpu.host.nvidia import (
+    ClusterAttributeLaunchConfig,
+    GridBlockAttributeLaunchConfig,
+    LaunchAttributeHolderExecutionConfig,
 )
 from std.builtin.variadics import TypeList
 
@@ -91,8 +100,10 @@ from max.gpu.host import (
     Dim,
     GridBlockLaunchConfig,
     LaunchAttribute,
+    LaunchAttributeID,
     default_accelerator,
 )
+from max.gpu.host.compile import _compile_code
 from max.gpu.host import DeviceAttribute
 from max.gpu.host.info import (
     GPUInfo,
@@ -133,14 +144,15 @@ def _check_exec_config_launch_support[
             ContextT.ExecutionConfigType, ClusterExecutionConfig
         ), "cluster launch is not supported on this device"
 
-    # Launch attributes and constant memory held by a config are not plumbed
-    # yet; refuse them rather than drop them.
-    comptime assert not conforms_to(
+    comptime if conforms_to(
         ExecutionConfigType, LaunchAttributeHolderExecutionConfig
-    ), (
-        "HAL DeviceContext.enqueue_function does not support launch"
-        " `attributes`."
-    )
+    ):
+        comptime assert conforms_to(
+            ContextT.ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+        ), "this target does not support launch attributes"
+
+    # Constant memory held by a config is not plumbed yet; refuse it rather
+    # than drop it.
     comptime assert not conforms_to(
         ExecutionConfigType, ConstantMemoryMappingExecutionConfig
     ), (
@@ -149,33 +161,35 @@ def _check_exec_config_launch_support[
     )
 
 
-# Skipped when the plugin's launcher takes over grid/block launches, since it
-# reads the dims its own way (eg, 0 for every core).
-def _check_dim[
+# Raises unless every component of `dim` is in `[1, Int32.MAX]`: drivers take
+# launch dims as 32-bit values, so a larger one would be truncated. Callers skip
+# it when the plugin's launcher takes over grid/block launches, since that
+# launcher reads the dims its own way (eg, 0 for every core).
+def _check_dim_in_range[
     func_name_for_msg: StringLiteral, dim_name_for_msg: StringLiteral
 ](dim: Dim, *, location: SourceLocation) raises:
-    if dim.x() <= 0:
+    if dim.x() <= 0 or dim.x() > Int(Int32.MAX):
         comptime msg = String(
             func_name_for_msg,
             ": Dim value ",
             dim_name_for_msg,
-            ".x must be a positive number.",
+            ".x must be in [1, Int32.MAX].",
         )
         raise Error(location.prefix(msg))
-    if dim.y() <= 0:
+    if dim.y() <= 0 or dim.y() > Int(Int32.MAX):
         comptime msg = String(
             func_name_for_msg,
             ": Dim value ",
             dim_name_for_msg,
-            ".y must be a positive number.",
+            ".y must be in [1, Int32.MAX].",
         )
         raise Error(location.prefix(msg))
-    if dim.z() <= 0:
+    if dim.z() <= 0 or dim.z() > Int(Int32.MAX):
         comptime msg = String(
             func_name_for_msg,
             ": Dim value ",
             dim_name_for_msg,
-            ".z must be a positive number.",
+            ".z must be in [1, Int32.MAX].",
         )
         raise Error(location.prefix(msg))
 
@@ -497,21 +511,29 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     comptime device_spec = get_device_spec[0]()
     """`DeviceSpec` describing the device this context targets."""
 
-    comptime _PluginExecutionConfigType: ExecutionConfig = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.device_spec]()
-    ].HookFor[
+    comptime _PluginExecutionConfigType: ExecutionConfig = HalPluginForTarget[
         DeviceSpec.target[Self.device_spec]()
-    ].ExecutionConfigType[
-        DeviceRef(Self.device_spec, 0, private=())
-    ]
+    ].ExecutionConfigType[DeviceRef(Self.device_spec, 0, private=())]
+
+    comptime _plugin_has_clusters = conforms_to(
+        Self._PluginExecutionConfigType, ClusterExecutionConfig
+    )
+    comptime _plugin_has_attributes = conforms_to(
+        Self._PluginExecutionConfigType, LaunchAttributeHolderExecutionConfig
+    )
 
     comptime ExecutionConfigType: ExecutionConfig = (
-        ClusterLaunchConfig if conforms_to(
-            Self._PluginExecutionConfigType, ClusterExecutionConfig
-        ) else GridBlockLaunchConfig
+        (
+            ClusterAttributeLaunchConfig if Self._plugin_has_clusters else GridBlockAttributeLaunchConfig
+        ) if Self._plugin_has_attributes else (
+            ClusterLaunchConfig if Self._plugin_has_clusters else GridBlockLaunchConfig
+        )
     )
     """The launch configuration type with every launch capability this
     device supports.
+
+    On NVIDIA devices it carries launch attributes, and from sm_90 on also
+    thread block clusters, as on the legacy `DeviceContext`.
 
     Generic code checks for a capability with `conforms_to`, for example
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
@@ -522,9 +544,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     comptime _target_value = Self.target._mlir_value
 
-    comptime _HALHooks = HAL_PLUGINS.for_target[Self._target_value].HookFor[
-        Self.target
-    ]
+    comptime _HALHooks = HalPluginForTarget[Self.target]
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -694,11 +714,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def __init__(out self, ctx_ptr: _DeviceContextPtr[mut=True]):
         """Create a Mojo DeviceContext from the opaque device-context handle
         carried by the runtime."""
-        # FIXME(MSTDL-3258): Remove default target assumption rebind/erasure.
-        self = rebind[Self](
-            Self._from_unsafe_cpp_handle(
-                ctx_ptr.unsafe_value().unsafe_bitcast[NoneType]()
-            )
+        self = Self._from_unsafe_cpp_handle(
+            ctx_ptr.unsafe_value().unsafe_bitcast[NoneType]()
         )
 
     @inline(.always)
@@ -711,14 +728,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Args:
             handle: The opaque device-context handle carried by the runtime.
         """
-        # FIXME(MSTDL-3258): Remove default target assumption rebind/erasure.
-        self = rebind[Self](Self._from_unsafe_cpp_handle(handle))
+        self = Self._from_unsafe_cpp_handle(handle)
 
     @staticmethod
     def _from_unsafe_cpp_handle(
         handle: OpaquePointer[MutUntrackedOrigin],
-    ) -> DeviceContext[]:
-        return handle.unsafe_bitcast[DeviceContext[]]()[]
+    ) -> DeviceContext[Self.target]:
+        return handle.unsafe_bitcast[DeviceContext[Self.target]]()[]
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -1160,6 +1176,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         ExecutionConfigType: GridBlockExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
@@ -1167,18 +1184,24 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self,
         execution_config: ExecutionConfigType,
         *args: *actual_arg_types,
+        host_args: Tuple[*HostArgs] = (),
         location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
 
+        Put capturing closures in `host_args`, after the encoded arguments,
+        as for the keyword overload.
+
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device function.
+            HostArgs: The host-layout types of the trailing arguments.
             func: The function to compile and launch.
             actual_arg_types: The dtypes of the arguments being passed to the function.
 
         Args:
             execution_config: The execution configuration specifying device specific kernel launch arguments.
             args: Variadic arguments which are passed to the `func`.
+            host_args: The trailing arguments passed by host layout.
             location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function`
@@ -1218,12 +1241,30 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_function[func](
-                self._hal_stream()[], execution_config, *args, host_args=()
+                self._hal_stream()[],
+                execution_config,
+                *args,
+                host_args=host_args,
             )
         else:
             var gpu_kernel = self.compile_function[func]()
-            self.enqueue_function(
-                execution_config, gpu_kernel, *args, location=location
+            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "grid_dim"
+                ](execution_config.get_grid_dim(), location=call_location())
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "block_dim"
+                ](execution_config.get_block_dim(), location=call_location())
+            comptime for idx in range(HostArgs.length):
+                type_of(gpu_kernel)._check_trailing_host[
+                    HostArgs[idx], actual_arg_types.length + idx
+                ]()
+            gpu_kernel._do_call_with_pack_checked(
+                self,
+                execution_config,
+                *args,
+                host_args=host_args,
+                location=location.or_else(call_location()),
             )
 
     @inline(.always)
@@ -1263,12 +1304,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             var block_dim = execution_config.get_block_dim()
 
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceContext.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
 
             var gpu_kernel = DeviceFunction[FuncType.__call__](self)
 
@@ -1338,12 +1379,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             var block_dim = execution_config.get_block_dim()
 
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceContext.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
             f._do_call_with_pack_checked(
                 self,
                 execution_config,
@@ -1440,12 +1481,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
         else:
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceContext.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
             var gpu_kernel = self.compile_function[func](
                 func_attribute=func_attribute
             )
@@ -1518,12 +1559,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
         else:
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceContext.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
             var gpu_kernel = DeviceFunction[FuncType.__call__](
                 self, func_attribute=func_attribute
             )
@@ -1607,12 +1648,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             ](self._hal_stream()[], f._inner[]._func_handle, launch, *args)
         else:
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceContext.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
             f._call_with_pack_checked(
                 self,
                 *args,
@@ -1710,10 +1751,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], f._inner[]._func_handle, launch, *args
             )
         else:
-            _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
-            _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
                 block_dim, location=call_location()
             )
             f._call_with_pack(
@@ -1785,7 +1826,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         Pinned memory is guaranteed to remain resident in the host's RAM, not be
         paged/swapped out to disk. Memory allocated normally (for example, using
-        [`alloc()`](/docs/std/memory/unsafe_pointer/alloc/))
+        [`alloc()`](/docs/std/memory/alloc/alloc/))
         is pageable—individual pages of memory can be moved to secondary storage
         (disk/SSD) when main memory fills up.
 
@@ -2428,11 +2469,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         if not (self._driver is peer._driver):
             raise Error("Peer access not implemented")
-        comptime Ext = type_of(self._device[].extensions())
+        comptime Ext = type_of(self._context[].extensions())
         comptime if conforms_to(Ext, SupportsPeerAccessV1):
-            if not self._device[].extensions().peer_access():
-                raise Error("Peer access not implemented")
-            self._context[].enable_peer_access(peer._context[])
+            self._context[].extensions().enable_peer_access(
+                self._context[].raw_driver()[],
+                self._context[].handle(),
+                peer._context[].handle(),
+            )
             var src = Int(self._device[].id)
             var dst = Int(peer._device[].id)
             var state = _PEER_STATE.get_or_create_ptr()
@@ -2470,7 +2513,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     driver[].get_device_dynamic[Optional[Int64](0)](Int64(i))
                 )
                 # A non-vendor `.so` may lack the group; stay a no-op.
-                if not device[].extensions().peer_access():
+                if not device[].extensions().supports_peer_access():
                     return
                 contexts.append(device[].get_context())
             # Concurrent callers may repeat a grant; the plugin treats an
@@ -2479,7 +2522,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 for j in range(count):
                     if i == j:
                         continue
-                    contexts[i][].enable_peer_access(contexts[j][])
+                    contexts[i][].extensions().enable_peer_access(
+                        contexts[i][].raw_driver()[],
+                        contexts[i][].handle(),
+                        contexts[j][].handle(),
+                    )
                     with BlockingScopedLock(state[].lock):
                         state[].record_enabled(i, contexts[i], j, contexts[j])
 
@@ -2782,7 +2829,15 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
             return False
         comptime Ext = type_of(ctx._device[].extensions())
         comptime if conforms_to(Ext, SupportsPeerAccessV1):
-            return ctx._device[].can_access_peer(peer_ctx._device[])
+            return (
+                ctx._device[]
+                .extensions()
+                .can_access_peer(
+                    ctx._device[].raw_driver()[],
+                    ctx._device[].handle(),
+                    peer_ctx._device[].handle(),
+                )
+            )
         else:
             return False
 
@@ -2961,6 +3016,60 @@ struct DeviceFunction[
         )
 
     @inline(.always)
+    def _check_pdl_wait[
+        o: ImmOrigin
+    ](imm self, attributes: Span[LaunchAttribute, o]) raises:
+        """Rejects a PDL launch of a kernel that never waits on its predecessor.
+
+        This is the HAL copy of the legacy `DeviceFunction._check_pdl_wait`,
+        which documents what the check covers and what it misses. It is off
+        unless the build passes `-D MAX_CHECK_PDL_WAIT=True`.
+
+        Parameters:
+            o: The origin of `attributes`.
+
+        Args:
+            attributes: The launch attributes of the enqueue being checked.
+
+        Raises:
+            If a PDL launch targets a kernel whose PTX has no
+            `griddepcontrol.wait`.
+        """
+        comptime if (
+            get_defined_bool["MAX_CHECK_PDL_WAIT", False]()
+            and Self._target.is_nvidia_gpu()
+        ):
+            for ref attribute in attributes:
+                # The value is a Boolean in the first word; a caller can pass
+                # the attribute with `False` to switch PDL off for the launch.
+                if (
+                    attribute.id
+                    == LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION
+                    and attribute.value._storage[0] != 0
+                ):
+                    # The loaded function is an object file, so compile the
+                    # kernel to PTX to look for the wait.
+                    var ptx = _compile_code[
+                        Self._wrapped_func,
+                        emission_kind="asm",
+                        target=Self._target,
+                    ]().asm
+                    if "griddepcontrol.wait" not in ptx:
+                        raise Error(
+                            "kernel '",
+                            self._func_info.function_name,
+                            (
+                                "' is launched with the PDL attribute but its"
+                                " PTX has no `griddepcontrol.wait`; bind a"
+                                " non-OFF `pdl_level` in the kernel's"
+                                " instantiation, or call"
+                                " `wait_on_dependent_grids()` before its first"
+                                " read of predecessor output"
+                            ),
+                        )
+                    return
+
+    @inline(.always)
     def _call_closure_checked[
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
         ContextT: _HALFunctionEnqueuer,
@@ -3097,9 +3206,10 @@ struct DeviceFunction[
         # Every grid/block launch, from a DeviceContext or a DeviceStream,
         # ends up here, so this is the one place the plugin's launcher has to
         # be honored.
-        comptime _HALHooks = HAL_PLUGINS.for_target[
-            ContextT._target_value
-        ].HookFor[CompilationTarget[_mlir_value=ContextT._target_value]()]
+        comptime _HALHooks = HalPluginForTarget[
+            CompilationTarget[_mlir_value=ContextT._target_value]()
+        ]
+        _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
         comptime if _HALHooks.Launcher.overrides_grid_block:
             comptime if HostArgs.length != 0:
                 raise Error(
@@ -3116,7 +3226,22 @@ struct DeviceFunction[
                 shared_mem_bytes = (
                     execution_config.get_near_compute_scratchpad_usage()
                 )
-            if shared_mem_bytes != 0 or len(attributes) != 0:
+            var num_attributes = len(attributes)
+            comptime if conforms_to(
+                ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+            ):
+                num_attributes += len(execution_config.get_launch_attributes())
+            var clustered = False
+            comptime if conforms_to(
+                ExecutionConfigType, ClusterExecutionConfig
+            ):
+                var cluster_dim = execution_config.get_cluster_dim()
+                clustered = (
+                    cluster_dim.x() != 1
+                    or cluster_dim.y() != 1
+                    or cluster_dim.z() != 1
+                )
+            if shared_mem_bytes != 0 or num_attributes != 0 or clustered:
                 raise Error(
                     "the active HAL plugin's launcher doesn't take shared"
                     " memory, cluster dims or launch attributes"
@@ -3134,7 +3259,11 @@ struct DeviceFunction[
 
         comptime extra_host_count = HostArgs.length
 
-        _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
+        self._check_pdl_wait(Span(attributes))
+        comptime if conforms_to(
+            ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+        ):
+            self._check_pdl_wait(execution_config.get_launch_attributes())
 
         var shared_mem_bytes: Int = 0
 
@@ -3278,6 +3407,7 @@ struct DeviceFunction[
                 "HAL DeviceContext.enqueue_function does not support"
                 " `constant_memory` mappings."
             )
+        self._check_pdl_wait(Span(attributes))
 
         comptime num_args = Ts.length
         # Function scope so the storage outlives the enqueue; see
@@ -3340,6 +3470,10 @@ struct DeviceFunction[
         location: Optional[SourceLocation] = None,
     ) raises:
         _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
+        comptime if conforms_to(
+            ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+        ):
+            self._check_pdl_wait(execution_config.get_launch_attributes())
 
         comptime num_args = Ts.length
         # Function scope so the storage outlives the enqueue; see
@@ -3610,9 +3744,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
 
     comptime _target_value = Self.target._mlir_value
 
-    comptime _HALHooks = HAL_PLUGINS.for_target[Self._target_value].HookFor[
-        Self.target
-    ]
+    comptime _HALHooks = HalPluginForTarget[Self.target]
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -3869,12 +4001,12 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             )
         else:
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceStream.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceStream.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
             var gpu_kernel = self._ctx.compile_function[func]()
             gpu_kernel._call_with_pack_checked(
                 self,
@@ -3978,12 +4110,12 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             )
         else:
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceStream.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceStream.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
             var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
             gpu_kernel._call_closure_checked(
                 self,
@@ -4032,12 +4164,12 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             var block_dim = execution_config.get_block_dim()
 
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceStream.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceStream.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
             var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
             gpu_kernel._do_call_closure_checked(
                 self,
@@ -4095,12 +4227,12 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             ](self._hal_stream()[], f._inner[]._func_handle, launch, *args)
         else:
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceStream.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceStream.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
             f._call_with_pack_checked(
                 self,
                 *args,
@@ -4154,12 +4286,12 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             var block_dim = execution_config.get_block_dim()
 
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim["DeviceStream.enqueue_function", "grid_dim"](
-                    grid_dim, location=call_location()
-                )
-                _check_dim["DeviceStream.enqueue_function", "block_dim"](
-                    block_dim, location=call_location()
-                )
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
 
             f._do_call_with_pack_checked(
                 self,
@@ -4216,10 +4348,10 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], f._inner[]._func_handle, launch, *args
             )
         else:
-            _check_dim["DeviceStream.enqueue_function", "grid_dim"](
+            _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
-            _check_dim["DeviceStream.enqueue_function", "block_dim"](
+            _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
                 block_dim, location=call_location()
             )
             f._call_with_pack(
@@ -4272,10 +4404,10 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             var grid_dim = execution_config.get_grid_dim()
             var block_dim = execution_config.get_block_dim()
 
-            _check_dim["DeviceStream.enqueue_function", "grid_dim"](
+            _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
-            _check_dim["DeviceStream.enqueue_function", "block_dim"](
+            _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
                 block_dim, location=call_location()
             )
             f._call_with_pack(

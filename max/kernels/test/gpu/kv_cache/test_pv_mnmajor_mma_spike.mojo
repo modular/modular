@@ -55,7 +55,6 @@ from max.gpu import block_idx
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
-    FuncAttribute,
     default_accelerator,
 )
 from max.gpu.host.nvidia.tma import (
@@ -514,9 +513,6 @@ def run_pv_spike[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
     else:
         var v_tma_op = create_tensor_tile[
@@ -544,9 +540,6 @@ def run_pv_spike[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
 
     cpu_pv_naive(o_ref.host_tensor(), p.host_tensor(), v.host_tensor())

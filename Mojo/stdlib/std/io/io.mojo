@@ -25,7 +25,7 @@ from std.ffi import (
     external_call,
     CStringSpan,
 )
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.sys import (
     is_gpu,
     stdin,

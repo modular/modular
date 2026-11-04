@@ -1121,9 +1121,9 @@ def test_ref_field(var mem: MemPair):
   _ = r == r
   # CHECK-NEXT: lit.call {{.*}}MemPair::@"__deinit__
 
-def get_inner_ptr(s: String) -> UnsafePointer[UInt8, AnyOrigin[mut=True]]:
+def get_inner_ptr(s: String) -> Pointer[UInt8, AnyOrigin[mut=True]]:
   return {}
-def use_inner_pointer[origin: Origin[mut=True]](ptr: UnsafePointer[UInt8, origin]): pass
+def use_inner_pointer[origin: Origin[mut=True]](ptr: Pointer[UInt8, origin]): pass
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime1
 def handleAnyLifetime1():
@@ -1141,7 +1141,7 @@ def handleAnyLifetime2():
   # Make sure this keeps 'ui8' alive until after the call even though
   # the element is trivial.
   # CHECK: lit.call {{.*}}use_inner_pointer
-  use_inner_pointer(UnsafePointer(to=ui8))
+  use_inner_pointer(Pointer(to=ui8))
   # CHECK-NEXT: lit.var.lifetime.end %ui8
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime3
@@ -1152,7 +1152,7 @@ def handleAnyLifetime3():
     # CHECK-NEXT: lit.ref.store
     # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
     # expected-warning @+1 {{assignment to 'a_packed_ptr' was never used}}
-    var a_packed_ptr = UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
+    var a_packed_ptr = Pointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
 
     # CHECK-NEXT: lit.call {{.*}}unsafe_dangling
     # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
@@ -1161,7 +1161,7 @@ def handleAnyLifetime3():
 
     # This shouldn't be treated as a use of `a_packed_ptr`
     # expected-warning @+1 {{assignment to 'a_packed_ptr' was never used}}
-    a_packed_ptr = UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
+    a_packed_ptr = Pointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
 
 
 def take_pack[*Ts: AnyType](*values: *Ts): pass
@@ -1171,7 +1171,7 @@ def take_pack[*Ts: AnyType](*values: *Ts): pass
 # https://github.com/modular/mojo/issues/3559
 def handleAnyLifetime4():
   var str = String()
-  var ptr = UnsafePointer(to=str)
+  var ptr = Pointer(to=str)
 
   # Should extend the lifetime of 'str'.
   take_pack(ptr)
@@ -1182,9 +1182,9 @@ def handleAnyLifetime4():
 
 
 struct A[origin: MutOrigin](Movable where False):
-    var data: UnsafePointer[Int, Self.origin]
+    var data: Pointer[Int, Self.origin]
     def __init__(out self):
-        self.data = UnsafePointer[Int, Self.origin].unsafe_dangling()
+        self.data = Pointer[Int, Self.origin].unsafe_dangling()
     def __deinit__(deinit self): pass
 
 def use_int(a: Int): pass

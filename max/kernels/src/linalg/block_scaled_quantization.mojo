@@ -27,7 +27,7 @@ from max.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from layout import (
     coord,
     Coord,
@@ -1498,9 +1498,6 @@ def quantize_dynamic_scaled_fp4_async[
         ),
         block_dim=(SF_MN_GROUP_SIZE + 32),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
         attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 

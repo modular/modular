@@ -47,7 +47,6 @@ from max.gpu.sync import barrier
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
-    FuncAttribute,
     default_accelerator,
 )
 from max.gpu.memory import external_memory
@@ -363,9 +362,6 @@ def run_qk_consumer[
             grid_dim=(1, 1),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
     else:
         # Baseline arm: default box (BN, gran) -> chunk-outer.
@@ -391,9 +387,6 @@ def run_qk_consumer[
             grid_dim=(1, 1),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
 
     cpu_qk_naive(o_ref.host_tensor(), q.host_tensor(), k.host_tensor())

@@ -18,6 +18,7 @@ modular_py_library(
     # an unversioned bazel alias, so we need to ignore its unresolved imports
     # (used for Engram token normalization).
     ignore_unresolved_imports = [
+        "tokenizers.Encoding",
         "tokenizers.Regex",
         "tokenizers.normalizers",
     ],

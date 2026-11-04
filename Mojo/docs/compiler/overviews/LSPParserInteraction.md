@@ -1009,7 +1009,7 @@ shared error state so the next block still parses.
    `removeLastREPLExpression`) can corrupt later blocks.
 8. **Scaffolding diagnostics** with no input mapping must be dropped; per-block
    `diags.clear()` is blunt and can mask or leak diagnostics.
-9. **Stdlib coupling**: the preamble hard-imports `std.memory.UnsafePointer` and
+9. **Stdlib coupling**: the preamble hard-imports `std.memory.Pointer` and
    `std.python.python.Python`; a stdlib reorg breaks every block.
 10. **Cost amplification**: runs inside the main parse, and
     `checkModuleSemantics` is invoked **per code block**

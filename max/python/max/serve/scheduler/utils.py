@@ -371,6 +371,11 @@ class BatchMetrics:
     dkv_own_runs_short_of_hint: int = 0
     dkv_split_loads: int = 0
     dkv_overlapped_peer_lookups: int = 0
+    # The peer-load write-back (MODULAR_DKV_OFFLOAD_PEER_LOADS): per-window
+    # counts published as counters on the same guard.
+    dkv_peer_writeback_blocks: int = 0
+    dkv_peer_writeback_blocks_evicted: int = 0
+    dkv_peer_writeback_blocks_dropped: int = 0
     dkv_hinted_lookups: int = 0
     dkv_hinted_lookup_avg_ms: float = 0.0
     # The dKV orphan queue: per-window outcome counts that publish as counters
@@ -566,6 +571,9 @@ class BatchMetrics:
         dkv_own_runs_short_of_hint = 0
         dkv_split_loads = 0
         dkv_overlapped_peer_lookups = 0
+        dkv_peer_writeback_blocks = 0
+        dkv_peer_writeback_blocks_evicted = 0
+        dkv_peer_writeback_blocks_dropped = 0
         dkv_hinted_lookups = 0
         dkv_hinted_lookup_avg_ms = 0.0
         dkv_orphan_cleanups_reissued = 0
@@ -723,6 +731,13 @@ class BatchMetrics:
             dkv_split_loads = metrics_agg.dkv_split_loads
             dkv_overlapped_peer_lookups = (
                 metrics_agg.dkv_overlapped_peer_lookups
+            )
+            dkv_peer_writeback_blocks = metrics_agg.dkv_peer_writeback_blocks
+            dkv_peer_writeback_blocks_evicted = (
+                metrics_agg.dkv_peer_writeback_blocks_evicted
+            )
+            dkv_peer_writeback_blocks_dropped = (
+                metrics_agg.dkv_peer_writeback_blocks_dropped
             )
             dkv_hinted_lookups = metrics_agg.dkv_hinted_lookups
             # Summed across replicas then averaged, like the rpc latencies.
@@ -893,6 +908,9 @@ class BatchMetrics:
             dkv_own_runs_short_of_hint=dkv_own_runs_short_of_hint,
             dkv_split_loads=dkv_split_loads,
             dkv_overlapped_peer_lookups=dkv_overlapped_peer_lookups,
+            dkv_peer_writeback_blocks=dkv_peer_writeback_blocks,
+            dkv_peer_writeback_blocks_evicted=dkv_peer_writeback_blocks_evicted,
+            dkv_peer_writeback_blocks_dropped=dkv_peer_writeback_blocks_dropped,
             dkv_hinted_lookups=dkv_hinted_lookups,
             dkv_hinted_lookup_avg_ms=dkv_hinted_lookup_avg_ms,
             dkv_orphan_cleanups_reissued=dkv_orphan_cleanups_reissued,
@@ -1393,6 +1411,13 @@ class BatchMetrics:
             extra["dkv_overlapped_peer_lookups"] = (
                 self.dkv_overlapped_peer_lookups
             )
+            extra["dkv_peer_writeback_blocks"] = self.dkv_peer_writeback_blocks
+            extra["dkv_peer_writeback_blocks_evicted"] = (
+                self.dkv_peer_writeback_blocks_evicted
+            )
+            extra["dkv_peer_writeback_blocks_dropped"] = (
+                self.dkv_peer_writeback_blocks_dropped
+            )
             extra["dkv_hinted_lookups"] = self.dkv_hinted_lookups
             extra["dkv_hinted_lookup_avg_ms"] = self.dkv_hinted_lookup_avg_ms
             extra["dkv_orphan_cleanups_reissued"] = (
@@ -1627,6 +1652,13 @@ class BatchMetrics:
             METRICS.dkv_split_loads(self.dkv_split_loads)
             METRICS.dkv_overlapped_peer_lookups(
                 self.dkv_overlapped_peer_lookups
+            )
+            METRICS.dkv_peer_writeback_blocks(self.dkv_peer_writeback_blocks)
+            METRICS.dkv_peer_writeback_blocks_evicted(
+                self.dkv_peer_writeback_blocks_evicted
+            )
+            METRICS.dkv_peer_writeback_blocks_dropped(
+                self.dkv_peer_writeback_blocks_dropped
             )
             METRICS.dkv_hinted_lookups(self.dkv_hinted_lookups)
             METRICS.dkv_orphan_cleanups_reissued(

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,9 @@ from max import tree
 from max.driver import Buffer, DeviceSpec, load_devices
 from max.engine import InferenceSession
 from max.graph.weights import SafetensorWeights
+from max.nn.legacy.graph_groups import DecoderGraphInputs
 from max.nn.legacy.kv_cache import (
+    CacheLeafParamInterface,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
@@ -260,19 +263,25 @@ def _weights(checkpoint: dict[str, torch.Tensor]) -> SafetensorWeights:
     )
 
 
+def _kv_tree(
+    kv_params: KVCacheParamInterface | CacheLeafParamInterface,
+    prompt_lens: tuple[int, ...],
+) -> object:
+    """Fresh prefill KV buffers, in the tree ``kv_params`` declares."""
+    if isinstance(kv_params, MultiKVCacheParams):
+        return OrderedDict(
+            (name, _kv_tree(child, prompt_lens))
+            for name, child in kv_params.children.items()
+        )
+    assert isinstance(kv_params, KVCacheParams)
+    return (paged_kv_cache_inputs(kv_params, prompt_lens),)
+
+
 def _kv_inputs(
     kv_params: KVCacheParamInterface, prompt_lens: tuple[int, ...]
 ) -> list[Buffer]:
     """Fresh prefill KV buffers for every cache leaf, in graph-input order."""
-    leaves = (
-        list(kv_params.children.values())
-        if isinstance(kv_params, MultiKVCacheParams)
-        else [kv_params]
-    )
-    buffers: list[Buffer] = []
-    for leaf in leaves:
-        assert isinstance(leaf, KVCacheParams)
-        buffers += tree.leaves(paged_kv_cache_inputs(leaf, prompt_lens))
+    buffers = tree.leaves(_kv_tree(kv_params, prompt_lens))
     assert len(buffers) == len(kv_params.flattened_kv_inputs())
     return buffers
 
@@ -339,9 +348,14 @@ def _graph_logits(model: Any) -> torch.Tensor:
 def _v3_logits(model: Any) -> torch.Tensor:
     tokens, offsets, n_logits = _token_inputs(model.devices[0])
     outputs = model.model(
-        tokens, offsets, n_logits, *_kv_inputs(model.kv_params, PROMPT_LENS)
+        DecoderGraphInputs(
+            tokens=tokens,
+            input_row_offsets=offsets,
+            return_n_logits=n_logits,
+            kv=_kv_tree(model.kv_params, PROMPT_LENS),
+        )
     )
-    logits = outputs.next_token_logits
+    logits = outputs.logits["next_token_logits"]
     return torch.from_dlpack(logits.driver_tensor).float().cpu()
 
 

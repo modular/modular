@@ -32,7 +32,7 @@ non-finite bf16. The poison launch fills every SM's shared memory with bf16
 NaN first, making the failure deterministic.
 """
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
 from max.gpu import block_dim, thread_idx
@@ -199,9 +199,6 @@ def main() raises:
                 grid_dim=(poison_blocks, 1),
                 block_dim=(poison_threads, 1),
                 shared_mem_bytes=poison_bytes,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(poison_bytes)
-                ),
             )
             flash_attention[ragged=True](
                 TileTensor(

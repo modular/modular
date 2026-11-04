@@ -26,7 +26,7 @@ import pytest
 from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.graph import Graph, KernelLibrary
+from max.graph import DeviceRef, Graph, KernelLibrary
 from max.nn.common_layers import quant_moe, quant_ops
 from max.nn.common_layers.functional_kernels import (
     moe_create_indices,
@@ -87,6 +87,19 @@ _FP8_HIDDEN_DIM = 256
 _FP8_MOE_DIM = 512
 
 _MEGA_FFN_OP = "mo.grouped.ffn.blockwise.fp8.amd"
+
+
+def _stack_blockwise_mega_ffn_b(
+    projections: list[Tensor], n_experts: int, device: DeviceRef
+) -> Tensor:
+    # The real op is registered only by the closed-source kernel library, so
+    # a source-only build cannot build it. This keeps its shape contract.
+    per_expert = len(projections) // n_experts
+    joined = [
+        F.concat(projections[e * per_expert : (e + 1) * per_expert], axis=0)
+        for e in range(n_experts)
+    ]
+    return F.stack(joined, axis=0).to(device.to_device())
 
 
 # --------------------------------------------------------------------------- #
@@ -449,8 +462,9 @@ def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
     """Peer-to-peer EP runs the shared expert between dispatch launch and wait.
 
     This matches the graph-API EP path for any ``MODULAR_OVERLAP_SHARED_EXPERT``
-    value: the blocking multi-device dispatch and combine would serialize the
-    shared expert behind the EP communication.
+    value: the blocking multi-device dispatch would serialize the shared expert
+    behind the EP communication. Only the dispatch splits; the combine is fused,
+    because nothing runs between its launch and its wait.
     """
     monkeypatch.setenv("MODULAR_OVERLAP_SHARED_EXPERT", overlap_env)
     with F.lazy():
@@ -483,9 +497,14 @@ def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
             ir = str(Graph.current._mlir_op)
 
     assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
-    assert "mo.distributed.ep" not in ir
-    for op in ("dispatch_async", "dispatch_wait", "combine_async"):
+    for op in ("dispatch_async", "dispatch_wait"):
         assert ir.count(f'"ep.{op}') == num_devices, op
+    # One fused multi-device combine op, not a per-device launch + wait pair:
+    # nothing runs between a combine launch and its wait, so the pair is one
+    # extra launch per device per layer.
+    assert '"ep.combine_async' not in ir
+    assert '"ep.combine_wait' not in ir
+    assert ir.count('"mo.distributed.ep.combine"') == 1
     last_launch = ir.rindex('"ep.dispatch_async')
     first_wait = ir.index('"ep.dispatch_wait')
     # The shared expert's gate/up matmul is the only matmul in between: the
@@ -574,6 +593,9 @@ def test_expert_parallel_moe_runs_blockwise_mega_ffn(
     )
     monkeypatch.setattr(
         ExpertParallelMoE, "_blockwise_mega_ffn_amd_eligible", lambda _: True
+    )
+    monkeypatch.setattr(
+        quant_ops, "stack_blockwise_mega_ffn_b", _stack_blockwise_mega_ffn_b
     )
     with F.lazy():
         devices = [mock_accelerator(0), mock_accelerator(1)]
@@ -664,6 +686,9 @@ def test_expert_parallel_moe_blockwise_mega_ffn_needs_registered_op(
     monkeypatch.setattr(KernelLibrary, "__contains__", library_contains)
     monkeypatch.setattr(
         quant_ops, "grouped_ffn_blockwise_fp8_amd_ep", fake_mega_ffn
+    )
+    monkeypatch.setattr(
+        quant_ops, "stack_blockwise_mega_ffn_b", _stack_blockwise_mega_ffn_b
     )
     monkeypatch.setattr(quant_ops, "stack_blockwise_mega_ffn", spy_stack)
     monkeypatch.setattr(quant_moe, "accelerator_api", lambda: "hip")

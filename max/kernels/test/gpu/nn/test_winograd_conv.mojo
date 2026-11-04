@@ -15,10 +15,9 @@ from std.math import ceildiv
 
 from max.gpu.host import DeviceContext
 from max.gpu import block_dim, block_idx, thread_idx
-from layout import Idx, IntTuple, TensorLayout, TileTensor, row_major
+from layout import Coord, Idx, TensorLayout, TileTensor, coord, row_major
 from layout.tile_tensor import stack_allocation
 from layout.tensor_engine import DefaultEngine
-from layout.int_tuple import product
 from layout._fillers import random
 from nn.conv.conv import conv_gpu
 from std.testing import assert_almost_equal, assert_true
@@ -326,8 +325,8 @@ def winograd_conv2d_gpu_launcher[
 
 @inline(.always)
 def get_output_dim[
-    input_dim: IntTuple,
-    filter_dim: IntTuple,
+    input_dim: Coord,
+    filter_dim: Coord,
     stride: IndexList[2],
     dilation: IndexList[2],
     pad: IndexList[
@@ -359,8 +358,8 @@ def get_output_dim[
 
 def test_winograd_conv_gpu[
     dtype: DType,
-    input_dim: IntTuple,
-    filter_dim: IntTuple,
+    input_dim: Coord,
+    filter_dim: Coord,
     stride: IndexList[2],
     dilation: IndexList[2],
     pad: IndexList[
@@ -400,8 +399,12 @@ def test_winograd_conv_gpu[
     )
 
     # Create device buffers
-    var input_device = ctx.enqueue_create_buffer[dtype](product(input_dim))
-    var filter_device = ctx.enqueue_create_buffer[dtype](product(filter_dim))
+    var input_device = ctx.enqueue_create_buffer[dtype](
+        Int(input_dim.product())
+    )
+    var filter_device = ctx.enqueue_create_buffer[dtype](
+        Int(filter_dim.product())
+    )
     var output_device = ctx.enqueue_create_buffer[dtype](
         output_dim.flattened_length()
     )
@@ -470,8 +473,8 @@ def main() raises:
     with DeviceContext() as ctx:
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim=IntTuple(1, 8, 8, 1),
-            filter_dim=IntTuple(3, 3, 1, 1),
+            input_dim=coord[1, 8, 8, 1],
+            filter_dim=coord[3, 3, 1, 1],
             stride=(1, 1),
             dilation=(1, 1),
             pad=(
@@ -484,8 +487,8 @@ def main() raises:
 
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim=IntTuple(32, 256, 256, 1),
-            filter_dim=IntTuple(3, 3, 1, 1),
+            input_dim=coord[32, 256, 256, 1],
+            filter_dim=coord[3, 3, 1, 1],
             stride=(1, 1),
             dilation=(1, 1),
             pad=(
@@ -498,8 +501,8 @@ def main() raises:
 
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim=IntTuple(1, 4, 16, 1),
-            filter_dim=IntTuple(3, 3, 1, 1),
+            input_dim=coord[1, 4, 16, 1],
+            filter_dim=coord[3, 3, 1, 1],
             stride=(1, 1),
             dilation=(1, 1),
             pad=(
@@ -512,8 +515,8 @@ def main() raises:
 
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim=IntTuple(1, 16, 4, 1),
-            filter_dim=IntTuple(3, 3, 1, 1),
+            input_dim=coord[1, 16, 4, 1],
+            filter_dim=coord[3, 3, 1, 1],
             stride=(1, 1),
             dilation=(1, 1),
             pad=(
@@ -526,8 +529,8 @@ def main() raises:
 
         test_winograd_conv_gpu[
             dtype=DType.bfloat16,
-            input_dim=IntTuple(1, 32, 32, 1),
-            filter_dim=IntTuple(3, 3, 1, 1),
+            input_dim=coord[1, 32, 32, 1],
+            filter_dim=coord[3, 3, 1, 1],
             stride=(1, 1),
             dilation=(1, 1),
             pad=(

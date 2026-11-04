@@ -18,12 +18,11 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
 from layout import (
     Idx,
-    Layout,
     coord,
     DefaultEngine,
     TensorLayout,
@@ -498,7 +497,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
     comptime CLUSTER_N = Int(cluster_shape[0])
     comptime CLUSTER_M = Int(cluster_shape[1])
 
-    comptime c_smem_layout = _get_c_smem_layout[
+    comptime c_smem_layout = _get_c_smem_shape[
         config.block_tile_shape,
         a_type,
         b_type,
@@ -511,15 +510,11 @@ def _warp_specialize_gemm_with_multicasting_impl[
     # Compute C shared memory tile dimensions
     # For normal: rows stay full, cols are divided by num_consumer
     # For swapAB: rows are divided by num_consumer, cols stay full
-    comptime c_smem_rows_reg = c_smem_layout.shape[0].value()
-    comptime c_smem_cols_reg = c_smem_layout.shape[
-        1
-    ].value() // config.num_consumer
+    comptime c_smem_rows_reg = c_smem_layout[0]
+    comptime c_smem_cols_reg = c_smem_layout[1] // config.num_consumer
 
-    comptime c_smem_rows_swapAB = c_smem_layout.shape[
-        0
-    ].value() // config.num_consumer
-    comptime c_smem_cols_swapAB = c_smem_layout.shape[1].value()
+    comptime c_smem_rows_swapAB = c_smem_layout[0] // config.num_consumer
+    comptime c_smem_cols_swapAB = c_smem_layout[1]
 
     comptime c_smem_rows = c_smem_rows_reg if not swapAB else c_smem_rows_swapAB
     comptime c_smem_cols = c_smem_cols_reg if not swapAB else c_smem_cols_swapAB
@@ -590,7 +585,8 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_layout,
         b_layout,
         c_layout,
-        c_smem_layout,
+        c_smem_layout[0],
+        c_smem_layout[1],
         config.block_tile_shape,
         config.mma_shape,
         cluster_shape,
@@ -704,9 +700,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_size)
-                    ),
                 )
             else:
                 comptime kernel = matmul_kernel_regular[
@@ -739,9 +732,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_size)
-                    ),
                 )
         else:
             var a_tma_op = create_tensor_tile[
@@ -789,9 +779,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_size)
-                    ),
                 )
 
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
@@ -818,13 +805,10 @@ def _warp_specialize_gemm_with_multicasting_impl[
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(num_threads),
             shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_size)
-            ),
         )
 
 
-def _get_c_smem_layout[
+def _get_c_smem_shape[
     block_tile_shape: Tuple[Int, Int, Int],
     a_type: DType,
     b_type: DType,
@@ -832,7 +816,7 @@ def _get_c_smem_layout[
     num_pipeline_stages: Int,
     k_group_size: Int,
     swapAB: Bool = False,
-]() -> Layout:
+]() -> Tuple[Int, Int]:
     comptime BM: Int = block_tile_shape[0]
     comptime BN: Int = block_tile_shape[1]
     comptime BK: Int = block_tile_shape[2]
@@ -890,9 +874,7 @@ def _get_c_smem_layout[
         return WG_BN
 
     comptime max_wg_bn = _get_max_wg_bn()
-    return Layout.row_major(max_wg_bn, WG_BM) if swapAB else Layout.row_major(
-        WG_BM, max_wg_bn
-    )
+    return (max_wg_bn, WG_BM) if swapAB else (WG_BM, max_wg_bn)
 
 
 def warp_specialize_gemm_with_multicasting_splitk[
@@ -994,7 +976,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
     comptime CLUSTER_N = Int(cluster_shape[0])
     comptime CLUSTER_M = Int(cluster_shape[1])
 
-    comptime c_smem_layout = _get_c_smem_layout[
+    comptime c_smem_layout = _get_c_smem_shape[
         config.block_tile_shape,
         a_type,
         b_type,
@@ -1003,8 +985,8 @@ def warp_specialize_gemm_with_multicasting_splitk[
         k_group_size,
     ]()
     comptime c_smem_tile = coord[
-        c_smem_layout.shape[0].value(),
-        c_smem_layout.shape[1].value() // config.num_consumer,
+        c_smem_layout[0],
+        c_smem_layout[1] // config.num_consumer,
     ]
 
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -1090,7 +1072,8 @@ def warp_specialize_gemm_with_multicasting_splitk[
         type_of(a_device).LayoutType,
         type_of(b_device).LayoutType,
         type_of(c_device).LayoutType,
-        c_smem_layout,
+        c_smem_layout[0],
+        c_smem_layout[1],
         config.block_tile_shape,
         config.mma_shape,
         cluster_shape,
@@ -1146,9 +1129,6 @@ def warp_specialize_gemm_with_multicasting_splitk[
         ),
         block_dim=(num_threads),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
     )
 
     _ = workspace_data^

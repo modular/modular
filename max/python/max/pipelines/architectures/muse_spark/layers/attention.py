@@ -100,10 +100,15 @@ class MuseSparkAttention(Module[..., Tensor]):
         )
 
     @property
-    def wqkv(self) -> Tensor:
-        """Q, K and V weights stacked along the output dim, for one matmul."""
+    def wqkvg(self) -> Tensor:
+        """Q, K, V and gate weights stacked for one matmul."""
         return F.concat(
-            [self.q_proj.weight, self.k_proj.weight, self.v_proj.weight],
+            [
+                self.q_proj.weight,
+                self.k_proj.weight,
+                self.v_proj.weight,
+                self.gate_proj.weight,
+            ],
             axis=0,
         )
 
@@ -125,13 +130,15 @@ class MuseSparkAttention(Module[..., Tensor]):
         )
         q_dim, kv_dim = self.q_weight_dim, self.kv_weight_dim
 
-        x_q, x_k, x_v = (x @ self.wqkv.T).split(
-            [q_dim, kv_dim, kv_dim], axis=-1
+        x_q, x_k, x_v, gate = (x @ self.wqkvg.T).split(
+            [q_dim, kv_dim, kv_dim, q_dim], axis=-1
         )
         x_q = self._head_norm(x_q, self.n_heads) * self.qk_scale_factor
         x_k = self._head_norm(x_k, self.num_key_value_heads)
 
         qkv = F.concat([x_q, x_k, x_v], axis=-1)
+        # The kernels run per device with no sharding rule: their outputs keep
+        # the heads' placement.
         xq = rope_split_store_ragged(
             kv_params=self.kv_params,
             qkv=qkv,
@@ -161,4 +168,4 @@ class MuseSparkAttention(Module[..., Tensor]):
             output_dtype=x.dtype,
         ).rebind_mapping(xq.mapping)
         attn_out = self._head_norm(attn_out, self.n_heads)
-        return self.o_proj(attn_out * F.sigmoid(self.gate_proj(x)))
+        return self.o_proj(attn_out * F.sigmoid(gate))

@@ -32,6 +32,12 @@ comptime inlineWhereIsError[x: Int where x > 0] = x
 # expected-error @below {{cannot implicitly convert 'SIMD[.int, x]' value to 'SIMD[.int, (x * Int(20))]'}}
 comptime ComptimeWithParametricType2[x: Int]: SIMD[.int, x*20] = SIMD[.int, x]()
 
+# expected-error @below {{'SIMD[.int, _]' is not concrete, use '[]' to bind missing parameters}}
+comptime HoleAnnotation[x: Int]: SIMD[.int, _] = SIMD[.int, x]()
+
+# expected-error @below {{'Origin[mut=mut]' is not concrete, use '[]' to bind missing parameters}}
+comptime MutOriginAnn[mut: Bool]: Origin[mut=mut] = AnyOrigin[mut=mut]
+
 def implicit_generator_constraint_drop_error[cond: Bool]():
     comptime constrained[x: Int]: AnyType where cond = Int
     # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where cond' value to '__generator_type[x: Int] AnyType' in comptime initializer}}

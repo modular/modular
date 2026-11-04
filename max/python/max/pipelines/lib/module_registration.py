@@ -22,7 +22,14 @@ the graph signature, batching and execution.
 A registered module class can also set:
 
 - ``graph_name``, the name its graph compiles under (:func:`graph_name`);
-- ``input_layout``, the role field names in a graph's existing input order;
+- ``input_layout``, the role field names in a graph's existing input order.
+  Naming ``signals`` places the allreduce signal buffers there, on one device
+  too, as the graph-API graph that keeps the layout takes them;
+- ``device_context_length_dtype``, when its graph takes
+  :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.batch_context_lengths`
+  as a graph-API graph does. Setting it changes both their count and their
+  dtype: one per device, each replica's on every device of the replica, of
+  that dtype, rather than one ``int32`` per replica;
 - ``lora_targets``, the projections it serves LoRA adapters on
   (:func:`lora_targets`);
 - ``supports_data_parallel``, when it runs one replica per device
@@ -74,7 +81,15 @@ from abc import ABCMeta
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Protocol, cast, runtime_checkable
+from types import MappingProxyType
+from typing import (
+    Any,
+    ClassVar,
+    Protocol,
+    TypeAlias,
+    cast,
+    runtime_checkable,
+)
 
 import numpy as np
 from max import functional as F
@@ -88,7 +103,15 @@ from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.legacy.comm.ep import EPInit
 from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
+from max.nn.legacy.graph_groups import (
+    DecoderGraphInputs,
+    HiddenStates,
+    Logits,
+    VisionMerge,
+)
+from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.context import TextContext
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
 from max.pipelines.modeling.types import RequestID
@@ -142,6 +165,7 @@ from .registration_runtime import (
     uses_expert_parallel_exchange,
 )
 from .request_state import (
+    RequestStateGroup,
     RequestStateMixin,
     RequestStateStore,
     build_state_store,
@@ -309,12 +333,15 @@ def decoder_input_types(
     state: Sequence[Any] = (),
     scratch: Sequence[BufferType] = (),
     input_layout: Sequence[str] | None = None,
-) -> OrderedDict[str, object]:
+) -> DecoderGraphInputs:
     """Returns a ``DECODER`` graph's input types, keyed by field.
 
     The keys are the :class:`~max.pipelines.lib.role_contracts.DecoderInputs`
     fields the deployment sets, in its order, and the leaves are the graph's
-    inputs.
+    inputs. The graph takes the tree as its one argument, so an exported
+    graph names its inputs. It takes ``vision`` as a
+    :class:`~max.nn.legacy.graph_groups.VisionMerge` group, the kind a
+    serving engine feeds image embeddings by.
 
     Args:
         kv_params: The KV cache parameters that supply the ``kv`` subtree.
@@ -357,7 +384,10 @@ def decoder_input_types(
     if token_positions is not None:
         types["token_positions"] = token_positions
     if vision is not None:
-        types["vision"] = vision
+        types["vision"] = VisionMerge(
+            image_embeddings=vision.embeddings,
+            image_token_indices=vision.scatter_indices,
+        )
     if batch_context_lengths is not None:
         types["batch_context_lengths"] = tuple(batch_context_lengths)
     if ep is not None:
@@ -380,7 +410,49 @@ def decoder_input_types(
                 f"invalid decoder input_layout: duplicate fields {duplicates}, "
                 f"unknown fields {unknown}, missing fields {missing}"
             )
-    return OrderedDict((name, types[name]) for name in order if name in types)
+    return DecoderGraphInputs(
+        (name, types[name]) for name in order if name in types
+    )
+
+
+def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
+    """Returns a decoder graph's named inputs as its role's fields.
+
+    The graph takes ``vision`` as a ``vision_merge`` group, which the decoder
+    reads as :class:`~max.pipelines.lib.role_contracts.VisionInputs`.
+    """
+    fields = OrderedDict(inputs)
+    if (vision := fields.get("vision")) is not None:
+        fields["vision"] = VisionInputs(
+            embeddings=vision["image_embeddings"],
+            scatter_indices=vision["image_token_indices"],
+        )
+    return fields
+
+
+def _signal_buffer_index(
+    input_types: Mapping[str, object], input_layout: Sequence[str] | None
+) -> int | None:
+    """Returns where a ModuleV3 decoder's graph takes its signal buffers.
+
+    A decoder whose ``input_layout`` names ``signals`` takes them there:
+    after the graph inputs of every field before it, a distributed field
+    taking one input per device. Otherwise its compiled graph adds them after
+    the last input, and only on several devices.
+
+    Args:
+        input_types: The graph's input types, keyed by field.
+        input_layout: The decoder's ``input_layout``, if it declares one.
+    """
+    if input_layout is None or "signals" not in input_layout:
+        return None
+    before = input_layout[: list(input_layout).index("signals")]
+    return sum(
+        leaf.mesh.num_devices if isinstance(leaf, TensorLayout) else 1
+        for name in before
+        if name in input_types
+        for leaf in tree.leaves(input_types[name])
+    )
 
 
 def decoder_vision_input_types(
@@ -522,15 +594,19 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
     def bind_input_tree(self, input_tree: OrderedDict[str, object]) -> None:
         """Binds the graph's inputs, and sizes the ones this fills."""
         super().bind_input_tree(input_tree)
-        _, self._input_tree_def = tree.flatten(input_tree)
-        self._batch_context_lengths = (
-            BatchContextLengths(
-                self.runtime.data_parallel_degree,
+        _, self._input_tree_def = tree.flatten(_decoder_fields(input_tree))
+        # One per replica, or one per device of each replica, as declared.
+        lengths = tree.leaves(input_tree.get("batch_context_lengths", ()))
+        self._batch_context_lengths = None
+        if lengths:
+            assert isinstance(lengths[0], TensorType)
+            replicas = self.runtime.data_parallel_degree
+            self._batch_context_lengths = BatchContextLengths(
+                replicas,
                 self.runtime.pipeline_config.model.kv_cache.kv_cache_page_size,
+                devices_per_replica=len(lengths) // max(1, replicas),
+                dtype=lengths[0].dtype,
             )
-            if "batch_context_lengths" in input_tree
-            else None
-        )
 
     def bind_ep_comm_initializer(
         self, initializer: ExpertParallelExchange | None
@@ -700,37 +776,102 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
         )
 
 
-class _DecoderGraph(Module[..., DecoderOutputs]):
+_GroupedOutputs: TypeAlias = (
+    GroupedDecoderOutputs[Tensor]
+    | tuple[GroupedDecoderOutputs[Tensor], RequestStateGroup]
+)
+"""A decoder graph's outputs, named by group as :func:`_grouped_outputs`
+names them."""
+
+
+class _DecoderGraph(
+    Module[[DecoderGraphInputs], _GroupedOutputs | DecoderOutputs]
+):
     """Calls a decoder with :class:`DecoderInputs` built from its graph inputs.
 
-    The graph takes the leaves of :func:`decoder_input_types` in order, and
-    binds the LoRA inputs into the decoder's LoRA layers before calling it.
-    It is name-transparent to the decoder, so the weight names are the
-    decoder's own.
+    The graph takes the :func:`decoder_input_types` tree as its one argument
+    and returns the decoder's outputs named by group, so an exported graph
+    names both. A pipeline stage before the last returns what it hands the
+    next stage, in the tree the decoder returns it. The graph binds the LoRA
+    inputs into the decoder's LoRA layers before calling it. It is
+    name-transparent to the decoder, so the weight names are the decoder's
+    own.
     """
 
     def __init__(
         self,
         decoder: Module[[DecoderInputs], DecoderOutputs],
-        input_types: Mapping[str, object],
+        *,
         lora_manager: LoRAManagerV3 | None = None,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        last_stage: bool = True,
     ) -> None:
         super().__init__()
         # The LoRA weight adapter nests every checkpoint key under `model.`.
         decoder.name_transparent = lora_manager is None
         self.model = decoder
-        # A plain dict flattens in sorted key order; the graph takes its
-        # inputs in field order.
-        _, self.input_tree = tree.flatten(OrderedDict(input_types))
         self.lora_manager = lora_manager
+        self.return_hidden_states = return_hidden_states
+        self.last_stage = last_stage
 
-    def forward(self, *inputs: Tensor) -> DecoderOutputs:
+    def forward(
+        self, inputs: DecoderGraphInputs
+    ) -> _GroupedOutputs | DecoderOutputs:
         """Groups the graph's inputs into fields and runs the decoder."""
-        fields = DecoderInputs(**tree.unflatten(self.input_tree, inputs))
+        fields = DecoderInputs(**_decoder_fields(inputs))
         if fields.lora is not None:
             assert self.lora_manager is not None
             self.lora_manager.bind_inputs(self.model, fields.lora)
-        return self.model(fields)
+        outputs = self.model(fields)
+        if not self.last_stage:
+            return outputs
+        return _grouped_outputs(outputs, self.return_hidden_states)
+
+
+def _grouped_outputs(
+    outputs: DecoderOutputs, return_hidden_states: ReturnHiddenStates
+) -> _GroupedOutputs:
+    """Names a decoder's outputs by group, as a graph-API decoder's are.
+
+    The role's fields go in a ``logits`` group, then a ``hidden_states`` group
+    keyed by ``return_hidden_states`` when there are any, and its per-request
+    ``state`` follows in a
+    :class:`~max.pipelines.lib.request_state.RequestStateGroup`. The leaves
+    keep the role's order, so the graph's outputs do too.
+    """
+    grouped: GroupedDecoderOutputs[Tensor] = GroupedDecoderOutputs(
+        logits=Logits(
+            next_token_logits=outputs.next_token_logits,
+            logits=outputs.logits,
+            logit_offsets=outputs.logit_offsets,
+        )
+    )
+    if outputs.hidden_states is not None:
+        grouped["hidden_states"] = HiddenStates(
+            {return_hidden_states.value: (outputs.hidden_states,)}
+        )
+    if not outputs.state:
+        return grouped
+    return grouped, RequestStateGroup(state=tuple(outputs.state))
+
+
+def _role_outputs(outputs: _GroupedOutputs) -> DecoderOutputs:
+    """Returns what :func:`_grouped_outputs` named as the role's outputs."""
+    state: tuple[Tensor, ...] | None = None
+    if isinstance(outputs, tuple):
+        outputs, state_group = outputs
+        state = state_group["state"]
+    logits = outputs.logits
+    hidden_states: Tensor | None = None
+    if "hidden_states" in outputs:
+        (hidden_states,) = outputs.hidden_states.tensors()
+    return DecoderOutputs(
+        next_token_logits=logits["next_token_logits"],
+        logits=logits.get("logits"),
+        logit_offsets=logits.get("logit_offsets"),
+        hidden_states=hidden_states,
+        state=state,
+    )
 
 
 def _returned_types(spec: GraphSpec) -> tree.Tree[Type[Any]]:
@@ -876,6 +1017,10 @@ class ModuleV3DecoderPipelineModel(
     """The expert-parallel buffers the decoder takes, under expert
     parallelism."""
 
+    export_records: Mapping[str, object] = MappingProxyType({})
+    """What the completed config records for exporters, by name
+    (:meth:`~max.pipelines.lib.registration_runtime.DeploymentConfig.export_records`)."""
+
     _session: InferenceSession
     _runtime: ModuleRuntime
     _vision_module: Any = None
@@ -972,7 +1117,9 @@ class ModuleV3DecoderPipelineModel(
         """Finalizes the config, then completes it with the deployment.
 
         The expert-parallel buffers initialize in between, since they depend
-        on the finalized config and the modules read their node ID.
+        on the finalized config and the modules read their node ID. What the
+        completed config records for exporters becomes
+        :attr:`export_records`.
 
         Raises:
             ValueError: If the deployment asks for expert parallelism and the
@@ -1008,7 +1155,8 @@ class ModuleV3DecoderPipelineModel(
             )
         self._runtime = runtime
         if isinstance(config, DeploymentConfig):
-            return config.apply_runtime(runtime)
+            config = config.apply_runtime(runtime)
+            self.export_records = config.export_records(runtime)
         return config
 
     def _decoder_ep_inputs(self, model_config: Any) -> object | None:
@@ -1017,6 +1165,32 @@ class ModuleV3DecoderPipelineModel(
             return None
         assert isinstance(model_config, ExpertParallelDeploymentConfig)
         return ep_input_tree(model_config, self._runtime.ep)
+
+    def _batch_context_length_types(
+        self, model_config: Any
+    ) -> tuple[TensorType, ...] | None:
+        """Returns the decoder's ``batch_context_lengths`` input types.
+
+        One ``int32`` per replica, or for a decoder that sets
+        ``device_context_length_dtype``, one of that dtype per device.
+        ``None`` when its config doesn't take them.
+        """
+        if not (
+            isinstance(model_config, DeploymentConfig)
+            and model_config.takes_batch_context_lengths
+        ):
+            return None
+        replicas = self._data_parallel_degree
+        dtype = getattr(
+            type(self).decoder_cls, "device_context_length_dtype", None
+        )
+        if dtype is None:
+            return batch_context_length_types(replicas)
+        return batch_context_length_types(
+            replicas,
+            devices_per_replica=len(self.devices) // max(1, replicas),
+            dtype=dtype,
+        )
 
     def _decoder_vision_inputs(
         self, model_config: Any
@@ -1143,6 +1317,7 @@ class ModuleV3DecoderPipelineModel(
             state_dict, model_config
         )
         lora_types: list[TensorType] = []
+        input_layout = getattr(decoder_cls, "input_layout", None)
         with F.lazy(), default_dtype(module_default_dtype):
             decoder = self._instantiate_module(model_config)
             if lora_manager is not None:
@@ -1165,11 +1340,8 @@ class ModuleV3DecoderPipelineModel(
                 if hasattr(decoder_cls, "token_position_dtype")
                 else None
             ),
-            batch_context_lengths=(
-                batch_context_length_types(self._data_parallel_degree)
-                if isinstance(model_config, DeploymentConfig)
-                and model_config.takes_batch_context_lengths
-                else None
+            batch_context_lengths=self._batch_context_length_types(
+                model_config
             ),
             ep=self._decoder_ep_inputs(model_config),
             lora=lora_types,
@@ -1180,13 +1352,18 @@ class ModuleV3DecoderPipelineModel(
                 else ()
             ),
             scratch=scratch.input_types if scratch is not None else (),
-            input_layout=getattr(decoder_cls, "input_layout", None),
+            input_layout=input_layout,
         )
         # A stage after the first takes the previous stage's return last.
         if boundary := stage_input_types(stage, ()):
             (decoder_inputs["stage_boundary"],) = boundary
-        input_types = self._bind_graph_inputs(decoder_inputs)
-        graph = _DecoderGraph(decoder, input_types, lora_manager)
+        self._bind_graph_inputs(decoder_inputs)
+        graph = _DecoderGraph(
+            decoder,
+            lora_manager=lora_manager,
+            return_hidden_states=self.return_hidden_states,
+            last_stage=stage is None or stage.is_last,
+        )
         if stage is not None:
             # A stage holds only its own layers.
             declared = dict(graph.parameters)
@@ -1198,8 +1375,11 @@ class ModuleV3DecoderPipelineModel(
         spec = GraphSpec(
             graph,
             graph_name(decoder_cls),
-            tuple(tree.leaves(input_types)),
+            (decoder_inputs,),
             weights=_cast_to_parameter_dtypes(graph, state_dict),
+            signal_buffer_index=_signal_buffer_index(
+                decoder_inputs, input_layout
+            ),
         )
         if stage is not None and not stage.is_last and stage.trace_only:
             raise_stage_traced(_returned_types(spec))
@@ -1239,17 +1419,21 @@ class ModuleV3DecoderPipelineModel(
         compiled = self.model
         assert isinstance(compiled, CompiledCallable)
         raw_outputs = iter(compiled.execute_raw(*model_inputs.buffers))
-        outputs = tree.unflatten(
-            compiled.out_tree,
-            [
-                Tensor._from_shards(
-                    tuple(
-                        itertools.islice(raw_outputs, layout.mesh.num_devices)
-                    ),
-                    layout.mapping,
-                )
-                for layout in compiled.out_layouts
-            ],
+        outputs = _role_outputs(
+            tree.unflatten(
+                compiled.out_tree,
+                [
+                    Tensor._from_shards(
+                        tuple(
+                            itertools.islice(
+                                raw_outputs, layout.mesh.num_devices
+                            )
+                        ),
+                        layout.mapping,
+                    )
+                    for layout in compiled.out_layouts
+                ],
+            )
         )
         if self._state_store is not None:
             self._state_store.update(
@@ -1384,6 +1568,7 @@ class RegisteredDecoderBuilder:
             ModelOutputConfig(
                 return_logits=context.return_logits,
                 return_hidden_states=context.return_hidden_states,
+                target_layer_ids=context.target_layer_ids or None,
             ),
         )
         if isinstance(config, DeploymentConfig):

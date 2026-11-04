@@ -4290,11 +4290,14 @@ def generic_flare_mla_decode_kv_cache_ragged[
     fold_shared_index: Bool = False,
     # How the sparse index producer packs each row; see flare_mla_decoding.
     sparse_row: SparseRowLayout = SparseRowLayout(),
+    # See flare_mla_decoding.
+    skip_masked_tiles: Bool = False,
     # Whether `extra_k` is supplied; see flare_mla_decoding.
     has_extra_k: Bool = False,
     physical_indices: Bool = True,
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
+    *,
 ](
     q: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -4347,6 +4350,9 @@ def generic_flare_mla_decode_kv_cache_ragged[
             fold threaded to `flare_mla_decoding` (defaults to `False`).
         sparse_row: How the sparse index producer packs each row, which
             bounds each row by its valid length (defaults to plain top-k).
+        skip_masked_tiles: Whether each query token stops at the slots its
+            causal key count covers, reading `topk_lengths` per token
+            (defaults to `False`); see `flare_mla_decoding`.
         has_extra_k: Whether `extra_k` is supplied (defaults to `False`).
         physical_indices: Whether `d_indices` holds paged physical rows rather
             than token positions (defaults to `True`); see `flare_mla_decoding`.
@@ -4374,7 +4380,8 @@ def generic_flare_mla_decode_kv_cache_ragged[
             indices for sparse decode.
         indices_stride: Stride between batch rows in d_indices (e.g. max
             top-k).
-        topk_lengths: Optional per-batch valid top-k counts.
+        topk_lengths: Optional valid top-k counts, per batch by default or
+            per packed query token with `skip_masked_tiles`.
         attn_sink_ptr: Optional per-batch attention sink weights.
         extra_k: Optional second KV cache operand for the extra stream.
         extra_d_indices: Optional extra KV stream sparse indices.
@@ -4425,6 +4432,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             sparse_mla=sparse_mla,
             fold_shared_index=fold_shared_index,
             sparse_row=sparse_row,
+            skip_masked_tiles=skip_masked_tiles,
             has_extra_k=has_extra_k,
             physical_indices=physical_indices,
         ](
@@ -4466,11 +4474,14 @@ def _flare_mla_decode_kv_cache_ragged[
     fold_shared_index: Bool = False,
     # How the sparse index producer packs each row; see flare_mla_decoding.
     sparse_row: SparseRowLayout = SparseRowLayout(),
+    # See flare_mla_decoding.
+    skip_masked_tiles: Bool = False,
     # Whether `extra_k` is supplied; see flare_mla_decoding.
     has_extra_k: Bool = False,
     physical_indices: Bool = True,
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
+    *,
 ](
     q: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -4522,7 +4533,8 @@ def _flare_mla_decode_kv_cache_ragged[
         d_indices: Optional device pointer to packed int32 physical KV row indices
             for sparse decode (see ``flare_mla_decoding``).
         indices_stride: Stride between batch rows in ``d_indices`` (e.g. max top-k).
-        topk_lengths: Optional per-batch valid top-k counts.
+        topk_lengths: Optional valid top-k counts, per batch by default or
+            per packed query token with `skip_masked_tiles`.
         attn_sink_ptr: Optional per-batch attention sink weights.
         extra_k: Optional second KV cache operand (see ``flare_mla_decoding``).
         extra_d_indices: Optional extra KV stream sparse indices.
@@ -4591,6 +4603,7 @@ def _flare_mla_decode_kv_cache_ragged[
             has_extra_k=has_extra_k,
             physical_indices=physical_indices,
             sparse_row=sparse_row,
+            skip_masked_tiles=skip_masked_tiles,
         ](
             output,
             q,

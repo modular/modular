@@ -417,3 +417,80 @@ struct timespec(TrivialRegisterPassable, Writable):
 
     var tv_sec: time_t
     var tv_nsec: c_long
+
+
+# ===-----------------------------------------------------------------------===#
+# sys/types.h — system data types
+# ===-----------------------------------------------------------------------===#
+
+comptime off_t = c_long
+"""C `off_t`: a file size or offset, in bytes."""
+
+
+# ===-----------------------------------------------------------------------===#
+# sys/mman.h — memory mapping
+# ===-----------------------------------------------------------------------===#
+
+comptime PROT_NONE: c_int = 0x0
+"""The pages can't be accessed."""
+comptime PROT_READ: c_int = 0x1
+"""The pages can be read."""
+comptime PROT_WRITE: c_int = 0x2
+"""The pages can be written."""
+comptime PROT_EXEC: c_int = 0x4
+"""The pages can be executed."""
+
+comptime MAP_SHARED: c_int = 0x01
+"""Writes to the mapping are visible to other mappings of the object."""
+comptime MAP_PRIVATE: c_int = 0x02
+"""Writes to the mapping are private, copied on write."""
+comptime MAP_FIXED: c_int = 0x10
+"""Place the mapping exactly at `addr`."""
+comptime MAP_ANONYMOUS: c_int = platform_map[
+    T=c_int, "MAP_ANONYMOUS", linux=c_int(0x20), macos=c_int(0x1000)
+]()
+"""The mapping is zero-filled memory rather than a file."""
+
+comptime MS_ASYNC: c_int = 0x1
+"""Schedule the writes and return without waiting for them."""
+comptime MS_INVALIDATE: c_int = 0x2
+"""Invalidate other mappings of the same file."""
+comptime MS_SYNC: c_int = platform_map[
+    T=c_int, "MS_SYNC", linux=c_int(0x4), macos=c_int(0x10)
+]()
+"""Write the pages and wait for the writes to finish."""
+
+
+@inline(.always)
+def mmap(
+    addr: Optional[MutPointer[NoneType, _]],
+    length: c_size_t,
+    prot: c_int,
+    flags: c_int,
+    fd: c_int,
+    offset: off_t,
+) -> MutOpaquePointer[MutUntrackedOrigin]:
+    """[`mmap()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/mmap.html)
+    — map pages of memory.
+    """
+    return external_call["mmap", MutOpaquePointer[MutUntrackedOrigin]](
+        addr, length, prot, flags, fd, offset
+    )
+
+
+@inline(.always)
+def msync(
+    addr: MutPointer[NoneType, _], length: c_size_t, flags: c_int
+) -> c_int:
+    """[`msync()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/msync.html)
+    — synchronize memory with physical storage.
+    """
+    return external_call["msync", c_int](addr, length, flags)
+
+
+@inline(.always)
+def munmap(addr: MutPointer[NoneType, _], length: c_size_t) -> c_int:
+    """[`munmap()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/munmap.html)
+    — unmap pages of memory.
+    """
+    return external_call["munmap", c_int](addr, length)

@@ -15,7 +15,12 @@
 from max.gpu.host import DeviceBuffer, DeviceContextArray
 from std.memory import unsafe_memcpy
 from extensibility import InputVariadicTensors, OutputVariadicTensors
+from std.sys import size_of
 from std.utils import product
+
+# Cap on the pinned staging buffer used to coalesce strided H2D uploads in
+# `_shard_and_stack_multi_device`.
+comptime _STAGING_BYTE_CAP = 32 * 1024 * 1024
 
 
 def _validate_shard_and_stack[
@@ -105,6 +110,11 @@ def _shard_and_stack_multi_device[
 ) raises:
     """Multi-device implementation using H2D transfers.
 
+    Each device's slice of an input is uploaded with a single contiguous
+    copy: directly when the slice is already contiguous in host memory
+    (`outer_dims == 1`), otherwise through a bounded pinned staging buffer
+    that gathers the slice's segments in output order.
+
     Device contexts are extracted from operands/results in order of first
     appearance (deduplicated). For multi-device:
       dev_ctxs_input[0] = CPU (from inputs)
@@ -144,39 +154,109 @@ def _shard_and_stack_multi_device[
         var gpu_ctx = dev_ctxs_input[tp_index + 1]
         var output_tensor = dyn_outputs[tp_index]
 
-        for input_idx in range(inputs.size):
-            var input_tensor = dyn_inputs[input_idx]
+        if outer_dims == 1:
+            # Each device's slice of an input is one contiguous host range,
+            # so one H2D copy per (device, input) needs no staging.
+            for input_idx in range(inputs.size):
+                var input_tensor = dyn_inputs[input_idx]
 
-            for outer_idx in range(outer_dims):
-                # Calculate source offset in input tensor
-                var src_offset = (
-                    outer_idx * input_axis * inner_dims
-                    + tp_index * segment_elements
-                )
+                for outer_idx in range(outer_dims):
+                    # Calculate source offset in input tensor
+                    var src_offset = (
+                        outer_idx * input_axis * inner_dims
+                        + tp_index * segment_elements
+                    )
 
-                # Calculate dest offset in output tensor
-                var dst_offset = (
-                    input_idx * output_elements_per_input
-                    + outer_idx * segment_elements
-                )
+                    # Calculate dest offset in output tensor
+                    var dst_offset = (
+                        input_idx * output_elements_per_input
+                        + outer_idx * segment_elements
+                    )
 
-                # H2D copy: source is host pointer, dest is device buffer
-                var src_ptr = input_tensor.unsafe_ptr().unsafe_offset(
-                    src_offset
-                )
-                var dst_ptr = output_tensor.unsafe_ptr().unsafe_offset(
-                    dst_offset
-                )
+                    # H2D copy: source is host pointer, dest is device buffer
+                    var src_ptr = input_tensor.unsafe_ptr().unsafe_offset(
+                        src_offset
+                    )
+                    var dst_ptr = output_tensor.unsafe_ptr().unsafe_offset(
+                        dst_offset
+                    )
 
-                gpu_ctx.enqueue_copy(
-                    DeviceBuffer(
-                        gpu_ctx,
-                        dst_ptr,
-                        segment_elements,
-                        owning=False,
-                    ),
-                    src_ptr,
-                )
+                    gpu_ctx.enqueue_copy(
+                        DeviceBuffer(
+                            gpu_ctx,
+                            dst_ptr,
+                            segment_elements,
+                            owning=False,
+                        ),
+                        src_ptr,
+                    )
+        else:
+            # The slice is strided in host memory: `outer_dims` segments of
+            # `segment_elements` elements. Copying it segment by segment costs
+            # one H2D call per outer row, which for a last-axis split is one
+            # call per row of the input. Instead gather the segments into a
+            # pinned staging buffer in output order -- which is also the
+            # destination layout -- and upload each input with a single
+            # contiguous copy.
+            comptime elem_size = size_of[outputs.dtype]()
+            var inputs_per_batch = max(
+                1, _STAGING_BYTE_CAP // (output_elements_per_input * elem_size)
+            )
+            var staging = gpu_ctx.enqueue_create_host_buffer[outputs.dtype](
+                min(inputs_per_batch, inputs.size) * output_elements_per_input
+            )
+            var staging_ptr = staging.unsafe_ptr()
+
+            for batch_start in range(0, inputs.size, inputs_per_batch):
+                var batch_end = min(batch_start + inputs_per_batch, inputs.size)
+
+                for input_idx in range(batch_start, batch_end):
+                    var input_tensor = dyn_inputs[input_idx]
+                    var slot_ptr = staging_ptr.unsafe_offset(
+                        (input_idx - batch_start) * output_elements_per_input
+                    )
+
+                    # Gather this device's segments of the input into its
+                    # staging slot, in output order.
+                    for outer_idx in range(outer_dims):
+                        var src_offset = (
+                            outer_idx * input_axis * inner_dims
+                            + tp_index * segment_elements
+                        )
+                        unsafe_memcpy(
+                            dest=slot_ptr.unsafe_offset(
+                                outer_idx * segment_elements
+                            ),
+                            src=input_tensor.unsafe_ptr().unsafe_offset(
+                                src_offset
+                            ),
+                            count=segment_elements,
+                        )
+
+                    # H2D copy of the input's whole output region, which is
+                    # contiguous: source is the staging slot, dest is the
+                    # device buffer.
+                    var dst_ptr = output_tensor.unsafe_ptr().unsafe_offset(
+                        input_idx * output_elements_per_input
+                    )
+                    gpu_ctx.enqueue_copy(
+                        DeviceBuffer(
+                            gpu_ctx,
+                            dst_ptr,
+                            output_elements_per_input,
+                            owning=False,
+                        ),
+                        slot_ptr,
+                    )
+
+                # Keep the pinned buffer alive past the copies just enqueued:
+                # without a use after them, Mojo could free it at the last
+                # `.unsafe_ptr()` above, before the copies run.
+                _ = staging
+                if batch_end < inputs.size:
+                    # The staging buffer is refilled for the next batch, so
+                    # wait for this batch's copies to complete first.
+                    gpu_ctx.synchronize()
 
 
 def _shard_and_stack_single_device[

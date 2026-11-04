@@ -24,10 +24,10 @@ def use_any[*Ts: AnyType](*args: *Ts): pass
 # ===----------------------------------------------------------------------=== #
 
 struct MyList[T: AnyType](Movable where False):
-    var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
+    var data: Pointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
+        self.data = Pointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):
         pass # Explicit deinit so it isn't considered trivial and elided.
@@ -178,7 +178,7 @@ def test_vardecl_store_handling(list: MyList[Int]):
     p = Pointer(to=list[])
     _ = p
 
-def test_bad_io_concrete[attr: StringLiteral](ptr: UnsafePointer[Int, _]) -> Int:
+def test_bad_io_concrete[attr: StringLiteral](ptr: Pointer[Int, _]) -> Int:
     var str = String()
     # expected-error @+1 {{interior origin name must be a string literal, it cannot be parametric when used}}
     ref r = ptr._get_ref_with_unsafe_interior_origin[attr](str)

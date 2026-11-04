@@ -23,6 +23,7 @@ from max.gpu.host import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
@@ -60,6 +61,24 @@ def _launch_rejected[
             grid_dim=1,
             block_dim=1,
             attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+    except e:
+        assert_true("griddepcontrol.wait" in String(e), String(e))
+        return True
+    return False
+
+
+def _config_launch_rejected[
+    kernel: def(MutPointer[Int32, MutAnyOrigin]) thin -> None
+](ctx: DeviceContext, dst: MutPointer[Int32, MutAnyOrigin]) raises -> Bool:
+    try:
+        ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=1,
+                block_dim=1,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
+            dst,
         )
     except e:
         assert_true("griddepcontrol.wait" in String(e), String(e))
@@ -111,6 +130,10 @@ def test_pdl_launch_wait_check() raises:
         assert_true(
             not _launch_rejected[level_gated_kernel[PDLLevel.ON]](ctx, dst)
         )
+
+        # A launch configuration's attributes are checked the same way.
+        assert_true(not _config_launch_rejected[waiting_kernel](ctx, dst))
+        assert_true(_config_launch_rejected[non_waiting_kernel](ctx, dst))
 
         ctx.synchronize()
         var host = ctx.enqueue_create_host_buffer[DType.int32](1)

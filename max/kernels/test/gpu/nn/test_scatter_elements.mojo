@@ -398,6 +398,33 @@ def test_narrow_reductions(gpu: DeviceContext, cpu: DeviceContext) raises:
     )
 
 
+def test_slice_widths[dt: DType](gpu: DeviceContext, cpu: DeviceContext) raises:
+    """Rank and axis coverage for the accumulating path.
+
+    `scatter_elements` launches with `simd_width=1`, so every element is one
+    body invocation and there is no vector-length branch for the slice width
+    to select. What varies is the geometry the launch walks and which
+    coordinate the index replaces: a 64x512 slice with `axis == 0`, where the
+    destination row is constant down a column, and with `axis == -1`, where
+    the replaced coordinate is the one the launch walks, both accumulating
+    into duplicates; plus a rank-1 1000-slot histogram, which is the rank the
+    serving paths use.
+    """
+    comptime pack_in = IndexList[2](64, 512)
+    # `axis == 0` keeps the destination row constant down a vector; `axis == 1`
+    # replaces the coordinate the lanes walk, so every lane lands elsewhere.
+    run_case[dt, DType.int32, _upd_small[dt], _add, _atomic_add](
+        gpu, cpu, pack_in, pack_in, 0, dup_targets=8
+    )
+    run_case[dt, DType.int64, _upd_signed[dt], _max](
+        gpu, cpu, pack_in, pack_in, -1, dup_targets=8
+    )
+    # The production accumulate is rank 1: a histogram over `total` slots.
+    run_case[dt, DType.int32, _upd_small[dt], _add, _atomic_add](
+        gpu, cpu, IndexList[1](1000), (1000,), 0, dup_targets=7
+    )
+
+
 def test_empty_updates(gpu: DeviceContext, cpu: DeviceContext) raises:
     """No updates: the output is a plain copy of the input."""
     run_case[
@@ -412,6 +439,8 @@ def main() raises:
         test_reductions[DType.float32](gpu, cpu)
         test_reductions[DType.int32](gpu, cpu)
         test_native_add_dtypes(gpu, cpu)
+        test_slice_widths[DType.float32](gpu, cpu)
+        test_slice_widths[DType.int32](gpu, cpu)
         # Metal has no atomic compare-exchange at any width but 32 bits.
         comptime if not gpu.target.is_apple_gpu():
             test_reductions[DType.int64](gpu, cpu)

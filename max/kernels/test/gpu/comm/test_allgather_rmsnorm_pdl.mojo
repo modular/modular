@@ -52,7 +52,7 @@ from comm.sync import (
 )
 from layout import Coord, TileTensor, row_major
 from max.gpu import block_dim, block_idx, grid_dim, thread_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -176,9 +176,6 @@ def _enqueue_producer(
             grid_dim=3 * ctx.default_device_info.sm_count,
             block_dim=FAT_BLOCK,
             shared_mem_bytes=FAT_SMEM_BYTES,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                FAT_SMEM_BYTES
-            ),
         )
     else:
         ctx.enqueue_function[_producer](
@@ -208,9 +205,6 @@ def _enqueue_consumer(
             grid_dim=3 * ctx.default_device_info.sm_count,
             block_dim=FAT_BLOCK,
             shared_mem_bytes=FAT_SMEM_BYTES,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                FAT_SMEM_BYTES
-            ),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:

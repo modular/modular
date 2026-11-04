@@ -15,15 +15,14 @@ used:
 
 ```mojo
 struct DeviceContextBase[target: CompilationTarget = default_accelerator()]:
-    comptime _target_value = Self.target._mlir_value
-    comptime _HALHooks = HAL_PLUGINS.for_target[Self._target_value].HookFor[
-        Self.target
-    ]
+    comptime _HALHooks = HalPluginForTarget[Self.target]
 ```
 
-Don't add a module-level `comptime` to do this for you (eg, a
-`_HALHooksFor[target]` helper). It hides which target a lookup is keyed on, and
-reads like a global even when it isn't one.
+`HalPluginForTarget` (`hal/_plugin/_impl.mojo`) is the one place the selection
+rule lives, so select through it rather than reading `HAL_PLUGINS` directly, and
+always pass it the type's own target. Don't add a helper that supplies the
+target for you (eg, one keyed on `default_accelerator()`). It hides which
+target a lookup is keyed on, and reads like a global even when it isn't one.
 
 Code without a target parameter of its own gets one from the context it's
 handed. `DeviceFunction`'s launch path is generic over a

@@ -18,7 +18,12 @@ Selected over the Graph-API architecture (``kimi_k3.arch.kimi_k3_arch``) by
 TP, EP and MXFP4 are all wired (see ``layers/ep.py``, ``layers/moe_latent.py``
 and ``weight_adapters.py``); EP and MXFP4 are mutually exclusive, matching
 ``moonshotai/Kimi-K3`` (MXFP4) vs ``moonshotai/Kimi-K3-ep`` (EP, bf16).
-Speculative decoding is not ported.
+The tower builds for a speculative pairing through the framework's
+registered builder, on a config the pairing stamped with the draft's
+``target_layer_ids``, so it reads the attention-residual mixture the
+drafter was trained against (TP only, the config refusing expert
+parallelism there); the fused pairing itself lives in the DSpark drafter's
+package (``kimi_k3_modulev3.dspark``).
 """
 
 from __future__ import annotations

@@ -45,15 +45,17 @@ rather than imported, so this module has no import dependency on the
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from enum import Enum
+from itertools import pairwise
 
 import numpy as np
 from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import BufferValue, TensorValue
+from max.graph import BufferValue, TensorType, TensorValue
 from max.nn import Embedding, Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
@@ -65,9 +67,10 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
+    RecurrentStateParams,
 )
 from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor
@@ -79,7 +82,10 @@ from max.tensor.sharding import (
 )
 
 from .layers import ep
-from .layers.attn_residual import kimi_k3_attn_res_mix_norm
+from .layers.attn_residual import (
+    attn_res_mix_op,
+    kimi_k3_attn_res_mix_norm,
+)
 from .layers.decoder_layer import (
     KimiK3DecoderLayer,
     expert_parallel_decoder_layer,
@@ -98,7 +104,12 @@ from .layers.output_head import (
     kimi_k3_output_head,
     tensor_parallel_lm_head_weight,
 )
-from .state_cache import ATTN_CACHE_KEY, STATE_CACHE_KEY, attn_cache
+from .state_cache import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    VERIFY_RING_LEAF_ID,
+    attn_cache,
+)
 
 _TEXT = "language_model.model"
 
@@ -231,6 +242,147 @@ def _distributed_kda_state(
     return RecurrentStateInputsPerDevice(leaves=tuple(leaves))
 
 
+def _pins_kda_decode_fma(kv_params: KVCacheParamInterface | None) -> bool:
+    """Returns whether this build's plain KDA decode pins its multiply-adds.
+
+    A speculative build's verify-ring and fold kernels spell every
+    multiply-add as an explicit ``fma``, so the state a rolled-back verify
+    lands on equals the decode it interrupted only when the plain decode
+    pins the same way. The cache a build was sized with declares the verify
+    ring exactly when speculation is on, so the ring is the signal; a build
+    without one keeps the kernel's default, which plain serving has always
+    run.
+    """
+    if not isinstance(kv_params, MultiKVCacheParams):
+        return False
+    state = kv_params.children[STATE_CACHE_KEY]
+    assert isinstance(state, RecurrentStateParams)
+    return any(
+        region.leaf_id == VERIFY_RING_LEAF_ID for region in state.regions
+    )
+
+
+class KimiK3TapMode(str, Enum):
+    """Which feature a draft tap reads off the attention-residual stream.
+
+    Under AttnRes the value the next consumer reads is a learned softmax
+    mixture over the committed blocks plus the running stream, scored with
+    the consumer's own res weights -- so the feature a tap exports is a
+    function of the tap mode, not just of the stream.
+    """
+
+    MIXTURE = "mixture"
+    """The un-normed mixture the next layer's front-end computes -- what the
+    drafter was trained against."""
+
+    PREFIX = "prefix"
+    """The running stream alone (``prefix_sum + pending MLP output``) -- one
+    of the mixture's sources rather than a nearby value; kept for an
+    acceptance A/B."""
+
+
+def _attn_res_mixture(
+    bank: Sequence[Tensor],
+    prefix: Tensor,
+    proj_weight: Tensor,
+    res_norm_weight: Tensor,
+    *,
+    eps: float,
+) -> Tensor:
+    """The attention-residual mixture the next consumer computes, un-normed.
+
+    ``attn_res_mix`` over the bank entries plus the running stream, scored
+    with the CONSUMER's ``self_attention_res`` weights: ``logit(v) =
+    (v . (norm_w * proj_w)) * rsqrt(mean(v^2) + eps)``, softmax over the
+    candidates, weighted sum of the RAW ones. The fused mix-plus-norm op
+    the front-ends run has a single output -- the normed value -- so a
+    tapped layer runs the mix again without the norm instead of unfusing
+    it everywhere. Per tapped layer that costs the candidate stack plus
+    one mix op (K3 taps 5 of 93 layers, each reading its consumer's few
+    sources -- measured at single-digit percent of AttnRes traffic). A
+    pure read: no candidate is folded or committed.
+    """
+    out_dtype = prefix.dtype
+    # The op replaces the device, as `kimi_k3_attn_res_mix_norm`'s wide-hidden
+    # path does; the placement is restated after it.
+    out_device = (
+        prefix.mesh.devices[0] if prefix.is_distributed else prefix.device
+    )
+    mixed = attn_res_mix_op(
+        F.stack([c.cast(out_dtype) for c in [*bank, prefix]], axis=1),
+        proj_weight.cast(out_dtype),
+        res_norm_weight.cast(out_dtype),
+        eps=eps,
+        out_type=TensorType(out_dtype, prefix.shape, device=out_device),
+    )
+    if prefix.is_distributed:
+        mixed = mixed.rebind_mapping(NamedMapping(prefix.mesh, (None, None)))
+    return mixed
+
+
+def _tap_layers(
+    config: KimiK3ModelConfig,
+    return_hidden_states: ReturnHiddenStates,
+    target_layer_ids: Sequence[int],
+    tap_mode: KimiK3TapMode,
+) -> tuple[int, ...] | None:
+    """Validates a draft-tap request and returns the ids to capture.
+
+    ``None`` builds the unchanged, tap-free forward. ``SELECTED_LAYERS``
+    taps each listed 0-based decoder layer, strictly ascending -- the order
+    the DSpark drafter's ``context_proj`` consumes them concatenated along
+    the feature axis.
+
+    Raises:
+        ValueError: If taps are requested without ids, ids without taps,
+            the ids are not strictly ascending, they name a layer the
+            decoder stack does not hold, or the mixture mode names the
+            last layer, whose weights no downstream layer scores with.
+        NotImplementedError: For any hidden-state mode besides ``NONE`` and
+            ``SELECTED_LAYERS``.
+    """
+    if return_hidden_states == ReturnHiddenStates.NONE:
+        if target_layer_ids:
+            raise ValueError(
+                "Kimi K3 got target_layer_ids"
+                f" {list(target_layer_ids)} without SELECTED_LAYERS hidden"
+                " states."
+            )
+        return None
+    if return_hidden_states != ReturnHiddenStates.SELECTED_LAYERS:
+        raise NotImplementedError(
+            "Kimi K3 on ModuleV3 returns only SELECTED_LAYERS hidden states"
+            f" for a draft's taps; got {return_hidden_states.value}."
+        )
+    ids = tuple(target_layer_ids)
+    if not ids:
+        raise ValueError(
+            "Kimi K3 was asked for SELECTED_LAYERS hidden states without"
+            " target_layer_ids naming the layers to tap."
+        )
+    if any(b <= a for a, b in pairwise(ids)):
+        raise ValueError(
+            "Kimi K3 captures its draft taps in ascending layer order; got"
+            f" target_layer_ids {list(ids)}."
+        )
+    if any(not 0 <= i < config.num_hidden_layers for i in ids):
+        raise ValueError(
+            "Kimi K3's target_layer_ids must index the decoder stack's"
+            f" {config.num_hidden_layers} layers; got {list(ids)}."
+        )
+    if (
+        tap_mode == KimiK3TapMode.MIXTURE
+        and ids[-1] == config.num_hidden_layers - 1
+    ):
+        raise ValueError(
+            "Kimi K3's mixture tap reads the consumer layer after the tapped"
+            " one, and the last layer has none; tap"
+            f" {list(ids[:-1]) + [ids[-1] - 1]} or a smaller id instead, or"
+            " implement the output-side aggregation."
+        )
+    return ids
+
+
 class KimiK3Model(Module[..., ModuleV3Outputs]):
     """The full-depth Kimi K3 text model: embedding, decoder stack, output head.
 
@@ -245,7 +397,11 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         config: KimiK3ModelConfig,
         kv_params: KVCacheParamInterface | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        target_layer_ids: Sequence[int] = (),
+        tap_mode: KimiK3TapMode = KimiK3TapMode.MIXTURE,
         mla_buffer_size: int = 16384,
+        mla_rope_table_rows: int | None = None,
         quant_config: QuantConfig | None = None,
         ep_config: EPConfig | None = None,
     ) -> None:
@@ -264,10 +420,26 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             -- so it is its own
             argument rather than a field on the checkpoint-derived
             ``KimiK3ModelConfig``.
+            return_hidden_states: Same reasoning as ``return_logits``: a
+            serving choice a speculative pairing hands its builder, not
+            a checkpoint shape. ``SELECTED_LAYERS`` appends the tapped
+            features to the outputs (see :func:`_tap_layers`).
+            target_layer_ids: The 0-based decoder layers ``SELECTED_LAYERS``
+            taps, after each listed layer -- the same post-layer convention
+            the DSpark draft's own ``target_layer_ids`` uses, with no shift.
+            tap_mode: Which feature each tap reads; see
+            :class:`KimiK3TapMode`.
             mla_buffer_size: One-shot MLA prefill buffer size. Same reasoning as
             ``return_logits``: a serving-time quantity
             (``KimiK3Config.max_batch_context_length``), not a checkpoint
             shape, so it is its own argument.
+            mla_rope_table_rows: Rows the identity rope table
+            (``kimi_k3_nope_freqs_cis``) is built with. Its own count, not
+            the plan cap: the table is indexed at one request's absolute
+            positions, never the batch-wide window the cap spans under
+            speculation (``spec_mla.py``'s module docstring). ``None``
+            sizes it by ``mla_buffer_size``; the serving paths pass
+            ``kimi_k3_mla_table_rows``.
             quant_config: MXFP4 config for the routed experts. Mutually
             exclusive with ``ep_config``.
             ep_config: The routed experts' expert-parallel exchange setup, or
@@ -281,7 +453,16 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         self.config = config
         self.kv_params = kv_params
         self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states
+        self._tap_mode = tap_mode
+        self._capture_after = _tap_layers(
+            config, return_hidden_states, target_layer_ids, tap_mode
+        )
         self.mla_buffer_size = mla_buffer_size
+        if mla_rope_table_rows is None:
+            mla_rope_table_rows = mla_buffer_size
+        self.mla_rope_table_rows = mla_rope_table_rows
+        self._pin_kda_fma = _pins_kda_decode_fma(kv_params)
         self.ep_config = ep_config
         attn_params = attn_cache(kv_params) if kv_params is not None else None
         self.embed_tokens = Embedding(
@@ -303,6 +484,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     head_dim=config.kda_head_dim,
                     conv_kernel_size=config.kda_conv_kernel_size,
                     gate_lower_bound=config.kda_gate_lower_bound,
+                    pin_fma=self._pin_kda_fma,
                 )
             else:
                 attention = KimiK3MLAAttention(
@@ -402,9 +584,15 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             return_n_logits: ``[1]``, see ``kimi_k3_output_head``.
             input_row_offsets: ``[batch_size + 1]`` exclusive prefix sums.
             kv_inputs: This model's flattened cache tree, followed by the host
-                prefill length for an MLA cache and any EP buffers. Empty runs
-                every MLA layer padded; a KDA layer always needs its state here,
-                since it has no padded form.
+                MLA prefill extent when the attention leaf is an MLA cache and
+                any EP buffers. Empty runs every MLA layer padded; a KDA layer
+                always needs its state here, since it has no padded form.
+
+        Returns the logits as before, plus ``hidden_states`` when this model
+        was built with ``ReturnHiddenStates.SELECTED_LAYERS``: the tapped
+        features concatenated along the feature axis, one tensor per mesh
+        (see :func:`_tap_layers` and :class:`KimiK3TapMode` for the tap
+        conventions).
         """
         tokens, input_row_offsets = self._place(tokens, input_row_offsets)
         hidden_states = self.embed_tokens(tokens)
@@ -447,7 +635,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     buffer_length=Tensor.from_graph_value(next(graph_values)),
                 )
                 mla_freqs_cis = kimi_k3_nope_freqs_cis(
-                    max_seq_len=self.mla_buffer_size,
+                    max_seq_len=self.mla_rope_table_rows,
                     qk_rope_head_dim=self.config.qk_rope_head_dim,
                     dtype=attn_params.dtype,
                     device=CPU(),
@@ -483,9 +671,15 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     ),
                 )
 
+        # Draft taps: a pure read after each listed layer, off the state the
+        # NEXT layer's front-end will consume -- the running stream and the
+        # committed-block bank the layer just returned. ``None`` builds the
+        # unchanged tap-free graph.
+        capture_after = self._capture_after
         block_residual: list[Tensor] = []
+        captures: list[Tensor] = []
         kda_idx = 0
-        for layer in self.layers:
+        for layer_idx, layer in enumerate(self.layers):
             if layer.is_kda:
                 assert state is not None, (
                     "KimiK3Model needs KDA state in kv_inputs to serve a KDA"
@@ -515,6 +709,10 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     ep_config=self.ep_config,
                     ep_buffers=ep_buffers,
                 )
+            if capture_after is not None and layer_idx in capture_after:
+                captures.append(
+                    self._capture_tap(block_residual, hidden_states, layer_idx)
+                )
 
         # The final norm rides the fused mix; the output head takes the
         # already-normed hidden state (norm-then-gather is per-row
@@ -540,11 +738,53 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             # Logits are replicated across the mesh, but a compiled graph's
             # output must be a single device's value.
             output = tuple(t.to(mesh.devices[0]) for t in output)
+        # The taps stay one tensor per mesh, unlike the logits above: the
+        # DSpark drafter reads a fused copy of them on every device (its
+        # ``context_proj`` matmul), and the fused spec graph consumes them
+        # in-graph before any compiled-output boundary. Concatenated along
+        # the feature axis, so tap ``j`` holds columns
+        # ``[j * hidden_size, (j + 1) * hidden_size)`` in ``target_layer_ids``
+        # order.
+        hidden_states_out = F.concat(captures, axis=-1) if captures else None
         if len(output) == 1:
-            return ModuleV3Outputs(next_token_logits=output[0])
+            return ModuleV3Outputs(
+                next_token_logits=output[0], hidden_states=hidden_states_out
+            )
         last_logits, logits, offsets = output
         return ModuleV3Outputs(
-            next_token_logits=last_logits, logits=logits, logit_offsets=offsets
+            next_token_logits=last_logits,
+            logits=logits,
+            logit_offsets=offsets,
+            hidden_states=hidden_states_out,
+        )
+
+    def _capture_tap(
+        self,
+        bank: Sequence[Tensor],
+        stream: Tensor,
+        layer_idx: int,
+    ) -> Tensor:
+        """Reads the feature tap id ``layer_idx`` hands the drafter.
+
+        Args:
+            bank: The committed-block bank the tapped layer just returned,
+                in the order the next layer's front-end mixes over it.
+            stream: The running stream the tapped layer just returned --
+                ``prefix_sum + pending MLP output``, the mixture's last
+                candidate.
+            layer_idx: The tapped layer's 0-based index.
+        """
+        if self._tap_mode == KimiK3TapMode.PREFIX:
+            return stream
+        # The mixture mode's ids never name the last layer; `_tap_layers`
+        # refused them, so the consumer layer exists.
+        consumer = self.layers[layer_idx + 1]
+        return _attn_res_mixture(
+            bank,
+            stream,
+            consumer.self_attention_res_proj_weight,
+            consumer.self_attention_res_norm_weight,
+            eps=self.config.rms_norm_eps,
         )
 
 

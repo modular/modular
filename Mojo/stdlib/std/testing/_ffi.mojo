@@ -54,6 +54,28 @@ struct CStruct(ImplicitlyCopyable):
         self.skip_fields = skip_fields
 
 
+__enum CType(ImplicitlyCopyable):
+    """The C spelling of a field's type, such as `.type("void *")` for
+    `void *udata` or `.array("__u64", 2)` for `__u64 __pad2[2]`.
+
+    A `String` implicitly converts to the `.type` case. `.default` spells
+    nothing: the field's check uses the C type that its Mojo type implies.
+    """
+
+    case default
+    case type(String)
+    case array(String, Int)
+
+    @implicit
+    def __init__(out self, type: String):
+        """Creates a `.type` case from the C type's spelling.
+
+        Args:
+            type: The C type as spelled in C, such as `void *`.
+        """
+        self = .type(type)
+
+
 struct CField(ImplicitlyCopyable):
     """Describes how a field of a struct that mirrors a C struct is checked
     against C.
@@ -77,24 +99,24 @@ struct CField(ImplicitlyCopyable):
     var rename: Optional[String]
     """The C field's name, when it differs from the Mojo field's name."""
 
-    var c_type: Optional[String]
-    """The C field's type, overriding the one that the Mojo field's type
-    implies."""
+    var c_type: CType
+    """The C field's type, or `.default` for the one that the Mojo field's
+    type implies."""
 
     def __init__(
         out self,
         *,
         rename: Optional[String] = None,
-        c_type: Optional[String] = None,
+        c_type: CType = .default,
     ):
         """Creates the annotation.
 
         Args:
             rename: The C field's name, when it differs from the Mojo field's
                 name.
-            c_type: The C field's type as spelled in C, such as `void *`.
-                The field's type check uses it instead of the type that the
-                Mojo field's type implies. It can't be an array type.
+            c_type: The C field's type, such as `"void *"` or
+                `.array("__u64", 2)`. The field's type check uses it instead
+                of the type that the Mojo field's type implies.
         """
         self.rename = rename
         self.c_type = c_type

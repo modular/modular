@@ -2061,24 +2061,8 @@ static LogicalResult emitExecuteCall(
     const std::function<ErrorOr<MojoValue>(StringRef)> &inferParam) {
   const KernelDeclFunctionAdaptor &execFnAdaptor = *adaptor.executeFunction;
 
-  // The stub's contexts are all typed as the default accelerator's, even on the
-  // CPU. A callee generic over the context's target is handed the CPU target
-  // it will run on instead.
-  //
-  // TODO(MSTDL-3265): Once every context is generic over its target, this
-  // cast belongs in `FuncOp::emitMojo`, where the stub's contexts are bound,
-  // rather than here: it makes `CallOpaqueOp` look at its parent op.
-  bool isCpuStub = op->getParentOfType<FuncOp>().getDevice() == kCPULabel;
-  bool hasGenericTargetContext = llvm::any_of(
-      execFnAdaptor.inputArguments, [](const KernelDeclOperandAdaptor &arg) {
-        return arg.isGenericTargetContextType();
-      });
-  for (Value ctx : op.getDeviceContexts()) {
-    MojoValue ctxValue = state.getMojoValueFor(ctx);
-    if (isCpuStub && hasGenericTargetContext)
-      ctxValue = state.builder.var(ctxValue.get(kFnAssertCpuTarget)({}, {}));
-    operands.push_back(ctxValue);
-  }
+  for (Value ctx : op.getDeviceContexts())
+    operands.push_back(state.getMojoValueFor(ctx));
 
   auto maybeParams = inferKernelParameters(
       adaptor, KernelFunctionKind::Execute,
@@ -4892,8 +4876,15 @@ LogicalResult AsyncUnpackOp::emitMojo(EmitMojoState &state) {
 
   } else if (isa<MGP::DeviceContextType>(inputType)) {
 
+    // The graph's device is static, so type the context by it instead of
+    // leaving every consumer to cast.
     MojoValue asyncUnpackFunc{kFnUnpackDeviceCtx};
-    unpackedValue = asyncUnpackFunc({}, {state.getMojoValueFor((input))});
+    MojoValue deviceKind =
+        MojoValue(
+            cast<MGP::DeviceContextType>(inputType).getDevice().getLabel())
+            .quote();
+    unpackedValue =
+        asyncUnpackFunc({deviceKind}, {state.getMojoValueFor((input))});
 
   } else if (isa<MGP::ContextType>(inputType)) {
 

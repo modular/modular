@@ -24,7 +24,7 @@ from max.gpu import (
     grid_dim,
     thread_idx,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.compile import _compile_code
 from max.gpu.intrinsics import lop
 from max.gpu.primitives.grid_controls import (
@@ -302,9 +302,6 @@ def test_repack_Q4_0_for_sm8x[
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_usage)
-        ),
     )
 
     comptime dequan = create_ref_b[
@@ -324,9 +321,6 @@ def test_repack_Q4_0_for_sm8x[
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_usage)
-        ),
     )
 
     ctx.enqueue_copy(repacked_b_host_ptr, repacked_b_device)

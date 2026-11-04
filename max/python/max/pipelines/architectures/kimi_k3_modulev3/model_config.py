@@ -24,19 +24,23 @@ apart. No vision support, but composable later as a VLM wrapper's
 not ``initialize()``: neither is available then. Mutually exclusive: EP
 doesn't support MXFP4 routed experts yet.
 
-Deliberately leaves out DSpark/speculative-decoding and checkpoint
-weight-size estimation (:mod:`memory_planner`'s job). What stays here is
-the KV-cache tree and the attention-geometry byte accounting that's
-inseparable from it.
+Deliberately leaves out the DSpark drafter itself and checkpoint
+weight-size estimation (:mod:`memory_planner`'s job). The speculative
+pieces that reach here are the draft-aware cache sizing (the MLA leaf's
+draft width and the verify ring's length, both sized in :mod:`spec_mla`)
+and the draft-tap stamps a pairing's build writes onto this config
+(:attr:`return_hidden_states`, :attr:`target_layer_ids`). What
+stays here is the KV-cache tree and the attention-geometry byte
+accounting that's inseparable from it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
-from max.driver import Buffer
+from max.driver import Buffer, accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.mesh_axis import EP, TP
@@ -54,7 +58,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
 )
 from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -77,7 +81,12 @@ from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
-from .model import KimiK3ModelConfig
+from .model import KimiK3ModelConfig, KimiK3TapMode
+from .spec_mla import (
+    kimi_k3_mla_buffer_size,
+    kimi_k3_spec_num_draft_tokens,
+    kimi_k3_verify_ring_len,
+)
 from .state_cache import (
     ATTN_CACHE_KEY,
     STATE_CACHE_KEY,
@@ -208,6 +217,35 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
     recurrence precision across decode steps and prefill chunks; promoting
     only the arithmetic still rounds a BF16 pool on each call."""
 
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """Which hidden states the forward returns beside the logits.
+
+    Serving leaves this ``NONE``. A speculative pairing's builder asks for
+    ``SELECTED_LAYERS`` hidden states, whose :meth:`finalize` stamps here
+    with :attr:`target_layer_ids`, and the forward then appends the tapped
+    features to its outputs.
+    """
+
+    target_layer_ids: list[int] = field(default_factory=list)
+    """Layers whose output ``SELECTED_LAYERS`` taps, MAX's post-layer
+    convention: id ``j`` taps the state after 0-based decoder layer ``j``
+    -- the same convention the DSpark draft's own ``target_layer_ids``
+    uses, with no shift."""
+
+    tap_mode: KimiK3TapMode = KimiK3TapMode.MIXTURE
+    """Which feature each tap reads off the attention-residual stream; see
+    :class:`~.model.KimiK3TapMode`. The mixture is what the drafter was
+    trained against and the only mode a pairing serves; the running-stream
+    form stays a constructor/config argument for an acceptance A/B."""
+
+    spec_num_draft_tokens: int = 0
+    """The draft width a speculative pairing verifies, or zero without one.
+
+    :meth:`initialize` stamps the DSpark width
+    :func:`~.spec_mla.kimi_k3_spec_num_draft_tokens` resolves, and
+    :meth:`apply_runtime` sizes the draft-aware MLA plan cap from it.
+    """
+
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """The logits the tower returns, as the pipeline asks for them."""
 
@@ -219,7 +257,9 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
     ) -> Self:
         """Returns the config completed with the pipeline's outputs.
 
-        Routed experts that arrive packed take their MXFP4 quantization.
+        Routed experts that arrive packed take their MXFP4 quantization. A
+        speculative pairing's outputs carry the layers its draft taps, which
+        serving leaves unset.
         """
         del huggingface_config, state_dict
         quant_config = None
@@ -231,15 +271,30 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
                 )
             )
         return replace(
-            self, quant_config=quant_config, return_logits=outputs.return_logits
+            self,
+            quant_config=quant_config,
+            return_logits=outputs.return_logits,
+            return_hidden_states=outputs.return_hidden_states,
+            target_layer_ids=list(outputs.target_layer_ids or ()),
         )
 
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
         """Sizes the expert-parallel buffers for ``runtime``.
 
         Raises:
-            NotImplementedError: If the routed experts are MXFP4.
+            NotImplementedError: If the routed experts are MXFP4, or a
+                speculative pairing runs under expert parallelism: the
+                DSpark draft pairs with the TP trunk, and the fused
+                speculative graph takes no expert-parallel exchange
+                buffers.
         """
+        if self.spec_num_draft_tokens:
+            raise NotImplementedError(
+                "Kimi K3's speculative graph serves tensor parallelism; the"
+                " DSpark draft pairs with the TP trunk, and the fused"
+                " speculative graph takes no expert-parallel exchange"
+                " buffers."
+            )
         if self.quant_config is not None:
             raise NotImplementedError(
                 "Kimi K3's expert parallelism doesn't support MXFP4 routed "
@@ -267,9 +322,39 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
         """Returns the config placed on the deployment's devices.
 
         The mesh has an ``ep`` axis under expert parallelism and a ``tp``
-        axis otherwise.
+        axis otherwise. A speculative pairing also sizes the MLA plan cap
+        for the verify windows it runs (:func:`_spec_mla_buffer_size`),
+        where the batch token budget a served tower takes would truncate
+        them.
+
+        Raises:
+            ValueError: If a pairing is on but the deployment resolved no
+                batch size, which the draft-aware cap is sized over.
         """
         devices = runtime.mesh.devices
+        max_batch_context_length = (
+            runtime.max_batch_total_tokens or self.max_batch_context_length
+        )
+        if self.spec_num_draft_tokens:
+            if runtime.max_batch_size is None:
+                raise ValueError(
+                    "Kimi K3: a speculative build sizes the MLA plan cap"
+                    " for a worst case over every batch slot, but"
+                    " max_batch_size is unresolved; pass --max-batch-size"
+                    " or let memory planning infer one."
+                )
+            max_batch_context_length = kimi_k3_mla_buffer_size(
+                max_batch_context_length=max_batch_context_length,
+                max_seq_len=self.max_seq_len,
+                page_size=self.attn_kv_params.page_size,
+                num_draft_tokens=self.spec_num_draft_tokens,
+                max_batch_size=runtime.max_batch_size,
+                num_q_heads_per_device=(
+                    self.model.num_attention_heads // max(1, len(devices))
+                ),
+                cache_dtype=self.attn_kv_params.dtype,
+                device_api=accelerator_api(),
+            )
         return replace(
             self,
             mesh=DeviceMesh(
@@ -278,9 +363,7 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
                 (EP if self.ep_size > 1 else TP,),
             ),
             ep_config=runtime.ep,
-            max_batch_context_length=(
-                runtime.max_batch_total_tokens or self.max_batch_context_length
-            ),
+            max_batch_context_length=max_batch_context_length,
         )
 
     def get_kv_params(self) -> KVCacheParamInterface:
@@ -449,6 +532,11 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
         speculative_method = (
             speculative.speculative_method if speculative else None
         )
+        # The block manager sizes a request's pages from this leaf's draft
+        # width (``_compute_seq_len``), so a verify's window must be charged
+        # to it here rather than left to the pairing's stamp -- which the
+        # cache manager never sees. See `spec_mla.py`'s module docstring.
+        num_draft_tokens = kimi_k3_spec_num_draft_tokens(pipeline_config)
         if KimiK3Config.supports_mla_latent_cache(
             text_config, cache_dtype, len(devices)
         ):
@@ -462,6 +550,7 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
                 is_mla=True,
                 num_q_heads=text_config.num_attention_heads,
                 speculative_method=speculative_method,
+                num_draft_tokens=num_draft_tokens,
             )
         return kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -473,6 +562,7 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
             devices=devices,
             data_parallel_degree=1,
             speculative_method=speculative_method,
+            num_draft_tokens=num_draft_tokens,
         )
 
     @staticmethod
@@ -520,6 +610,7 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
                 conv_dtype=conv_dtype,
                 recurrent_dtype=recurrent_dtype,
                 num_devices=len(devices),
+                ring_len=kimi_k3_verify_ring_len(pipeline_config),
             ),
             devices=attn.devices,
             data_parallel_degree=attn.data_parallel_degree,
@@ -746,6 +837,9 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
             ssm_dtype=conv_state_dtype,
             recurrent_state_dtype=recurrent_state_dtype,
             ep_size=pipeline_config.runtime.ep_size,
+            spec_num_draft_tokens=(
+                kimi_k3_spec_num_draft_tokens(pipeline_config)
+            ),
         )
         config_instance.validate_tensor_parallel_split()
         return config_instance

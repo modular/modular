@@ -575,18 +575,22 @@ class ExpertParallelMoE(QuantizedMoE):
     def _num_local_experts(self) -> int:
         return self.num_experts // self.mesh.num_devices
 
-    def _init_experts(self) -> ModuleList[QuantizedMLP]:
-        dtype, mesh = defaults()
+    @staticmethod
+    def _check_mesh(mesh: DeviceMesh, num_experts: int) -> None:
         if mesh.ndim != 1:
             raise ValueError(
                 "Mesh used with ExpertParallelMoE must have exactly one device"
                 f" axis, but got {mesh}"
             )
-        if self.num_experts % mesh.num_devices != 0:
+        if num_experts % mesh.num_devices != 0:
             raise ValueError(
-                f"num_experts ({self.num_experts}) must be divisible by the "
+                f"num_experts ({num_experts}) must be divisible by the "
                 f"number of devices ({mesh.num_devices}) for expert parallelism"
             )
+
+    def _init_experts(self) -> ModuleList[QuantizedMLP]:
+        dtype, mesh = defaults()
+        self._check_mesh(mesh, self.num_experts)
         num_local_experts = self.num_experts // mesh.num_devices
         experts: list[QuantizedMLP] = []
         for device in mesh.devices:
@@ -619,6 +623,16 @@ class ExpertParallelMoE(QuantizedMoE):
     @property
     def gate_up_proj(self) -> list[QuantAwareTensor]:
         """Per-device stacked ``[gate, up]`` weight bundle for local experts."""
+        stacked = self._stack_gate_up()
+        if self._uses_fused_swiglu:
+            permuted: list[QuantAwareTensor] = []
+            for w in stacked:
+                assert isinstance(w, NVFP4Tensor)
+                permuted.append(quant_ops.sigma_permute_gate_up_nvfp4(w))
+            return permuted
+        return stacked
+
+    def _stack_gate_up(self) -> list[QuantAwareTensor]:
         per_device: list[list[list[QuantAwareTensor]]] = [
             [] for _ in self.mesh.devices
         ]
@@ -638,14 +652,7 @@ class ExpertParallelMoE(QuantizedMoE):
             per_device[idx].append(
                 [expert.gate_proj.weight, expert.up_proj.weight]
             )
-        stacked = self._stack_local_experts(per_device)
-        if self._uses_fused_swiglu:
-            permuted: list[QuantAwareTensor] = []
-            for w in stacked:
-                assert isinstance(w, NVFP4Tensor)
-                permuted.append(quant_ops.sigma_permute_gate_up_nvfp4(w))
-            return permuted
-        return stacked
+        return self._stack_local_experts(per_device)
 
     @property
     def down_proj(self) -> list[QuantAwareTensor]:
@@ -867,9 +874,10 @@ class ExpertParallelMoE(QuantizedMoE):
         has_unfused_shared = (
             self.shared_experts is not None and not config.fused_shared_expert
         )
-        # As in the graph-API EP path, split the peer-to-peer dispatch and
-        # combine into launch + wait and run the shared expert in between. It
-        # reads only ``x``, so it overlaps the EP communication.
+        # Split the peer-to-peer dispatch into launch + wait and run the shared
+        # expert in between. It reads only ``x``, so it overlaps the EP
+        # communication. Only the dispatch splits: the combine's launch and
+        # wait have nothing to put between them, so it stays fused.
         overlap_shared_expert = (
             has_unfused_shared
             and not config.use_allreduce
@@ -957,16 +965,11 @@ class ExpertParallelMoE(QuantizedMoE):
                 )
                 for i in range(self.mesh.num_devices)
             ]
-        elif overlap_shared_expert:
-            for i in range(self.mesh.num_devices):
-                batch_mgr.ep_combine_async(down_bundle[i], device_ids[i])
-            combine_results = [
-                batch_mgr.ep_combine_wait(
-                    router_weight_shards[i], device_ids[i]
-                )
-                for i in range(self.mesh.num_devices)
-            ]
         else:
+            # Fused combine: one launch per device instead of the async/wait
+            # pair's two. The split's only benefit is an interleaving window
+            # for work issued before it, and the shared expert it exists for
+            # was issued back before dispatch.
             combine_results = batch_mgr.ep_combine_all(
                 down_bundle, router_weight_shards, device_ids
             )

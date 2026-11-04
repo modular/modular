@@ -74,6 +74,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.model import (
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
+    RoutedExpertFormat,
     dispatch_rows,
     forward_row_bound,
     forward_rows,
@@ -174,7 +175,9 @@ def _expected_ep_reserve(dp4_config: Mock) -> tuple[int, int]:
     one) moves this hand computation and fails the tests that use it.
     """
     text = text_config()
-    ep_config = build_ep_config(dp4_config, text, n_devices=4)
+    ep_config = build_ep_config(
+        dp4_config, text, n_devices=4, expert_format=RoutedExpertFormat.NVFP4
+    )
     rows = int(ep_config.get_max_recv_tokens())
     hidden = int(text.hidden_size)
     inter = int(text.moe_intermediate_size)
@@ -346,8 +349,12 @@ def test_dspark_ep_budget_counts_the_draft_rows() -> None:
     dspark = _with_dspark(
         _pipeline_config(dp=4, ep_size=4, n_devices=4), max_batch_size=8
     )
-    assert build_ep_config(plain, text, 4).max_tokens_per_rank == 512
-    assert build_ep_config(dspark, text, 4).max_tokens_per_rank == 512 + 8 * 5
+    nvfp4 = RoutedExpertFormat.NVFP4
+    assert build_ep_config(plain, text, 4, nvfp4).max_tokens_per_rank == 512
+    assert (
+        build_ep_config(dspark, text, 4, nvfp4).max_tokens_per_rank
+        == 512 + 8 * 5
+    )
     planner = _planner()
     assert planner.forward_scratch_bytes_per_device(
         dspark
@@ -443,7 +450,7 @@ def test_dspark_ep_needs_max_batch_size() -> None:
         _pipeline_config(dp=4, ep_size=4, n_devices=4), max_batch_size=None
     )
     with pytest.raises(ValueError, match="needs max_batch_size"):
-        build_ep_config(config, text_config(), 4)
+        build_ep_config(config, text_config(), 4, RoutedExpertFormat.NVFP4)
 
 
 def test_unwired_shapes_add_no_ep_reserve() -> None:
@@ -519,3 +526,56 @@ def test_dp4_scratch_matches_the_summed_estimate() -> None:
 
 if __name__ == "__main__":
     raise SystemExit("run via bazel or pytest")
+
+
+def test_mxfp4_sidecar_scratch_reserves_the_mxfp8_receive_pool() -> None:
+    """MXFP4 experts receive MXFP8 rows: one byte a value, with an E8M0
+    scale per 32, and the fused gate/up+SwiGLU kernel writes their down
+    input the same way. The reserve follows the checkpoint's format."""
+    config = _pipeline_config(dp=4, ep_size=4, n_devices=4)
+    config.model.huggingface_config = {
+        **_HF_CONFIG,
+        "quantization_config": {"quant_method": "fp8", "expert_dtype": "fp4"},
+    }
+    text = text_config()
+    ep_config = build_ep_config(config, text, 4, RoutedExpertFormat.MXFP4)
+    assert ep_config.dispatch_quant_config is not None
+    assert ep_config.dispatch_quant_config.is_mxfp8
+    rows = int(ep_config.get_max_recv_tokens())
+    hidden = int(text.hidden_size)
+    inter = int(text.moe_intermediate_size)
+    n_local = int(text.n_routed_experts) // 4
+    tile_rows = -(-(rows + n_local * _SCALE_TILE_ROWS) // _SCALE_TILE_ROWS)
+
+    def scale_bytes(width: int) -> int:
+        tile_cols = -(-width // (32 * _SCALE_TILE_SCALES))
+        return tile_rows * tile_cols * _SCALE_TILE_BYTES
+
+    pool = _mm_pages(
+        rows * hidden
+        + scale_bytes(hidden)
+        + rows * 8
+        + rows * inter
+        + scale_bytes(inter)
+        + rows * hidden * 2
+    )
+    planner = _planner()
+    nvfp4 = planner.forward_scratch_bytes_per_device(
+        _pipeline_config(dp=4, ep_size=4, n_devices=4)
+    )
+    mxfp4 = planner.forward_scratch_bytes_per_device(config)
+    _, nvfp4_pool = _expected_ep_reserve(
+        _pipeline_config(dp=4, ep_size=4, n_devices=4)
+    )
+    comm = int(ep_config.estimate_memory_usage())
+    assert mxfp4 - nvfp4 == (comm + pool) - (
+        int(
+            build_ep_config(
+                _pipeline_config(dp=4, ep_size=4, n_devices=4),
+                text,
+                4,
+                RoutedExpertFormat.NVFP4,
+            ).estimate_memory_usage()
+        )
+        + nvfp4_pool
+    )

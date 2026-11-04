@@ -29,7 +29,7 @@ from max.algorithm.functional import elementwise
 from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.primitives.grid_controls import PDLLevel
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import A100, B200, H100, MI355X, get_gpu_info
 from layout import (
     Coord,
@@ -2391,9 +2391,6 @@ def multistage_gemm[
             grid_dim=config.grid_dim(M, N),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(config.shared_mem_usage())
-            ),
         )
 
 
@@ -2472,9 +2469,6 @@ def multistage_gemm[
             grid_dim=config.grid_dim(M, N),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(config.shared_mem_usage())
-            ),
         )
 
 
@@ -2552,9 +2546,6 @@ def multistage_gemm[
             grid_dim=config.grid_dim(M, N),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(config.shared_mem_usage())
-            ),
         )
 
 
@@ -2781,9 +2772,6 @@ def _multistage_gemm_runtime_impl[
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(runtime_config.shared_mem_usage())
-                ),
             )
 
         _split_k_reduce_impl[
@@ -2830,9 +2818,6 @@ def _multistage_gemm_runtime_impl[
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(config.shared_mem_usage())
-                ),
             )
         elif has_compute_fn:
             comptime gemm_kernel_type = multistage_gemm_kernel_compute_fn[
@@ -2856,9 +2841,6 @@ def _multistage_gemm_runtime_impl[
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(config.shared_mem_usage())
-                ),
             )
         else:
             comptime gemm_kernel_type = multistage_gemm_kernel[
@@ -2880,7 +2862,4 @@ def _multistage_gemm_runtime_impl[
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(config.shared_mem_usage())
-                ),
             )
