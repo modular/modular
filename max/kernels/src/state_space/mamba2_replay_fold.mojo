@@ -311,10 +311,10 @@ def mamba2_replay_fold_launch[
     convolved_stride: Int,
     ngroups: Int,
     conv_pool: TileTensor[conv_dtype, conv_pool_LT, _, Engine=Engine],
-    ssm_pool: TileTensor[state_dtype, ssm_pool_LT, _, Engine=Engine],
-    conv_rows: TileTensor[.uint32, conv_rows_LT, _, Engine=Engine],
-    ssm_rows: TileTensor[.uint32, ssm_rows_LT, _, Engine=Engine],
-    replay_bounds: TileTensor[.int32, bounds_LT, _, Engine=Engine],
+    ssm_pool: TileTensor[state_dtype, ssm_pool_LT, _, Engine=_],
+    conv_rows: TileTensor[.uint32, conv_rows_LT, _, Engine=_],
+    ssm_rows: TileTensor[.uint32, ssm_rows_LT, _, Engine=_],
+    replay_bounds: TileTensor[.int32, bounds_LT, _, Engine=_],
     ctx: DeviceContext,
 ) raises:
     """Launches `mamba2_replay_fold_gpu` for every layer and request.
@@ -329,7 +329,8 @@ def mamba2_replay_fold_launch[
         conv_rows_LT: Tensor layout of `conv_rows`.
         ssm_rows_LT: Tensor layout of `ssm_rows`.
         bounds_LT: Tensor layout of `replay_bounds`.
-        Engine: Engine shared by all tile operands.
+        Engine: Engine of `conv_pool`. The launched kernel takes one engine
+            for every tile operand, so the others must match it.
         dt_softplus: Whether to apply softplus to `dt + dt_bias`.
 
     Args:

@@ -32,7 +32,12 @@ from internal_utils.fp8_utils import cast_saturating
 
 from comm import Signal
 from extensibility import StaticTensorSpec
-from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
+from max.gpu.host import (
+    CompletionFlag,
+    DeviceBuffer,
+    DeviceContext,
+    DeviceContextArray,
+)
 from layout.tile_tensor import row_major
 from max.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
@@ -5034,34 +5039,86 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        state_dtype: DType,
-        xbc_dtype: DType,
         target: StaticString,
     ](
-        y: OutputTensor[dtype=dtype, rank=3, ...],
-        x: FusedInputTensor[dtype=dtype, rank=3, ...],
-        dt: FusedInputTensor[dtype=dtype, rank=2, ...],
-        A: InputTensor[dtype=dtype, rank=1, ...],
-        B: FusedInputTensor[dtype=dtype, rank=3, ...],
-        C: FusedInputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
+        y: Some[Output & Tensor],
+        x: Some[Input & Fused & LoadAccess],
+        dt: Some[Input & Fused & LoadAccess],
+        A: Some[Input & Tensor],
+        B: Some[Input & Fused & LoadAccess],
+        C: Some[Input & Fused & LoadAccess],
+        D: Some[Input & Tensor],
+        dt_bias: Some[Input & Tensor],
         # The caller owns this pool and the kernel writes it in place.
-        ssm_pool: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
-        cache_indices: FusedInputTensor[dtype=.uint32, ...],
-        update_state: InputTensor[dtype=.bool, rank=1, ...],
-        xbc: InputTensor[dtype=xbc_dtype, rank=2, ...],
+        ssm_pool: Some[MutableInput & Tensor],
+        query_start_loc: Some[Input & Tensor],
+        has_initial_state: Some[Input & Tensor],
+        cache_indices: Some[Input & Fused & LoadAccess],
+        update_state: Some[Input & Tensor],
+        xbc: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime if cache_indices.rank == 2:
-            if cache_indices.dim_size(0) != 1:
+        comptime assert conforms_to(type_of(y), TileTensorable)
+        comptime assert conforms_to(type_of(A), TileTensorable)
+        comptime assert conforms_to(type_of(D), TileTensorable)
+        comptime assert conforms_to(type_of(dt_bias), TileTensorable)
+        comptime assert conforms_to(type_of(ssm_pool), TileTensorable)
+        comptime assert conforms_to(type_of(query_start_loc), TileTensorable)
+        comptime assert conforms_to(type_of(has_initial_state), TileTensorable)
+        comptime assert conforms_to(type_of(update_state), TileTensorable)
+        comptime assert conforms_to(type_of(xbc), TileTensorable)
+        comptime dtype = type_of(x).dtype
+        comptime state_dtype = type_of(ssm_pool).dtype
+        comptime xbc_dtype = type_of(xbc).dtype
+        comptime cache_indices_rank = type_of(cache_indices).rank
+        comptime assert type_of(y).dtype == dtype
+        comptime assert type_of(dt).dtype == dtype
+        comptime assert type_of(A).dtype == dtype
+        comptime assert type_of(B).dtype == dtype
+        comptime assert type_of(C).dtype == dtype
+        comptime assert type_of(D).dtype == dtype
+        comptime assert type_of(dt_bias).dtype == dtype
+        comptime assert type_of(query_start_loc).dtype == .int32
+        comptime assert type_of(has_initial_state).dtype == .bool
+        comptime assert type_of(cache_indices).dtype == .uint32
+        comptime assert type_of(update_state).dtype == .bool
+        comptime assert type_of(y).rank == 3
+        comptime assert type_of(x).rank == 3
+        comptime assert type_of(dt).rank == 2
+        comptime assert type_of(A).rank == 1
+        comptime assert type_of(B).rank == 3
+        comptime assert type_of(C).rank == 3
+        comptime assert type_of(D).rank == 1
+        comptime assert type_of(dt_bias).rank == 1
+        comptime assert type_of(ssm_pool).rank == 4
+        comptime assert type_of(query_start_loc).rank == 1
+        comptime assert type_of(has_initial_state).rank == 1
+        comptime assert type_of(update_state).rank == 1
+        comptime assert type_of(xbc).rank == 2
+
+        comptime assert conforms_to(type_of(x), UnsafeFusedView)
+        var x_view = unsafe_fused_view(x)
+        comptime assert conforms_to(type_of(x_view), Loadable)
+        comptime assert conforms_to(type_of(dt), UnsafeFusedView)
+        var dt_view = unsafe_fused_view(dt)
+        comptime assert conforms_to(type_of(dt_view), Loadable)
+        comptime assert conforms_to(type_of(B), UnsafeFusedView)
+        var B_view = unsafe_fused_view(B)
+        comptime assert conforms_to(type_of(B_view), Loadable)
+        comptime assert conforms_to(type_of(C), UnsafeFusedView)
+        var C_view = unsafe_fused_view(C)
+        comptime assert conforms_to(type_of(C_view), Loadable)
+        comptime assert conforms_to(type_of(cache_indices), UnsafeFusedView)
+        var cache_indices_view = unsafe_fused_view(cache_indices)
+        comptime assert conforms_to(type_of(cache_indices_view), Loadable)
+
+        comptime if cache_indices_rank == 2:
+            if Int(cache_indices.shape()[0].value()) != 1:
                 raise Error(
                     String(
                         t"cache_indices must be [batch] or [1, batch], got"
-                        t" leading extent {cache_indices.dim_size(0)}"
+                        t" leading extent"
+                        t" {Int(cache_indices.shape()[0].value())}"
                     )
                 )
         # fp16 can overflow on the unbounded state, so only the two validated
@@ -5069,66 +5126,89 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         comptime assert (
             state_dtype == .float32 or state_dtype == .bfloat16
         ), "ssm_pool must be float32 or bfloat16"
+
+        var y_tt = y.to_tile_tensor[dtype]()
+        var A_tt = A.to_tile_tensor[dtype]()
+        var D_tt = D.to_tile_tensor[dtype]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[dtype]()
+        var ssm_pool_tt = ssm_pool.to_tile_tensor[state_dtype]()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
+        var has_initial_state_tt = has_initial_state.to_tile_tensor[.bool]()
+        var update_state_tt = update_state.to_tile_tensor[.bool]()
+        var xbc_tt = xbc.to_tile_tensor[xbc_dtype]()
+
         # The kernels move each dstate run of the pool as one SIMD access. B
         # and C are fused inputs, so their loads handle any stride.
-        if ssm_pool.strides()[3] != 1:
+        if Int(ssm_pool_tt.layout.stride[3]().value()) != 1:
             raise Error(
                 "the Mamba-2 SSD scan needs a unit stride on the dstate axis"
                 " of ssm_pool"
             )
 
-        var nheads = x.dim_size(1)
-        var head_dim = x.dim_size(2)
-        var ngroups = B.dim_size(1)
-        var batch = query_start_loc.dim_size(0) - 1
-
-        var y_tt = y.to_tile_tensor()
-        var A_tt = A.to_tile_tensor()
-        var D_tt = D.to_tile_tensor()
-        var dt_bias_tt = dt_bias.to_tile_tensor()
-        var ssm_pool_tt = ssm_pool.to_tile_tensor()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor()
-        var has_initial_state_tt = has_initial_state.to_tile_tensor()
-        var update_state_tt = update_state.to_tile_tensor()
+        var nheads = Int(x.shape()[1].value())
+        var head_dim = Int(x.shape()[2].value())
+        var ngroups = Int(B.shape()[1].value())
+        var batch = Int(query_start_loc.shape()[0].value()) - 1
+        var total_len = Int(x.shape()[0].value())
 
         # x, dt, B, C and the slot indices are fused inputs: a slice feeding
         # one is folded into its loads instead of being copied.
         @inline(.always)
         def x_fn[
             width: Int, alignment: Int
-        ](t: Int, h: Int, p: Int) {var x} -> SIMD[dtype, width]:
-            return x._fused_load[width, element_alignment=alignment]((t, h, p))
+        ](t: Int, h: Int, p: Int) {var x_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                x_view.load[width=width, element_alignment=alignment](
+                    Coord(t, h, p)
+                )
+            )
 
         @inline(.always)
         def dt_fn[
             width: Int, alignment: Int
-        ](t: Int, h: Int) {var dt} -> SIMD[dtype, width]:
-            return dt._fused_load[width, element_alignment=alignment]((t, h))
+        ](t: Int, h: Int) {var dt_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                dt_view.load[width=width, element_alignment=alignment](
+                    Coord(t, h)
+                )
+            )
 
         @inline(.always)
         def b_fn[
             width: Int, alignment: Int
-        ](t: Int, g: Int, n: Int) {var B} -> SIMD[dtype, width]:
-            return B._fused_load[width, element_alignment=alignment]((t, g, n))
+        ](t: Int, g: Int, n: Int) {var B_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                B_view.load[width=width, element_alignment=alignment](
+                    Coord(t, g, n)
+                )
+            )
 
         @inline(.always)
         def c_fn[
             width: Int, alignment: Int
-        ](t: Int, g: Int, n: Int) {var C} -> SIMD[dtype, width]:
-            return C._fused_load[width, element_alignment=alignment]((t, g, n))
+        ](t: Int, g: Int, n: Int) {var C_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                C_view.load[width=width, element_alignment=alignment](
+                    Coord(t, g, n)
+                )
+            )
 
         @inline(.always)
         def slot_fn[
             width: Int, alignment: Int
-        ](b: Int) {var cache_indices} -> SIMD[DType.uint32, width]:
-            comptime if cache_indices.rank == 2:
-                return cache_indices._fused_load[
-                    width, element_alignment=alignment
-                ]((0, b))
+        ](b: Int) {var cache_indices_view} -> SIMD[DType.uint32, width]:
+            comptime if cache_indices_rank == 2:
+                return rebind[SIMD[DType.uint32, width]](
+                    cache_indices_view.load[
+                        width=width, element_alignment=alignment
+                    ](Coord(0, b))
+                )
             else:
-                return cache_indices._fused_load[
-                    width, element_alignment=alignment
-                ]((b,))
+                return rebind[SIMD[DType.uint32, width]](
+                    cache_indices_view.load[
+                        width=width, element_alignment=alignment
+                    ](Coord(b))
+                )
 
         @inline(.always)
         def launch[DSTATE: Int]() raises {imm}:
@@ -5209,7 +5289,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 # The staged long-sequence path costs decode registers and
                 # shared memory, so only a launch with a multi-token sequence
                 # uses it.
-                var has_prefill = x.dim_size(0) > batch
+                var has_prefill = total_len > batch
                 # A long prefill takes the chunked algorithm, which turns the
                 # token-serial recurrence into matmuls; see
                 # `state_space.mamba2_ssd_chunked`. On AMD only MI355 has its
@@ -5223,7 +5303,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     )
                 ):
                     if use_chunked_ssd(
-                        x.dim_size(0),
+                        total_len,
                         batch,
                         head_dim,
                         _ssd_chunked_min_tokens(),
@@ -5232,15 +5312,15 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                         # MI355 ones 16 bytes a lane, so they need the rows of
                         # the tensor those slice: the conv output
                         # `[total_len, x | B | C]`, when the caller passes it.
-                        var xbc_ld = xbc.strides()[0]
+                        var xbc_ld = Int(xbc_tt.layout.stride[0]().value())
                         var rows_ok = (
                             xbc_dtype == dtype
-                            and xbc.dim_size(0) == x.dim_size(0)
-                            and xbc.dim_size(1)
+                            and Int(xbc.shape()[0].value()) == total_len
+                            and Int(xbc.shape()[1].value())
                             == nheads * head_dim + 2 * ngroups * DSTATE
-                            and xbc.strides()[1] == 1
+                            and Int(xbc_tt.layout.stride[1]().value()) == 1
                         )
-                        var xbc_addr = Int(xbc.unsafe_ptr())
+                        var xbc_addr = Int(xbc_tt.unsafe_ptr())
                         var b_off = 2 * nheads * head_dim
                         var c_off = 2 * (nheads * head_dim + ngroups * DSTATE)
                         var take = True
@@ -5252,23 +5332,28 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                                 ngroups,
                                 head_dim,
                                 DSTATE,
-                                Int(y.unsafe_ptr()),
+                                Int(y_tt.unsafe_ptr()),
                                 xbc_addr,
                                 xbc_ld,
                                 xbc_addr + b_off,
                                 xbc_addr + c_off,
                                 xbc_ld,
-                                D.strides()[0] if D.dim_size(0) > 0 else 1,
-                                y.strides()[0] == nheads * head_dim
-                                and y.strides()[1] == head_dim
-                                and y.strides()[2] == 1,
+                                Int(D_tt.layout.stride[0]().value()) if Int(
+                                    D.shape()[0].value()
+                                )
+                                > 0 else 1,
+                                Int(y_tt.layout.stride[0]().value())
+                                == nheads * head_dim
+                                and Int(y_tt.layout.stride[1]().value())
+                                == head_dim
+                                and Int(y_tt.layout.stride[2]().value()) == 1,
                             )
                         if take:
                             mamba2_ssd_chunked_fwd_inplace_gpu[
                                 DSTATE, dt_softplus=Self.dt_softplus
                             ](
                                 ctx,
-                                x.dim_size(0),
+                                total_len,
                                 batch,
                                 ngroups,
                                 A_tt,
@@ -5360,7 +5445,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                             attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
 
-        var dstate = B.dim_size(2)
+        var dstate = Int(B.shape()[2].value())
         match dstate:
             case 16:
                 launch[16]()
@@ -5506,32 +5591,50 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        conv_dtype: DType,
-        state_dtype: DType,
+        Layers: TypeList[Trait=Input & Tensor, ...],
+        //,
         target: StaticString,
     ](
-        conv_pool: MutableInputTensor[dtype=conv_dtype, rank=3, ...],
-        ssm_pool: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
-        ssm_rows: InputTensor[dtype=.uint32, rank=2, ...],
-        replay_bounds: InputTensor[dtype=.int32, rank=1, ...],
-        layers: InputVariadicTensors[dtype=dtype, rank=2, ...],
+        conv_pool: Some[MutableInput & Tensor],
+        ssm_pool: Some[MutableInput & Tensor],
+        conv_rows: Some[Input & Tensor],
+        ssm_rows: Some[Input & Tensor],
+        replay_bounds: Some[Input & Tensor],
+        layers: TensorTuple[*Layers],
         ctx: DeviceContext,
     ) raises:
         comptime if not is_gpu[target]():
             raise Error("mamba2_replay_fold runs on GPUs only")
         else:
+            comptime assert conforms_to(type_of(conv_pool), TileTensorable)
+            comptime assert conforms_to(type_of(ssm_pool), TileTensorable)
+            comptime assert conforms_to(type_of(conv_rows), TileTensorable)
+            comptime assert conforms_to(type_of(ssm_rows), TileTensorable)
+            comptime assert conforms_to(type_of(replay_bounds), TileTensorable)
+            comptime dtype = Layers[0].dtype
+            comptime conv_dtype = type_of(conv_pool).dtype
+            comptime state_dtype = type_of(ssm_pool).dtype
+            comptime assert type_of(conv_pool).rank == 3
+            comptime assert type_of(ssm_pool).rank == 4
+            comptime assert type_of(conv_rows).dtype == .uint32
+            comptime assert type_of(ssm_rows).dtype == .uint32
+            comptime assert type_of(replay_bounds).dtype == .int32
+            comptime assert type_of(conv_rows).rank == 2
+            comptime assert type_of(ssm_rows).rank == 2
+            comptime assert type_of(replay_bounds).rank == 1
             comptime assert (
-                layers.size % 4 == 0
+                len(Layers) % 4 == 0
             ), "layers holds four tensors per layer"
-            comptime NUM_LAYERS = layers.size // 4
+            comptime NUM_LAYERS = len(Layers) // 4
             comptime assert (
                 state_dtype == .float32 or state_dtype == .bfloat16
             ), "ssm_pool must be float32 or bfloat16"
+            comptime for i in range(len(Layers)):
+                comptime assert Layers[i].rank == 2
+                comptime assert Layers[i].dtype == dtype
             if (
-                conv_rows.dim_size(0) != NUM_LAYERS
-                or ssm_rows.dim_size(0) != NUM_LAYERS
+                Int(conv_rows.shape()[0].value()) != NUM_LAYERS
+                or Int(ssm_rows.shape()[0].value()) != NUM_LAYERS
             ):
                 raise Error(
                     String(
@@ -5539,19 +5642,32 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
                         t"{NUM_LAYERS}"
                     )
                 )
+            var conv_pool_tt = conv_pool.to_tile_tensor[conv_dtype]()
+            var ssm_pool_tt = ssm_pool.to_tile_tensor[state_dtype]()
             # Each thread moves its dstate lanes of the pool as one vector.
-            if ssm_pool.strides()[3] != 1:
+            if Int(ssm_pool_tt.layout.stride[3]().value()) != 1:
                 raise Error(
                     "the replay fold needs a unit stride on the dstate axis"
                     " of ssm_pool"
                 )
-            var nheads = ssm_pool.dim_size(1)
-            var head_dim = ssm_pool.dim_size(2)
-            var dstate = ssm_pool.dim_size(3)
-            var conv_dim = conv_pool.dim_size(1)
+            var nheads = Int(ssm_pool.shape()[1].value())
+            var head_dim = Int(ssm_pool.shape()[2].value())
+            var dstate = Int(ssm_pool.shape()[3].value())
+            var conv_dim = Int(conv_pool.shape()[1].value())
             var ngroups = (conv_dim - nheads * head_dim) // (2 * dstate)
-            var projected_stride = layers[0].strides()[0]
-            var convolved_stride = layers[NUM_LAYERS].strides()[0]
+            comptime assert conforms_to(type_of(layers[0]), TileTensorable)
+            comptime assert conforms_to(
+                type_of(layers[NUM_LAYERS]), TileTensorable
+            )
+            var projected_stride = Int(
+                layers[0].to_tile_tensor[dtype]().layout.stride[0]().value()
+            )
+            var convolved_stride = Int(
+                layers[NUM_LAYERS]
+                .to_tile_tensor[dtype]()
+                .layout.stride[0]()
+                .value()
+            )
 
             comptime Ptr = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
             var projected = StaticTuple[Ptr, NUM_LAYERS]()
@@ -5559,49 +5675,58 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
             var A = StaticTuple[Ptr, NUM_LAYERS]()
             var dt_bias = StaticTuple[Ptr, NUM_LAYERS]()
             comptime for i in range(NUM_LAYERS):
+                comptime assert conforms_to(type_of(layers[i]), TileTensorable)
+                comptime assert conforms_to(
+                    type_of(layers[NUM_LAYERS + i]), TileTensorable
+                )
+                comptime assert conforms_to(
+                    type_of(layers[2 * NUM_LAYERS + i]), TileTensorable
+                )
+                comptime assert conforms_to(
+                    type_of(layers[3 * NUM_LAYERS + i]), TileTensorable
+                )
+                var projected_tt = layers[i].to_tile_tensor[dtype]().as_imm()
+                var convolved_tt = (
+                    layers[NUM_LAYERS + i].to_tile_tensor[dtype]().as_imm()
+                )
                 if (
-                    layers[i].dim_size(1)
+                    Int(layers[i].shape()[1].value())
                     != nheads * head_dim + conv_dim + nheads
-                    or layers[i].strides()[0] != projected_stride
-                    or layers[i].strides()[1] != 1
+                    or Int(projected_tt.layout.stride[0]().value())
+                    != projected_stride
+                    or Int(projected_tt.layout.stride[1]().value()) != 1
                 ):
                     raise Error(
                         "every in_proj tensor must be (rows, intermediate +"
                         " conv_dim + nheads) with one row stride"
                     )
                 if (
-                    layers[NUM_LAYERS + i].dim_size(1) != conv_dim
-                    or layers[NUM_LAYERS + i].strides()[0] != convolved_stride
-                    or layers[NUM_LAYERS + i].strides()[1] != 1
+                    Int(layers[NUM_LAYERS + i].shape()[1].value()) != conv_dim
+                    or Int(convolved_tt.layout.stride[0]().value())
+                    != convolved_stride
+                    or Int(convolved_tt.layout.stride[1]().value()) != 1
                 ):
                     raise Error(
                         "every conv output must be (rows, conv_dim) with one"
                         " row stride"
                     )
-                comptime for k in range(2, 4):
-                    if (
-                        layers[k * NUM_LAYERS + i].dim_size(1) != nheads
-                        or layers[k * NUM_LAYERS + i].strides()[1] != 1
-                    ):
-                        raise Error("A and dt_bias must be (1, nheads)")
-                projected[i] = rebind[Ptr](
-                    layers[i].to_tile_tensor[.int64]().as_imm().ptr
+                var A_tt = (
+                    layers[2 * NUM_LAYERS + i].to_tile_tensor[dtype]().as_imm()
                 )
-                convolved[i] = rebind[Ptr](
-                    layers[NUM_LAYERS + i].to_tile_tensor[.int64]().as_imm().ptr
+                var dt_bias_tt = (
+                    layers[3 * NUM_LAYERS + i].to_tile_tensor[dtype]().as_imm()
                 )
-                A[i] = rebind[Ptr](
-                    layers[2 * NUM_LAYERS + i]
-                    .to_tile_tensor[.int64]()
-                    .as_imm()
-                    .ptr
-                )
-                dt_bias[i] = rebind[Ptr](
-                    layers[3 * NUM_LAYERS + i]
-                    .to_tile_tensor[.int64]()
-                    .as_imm()
-                    .ptr
-                )
+                if (
+                    Int(A_tt.dim[1]()) != nheads
+                    or Int(A_tt.layout.stride[1]().value()) != 1
+                    or Int(dt_bias_tt.dim[1]()) != nheads
+                    or Int(dt_bias_tt.layout.stride[1]().value()) != 1
+                ):
+                    raise Error("A and dt_bias must be (1, nheads)")
+                projected[i] = projected_tt.unsafe_ptr().as_unsafe_any_origin()
+                convolved[i] = convolved_tt.unsafe_ptr().as_unsafe_any_origin()
+                A[i] = A_tt.unsafe_ptr().as_unsafe_any_origin()
+                dt_bias[i] = dt_bias_tt.unsafe_ptr().as_unsafe_any_origin()
 
             mamba2_replay_fold_launch[dt_softplus=Self.dt_softplus](
                 projected,
@@ -5611,11 +5736,11 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
                 projected_stride,
                 convolved_stride,
                 ngroups,
-                conv_pool.to_tile_tensor(),
-                ssm_pool.to_tile_tensor(),
-                conv_rows.to_tile_tensor(),
-                ssm_rows.to_tile_tensor(),
-                replay_bounds.to_tile_tensor(),
+                conv_pool_tt,
+                ssm_pool_tt,
+                conv_rows.to_tile_tensor[.uint32](),
+                ssm_rows.to_tile_tensor[.uint32](),
+                replay_bounds.to_tile_tensor[.int32](),
                 ctx,
             )
 
@@ -5660,76 +5785,114 @@ struct CausalConv1DVarlenFwd[
 
     @staticmethod
     def execute[
-        dtype: DType,
-        conv_states_dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        x: FusedInputTensor[dtype=dtype, rank=2, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
+        output: Some[Output & Tensor],
+        x: Some[Input & Fused & LoadAccess],
+        weight: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
         # The caller owns this pool and the kernel writes it in place.
-        conv_states: MutableInputTensor[dtype=conv_states_dtype, rank=3, ...],
-        query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
-        cache_indices: FusedInputTensor[dtype=.uint32, ...],
-        has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
-        update_state: InputTensor[dtype=.bool, rank=1, ...],
+        conv_states: Some[MutableInput & Tensor],
+        query_start_loc: Some[Input & Tensor],
+        cache_indices: Some[Input & Fused & LoadAccess],
+        has_initial_state: Some[Input & Tensor],
+        update_state: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime if cache_indices.rank == 2:
-            if cache_indices.dim_size(0) != 1:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        comptime assert conforms_to(type_of(conv_states), TileTensorable)
+        comptime assert conforms_to(type_of(query_start_loc), TileTensorable)
+        comptime assert conforms_to(type_of(has_initial_state), TileTensorable)
+        comptime assert conforms_to(type_of(update_state), TileTensorable)
+        comptime dtype = type_of(x).dtype
+        comptime conv_states_dtype = type_of(conv_states).dtype
+        comptime cache_indices_rank = type_of(cache_indices).rank
+        comptime assert type_of(output).dtype == dtype
+        comptime assert type_of(weight).dtype == dtype
+        comptime assert type_of(bias).dtype == dtype
+        comptime assert type_of(query_start_loc).dtype == .int32
+        comptime assert type_of(cache_indices).dtype == .uint32
+        comptime assert type_of(has_initial_state).dtype == .bool
+        comptime assert type_of(update_state).dtype == .bool
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(x).rank == 2
+        comptime assert type_of(weight).rank == 2
+        comptime assert type_of(bias).rank == 1
+        comptime assert type_of(conv_states).rank == 3
+        comptime assert type_of(query_start_loc).rank == 1
+        comptime assert type_of(has_initial_state).rank == 1
+        comptime assert type_of(update_state).rank == 1
+
+        comptime assert conforms_to(type_of(x), UnsafeFusedView)
+        var x_view = unsafe_fused_view(x)
+        comptime assert conforms_to(type_of(x_view), Loadable)
+        comptime assert conforms_to(type_of(cache_indices), UnsafeFusedView)
+        var cache_indices_view = unsafe_fused_view(cache_indices)
+        comptime assert conforms_to(type_of(cache_indices_view), Loadable)
+
+        comptime if cache_indices_rank == 2:
+            if Int(cache_indices.shape()[0].value()) != 1:
                 raise Error(
                     String(
                         t"cache_indices must be [batch] or [1, batch], got"
-                        t" leading extent {cache_indices.dim_size(0)}"
+                        t" leading extent"
+                        t" {Int(cache_indices.shape()[0].value())}"
                     )
                 )
         comptime silu_activation = Self.activation == "silu"
 
-        var output_tt = output.to_tile_tensor()
-        var weight_tt = weight.to_tile_tensor()
-        var bias_tt = bias.to_tile_tensor()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor()
-        var has_initial_state_tt = has_initial_state.to_tile_tensor()
-        var update_state_tt = update_state.to_tile_tensor()
-        var conv_states_tt = conv_states.to_tile_tensor()
+        var output_tt = output.to_tile_tensor[dtype]()
+        var weight_tt = weight.to_tile_tensor[dtype]()
+        var bias_tt = bias.to_tile_tensor[dtype]()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
+        var has_initial_state_tt = has_initial_state.to_tile_tensor[.bool]()
+        var update_state_tt = update_state.to_tile_tensor[.bool]()
+        var conv_states_tt = conv_states.to_tile_tensor[conv_states_dtype]()
 
         # x and the slot indices are fused inputs: a slice feeding one is
         # folded into its loads instead of being copied.
         @inline(.always)
         def x_fn[
             width: Int, _alignment: Int
-        ](i: Int, j: Int) {var x} -> SIMD[dtype, width]:
+        ](i: Int, j: Int) {var x_view} -> SIMD[dtype, width]:
             # A fused load applies its slice offset inside the functor. The
             # slice pointer is the backing base, so a wide load can be
             # misaligned even when that base is not. Read one element at a
             # time; bias, SiLU and the store can still be vectors.
             var v = SIMD[dtype, width]()
             comptime for c in range(width):
-                v[c] = x._fused_load[1, element_alignment=1]((i, j + c))
+                v[c] = rebind[Scalar[dtype]](
+                    x_view.load[width=1, element_alignment=1](Coord(i, j + c))
+                )
             return v
 
         # An empty `cache_indices` maps sequence `b` to slot `b`.
         var has_cache_indices = (
-            cache_indices.dim_size(cache_indices.rank - 1) > 0
+            Int(cache_indices.shape()[cache_indices_rank - 1].value()) > 0
         )
 
         @inline(.always)
         def slot_fn[
             width: Int, alignment: Int
-        ](b: Int) {var cache_indices, var has_cache_indices} -> SIMD[
+        ](b: Int) {var cache_indices_view, var has_cache_indices} -> SIMD[
             DType.uint32, width
         ]:
             if not has_cache_indices:
                 return SIMD[DType.uint32, width](UInt32(b))
-            comptime if cache_indices.rank == 2:
-                return cache_indices._fused_load[
-                    width, element_alignment=alignment
-                ]((0, b))
+            comptime if cache_indices_rank == 2:
+                return rebind[SIMD[DType.uint32, width]](
+                    cache_indices_view.load[
+                        width=width, element_alignment=alignment
+                    ](Coord(0, b))
+                )
             else:
-                return cache_indices._fused_load[
-                    width, element_alignment=alignment
-                ]((b,))
+                return rebind[SIMD[DType.uint32, width]](
+                    cache_indices_view.load[
+                        width=width, element_alignment=alignment
+                    ](Coord(b))
+                )
 
         comptime if is_cpu[target]():
             causal_conv1d_varlen_fwd_cpu[
@@ -5776,7 +5939,7 @@ struct CausalConv1DVarlenFwd[
                     x_vector_loads=False,
                 )
 
-            match weight.dim_size(1):
+            match Int(weight.shape()[1].value()):
                 case 1:
                     launch_gpu[1]()
                 case 2:
@@ -6036,26 +6199,48 @@ struct StateSpaceCopyRows:
 
     @staticmethod
     def execute[
-        dtype: DType, rank: Int, target: StaticString
+        target: StaticString
     ](
-        dst: MutableInputTensor[dtype=dtype, rank=rank, ...],
-        src: MutableInputTensor[dtype=dtype, rank=rank, ...],
-        dst_rows: InputTensor[dtype=.uint32, rank=2, ...],
-        src_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        dst: Some[MutableInput & Tensor],
+        src: Some[MutableInput & Tensor],
+        dst_rows: Some[Input & Tensor],
+        src_rows: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         from max.gpu import global_idx
 
-        if dst_rows.dim_size(0) != src_rows.dim_size(0) or (
-            dst_rows.dim_size(1) != src_rows.dim_size(1)
+        comptime assert conforms_to(type_of(dst), TileTensorable)
+        comptime assert conforms_to(type_of(src), TileTensorable)
+        comptime assert conforms_to(type_of(dst_rows), TileTensorable)
+        comptime assert conforms_to(type_of(src_rows), TileTensorable)
+        comptime dtype = type_of(dst).dtype
+        comptime rank = type_of(dst).rank
+        comptime assert type_of(src).dtype == dtype
+        comptime assert type_of(src).rank == rank
+        comptime assert type_of(dst_rows).dtype == .uint32
+        comptime assert type_of(src_rows).dtype == .uint32
+        comptime assert type_of(dst_rows).rank == 2
+        comptime assert type_of(src_rows).rank == 2
+
+        var dst_rows_tt = dst_rows.to_tile_tensor[.uint32]().as_imm()
+        var src_rows_tt = src_rows.to_tile_tensor[.uint32]().as_imm()
+        var dst_tt = dst.to_tile_tensor[dtype]()
+        # `src` is only read. Its tensor stays mutable to order the
+        # snapshot in the graph.
+        var src_tt = src.to_tile_tensor[dtype]().as_imm()
+
+        if Int(dst_rows.shape()[0].value()) != Int(
+            src_rows.shape()[0].value()
+        ) or (
+            Int(dst_rows.shape()[1].value()) != Int(src_rows.shape()[1].value())
         ):
             raise Error("state_space_copy_rows: row tables must match")
         var row_size = 1
         comptime for axis in range(1, rank):
-            if dst.dim_size(axis) != src.dim_size(axis):
+            if Int(dst.shape()[axis].value()) != Int(src.shape()[axis].value()):
                 raise Error("state_space_copy_rows: row shapes must match")
-            row_size *= src.dim_size(axis)
-        var rows = src_rows.size()
+            row_size *= Int(src.shape()[axis].value())
+        var rows = Int(src_rows.shape().product())
         if rows == 0:
             return
 
@@ -6078,12 +6263,10 @@ struct StateSpaceCopyRows:
 
         comptime if is_gpu[target]():
             ctx.enqueue_function[copy_rows_kernel](
-                dst.to_tile_tensor().unsafe_ptr(),
-                # `src` is only read. Its tensor stays mutable to order the
-                # snapshot in the graph.
-                src.to_tile_tensor().unsafe_ptr().as_imm(),
-                dst_rows.unsafe_ptr(),
-                src_rows.unsafe_ptr(),
+                dst_tt.unsafe_ptr(),
+                src_tt.unsafe_ptr(),
+                dst_rows_tt.unsafe_ptr(),
+                src_rows_tt.unsafe_ptr(),
                 Int64(rows),
                 Int64(row_size),
                 grid_dim=(ceildiv(rows * row_size, 256),),
@@ -6091,12 +6274,12 @@ struct StateSpaceCopyRows:
             )
         else:
             for row in range(rows):
-                var dst_row = Int(dst_rows.unsafe_ptr()[row])
-                var src_row = Int(src_rows.unsafe_ptr()[row])
+                var dst_row = Int(dst_rows_tt.unsafe_ptr()[row])
+                var src_row = Int(src_rows_tt.unsafe_ptr()[row])
                 for col in range(row_size):
-                    dst.unsafe_ptr()[
+                    dst_tt.unsafe_ptr()[
                         dst_row * row_size + col
-                    ] = src.unsafe_ptr()[src_row * row_size + col]
+                    ] = src_tt.unsafe_ptr()[src_row * row_size + col]
 
 
 @extensibility.register("mo.inplace_memcpy")
@@ -6123,35 +6306,43 @@ struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
     @staticmethod
     def execute[
         target: StaticString,
-        dtype: DType,
-        rank: Int,
     ](
-        dst: MutableInputTensor[dtype=dtype, rank=rank, ...],
-        src: InputTensor[dtype=dtype, rank=rank, ...],
+        dst: Some[MutableInput & Tensor],
+        src: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var count = dst.size()
+        comptime assert conforms_to(type_of(dst), TileTensorable)
+        comptime assert conforms_to(type_of(src), TileTensorable)
+        comptime dtype = type_of(dst).dtype
+        comptime assert type_of(src).dtype == dtype
+        comptime assert type_of(src).rank == type_of(dst).rank
+
+        var count = Int(dst.shape().product())
+        var dst_ptr = dst.to_tile_tensor[dtype]().unsafe_ptr()
+        var src_ptr = src.to_tile_tensor[dtype]().as_imm().unsafe_ptr()
         comptime if is_gpu[Self.DstDevice]() and is_gpu[Self.SrcDevice]():
             # Same-GPU async memcpy.
-            ctx.enqueue_copy[dtype](dst.unsafe_ptr(), src.unsafe_ptr(), count)
+            ctx.enqueue_copy[dtype](dst_ptr, src_ptr, count)
         elif is_gpu[Self.DstDevice]() and is_cpu[Self.SrcDevice]():
             # Host-to-device async memcpy. Wrap the GPU dst pointer as a
             # non-owning `DeviceBuffer` so the typed overload is selected.
             ctx.enqueue_copy[dtype](
-                dst.to_device_buffer(ctx),
-                src.unsafe_ptr(),
+                DeviceBuffer[dtype](ctx, dst_ptr, count, owning=False) if count
+                > 0 else DeviceBuffer[dtype].empty(ctx),
+                src_ptr,
             )
         elif is_cpu[Self.DstDevice]() and is_gpu[Self.SrcDevice]():
             # Device-to-host async memcpy.
             ctx.enqueue_copy[dtype](
-                dst.unsafe_ptr(),
-                src.to_device_buffer(ctx),
+                dst_ptr,
+                DeviceBuffer[dtype](ctx, src_ptr, count, owning=False) if count
+                > 0 else DeviceBuffer[dtype].empty(ctx),
             )
         elif is_cpu[Self.DstDevice]() and is_cpu[Self.SrcDevice]():
             # Host-to-host. Plain synchronous memcpy.
             unsafe_memcpy(
-                dest=dst.unsafe_ptr(),
-                src=src.unsafe_ptr(),
+                dest=dst_ptr,
+                src=src_ptr,
                 count=count,
             )
         else:
