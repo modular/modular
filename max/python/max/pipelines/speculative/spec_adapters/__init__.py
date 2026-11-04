@@ -109,6 +109,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "LlamaForCausalLM": ".llama3.spec_adapters",
     "MiMoV2ForCausalLM": ".mimo_v2.spec_adapters",
     "MiMoV2ForCausalLM_ModuleV3": ".mimo_v2_modulev3.spec_adapters",
+    "MuseSparkForConditionalGeneration_ModuleV3": ".muse_spark.spec_adapters",
     "NemotronHForCausalLM": ".nemotron_h_modulev3.spec_adapters",
     "Qwen3_5ForCausalLM": ".qwen3_5.spec_adapters",
     "Qwen3_5ForConditionalGeneration": ".qwen3_5.spec_adapters",

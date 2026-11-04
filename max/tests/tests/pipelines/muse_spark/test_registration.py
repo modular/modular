@@ -16,12 +16,14 @@ from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
 from max.graph.weights import Weights
+from max.pipelines.architectures.muse_spark.arch import muse_spark_arch
 from max.pipelines.architectures.muse_spark.model_config import MuseSparkConfig
 from max.pipelines.architectures.muse_spark.modules import MuseSparkDecoder
 from max.pipelines.architectures.muse_spark.weight_adapters import (
     convert_registered_state_dict,
 )
 from max.pipelines.lib.role_contracts import DecoderInputs, VisionInputs
+from max.pipelines.speculative import spec_adapters
 
 
 @pytest.mark.parametrize("ep_buffers", [None, ("counters", "pointers")])
@@ -72,6 +74,11 @@ def test_registered_weights_adapt_both_roles_without_cross_contamination() -> (
         "decoder.language_model.embed_tokens.weight": "language",
         "vision.vision_tower.patch_embedder.position_embedding_table": "vision",
     }
+
+
+def test_spec_decoding_holds_a_call_for_the_registered_target() -> None:
+    # A registered decoder verifies drafts only under its exact arch name.
+    assert spec_adapters.has_adapter(muse_spark_arch.name)
 
 
 def test_exports_carry_the_ep_init_graph() -> None:

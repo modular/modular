@@ -49,4 +49,6 @@ muse_spark_arch = SupportedArchitecture(
     memory_planner=MuseSparkMemoryPlanner,
     supports_overlap_scheduler=True,
     supports_device_graph_capture=False,
+    # The name Mach finds the fused DSpark graph by.
+    spec_decode_graph_names={"dspark": "UnifiedDSparkMuseSparkModule"},
 )

@@ -954,7 +954,8 @@ class _Inputs(UnifiedSpecDecodeInputs):
     batch_context_lengths: list[Buffer] = field(default_factory=list)
     """Each device's context length, under a distributed signature."""
     ep_inputs: tuple[Buffer, ...] = ()
-    """Expert parallelism's buffers, under a distributed signature."""
+    """Expert parallelism's buffers: beside the distributed inputs, or past
+    the tail of a signature that isn't distributed."""
     trailing: list[Buffer] = field(default_factory=list)
     """Host inputs the target's call takes past the canonical tail."""
     replay_trailing: list[Buffer] = field(default_factory=list)
@@ -1016,6 +1017,7 @@ class _Inputs(UnifiedSpecDecodeInputs):
             *self._spec_decode_tail_buffers(
                 include_in_thinking_phase=spec.include_in_thinking_phase,
             ),
+            *(() if spec.distributed else self.ep_inputs),
             *self.trailing,
             *self.replay_trailing,
         )
@@ -1055,6 +1057,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._prepares_batches = _encodes_in_batching(
             target, draft
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
+        self._ep_comm_initializer: EPCommInitializer | None = None
 
     @property
     def _target_prepares_inputs(self) -> bool:
@@ -1080,8 +1083,9 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         """Hands expert parallelism's buffers to the target's batching.
 
         Only a target whose batching takes them, as the pipeline model's own
-        wiring does.
+        wiring does. A signature that isn't distributed takes them from here.
         """
+        self._ep_comm_initializer = initializer
         bind = getattr(self._target_batching, "bind_ep_comm_initializer", None)
         if bind is not None:
             bind(initializer)
@@ -1173,6 +1177,9 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             [ctx for batch in replica_batches for ctx in batch],
             self.runtime.devices,
         )
+        initializer = self._ep_comm_initializer
+        if initializer is not None and not config.input_spec.distributed:
+            inputs.ep_inputs = tuple(initializer.model_inputs())
         if config.input_spec.enable_vision and not self._takes_images:
             embeddings, indices = self._no_images
             inputs.vision_embeddings = embeddings

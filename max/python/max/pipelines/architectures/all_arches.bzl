@@ -28,6 +28,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/dspark_deepseekV41_modulev3",
     "//max/python/max/pipelines/architectures/dspark_draft",
     "//max/python/max/pipelines/architectures/dspark_gemma4",
+    "//max/python/max/pipelines/architectures/dspark_muse_spark",
     "//max/python/max/pipelines/architectures/dspark_qwen3",
     "//max/python/max/pipelines/architectures/eagle3_deepseekV3",
     "//max/python/max/pipelines/architectures/eagle_llama3",

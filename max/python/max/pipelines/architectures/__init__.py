@@ -398,6 +398,11 @@ def register_all_models() -> None:
             ".muse_spark",
             "muse_spark_arch",
         ),
+        _LazyArch(
+            "MuseSparkDSparkModel",
+            ".dspark_muse_spark",
+            "muse_spark_dspark_draft_arch",
+        ),
         _LazyArch("OlmoForCausalLM", ".olmo", "olmo_arch"),
         _LazyArch("Olmo2ForCausalLM", ".olmo2", "olmo2_arch"),
         _LazyArch(

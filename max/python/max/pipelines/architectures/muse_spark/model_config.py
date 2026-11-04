@@ -42,6 +42,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithVisionCache,
     ModelOutputConfig,
 )
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.registration_runtime import (
     ExpertParallelDeploymentConfig,
     ModuleRuntime,
@@ -390,6 +391,8 @@ class MuseSparkConfig(
     vision_config: MuseGlimmerVisionConfig
     quantization_encoding: SupportedEncoding | None = None
     mesh: DeviceMesh | None = None
+    target_layer_ids: tuple[int, ...] = ()
+    """The layers whose outputs a drafter reads, as a speculative target."""
     ep: EPConfig | None = None
     """The NVFP4 experts' exchange, under expert parallelism."""
 
@@ -404,6 +407,10 @@ class MuseSparkConfig(
         GraphRole.DECODER: "decoder.",
         GraphRole.VISION: "vision.",
     }
+
+    def apply_model_load_context(self, context: ModelLoadContext) -> Self:
+        """Keeps the layers a drafter taps, when built as its target."""
+        return replace(self, target_layer_ids=tuple(context.target_layer_ids))
 
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
         """Sizes the exchange for BF16 tokens, the larger of both formats.
