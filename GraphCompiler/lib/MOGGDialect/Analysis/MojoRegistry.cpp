@@ -159,25 +159,6 @@ static int deviceInfoSpecificity(DeviceInfoAttr infos) {
          !infos.getArch().empty() + !infos.getModel().empty();
 }
 
-// Whether the kernel's `execute` (or `execute_device`, for a declarative
-// kernel) declares a tile-based fused output (_FusedComputeOutputTileTensor or
-// _FusedOutputTileTensor), which only lowers on a tile_based_fusion device.
-// Transitional, remove per GEX-3941.
-static bool kernelDeclaresTileOutput(KernelDeclOp decl) {
-  KernelDeclAdaptor adaptor(decl);
-  if (!adaptor.executeFunction.has_value())
-    return false;
-  for (const auto &arg : adaptor.executeFunction->outputArguments) {
-    const auto *tensorArg =
-        std::get_if<KernelDeclTensorAdaptor>(&arg.underlyingType);
-    if (tensorArg &&
-        (tensorArg->ioSpec == IOSpec::FusedComputeOutputTileTensor ||
-         tensorArg->ioSpec == IOSpec::FusedOutputTileTensor))
-      return true;
-  }
-  return false;
-}
-
 // The order candidates win in, compared lexicographically: a user-defined
 // kernel beats a built-in one, then more matching device fields beat fewer.
 static std::tuple<bool, int> resolutionRank(KernelDeclOp decl) {

@@ -91,13 +91,16 @@ bool dependsOnNoAliasConstantLikesOnly(mlir::Operation *operation) {
               .wasInterrupted();
 }
 
-bool isTileCodegenForOp(mlir::Operation *op, mlir::ModuleOp moduleOp) {
-  auto kernelStubOp = op->getParentOfType<MOGG::FuncOp>();
-  StringRef deviceLabel = kernelStubOp
-                              ? kernelStubOp.getDevice()
-                              : MO::getDeviceOrDefaultAny(op).getLabel();
-  auto deviceRef = M::DeviceRefAttr::get(op->getContext(), deviceLabel, 0);
-  return MO::DeviceInfoMapping(moduleOp).get(deviceRef).getTileBasedFusion();
+bool kernelDeclaresTileOutput(KernelDeclOp decl) {
+  KernelDeclAdaptor adaptor(decl);
+  if (!adaptor.executeFunction.has_value())
+    return false;
+  return llvm::any_of(
+      adaptor.executeFunction->outputArguments, [](const auto &arg) {
+        const auto *tensorArg =
+            std::get_if<KernelDeclTensorAdaptor>(&arg.underlyingType);
+        return tensorArg && isTileFusedOutputIOSpec(tensorArg->ioSpec);
+      });
 }
 
 } // namespace M::MOGG

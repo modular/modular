@@ -1215,6 +1215,7 @@ def MOGG_TensorCreateEpilogueOp : MOGG_Op<"tensor.create.epilogue", [
 }
 
 def MOGG_TileCreateEpilogueOp : MOGG_Op<"tile.create.epilogue", [
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
   NoTerminator,
   DeclareOpInterfaceMethods<MOGG_FusedEpilogueInterface>,
@@ -1657,6 +1658,7 @@ def MOGG_CallForeachOp : MOGG_Op<"call.foreach", [
 }
 
 def MOGG_CallForeachTileOp : MOGG_Op<"call.foreach.tile", [
+  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
   MOGG_CallLike,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
   NoTerminator,

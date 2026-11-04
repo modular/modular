@@ -618,7 +618,7 @@ def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
 def MAP_ConstantScalarOp : MAP_Op<"constant.scalar", [
   ConstantLike,
   Pure,
-  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface, ["lowerToMOGGTile"]>,
 ]> {
   let summary = "A compile-time scalar constant, as a value not a tensor";
   let description = [{
@@ -654,7 +654,7 @@ def MAP_LoadOp : MAP_Op<"load", [
                  "::M::MAP::IndexType::get($_self.getContext(), "
                  "::M::MO::castFromTensorLike($_self).getRank())">,
   Pure,
-  DeclareOpInterfaceMethods<LowerableToMOGGInterface>
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface, ["lowerToMOGGTile"]>
 ]> {
   let summary = "Load a value from a tensor at an N-D index";
   let description = [{
@@ -687,7 +687,7 @@ def MAP_StoreOp : MAP_Op<"store", [
                  "tensor", "index",
                  "::M::MAP::IndexType::get($_self.getContext(), "
                  "::M::MO::castFromTensorLike($_self).getRank())">,
-  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface, ["lowerToMOGGTile"]>,
 ]> {
   let summary = "Store a value into a tensor (or buffer) at an N-D index";
   let description = [{
@@ -713,7 +713,7 @@ def MAP_StoreOp : MAP_Op<"store", [
 
 def MAP_CallElementwiseOp : MAP_Op<"call.elementwise", [
   Pure,
-  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface, ["lowerToMOGGTile"]>,
   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
 ]> {
   let summary = "Call a named pointwise kernel on the current index and scalar arguments";

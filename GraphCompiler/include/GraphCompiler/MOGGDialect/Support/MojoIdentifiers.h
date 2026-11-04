@@ -261,7 +261,7 @@ constexpr llvm::StringLiteral kStructSIMD = "SIMD";
 constexpr llvm::StringLiteral kStructTileTensor = "layout.TileTensor";
 constexpr llvm::StringLiteral kStructTensorLayout = "layout.TensorLayout";
 constexpr llvm::StringLiteral kStructTileCopier = "layout.tile_io.TileCopier";
-constexpr llvm::StringLiteral kStructTileLayout = "layout.tile_layout.Layout";
+constexpr llvm::StringLiteral kStructTileLayout = "layout.MixedLayout";
 constexpr llvm::StringLiteral kStructMoggOutputStoreFusionTensor =
     "_MoggOutputStoreFusionTensor";
 constexpr llvm::StringLiteral kStructStateContext =
@@ -287,6 +287,10 @@ constexpr llvm::StringLiteral kStructStableVariadicTensors =
     "extensibility.StableVariadicTensors";
 constexpr llvm::StringLiteral kStructTensorTuple = "extensibility.TensorTuple";
 constexpr llvm::StringLiteral kStructStaticString = "StaticString";
+constexpr llvm::StringLiteral kStructMsNoComputeFusionTile =
+    "managed_tensor_slice._NoComputeFusionTile";
+constexpr llvm::StringLiteral kStructMsNoOutputFusionTile =
+    "managed_tensor_slice._NoOutputFusionTile";
 constexpr llvm::StringLiteral kStructMsFusionPack =
     "managed_tensor_slice._FusionPack";
 constexpr llvm::StringLiteral kStructMsFusedInputVariadicTensors =
@@ -655,6 +659,12 @@ public:
   MojoValue shape() const { return value.get(kShape)(); }
   MojoValue strides() const { return value.get(kStrides)(); }
   MojoValue toTileTensor() const { return value.get(kToTileTensor)(); }
+  MojoValue bindToFusedComputeOutputTile() const {
+    return value.get(kBindToFusedComputeOutputTile);
+  }
+  MojoValue bindToFusedOutputTile() const {
+    return value.get(kBindToFusedOutputTile);
+  }
 
   /// Return the uncalled method handle.
   MojoValue bindToFusedInput() const { return value.get(kBindToFusedInput); }

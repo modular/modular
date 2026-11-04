@@ -3846,12 +3846,29 @@ static bool isPassThroughEpilogueBody(Block &body) {
          store.getTensor() == body.getArgument(kStoreTargetArg);
 }
 
+/// The tile counterpart of `isPassThroughEpilogueBody`.
+static bool isPassThroughTileBody(Block &body) {
+  constexpr unsigned kValueArg = 0;
+  constexpr unsigned kCoordArg = 1;
+  constexpr unsigned kStoreTargetArg = 2;
+  if (!llvm::hasSingleElement(body))
+    return false;
+  Value value = body.getArgument(kValueArg);
+  if (auto yield = dyn_cast<YieldOp>(body.front()))
+    return yield.getNumOperands() == 1 && yield.getOperand(0) == value;
+  auto store = dyn_cast<TileStoreOp>(body.front());
+  return store && store.getValue() == value &&
+         store.getCoord() == body.getArgument(kCoordArg) &&
+         body.getNumArguments() > kStoreTargetArg &&
+         store.getTensor() == body.getArgument(kStoreTargetArg);
+}
+
 bool TensorCreateEpilogueOp::recomputesValue() {
   return !isPassThroughEpilogueBody(getBody().front());
 }
 
 bool TileCreateEpilogueOp::recomputesValue() {
-  return !isPassThroughEpilogueBody(getBody().front());
+  return !isPassThroughTileBody(getBody().front());
 }
 
 /// Whether `value` is one of `body`'s capture arguments, which start at
@@ -3863,14 +3880,16 @@ static bool isCaptureArgOf(Block &body, unsigned firstCapture, Value value) {
 
 /// A tile body addresses whole tiles at its own index, so every load reads a
 /// capture at `index`, and there is no index transform to read through.
-/// Interim: bodies are SIMD-typed (`tensor.load` / `tensor.store`) until the
-/// tile vocabulary lands.
 static LogicalResult verifyTileBodyLoads(Block &body, unsigned firstCapture,
                                          Value index, StringRef container) {
   for (Operation &op : body) {
-    if (auto load = dyn_cast<TensorLoadOp>(op)) {
+    if (isa<TensorLoadOp, TensorStoreOp>(op))
+      return op.emitOpError() << "in a " << container
+                              << " must move a tile, with tile.load or "
+                                 "tile.store";
+    if (auto load = dyn_cast<TileLoadOp>(op)) {
       if (!isCaptureArgOf(body, firstCapture, load.getTensor()) ||
-          load.getIndex() != index)
+          load.getCoord() != index)
         return load.emitOpError() << "in a " << container
                                   << " must read a capture at the loop index";
     } else if (isa<IndexReshapeOp, IndexSliceSelectOp>(op)) {
@@ -3894,6 +3913,10 @@ LogicalResult TileCreateEpilogueOp::verify() {
   Value storeTarget = body.getArgument(kFirstCapture);
   if (failed(verifyTileBodyLoads(body, kFirstCapture, index, "tile epilogue")))
     return failure();
+  Type tileType = TileType::get(getElementType());
+  Value value = body.getArgument(0);
+  if (value.getType() != tileType)
+    return emitOpError("the kernel's tile is a ") << tileType;
 
   // The lane fixes the body shape, so the two are cross-checked.
   Operation &last = body.back();
@@ -3901,12 +3924,14 @@ LogicalResult TileCreateEpilogueOp::verify() {
     auto yield = dyn_cast<YieldOp>(last);
     if (!yield || yield.getNumOperands() != 1)
       return emitOpError("a compute lane ends in a yield of one value");
+    if (yield.getOperand(0).getType() != tileType)
+      return emitOpError("a compute lane yields a ") << tileType;
     return success();
   }
   if (!body.getOps<YieldOp>().empty())
     return emitOpError("a store lane does not yield");
-  auto store = dyn_cast<TensorStoreOp>(last);
-  if (!store || store.getTensor() != storeTarget || store.getIndex() != index)
+  auto store = dyn_cast<TileStoreOp>(last);
+  if (!store || store.getTensor() != storeTarget || store.getCoord() != index)
     return emitOpError("a store lane ends in a store to the store-target "
                        "capture at the loop index");
   return success();
@@ -3925,15 +3950,476 @@ LogicalResult CallForeachTileOp::verify() {
           verifyTileBodyLoads(body, /*firstCapture=*/0, index, "tile foreach")))
     return failure();
   unsigned numStores = 0;
-  for (auto store : body.getOps<TensorStoreOp>()) {
+  for (auto store : body.getOps<TileStoreOp>()) {
     ++numStores;
     if (!isCaptureArgOf(body, /*firstCapture=*/0, store.getTensor()) ||
-        store.getIndex() != index)
+        store.getCoord() != index)
       return store.emitOpError(
           "in a tile foreach must write a capture at the loop index");
   }
   if (numStores != 1)
     return emitOpError("body stores exactly once, got ") << numStores;
+  return success();
+}
+
+bool CallForeachTileOp::isThrows() { return true; }
+
+static std::optional<MojoValue> scalarConstantAttrToMojoLiteral(TypedAttr attr);
+
+/// The call expression for `op`'s elementwise kernel on `inputs`, through the
+/// kernel's `kind` function. `extraParams` follow the inferred parameters.
+static FailureOr<MojoValue>
+emitElementwiseCallExpr(EmitMojoState &state, CallElementwiseOp op,
+                        KernelFunctionKind kind, ArrayRef<MojoValue> inputs,
+                        ArrayRef<MojoValue> extraParams = {}) {
+  KernelDeclAdaptor ewAdaptor(
+      state.registry.lookupKernelBySymName(op.getCallee()));
+  const KernelDeclFunctionAdaptor *ewFnAdaptor = ewAdaptor.getFunction(kind);
+  if (!ewFnAdaptor)
+    return op.emitOpError("kernel has no ")
+           << stringifyKernelFunctionKind(kind) << " function";
+
+  auto outputs = op.getOutputs();
+  if (outputs.size() != 1)
+    return op.emitError(
+        "elementwise with outputs size != 1 not supported for EmitMojo");
+  Value outputVal = outputs.front();
+
+  std::optional<StringRef> maybeDtypeParamName =
+      EmitMojoState::getResultParamNameFor(*ewFnAdaptor, kParameterDType);
+  auto inferParam = [&](StringRef paramName) -> ErrorOr<MojoValue> {
+    if (maybeDtypeParamName.has_value() && paramName == *maybeDtypeParamName) {
+      ErrorOr<DType> resultTyOr = M::MO::fromMLIRType(
+          cast<ElementTypeInterface>(outputVal.getType()).getElementType());
+      if (resultTyOr.isError())
+        return Error("invalid output type can't be converted to mojo dtype");
+      return state.mlirDTypeToMojoType(*resultTyOr);
+    }
+    return state.inferDefaultKernelParamValue(op, paramName);
+  };
+  auto maybeParams = inferKernelParameters(ewAdaptor, kind, inferParam);
+  if (maybeParams.isError())
+    return op.emitError() << "Failed to infer all the kernel parameters: "
+                          << maybeParams.takeError();
+
+  SmallVector<MojoValue> params(maybeParams->functionParameters);
+  params.append(extraParams.begin(), extraParams.end());
+  return MojoValue(ewFnAdaptor->fullyResolvedName.strref())(params, inputs);
+}
+
+/// A capture's static shape, from its `mogg.tensor.create*` op.
+static MOSH::ShapeAttr captureShape(Value tensor) {
+  Operation *def = tensor.getDefiningOp();
+  if (auto op = dyn_cast_or_null<TensorCreateOp>(def))
+    return op.getShapeAttr();
+  if (auto op = dyn_cast_or_null<TensorCreateSliceOp>(def))
+    return op.getOutShape();
+  if (auto op = dyn_cast_or_null<TensorCreateBroadcastOp>(def))
+    return op.getOutShape();
+  if (auto op = dyn_cast_or_null<TensorCreateTransposeOp>(def))
+    return op.getOutShape();
+  if (auto op = dyn_cast_or_null<TensorCreateReshapeOp>(def))
+    return op.getOutShape();
+  return {};
+}
+
+namespace {
+
+/// The tile fusion-struct flavors, one per trait in managed_tensor_slice.mojo.
+enum class TileFusionKind {
+  /// `ComputeOutputFusionTile`: returns the tile for the kernel to store.
+  Compute,
+  /// `OutputFusionTile`: owns the store.
+  Store,
+  /// `ElementwiseFusionTile`: a standalone body, whose driver stores the tile.
+  Elementwise,
+};
+
+struct TileCapture {
+  /// A `mogg.tensor.create*` result, and the body argument standing for it.
+  Value tensor;
+  BlockArgument arg;
+  DType dtype;
+  SmallVector<int64_t> dims;
+  /// The `N` of the struct's `spec_N` / `tile_N` names.
+  unsigned idx;
+
+  unsigned rank() const { return dims.empty() ? 1 : dims.size(); }
+};
+
+} // namespace
+
+static FailureOr<TileCapture> makeTileCapture(Operation *op, Value tensor,
+                                              BlockArgument arg, unsigned idx) {
+  auto create = tensor.getDefiningOp<TensorCreateInterface>();
+  MOSH::ShapeAttr shape = captureShape(tensor);
+  if (!create || !shape)
+    return op->emitOpError("capture must be a mogg.tensor.create(.slice|"
+                           ".broadcast|.transpose|.reshape) result");
+  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(create.getElementType());
+  if (dtypeOr.isError())
+    return op->emitOpError("failed to convert capture dtype to Mojo");
+  return TileCapture{tensor, arg, *dtypeOr, shape.getIntDims(), idx};
+}
+
+/// The tile of `field` at `tile_coords`, `get_kernel_tile_shape` big. The
+/// kernel must use the same shape (TODO(GEX-3905)).
+static MojoValue emitCaptureTileAt(MojoBuilder &sdb, const MojoValue &field,
+                                   unsigned rank, StringRef device) {
+  MojoValue tileShape = sdb.comptime(MojoValue(kFnGetKernelTileShape)[{
+      MojoValue(kParameterDType), MojoValue(device.str()).quote()}]());
+  SmallVector<MojoValue> tileDims;
+  SmallVector<MojoValue> coordArgs;
+  for (unsigned d = 0; d < rank; ++d) {
+    tileDims.push_back(tileShape[d]);
+    coordArgs.push_back(
+        MojoValue(kStructInt)({}, {MojoValue(kParameterTileCoords)[d]}));
+  }
+  MojoValue coord = MojoValue(kStructCoord)({}, coordArgs);
+  return sdb.var(field.get("tile")[tileDims]({}, {coord}), /*cache=*/false);
+}
+
+/// Stages the tile of `field` into storage shaped like `layoutSrc` with the
+/// method's load copier. `cache=false`: each load needs its own storage.
+static MojoValue emitTileCopierLoad(MojoBuilder &sdb, const MojoValue &field,
+                                    unsigned rank, llvm::StringRef layoutSrc,
+                                    StringRef device) {
+  TileTensorRef dstTile{MojoValue(layoutSrc.str())};
+  MojoValue storage = sdb.var(TileTensorRef::makeStorage(), /*cache=*/false);
+  MojoValue dst =
+      sdb.var(TileTensorRef::fromMutStorage(storage, dstTile.layout()),
+              /*cache=*/false);
+  MojoValue src = emitCaptureTileAt(sdb, field, rank, device);
+  sdb.call(MojoValue(kParameterCopier).get("copy"), {},
+           {dst, TileTensorRef(src).castToSrcAddressSpace()});
+  return sdb.var(TileTensorRef::fromGenericStorage(storage, dstTile.layout()),
+                 /*cache=*/false);
+}
+
+/// The trait method's signature for `lane`, which must match the trait
+/// (managed_tensor_slice.mojo).
+static void
+emitTileFusionMethodSignature(TileFusionKind lane,
+                              SmallVectorImpl<NamedMojoDef> &methodParameters,
+                              SmallVectorImpl<NamedMojoDef> &methodArgs,
+                              std::optional<MojoValue> &returnType) {
+  bool isStore = lane == TileFusionKind::Store;
+  MojoValue tileTensorType = MojoValue(kStructTileTensor)[{
+      kParameterDType, kParameterLayoutType, kComptimeMutAnyOrigin}];
+
+  methodParameters.assign({
+      NamedMojoDef::asVerbatim(kParameterDType, kStructDType),
+      NamedMojoDef::asVerbatim(kParameterRank, kStructInt),
+      NamedMojoDef::asVerbatim(kParameterLayoutType, kStructTensorLayout),
+      // The runtime arg below is `copier: Copier`; the names must differ.
+      NamedMojoDef::asVerbatim(kParameterCopierType, kStructTileCopier),
+  });
+  if (isStore)
+    methodParameters.push_back(
+        NamedMojoDef::asVerbatim(kParameterStoreCopierType, kStructTileCopier));
+
+  methodArgs.push_back(NamedMojoDef::asVerbatim(kParameterSelf));
+  methodArgs.push_back(NamedMojoDef::asVerbatim(
+      kParameterTileCoords, MojoValue(kStructIndexList)[kParameterRank]));
+  methodArgs.push_back(
+      NamedMojoDef::asVerbatim(kParameterCopier, kParameterCopierType));
+  if (isStore)
+    methodArgs.push_back(NamedMojoDef::asVerbatim(kParameterStoreCopier,
+                                                  kParameterStoreCopierType));
+  methodArgs.push_back(NamedMojoDef::asVerbatim(
+      lane == TileFusionKind::Elementwise ? kParameterDst : kParameterVal,
+      tileTensorType));
+  if (!isStore)
+    returnType = tileTensorType;
+}
+
+/// Declares a tile fusion struct for `lane`'s trait and translates `body` into
+/// its method, returning the struct's name. `value` is the kernel's incoming
+/// tile (epilogue lanes), and `storeTarget` the argument the body stores to.
+static FailureOr<MojoValue>
+emitTileFusionStruct(Operation *op, EmitMojoState &state, TileFusionKind lane,
+                     Block &body, ArrayRef<TileCapture> captures, Value index,
+                     Value value, Value storeTarget, DType dtype,
+                     StringRef device) {
+  bool isStore = lane == TileFusionKind::Store;
+  bool isElementwise = lane == TileFusionKind::Elementwise;
+  StringRef dstArg = isElementwise ? kParameterDst : kParameterVal;
+
+  // Local staging tiles are allocated with the method's `dtype`.
+  for (const TileCapture &cap : captures)
+    if (cap.dtype != dtype)
+      return op->emitOpError("a tile fusion requires every captured operand "
+                             "to share one dtype");
+
+  // The rank is inferred: a view's spec (a broadcast, say) carries a symbolic
+  // one.
+  SmallVector<std::pair<MojoValue, MojoValue>> parameters;
+  SmallVector<std::pair<MojoValue, MojoValue>> fields;
+  DenseMap<Value, MojoValue> fieldFor;
+  DenseMap<Value, const TileCapture *> captureFor;
+  for (const TileCapture &cap : captures) {
+    std::string ci = std::to_string(cap.idx);
+    std::string dtypeText = state.mlirDTypeToMojoType(cap.dtype).text;
+    parameters.push_back(
+        {MojoValue("spec_" + ci),
+         MojoValue(llvm::formatv("{0}[{1}, _, ...]", kStructStaticTensorSpec,
+                                 dtypeText)
+                       .str())});
+    fields.push_back(
+        {MojoValue("tile_" + ci),
+         TileTensorRef::captureFieldType(dtypeText, "Self.spec_" + ci)});
+    fieldFor[cap.arg] = MojoValue(kParameterSelf).get("tile_" + ci);
+    captureFor[cap.arg] = &cap;
+  }
+
+  StringRef traitName = isStore         ? kTraitOutputFusionTile
+                        : isElementwise ? kTraitElementwiseFusionTile
+                                        : kTraitComputeOutputFusionTile;
+
+  MojoBuilder &sdb = state.structDefsBuilder;
+  MojoValue name = sdb.newVar(sdb.getIdentifier("FusionStruct"));
+  bool errOccurred = false;
+  sdb.structDecl(name, parameters, {MojoValue(traitName)}, fields, [&]() {
+    SmallVector<NamedMojoDef> methodParams;
+    SmallVector<NamedMojoDef> methodArgs;
+    std::optional<MojoValue> returnType;
+    emitTileFusionMethodSignature(lane, methodParams, methodArgs, returnType);
+
+    sdb.def(
+        MojoValue(isStore ? "store" : "compute"), methodParams, methodArgs,
+        returnType, /*exported=*/false, /*raises=*/false,
+        /*isAlwaysInline=*/true, [&](const FunctionBody &) {
+          DenseMap<Value, MojoValue> tileFor;
+          DenseMap<Value, MojoValue> scalarFor;
+          if (value)
+            tileFor[value] = MojoValue(kParameterVal);
+
+          auto unsupported = [&](Operation *bodyOp, StringRef why) {
+            bodyOp->emitOpError() << "in a tile fusion: " << why;
+            errOccurred = true;
+          };
+          MojoValue result;
+          for (Operation &bodyOp : body) {
+            if (auto load = dyn_cast<TileLoadOp>(bodyOp)) {
+              auto fieldIt = fieldFor.find(load.getTensor());
+              if (load.getCoord() != index || fieldIt == fieldFor.end())
+                return unsupported(load, "a load must read a capture at "
+                                         "the loop index");
+              tileFor[load.getResult()] = emitTileCopierLoad(
+                  sdb, fieldIt->second, captureFor[load.getTensor()]->rank(),
+                  dstArg, device);
+              continue;
+            }
+            if (auto constant = dyn_cast<ConstantScalarOp>(bodyOp)) {
+              std::optional<MojoValue> literal =
+                  scalarConstantAttrToMojoLiteral(constant.getValue());
+              if (!literal)
+                return unsupported(constant, "unsupported scalar type");
+              scalarFor[constant.getResult()] = *literal;
+              continue;
+            }
+            if (auto call = dyn_cast<CallElementwiseOp>(bodyOp)) {
+              KernelDeclAdaptor ewAdaptor(
+                  state.registry.lookupKernelBySymName(call.getCallee()));
+              if (!ewAdaptor.isTileElementwise())
+                return unsupported(call, "the kernel has no TileTensor "
+                                         "elementwise overload");
+              // One tile argument more than the op's operands is a
+              // destination to fill (`mo.cast`).
+              bool takesDestination =
+                  ewAdaptor.tileElementwiseFunction->inputArguments.size() ==
+                  call.getInputs().size() + 1;
+              SmallVector<MojoValue> inputs;
+              // A constant operand is a comptime parameter of the overload.
+              SmallVector<MojoValue> scalarParams;
+              for (Value in : call.getInputs()) {
+                if (auto scalarIt = scalarFor.find(in);
+                    scalarIt != scalarFor.end()) {
+                  // A bare literal would default to Float64.
+                  scalarParams.push_back(MojoValue("scalar").equal(
+                      MojoValue(kStructScalar)[{MojoValue(kParameterDType)}](
+                          {}, {scalarIt->second})));
+                  continue;
+                }
+                auto it = tileFor.find(in);
+                if (it == tileFor.end())
+                  return unsupported(call, "every elementwise operand must "
+                                           "be a tile or a constant");
+                inputs.push_back(it->second);
+              }
+              if (takesDestination && isElementwise)
+                inputs.insert(inputs.begin(), MojoValue(kParameterDst));
+              FailureOr<MojoValue> expr = emitElementwiseCallExpr(
+                  state, call, KernelFunctionKind::TileElementwise, inputs,
+                  scalarParams);
+              if (failed(expr)) {
+                errOccurred = true;
+                return;
+              }
+              tileFor[call.getOutputs().front()] = sdb.var(*expr);
+              continue;
+            }
+            if (auto store = dyn_cast<TileStoreOp>(bodyOp)) {
+              if (lane == TileFusionKind::Compute ||
+                  store.getCoord() != index ||
+                  store.getTensor() != storeTarget ||
+                  !tileFor.count(store.getValue()))
+                return unsupported(store, "a store must write a tile to "
+                                          "the output at the loop index");
+              result = tileFor[store.getValue()];
+              continue;
+            }
+            if (auto yieldOp = dyn_cast<YieldOp>(bodyOp)) {
+              auto it = tileFor.find(yieldOp.getOperand(0));
+              if (it == tileFor.end())
+                return unsupported(yieldOp, "must yield a tile");
+              result = it->second;
+              continue;
+            }
+            return unsupported(&bodyOp, "unsupported op");
+          }
+          if (errOccurred)
+            return;
+
+          if (isStore) {
+            MojoValue outTile =
+                emitCaptureTileAt(sdb, fieldFor[storeTarget],
+                                  captureFor[storeTarget]->rank(), device);
+            MojoValue dstSpace = MojoValue(kParameterStoreCopierType)
+                                     .get(TileTensorRef::kDstAddressSpace);
+            MojoValue srcSpace = MojoValue(kParameterStoreCopierType)
+                                     .get(TileTensorRef::kSrcAddressSpace);
+            sdb.call(
+                MojoValue(kParameterStoreCopier).get("copy"), {},
+                {outTile.get(TileTensorRef::kAddressSpaceCast)[dstSpace](),
+                 result.get(TileTensorRef::kAddressSpaceCast)[srcSpace]()});
+            return;
+          }
+          sdb.returnsValue(result.rebind(MojoValue(kStructTileTensor)[{
+              kParameterDType, kParameterLayoutType, kComptimeMutAnyOrigin}]));
+        });
+  });
+  if (errOccurred)
+    return failure();
+  return name;
+}
+
+/// Instantiates the struct from each capture's spec and `to_tile_tensor()`.
+static MojoValue instantiateTileFusionStruct(EmitMojoState &state,
+                                             const MojoValue &name,
+                                             ArrayRef<TileCapture> captures) {
+  SmallVector<MojoValue> comptimeArgs;
+  SmallVector<MojoValue> instanceArgs;
+  for (const TileCapture &cap : captures) {
+    ManagedTensorSliceRef mts(state.getMojoValueFor(cap.tensor));
+    comptimeArgs.push_back(mts.staticSpec());
+    instanceArgs.push_back(state.builder.var(mts.toTileTensor()));
+  }
+  return state.builder.var(name(comptimeArgs, instanceArgs));
+}
+
+/// Binds a tile fused output (`_FusedComputeOutputTileTensor` /
+/// `_FusedOutputTileTensor`) onto a slice over `$outputPtr`. A pass-through
+/// body binds the "no fusion" sentinel, so the kernel stores by itself.
+LogicalResult TileCreateEpilogueOp::emitMojo(EmitMojoState &state) {
+  // Shared with the SIMD store fusions.
+  state.emitOutputStoreFusionDefsOnce();
+  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(getElementType());
+  if (dtypeOr.isError())
+    return emitOpError("failed to convert epilogue element type to Mojo");
+  Block &body = getBody().front();
+  FailureOr<unsigned> rank = fusedRegionRank(*this, getShape());
+  if (failed(rank))
+    return failure();
+  TileFusionKind lane = getLane() == TileFusionLane::Compute
+                            ? TileFusionKind::Compute
+                            : TileFusionKind::Store;
+
+  MojoValue fusion;
+  if (isPassThroughTileBody(body)) {
+    fusion = MojoValue(lane == TileFusionKind::Compute
+                           ? kStructMsNoComputeFusionTile
+                           : kStructMsNoOutputFusionTile)();
+  } else {
+    // Body args are (value, index, captures...); capture 0 is the store
+    // target.
+    SmallVector<TileCapture> captures;
+    for (auto [i, cap] : llvm::enumerate(getCaptures())) {
+      FailureOr<TileCapture> capture =
+          makeTileCapture(*this, cap, body.getArgument(2 + i), i);
+      if (failed(capture))
+        return failure();
+      captures.push_back(*capture);
+    }
+    FailureOr<MojoValue> name = emitTileFusionStruct(
+        *this, state, lane, body, captures, /*index=*/body.getArgument(1),
+        /*value=*/body.getArgument(0), /*storeTarget=*/body.getArgument(2),
+        *dtypeOr, getDevice());
+    if (failed(name))
+      return failure();
+    fusion = instantiateTileFusionStruct(state, *name, captures);
+  }
+
+  MojoValue layout = state.builder.var(
+      MojoValue(kFnRowMajor)({}, {state.getMojoValueFor(getShape())}));
+  ManagedTensorSliceRef baseSlice(emitBaseSliceFromPtr(
+      state, state.mlirDTypeToMojoType(*dtypeOr), *rank, layout,
+      MojoValue(static_cast<uint64_t>(
+          M::Driver::getPreferredAlignment(getDevice().str()))),
+      state.getMojoValueFor(getOutputPtr())));
+  MojoValue bind = lane == TileFusionKind::Compute
+                       ? baseSlice.bindToFusedComputeOutputTile()
+                       : baseSlice.bindToFusedOutputTile();
+  state.setMojoValueFor(getTensor(), state.builder.var(bind({}, {fusion})));
+  return success();
+}
+
+/// Drives a standalone elementwise body through an `ElementwiseFusionTile`
+/// struct with `foreach_fusion_tile`, which stores each tile `compute` returns
+/// into the output.
+LogicalResult CallForeachTileOp::emitMojo(EmitMojoState &state) {
+  Block &body = getBody().front();
+  ValueRange capturing = getCapturing();
+  auto storeArg = dyn_cast<BlockArgument>(
+      (*body.getOps<TileStoreOp>().begin()).getTensor());
+  // Body args are (captures..., index); the verifier checked the one store.
+  Value output = capturing[storeArg.getArgNumber()];
+  FailureOr<TileCapture> outCapture =
+      makeTileCapture(*this, output, storeArg, /*idx=*/0);
+  if (failed(outCapture))
+    return failure();
+
+  SmallVector<TileCapture> inputs;
+  for (auto [i, cap] : llvm::enumerate(capturing)) {
+    if (i == storeArg.getArgNumber())
+      continue;
+    FailureOr<TileCapture> input =
+        makeTileCapture(*this, cap, body.getArgument(i), inputs.size());
+    if (failed(input))
+      return failure();
+    inputs.push_back(*input);
+  }
+
+  FailureOr<MojoValue> name = emitTileFusionStruct(
+      *this, state, TileFusionKind::Elementwise, body, inputs,
+      /*index=*/body.getArguments().back(), /*value=*/Value(),
+      /*storeTarget=*/storeArg, outCapture->dtype, getDevice());
+  if (failed(name))
+    return failure();
+  MojoValue functor = instantiateTileFusionStruct(state, *name, inputs);
+
+  auto driverDecl =
+      state.registry.lookupPrimitive(kMoggForeachTileRegistration);
+  ASSERT_STREAM(driverDecl,
+                "Primitive not found for " << kMoggForeachTileRegistration);
+  state.builder.call(
+      MojoValue(primitiveMojoName(driverDecl)),
+      {MojoValue(kMoggTargetParameterName)
+           .equal(MojoValue(getDevice().str()).quote())},
+      {MojoValue(kParameterForeachTensor).equal(state.getMojoValueFor(output)),
+       MojoValue(kParameterForeachElem).equal(functor),
+       MojoValue(kParameterForeachCtx)
+           .equal(state.getMojoValueFor(getContext()))});
   return success();
 }
 
@@ -5807,42 +6293,17 @@ LogicalResult CallElementwiseOp::emitMojo(EmitMojoState &state) {
     inputs.push_back(
         MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(index)}));
 
-  KernelDeclOp ewKernelDecl = state.registry.lookupKernelBySymName(getCallee());
-  KernelDeclAdaptor ewAdaptor(ewKernelDecl);
-  const KernelDeclFunctionAdaptor &ewFnAdaptor =
-      ewAdaptor.isElementwise() ? *ewAdaptor.elementwiseFunction
-                                : *ewAdaptor.executeFunction;
-
-  auto outputs = getOutputs();
-  if (outputs.size() != 1)
-    return emitError(
-        "elementwise with outputs size != 1 not supported for EmitMojo");
-  Value outputVal = outputs.front();
-
-  std::optional<StringRef> maybeDtypeParamName =
-      EmitMojoState::getResultParamNameFor(ewFnAdaptor, kParameterDType);
-  auto inferParam = [&](StringRef paramName) -> ErrorOr<MojoValue> {
-    if (maybeDtypeParamName.has_value() && paramName == *maybeDtypeParamName) {
-      ErrorOr<DType> resultTyOr = M::MO::fromMLIRType(
-          cast<ElementTypeInterface>(outputVal.getType()).getElementType());
-      if (resultTyOr.isError())
-        return Error("invalid output type can't be converted to mojo dtype");
-      return state.mlirDTypeToMojoType(*resultTyOr);
-    }
-    return state.inferDefaultKernelParamValue(*this, paramName);
-  };
-  KernelFunctionKind ewKind = ewAdaptor.isElementwise()
-                                  ? KernelFunctionKind::Elementwise
-                                  : KernelFunctionKind::Execute;
-  auto maybeParams = inferKernelParameters(ewAdaptor, ewKind, inferParam);
-  if (maybeParams.isError())
-    return emitError() << "Failed to infer all the kernel parameters: "
-                       << maybeParams.takeError();
-
-  MojoValue mojoSymbolName(ewFnAdaptor.fullyResolvedName.strref());
-  state.setMojoValueFor(
-      outputVal, lambdaInfo.lambdaBuilder->var(
-                     mojoSymbolName(maybeParams->functionParameters, inputs)));
+  KernelDeclAdaptor ewAdaptor(
+      state.registry.lookupKernelBySymName(getCallee()));
+  FailureOr<MojoValue> call = emitElementwiseCallExpr(
+      state, *this,
+      ewAdaptor.isElementwise() ? KernelFunctionKind::Elementwise
+                                : KernelFunctionKind::Execute,
+      inputs);
+  if (failed(call))
+    return failure();
+  state.setMojoValueFor(getOutputs().front(),
+                        lambdaInfo.lambdaBuilder->var(*call));
   return success();
 }
 
