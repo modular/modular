@@ -1088,20 +1088,6 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
-  if (auto gen = sugarDynCast<GeneratorType>(type)) {
-    if (bindUnboundGeneratorTypes) {
-      PogListAttr genParamList = gen.getParamListAttrs();
-      ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
-      for (auto [idx, type] : llvm::enumerate(gen.getInputParamTypes()))
-        declareAndAddParam(type, pogs[idx].getName());
-      propagateBodyConstraints(genParamList);
-      return gen
-          .getSpecializedGenerator(paramValues, &shared.getEvaluationContext(),
-                                   shared.translateLocation(loc))
-          .getInstantiatedBody();
-    }
-  }
-
   // Auto-parameterize generator typed values.
   if (auto paramType = sugarDynCast<ParamType>(type)) {
     if (auto genType =
@@ -1147,6 +1133,30 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   }
   if (auto metatype = sugarDynCast<StructMetaType>(type))
     return getBoundStructMetaType(metatype);
+
+  if (auto gen = sugarDynCast<GeneratorType>(type)) {
+    // Always auto-param a `type_of(ParamStruct[_])` expression, this is to
+    // support `def __merge_with__[other_type: type_of(ParamStruct[_])]`.
+    //
+    // TODO: does it worth for us to bend the language for that specific
+    // (rare) use cases?
+    // TODO: we should have a syntactical way to opt-out/in
+    // auto-parameterization instead of relying on implicit rules.
+    bool bindUnbound = bindUnboundGeneratorTypes ||
+                       sugarIsa<LIT::StructMetaType>(gen.getBody());
+
+    if (bindUnbound) {
+      PogListAttr genParamList = gen.getParamListAttrs();
+      ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
+      for (auto [idx, type] : llvm::enumerate(gen.getInputParamTypes()))
+        declareAndAddParam(type, pogs[idx].getName());
+      propagateBodyConstraints(genParamList);
+      return gen
+          .getSpecializedGenerator(paramValues, &shared.getEvaluationContext(),
+                                   shared.translateLocation(loc))
+          .getInstantiatedBody();
+    }
+  }
 
   return type;
 }
