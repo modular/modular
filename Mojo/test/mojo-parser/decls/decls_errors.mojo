@@ -1410,6 +1410,8 @@ def pack_error[Trait: type_of(AnyType), //, *element_types: Trait]():
     pass
 
 
+# expected-note @below {{missing parameter 'mut'}}
+# expected-note @below {{missing parameter '_mlir_origin'}}
 # expected-error @+1 {{'Origin[mut=_]' is not concrete, use '[]' to bind missing parameters}}
 comptime A: Origin = AnyOrigin
 
@@ -1425,5 +1427,6 @@ def overload_on_arg_conv(mut x: Int):
 def overload_on_arg_conv(imm x: Int):
     pass
 
+# expected-note @below {{missing parameter 'T'}}
 # expected-error @+1 {{'List[_]' is not concrete, use '[]' to bind missing parameters}}
 comptime _list_eq_int = List == Int
