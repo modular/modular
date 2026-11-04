@@ -138,7 +138,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
-from std.collections.optional import Optional
+from std.collections.optional import Optional, OptionalReg
 
 from .reducescatter import (
     CollectiveEpilogueFn,
@@ -236,7 +236,7 @@ struct AllReduceAlgorithm(EnumLike, TrivialRegisterPassable, Writable):
                 writer.write("lamport")
 
 
-struct AllReduceTuningConfig(CommTuningConfig, RegisterPassable):
+struct AllReduceTuningConfig(CommTuningConfig, TrivialRegisterPassable):
     """
     Parameters:
         ngpus: Number of GPUs for running allreduce.
@@ -253,7 +253,7 @@ struct AllReduceTuningConfig(CommTuningConfig, RegisterPassable):
     var sm_version: StaticString
     var num_blocks: Int
     var algorithm: AllReduceAlgorithm
-    var allreduce_num_blocks: Optional[Int]
+    var allreduce_num_blocks: OptionalReg[Int]
 
     def __init__(
         out self,
@@ -263,7 +263,7 @@ struct AllReduceTuningConfig(CommTuningConfig, RegisterPassable):
         sm_version: StaticString,
         num_blocks: Int,
         algorithm: AllReduceAlgorithm,
-        allreduce_num_blocks: Optional[Int] = None,
+        allreduce_num_blocks: OptionalReg[Int] = None,
     ):
         self.ngpus = ngpus
         self.num_bytes = num_bytes
