@@ -5360,15 +5360,12 @@ LogicalResult AsyncUnpackOp::emitMojo(EmitMojoState &state) {
     MojoValue asyncUnpackFunc{kFnUnpackBufferRef};
     unpackedValue = asyncUnpackFunc({}, {state.getMojoValueFor(input)});
 
-  } else if (isa<MGP::DeviceContextType>(inputType)) {
+  } else if (auto context = dyn_cast<MGP::DeviceContextType>(inputType)) {
 
     // The graph's device is static, so type the context by it instead of
     // leaving every consumer to cast.
     MojoValue asyncUnpackFunc{kFnUnpackDeviceCtx};
-    MojoValue deviceKind =
-        MojoValue(
-            cast<MGP::DeviceContextType>(inputType).getDevice().getLabel())
-            .quote();
+    MojoValue deviceKind = MojoValue(context.getDevice().getLabel()).quote();
     unpackedValue =
         asyncUnpackFunc({deviceKind}, {state.getMojoValueFor((input))});
 
