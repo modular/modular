@@ -27,6 +27,7 @@ from collections.abc import (
 from typing import Any, ParamSpec, TypeVar, cast
 
 import numpy as np
+from max._core import Operation
 from max._core.dialects import builtin, kgen, mo
 from max.driver import (
     Device,
@@ -4835,6 +4836,132 @@ def masked_flash_attention_gpu(
     Returns:
         Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
     """
+    _validate_dense_attention(q, k, v, mask)
+    return _dense_attention_op(
+        mo.CompositeMaskedFlashAttentionGpuOp, q, k, v, mask, scale
+    )
+
+
+def flash_attention_cpu(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    scale: float,
+) -> TensorValue:
+    """Computes flash attention on CPU, without a mask.
+
+    Args:
+        q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        scale: Scaling factor for attention scores.
+
+    Returns:
+        Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
+    """
+    _validate_dense_attention(q, k, v, None)
+    return _dense_attention_op(
+        mo.CompositeNoMaskFlashAttentionCpuOp, q, k, v, None, scale
+    )
+
+
+def masked_flash_attention_cpu(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    mask: TensorValue,
+    scale: float,
+) -> TensorValue:
+    """Computes flash attention on CPU using a materialized additive mask.
+
+    Args:
+        q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        mask: Additive mask tensor with the dtype of ``q``. Rank 3 of shape
+            [batch, q_seq_len, kv_seq_len] broadcasts across attention
+            heads. Rank 4 of shape [batch, num_heads, q_seq_len,
+            kv_seq_len] applies a per-head bias.
+        scale: Scaling factor for attention scores.
+
+    Returns:
+        Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
+    """
+    _validate_dense_attention(q, k, v, mask)
+    if mask.dtype != q.dtype:
+        raise ValueError(
+            f"mask dtype ({mask.dtype}) must match q dtype ({q.dtype})"
+        )
+    return _dense_attention_op(
+        mo.CompositeMaskedFlashAttentionCpuOp, q, k, v, mask, scale
+    )
+
+
+def flash_attention(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    scale: float,
+    mask: TensorValue | None = None,
+) -> TensorValue:
+    """Computes flash attention over dense tensors on the device of ``q``.
+
+    Picks the CPU or GPU kernel for the device. The mask, when given, is cast
+    to the dtype of ``q``. On GPU, a head dim other than 64 or 128 runs as
+    separate matmul and softmax ops, unless the heads are grouped.
+
+    Args:
+        q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        scale: Scaling factor for attention scores.
+        mask: Optional additive mask tensor. Rank 3 of shape
+            [batch, q_seq_len, kv_seq_len] broadcasts across attention
+            heads. Rank 4 of shape [batch, num_heads, q_seq_len,
+            kv_seq_len] applies a per-head bias.
+
+    Returns:
+        Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
+    """
+    if mask is not None:
+        mask = TensorValue(mask).cast(q.dtype)
+    if q.device.is_cpu():
+        if mask is None:
+            return flash_attention_cpu(q, k, v, scale)
+        return masked_flash_attention_cpu(q, k, v, mask, scale)
+    # TODO(GEX-4477): The GPU kernel's flash path covers few head dims, and
+    # its naive fallback is slower than separate ops (0.6-0.8x at head dim 32
+    # on B200). Drop this once the kernel covers small head dims.
+    head_dim = q.shape[-1]
+    flash_head_dim = isinstance(head_dim, StaticDim) and int(head_dim) in (
+        64,
+        128,
+    )
+    if not flash_head_dim and q.shape[2] == k.shape[2]:
+        return _unfused_attention(q, k, v, scale, mask)
+    if mask is None:
+        return flash_attention_gpu(q, k, v, MHAMaskVariant.NULL_MASK, scale)
+    return masked_flash_attention_gpu(q, k, v, mask, scale)
+
+
+def _unfused_attention(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    scale: float,
+    mask: TensorValue | None,
+) -> TensorValue:
+    _validate_dense_attention(q, k, v, mask)
+    q, k, v = (ops.permute(x, [0, 2, 1, 3]) for x in (q, k, v))
+    scores = (q @ k.transpose(-1, -2)) * scale
+    if mask is not None:
+        scores += mask if mask.rank == 4 else ops.unsqueeze(mask, 1)
+    return ops.permute(ops.softmax(scores) @ v, [0, 2, 1, 3])
+
+
+def _validate_dense_attention(
+    q: TensorValue, k: TensorValue, v: TensorValue, mask: TensorValue | None
+) -> None:
     if q.dtype != k.dtype or q.dtype != v.dtype:
         raise ValueError(
             "q, k, v must have matching dtypes. Got "
@@ -4848,16 +4975,28 @@ def masked_flash_attention_gpu(
                 f"{name} must be rank {expected_rank}, got {tensor.rank}"
             )
 
-    if mask.rank not in (3, 4):
-        raise ValueError(
-            "mask must be rank 3 (broadcast across heads) or rank 4 "
-            f"(per-head), got {mask.rank}"
-        )
-
     if q.shape[0] != k.shape[0] or q.shape[0] != v.shape[0]:
         raise ValueError(
             "q, k, v batch sizes must match. Got "
             f"q: {q.shape[0]}, k: {k.shape[0]}, v: {v.shape[0]}"
+        )
+
+    head_dim = q.shape[-1]
+    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
+        raise ValueError(
+            "All inputs must have same head_dim. Got "
+            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
+        )
+
+    _validate_argument_tensor("k", k, device=q.device)
+    _validate_argument_tensor("v", v, device=q.device)
+    if mask is None:
+        return
+
+    if mask.rank not in (3, 4):
+        raise ValueError(
+            "mask must be rank 3 (broadcast across heads) or rank 4 "
+            f"(per-head), got {mask.rank}"
         )
 
     if mask.shape[0] != q.shape[0]:
@@ -4890,17 +5029,17 @@ def masked_flash_attention_gpu(
             f"sequence length ({k.shape[1]})"
         )
 
-    head_dim = q.shape[-1]
-    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
-        raise ValueError(
-            "All inputs must have same head_dim. Got "
-            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
-        )
-
-    _validate_argument_tensor("k", k, device=q.device)
-    _validate_argument_tensor("v", v, device=q.device)
     _validate_argument_tensor("mask", mask, device=q.device)
 
+
+def _dense_attention_op(
+    op: type[Operation],
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    mask: TensorValue | None,
+    scale: float,
+) -> TensorValue:
     out_type = TensorType(dtype=q.dtype, shape=q.shape, device=q.device)
     scale_const = ops.constant(
         scale, dtype=DType.float32, device=DeviceRef.CPU()
@@ -4910,13 +5049,14 @@ def masked_flash_attention_gpu(
     # ``ops.custom``). Under the experimental ``functional`` dispatch the
     # q/k/v/mask arrive as ``max.tensor.Tensor`` rather than
     # ``TensorValue``, so coerce them explicitly to match ``scale_const``.
+    masks = [] if mask is None else [TensorValue(mask)]
     return Graph.current._add_op_generated(
-        mo.CompositeMaskedFlashAttentionGpuOp,
+        op,
         out_type,
         TensorValue(q),
         TensorValue(k),
         TensorValue(v),
-        TensorValue(mask),
+        *masks,
         scale_const,
     )[0].tensor
 

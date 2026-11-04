@@ -289,11 +289,6 @@ void M::MO::buildMoPipeline(mlir::OpPassManager &pm,
   pm.addPass(MO::createInferLayouts());
   if (opts.usePatterns) {
     MOGG::PatternFusionOptions patternFusionOpts;
-    patternFusionOpts.mhaAllowUnsafeBCast =
-        opts.patternFusionMHAAllowUnsafeBCasts;
-    patternFusionOpts.mhaAllowInternalReshape =
-        opts.patternFusionMHAAllowInternalReshape;
-    patternFusionOpts.enableMHAPattern = opts.patternFusionMHAEnable;
     patternFusionOpts.targetDevice = opts.defaultDeviceLabel;
     patternFusionOpts.targetDeviceId = opts.defaultDeviceId;
     pm.addPass(MOGG::createPatternFusion(patternFusionOpts));
@@ -522,11 +517,6 @@ static void gcPipelineImpl(mlir::OpPassManager &pm,
   moOpts.kernelLibraryPaths = kernelLibraryPaths;
   moOpts.kernelDeclsPrePopulated = opts.kernelDeclsPrePopulated;
   moOpts.usePatterns = opts.usePatterns;
-  moOpts.patternFusionMHAEnable = opts.patternFusionMHAEnable;
-  moOpts.patternFusionMHAAllowUnsafeBCasts =
-      opts.patternFusionMHAAllowUnsafeBCasts;
-  moOpts.patternFusionMHAAllowInternalReshape =
-      opts.patternFusionMHAAllowInternalReshape;
   moOpts.sanityCheckShapeFuncs = opts.sanityCheckShapeFuncs;
   moOpts.defaultDeviceLabel = opts.defaultDeviceLabel;
   moOpts.defaultDeviceId = opts.defaultDeviceId;

@@ -86,14 +86,6 @@ def PatternFusion: Pass<"mo-pattern-fusion", "MO::GraphOp"> {
   }];
   let dependentDialects = ["M::MOGG::MOGGDialect"];
   let options = [
-    Option<"enableMHAPattern", "mha-enable", "bool", /*default=*/"true",
-            "Enable multi-head attention pattern.">,
-    Option<"debugMHAPattern", "mha-debug", "bool", /*default=*/"false",
-            "Enable multi-head attention pattern matching logs. Useful for debugging pattern matching failures.">,
-    Option<"mhaAllowUnsafeBCast", "mha-allow-unsafe-bcast", "bool", /*default=*/"true",
-            "Allow potentially unsafe broadcasts to be pattern matched for MHA patterns.">,
-    Option<"mhaAllowInternalReshape", "mha-allow-internal-reshape", "bool", /*default=*/"true",
-            "Allow potentially unsafe broadcasts to be pattern matched for MHA patterns.">,
     Option<"enableMegaFFNPattern", "mega-ffn-enable", "bool", /*default=*/"true",
             "Enable the NVFP4 MegaFFN fusion (grouped_matmul_swiglu_nvfp4 + "
             "grouped_matmul_block_scaled -> mega_ffn_nvfp4). Only fires on SM100 "

@@ -32,6 +32,9 @@ from max.nn.legacy.kernels import (
     flare_mla_prefill_plan as _flare_mla_prefill_plan,
 )
 from max.nn.legacy.kernels import (
+    flash_attention as _flash_attention,
+)
+from max.nn.legacy.kernels import (
     flash_attention_gpu as _flash_attention_gpu,
 )
 from max.nn.legacy.kernels import (
@@ -217,6 +220,7 @@ shard_and_stack = F.functional(ops.shard_and_stack)
 # ─── Operations that should be dispatched per-device on distributed inputs ────
 
 
+flash_attention = F.functional(_flash_attention)
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 flash_attention_ragged = F.functional(_flash_attention_ragged)
 flash_attention_ragged_gpu = F.functional(_flash_attention_ragged_gpu)
@@ -316,6 +320,7 @@ def stack_device_shards(
 
 
 __all__ = [
+    "flash_attention",
     "flash_attention_gpu",
     "flash_attention_ragged",
     "flash_attention_ragged_gpu",

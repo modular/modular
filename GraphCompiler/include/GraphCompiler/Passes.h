@@ -188,20 +188,6 @@ struct GCPipelineOptions : public mlir::PassPipelineOptions<GCPipelineOptions> {
       *this, "time-mogg-compile",
       llvm::cl::desc("Turns on timing for the KGEN passes invoked by mogg"),
       llvm::cl::init(false)};
-  Option<bool> patternFusionMHAEnable{
-      *this, "mha-enable",
-      llvm::cl::desc("Enables multi-head attention (mha) pattern fusion."),
-      llvm::cl::init(true)};
-  Option<bool> patternFusionMHAAllowUnsafeBCasts{
-      *this, "mha-allow-unsafe-bcast",
-      llvm::cl::desc("If the mha pattern is enabled, allows fusing potentially "
-                     "unsafe bcasts with a runtime guard."),
-      llvm::cl::init(true)};
-  Option<bool> patternFusionMHAAllowInternalReshape{
-      *this, "mha-allow-internal-reshape",
-      llvm::cl::desc("If the mha pattern is enabled, allows fusing potentially "
-                     "unsafe bcasts with a runtime guard."),
-      llvm::cl::init(true)};
   Option<bool> forceSync{*this, "force-sync",
                          llvm::cl::desc("Make all kernels synchronous."),
                          llvm::cl::init(false)};
@@ -357,20 +343,6 @@ struct MoPipelineOptions : public mlir::PassPipelineOptions<MoPipelineOptions> {
   Option<bool> usePatterns{
       *this, "use-patterns",
       llvm::cl::desc("Lower to hand-fused kernels using pattern matching."),
-      llvm::cl::init(true)};
-  Option<bool> patternFusionMHAEnable{
-      *this, "mha-enable",
-      llvm::cl::desc("Enables multi-head attention (mha) pattern fusion."),
-      llvm::cl::init(true)};
-  Option<bool> patternFusionMHAAllowUnsafeBCasts{
-      *this, "mha-allow-unsafe-bcast",
-      llvm::cl::desc("If the mha pattern is enabled, allows fusing potentially "
-                     "unsafe bcasts with a runtime guard."),
-      llvm::cl::init(true)};
-  Option<bool> patternFusionMHAAllowInternalReshape{
-      *this, "mha-allow-internal-reshape",
-      llvm::cl::desc("If the mha pattern is enabled, allows fusing potentially "
-                     "unsafe bcasts with a runtime guard."),
       llvm::cl::init(true)};
   Option<bool> sanityCheckShapeFuncs{
       *this, "sanity-check-shape-funcs",

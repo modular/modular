@@ -16,6 +16,7 @@ import math
 
 from max.graph import TensorValue, TensorValueLike, ops
 from max.nn import Module
+from max.nn.common_layers.functional_kernels import flash_attention
 from max.nn.linear import Linear
 from max.tensor import Tensor
 
@@ -56,13 +57,14 @@ class Attention(Module[..., Tensor]):
         xk: TensorValue,
         cos: TensorValue,
         sin: TensorValue,
-        unsqueeze_dim: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies Rotary Position Embedding to the query and key tensors."""
-        cos = ops.unsqueeze(cos, unsqueeze_dim)
-        sin = ops.unsqueeze(sin, unsqueeze_dim)
-        xq = xq.transpose(1, 2)
-        xk = xk.transpose(1, 2)
+        """Applies Rotary Position Embedding to the query and key tensors.
+
+        ``xq`` and ``xk`` are ``[batch_size, seq_len, n_heads, head_dim]``;
+        ``cos`` and ``sin`` are ``[seq_len, head_dim]``.
+        """
+        cos = ops.unsqueeze(cos, 1)
+        sin = ops.unsqueeze(sin, 1)
 
         q_embed = (xq * cos) + (rotate_half(xq) * sin)
         k_embed = (xk * cos) + (rotate_half(xk) * sin)
@@ -75,21 +77,22 @@ class Attention(Module[..., Tensor]):
         xv: TensorValue,
         attn_mask: TensorValueLike,
     ) -> TensorValue:
-        """Runs the attention over the query, key and value."""
-        xv = xv.transpose(1, 2)
+        """Runs the attention over the query, key and value.
 
-        scale = math.sqrt(1.0 / self.head_dim)
-        scores = xq @ ops.transpose(xk, 2, 3)
+        ``xq``, ``xk`` and ``xv`` are ``[batch_size, seq_len, n_heads,
+        head_dim]``; ``attn_mask`` is ``[batch_size, 1, seq_len, seq_len]``.
+        """
         attn_mask = TensorValue(attn_mask)
-        # Cast mask to match scores dtype to avoid float32 promotion
-        attn_mask = attn_mask.cast(scores.dtype)
-
         attn_mask = ops.rebind(
-            attn_mask, (scores.shape[0], 1, scores.shape[2], scores.shape[3])
+            attn_mask, (xq.shape[0], 1, xq.shape[1], xk.shape[1])
         )
-        scores = ops.softmax(scores * scale + attn_mask)
-
-        return scores @ xv
+        return flash_attention(
+            xq,
+            xk,
+            xv,
+            scale=math.sqrt(1.0 / self.head_dim),
+            mask=ops.squeeze(attn_mask, 1),
+        )
 
     def forward(
         self,
@@ -123,12 +126,9 @@ class Attention(Module[..., Tensor]):
             TensorValue(xk_v),
             TensorValue(cos),
             TensorValue(sin),
-            unsqueeze_dim=0,
         )
 
-        output = (
-            self.attention(xq_r, xk_r, TensorValue(xv_v), attention_mask)
-            .transpose(1, 2)
-            .reshape([batch_size, n_patches, -1])
-        )
+        output = self.attention(
+            xq_r, xk_r, TensorValue(xv_v), attention_mask
+        ).reshape([batch_size, n_patches, -1])
         return self.o_proj(output)  # type: ignore[arg-type]

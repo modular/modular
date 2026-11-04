@@ -16,6 +16,7 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.nn.legacy.kernels import flash_attention
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 
@@ -66,30 +67,24 @@ class Attention(Module):
         xk: TensorValue,
         cos: TensorValue,
         sin: TensorValue,
-        unsqueeze_dim: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies Rotary Position Embedding to the query and key tensors.
 
         Args:
-            xq (`TensorValueLike`): The query tensor.
-            xk (`TensorValueLike`): The key tensor.
-            cos (`TensorValueLike`): The cosine part of the rotary embedding.
-            sin (`TensorValueLike`): The sine part of the rotary embedding.
-            unsqueeze_dim (`int`, *optional*, defaults to 1):
-                The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos and
-                sin so that they can be properly broadcasted to the dimensions of q and k. For example, note
-                that cos and sin have the shape [batch_size, seq_len, head_dim]. Then, if q and
-                k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
-                cos and sin broadcastable to the shapes of q and k. Similarly, if q and k have
-                the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+            xq: The query tensor, of shape
+                ``[batch_size, seq_len, n_heads, head_dim]``.
+            xk: The key tensor, with the same shape as ``xq``.
+            cos: The cosine part of the rotary embedding, of shape
+                ``[seq_len, head_dim]``.
+            sin: The sine part of the rotary embedding, of shape
+                ``[seq_len, head_dim]``.
 
         Returns:
-            `tuple(TensorValueLike)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+            The query and key tensors rotated using the Rotary Position
+            Embedding, in the layout of ``xq`` and ``xk``.
         """
-        cos = ops.unsqueeze(cos, unsqueeze_dim)
-        sin = ops.unsqueeze(sin, unsqueeze_dim)
-        xq = xq.transpose(1, 2)
-        xk = xk.transpose(1, 2)
+        cos = ops.unsqueeze(cos, 1)
+        sin = ops.unsqueeze(sin, 1)
 
         q_embed = (xq * cos) + (rotate_half(xq) * sin)
         k_embed = (xk * cos) + (rotate_half(xk) * sin)
@@ -102,31 +97,31 @@ class Attention(Module):
         xv: TensorValue,
         attn_mask: TensorValueLike,
     ) -> TensorValue:
-        """Runs the attention over the query, key and value."""
-        xv = xv.transpose(1, 2)
+        """Runs the attention over the query, key and value.
 
-        scale = math.sqrt(1.0 / self.head_dim)
-        # xk shape = batch_size=1, n_heads=16, head_dim=64, image_seq_len=160
-        scores = xq @ ops.transpose(xk, 2, 3)
-        # Note, the graph compiler currently requires the order of operands
-        # to be `scores * scale` in order to pattern match the fused attention
-        # operator.
-        # attn_mask and pixel_values are model inputs. scores is self-attention
-        # scores between all patches in pixel_values.
-        # attn_mask shape = ("n_images", 1, "num_patches_in_image", "num_patches_in_image")
-        # scores shape = ("n_images", "n_heads", "num_patches_in_image", "num_patches_in_image")
+        Args:
+            xq: The query tensor, of shape
+                ``[batch_size, seq_len, n_heads, head_dim]``.
+            xk: The key tensor, with the same shape as ``xq``.
+            xv: The value tensor, with the same shape as ``xq``.
+            attn_mask: The additive mask, of shape
+                ``[batch_size, 1, seq_len, seq_len]``. It keeps each image's
+                patches from attending to other images' patches.
+
+        Returns:
+            The attention output, with the same shape as ``xq``.
+        """
         attn_mask = TensorValue(attn_mask)
-
         attn_mask = ops.rebind(
-            attn_mask, (scores.shape[0], 1, scores.shape[2], scores.shape[3])
+            attn_mask, (xq.shape[0], 1, xq.shape[1], xk.shape[1])
         )
-        # If there's an accuracy issues, check
-        # the dtypes here first.
-        attn_mask = attn_mask.cast(scores.dtype)
-        # This avoids the symbolic dimension mismatch issue
-        scores = ops.softmax(scores * scale + attn_mask)
-
-        return scores @ xv
+        return flash_attention(
+            xq,
+            xk,
+            xv,
+            scale=math.sqrt(1.0 / self.head_dim),
+            mask=ops.squeeze(attn_mask, 1),
+        )
 
     def __call__(
         self,
@@ -163,11 +158,9 @@ class Attention(Module):
         )
 
         cos, sin = position_embeddings
-        xq, xk = self.apply_rotary_embedding(xq, xk, cos, sin, unsqueeze_dim=0)
+        xq, xk = self.apply_rotary_embedding(xq, xk, cos, sin)
 
-        output = (
-            self.attention(xq, xk, xv, attention_mask)
-            .transpose(1, 2)
-            .reshape([batch_size, n_patches, -1])
+        output = self.attention(xq, xk, xv, attention_mask).reshape(
+            [batch_size, n_patches, -1]
         )
         return self.o_proj(output)
