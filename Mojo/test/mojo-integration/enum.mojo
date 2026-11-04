@@ -164,7 +164,7 @@ def test_writable():
 def test_function_value():
     print("== function value")
     var tokens = List[Token]()
-    for token in map[Token.integer]([1, 2, 3]):
+    for token in map([1, 2, 3], Token.integer):
         tokens.append(token.copy())
     # CHECK-NEXT: 3 int:3
     print(len(tokens), describe(tokens[2]))

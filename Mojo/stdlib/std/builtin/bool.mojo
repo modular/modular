@@ -564,6 +564,28 @@ def any[
     return False
 
 
+def any(
+    var iterable: Some[IterableOwned],
+) -> Bool where conforms_to(
+    type_of(iterable).IteratorOwnedType.Element,
+    Boolable & Deinitable,
+):
+    """Checks if **any** element in the iterable is truthy, consuming the
+    iterable.
+
+    Args:
+        iterable: The iterable to consume and check.
+
+    Returns:
+        `True` if **any** element in the iterable is truthy, `False` otherwise.
+    """
+    for var item0 in iterable^:
+        var item = item0^
+        if item:
+            return True
+    return False
+
+
 def any(value: SIMD) -> Bool:
     """Checks whether any element in the SIMD vector is truthy.
 
@@ -617,6 +639,28 @@ def all[
     ```
     """
     for var item0 in iterable:
+        var item = item0^
+        if not item:
+            return False
+    return True
+
+
+def all(
+    var iterable: Some[IterableOwned],
+) -> Bool where conforms_to(
+    type_of(iterable).IteratorOwnedType.Element,
+    Boolable & Deinitable,
+):
+    """Checks if **all** elements in the iterable are truthy, consuming the
+    iterable.
+
+    Args:
+        iterable: The iterable to consume and check.
+
+    Returns:
+        `True` if **all** elements in the iterable are truthy, `False` otherwise.
+    """
+    for var item0 in iterable^:
         var item = item0^
         if not item:
             return False

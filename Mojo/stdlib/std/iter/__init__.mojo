@@ -646,10 +646,14 @@ struct _MapIterator[
     OutputType: Copyable,
     InnerIteratorType: Iterator,
     //,
-    function: def(var InnerIteratorType.Element) thin -> OutputType,
+    Function: def(var InnerIteratorType.Element) -> OutputType,
 ](
-    Copyable where conforms_to(InnerIteratorType, Copyable),
-    Iterable where conforms_to(InnerIteratorType, Copyable),
+    Copyable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    Iterable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
     IterableOwned,
     Iterator,
 ):
@@ -660,12 +664,13 @@ struct _MapIterator[
     comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
+    var _function: Self.Function
 
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
         Self.InnerIteratorType, Copyable
-    ):
+    ) and conforms_to(Self.Function, Copyable):
         return self.copy()
 
     @inline(.always)
@@ -673,7 +678,7 @@ struct _MapIterator[
         return self^
 
     def __next__(mut self) raises StopIteration -> Self.Element:
-        return Self.function(next(self._inner))
+        return self._function(next(self._inner))
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
@@ -685,10 +690,10 @@ def map[
     IterableType: Iterable,
     ResultType: Copyable,
     //,
-    function: def(
-        var IterableType.IteratorType[origin].Element
-    ) thin -> ResultType,
-](ref[origin] iterable: IterableType) -> _MapIterator[function]:
+    Function: def(var IterableType.IteratorType[origin].Element) -> ResultType,
+](ref[origin] iterable: IterableType, var function: Function) -> _MapIterator[
+    Function
+]:
     """Returns an iterator that applies `function` to each element of the input
     iterable.
 
@@ -696,10 +701,11 @@ def map[
         origin: The origin of the iterable.
         IterableType: The type of the iterable.
         ResultType: The return type of the function.
-        function: The function to apply to each element.
+        Function: The type of the function to apply to each element.
 
     Args:
         iterable: The iterable to map over.
+        function: The function to apply to each element.
 
     Returns:
         A map iterator that yields the results of applying `function` to each
@@ -719,10 +725,11 @@ def map[
         print(elem)
     ```
     """
-    # FIXME(MOCO-3238): This rebind shouldn't ve needed, something isn't getting
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
     # substituted through associated types right.
     return {
-        rebind_var[_MapIterator[function].InnerIteratorType](iter(iterable))
+        rebind_var[_MapIterator[Function].InnerIteratorType](iter(iterable)),
+        function^,
     }
 
 
@@ -731,30 +738,25 @@ def map[
     IterableType: IterableOwned,
     ResultType: Copyable,
     //,
-    function: def(
-        var IterableType.IteratorOwnedType.Element
-    ) thin -> ResultType,
-](var iterable: IterableType) -> _MapIterator[function]:
+    Function: def(var IterableType.IteratorOwnedType.Element) -> ResultType,
+](var iterable: IterableType, var function: Function) -> _MapIterator[Function]:
     """Returns an iterator that applies `function` to each element of the input
     iterable, consuming the iterable.
 
     Parameters:
         IterableType: The type of the iterable.
         ResultType: The return type of the function.
-        function: The function to apply to each element.
+        Function: The type of the function to apply to each element.
 
     Args:
         iterable: The iterable to consume and map over.
+        function: The function to apply to each element.
 
     Returns:
         A map iterator that yields the results of applying `function` to each
         element.
     """
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
-    return {
-        rebind_var[_MapIterator[function].InnerIteratorType](iter(iterable^))
-    }
+    return {iter(iterable^), function^}
 
 
 # ===-----------------------------------------------------------------------===#
