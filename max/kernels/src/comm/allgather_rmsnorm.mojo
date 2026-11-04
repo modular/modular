@@ -69,6 +69,10 @@ comptime AG_NORM_FUSE_THRESHOLD = (
     128 * AG_NORM_CALIBRATED_COLS * size_of[DType.bfloat16]()
 )
 
+comptime AG_QUANT_ONLY_THRESHOLD = (
+    1024 * AG_NORM_CALIBRATED_COLS * size_of[DType.bfloat16]()
+)
+
 
 # --- GPU Kernel ---
 

@@ -268,6 +268,7 @@ def allgather_rms_norm_quant_mxfp8(
     epsilon: float,
     weight_offset: float = 0.0,
     group_size: int | None = None,
+    gather_quant_only: bool = False,
 ) -> tuple[
     list[TensorValue], list[TensorValue], list[TensorValue], list[TensorValue]
 ]:
@@ -288,6 +289,14 @@ def allgather_rms_norm_quant_mxfp8(
         epsilon: Numerical stability epsilon for RMSNorm.
         weight_offset: Constant offset added to ``gammas``.
         group_size: Devices per independent gather group; defaults to all.
+        gather_quant_only: When every group gathers at least ~1024 rows,
+            norms and quantizes only each device's own row shard and gathers
+            just ``quantized`` and ``scales``, about half the bytes of the
+            bfloat16 residual; below that the default runs. Each shard is
+            normed with its owner's gamma, so it requires the same ``gammas``
+            on every device of a group. ``normed`` and ``residual`` then hold
+            valid values only in each device's own rows, so set it only when
+            every consumer reads nothing else of them.
 
     Returns:
         ``(normed, quantized, scales, residual)``, each a per-device list.
@@ -364,6 +373,7 @@ def allgather_rms_norm_quant_mxfp8(
         _float32_attr(epsilon),
         _float32_attr(weight_offset),
         IntegerAttr(IntegerType(64), group_size),
+        BoolAttr(gather_quant_only),
     )
 
     graph._update_chain(out_chain)
