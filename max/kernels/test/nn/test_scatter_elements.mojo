@@ -20,7 +20,7 @@ from std.testing import assert_equal
 def main() raises:
     var ctx = DeviceContext.cpu()
 
-    def test_scatter_ax0(ctx: DeviceContext) raises:
+    def test_scatter_ax0(ctx: DeviceContext.CPU) raises:
         print("== test_scatter_ax0")
 
         var data_ptr = List(length=9, fill=Float32(0))
@@ -70,7 +70,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_scatter_ax0(ctx)
 
-    def test_scatter_ax1(ctx: DeviceContext) raises:
+    def test_scatter_ax1(ctx: DeviceContext.CPU) raises:
         print("== test_scatter_ax1")
 
         var data_ptr = List(length=5, fill=Float32(0))
@@ -112,7 +112,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_scatter_ax1(ctx)
 
-    def test_scatter_neg_indices(ctx: DeviceContext) raises:
+    def test_scatter_neg_indices(ctx: DeviceContext.CPU) raises:
         print("== test_scatter_neg_indices")
 
         var data_ptr = List(length=5, fill=Float32(0))
@@ -154,7 +154,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_scatter_neg_indices(ctx)
 
-    def test_scatter_reduce_max(ctx: DeviceContext) raises:
+    def test_scatter_reduce_max(ctx: DeviceContext.CPU) raises:
         print("== test_scatter_reduce_max")
 
         var data_ptr = List(length=5, fill=Float32(0))
@@ -205,7 +205,7 @@ def main() raises:
     test_scatter_reduce_max(ctx)
 
     def test_scatter_reduce_add_parallel_duplicates(
-        ctx: DeviceContext,
+        ctx: DeviceContext.CPU,
     ) raises:
         print("== test_scatter_reduce_add_parallel_duplicates")
         # More index rows than the CPU elementwise grain size (32768), so

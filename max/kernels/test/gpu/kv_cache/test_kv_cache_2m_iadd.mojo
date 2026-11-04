@@ -332,7 +332,7 @@ def test_kv_cache_2m_iadd_cpu[
     prompt_lens: IndexList[batch_size],
     cache_lens: IndexList[batch_size],
     num_active_loras: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext.CPU,
 ) raises:
     comptime num_layers = 2
     assert (

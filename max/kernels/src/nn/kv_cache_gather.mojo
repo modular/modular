@@ -64,6 +64,8 @@ def kv_cache_gather_rows_ragged[
         cache: The key or value cache of one layer.
         ctx: Device context used to enqueue the GPU kernel.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime head_dim = cache_t.kv_params.head_size
     comptime assert (
         dtype == cache_t.dtype

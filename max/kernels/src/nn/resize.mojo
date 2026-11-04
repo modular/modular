@@ -274,6 +274,8 @@ def resize_nearest_neighbor[
         output: The output containing the resized input.
         ctx: The device context used to launch the kernel.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     _check_resize_shapes(input, output)
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):

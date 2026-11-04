@@ -66,6 +66,7 @@ def random_normal[
         ctx: The device context.
         output_fn: The function which stores the generated values.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     if stddev <= 0:
         raise Error("stddev must be positive")

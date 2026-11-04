@@ -3698,6 +3698,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
             projection.
         context: The call context pointer, passed by the graph compiler.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -5532,6 +5533,8 @@ def kv_cache_2m_iadd_dispatch[
             K and V caches from `cache`.
         ctx: The call context pointer, passed by the graph compiler.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
     comptime assert (
         dtype == collection_t.dtype

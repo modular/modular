@@ -270,6 +270,8 @@ def elementwise[
     Raises:
         If the operation fails.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     _elementwise_impl[
         simd_width,
         target=target,
@@ -287,8 +289,8 @@ def _elementwise_impl[
     *,
     target: StaticString = "cpu",
     trace_description: StaticString,
-](func: FuncType, shape: Coord, context0: DeviceContext) raises:
-    var context = context0.cast_if_cpu[target]()
+](func: FuncType, shape: Coord, context: DeviceContext) raises:
+    context._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:

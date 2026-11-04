@@ -49,6 +49,7 @@ def fold[
         kernel_size: Size of the sliding blocks.
         ctx: The device context.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     comptime assert stride[0] > 0 and stride[1] > 0, "Stride must be positive"
     comptime assert (

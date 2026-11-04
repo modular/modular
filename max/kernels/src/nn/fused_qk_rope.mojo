@@ -372,6 +372,8 @@ def fused_qk_rope_ragged[
         output: Output tensor for Q with RoPE applied, same shape as `q_proj`.
         context: Device context for GPU execution.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert q_proj.flat_rank == 3, "q_proj must be rank 3"
     comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"
     comptime assert output.flat_rank == 3, "output must be rank 3"

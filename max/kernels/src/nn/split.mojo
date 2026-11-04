@@ -79,6 +79,7 @@ def split[
     Raises:
         Error: If the outputs disagree on a non-split axis dimension.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
     comptime assert (
         input.rank == OutputLayoutType.rank
     ), "Input and outputs must have the same rank."

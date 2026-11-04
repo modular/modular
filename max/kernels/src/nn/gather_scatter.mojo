@@ -488,6 +488,7 @@ def gather[
         indices: Indices to gather along `axis`.
         context: Device context for execution.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
 
     comptime prefetch_offset = 12  # TODO: search
 
@@ -934,6 +935,8 @@ def gather[
         output_fn: Callback that stores values into the output tensor.
         context: Device context for execution.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     _gather_impl[
         input_rank,
         indices_rank,
@@ -991,6 +994,8 @@ def _gather_impl[
     prefetch_fn: PrefetchFnType,
     context: DeviceContext,
 ) raises:
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     comptime target_simd_width = (
         simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
             target
@@ -1273,6 +1278,8 @@ def scatter_nd_generator[
         output: Tensor of rank data_rank, shaped the same as data tensor.
         context: Pointer to DeviceContext.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     with Trace[TraceLevel.OP, target=target](
         _trace_description, task_id=get_safe_task_id(context)
     ):
@@ -1640,6 +1647,8 @@ def scatter_nd[
             and scattered result.
         context: Device context for execution.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     scatter_nd_generator[target=target](data, indices, updates, output, context)
 
 
@@ -1825,6 +1834,8 @@ def scatter_elements[
             updates.
         ctx: Device context for execution.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert (
         indices_type == .int32 or indices_type == .int64
     ), "indices in scatter_elements must be int32 or int64"
@@ -1965,7 +1976,7 @@ def gather_elements[
     indices: TileTensor[mut=False, indices_type, ...],
     _axis: Int,
     output: TileTensor[mut=True, input_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext.CPU,
 ) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
@@ -2132,6 +2143,8 @@ def gather_nd[
         ctx: The device context as prepared by the graph compiler.
 
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert (
         data.rank >= 1 and indices.rank >= 1
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
@@ -2280,6 +2293,8 @@ def scatter_set_constant[
         fill_value: The value to fill the data with.
         ctx: The device context.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert (
         index_type.is_integral()
     ), "index_type must be an integer dtype"
@@ -2350,6 +2365,8 @@ def apply_packed_bitmask[
         fill_value: Value written for masked-out (grammar-invalid) tokens.
         ctx: The device context.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert output.flat_rank == 2, "apply_packed_bitmask: output rank 2"
     comptime assert logits.flat_rank == 2, "apply_packed_bitmask: logits rank 2"
     comptime assert packed.flat_rank == 2, "apply_packed_bitmask: packed rank 2"

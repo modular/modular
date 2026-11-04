@@ -761,11 +761,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     #   target device via `DeviceContext.target`.
     @inline(.always)
     def _comptime_assert_matches_target_is_cpu[
-        target_name: StaticString
+        device_kind: StaticString
     ](self,):
-        comptime assert Self.target.is_cpu() == is_cpu[target_name](), String(
+        comptime assert Self.target.is_cpu() == is_cpu[device_kind](), String(
             "`target` parameter '",
-            target_name,
+            device_kind,
             "' does not match the DeviceContext target, which is ",
             "a CPU" if Self.target.is_cpu() else "not a CPU",
             " (triple: ",
@@ -775,43 +775,43 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             ")",
         )
 
+    # The inverse of `CompilationTarget.device_kind_label()`: "cpu" maps to
+    # the host target and anything else to `Self.target`. The branches are
+    # distinct `CompilationTarget` types, so the choice has to be made on the
+    # raw `_mlir_value` rather than with a ternary over the targets themselves.
+    @staticmethod
     @inline(.always)
-    def cast_if_cpu[
-        target_str: StaticString
+    def from_device_kind[
+        device_kind: StaticString
     ](
-        var self,
         out result: DeviceContext[
             CompilationTarget[
                 _mlir_value=(
-                    CompilationTarget.current()._mlir_value if target_str
+                    CompilationTarget.current()._mlir_value if device_kind
                     == "cpu" else Self.target._mlir_value
                 )
             ]()
-        ],
-    ):
-        """Temporary function to cast this DeviceContext to the CPU target if
-        the device label is "cpu".
+        ]
+    ) raises:
+        """Creates a `DeviceContext` whose static target matches a device kind.
 
         Parameters:
-            target_str: The device label to cast to. Typically "cpu" or "gpu".
+            device_kind: The device kind, either "cpu" or "gpu". "cpu" gives a
+                `DeviceContext.CPU` and "gpu" gives a context for this type's
+                `target` (the default accelerator for a plain `DeviceContext`).
 
         Returns:
-            A DeviceContext with a target parameter matching the provided device
-            label.
-        """
-        comptime if target_str == "cpu":
-            # Defensive sanity check, since we make this assumption in the
-            # result type. `assert_cpu_target` checks at runtime, so this also
-            # accepts a context that already has the CPU target.
-            comptime assert CompilationTarget.current().is_cpu()
+            A new device context with the target selected by `device_kind`.
 
-            var self_cpu = self.assert_cpu_target()
-            return rebind_var[type_of(result)](self_cpu^)
-        else:
-            # Assert that this is only called on `ctx: DeviceContext` concrete
-            # / default accelerator instances for the time being.
-            var _ = self.assert_default_target()
-            return rebind_var[type_of(result)](self^)
+        Raises:
+            If device initialization fails.
+        """
+        comptime assert device_kind == "cpu" or device_kind == "gpu", String(
+            "unsupported device kind '",
+            device_kind,
+            "', expected 'cpu' or 'gpu'",
+        )
+        result = type_of(result)()
 
     @inline(.always)
     def assert_cpu_target(var self) -> DeviceContext.CPU:

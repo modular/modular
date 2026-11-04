@@ -455,6 +455,8 @@ def repeat_interleave[
     Both scalar and per-element repeats run on CPU and GPU (see
     `_repeat_interleave_gpu` for the GPU decomposition).
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime if is_cpu[target]():
         _repeat_interleave_cpu(input, repeats, axis, output, ctx)
     else:

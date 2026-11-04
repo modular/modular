@@ -301,7 +301,7 @@ def _check_cubic_matches_naive(
 def main() raises:
     var ctx = DeviceContext.cpu()
 
-    def test_upsample_sizes_nearest_1(ctx: DeviceContext) raises:
+    def test_upsample_sizes_nearest_1(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_nearest_1")
         var input_stack: Array[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -344,7 +344,7 @@ def main() raises:
 
     test_upsample_sizes_nearest_1(ctx)
 
-    def test_downsample_sizes_nearest(ctx: DeviceContext) raises:
+    def test_downsample_sizes_nearest(ctx: DeviceContext.CPU) raises:
         print("== test_downsample_sizes_nearest")
         var input_stack: Array[Float32, 8] = [
             Float32(1),
@@ -372,7 +372,7 @@ def main() raises:
     test_downsample_sizes_nearest(ctx)
 
     def test_upsample_2x_nearest_asymmetric_floor_fastpath(
-        ctx: DeviceContext,
+        ctx: DeviceContext.CPU,
     ) raises:
         print("== test_upsample_2x_nearest_asymmetric_floor_fastpath")
         # The mode combination the model 2x upsample helpers migrated to:
@@ -427,7 +427,7 @@ def main() raises:
     test_upsample_2x_nearest_asymmetric_floor_fastpath(ctx)
 
     def test_downsample_sizes_nearest_half_pixel_1D(
-        ctx: DeviceContext,
+        ctx: DeviceContext.CPU,
     ) raises:
         print("== test_downsample_sizes_nearest_half_pixel_1D")
         var input_stack: Array[Float32, 16] = [
@@ -463,7 +463,7 @@ def main() raises:
 
     test_downsample_sizes_nearest_half_pixel_1D(ctx)
 
-    def test_upsample_sizes_nearest_2(ctx: DeviceContext) raises:
+    def test_upsample_sizes_nearest_2(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_nearest_2")
         var input_stack: Array[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -541,7 +541,7 @@ def main() raises:
     test_upsample_sizes_nearest_2(ctx)
 
     def test_upsample_sizes_nearest_floor_align_corners(
-        ctx: DeviceContext,
+        ctx: DeviceContext.CPU,
     ) raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
         var input_stack: Array[Float32, 16] = [
@@ -645,7 +645,7 @@ def main() raises:
     test_upsample_sizes_nearest_floor_align_corners(ctx)
 
     def test_upsample_sizes_nearest_round_half_up_asymmetric(
-        ctx: DeviceContext,
+        ctx: DeviceContext.CPU,
     ) raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
         var input_stack: Array[Float32, 16] = [
@@ -746,7 +746,9 @@ def main() raises:
 
     test_upsample_sizes_nearest_round_half_up_asymmetric(ctx)
 
-    def test_upsample_sizes_nearest_ceil_half_pixel(ctx: DeviceContext) raises:
+    def test_upsample_sizes_nearest_ceil_half_pixel(
+        ctx: DeviceContext.CPU,
+    ) raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
         var input_stack: Array[Float32, 16] = [
             Float32(1),
@@ -846,7 +848,7 @@ def main() raises:
 
     test_upsample_sizes_nearest_ceil_half_pixel(ctx)
 
-    def test_upsample_sizes_linear(ctx: DeviceContext) raises:
+    def test_upsample_sizes_linear(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_linear")
         var input_stack: Array[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -889,7 +891,7 @@ def main() raises:
 
     test_upsample_sizes_linear(ctx)
 
-    def test_upsample_sizes_linear_align_corners(ctx: DeviceContext) raises:
+    def test_upsample_sizes_linear_align_corners(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_linear_align_corners")
         var input_stack: Array[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -932,7 +934,7 @@ def main() raises:
 
     test_upsample_sizes_linear_align_corners(ctx)
 
-    def test_downsample_sizes_linear(ctx: DeviceContext) raises:
+    def test_downsample_sizes_linear(ctx: DeviceContext.CPU) raises:
         print("== test_downsample_sizes_linear")
         var input_stack: Array[Float32, 8] = [
             Float32(1),
@@ -968,7 +970,9 @@ def main() raises:
 
     test_downsample_sizes_linear(ctx)
 
-    def test_downsample_sizes_linear_align_corners(ctx: DeviceContext) raises:
+    def test_downsample_sizes_linear_align_corners(
+        ctx: DeviceContext.CPU,
+    ) raises:
         print("== test_downsample_sizes_linear_align_corners")
         var input_stack: Array[Float32, 8] = [
             Float32(1),
@@ -1003,7 +1007,7 @@ def main() raises:
 
     test_downsample_sizes_linear_align_corners(ctx)
 
-    def test_upsample_sizes_trilinear(ctx: DeviceContext) raises:
+    def test_upsample_sizes_trilinear(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_trilinear")
         var input_stack: Array[Float32, 16] = [
             Float32(0),
@@ -1064,7 +1068,7 @@ def main() raises:
 
     test_upsample_sizes_trilinear(ctx)
 
-    def test_downsample_sizes_linear_antialias(ctx: DeviceContext) raises:
+    def test_downsample_sizes_linear_antialias(ctx: DeviceContext.CPU) raises:
         print("== test_downsample_sizes_linear_antialias")
         var input_stack: Array[Float32, 16] = [
             Float32(0),
@@ -1113,7 +1117,7 @@ def main() raises:
 
     test_downsample_sizes_linear_antialias(ctx)
 
-    def test_no_resize(ctx: DeviceContext) raises:
+    def test_no_resize(ctx: DeviceContext.CPU) raises:
         print("== test_no_resize")
         var input_stack: Array[Float32, 4] = [Float32(1), 1, 1, 1]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())

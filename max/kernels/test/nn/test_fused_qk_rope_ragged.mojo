@@ -41,7 +41,7 @@ from std.utils.index import Index
 
 def test_fused_qk_rope[
     rope_dim: Int, dtype: DType
-](ctx: DeviceContext) raises -> None:
+](ctx: DeviceContext.CPU) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert dtype == .float32, "goldens only for float32, currently"
 

@@ -163,6 +163,8 @@ def rope_ragged[
     and start_pos.flat_rank == 1
     and freqs_cis.flat_rank == 2
 ):
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert freqs_cis.LayoutType._shape_types[
         1
     ].is_static_value, "Need static rope_dim for freqs_cis"

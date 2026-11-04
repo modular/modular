@@ -223,6 +223,8 @@ def copy_to_slice[
         step: One-dimensional tensor of strides, one per rank; each must be non-zero.
         context: Device context for the target execution backend.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     var expected_shape = slice_shape(buffer, start, end, step)
 
     if expected_shape != rebind[IndexList[buffer.rank]](
@@ -264,7 +266,7 @@ def slice_as_copy[
     start: TileTensor[mut=False, index_type, ...],
     end: TileTensor[mut=False, index_type, ...],
     step: TileTensor[mut=False, index_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext.CPU,
 ) raises:
     """Copies a slice of `tensor` into `output` using the given start, end, and step indices.
 
@@ -397,6 +399,8 @@ def sliced_add[
         lora_end_idx: Scalar tensor with end index of LoRA token portion (rows to apply add).
         ctx: Device context for GPU operations.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert lora_end_idx.flat_rank == 1
 
     var batch_end_idx = Int(lora_end_idx[0])

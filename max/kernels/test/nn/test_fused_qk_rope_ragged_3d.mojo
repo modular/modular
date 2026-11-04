@@ -42,7 +42,7 @@ from std.utils.index import Index
 
 def test_fused_qk_rope[
     rope_dim: Int, dtype: DType
-](ctx: DeviceContext) raises -> None:
+](ctx: DeviceContext.CPU) raises -> None:
     """Verifies fused_qk_rope_ragged with 3D position_ids and mrope sections
     against golden values computed with PyTorch.
     """
