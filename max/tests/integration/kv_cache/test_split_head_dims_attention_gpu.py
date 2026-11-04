@@ -88,7 +88,9 @@ def _attention(
     group = q.shape[1] // k.shape[1]
     k = np.repeat(k, group, axis=1)
     v = np.repeat(v, group, axis=1)
-    scores = np.einsum("qhd,khd->hqk", q, k) / np.sqrt(K_DIM)
+    # Equivalent to: `np.einsum("qhd,khd->hqk", q, k) * K_DIM**-0.5`.
+    # Batched matmul uses BLAS. It is much faster than einsum.
+    scores = q.transpose(1, 0, 2) @ k.transpose(1, 2, 0) * K_DIM**-0.5
     n, keys = q.shape[0], k.shape[0]
     visible = np.tril(np.ones((n, keys), dtype=bool), k=keys - n)
     if window is not None:
@@ -103,7 +105,8 @@ def _attention(
     denom = weights.sum(axis=-1, keepdims=True)
     if sinks is not None:
         denom += np.exp(sinks[:, None, None] - row_max)
-    return np.einsum("hqk,khd->qhd", weights / denom, v)
+    # Equivalent to: `np.einsum("hqk,khd->qhd", weights / denom, v)`.
+    return ((weights / denom) @ v.transpose(1, 0, 2)).transpose(1, 0, 2)
 
 
 def test_split_cache_attention() -> None:
