@@ -2422,9 +2422,9 @@ LogicalResult TupleCreateOp::emitMojo(EmitMojoState &state) {
     SmallVector<MojoValue> params;
     for (const MojoValue &val : inputValues)
       params.push_back(MojoValue("type_of")({}, {val}));
-    state.setMojoValueFor(getTuple(),
-                          state.builder.var(MojoValue(
-                              kStructTensorTuple)[params]({}, inputValues)));
+    state.setMojoValueFor(
+        getTuple(),
+        state.builder.var(MojoValue(kStructTensorTuple)(params, inputValues)));
     return success();
   }
 

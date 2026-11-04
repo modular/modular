@@ -915,6 +915,84 @@ struct TraitTensorTupleAdd:
             )
 
 
+# `z = bias + sum(inputs)` over rank-1 tensors. The `TensorTuple` may be
+# empty, and a fixed argument follows it. CPU only.
+@extensibility.register("trait_tensor_tuple_sum")
+struct TraitTensorTupleSum:
+    @staticmethod
+    def execute[
+        Ins: TypeList[Trait=Input & TileTensorable, ...],
+        //,
+        target: StaticString,
+    ](
+        z: Some[Output & TileTensorable],
+        inputs: TensorTuple[*Ins],
+        bias: Some[Input & TileTensorable],
+    ) raises:
+        comptime assert is_cpu[target]()
+        comptime assert conforms_to(type_of(z), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        var zt = z.to_tile_tensor()
+        var bt = bias.to_tile_tensor()
+        comptime OutT = SIMD[type_of(zt).dtype, 1]
+        for j in range(Int(z.shape().product())):
+            var acc = bt.load[width=1]((j,)).cast[type_of(zt).dtype]()
+            comptime for i in range(len(Ins)):
+                comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+                acc += (
+                    inputs[i]
+                    .to_tile_tensor()
+                    .load[width=1]((j,))
+                    .cast[type_of(zt).dtype]()
+                )
+            zt.store((j,), rebind[OutT](acc))
+
+
+# `trait_tensor_tuple_sum` with a `TensorTuple` last on each side: `z = bias +
+# sum(inputs)`, and each of `copies` gets `z`. Either tuple may be empty. CPU
+# only.
+@extensibility.register("trait_tensor_tuple_sum_tail")
+struct TraitTensorTupleSumTail:
+    @staticmethod
+    def execute[
+        Outs: TypeList[Trait=Output & TileTensorable, ...],
+        Ins: TypeList[Trait=Input & TileTensorable, ...],
+        //,
+        target: StaticString,
+    ](
+        z: Some[Output & TileTensorable],
+        copies: TensorTuple[*Outs],
+        bias: Some[Input & TileTensorable],
+        inputs: TensorTuple[*Ins],
+    ) raises:
+        comptime assert is_cpu[target]()
+        comptime assert conforms_to(type_of(z), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        var zt = z.to_tile_tensor()
+        var bt = bias.to_tile_tensor()
+        comptime OutT = SIMD[type_of(zt).dtype, 1]
+        for j in range(Int(z.shape().product())):
+            var acc = bt.load[width=1]((j,)).cast[type_of(zt).dtype]()
+            comptime for i in range(len(Ins)):
+                comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+                acc += (
+                    inputs[i]
+                    .to_tile_tensor()
+                    .load[width=1]((j,))
+                    .cast[type_of(zt).dtype]()
+                )
+            zt.store((j,), rebind[OutT](acc))
+            comptime for i in range(len(Outs)):
+                comptime assert conforms_to(type_of(copies[i]), TileTensorable)
+                var ct = copies[i].to_tile_tensor()
+                ct.store(
+                    (j,),
+                    rebind[SIMD[type_of(ct).dtype, 1]](
+                        acc.cast[type_of(ct).dtype]()
+                    ),
+                )
+
+
 # Device entry for `trait_tensor_tuple_add_array`: one thread per element of the
 # concatenated pairs, which finds the pair `k` that owns it. Both tuples arrive
 # as `Array`s of `TileTensor`s built on the host.
