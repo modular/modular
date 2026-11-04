@@ -27,9 +27,22 @@ from layout import (
     ImmTileTensor,
     RowMajorLayout,
     TensorLayout,
+    row_major,
 )
 from std.collections import OptionalReg
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.builtin.rebind import downcast
+
+from extensibility import (
+    Fused,
+    Input,
+    LoadAccess,
+    Loadable,
+    Tensor,
+    TensorTuple,
+    UnsafeFusedView,
+    unsafe_fused_view,
+)
 
 from nn.attention.mha_operand import MHAOperand, SparseRowsMHAOperand
 
@@ -548,6 +561,110 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
     def name() -> String:
         ...
 
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask
+    """The mask built from graph operands of types `Ts`.
+
+    A mask that stores its operands has a type that depends on theirs, so a
+    caller names a placeholder instantiation and `make` returns this one. A
+    mask that overrides `make` names its own type here; any other mask uses
+    `Self`.
+    """
+
+    @staticmethod
+    def make[
+        *Ts: Input & Fused & LoadAccess
+    ](operands: TensorTuple[*Ts]) -> Self.MaskType[*Ts]:
+        """Builds the mask from its graph operands.
+
+        The default builds a `Defaultable` mask that takes no operands.
+
+        Parameters:
+            Ts: The operand types.
+
+        Args:
+            operands: The mask's graph operands, possibly none.
+
+        Returns:
+            The mask.
+        """
+        comptime assert len(Ts) == 0 and conforms_to(
+            Self, Defaultable
+        ), "only a Defaultable mask without operands has a default make"
+        return rebind[Self.MaskType[*Ts]](downcast[Self, Defaultable]())
+
+
+# ===-----------------------------------------------------------------------===#
+# Mask operands
+# ===-----------------------------------------------------------------------===#
+
+
+comptime LoadView[T: Tensor] = downcast[
+    downcast[T, UnsafeFusedView].FusedViewType,
+    Loadable & TrivialRegisterPassable,
+]
+"""The device view a mask stores for a graph operand of type `T`."""
+
+
+@inline(.always)
+def load_view[T: Tensor](operand: T) -> LoadView[T]:
+    """Returns the device view of a mask's graph operand.
+
+    The kernel launches with the mask itself as its device form, so the mask
+    holds its operands' device views from the start.
+
+    Parameters:
+        T: The operand type, a fused input.
+
+    Args:
+        operand: The graph operand.
+
+    Returns:
+        The operand's device view, which masks read through `load`.
+    """
+    comptime assert conforms_to(T, UnsafeFusedView)
+    return rebind[LoadView[T]](unsafe_fused_view(operand))
+
+
+@fieldwise_init
+struct NoView(Loadable, TrivialRegisterPassable):
+    """Stands in for a mask's operand views before the operands are known.
+
+    A mask with operands defaults its view parameters to `NoView`, so a caller
+    can name it without them; `make` returns the instantiation with the real
+    views. It is never read.
+    """
+
+    comptime _Layout = type_of(row_major[1]())
+    comptime dtype: DType = .uint8
+    comptime rank: Int = 1
+    comptime _shape_types = Self._Layout._shape_types
+    comptime __shape_types = Self._Layout.__shape_types
+
+    def shape(self) -> Coord[*Self._shape_types]:
+        """Returns a one-element shape.
+
+        Returns:
+            The shape.
+        """
+        return row_major[1]().shape_coord()
+
+    def load[
+        width: Int, element_alignment: Int = 1
+    ](self, idx: Coord) -> SIMD[Self.dtype, width]:
+        """Returns zeros.
+
+        Parameters:
+            width: Number of elements to load.
+            element_alignment: Assumed alignment of the load in elements.
+
+        Args:
+            idx: The element coordinate to load from.
+
+        Returns:
+            Zeros.
+        """
+        return 0
+
 
 # ===-----------------------------------------------------------------------===#
 # CausalMask
@@ -562,13 +679,15 @@ comptime MASK_VALUE = -FloatLiteral(2**100)
 
 
 @fieldwise_init
-struct CausalMask(MHAMask, TrivialRegisterPassable):
+struct CausalMask(Defaultable, MHAMask, TrivialRegisterPassable):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
     comptime apply_log2e_after_mask: Bool = False
     comptime mask_out_of_bound: Bool = is_nvidia_gpu()
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = False
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -755,13 +874,15 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct NullMask(MHAMask, TrivialRegisterPassable):
+struct NullMask(Defaultable, MHAMask, TrivialRegisterPassable):
     """Mask that's effectively a noop."""
 
     comptime apply_log2e_after_mask: Bool = False
     comptime mask_out_of_bound: Bool = True
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = False
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -891,7 +1012,9 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
+struct ChunkedMask[local_window_size: Int](
+    Defaultable, MHAMask, TrivialRegisterPassable
+):
     """Mask implementing Chunked attention.
 
     This groups the mask into chunks of size `local_window_size`.
@@ -920,6 +1043,8 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
     comptime mask_out_of_bound: Bool = True
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = True
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -1187,7 +1312,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
 
 @fieldwise_init
 struct SlidingWindowCausalMask[window_size: Int](
-    MHAMask, TrivialRegisterPassable
+    Defaultable, MHAMask, TrivialRegisterPassable
 ):
     """Mask implementing Sliding Window attention.
 
@@ -1216,6 +1341,8 @@ struct SlidingWindowCausalMask[window_size: Int](
     comptime mask_out_of_bound: Bool = True
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = True
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -1477,7 +1604,7 @@ struct SlidingWindowCausalMask[window_size: Int](
 
 @fieldwise_init
 struct SlidingWindowNonCausalMask[window_size: Int](
-    MHAMask, TrivialRegisterPassable
+    Defaultable, MHAMask, TrivialRegisterPassable
 ):
     """Non-causal sliding-window attention mask.
 
@@ -1508,6 +1635,8 @@ struct SlidingWindowNonCausalMask[window_size: Int](
     comptime mask_out_of_bound: Bool = True
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = True
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -1721,6 +1850,8 @@ struct CausalPaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
 
     var valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_]
 
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
+
     comptime device_type: AnyType = Self
 
     def _to_device_type(
@@ -1921,6 +2052,8 @@ struct PaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
 
     var valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_]
 
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
+
     comptime device_type: AnyType = Self
 
     def _to_device_type(
@@ -2086,6 +2219,8 @@ struct SegmentMask(MHAMask, TrivialRegisterPassable):
 
     @__allow_legacy_any_origin_fields
     var row_offsets: ImmPointer[UInt32, ImmutAnyOrigin]
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -2306,6 +2441,8 @@ struct SparseRowsDecodeMask[base_t: MHAOperand, //, row_width: Int](
     var rows: SparseRowsMHAOperand[
         base_t=Self.base_t, row_width=Self.row_width, predicated=True
     ]
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -2560,6 +2697,8 @@ struct MaterializedMask[
         ImmTileTensor[.uint32, RowMajorLayout[Int64], ImmutAnyOrigin]
     ]
     var is_multiple_of_2: Bool
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -2846,7 +2985,7 @@ def _child_nomask_cols[
 
 @fieldwise_init
 struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    MHAMask, TrivialRegisterPassable
+    Defaultable, MHAMask, TrivialRegisterPassable
 ):
     """Mask that's the AND of two masks.
     If both masks mask off an element, the element is masked off."""
@@ -2855,6 +2994,8 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     comptime mask_out_of_bound: Bool = Self.T.mask_out_of_bound or Self.S.mask_out_of_bound
     comptime mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
     comptime check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding and Self.S.check_mask_during_decoding
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -3009,7 +3150,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
 @fieldwise_init
 struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    MHAMask, TrivialRegisterPassable
+    Defaultable, MHAMask, TrivialRegisterPassable
 ):
     """Mask that's the OR of two masks.
     If either mask masks off an element, the element is masked off.
@@ -3025,6 +3166,8 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     comptime mask_out_of_bound: Bool = Self.T.mask_out_of_bound and Self.S.mask_out_of_bound
     comptime mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
     comptime check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding or Self.S.check_mask_during_decoding
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
@@ -3375,6 +3518,8 @@ struct RelativeLogitsMask[
         .uint32, Self.RowOffsetsLayout, Self.row_offsets_origin
     ]
     """Ragged row offset into `bias`/`q` for this call's new tokens, `(batch + 1,)`."""
+
+    comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
     comptime device_type: AnyType = Self
 
