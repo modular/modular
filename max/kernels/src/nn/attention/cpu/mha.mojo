@@ -1238,7 +1238,7 @@ def flash_attention_split_kv[
         return String(";").join(
             Span(
                 [
-                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
+                    trace_arg("q", q.layout.shape_coord()),
                     trace_arg("k", k_shape),
                     trace_arg("v", v_shape),
                     trace_arg("k_cache", k_cache_shape),

@@ -231,9 +231,9 @@ def flash_attention[
         return String(";").join(
             Span(
                 [
-                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
-                    trace_arg("k", coord_to_index_list(k.layout.shape_coord())),
-                    trace_arg("v", coord_to_index_list(v.layout.shape_coord())),
+                    trace_arg("q", q.layout.shape_coord()),
+                    trace_arg("k", k.layout.shape_coord()),
+                    trace_arg("v", v.layout.shape_coord()),
                     trace_arg(
                         "output",
                         coord_to_index_list(output.layout.shape_coord()),
@@ -637,11 +637,8 @@ def _flash_attention_kv_cache[
         return String(";").join(
             Span(
                 [
-                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
+                    trace_arg("q", q.layout.shape_coord()),
+                    trace_arg("output", output.layout.shape_coord()),
                 ]
             )
         )

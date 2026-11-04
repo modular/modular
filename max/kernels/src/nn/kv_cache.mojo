@@ -128,21 +128,13 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
         return String(";").join(
             Span(
                 [
+                    trace_arg("output", output.layout.shape_coord()),
                     trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        "hidden_state", hidden_state.layout.shape_coord()
                     ),
+                    trace_arg("weight", weight.layout.shape_coord()),
                     trace_arg(
-                        "hidden_state",
-                        coord_to_index_list(hidden_state.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "valid_lengths",
-                        coord_to_index_list(valid_lengths.layout.shape_coord()),
+                        "valid_lengths", valid_lengths.layout.shape_coord()
                     ),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={kv_collection.kv_params.num_heads}"),
@@ -415,10 +407,9 @@ def generic_flash_attention_kv_cache_padded[
         return String(";").join(
             Span(
                 [
-                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
+                    trace_arg("q", q.layout.shape_coord()),
                     trace_arg(
-                        "valid_lengths",
-                        coord_to_index_list(valid_lengths.layout.shape_coord()),
+                        "valid_lengths", valid_lengths.layout.shape_coord()
                     ),
                     String(t"scale={scale}"),
                     String(t"layer_idx={layer_idx}"),
@@ -707,9 +698,7 @@ def fused_qk_rms_norm_ragged_paged[
 
     @inline(.always)
     def description_fn() {imm} -> String:
-        return trace_arg(
-            "q_proj", coord_to_index_list(q_proj.layout.shape_coord())
-        ) + String(
+        return trace_arg("q_proj", q_proj.layout.shape_coord()) + String(
             t";layer_idx={layer_idx};num_heads={params.num_heads};head_size={params.head_size}"
         )
 
@@ -1227,9 +1216,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
 
     @inline(.always)
     def description_fn() {imm} -> String:
-        return trace_arg(
-            "q_output", coord_to_index_list(q_output.layout.shape_coord())
-        ) + String(
+        return trace_arg("q_output", q_output.layout.shape_coord()) + String(
             t";layer_idx={layer_idx};num_heads={params.num_heads};head_size={params.head_size};rope_dim={rope_dim}"
         )
 
@@ -1668,7 +1655,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     def description_fn() {imm} -> String:
         return trace_arg(
             "q_main_output",
-            coord_to_index_list(q_main_output.layout.shape_coord()),
+            q_main_output.layout.shape_coord(),
         ) + String(
             t";layer_idx={layer_idx};main_num_heads={main_params.num_heads};index_num_heads={index_params.num_heads};head_size={main_params.head_size};rope_dim={rope_dim}"
         )
@@ -2956,8 +2943,7 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
     @inline(.always)
     def description_fn() {imm} -> String:
         return trace_arg(
-            "q_main_output",
-            coord_to_index_list(q_main_output.layout.shape_coord()),
+            "q_main_output", q_main_output.layout.shape_coord()
         ) + String(
             t";layer_idx={layer_idx};main_num_heads={main_collection_t.kv_params.num_heads};index_num_heads={index_collection_t.kv_params.num_heads};head_dim={head_dim};rope_dim={rope_dim}"
         )

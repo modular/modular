@@ -155,18 +155,11 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
         return String(";").join(
             Span(
                 [
+                    trace_arg("output", output.layout.shape_coord()),
                     trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        "hidden_state", hidden_state.layout.shape_coord()
                     ),
-                    trace_arg(
-                        "hidden_state",
-                        coord_to_index_list(hidden_state.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
+                    trace_arg("weight", weight.layout.shape_coord()),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={kv_collection.kv_params.num_heads}"),
                     String(t"head_size={kv_collection.kv_params.head_size}"),
@@ -251,18 +244,11 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
         return String(";").join(
             Span(
                 [
+                    trace_arg("output", output.layout.shape_coord()),
                     trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        "hidden_state", hidden_state.layout.shape_coord()
                     ),
-                    trace_arg(
-                        "hidden_state",
-                        coord_to_index_list(hidden_state.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
+                    trace_arg("weight", weight.layout.shape_coord()),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={kv_collection.kv_params.num_heads}"),
                     String(t"head_size={kv_collection.kv_params.head_size}"),
@@ -370,25 +356,14 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
         return String(";").join(
             Span(
                 [
+                    trace_arg("output", output.layout.shape_coord()),
                     trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        "hidden_state", hidden_state.layout.shape_coord()
                     ),
+                    trace_arg("weight", weight.layout.shape_coord()),
+                    trace_arg("input_scale", input_scale.layout.shape_coord()),
                     trace_arg(
-                        "hidden_state",
-                        coord_to_index_list(hidden_state.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "input_scale",
-                        coord_to_index_list(input_scale.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight_scale",
-                        coord_to_index_list(weight_scale.layout.shape_coord()),
+                        "weight_scale", weight_scale.layout.shape_coord()
                     ),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={kv_collection.kv_params.num_heads}"),
@@ -503,25 +478,14 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         return String(";").join(
             Span(
                 [
+                    trace_arg("output", output.layout.shape_coord()),
                     trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        "hidden_state", hidden_state.layout.shape_coord()
                     ),
+                    trace_arg("weight", weight.layout.shape_coord()),
+                    trace_arg("input_scale", input_scale.layout.shape_coord()),
                     trace_arg(
-                        "hidden_state",
-                        coord_to_index_list(hidden_state.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "input_scale",
-                        coord_to_index_list(input_scale.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight_scale",
-                        coord_to_index_list(weight_scale.layout.shape_coord()),
+                        "weight_scale", weight_scale.layout.shape_coord()
                     ),
                     String(t"tensor_sf={tensor_sf}"),
                     String(t"layer_idx={layer_idx}"),
@@ -1724,22 +1688,12 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
         return String(";").join(
             Span(
                 [
+                    trace_arg("q_output", q_output.layout.shape_coord()),
+                    trace_arg("iq_output", iq_output.layout.shape_coord()),
                     trace_arg(
-                        "q_output",
-                        coord_to_index_list(q_output.layout.shape_coord()),
+                        "hidden_state", hidden_state.layout.shape_coord()
                     ),
-                    trace_arg(
-                        "iq_output",
-                        coord_to_index_list(iq_output.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "hidden_state",
-                        coord_to_index_list(hidden_state.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
+                    trace_arg("weight", weight.layout.shape_coord()),
                     String(t"tensor_sf={tensor_sf}"),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={kv_collection.kv_params.num_heads}"),
@@ -2129,18 +2083,11 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
         return String(";").join(
             Span(
                 [
+                    trace_arg("output", output.layout.shape_coord()),
                     trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        "hidden_state", hidden_state.layout.shape_coord()
                     ),
-                    trace_arg(
-                        "hidden_state",
-                        coord_to_index_list(hidden_state.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
+                    trace_arg("weight", weight.layout.shape_coord()),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={kv_collection.kv_params.num_heads}"),
                     String(t"head_size={kv_collection.kv_params.head_size}"),
@@ -2788,10 +2735,7 @@ def kv_matmul_ragged_paged[
         return String(";").join(
             Span(
                 [
-                    trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
+                    trace_arg("weight", weight.layout.shape_coord()),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={kv_collection.kv_params.num_heads}"),
                     String(t"head_size={kv_collection.kv_params.head_size}"),
@@ -2996,10 +2940,7 @@ def k_matmul_ragged_paged[
         return String(";").join(
             Span(
                 [
-                    trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
+                    trace_arg("weight", weight.layout.shape_coord()),
                     String(t"layer_idx={layer_idx}"),
                 ]
             )
@@ -3171,20 +3112,12 @@ def k_matmul_ragged_paged_scale[
             Span(
                 [
                     trace_arg(
-                        "hidden_state",
-                        coord_to_index_list(hidden_state.layout.shape_coord()),
+                        "hidden_state", hidden_state.layout.shape_coord()
                     ),
+                    trace_arg("weight", weight.layout.shape_coord()),
+                    trace_arg("input_scale", input_scale.layout.shape_coord()),
                     trace_arg(
-                        "weight",
-                        coord_to_index_list(weight.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "input_scale",
-                        coord_to_index_list(input_scale.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "weight_scale",
-                        coord_to_index_list(weight_scale.layout.shape_coord()),
+                        "weight_scale", weight_scale.layout.shape_coord()
                     ),
                     String(t"layer_idx={layer_idx}"),
                 ]
@@ -3391,18 +3324,9 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
         return String(";").join(
             Span(
                 [
-                    trace_arg(
-                        "q_weight",
-                        coord_to_index_list(q_weight.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "k_weight",
-                        coord_to_index_list(k_weight.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "v_weight",
-                        coord_to_index_list(v_weight.layout.shape_coord()),
-                    ),
+                    trace_arg("q_weight", q_weight.layout.shape_coord()),
+                    trace_arg("k_weight", k_weight.layout.shape_coord()),
+                    trace_arg("v_weight", v_weight.layout.shape_coord()),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={kv_collection.kv_params.num_heads}"),
                     String(t"head_size={kv_collection.kv_params.head_size}"),
@@ -3780,18 +3704,9 @@ def generic_fused_qk_rope_bshd_paged_ragged[
         return String(";").join(
             Span(
                 [
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "q_proj",
-                        coord_to_index_list(q_proj.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "freqs_cis",
-                        coord_to_index_list(freqs_cis.layout.shape_coord()),
-                    ),
+                    trace_arg("output", output.layout.shape_coord()),
+                    trace_arg("q_proj", q_proj.layout.shape_coord()),
+                    trace_arg("freqs_cis", freqs_cis.layout.shape_coord()),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={kv_collection.kv_params.num_heads}"),
                     String(t"head_size={kv_collection.kv_params.head_size}"),
@@ -3907,9 +3822,7 @@ def generic_flash_attention_kv_cache_ragged[
     @inline(.always)
     def description_fn() {imm} -> String:
         var desc_parts = List[String]()
-        desc_parts.append(
-            trace_arg("q", coord_to_index_list(q.layout.shape_coord()))
-        )
+        desc_parts.append(trace_arg("q", q.layout.shape_coord()))
         desc_parts.append(String(t"scale={scale}"))
         desc_parts.append(String(t"layer_idx={layer_idx}"))
         desc_parts.append(
@@ -4109,9 +4022,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     @inline(.always)
     def description_fn() {imm} -> String:
         var desc_parts = List[String]()
-        desc_parts.append(
-            trace_arg("q", coord_to_index_list(q.layout.shape_coord()))
-        )
+        desc_parts.append(trace_arg("q", q.layout.shape_coord()))
         desc_parts.append(String(t"scale={scale}"))
         desc_parts.append(String(t"layer_idx={layer_idx}"))
         desc_parts.append(
@@ -4227,9 +4138,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
     @inline(.always)
     def description_fn() {imm} -> String:
         var desc_parts = List[String]()
-        desc_parts.append(
-            trace_arg("q", coord_to_index_list(q.layout.shape_coord()))
-        )
+        desc_parts.append(trace_arg("q", q.layout.shape_coord()))
         desc_parts.append(String(t"scale={scale}"))
         desc_parts.append(String(t"layer_idx={layer_idx}"))
         desc_parts.append(
@@ -4401,10 +4310,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
         return String(";").join(
             Span(
                 [
-                    trace_arg(
-                        "q",
-                        coord_to_index_list(q.layout.shape_coord()),
-                    ),
+                    trace_arg("q", q.layout.shape_coord()),
                     String(t"scale={scale}"),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={collection_t.kv_params.num_heads}"),
@@ -4701,33 +4607,19 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         return String(";").join(
             Span(
                 [
-                    trace_arg(
-                        "q",
-                        coord_to_index_list(q.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "k",
-                        coord_to_index_list(k.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "v",
-                        coord_to_index_list(v.layout.shape_coord()),
-                    ),
+                    trace_arg("q", q.layout.shape_coord()),
+                    trace_arg("k", k.layout.shape_coord()),
+                    trace_arg("v", v.layout.shape_coord()),
                     trace_arg(
                         "buffer_row_offsets",
-                        coord_to_index_list(
-                            buffer_row_offsets.layout.shape_coord()
-                        ),
+                        buffer_row_offsets.layout.shape_coord(),
                     ),
                     trace_arg(
-                        "cache_offsets",
-                        coord_to_index_list(cache_offsets.layout.shape_coord()),
+                        "cache_offsets", cache_offsets.layout.shape_coord()
                     ),
                     trace_arg(
                         "input_row_offsets",
-                        coord_to_index_list(
-                            input_row_offsets.layout.shape_coord()
-                        ),
+                        input_row_offsets.layout.shape_coord(),
                     ),
                     String(t"scale={scale}"),
                     String(t"layer_idx={layer_idx}"),
@@ -5239,22 +5131,15 @@ def generic_cross_attention_kv_cache[
         return String(";").join(
             Span(
                 [
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
+                    trace_arg("output", output.layout.shape_coord()),
+                    trace_arg("q", q.layout.shape_coord()),
                     trace_arg(
                         "q_input_row_offsets",
-                        coord_to_index_list(
-                            q_input_row_offsets.layout.shape_coord()
-                        ),
+                        q_input_row_offsets.layout.shape_coord(),
                     ),
                     trace_arg(
                         "kv_input_row_offsets",
-                        coord_to_index_list(
-                            kv_input_row_offsets.layout.shape_coord()
-                        ),
+                        kv_input_row_offsets.layout.shape_coord(),
                     ),
                     String(t"layer_idx={layer_idx}"),
                     String(t"num_heads={collection_t.kv_params.num_heads}"),
