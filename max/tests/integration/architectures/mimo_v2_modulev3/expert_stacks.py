@@ -98,9 +98,9 @@ def check_staged_expert_stacks(
     A device temporary freed around the persistent stacks strands allocator
     granules and shrinks the KV cache.
     """
-    # TODO(DISTINF-813): mo.shard_and_stack copies each device's slice
+    # TODO(DISTINF-813): gather_scatter.shard_and_stack copies each device's slice
     # serially, far slower than the host stack; drop this once it is fixed.
-    assert "mo.shard_and_stack" not in text
+    assert "gather_scatter.shard_and_stack" not in text
     local = EXPERTS // n_devices if expert_parallel else EXPERTS
     share = MOE_DIM if expert_parallel else MOE_DIM // n_devices
     # The scales go through device temporaries in the interleave by design,

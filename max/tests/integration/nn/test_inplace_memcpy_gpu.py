@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Integration tests for the ``mo.inplace_memcpy`` custom op.
+"""Integration tests for the ``runtime.inplace_memcpy`` custom op.
 
 The op copies a read-only ``src`` tensor into a mutable ``dst`` buffer in
 place, similar to ``Buffer.inplace_copy_from`` but usable from within a

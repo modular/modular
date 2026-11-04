@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Numeric test for the fused MXFP8 QKV-matmul-with-KV-write kernel.
 
-Exercises the ``mo.fused_qkv_matmul.ragged.paged.scale.mxfp8`` path (and its
+Exercises the ``kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp8`` path (and its
 ``.amd`` CDNA4 sibling, which differs only in taking rank-2 rather than rank-5
 E8M0 scales) that ``quantized_fused_qkv_matmul`` uses for ``QuantFormat.MXFP8``:
 the activation and the concatenated QKV weight are quantized to

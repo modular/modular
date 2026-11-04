@@ -88,7 +88,7 @@ def test_write_back_falls_back_outside_the_kernel_limits(
         )
     )
     uses_kernel = supported and accelerator_api() == "hip"
-    assert ("mo.mhc.post" in graph) == uses_kernel
+    assert ("hyper_connection.mhc.post" in graph) == uses_kernel
     assert ("matmul" in graph) != uses_kernel
 
 

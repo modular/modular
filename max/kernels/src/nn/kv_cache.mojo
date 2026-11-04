@@ -145,7 +145,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
 
     with Trace[TraceLevel.OP, target=target](
         String(
-            t"mo.fused_qkv_matmul.padded.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+            t"kv_cache.fused_qkv_matmul.padded.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
@@ -420,7 +420,7 @@ def generic_flash_attention_kv_cache_padded[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mha.padded."
+        "attention.mha.padded."
         + collection_t.name_str
         + "."
         + mask_str

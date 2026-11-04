@@ -59,7 +59,7 @@ _QK_ROPE_HEAD_DIM = 64
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_forward_latent_ragged_matches_forward() -> None:
     rng = np.random.default_rng(0)

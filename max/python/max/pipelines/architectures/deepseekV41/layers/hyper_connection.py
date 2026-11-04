@@ -123,7 +123,9 @@ def fused_hc_step(
             device=device,
         )
     results = ops.inplace_custom(
-        "mo.mega_mhc.mxfp8" if mxfp8 else "mo.mega_mhc",
+        "hyper_connection.mega_mhc.mxfp8"
+        if mxfp8
+        else "hyper_connection.mega_mhc",
         device=device,
         values=[
             ops.reshape(ops.cast(out, DType.bfloat16), [-1, d]),

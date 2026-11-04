@@ -173,7 +173,7 @@ def execute_sink_prefill_repro[
     )
 
     # Route through the exact MOGG-level entry point used by
-    # `mo.mha.ragged.paged`. `_flash_attention_dispatch` inside runs
+    # `attention.mha.ragged.paged`. `_flash_attention_dispatch` inside runs
     # `unswitch[call_flash_attention](Bool(sink_weights))`, forcing BOTH
     # sink=True and sink=False specializations to compile — which is the
     # distinguishing property of the gemma4 graph compile.

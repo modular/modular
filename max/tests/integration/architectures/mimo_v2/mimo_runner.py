@@ -257,7 +257,7 @@ class Runner:
                     )
                 )
         self.fused_qkv_count = graph.module.mlir_module.asm().count(
-            "mo.chunked_qkv_rope_store.ragged.paged"
+            "kv_cache.chunked_qkv_rope_store.ragged.paged"
         )
         t0 = time.time()
         session = InferenceSession(devices=self.devices)

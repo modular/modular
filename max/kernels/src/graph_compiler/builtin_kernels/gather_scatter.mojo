@@ -706,9 +706,9 @@ def scatter_nd_shape_fn(
     return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
-@extensibility.register("mo.scatter_nd.skip_oob_indices")
+@extensibility.register("gather_scatter.scatter_nd.skip_oob_indices")
 struct ScatterNDSkipOobIndices:
-    """Registers the `mo.scatter_nd.skip_oob_indices` graph op with the graph compiler.
+    """Registers the `gather_scatter.scatter_nd.skip_oob_indices` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -981,9 +981,9 @@ def scatter_nd_max_shape(
     return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
-@extensibility.register("mo.apply_packed_bitmask")
+@extensibility.register("sampler.apply_packed_bitmask")
 struct ApplyPackedBitmask:
-    """Registers the `mo.apply_packed_bitmask` graph op with the graph compiler.
+    """Registers the `sampler.apply_packed_bitmask` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -1013,9 +1013,9 @@ struct ApplyPackedBitmask:
         )
 
 
-@extensibility.register("mo.scatter_set_constant")
+@extensibility.register("gather_scatter.scatter_set_constant")
 struct ScatterSetConstant:
-    """Registers the `mo.scatter_set_constant` graph op with the graph compiler.
+    """Registers the `gather_scatter.scatter_set_constant` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -2295,9 +2295,10 @@ def tile_shape_fn(
     )
 
 
-@extensibility.register("mo.shard_and_stack")
+@extensibility.register("gather_scatter.shard_and_stack")
 struct ShardWeights:
-    """Registers the `mo.shard_and_stack` graph op with the graph compiler."""
+    """Registers the `gather_scatter.shard_and_stack` graph op with the graph compiler.
+    """
 
     @staticmethod
     def execute[
@@ -2557,9 +2558,9 @@ struct IndexTensor:
         )
 
 
-@extensibility.register("mo.sliced.add.ragged")
+@extensibility.register("ragged.sliced.add")
 struct Struct_sliced_add_ragged:
-    """Registers the `mo.sliced.add.ragged` graph op with the graph compiler."""
+    """Registers the `ragged.sliced.add` graph op with the graph compiler."""
 
     @inline(.always)
     @staticmethod

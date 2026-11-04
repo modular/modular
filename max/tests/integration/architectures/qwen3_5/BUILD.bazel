@@ -146,7 +146,7 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },
-    # `mo.spatial_merge` is `comptime assert is_gpu[target]()`.
+    # `vision.spatial_merge` is `comptime assert is_gpu[target]()`.
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -199,7 +199,7 @@ modular_py_test(
 modular_py_test(
     name = "test_vision_pos_embed",
     srcs = ["test_vision_pos_embed.py"],
-    # `mo.spatial_merge` is `comptime assert is_gpu[target]()`, so this cannot
+    # `vision.spatial_merge` is `comptime assert is_gpu[target]()`, so this cannot
     # run on CPU at all.
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

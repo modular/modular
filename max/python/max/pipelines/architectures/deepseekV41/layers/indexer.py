@@ -239,7 +239,7 @@ def quantize_queries(
     t = queries.shape[0]
     device = queries.device
     packed, scales, scaled = ops.custom(
-        "mo.csa.indexer.q_rope_quant",
+        "attention.csa.indexer.q_rope_quant",
         device=device,
         values=[
             queries,
@@ -317,7 +317,7 @@ def store_index_keys(
         epsilon: RMSNorm epsilon.
     """
     ops.inplace_custom(
-        "mo.csa.indexer.k_store",
+        "attention.csa.indexer.k_store",
         device=keys.device,
         values=[
             keys,
@@ -356,7 +356,7 @@ def select_index_keys(
     packed, scales, weights = q
     t, n_heads = packed.shape[0], int(packed.shape[1])
     return ops.inplace_custom(
-        "mo.csa.indexer.mxfp4",
+        "attention.csa.indexer.mxfp4",
         device=packed.device,
         values=[
             packed,
@@ -428,7 +428,7 @@ def select_index_keys_block_topk(
     t, n_heads = packed.shape[0], int(packed.shape[1])
     device = packed.device
     ids, kept = ops.inplace_custom(
-        "mo.csa.indexer.mxfp4.block_max",
+        "attention.csa.indexer.mxfp4.block_max",
         device=device,
         values=[
             packed,
@@ -481,7 +481,7 @@ def select_index_keys_masked(
     packed, scales, weights = q
     t, n_heads = packed.shape[0], int(packed.shape[1])
     return ops.inplace_custom(
-        "mo.csa.indexer.mxfp4.masked",
+        "attention.csa.indexer.mxfp4.masked",
         device=packed.device,
         values=[
             packed,

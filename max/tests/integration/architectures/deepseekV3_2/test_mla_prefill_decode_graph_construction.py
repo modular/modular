@@ -394,11 +394,13 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
         op
         for op in g._mlir_op.regions[0].blocks[0].operations
         if op.name == "mo.custom"
-        and mlir.StringAttr(op.attributes["symbol"]).value.startswith("mo.mla.")
+        and mlir.StringAttr(op.attributes["symbol"]).value.startswith(
+            "attention.mla."
+        )
     ]
     symbols = [mlir.StringAttr(op.attributes["symbol"]).value for op in mla_ops]
-    assert "mo.mla.graph.prefill.decode.paged.sparse.nvfp4" in symbols
-    assert "mo.mla.graph.decode.paged.sparse.nvfp4" in symbols
+    assert "attention.mla.graph.prefill.decode.paged.sparse.nvfp4" in symbols
+    assert "attention.mla.graph.decode.paged.sparse.nvfp4" in symbols
     for op in mla_ops:
         assert not [
             value
@@ -407,8 +409,8 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
         ], mlir.StringAttr(op.attributes["symbol"]).value
 
     ir = str(g)
-    assert '"mo.mla.graph.prefill.decode.paged.sparse.nvfp4"' in ir
-    assert '"mo.mla.graph.decode.paged.sparse.nvfp4"' in ir
+    assert '"attention.mla.graph.prefill.decode.paged.sparse.nvfp4"' in ir
+    assert '"attention.mla.graph.decode.paged.sparse.nvfp4"' in ir
     assert re.search(r"nvfp4_convert_ratio = 37\b", ir)
     assert re.search(r"nvfp4_convert_max_rows = 4096\b", ir)
 
@@ -508,5 +510,5 @@ def test_mla_indexer_nvfp4_cache_rows_carry_scale_rows() -> None:
     assert nvfp4_rows.shape[1] == 2 * top_k == nvfp4_only.shape[1]
     assert fp8_rows.shape[1] == top_k == fp8_only.shape[1]
     ir = str(g)
-    assert '"mo.mla.indexer.ragged.float8.paged.remap.nvfp4"' in ir
-    assert '"mo.mla.indexer.ragged.float8.paged.remap"' in ir
+    assert '"attention.mla.indexer.ragged.float8.paged.remap.nvfp4"' in ir
+    assert '"attention.mla.indexer.ragged.float8.paged.remap"' in ir

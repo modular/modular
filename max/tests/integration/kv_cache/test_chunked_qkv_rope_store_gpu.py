@@ -425,7 +425,7 @@ def _unchecked_graph(
         qkv, offsets, freqs = (value.tensor for value in graph.inputs[:3])
         cache = params.unflatten_kv_inputs(iter(graph.inputs[3:]))[0]
         q = ops.inplace_custom(
-            "mo.chunked_qkv_rope_store.ragged.paged",
+            "kv_cache.chunked_qkv_rope_store.ragged.paged",
             device=device,
             values=[
                 qkv,

@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Graph-op plumbing for MiniMax-M3's NVFP4 KV cache (B200 and MI355X).
 
-Two ops carry the format: ``mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4``
-writes K/V into the packed cache, and ``mo.msa.attention.ragged.paged.nvfp4``
+Two ops carry the format: ``kv_cache.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4``
+writes K/V into the packed cache, and ``attention.msa.ragged.paged.nvfp4``
 reads it. Kernel-level edge cases (ties, scale clamps, poisoned tails, bitwise
 K) live in ``test_fused_dual_qk_rms_norm_rope_nvfp4.mojo`` and
 ``Kernels/test/msa/test_msa_sm100_d128_decode_q8kv4.mojo``; this test owns the

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """The GLM-5.3-Flash ModuleV3 decoder layer folds its input norms into mHC.
 
-Where ``mo.mhc.pre`` runs, both sites of a layer hand their sublayer's input
+Where ``hyper_connection.mhc.pre`` runs, both sites of a layer hand their sublayer's input
 RMSNorm to the fused op, so the graph has no separate ``rms_norm``; elsewhere
 the layer builds the op chain. The sublayers are pass-throughs, so the layer's
 output is the two sites and their write-backs alone.
@@ -182,12 +182,12 @@ def test_input_norms_fold_into_mhc_pre(fn_dtype: DType) -> None:
     layer = _layer(fn_dtype, mesh)
     graph = str(layer.trace(_input_type(mesh)))
     uses_kernel = _uses_mhc_pre(fn_dtype)
-    assert graph.count("mo.mhc.pre") == (2 if uses_kernel else 0)
+    assert graph.count("hyper_connection.mhc.pre") == (2 if uses_kernel else 0)
     assert (_RMS_NORM_OP.search(graph) is None) == uses_kernel
 
     with _op_chain_only():
         chain = str(layer.trace(_input_type(mesh)))
-    assert "mo.mhc.pre" not in chain
+    assert "hyper_connection.mhc.pre" not in chain
     assert len(_RMS_NORM_OP.findall(chain)) == 2
 
 

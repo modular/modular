@@ -51,7 +51,7 @@ _PROD_HIDDEN = 7168
 _PROD_EXPERTS = 896
 _PROD_TOP_K = 16
 
-_MIXED_GEMV_OP = "mo.router.gate.mixed.gemv"
+_MIXED_GEMV_OP = "moe.router.gate.mixed.gemv"
 _ROUTER_MODULE = (
     "max.pipelines.architectures.kimi_k3_modulev3.layers.moe_router"
 )
@@ -182,7 +182,7 @@ def _production_router() -> KimiK3TopKRouter:
 
 
 @pytest.mark.compile_on_gpu(
-    "the mo.moe router kernels are staged as an undeclared custom op the interpreter can't bind"
+    "the moe router kernels are staged as an undeclared custom op the interpreter can't bind"
 )
 @pytest.mark.parametrize(
     ("num_expert_group", "topk_group"),
@@ -238,7 +238,7 @@ def test_matches_independent_reference(
 
 
 @pytest.mark.compile_on_gpu(
-    "the mo.moe router kernels are staged as an undeclared custom op the interpreter can't bind"
+    "the moe router kernels are staged as an undeclared custom op the interpreter can't bind"
 )
 @pytest.mark.parametrize("tokens", [1, 12], ids=["decode_row", "rows"])
 @pytest.mark.parametrize(
@@ -309,7 +309,7 @@ def test_bf16_activations_match_independent_reference(
 
 
 @pytest.mark.compile_on_gpu(
-    "the mo.moe router kernels are staged as an undeclared custom op the interpreter can't bind"
+    "the moe router kernels are staged as an undeclared custom op the interpreter can't bind"
 )
 @pytest.mark.parametrize(
     "tokens",

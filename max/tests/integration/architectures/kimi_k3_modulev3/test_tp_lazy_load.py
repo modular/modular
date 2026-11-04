@@ -195,7 +195,7 @@ def _serve_logits(
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache and gated_delta_conv1d_fwd are both staged as undeclared"
+    "attention.mha.no_cache and gated_delta_conv1d_fwd are both staged as undeclared"
     " custom ops the interpreter can't bind"
 )
 def test_lazy_loaded_tp2_matches_tp1(tmp_path: Path) -> None:

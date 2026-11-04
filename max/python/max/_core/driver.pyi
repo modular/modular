@@ -398,7 +398,7 @@ class CompletionFlag:
     Lets a CPU thread signal a GPU queue (or vice versa) by writing a
     64-bit value to a single location that is visible to both. Pair
     with :meth:`DeviceQueue.wait_for_host_value` or the
-    ``mo.wait_host_value`` graph op to gate downstream GPU work on a
+    ``runtime.wait_host_value`` graph op to gate downstream GPU work on a
     host-produced result without a second queue or a blocking host
     callback.
 
@@ -448,7 +448,7 @@ class CompletionFlag:
         host-side acquire ``load``).
 
         Primary intended use is priming the flag at setup time so
-        the first captured-graph replay's ``mo.wait_host_value``
+        the first captured-graph replay's ``runtime.wait_host_value``
         passes immediately, before any async kickoff has run.
         Direct Python signalling on the hot path is usually a
         mistake; prefer the async-host-func trampoline, which
@@ -474,9 +474,9 @@ class CompletionFlag:
         Raw 64-bit address of the underlying ``M::Driver::CompletionFlag``.
 
         Intended for packing into a graph-op payload buffer
-        (such as for ``mo.wait_host_value``); parallels the
+        (such as for ``runtime.wait_host_value``); parallels the
         trampoline/user_data pointers returned by
-        ``__unsafe_pack_py_host_func`` for ``mo.launch_host_func``.
+        ``__unsafe_pack_py_host_func`` for ``runtime.launch_host_func``.
 
         The caller must keep this ``CompletionFlag`` Python object
         alive for the duration of any graph execution that
@@ -885,7 +885,7 @@ def __unsafe_pack_py_host_func(fn: Callable) -> tuple[int, int]:
 
     The returned integers are suitable for passing to
     ``MLRT::DeviceStream::enqueueHostFunc`` (and, by extension, to the
-    ``mo.launch_host_func`` custom op). The trampoline is a C ABI
+    ``runtime.launch_host_func`` custom op). The trampoline is a C ABI
     ``void(void*)`` function; ``user_data_ptr`` owns a heap allocation
     holding the Python callable.
 

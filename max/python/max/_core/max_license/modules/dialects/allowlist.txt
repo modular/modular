@@ -109,6 +109,7 @@ MOComposite_FusedMatmulAddOp                         # CompositeMatmulAddOp; dec
 MOComposite_GroupedMatmulBlockScaledOp               # CompositeGroupedMatmulBlockScaledOp
 MOComposite_GroupedMatmulSwigluNvfp4Op               # CompositeGroupedMatmulSwigluNvfp4Op
 MOComposite_LayerNormRopeRaggedOp                    # CompositeLayerNormRopeRaggedOp; declares output params; graph.py reaches it structurally
+MOComposite_QuantizeDynamicScaledFP8Op               # CompositeQuantizeDynamicScaledFp8Op
 MOComposite_RMSNormResidualAddOp                     # CompositeRmsNormResidualAddOp; declares output params; graph.py reaches it structurally
 MOComposite_ReduceRMSNormFusedResidualAddOp          # CompositeRmsNormFusedResidualAddOp; declares output params; graph.py reaches it structurally
 MOComposite_ReduceRMSNormRoPEOp                      # CompositeRmsNormRopeOp; declares output params; graph.py reaches it structurally

@@ -550,7 +550,7 @@ def bench_fused_qkv_index_rms_norm_rope[
             ]:
                 return q_index_src.load[width=width]((token, head, col))
 
-            # Exercises the merged dual op (`mo.fused_qk_rms_norm_rope.ragged.paged.dual`,
+            # Exercises the merged dual op (`kv_cache.fused_qk_rms_norm_rope.ragged.paged.dual`,
             # landed separately), which collapses the two single-pair launches above
             # into one. It takes a per-band epsilon, so `main_epsilon`/`index_epsilon`
             # are passed twice below with the same value the unfused pair uses.

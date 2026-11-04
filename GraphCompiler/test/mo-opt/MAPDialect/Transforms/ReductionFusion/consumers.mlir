@@ -54,7 +54,7 @@ mo.graph @sideOutput(%x: !mo.tensor<[8, 128], f32>) -> (!mo.tensor<[8, 1], f32>,
 // CHECK-NEXT:  map.store %[[ON]][{{.*}}] = %[[N]]
 // CHECK:       mo.output %[[R3]]#1, %[[R3]]#0
 mo.graph @oneField(%x: !mo.tensor<[4, 16], f32>) -> (!mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], si64>) {
-  %v, %i = mo.custom [symbol = "mo.reduce.arg_max.tmp", device = #M.device_ref<"cpu", 0>](%x) : (!mo.tensor<[4, 16], f32>) -> (!mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], si64>)
+  %v, %i = mo.custom [symbol = "reduction.arg_max.tmp", device = #M.device_ref<"cpu", 0>](%x) : (!mo.tensor<[4, 16], f32>) -> (!mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], si64>)
   %n = mo.negative(%v) : !mo.tensor<[4, 1], f32>
   mo.output %n, %i : !mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], si64>
 }

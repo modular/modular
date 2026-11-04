@@ -277,7 +277,7 @@ def arg_nonzero_shape(input_buffer: Some[TileTensorable]) -> IndexList[2]:
     )
 
 
-@extensibility.register("mo.reduce.row_mean_of_squares")
+@extensibility.register("reduction.row_mean_of_squares")
 struct RowMeanOfSquares:
     """Per-row mean of squares over the last axis, accumulated in float32.
 
@@ -295,7 +295,7 @@ struct RowMeanOfSquares:
         input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
-        """Executes the `mo.reduce.row_mean_of_squares` graph op.
+        """Executes the `reduction.row_mean_of_squares` graph op.
 
         Parameters:
             target: Compilation target string.
@@ -354,9 +354,9 @@ struct RowMeanOfSquares:
         )
 
 
-@extensibility.register_shape_function("mo.reduce.row_mean_of_squares")
+@extensibility.register_shape_function("reduction.row_mean_of_squares")
 def reduce_row_mean_of_squares_shape(input: Some[Tensor]) -> IndexList[2]:
-    """Computes the output shape for the `mo.reduce.row_mean_of_squares` graph op.
+    """Computes the output shape for the `reduction.row_mean_of_squares` graph op.
 
     Args:
         input: Two-dimensional input tensor of shape `[M, N]` whose
@@ -371,7 +371,7 @@ def reduce_row_mean_of_squares_shape(input: Some[Tensor]) -> IndexList[2]:
     return Index(input_shape[0], 1)
 
 
-@extensibility.register("mo.reduce.row_mean_of_squares_qk")
+@extensibility.register("reduction.row_mean_of_squares_qk")
 struct RowMeanOfSquaresQK:
     """Fused per-row mean of squares for two operands Q and K.
 
@@ -379,7 +379,7 @@ struct RowMeanOfSquaresQK:
     possibly different column counts), computes `out[m, 0] = mean_n(q[m,n]^2)`
     and `out[m, 1] = mean_n(k[m,n]^2)` into a `[M, 2]` output. The square and
     accumulation always run in float32. This is a single-launch fusion of two
-    `mo.reduce.row_mean_of_squares` ops plus a concat, used for cross-head
+    `reduction.row_mean_of_squares` ops plus a concat, used for cross-head
     QK-RMSNorm statistics under tensor parallelism.
     """
 
@@ -392,7 +392,7 @@ struct RowMeanOfSquaresQK:
         k: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        """Executes the `mo.reduce.row_mean_of_squares_qk` graph op.
+        """Executes the `reduction.row_mean_of_squares_qk` graph op.
 
         Parameters:
             target: Compilation target string.
@@ -441,11 +441,11 @@ struct RowMeanOfSquaresQK:
         )
 
 
-@extensibility.register_shape_function("mo.reduce.row_mean_of_squares_qk")
+@extensibility.register_shape_function("reduction.row_mean_of_squares_qk")
 def reduce_row_mean_of_squares_qk_shape(
     q: Some[Tensor], k: Some[Tensor]
 ) -> IndexList[2]:
-    """Computes the output shape for the `mo.reduce.row_mean_of_squares_qk` graph op.
+    """Computes the output shape for the `reduction.row_mean_of_squares_qk` graph op.
 
     Args:
         q: Query tensor of shape `[M, Nq]` whose per-row mean of squares
@@ -464,7 +464,7 @@ def reduce_row_mean_of_squares_qk_shape(
     return Index(q_shape[0], 2)
 
 
-@extensibility.register("mo.norm.apply_qk_rms_norm")
+@extensibility.register("norm.apply_qk_rms_norm")
 struct ApplyQKRMSNorm:
     """Fused per-element QK-RMSNorm apply for two operands Q and K.
 
@@ -498,7 +498,7 @@ struct ApplyQKRMSNorm:
         epsilon: Float32,
         ctx: DeviceContext,
     ) raises:
-        """Executes the `mo.norm.apply_qk_rms_norm` graph op.
+        """Executes the `norm.apply_qk_rms_norm` graph op.
 
         Parameters:
             target: Compilation target string.
@@ -2105,9 +2105,9 @@ def top_k_shape(
     )
 
 
-@extensibility.register("mo.top_k.per_row")
+@extensibility.register("reduction.top_k.per_row")
 struct TopKPerRow:
-    """Registers the `mo.top_k.per_row` graph op with the graph compiler.
+    """Registers the `reduction.top_k.per_row` graph op with the graph compiler.
 
     `mo.top_k` over the last axis of a `[rows, n]` input, with a count per
     row: row `r` keeps the first `k[r]` picks `mo.top_k` with `max_k` makes
@@ -2130,7 +2130,7 @@ struct TopKPerRow:
         k: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        """Executes the `mo.top_k.per_row` graph op.
+        """Executes the `reduction.top_k.per_row` graph op.
 
         Parameters:
             max_k: Output width, the largest count any row may ask for.

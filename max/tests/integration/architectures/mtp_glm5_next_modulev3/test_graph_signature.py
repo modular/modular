@@ -286,7 +286,7 @@ def test_every_indexer_seeds_its_tail_twice(fused: str) -> None:
     """Checks each indexer over the window, the draft's included, gets a
     deferred seed and a replay."""
     indexers = NUM_SPARSE + 1
-    assert _symbol_count(fused, "mo.mla.kpool.seed_tail") == 2 * indexers
+    assert _symbol_count(fused, "attention.mla.kpool.seed_tail") == 2 * indexers
 
 
 def test_the_fused_graph_compiles() -> None:

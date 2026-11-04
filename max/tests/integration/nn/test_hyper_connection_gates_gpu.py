@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Validates the fused mHC gate op against the PyTorch reference it replaces.
 
-`mo.hyper_connection.gates` fuses the sigmoids, the softmax, and the
+`hyper_connection.gates` fuses the sigmoids, the softmax, and the
 Sinkhorn-Knopp projection that a manifold-constrained hyper-connection site
 runs between its stream projection and its stream collapse. The reference is a
 transcription of that block, run in float32 -- the thing the kernel has to

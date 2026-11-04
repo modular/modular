@@ -233,7 +233,7 @@ class HyperConnection(Module):
     def _fused_pre(
         self, hidden_streams: TensorValue
     ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
-        """Runs the whole site as one ``mo.mhc.pre`` op on gfx950."""
+        """Runs the whole site as one ``hyper_connection.mhc.pre`` op on gfx950."""
         device = hidden_streams.device
         base: TensorValue = self.hc_base
         scale: TensorValue = self.hc_scale

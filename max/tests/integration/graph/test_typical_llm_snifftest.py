@@ -21,7 +21,7 @@ with mixed static/dynamic shapes (symbolic ``batch``/``seq_len``, static
 ``window_size``/``num_heads``/``head_size``) in the same graph.
 Compile-only, no correctness/numeric checks and no benchmarking.
 
-``mo.mha.no_cache`` (the attention op `_AttentionBlock` calls through
+``attention.mha.no_cache`` (the attention op `_AttentionBlock` calls through
 ``F.custom``) has only a GPU kernel registration
 (``builtin_kernels/attention.mojo``'s ``FlashAttentionGPU``), so this test
 is skipped without one, like `test_tile_based_fusion.py`.
@@ -160,7 +160,7 @@ class _AttentionBlock(Module[..., tuple[Tensor, Tensor, Tensor]]):
         new_v_cache = value[:, -self.window_size :]
 
         attn_out = F.custom(
-            "mo.mha.no_cache",
+            "attention.mha.no_cache",
             query.device,
             [
                 query,

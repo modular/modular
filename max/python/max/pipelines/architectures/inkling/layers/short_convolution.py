@@ -218,7 +218,7 @@ def fused_qk_rms_norm_short_conv_ragged(
         The normalized query, ``[total_tokens, q_num_heads, head_dim]``.
     """
     return ops.inplace_custom(
-        "mo.fused_qk_rms_norm_short_conv.ragged.paged",
+        "kv_cache.fused_qk_rms_norm_short_conv.ragged.paged",
         device=qkvr.device,
         values=[
             qkvr,

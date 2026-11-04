@@ -194,7 +194,7 @@ example, `convert_e4m3fn_to_e4m3fnuz_shape` in
 shape:
 
 ```mojo
-@extensibility.register_shape_function("mo.convert_e4m3fn_to_e4m3fnuz")
+@extensibility.register_shape_function("quantization.convert_e4m3fn_to_e4m3fnuz")
 def convert_e4m3fn_to_e4m3fnuz_shape(
     input: Some[Tensor],
 ) -> IndexList[type_of(input).rank]:

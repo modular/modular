@@ -234,6 +234,6 @@ def test_fused_router_routes_on_every_device() -> None:
     """The fused gate GEMV and top-k cost no collective at four devices."""
     graph = _fused_router_graph()
     ir = str(graph)
-    assert "mo.moe.sigmoid.gemv.single.group.router" in ir, ir
+    assert "moe.sigmoid.gemv.single.group.router" in ir, ir
     broadcast = _BROADCAST_OP.findall(ir)
     assert not broadcast, broadcast

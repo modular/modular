@@ -234,7 +234,7 @@ mo.graph @reduceResultCount(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1],
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
-mogg.kernel.decl @builtin_kernels.monoids.Welford registration = "mo.reduce.mean_var.tmp" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"count", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"mean", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"M2", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.Welford registration = "reduction.mean_var.tmp" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"count", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"mean", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"M2", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 // Welford's three outputs share the `dtype` parameter.
 mo.graph @reduceParamTypes(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {

@@ -187,7 +187,7 @@ class Runner:
             name="mimo_v2_modulev3_fixture_check",
         )
         self.fused_qkv_count = str(staged).count(
-            "mo.chunked_qkv_rope_store.ragged.paged"
+            "kv_cache.chunked_qkv_rope_store.ragged.paged"
         )
         self.model = compilation.CompiledCallable(
             staged, registry, session=session

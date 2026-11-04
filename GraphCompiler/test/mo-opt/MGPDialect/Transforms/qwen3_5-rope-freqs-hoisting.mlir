@@ -55,7 +55,7 @@ module {
     %mask_bf16 = mo.cast(%mask_col) : (!mo.tensor<[total_seq_len, 1], bool, gpu:0>) -> !mo.tensor<[total_seq_len, 1], bf16, gpu:0>
     %embeds_masked = rmo.mul(%embeds, %mask_bf16) : (!hidden, !mo.tensor<[total_seq_len, 1], bf16, gpu:0>) -> !hidden
     %image_idx_col = rmo.reshape(%arg17) [newShape = #mosh<ape[total_image_tokens, 1]> : !mosh.ape] : (!mo.tensor<[total_image_tokens], si32, gpu:0>) -> !mo.tensor<[total_image_tokens, 1], si32, gpu:0>
-    %hidden_in = mo.custom [symbol = "mo.scatter_nd.skip_oob_indices", device = #M.device_ref<"gpu", 0>](%embeds_masked, %arg16, %image_idx_col) : (!hidden, !mo.tensor<[vision_merged_seq_len, 4096], bf16, gpu:0>, !mo.tensor<[total_image_tokens, 1], si32, gpu:0>) -> !hidden
+    %hidden_in = mo.custom [symbol = "gather_scatter.scatter_nd.skip_oob_indices", device = #M.device_ref<"gpu", 0>](%embeds_masked, %arg16, %image_idx_col) : (!hidden, !mo.tensor<[vision_merged_seq_len, 4096], bf16, gpu:0>, !mo.tensor<[total_image_tokens, 1], si32, gpu:0>) -> !hidden
     // RoPE cos/sin (freqs_cis) table: built on host, then transferred to the device.
     %dim_range = mo.range(%f64_zero, %f64_64, %f64_two) : (!mo.tensor<[], f64>, !mo.tensor<[], f64>, !mo.tensor<[], f64>) -> !mo.tensor<[32], f64>
     %dim_ratio = rmo.div(%dim_range, %f64_64) : (!mo.tensor<[32], f64>, !mo.tensor<[], f64>) -> !mo.tensor<[32], f64>
@@ -87,7 +87,7 @@ module {
     %qkv = rmo.reshape(%arg0) [newShape = #mosh<ape[total_seq_len, 16, 256]> : !mosh.ape] : (!hidden) -> !mo.tensor<[total_seq_len, 16, 256], bf16, gpu:0>
     // Split the legacy packed max_lengths [steps_remaining, 2] into two rank-1
     // [1] scalar tensors (max_prompt_length, max_cache_length) to match the
-    // updated mo.fused_qk_rope.ragged.paged operand signature.
+    // updated kv_cache.fused_qk_rope.ragged.paged operand signature.
     %max_prompt_2d = rmo.slice(%arg5) [starts = #mosh<ape[0, 0]> : !mosh.ape, stops = #mosh<ape[1, 1]> : !mosh.ape, steps = #mosh<ape[1, 1]> : !mosh.ape] : (!mo.tensor<[replica_0_steps_remaining, 2], ui32>) -> !mo.tensor<[1, 1], ui32>
     %max_prompt_length = rmo.reshape(%max_prompt_2d) [newShape = #mosh<ape[1]> : !mosh.ape] : (!mo.tensor<[1, 1], ui32>) -> !mo.tensor<[1], ui32>
     %max_cache_2d = rmo.slice(%arg5) [starts = #mosh<ape[0, 1]> : !mosh.ape, stops = #mosh<ape[1, 2]> : !mosh.ape, steps = #mosh<ape[1, 1]> : !mosh.ape] : (!mo.tensor<[replica_0_steps_remaining, 2], ui32>) -> !mo.tensor<[1, 1], ui32>
@@ -95,7 +95,7 @@ module {
     // -1 marks the pages as packed, so the kernel derives the page-to-page
     // distance from the block shape.
     %page_stride = "mo.constant"() {device = #M.device_ref<"cpu", 0>, value = #M.dense_array<-1> : tensor<1xsi64>} : () -> !mo.tensor<[1], si64>
-    %roped:2 = mo.custom [symbol = "mo.fused_qk_rope.ragged.paged", device = #M.device_ref<"gpu", 0>, parameters = {cache_dtype = bf16, interleaved = true}](%qkv, %arg8, %arg2, %page_stride, %arg3, %arg4, %max_prompt_length, %max_cache_length, %freqs_bf16, %arg1, %arg10) : (!mo.tensor<[total_seq_len, 16, 256], bf16, gpu:0>, !mo.tensor<[input_row_offsets_len], ui32, gpu:0>, !kv_cache, !mo.tensor<[1], si64>, !mo.tensor<[replica_0_batch_size], ui32, gpu:0>, !mo.tensor<[replica_0_batch_size, replica_0_max_num_pages], ui32, gpu:0>, !mo.tensor<[1], ui32>, !mo.tensor<[1], ui32>, !mo.tensor<[16, 64], bf16, gpu:0>, !mo.tensor<[], ui32>, !chain) -> (!mo.tensor<[total_seq_len, 16, 256], bf16, gpu:0>, !chain)
+    %roped:2 = mo.custom [symbol = "kv_cache.fused_qk_rope.ragged.paged", device = #M.device_ref<"gpu", 0>, parameters = {cache_dtype = bf16, interleaved = true}](%qkv, %arg8, %arg2, %page_stride, %arg3, %arg4, %max_prompt_length, %max_cache_length, %freqs_bf16, %arg1, %arg10) : (!mo.tensor<[total_seq_len, 16, 256], bf16, gpu:0>, !mo.tensor<[input_row_offsets_len], ui32, gpu:0>, !kv_cache, !mo.tensor<[1], si64>, !mo.tensor<[replica_0_batch_size], ui32, gpu:0>, !mo.tensor<[replica_0_batch_size, replica_0_max_num_pages], ui32, gpu:0>, !mo.tensor<[1], ui32>, !mo.tensor<[1], ui32>, !mo.tensor<[16, 64], bf16, gpu:0>, !mo.tensor<[], ui32>, !chain) -> (!mo.tensor<[total_seq_len, 16, 256], bf16, gpu:0>, !chain)
     %attn_out = rmo.reshape(%roped#0) [newShape = #mosh<ape[total_seq_len, 4096]> : !mosh.ape] : (!mo.tensor<[total_seq_len, 16, 256], bf16, gpu:0>) -> !hidden
     %out = rmo.add(%arg0, %attn_out) : (!hidden, !hidden) -> !hidden
     mo.output %out, %arg9, %roped#1 : !hidden, !chain, !chain

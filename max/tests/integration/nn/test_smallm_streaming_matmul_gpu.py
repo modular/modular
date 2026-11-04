@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """MI355X small-M streaming matmul op.
 
-Covers the graph custom op (`mo.smallm.streaming.matmul`) contract and, by
+Covers the graph custom op (`matmul.smallm.streaming`) contract and, by
 comparing against a plain matmul, the parity between the op's in-graph weight
 permutation and the layout the Mojo kernel reads.
 """

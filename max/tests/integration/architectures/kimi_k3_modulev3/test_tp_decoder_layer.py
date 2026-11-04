@@ -67,7 +67,7 @@ def _arr(*shape: int) -> np.ndarray:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
     # Matches test_tp_attention.py's MLA parameters: flash_attention_gpu has

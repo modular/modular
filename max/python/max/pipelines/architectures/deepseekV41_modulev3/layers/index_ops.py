@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Graph ops of the MXFP4 sparse-attention indexer, ModuleV3 wiring.
 
-Thin bindings of the ``mo.csa.indexer.*`` ops (registered in
+Thin bindings of the ``attention.csa.indexer.*`` ops (registered in
 ``Kernels/lib/graph_compiler/csa_indexer.mojo``) over this stack's
 ``PagedCacheValues`` leaves. Index keys live in the MXFP4 index
 leaf -- one 68-byte record per entry (64 E2M1 code bytes then four
@@ -102,7 +102,7 @@ def indexer_q_rope_quant_rows(
     t = queries.shape[0]
     device = queries.device
     packed, scales, scaled = ops.custom(
-        "mo.csa.indexer.q_rope_quant",
+        "attention.csa.indexer.q_rope_quant",
         device=device,
         values=[
             queries,
@@ -156,7 +156,7 @@ def indexer_k_store_rows(
         epsilon: RMSNorm epsilon.
     """
     ops.inplace_custom(
-        "mo.csa.indexer.k_store",
+        "attention.csa.indexer.k_store",
         device=keys.device,
         values=[
             keys,
@@ -232,7 +232,7 @@ def indexer_select_rows(
 ) -> Tensor:
     """Selects each row's top-k visible entries, ``-1``-padded, unordered."""
     return _select(
-        "mo.csa.indexer.mxfp4",
+        "attention.csa.indexer.mxfp4",
         q,
         offsets,
         leaf,
@@ -279,7 +279,7 @@ def indexer_select_block_topk_rows(
     """
     device = q[0].device
     ids, kept = _select(
-        "mo.csa.indexer.mxfp4.block_max",
+        "attention.csa.indexer.mxfp4.block_max",
         q,
         offsets,
         leaf,
@@ -323,7 +323,7 @@ def indexer_select_masked_rows(
         block_size: Entries per block.
     """
     return _select(
-        "mo.csa.indexer.mxfp4.masked",
+        "attention.csa.indexer.mxfp4.masked",
         q,
         offsets,
         leaf,

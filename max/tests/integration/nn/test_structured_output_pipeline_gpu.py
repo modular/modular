@@ -16,12 +16,12 @@ The graph stitches together every primitive added in DRIV-135/DRIV-136:
 
   1. A first GPU ``argmax`` over a hand-crafted logits vector to pick a
      token deterministically.
-  2. A D2H ``mo.inplace_memcpy`` of that token into pinned host memory.
-  3. ``mo.launch_host_func`` runs a Python callback on the GPU stream
+  2. A D2H ``runtime.inplace_memcpy`` of that token into pinned host memory.
+  3. ``runtime.launch_host_func`` runs a Python callback on the GPU stream
      that advances an xgrammar ``XgrammarMatcher`` with the just-arrived
      token and writes the next-step "additive logits mask" (``0.0`` for
      allowed tokens, ``-inf`` for forbidden) into a second pinned buffer.
-  4. An H2D ``mo.inplace_memcpy`` of the mask into a GPU buffer.
+  4. An H2D ``runtime.inplace_memcpy`` of the mask into a GPU buffer.
   5. A second GPU argmax that adds the mask to a fresh logits vector and
      samples the next token.
 

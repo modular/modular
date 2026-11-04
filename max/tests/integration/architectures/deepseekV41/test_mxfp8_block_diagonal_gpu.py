@@ -81,7 +81,7 @@ def test_block_diagonal_split_k_matches_production(
                 x_q, w, x_scales, w_scales, GROUPS
             ),
         )
-    assert "mo.matmul.mxfp8.cluster_splitk.block_diagonal" in str(graph)
+    assert "matmul.mxfp8.cluster_splitk.block_diagonal" in str(graph)
     model = session.load(graph)
 
     rng = np.random.default_rng(0)

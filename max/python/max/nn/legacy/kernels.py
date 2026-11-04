@@ -251,7 +251,7 @@ def fused_qkv_padded_matmul(
     _check_rank(1, valid_lengths=valid_lengths)
 
     return ops.inplace_custom(
-        "mo.fused_qkv_matmul.padded.paged",
+        "kv_cache.fused_qkv_matmul.padded.paged",
         device=input.device,
         values=[
             input,
@@ -311,7 +311,7 @@ def fused_qkv_ragged_matmul(
         DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
     )
 
-    op_name = "mo.fused_qkv_matmul.ragged.paged"
+    op_name = "kv_cache.fused_qkv_matmul.ragged.paged"
     values = [
         input,
         input_row_offsets,
@@ -478,7 +478,7 @@ def fused_chunked_qkv_rope_store_ragged(
     if split:
         parameters["split_cache"] = True
     return ops.inplace_custom(
-        "mo.chunked_qkv_rope_store.ragged.paged",
+        "kv_cache.chunked_qkv_rope_store.ragged.paged",
         device=qkv.device,
         values=[
             qkv,
@@ -633,7 +633,7 @@ def rope_split_store_ragged(
         )
 
     if position_ids is not None:
-        op_name = "mo.rope_split_store.ragged.paged.with_position_id"
+        op_name = "kv_cache.rope_split_store.ragged.paged.with_position_id"
         values = [
             qkv,
             input_row_offsets,
@@ -650,7 +650,7 @@ def rope_split_store_ragged(
         assert k_norm_weight is not None
         if rms_norm_eps is None:
             raise ValueError("rms_norm_eps is required with q_norm_weight")
-        op_name = "mo.rope_split_store.ragged.paged.with_qk_norm"
+        op_name = "kv_cache.rope_split_store.ragged.paged.with_qk_norm"
         parameters["eps_recip"] = round(1.0 / rms_norm_eps)
         # When `k_eq_v`, V has no projection: `qkv` is `[q|k]` and the kernel
         # reads the K region for both K and V (sharing one norm reduction)
@@ -666,7 +666,7 @@ def rope_split_store_ragged(
             layer_idx,
         ]
     else:
-        op_name = "mo.rope_split_store.ragged.paged"
+        op_name = "kv_cache.rope_split_store.ragged.paged"
         values = [
             qkv,
             input_row_offsets,
@@ -712,7 +712,7 @@ def store_k_scale_cache_ragged(
             "kv_collection.scales_lookup_table is None, expected a tensor value"
         )
     ops.inplace_custom(
-        "mo.kv_cache.store_k_scales.paged.ragged",
+        "kv_cache.store_k_scales.paged.ragged",
         device=x_k_scale.device,
         values=[
             x_k_scale,
@@ -788,7 +788,7 @@ def _rope_split_store_ragged_unfused(
     max_prompt_length = kv_collection.max_prompt_length
     max_cache_length = kv_collection.max_cache_length
     ops.inplace_custom(
-        "mo.kv_cache.store.paged.ragged",
+        "kv_cache.store.paged.ragged",
         device=xk_rope.device,
         values=[
             xk_rope,
@@ -804,7 +804,7 @@ def _rope_split_store_ragged_unfused(
         parameters={"key_or_value": 0},
     )
     ops.inplace_custom(
-        "mo.kv_cache.store.paged.ragged",
+        "kv_cache.store.paged.ragged",
         device=x_v.device,
         values=[
             x_v,
@@ -939,7 +939,7 @@ def _fused_qkv_ragged_matmul_scaled_float8(
         "k_scale_granularity": scales_granularity_mnk[2],
     }
 
-    op_name = "mo.fused_qkv_matmul.ragged.paged.scale"
+    op_name = "kv_cache.fused_qkv_matmul.ragged.paged.scale"
     values = [
         input,
         input_row_offsets,
@@ -1066,7 +1066,7 @@ def _fused_qkv_ragged_matmul_scaled_float4(
         "SF_VECTOR_SIZE": sf_vector_size,
     }
 
-    op_name = "mo.fused_qkv_matmul.ragged.paged.scale.float4"
+    op_name = "kv_cache.fused_qkv_matmul.ragged.paged.scale.float4"
     values = [
         input,
         input_row_offsets,
@@ -1179,9 +1179,9 @@ def _fused_qkv_ragged_matmul_scaled_mxfp8(
     # The two ops share every operand but the scale layout: SM100 takes the
     # rank-5 SF-atom interleave, CDNA4 the checkpoint's rank-2 E8M0 scales.
     op_name = (
-        "mo.fused_qkv_matmul.ragged.paged.scale.mxfp8.amd"
+        "kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp8.amd"
         if _is_amd_gpu()
-        else "mo.fused_qkv_matmul.ragged.paged.scale.mxfp8"
+        else "kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp8"
     )
     values = [
         input,
@@ -1298,7 +1298,7 @@ def _fused_qkv_ragged_matmul_scaled_mxfp6(
         raise ValueError(
             "the fused MXFP6 QKV matmul is CDNA4-only; there is no SM100 path"
         )
-    op_name = "mo.fused_qkv_matmul.ragged.paged.scale.mxfp6.amd"
+    op_name = "kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp6.amd"
     values = [
         input,
         input_row_offsets,
@@ -1433,9 +1433,9 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
     # The two ops share every operand but the scale layout: SM100 takes the
     # rank-5 SF-atom interleave, CDNA4 the checkpoint's rank-2 E8M0 scales.
     op_name = (
-        "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8.amd"
+        "kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp8.amd"
         if _is_amd_gpu()
-        else "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8"
+        else "kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp8"
     )
     values = [
         input,
@@ -1585,7 +1585,7 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp6(
 
     if not _is_amd_gpu():
         raise ValueError("the fused MXFP6 QKV+IndexQK matmul is CDNA4-only")
-    op_name = "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp6.amd"
+    op_name = "kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp6.amd"
     values = [
         input,
         input_row_offsets,
@@ -1710,7 +1710,7 @@ def _fused_qkv_index_ragged_matmul(
         "IQ_DIM": iq_dim,
     }
 
-    op_name = "mo.fused_qkv_index_matmul.ragged.paged"
+    op_name = "kv_cache.fused_qkv_index_matmul.ragged.paged"
     values = [
         input,
         input_row_offsets,
@@ -1794,7 +1794,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
     }
 
     return ops.inplace_custom(
-        "mo.unfused_qkv_matmul.ragged.paged.gguf_quantized",
+        "kv_cache.unfused_qkv_matmul.ragged.paged.gguf_quantized",
         device=input.device,
         values=[
             input,
@@ -1902,7 +1902,7 @@ def fused_qkv_ragged_matmul_quantized(
     else:
         bias_name_str = ""
 
-    op_name = f"mo.fused_qkv_matmul.ragged.paged.{bias_name_str}quantized"
+    op_name = f"kv_cache.fused_qkv_matmul.ragged.paged.{bias_name_str}quantized"
 
     return ops.inplace_custom(
         op_name,
@@ -1941,7 +1941,7 @@ def matmul_kv_cache_ragged(
 
     _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
 
-    op_name = "mo.kv_matmul.ragged.paged"
+    op_name = "kv_cache.kv_matmul.ragged.paged"
 
     ops.inplace_custom(
         name=op_name,
@@ -1978,7 +1978,7 @@ def matmul_k_cache_ragged(
 
     _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
 
-    op_name = "mo.k_matmul.ragged.paged"
+    op_name = "kv_cache.k_matmul.ragged.paged"
 
     ops.inplace_custom(
         name=op_name,
@@ -2037,7 +2037,7 @@ def matmul_k_cache_ragged_scaled_float8(
         DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
     )
 
-    op_name = "mo.k_matmul.ragged.paged.scale"
+    op_name = "kv_cache.k_matmul.ragged.paged.scale"
 
     parameters: dict[str, bool | int | str | DType] = {
         "m_scale_granularity": scales_granularity_mnk[0],
@@ -2154,7 +2154,7 @@ def fused_qk_ragged_rope(
             parameters["mrope_section"] = ""
 
     if position_ids is not None:
-        op_name = "mo.fused_qk_rope.ragged.paged.with_position_id"
+        op_name = "kv_cache.fused_qk_rope.ragged.paged.with_position_id"
         values = [
             input,
             input_row_offsets,
@@ -2164,7 +2164,7 @@ def fused_qk_ragged_rope(
             layer_idx,
         ]
     else:
-        op_name = "mo.fused_qk_rope.ragged.paged"
+        op_name = "kv_cache.fused_qk_rope.ragged.paged"
         values = [
             input,
             input_row_offsets,
@@ -2261,7 +2261,7 @@ def fused_qk_ragged_rms_norm(
     assert kv_params.page_size is not None
 
     return ops.inplace_custom(
-        "mo.fused_qk_rms_norm.ragged.paged",
+        "kv_cache.fused_qk_rms_norm.ragged.paged",
         device=input.device,
         values=[
             input,
@@ -2389,7 +2389,7 @@ def fused_qk_rms_norm_rope_ragged(
     assert kv_params.page_size is not None
 
     return ops.inplace_custom(
-        "mo.fused_qk_rms_norm_rope.ragged.paged",
+        "kv_cache.fused_qk_rms_norm_rope.ragged.paged",
         device=input.device,
         values=[
             input,
@@ -2547,7 +2547,7 @@ def fused_dual_qk_rms_norm_rope_ragged(
     assert index_kv_params.page_size is not None
 
     results = ops.inplace_custom(
-        "mo.fused_qk_rms_norm_rope.ragged.paged.dual",
+        "kv_cache.fused_qk_rms_norm_rope.ragged.paged.dual",
         device=main_input.device,
         values=[
             main_input,
@@ -2709,9 +2709,9 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged(
         )
 
     results = ops.inplace_custom(
-        "mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4.nvfp4_index"
+        "kv_cache.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4.nvfp4_index"
         if index_kv_params.is_nvfp4_kv_cache
-        else "mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4",
+        else "kv_cache.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4",
         device=q_main.device,
         values=[
             q_main,
@@ -2825,7 +2825,7 @@ def kv_cache_store_paged_ragged(
         parameters["v_head_dim"] = v_head_dim
 
     ops.inplace_custom(
-        "mo.kv_cache.store.paged.ragged",
+        "kv_cache.store.paged.ragged",
         device=x_cache.device,
         values=[
             x_cache,
@@ -2946,7 +2946,7 @@ def kv_cache_gather_rows_ragged(
         )
 
     return ops.inplace_custom(
-        "mo.kv_cache.gather_rows.ragged.paged",
+        "kv_cache.gather_rows.ragged.paged",
         device=slots.device,
         values=[
             slots,
@@ -2990,7 +2990,7 @@ def kv_cache_store_paged_padded(
     }
 
     ops.inplace_custom(
-        "mo.kv_cache.store.paged.padded",
+        "kv_cache.store.paged.padded",
         device=x_cache.device,
         values=[
             x_cache,
@@ -3250,7 +3250,7 @@ def rope_ragged_with_position_ids(
         )
         start_pos = ops.constant([0], dtype=DType.uint32, device=input.device)
         return ops.custom(
-            "mo.rope.ragged.with_position_id",
+            "rope.ragged.with_position_id",
             device=input.device,
             values=[
                 input,
@@ -3332,7 +3332,7 @@ def flash_attention_padded_kv_cache(
     )
 
     return ops.inplace_custom(
-        "mo.mha.padded.paged",
+        "attention.mha.padded.paged",
         device=q.device,
         values=[
             q,
@@ -3472,12 +3472,12 @@ def _mla_fp8_index_top_k(
     ]
     if mla_collection is None:
         assert write_logical, "the plain indexer op writes only logical indices"
-        op_name = "mo.mla.indexer.ragged.float8.paged"
+        op_name = "attention.mla.indexer.ragged.float8.paged"
         parameters["kpool"] = kpool
         out_types = [out_type]
     else:
         assert kpool == 1, "physical indices need token positions"
-        op_name = "mo.mla.indexer.ragged.float8.paged.remap"
+        op_name = "attention.mla.indexer.ragged.float8.paged.remap"
         values += [mla_collection.kv_blocks, mla_collection.lookup_table]
         if nvfp4_mla:
             op_name += ".nvfp4"
@@ -3751,7 +3751,7 @@ def mla_kpool_compress(
         )
 
     return ops.custom(
-        "mo.mla.kpool.compress",
+        "attention.mla.kpool.compress",
         device=k.device,
         values=[
             k,
@@ -3820,7 +3820,7 @@ def mla_kpool_expand_topk(
     tail_width = (kpool - 1) if always_select_tail else 0
 
     return ops.custom(
-        "mo.mla.kpool.expand_topk",
+        "attention.mla.kpool.expand_topk",
         device=pool_ids.device,
         values=[pool_ids, input_row_offsets, cache_lengths],
         out_types=[
@@ -3889,7 +3889,7 @@ def mla_kpool_seed_tail(
         )
 
     ops.inplace_custom(
-        "mo.mla.kpool.seed_tail",
+        "attention.mla.kpool.seed_tail",
         device=k.device,
         values=[
             tail,
@@ -3979,7 +3979,7 @@ def mla_kpool_ring_close(
 
     batch = cache_lengths.shape[0]
     results = ops.inplace_custom(
-        "mo.mla.kpool.ring_close",
+        "attention.mla.kpool.ring_close",
         device=k.device,
         values=[
             tail,
@@ -4189,9 +4189,9 @@ def msa_sparse_indexer(
     ]
 
     return ops.inplace_custom(
-        "mo.msa.indexer.ragged.paged.nvfp4"
+        "attention.msa.indexer.ragged.paged.nvfp4"
         if nvfp4_k
-        else "mo.msa.indexer.ragged.paged",
+        else "attention.msa.indexer.ragged.paged",
         device=index_q.device,
         values=values,
         out_types=[
@@ -4229,7 +4229,7 @@ def _kv_cache_row_offsets_ragged(
     )
 
     return ops.custom(
-        "mo.kv_cache.row_offsets.ragged.paged",
+        "kv_cache.row_offsets.ragged.paged",
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
@@ -4311,9 +4311,9 @@ def msa_sparse_attention_ragged(
     )
 
     return ops.inplace_custom(
-        "mo.msa.attention.ragged.paged.nvfp4"
+        "attention.msa.ragged.paged.nvfp4"
         if kv_params.is_nvfp4_kv_cache
-        else "mo.msa.attention.ragged.paged",
+        else "attention.msa.ragged.paged",
         device=input.device,
         values=values,
         out_types=[
@@ -4358,7 +4358,7 @@ def msa_sparse_attention_ragged_mxfp8(
     separate quantize dispatch is skipped. Bit-identical to that unfused
     pair; on split-K decode shapes the quantize fuses into the reduce and
     saves a dispatch. An NVFP4 main cache runs
-    ``mo.msa.attention.ragged.paged.nvfp4.mxfp8``.
+    ``attention.msa.ragged.paged.nvfp4.mxfp8``.
 
     Args:
         kv_params: Key-value cache parameters for the main KV cache.
@@ -4408,9 +4408,9 @@ def msa_sparse_attention_ragged_mxfp8(
         )
 
     results = ops.inplace_custom(
-        "mo.msa.attention.ragged.paged.nvfp4.mxfp8"
+        "attention.msa.ragged.paged.nvfp4.mxfp8"
         if kv_params.is_nvfp4_kv_cache
-        else "mo.msa.attention.ragged.paged.mxfp8",
+        else "attention.msa.ragged.paged.mxfp8",
         device=input.device,
         values=values,
         out_types=[
@@ -4505,7 +4505,7 @@ def msa_sparse_attention_ragged_mxfp6(
         )
 
     results = ops.inplace_custom(
-        "mo.msa.attention.ragged.paged.mxfp6",
+        "attention.msa.ragged.paged.mxfp6",
         device=input.device,
         values=values,
         out_types=[
@@ -4544,7 +4544,7 @@ def _msa_sparse_attention_ragged_values(
 ) -> list[Value[Any]]:
     """Validates and builds the shared operand list for the MSA attention ops.
 
-    ``mo.msa.attention.ragged.paged`` and its ``.mxfp8`` variant take the
+    ``attention.msa.ragged.paged`` and its ``.mxfp8`` variant take the
     identical input operands in the identical order; only their outputs
     differ. Keeping the list in one place keeps them from drifting.
     """
@@ -4795,10 +4795,10 @@ def flash_attention_gpu(
         mask_variant, local_window_size=local_window_size
     )
 
-    op_name = "mo.mha.no_cache"
+    op_name = "attention.mha.no_cache"
     values = [q, k, v]
     if valid_length is not None:
-        op_name = "mo.mha.padded.no_cache"
+        op_name = "attention.mha.padded.no_cache"
         values.append(valid_length)
     values.append(
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU())
@@ -4991,7 +4991,7 @@ def _dense_attention(
         values.append(mask)
         parameters = {"mask_str": "additive"}
     return ops.custom(
-        "mo.mha.no_cache",
+        "attention.mha.no_cache",
         device=q.device,
         values=values,
         out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
@@ -5036,7 +5036,7 @@ def flash_attention_ragged(
     For a cache whose key and value head dims differ, ``input`` is
     ``head_dim`` wide and the output is ``v_head_dim`` wide.
 
-    ``mo.mha.ragged.paged`` takes the KV collection's mixed-step split record
+    ``attention.mha.ragged.paged`` takes the KV collection's mixed-step split record
     (zeros when it has none) and splits a mixed batch with it; the sink,
     relative-logit and split-head-dim calls do not split.
 
@@ -5162,14 +5162,14 @@ def flash_attention_ragged(
             "mask_str": "relative_logits",
             "local_window_size": local_window_size,
         }
-        op_name = "mo.mha.ragged.paged"
+        op_name = "attention.mha.ragged.paged"
     else:
         parameters = _mha_parameters(
             mask_variant, local_window_size=local_window_size
         )
-        op_name = "mo.mha.ragged.paged"
+        op_name = "attention.mha.ragged.paged"
         if sink_weights is not None:
-            op_name = "mo.mha.ragged.paged.sink_weights"
+            op_name = "attention.mha.ragged.paged.sink_weights"
         if v_head_dim is not None:
             parameters["v_head_dim"] = v_head_dim
 
@@ -5463,7 +5463,7 @@ def flash_attention_ragged_gpu(
         values += [segment_ids, input_row_offsets]
 
     return ops.custom(
-        "mo.mha.ragged.no_cache",
+        "attention.mha.ragged.no_cache",
         values=values,
         out_types=[
             TensorType(
@@ -5528,7 +5528,7 @@ def flare_mla_decode_ragged(
         )
 
     assert kv_params.page_size is not None
-    _reject_nvfp4_mla_kv_cache(kv_params, "mo.mla.decode.ragged.paged")
+    _reject_nvfp4_mla_kv_cache(kv_params, "attention.mla.decode.ragged.paged")
     parameters = _mha_parameters(mask_variant)
 
     # Output dtype: always bfloat16 for FP8 Q (native FP8 path produces
@@ -5544,7 +5544,7 @@ def flare_mla_decode_ragged(
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
 
-    op_name = "mo.mla.decode.ragged.paged"
+    op_name = "attention.mla.decode.ragged.paged"
     input_values.append(scalar_args)
 
     return ops.inplace_custom(
@@ -5630,7 +5630,9 @@ def flare_mla_decode_ragged_scaled(
         )
 
     assert kv_params.page_size is not None
-    _reject_nvfp4_mla_kv_cache(kv_params, "mo.mla.decode.ragged.paged.scaled")
+    _reject_nvfp4_mla_kv_cache(
+        kv_params, "attention.mla.decode.ragged.paged.scaled"
+    )
     parameters = _mha_parameters(mask_variant)
     if per_token_scale_rope_aware:
         parameters["per_token_scale_rope_aware"] = 1
@@ -5647,7 +5649,7 @@ def flare_mla_decode_ragged_scaled(
     # is unquantized and the scale ops index by the values' lookup table.
     assert kv_collection.kv_scales is None
     return ops.inplace_custom(
-        "mo.mla.decode.ragged.paged.scaled",
+        "attention.mla.decode.ragged.paged.scaled",
         device=input.device,
         values=[
             input,
@@ -5740,7 +5742,7 @@ def flare_mla_prefill_ragged(
         )
 
     assert kv_params.page_size is not None
-    _reject_nvfp4_mla_kv_cache(kv_params, "mo.mla.prefill.ragged.paged")
+    _reject_nvfp4_mla_kv_cache(kv_params, "attention.mla.prefill.ragged.paged")
     parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
@@ -5756,7 +5758,7 @@ def flare_mla_prefill_ragged(
     ]
 
     results = ops.inplace_custom(
-        "mo.mla.prefill.ragged.paged",
+        "attention.mla.prefill.ragged.paged",
         device=input.device,
         values=input_values,
         out_types=[
@@ -5812,7 +5814,7 @@ def flare_mla_prefill_plan(
         buffer_size, DType.uint32, device=DeviceRef.CPU()
     )
 
-    op_name = "mo.mla.prefill.ragged.plan"
+    op_name = "attention.mla.prefill.ragged.plan"
     results = ops.inplace_custom(
         op_name,
         device=input_row_offsets.device,
@@ -6151,7 +6153,7 @@ def mla_prefill_graph(
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-    op_name = "mo.mla.graph.prefill.paged"
+    op_name = "attention.mla.graph.prefill.paged"
 
     if quant_config is not None:
         assert w_k_scale is not None and w_uv_scale is not None
@@ -6411,7 +6413,7 @@ def mla_decode_graph(
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-    op_name = "mo.mla.graph.decode.paged"
+    op_name = "attention.mla.graph.decode.paged"
 
     if quant_config is not None:
         assert w_uk_scale is not None and w_uv_scale is not None
@@ -6620,7 +6622,7 @@ def mla_prefill_decode_graph(
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-    op_name = "mo.mla.graph.prefill.decode.paged"
+    op_name = "attention.mla.graph.prefill.decode.paged"
 
     if quant_config is not None:
         assert (
@@ -6731,11 +6733,11 @@ def flare_mla_decompress_k_cache(
 
     assert kv_params.page_size is not None
     _reject_nvfp4_mla_kv_cache(
-        kv_params, "mo.mla.decompress.k.cache.ragged.paged"
+        kv_params, "attention.mla.decompress.k.cache.ragged.paged"
     )
 
     results = ops.inplace_custom(
-        "mo.mla.decompress.k.cache.ragged.paged",
+        "attention.mla.decompress.k.cache.ragged.paged",
         device=buffer_row_offsets_1d.device,
         values=[
             buffer_row_offsets_1d,
@@ -6840,10 +6842,10 @@ def store_mla_latent_ragged(
         )
 
     assert kv_params.page_size is not None
-    _reject_nvfp4_mla_kv_cache(kv_params, "mo.mla.store.ragged.paged")
+    _reject_nvfp4_mla_kv_cache(kv_params, "attention.mla.store.ragged.paged")
 
     ops.inplace_custom(
-        "mo.mla.store.ragged.paged",
+        "attention.mla.store.ragged.paged",
         device=kv.device,
         values=[
             kv,
@@ -6913,7 +6915,7 @@ def cross_attention_ragged(
     )
 
     return ops.inplace_custom(
-        "mo.cross_attention.ragged.paged",
+        "attention.cross.ragged.paged",
         device=input.device,
         values=[
             input,
@@ -6974,7 +6976,7 @@ def kv_cache_ragged_radd(
     )
 
     ops.inplace_custom(
-        "mo.kv_cache.ragged.paged.radd",
+        "kv_cache.ragged.paged.radd",
         device=input_row_offsets.device,
         values=[
             a,
@@ -7081,7 +7083,7 @@ def rms_norm_key_cache(
     assert kv_params.page_size is not None
 
     ops.inplace_custom(
-        "mo.rms_norm_kv_cache.ragged.paged",
+        "kv_cache.rms_norm.ragged.paged",
         device=input_row_offsets.device,
         values=[
             *kv_collection.flatten_without_attention_dispatch_metadata(),
@@ -7148,7 +7150,7 @@ def rms_norm_value_cache(
     }
     assert kv_params.page_size is not None
     ops.inplace_custom(
-        "mo.rms_norm_value_cache.ragged.paged",
+        "kv_cache.rms_norm_value_cache.ragged.paged",
         device=input_row_offsets.device,
         values=[
             *kv_collection.flatten_without_attention_dispatch_metadata(),
@@ -7273,7 +7275,7 @@ def moe_create_indices(
 
     .. skip: end
     """
-    op_name = "mo.moe.create.indices"
+    op_name = "moe.create.indices"
     if needs_scales_offset:
         op_name += ".with.scales.offset"
 
@@ -7363,7 +7365,7 @@ def moe_finalize(
     hidden = down_projs.shape[1]
 
     result = ops.custom(
-        "mo.moe.finalize",
+        "moe.finalize",
         device=down_projs.device,
         values=[down_projs, restore_token_order, router_weight],
         out_types=[
@@ -7444,7 +7446,7 @@ def moe_create_indices_with_slots(
         return TensorType(dtype=dtype, shape=[length], device=device)
 
     results = ops.custom(
-        "mo.moe.create.indices.with.slots",
+        "moe.create.indices.with.slots",
         device=device,
         values=[topk_ids, slot_weights],
         out_types=[
@@ -7483,7 +7485,7 @@ def moe_router_group_limited(
     then picks ``n_experts_per_tok`` experts within those groups
     (DeepSeek-V3 style). When ``n_groups == 1``, there is only one group,
     so group selection is skipped and routing uses the dedicated GPU
-    single-group path (``mo.moe.single.group.router``, implemented as
+    single-group path (``moe.single.group.router``, implemented as
     ``single_group_router`` in Mojo). In that case ``topk_group`` is not
     used by the kernel.
 
@@ -7636,7 +7638,7 @@ def moe_router_group_limited(
             "n_experts_per_tok": n_experts_per_tok,
             "norm_weights": norm_weights,
         }
-        op_name = "mo.moe.single.group.router"
+        op_name = "moe.single.group.router"
     else:
         parameters = {
             "n_routed_experts": n_routed_experts,
@@ -7645,7 +7647,7 @@ def moe_router_group_limited(
             "topk_group": topk_group,
             "norm_weights": norm_weights,
         }
-        op_name = "mo.moe.router.group.limited"
+        op_name = "moe.router.group.limited"
 
     results = ops.custom(
         op_name,
@@ -7731,7 +7733,7 @@ def moe_router_image_bias(
         )
 
     results = ops.custom(
-        "mo.moe.single.group.router.image.bias",
+        "moe.single.group.router.image.bias",
         device=expert_scores.device,
         values=[
             expert_scores,
@@ -7841,7 +7843,7 @@ def _moe_sigmoid_gemv_router(
 
     Equivalent to :func:`moe_router_group_limited` with ``n_groups == 1`` on
     ``sigmoid(hidden_states.cast(gate_weight.dtype) @ gate_weight.T)``, as
-    one op (``mo.moe.sigmoid.gemv.single.group.router``). On GPU it runs a
+    one op (``moe.sigmoid.gemv.single.group.router``). On GPU it runs a
     split-K gate GEMV that writes partial dot products, and the router kernel
     adds them and applies the sigmoid as it loads its scores, so no separate
     matmul reduction or sigmoid runs. The gate GEMV accumulates in
@@ -7918,7 +7920,7 @@ def _moe_sigmoid_gemv_router(
         raise ValueError(reason)
 
     results = ops.custom(
-        "mo.moe.sigmoid.gemv.single.group.router",
+        "moe.sigmoid.gemv.single.group.router",
         device=device,
         values=[
             hidden_states,
@@ -7968,7 +7970,7 @@ def moe_sink_gate_router(
     log-sigmoid of those experts' raw logits together with
     ``n_shared_experts`` always-selected sink logits, scaled by
     ``route_scale * global_scale``. This is the Inkling gate formula, run on
-    the GPU as a single kernel (``mo.moe.sink.gate.router``, implemented as
+    the GPU as a single kernel (``moe.sink.gate.router``, implemented as
     ``sink_gate_router`` in Mojo).
 
     Args:
@@ -8068,7 +8070,7 @@ def moe_sink_gate_router(
         )
 
     results = ops.custom(
-        "mo.moe.sink.gate.router",
+        "moe.sink.gate.router",
         device=logits.device,
         values=[
             logits,
@@ -8135,7 +8137,7 @@ def _router_gate_mixed_gemv(
         )
 
     return ops.custom(
-        "mo.router.gate.mixed.gemv",
+        "moe.router.gate.mixed.gemv",
         device=hidden_states.device,
         values=[hidden_states, gate_weight],
         out_types=[
@@ -8188,7 +8190,7 @@ def smallm_streaming_matmul(a: TensorValue, b: TensorValue) -> TensorValue:
     # ignores it). Graph memory keeps captured launch pointers valid across
     # device-graph replays, unlike an execute-time transient allocation.
     return ops.custom(
-        "mo.smallm.streaming.matmul",
+        "matmul.smallm.streaming",
         device=a.device,
         values=[a, b_shuffled, b],
         out_types=[
@@ -8297,7 +8299,7 @@ def moe_eplb_remap(
     }
 
     return ops.custom(
-        "mo.moe.eplb.remap",
+        "moe.eplb.remap",
         device=router_idx.device,
         values=[router_idx, logcnt, log2phy, layer_idx],
         out_types=[
@@ -8368,7 +8370,7 @@ def moe_router_single_group_eplb(
     }
 
     results = ops.custom(
-        "mo.moe.single.group.router.eplb",
+        "moe.single.group.router.eplb",
         device=expert_scores.device,
         values=[
             expert_scores,
@@ -8576,7 +8578,7 @@ def grouped_matmul_ragged(
         expert_usage_stats = expert_usage_stats.to(hidden_states.device)
 
     output = ops.custom(
-        "mo.grouped.matmul.ragged",
+        "matmul.grouped.ragged",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -8733,7 +8735,7 @@ def grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
         **(activation or GatedActivation()).kernel_parameters(),
     }
     outputs = ops.custom(
-        "mo.grouped.matmul.block.scaled.amd.swiglu.quant",
+        "matmul.grouped.block.scaled.amd.swiglu.quant",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -8896,7 +8898,7 @@ def grouped_ffn_block_scaled_amd(
         device=expert_usage_stats_host.device,
     )
     results = ops.inplace_custom(
-        "mo.grouped.ffn.block.scaled.amd",
+        "moe.grouped.ffn.block.scaled.amd",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -9066,7 +9068,7 @@ def grouped_ffn_blockwise_fp8_amd(
             )
     rows = hidden_states.shape[0]
     results = ops.inplace_custom(
-        "mo.grouped.ffn.blockwise.fp8.amd",
+        "moe.grouped.ffn.blockwise.fp8.amd",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -9239,7 +9241,7 @@ def stack_blockwise_fp8_b(
     first = projections[0]
     n = sum(int(p.shape[0]) for p in projections[:per_expert])
     return ops.custom(
-        "mo.grouped.ffn.blockwise.fp8.amd.stack_b",
+        "moe.grouped.ffn.blockwise.fp8.amd.stack_b",
         device=device,
         values=list(projections),
         out_types=[
@@ -9528,7 +9530,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
     )
 
     output = ops.custom(
-        "mo.grouped.matmul.block.scaled.amd",
+        "matmul.grouped.block.scaled.amd",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -9704,7 +9706,7 @@ def grouped_dynamic_scaled_mxfp6_matmul(
         max_num_tokens_arg = expert_usage_stats_host[0]
 
     return ops.custom(
-        "mo.grouped.matmul.block.scaled.mxfp6",
+        "matmul.grouped.block.scaled.mxfp6",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -10391,7 +10393,7 @@ def grouped_dynamic_scaled_fp8_matmul(
     )
 
     output = ops.custom(
-        "mo.grouped.matmul.dynamic.scaled.fp8",
+        "matmul.grouped.dynamic.scaled.fp8",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -10436,7 +10438,7 @@ def _grouped_matmul_rowwise_dynamic_scaled_fp8(
 ) -> TensorValue:
     """Grouped (ragged MoE) FP8 matmul with rowwise weight + per-token scales.
 
-    Drives ``mo.grouped.matmul.rowwise.dynamic.scaled.fp8`` (NVIDIA SM100 /
+    Drives ``matmul.grouped.rowwise.dynamic.scaled.fp8`` (NVIDIA SM100 /
     B200). Computes, for each token ``t`` in expert group ``g`` and each output
     channel ``n``::
 
@@ -10554,7 +10556,7 @@ def _grouped_matmul_rowwise_dynamic_scaled_fp8(
         )
 
     return ops.custom(
-        "mo.grouped.matmul.rowwise.dynamic.scaled.fp8",
+        "matmul.grouped.rowwise.dynamic.scaled.fp8",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -10668,7 +10670,7 @@ def batched_dynamic_scaled_fp8_matmul(
         raise ValueError("unsupported FP8 scaling granularity")
 
     result = ops.custom(
-        "mo.batched.matmul.dynamic.scaled.fp8",
+        "matmul.batched.dynamic.scaled.fp8",
         device=a.device,
         values=[a, b, a_scales, b_scales],
         out_types=[
@@ -10733,7 +10735,7 @@ def quantize_static_scaled_float8(
         raise ValueError(f"expected scale to be on CPU, but got {scale.device}")
 
     return ops.custom(
-        "mo.quantize_static_scaled_float8",
+        "quantization.quantize_static_scaled_float8",
         device=x.device,
         values=[x, scale.reshape([])],
         parameters={"scale_is_inverted": scale_is_inverted},
@@ -10789,7 +10791,7 @@ def quantize_tensor_dynamic_scaled_float8(
         )
 
     result = ops.custom(
-        "mo.quantize_tensor_dynamic_scaled_float8",
+        "quantization.quantize_tensor_dynamic_scaled_float8",
         device=input.device,
         values=[
             input,
@@ -10879,40 +10881,36 @@ def quantize_dynamic_scaled_float8(
         scales_type,
     )
 
-    values: list[Value[Any]] = [
-        input,
-        ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
-    ]
-    op_name = "mo.quantize_dynamic_scaled_float8"
+    scale_ub_value = ops.constant(
+        scale_ub, DType.float32, device=DeviceRef.CPU()
+    )
     if row_offsets is not None:
         if row_offsets.dtype != DType.uint32 or row_offsets.rank != 1:
             raise ValueError(
                 "row_offsets must be a rank-1 uint32 tensor, but got"
                 f" {row_offsets.rank}-D {row_offsets.dtype}"
             )
-        # A distinct symbol, not a third operand: the graph compiler's
-        # RMS-norm and all-reduce fusion patterns match the unbounded op on
-        # its two-operand signature.
-        op_name += ".row_bounded"
-        values.append(row_offsets)
+        result = ops.custom(
+            "quantization.quantize_dynamic_scaled_float8.row_bounded",
+            device=input.device,
+            values=[input, scale_ub_value, row_offsets],
+            out_types=out_types,
+            parameters={"group_size_or_per_token": group_size},
+        )
+        return result[0].tensor, result[1].tensor
 
-    # The RMS-norm fusion pattern only matches a quantize op carrying exactly
-    # one parameter, so leave `amax_floor` off at its default.
-    parameters: dict[str, bool | int | float | str | DType] = {
-        "group_size_or_per_token": group_size,
-    }
-    if amax_floor > 0.0:
-        parameters["amax_floor"] = amax_floor
-
-    result = ops.custom(
-        op_name,
-        device=input.device,
-        values=values,
-        out_types=out_types,
-        parameters=parameters,
+    # A typed op, so the graph compiler's RMS-norm and all-reduce fusions can
+    # match it.
+    output, scales = Graph.current._add_op_generated(
+        mo.CompositeQuantizeDynamicScaledFp8Op,
+        out_types[0],
+        out_types[1],
+        input,
+        scale_ub_value,
+        builtin.IntegerAttr(builtin.IndexType(), group_size),
+        _float32_attr(amax_floor) if amax_floor > 0.0 else None,
     )
-
-    return result[0].tensor, result[1].tensor
+    return output.tensor, scales.tensor
 
 
 def _dynamic_scaled_float8_quant_out_types(
@@ -11049,7 +11047,7 @@ def rms_norm_quantize_dynamic_scaled_float8(
         )
 
     result = ops.custom(
-        "mo.rms_norm_quantize_dynamic_scaled_float8",
+        "quantization.rms_norm_quantize_dynamic_scaled_float8",
         device=input.device,
         values=[
             input,
@@ -11168,7 +11166,7 @@ def dynamic_scaled_matmul(
         )
 
     result = ops.custom(
-        "mo.matmul_dynamic_scaled_fp8",
+        "matmul.dynamic_scaled_fp8",
         device=a.device,
         values=[a, b, a_scales, b_scales],
         out_types=[
@@ -11206,7 +11204,7 @@ def dynamic_block_scaled_matmul(
     """Performs a block-scaled matmul of two NVFP4 or MXFP8 tensors.
 
     Both formats drive the same SM100 tensor-core block-scaled MMA kernel
-    (``UMMAKind.KIND_MXF8F6F4``) via the ``mo.matmul.dynamic.block.scaled`` op;
+    (``UMMAKind.KIND_MXF8F6F4``) via the ``matmul.dynamic.block.scaled`` op;
     the format is selected from ``a.dtype``:
 
     - NVFP4: ``a``/``b`` are ``uint8`` (two ``e2m1`` values packed per byte)
@@ -11323,7 +11321,7 @@ def dynamic_block_scaled_matmul(
         tensor_sf_value = TensorValue(tensor_sf)
 
     result = ops.custom(
-        "mo.matmul.dynamic.block.scaled",
+        "matmul.dynamic.block.scaled",
         device=a.device,
         values=[
             a,
@@ -11425,7 +11423,7 @@ def block_diagonal_block_scaled_matmul(
         else TensorValue(tensor_sf)
     )
     return ops.custom(
-        "mo.matmul.dynamic.block.scaled.block.diagonal",
+        "matmul.dynamic.block.scaled.block.diagonal",
         device=a.device,
         values=[a, b, a_scales, b_scales, tensor_sf_value],
         out_types=[
@@ -11482,7 +11480,7 @@ def _apple_weight_only_block_scaled_matmul(
         )
 
     result = ops.custom(
-        "mo.matmul.weight.only.block.scaled.apple",
+        "matmul.weight.only.block.scaled.apple",
         device=a.device,
         values=[a, b, b_scales],
         out_types=[
@@ -11530,7 +11528,7 @@ def _apple_weight_only_scaled_float8_matmul(
         raise ValueError("a and b must share the K dimension (a[M,K], b[N,K])")
 
     result = ops.custom(
-        "mo.matmul.weight.only.scaled.float8.apple",
+        "matmul.weight.only.scaled.float8.apple",
         device=a.device,
         values=[a, b],
         out_types=[
@@ -11609,7 +11607,7 @@ def _apple_int8_w8a8_matmul(
     # Custom-op input arity is fixed per registration, so the optional bias is
     # a separate op name (`.bias`), the same idiom as the FP8 fused-QKV op --
     # not a comptime flag on one op.
-    op_name = "mo.matmul.int8.w8a8.apple"
+    op_name = "matmul.int8.w8a8.apple"
     values = [a, b, b_scale]
     if bias is not None:
         op_name += ".bias"
@@ -11697,7 +11695,7 @@ def dynamic_block_scaled_matmul_amd(
         )
 
     result = ops.custom(
-        "mo.matmul.dynamic.block.scaled.amd",
+        "matmul.dynamic.block.scaled.amd",
         device=a.device,
         values=[
             a,
@@ -11812,7 +11810,7 @@ def dynamic_block_scaled_matmul_mxfp6(
         )
 
     return ops.custom(
-        "mo.matmul.dynamic.block.scaled.mxfp6",
+        "matmul.dynamic.block.scaled.mxfp6",
         device=a.device,
         values=[a, b, a_scales, b_scales],
         out_types=[
@@ -11866,7 +11864,7 @@ def quantize_dynamic_block_scaled_mxfp6(
         )
 
     result = ops.custom(
-        "mo.quantize.dynamic.block.scaled.mxfp6",
+        "quantization.quantize.dynamic.block.scaled.mxfp6",
         device=input.device,
         values=[input],
         out_types=[
@@ -12037,7 +12035,7 @@ def mxfp4_dequant(
         Dequantized tensor ``[N, K]`` or ``[E, N, K]`` in out_type.
     """
     return _mx_dequant(
-        "mo.dequant.mxfp4",
+        "quantization.dequant.mxfp4",
         packed_weights,
         scales,
         out_type,
@@ -12081,7 +12079,7 @@ def mxfp8_dequant(
         Dequantized tensor ``[N, K]`` or ``[E, N, K]`` in out_type.
     """
     return _mx_dequant(
-        "mo.dequant.mxfp8",
+        "quantization.dequant.mxfp8",
         weights,
         scales,
         out_type,
@@ -12147,7 +12145,7 @@ def mxfp6_dequant(
     k = packed_weights.shape[1] * 4 // 3  # Unpacked column count
 
     result = ops.custom(
-        "mo.dequant.mxfp6",
+        "quantization.dequant.mxfp6",
         device=packed_weights.device,
         values=[packed_weights, scales],
         out_types=[
@@ -12305,7 +12303,7 @@ def nvfp4_dequant(
                 )
 
     result = ops.custom(
-        "mo.dequant.nvfp4",
+        "quantization.dequant.nvfp4",
         device=packed_weights.device,
         values=[
             packed_weights,
@@ -12452,7 +12450,7 @@ def quantize_dynamic_block_scaled(
 ) -> tuple[TensorValue, TensorValue]:
     """Dynamically quantize a bf16 tensor to NVFP4 or MXFP8 with block scales.
 
-    Both formats go through the ``mo.quantize.dynamic.block.scaled`` op; the
+    Both formats go through the ``quantization.quantize.dynamic.block.scaled`` op; the
     format is selected from ``out_type``:
 
     - NVFP4 (``out_type=uint8``): two ``e2m1`` values packed per output byte,
@@ -12485,7 +12483,7 @@ def quantize_dynamic_block_scaled(
         raise ValueError("input tensor dtype must be bfloat16")
 
     result = ops.custom(
-        "mo.quantize.dynamic.block.scaled",
+        "quantization.quantize.dynamic.block.scaled",
         device=input.device,
         values=[input, _tensor_sf_value(tensor_sf)],
         out_types=_block_scaled_quantize_out_types(
@@ -12603,7 +12601,7 @@ def swiglu_quantize_dynamic_block_scaled(
         )
 
     result = ops.custom(
-        "mo.swiglu.quantize.dynamic.block.scaled",
+        "quantization.swiglu.quantize.dynamic.block.scaled",
         device=gate_up.device,
         values=[gate_up, _tensor_sf_value(tensor_sf)],
         out_types=_block_scaled_quantize_out_types(
@@ -12707,7 +12705,7 @@ def rope_quantize_dynamic_block_scaled(
     freqs = freqs.rebind([x.shape[0], rope_dim])
 
     result = ops.custom(
-        "mo.rope.quantize.dynamic.block.scaled",
+        "quantization.rope.quantize.dynamic.block.scaled",
         device=x.device,
         values=[x, freqs, _tensor_sf_value(tensor_sf)],
         out_types=_block_scaled_quantize_out_types(
@@ -12796,7 +12794,7 @@ def rms_norm_quantize_mxfp8_q_kv(
         x.device,
     )
     result = ops.custom(
-        "mo.rms_norm.quantize.mxfp8.q_kv",
+        "quantization.rms_norm.quantize.mxfp8.q_kv",
         device=x.device,
         values=[
             x,
@@ -12903,11 +12901,11 @@ def grouped_quantize_dynamic_block_scaled(
         SF_ATOM_K,
     ]
 
-    op_name = "mo.grouped.quantize.dynamic.block.scaled"
+    op_name = "quantization.grouped.quantize.dynamic.block.scaled"
     values = [input, row_offsets, scales_offsets, expert_ids, sf_tensor]
     parameters: dict[str, int] = {}
     if indices is not None:
-        op_name = "mo.grouped.quantize.dynamic.block.scaled.with_row_indices"
+        op_name = "quantization.grouped.quantize.dynamic.block.scaled.with_row_indices"
         values.append(indices)
         parameters["row_index_divisor"] = indices_divisor
 
@@ -13009,7 +13007,7 @@ def grouped_quantize_nvfp4_row_scaled(
         kgen.POC.min, scales_offsets.shape[0], num_rows
     )
 
-    op_name = "mo.grouped.quantize.nvfp4.row_scaled"
+    op_name = "quantization.grouped.quantize.nvfp4.row_scaled"
     values = [input, row_offsets, scales_offsets]
     parameters: dict[str, int] = {"apply_relu2": int(relu2)}
     if indices is not None:
@@ -13086,7 +13084,7 @@ def quantize_dynamic_block_scaled_mxfp4(
         )
 
     result = ops.custom(
-        "mo.quantize.dynamic.block.scaled.mxfp4",
+        "quantization.quantize.dynamic.block.scaled.mxfp4",
         device=input.device,
         values=[input],
         out_types=[
@@ -13158,7 +13156,7 @@ def block_scales_interleave(
     scales_dim_4 = SF_ATOM_K
 
     result = ops.custom(
-        "mo.interleave.block.scales",
+        "quantization.interleave.block.scales",
         device=scales.device,
         values=[scales],
         out_types=[
@@ -13264,7 +13262,7 @@ def block_scaled_preshuffle_grouped_scale_4d(
     out_rows = num_experts * slot_rows
 
     return ops.custom(
-        "mo.block.scaled.preshuffle.scale.4d_per_expert",
+        "quantization.block.scaled.preshuffle.scale.4d_per_expert",
         device=a_scales.device,
         values=[
             a_scales,
@@ -13308,7 +13306,7 @@ def block_scaled_preshuffle_b_5d(b: TensorValue) -> TensorValue:
         raise ValueError(f"b must be uint8 (packed MXFP4), got {b.dtype}")
 
     return ops.custom(
-        "mo.block.scaled.preshuffle.b.5d",
+        "quantization.block.scaled.preshuffle.b.5d",
         device=b.device,
         values=[b],
         out_types=[
@@ -13392,7 +13390,7 @@ def matmul_static_scaled_float8(
         )
 
     return ops.custom(
-        "mo.matmul_static_scaled_float8",
+        "matmul.static_scaled_float8",
         device=input.device,
         values=[
             input,
@@ -13448,7 +13446,7 @@ def normalize_e4m3fn_to_e4m3fnuz(
     # Convert using custom op that takes float8_e4m3fn input and returns float8_e4m3fnuz
     # Then cast back to float8_e4m3fn to maintain dtype compatibility with kernels
     converted_weight_fnuz = ops.custom(
-        "mo.convert_e4m3fn_to_e4m3fnuz",
+        "quantization.convert_e4m3fn_to_e4m3fnuz",
         device=weight.device,
         values=[weight],
         out_types=[
@@ -13563,7 +13561,7 @@ def merge_ragged_tensors(
     c_shape = [a.shape[0] + b.shape[0]] + a.shape[1:]
 
     results = ops.custom(
-        "mo.merge_ragged_tensors",
+        "ragged.merge_ragged_tensors",
         device=a.device,
         values=[a, a_row_offsets, b, b_row_offsets],
         out_types=[
@@ -13672,7 +13670,7 @@ def mtp_eh_norm(
     hidden_size = int(embed.shape[1])
 
     return ops.custom(
-        "mo.mtp.eh_norm",
+        "speculative.mtp.eh_norm",
         device=embed.device,
         values=[
             embed,
@@ -13713,7 +13711,7 @@ def eagle_prefill_shift_tokens(
         Shifted (or copied) tokens with the same shape as ``tokens``.
     """
     results = ops.custom(
-        "mo.eagle_prefill_shift_tokens",
+        "speculative.eagle_prefill_shift_tokens",
         device=tokens.device,
         values=[tokens, offsets, shift_next_tokens],
         out_types=[
@@ -13897,7 +13895,7 @@ def scatter_set_constant(
         )
 
     ops.inplace_custom(
-        "mo.scatter_set_constant",
+        "gather_scatter.scatter_set_constant",
         device=data.device,
         values=[
             data,
@@ -13961,7 +13959,7 @@ def apply_packed_bitmask(
         packed_2d = packed
 
     masked = ops.custom(
-        "mo.apply_packed_bitmask",
+        "sampler.apply_packed_bitmask",
         device=logits.device,
         values=[
             logits_2d,
@@ -14098,7 +14096,7 @@ def scatter_nd_skip_oob_indices(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return ops.custom(
-        "mo.scatter_nd.skip_oob_indices",
+        "gather_scatter.scatter_nd.skip_oob_indices",
         device=input.device,
         values=[input, updates, indices],
         out_types=[TensorType(input.dtype, input.shape, device=input.device)],
@@ -14134,7 +14132,7 @@ def top_k_per_row(
         raise ValueError(f"max_k must be in [0, {input.shape[1]}], got {max_k}")
     rows = input.shape[0]
     values, indices = ops.custom(
-        "mo.top_k.per_row",
+        "reduction.top_k.per_row",
         device=input.device,
         values=[input, ops.rebind(k, [rows])],
         out_types=[
@@ -14688,7 +14686,7 @@ def sgmv_kernel(  # noqa: ANN201
     M = input.shape[0] if not lora_end_idx else lora_end_idx.shape[0]
 
     out = ops.custom(
-        "mo.lora_sgmv.ragged",
+        "matmul.lora_sgmv.ragged",
         device=input.device,
         values=[
             input,
@@ -14835,7 +14833,7 @@ def sgmv_lora_qkv_shrink(
     _check_dtype(DType.uint32, lora_grouped_offsets=lora_grouped_offsets)
 
     return ops.custom(
-        "mo.lora_sgmv.qkv_shrink.ragged",
+        "matmul.lora_sgmv.qkv_shrink.ragged",
         device=input.device,
         values=[
             input,
@@ -14904,7 +14902,7 @@ def _sgmv_qkv_expand(
     m_dim = p.shape[1]
 
     results = ops.custom(
-        "mo.lora_sgmv.qkv_expand.ragged",
+        "matmul.lora_sgmv.qkv_expand.ragged",
         device=p.device,
         values=[
             p,
@@ -15142,7 +15140,7 @@ def kv_cache_ragged_2m_iadd(
     _check_rank(1, input_row_offsets=input_row_offsets)
 
     ops.inplace_custom(
-        "mo.kv_cache.ragged.paged.2m_iadd",
+        "kv_cache.ragged.paged.2m_iadd",
         device=input_row_offsets.device,
         values=[
             a,
@@ -15208,7 +15206,7 @@ def spatial_merge(
         )
 
     return ops.custom(
-        "mo.spatial_merge",
+        "vision.spatial_merge",
         device=input.device,
         values=[
             input,
@@ -15302,7 +15300,7 @@ def sliced_add(
         lora_end_idx: End index of LoRA token portion (rows to apply add).
     """
     return ops.custom(
-        "mo.sliced.add.ragged",
+        "ragged.sliced.add",
         device=x.device,
         values=[
             x,
@@ -15322,7 +15320,7 @@ def sliced_add(
 def inplace_memcpy(dst: BufferValue, src: TensorValue) -> None:
     """Copies `src` into `dst` in place.
 
-    Wraps the `mo.inplace_memcpy` custom op. Semantically equivalent to
+    Wraps the `runtime.inplace_memcpy` custom op. Semantically equivalent to
     ``Buffer.inplace_copy_from``, but usable from within a compiled MAX
     graph so the copy can be scheduled alongside other graph work.
 
@@ -15358,7 +15356,7 @@ def inplace_memcpy(dst: BufferValue, src: TensorValue) -> None:
         compute_device = dst.device
 
     ops.inplace_custom(
-        "mo.inplace_memcpy",
+        "runtime.inplace_memcpy",
         device=compute_device,
         values=[dst, src],
         out_types=[],
@@ -15372,7 +15370,7 @@ def inplace_memcpy(dst: BufferValue, src: TensorValue) -> None:
 def launch_host_func(payload: BufferValue, device: DeviceRef) -> None:
     """Enqueues a Python callback on the device stream.
 
-    Wraps the ``mo.launch_host_func`` custom op. The callback runs on a
+    Wraps the ``runtime.launch_host_func`` custom op. The callback runs on a
     driver thread once the stream reaches this point, after all preceding
     work has completed.
 
@@ -15395,7 +15393,7 @@ def launch_host_func(payload: BufferValue, device: DeviceRef) -> None:
         raise ValueError("launch_host_func is only supported on GPU devices")
 
     ops.inplace_custom(
-        "mo.launch_host_func",
+        "runtime.launch_host_func",
         device=device,
         values=[payload],
         out_types=[],
@@ -15409,7 +15407,7 @@ def wait_host_value_with_dep(
 ) -> None:
     """Variant of ``wait_host_value`` with a fake mutable dependency.
 
-    Wraps ``mo.wait_host_value_with_dep``. Behaves identically to
+    Wraps ``runtime.wait_host_value_with_dep``. Behaves identically to
     :func:`wait_host_value` at runtime, but threads ``dep`` through the
     op as a mutated operand so any downstream op that mutates ``dep``
     must chain after the wait completes.
@@ -15441,7 +15439,7 @@ def wait_host_value_with_dep(
         )
 
     ops.inplace_custom(
-        "mo.wait_host_value_with_dep",
+        "runtime.wait_host_value_with_dep",
         device=device,
         values=[payload, dep],
         out_types=[],
@@ -15451,7 +15449,7 @@ def wait_host_value_with_dep(
 def wait_host_value(payload: BufferValue, device: DeviceRef) -> None:
     """Stalls the device stream until a host-visible flag reaches a value.
 
-    Wraps the ``mo.wait_host_value`` custom op, which lowers to
+    Wraps the ``runtime.wait_host_value`` custom op, which lowers to
     ``cuStreamWaitValue64`` / ``hipStreamWaitValue64`` via
     ``DeviceQueue.wait_for_host_value``. Records into a captured device
     graph as a wait-value (batch-mem-op) node, so it can sit inside a
@@ -15468,7 +15466,7 @@ def wait_host_value(payload: BufferValue, device: DeviceRef) -> None:
     - ``payload[1]``: the 64-bit value to wait for (the ``int64``
       element is reinterpreted as a ``u64``).
 
-    The payload shape mirrors ``mo.launch_host_func``'s
+    The payload shape mirrors ``runtime.launch_host_func``'s
     ``[trampoline_ptr, user_data_ptr]`` pair; both ops carry their
     runtime pointers through a single ``int64[2]`` buffer rather than
     a typed graph operand.
@@ -15494,7 +15492,7 @@ def wait_host_value(payload: BufferValue, device: DeviceRef) -> None:
         raise ValueError("wait_host_value is only supported on GPU devices")
 
     ops.inplace_custom(
-        "mo.wait_host_value",
+        "runtime.wait_host_value",
         device=device,
         values=[payload],
         out_types=[],
@@ -15529,7 +15527,7 @@ def sleep(duration_sec: BufferValue, device_ref: DeviceRef) -> None:
         )
 
     ops.inplace_custom(
-        "mo.sleep",
+        "runtime.sleep",
         device=device_ref,
         values=[duration_sec],
         out_types=[],
@@ -15665,7 +15663,7 @@ def row_mean_of_squares(x: TensorValue) -> TensorValue:
     x_2d = x.reshape([-1, cols]) if x.rank != 2 else x
 
     out_2d = ops.custom(
-        "mo.reduce.row_mean_of_squares",
+        "reduction.row_mean_of_squares",
         device=x.device,
         values=[x_2d],
         out_types=[
@@ -15724,7 +15722,7 @@ def row_mean_of_squares_qk(q: TensorValue, k: TensorValue) -> TensorValue:
         )
 
     return ops.custom(
-        "mo.reduce.row_mean_of_squares_qk",
+        "reduction.row_mean_of_squares_qk",
         device=q.device,
         values=[q, k],
         out_types=[
@@ -15820,7 +15818,7 @@ def apply_qk_rms_norm(
         )
 
     q_out, k_out = ops.custom(
-        "mo.norm.apply_qk_rms_norm",
+        "norm.apply_qk_rms_norm",
         device=q.device,
         values=[
             q,
@@ -15897,7 +15895,7 @@ def indexer_score_ragged(
         )
 
     return ops.inplace_custom(
-        "mo.indexer_score.ragged.paged",
+        "attention.indexer_score.ragged.paged",
         device=q.device,
         values=[
             q,
@@ -16005,7 +16003,7 @@ def compress_windows_ragged(
     batch = window_offsets.shape[0] - 1
     rows = (kv.shape[0] + batch * (ratio - 1)) // ratio
     return ops.inplace_custom(
-        "mo.compress_windows.ragged.paged",
+        "attention.compress_windows.ragged.paged",
         device=kv.device,
         values=[
             kv,
@@ -16098,7 +16096,7 @@ def latent_sparse_attention_ragged(
         raise ValueError(f"window must be positive, got {window}")
 
     return ops.inplace_custom(
-        "mo.latent_sparse_attention.ragged.paged",
+        "attention.latent_sparse.ragged.paged",
         device=q.device,
         values=[
             q,
@@ -16222,7 +16220,7 @@ def hyper_connection_gates(
 
     rows = hc_proj.shape[0]
     results = ops.custom(
-        "mo.hyper_connection.gates",
+        "hyper_connection.gates",
         device=hc_proj.device,
         values=[
             hc_proj,
@@ -16432,7 +16430,7 @@ def mhc_pre(
 
     rows = streams.shape[0]
     results = ops.custom(
-        "mo.mhc.pre",
+        "hyper_connection.mhc.pre",
         device=device,
         values=[
             streams,
@@ -16596,7 +16594,7 @@ def mhc_post(
         )
 
     return ops.custom(
-        "mo.mhc.post",
+        "hyper_connection.mhc.post",
         device=streams.device,
         values=[streams, y, post, comb],
         out_types=[

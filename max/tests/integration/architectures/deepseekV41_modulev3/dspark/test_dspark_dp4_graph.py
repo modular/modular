@@ -300,9 +300,9 @@ def test_stages_lower_to_the_graph_api_models_fused_kernels() -> None:
             *kv_params.flattened_kv_inputs(),
         ]
         staged = str(module.trace(*inputs))
-    kernels = Counter(re.findall(r"\bmo\.[\w.]+", staged))
-    assert kernels["mo.csa.rms_norm_quantize_q_store_kv"] == stages
-    assert kernels["mo.csa.window_kv_store"] == 0
-    assert kernels["mo.matmul.mxfp8.rope_tail"] == stages
-    assert kernels["mo.moe.create.indices.with.slots"] == stages
-    assert kernels["mo.moe.create.indices"] == 0
+    kernels = Counter(re.findall(r'symbol = "([\w.]+)"', staged))
+    assert kernels["attention.csa.rms_norm_quantize_q_store_kv"] == stages
+    assert kernels["attention.csa.window_kv_store"] == 0
+    assert kernels["matmul.mxfp8.rope_tail"] == stages
+    assert kernels["moe.create.indices.with.slots"] == stages
+    assert kernels["moe.create.indices"] == 0

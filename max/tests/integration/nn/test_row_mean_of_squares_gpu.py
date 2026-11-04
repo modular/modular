@@ -13,7 +13,7 @@
 """Validates the row_mean_of_squares graph op against a float64 reference.
 
 Mirrors the kernel-level Mojo test (test_row_mean_of_squares.mojo) but exercises
-the full graph-op path: ops.custom -> mo.reduce.row_mean_of_squares ->
+the full graph-op path: ops.custom -> reduction.row_mean_of_squares ->
 row_mean_of_squares_gpu. The reference is computed in float64 so the only error
 is the input's representational error (bf16) plus the f32 accumulation.
 """

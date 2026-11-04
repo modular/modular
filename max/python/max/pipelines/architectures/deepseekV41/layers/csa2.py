@@ -261,11 +261,11 @@ def index_list(
         ops.cast(window.lookup_table, DType.uint32),
     ]
     layers = [ops.constant(window_layer, DType.uint32, DeviceRef.CPU())]
-    name = "mo.csa2.index_list.window_only"
+    name = "attention.csa2.index_list.window_only"
     if selected is not None:
         if comp is None:
             raise ValueError("a compressed selection needs its cache leaf")
-        name = "mo.csa2.index_list"
+        name = "attention.csa2.index_list"
         parameters["comp_page"] = records_per_page(comp.kv_blocks)
         parameters["comp_layers"] = int(comp.kv_blocks.shape[2])
         parameters["ratio"] = ratio
@@ -352,7 +352,7 @@ def store_window_kv(
             blocks.
     """
     ops.inplace_custom(
-        "mo.csa.window_kv_store",
+        "attention.csa.window_kv_store",
         device=latent.device,
         values=[
             ops.cast(latent, DType.bfloat16),
@@ -430,7 +430,7 @@ def norm_quantize_q_store_kv(
         x.device,
     )
     q, scales = ops.inplace_custom(
-        "mo.csa.rms_norm_quantize_q_store_kv",
+        "attention.csa.rms_norm_quantize_q_store_kv",
         device=x.device,
         values=[
             x,
@@ -473,7 +473,7 @@ def store_compressed_kv(
         block_stride: As for :func:`store_window_kv`.
     """
     ops.inplace_custom(
-        "mo.csa.compressed_kv_store",
+        "attention.csa.compressed_kv_store",
         device=latent.device,
         values=[
             ops.cast(latent, DType.bfloat16),
@@ -743,9 +743,9 @@ def _csa2_op(
     device = q.device
     flag = None if isinstance(prefill, bool) else prefill
     if flag is None:
-        name = "mo.csa2." + ("prefill" if prefill else "decode")
+        name = "attention.csa2." + ("prefill" if prefill else "decode")
     else:
-        name = "mo.csa2.attention"
+        name = "attention.csa2"
     parameters: dict[str, bool | int | float | str | DType] = {
         "num_heads": n_heads,
         "window_page": records_per_page(kv_window),

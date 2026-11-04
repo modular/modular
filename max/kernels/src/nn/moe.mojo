@@ -846,11 +846,11 @@ def moe_finalize[
     # `down` rows are only vector-aligned when the row width is a multiple of
     # `simd_width`; every other shape runs scalar.
     if Int(down.dim(1)) % simd_width == 0:
-        elementwise[simd_width, _trace_description="mo.moe.finalize"](
+        elementwise[simd_width, _trace_description="moe.finalize"](
             finalize, shape, context
         )
     else:
-        elementwise[1, _trace_description="mo.moe.finalize"](
+        elementwise[1, _trace_description="moe.finalize"](
             finalize, shape, context
         )
 
@@ -2954,7 +2954,7 @@ def single_group_router_eplb[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.single.group.router.eplb", task_id=Int(gpu_ctx.device().id)
+        "moe.single.group.router.eplb", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
 
@@ -3219,7 +3219,7 @@ def eplb_remap[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.eplb.remap", task_id=Int(gpu_ctx.device().id)
+        "moe.eplb.remap", task_id=Int(gpu_ctx.device().id)
     ):
         # Target ~128 threads/block. Divides cleanly into NVIDIA warp=32,
         # AMD wave=64, and Apple SIMD=32 so no lanes idle from divisibility.

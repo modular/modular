@@ -49,7 +49,7 @@ def _rel_error(got: np.ndarray, want: np.ndarray) -> float:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_mla_tp1_matches_tp2() -> None:
     hidden, heads, qk_nope, qk_rope, v_head, q_lora, kv_lora = (

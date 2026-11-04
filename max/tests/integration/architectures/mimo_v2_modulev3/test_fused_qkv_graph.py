@@ -49,7 +49,7 @@ from max.tensor.sharding import DeviceMesh
 from mimo_v3_runner import kv_params
 from transformers.configuration_utils import PretrainedConfig
 
-FUSED_QKV = "mo.chunked_qkv_rope_store.ragged.paged"
+FUSED_QKV = "kv_cache.chunked_qkv_rope_store.ragged.paged"
 SLIDING_LAYERS = sum(sliding for sliding, _ in tiny_fixture.LAYERS)
 FULL_LAYERS = len(tiny_fixture.LAYERS) - SLIDING_LAYERS
 

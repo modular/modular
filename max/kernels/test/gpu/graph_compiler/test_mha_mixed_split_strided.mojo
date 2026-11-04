@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Strided operands keep the unsplit route of the mixed-step MHA split (B200).
 
-`mo.mha.ragged.paged` with a split record runs a batch as two row-range views
+`attention.mha.ragged.paged` with a split record runs a batch as two row-range views
 that are pointer offsets, so it reads its operands as packed. A valid split
 record paired with a strided operand must therefore keep the single launch:
 the output must equal the call with an all-zero record on the same inputs.

@@ -73,9 +73,9 @@ from .kernels import (
 )
 
 
-@extensibility.register("mo.convert_e4m3fn_to_e4m3fnuz")
+@extensibility.register("quantization.convert_e4m3fn_to_e4m3fnuz")
 struct ConvertE4M3FNToE4M3FNUZ:
-    """Registers the `mo.convert_e4m3fn_to_e4m3fnuz` graph op with the graph compiler.
+    """Registers the `quantization.convert_e4m3fn_to_e4m3fnuz` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -98,11 +98,13 @@ struct ConvertE4M3FNToE4M3FNUZ:
         )
 
 
-@extensibility.register_shape_function("mo.convert_e4m3fn_to_e4m3fnuz")
+@extensibility.register_shape_function(
+    "quantization.convert_e4m3fn_to_e4m3fnuz"
+)
 def convert_e4m3fn_to_e4m3fnuz_shape(
     input: Some[Tensor],
 ) -> IndexList[type_of(input).rank]:
-    """Computes the output shape for the `mo.convert_e4m3fn_to_e4m3fnuz` graph op.
+    """Computes the output shape for the `quantization.convert_e4m3fn_to_e4m3fnuz` graph op.
     """
     comptime assert (
         type_of(input).dtype == .float8_e4m3fn

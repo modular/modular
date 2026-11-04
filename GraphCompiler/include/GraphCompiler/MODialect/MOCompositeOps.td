@@ -461,6 +461,44 @@ def MOComposite_BundledAllReduceAddRMSNormQuantFP8Op : MO_CompositeOp<
 }
 
 //===----------------------------------------------------------------------===//
+// QuantizeDynamicScaledFP8Op
+//===----------------------------------------------------------------------===//
+
+def MOComposite_QuantizeDynamicScaledFP8Op
+    : MO_CompositeOp<"quantize_dynamic_scaled_fp8", [
+  Pure,
+  MO_SingleDeviceWithHostOperands<["scaleUb"]>,
+]> {
+  let summary = "Dynamic-scaled FP8 quantize";
+  let description = [{
+      output, scales = quantize_dynamic_scaled_float8(input, scale_ub)
+
+    `input` is `[rows, cols]`. Each group of `group_size_or_per_token`
+    columns of a row gets one scale, its max-abs over the FP8 maximum,
+    capped at `scale_ub`; `-1` gives one scale per row. When set,
+    `amax_floor` floors each group's max-abs first. GPU only.
+
+    The fusion patterns that fold an `mo.reduce.rms_norm` (and an
+    allreduce and add) into the quantize match this op.
+  }];
+
+  let arguments = (ins
+    MO_Tensor:$input,
+    MO_Tensor:$scaleUb,
+    IndexAttr:$group_size_or_per_token,
+    OptionalAttr<MO_F32ScalarAttr>:$amax_floor
+  );
+  let results = (outs MO_Tensor:$output, MO_Tensor:$scales);
+  let assemblyFormat = [{
+    `(` operands `)`
+    `{` `group_size_or_per_token` `=` $group_size_or_per_token
+    (`,` `amax_floor` `=` $amax_floor^)? `}`
+    attr-dict `:` functional-type(operands, results)
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // RMSNormFusedQuantizeDynamicScaledFP8Op
 //===----------------------------------------------------------------------===//
 

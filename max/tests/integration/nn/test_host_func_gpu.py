@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Integration test for the ``mo.launch_host_func`` custom op.
+"""Integration test for the ``runtime.launch_host_func`` custom op.
 
 The op enqueues a Python callback on the device's default stream via
 ``cuLaunchHostFunc``. The callback pointer and its user-data pointer are
@@ -27,7 +27,7 @@ from max.nn.legacy import kernels
 
 
 def _build_launch_graph(device_ref: DeviceRef) -> Graph:
-    """Returns a one-op graph that wraps ``mo.launch_host_func``."""
+    """Returns a one-op graph that wraps ``runtime.launch_host_func``."""
     with Graph(
         "host_func_launch",
         input_types=[BufferType(DType.int64, [2], device=DeviceRef.CPU())],
@@ -46,7 +46,9 @@ def accelerator() -> Accelerator:
 def test_launch_host_func_runs_callback(accelerator: Accelerator) -> None:
     """Enqueues a Python callback through the custom op and verifies it ran."""
     if accelerator.api not in ("cuda", "hip"):
-        pytest.skip("mo.launch_host_func is only supported on CUDA/HIP devices")
+        pytest.skip(
+            "runtime.launch_host_func is only supported on CUDA/HIP devices"
+        )
 
     calls: list[str] = []
 

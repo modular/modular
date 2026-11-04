@@ -1785,7 +1785,7 @@ comptime _AMD_ROUTER_GATE_896X7168_TABLE = (
 )
 
 # Config for `m` above the last band, never reached through
-# `mo.router.gate.mixed.gemv` (which caps at `m <= 64`): the wide-N launch.
+# `moe.router.gate.mixed.gemv` (which caps at `m <= 64`): the wide-N launch.
 comptime _AMD_ROUTER_GATE_896X7168_FALLBACK = _RouterGateGemvConfig(
     1, 4, 128, 2, False, False, 0, False, False
 )

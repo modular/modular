@@ -139,9 +139,9 @@ from .kernels import (
 )
 
 
-@extensibility.register("mo.mla.kpool.expand_topk")
+@extensibility.register("attention.mla.kpool.expand_topk")
 struct MLAKPoolExpandTopK:
-    """Registers the `mo.mla.kpool.expand_topk` graph op with the graph compiler.
+    """Registers the `attention.mla.kpool.expand_topk` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -229,9 +229,9 @@ struct MLAKPoolExpandTopK:
         )
 
 
-@extensibility.register("mo.mla.kpool.compress")
+@extensibility.register("attention.mla.kpool.compress")
 struct MLAKPoolCompress:
-    """Registers the `mo.mla.kpool.compress` graph op with the graph compiler.
+    """Registers the `attention.mla.kpool.compress` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -336,9 +336,9 @@ struct MLAKPoolCompress:
         )
 
 
-@extensibility.register("mo.mla.kpool.seed_tail")
+@extensibility.register("attention.mla.kpool.seed_tail")
 struct MLAKPoolSeedTail:
-    """Registers the `mo.mla.kpool.seed_tail` graph op with the graph compiler.
+    """Registers the `attention.mla.kpool.seed_tail` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -365,7 +365,7 @@ struct MLAKPoolSeedTail:
         Whole pools compress directly from `k`/`gate`; the tokens after the
         last complete pool are that request's in-progress pool and have
         nowhere else to go until later tokens complete it, so they seed this
-        per-request ring. `mo.mla.kpool.ring_close` reads them back and
+        per-request ring. `attention.mla.kpool.ring_close` reads them back and
         closes the pool once it fills.
 
         Parameters:
@@ -444,9 +444,9 @@ struct MLAKPoolSeedTail:
         )
 
 
-@extensibility.register("mo.mla.kpool.ring_close")
+@extensibility.register("attention.mla.kpool.ring_close")
 struct MLAKPoolRingClose:
-    """Registers the `mo.mla.kpool.ring_close` graph op with the graph
+    """Registers the `attention.mla.kpool.ring_close` graph op with the graph
     compiler.
     """
 
@@ -458,13 +458,13 @@ struct MLAKPoolRingClose:
     ](
         pooled: Some[Output & Tensor],
         closed_pool: Some[Output & Tensor],
-        # `tail` is only read here, but `mo.mla.kpool.seed_tail` mutates the
+        # `tail` is only read here, but `attention.mla.kpool.seed_tail` mutates the
         # same buffer in this same step (to extend whatever pool this op
         # leaves pending), so it must stay a `MutableInput` argument to get
         # correct ordering against that writer -- mirroring how
         # `MLAIndexerRaggedFloat8Paged` above reads `k_blocks`/`k_scales`
         # through `MutableInputTensor` even though it never writes them,
-        # because `mo.kv_cache.store.paged.ragged` does.
+        # because `kv_cache.store.paged.ragged` does.
         tail: Some[MutableInput & Tensor],
         k: Some[Input & Tensor],
         gate: Some[Input & Tensor],
@@ -708,9 +708,9 @@ def _mla_indexer_ragged_float8_paged_execute[
     )
 
 
-@extensibility.register("mo.mla.indexer.ragged.float8.paged")
+@extensibility.register("attention.mla.indexer.ragged.float8.paged")
 struct MLAIndexerRaggedFloat8Paged:
-    """Registers the `mo.mla.indexer.ragged.float8.paged` graph op with the graph compiler.
+    """Registers the `attention.mla.indexer.ragged.float8.paged` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -841,11 +841,11 @@ struct MLAIndexerRaggedFloat8Paged:
         )
 
 
-@extensibility.register("mo.mla.indexer.ragged.float8.paged.remap")
+@extensibility.register("attention.mla.indexer.ragged.float8.paged.remap")
 struct MLAIndexerRaggedFloat8PagedRemap:
-    """Registers the `mo.mla.indexer.ragged.float8.paged.remap` graph op.
+    """Registers the `attention.mla.indexer.ragged.float8.paged.remap` graph op.
 
-    `mo.mla.indexer.ragged.float8.paged` plus a second output: each selected
+    `attention.mla.indexer.ragged.float8.paged` plus a second output: each selected
     position's physical row in the MLA cache, exactly what
     `paged_sparse_kv_index_remap` would compute from the logical output. A
     sparse MLA op given it skips that remap.
@@ -993,11 +993,11 @@ struct MLAIndexerRaggedFloat8PagedRemap:
         )
 
 
-@extensibility.register("mo.mla.indexer.ragged.float8.paged.remap.nvfp4")
+@extensibility.register("attention.mla.indexer.ragged.float8.paged.remap.nvfp4")
 struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
-    """Registers the `mo.mla.indexer.ragged.float8.paged.remap.nvfp4` graph op.
+    """Registers the `attention.mla.indexer.ragged.float8.paged.remap.nvfp4` graph op.
 
-    `mo.mla.indexer.ragged.float8.paged.remap` for an NVFP4 MLA cache, whose
+    `attention.mla.indexer.ragged.float8.paged.remap` for an NVFP4 MLA cache, whose
     scales are paged apart from its values. Each row of `physical_indices` is
     `2 * k` wide: the selected positions' physical rows in the values, then
     their rows in the scale pool, resolved through the cache's scales lookup
@@ -1189,9 +1189,10 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
         )
 
 
-@extensibility.register("mo.mha.no_cache")
+@extensibility.register("attention.mha.no_cache")
 struct FlashAttentionGPU:
-    """Registers the `mo.mha.no_cache` graph op with the graph compiler."""
+    """Registers the `attention.mha.no_cache` graph op with the graph compiler.
+    """
 
     @staticmethod
     def execute[
@@ -1209,7 +1210,7 @@ struct FlashAttentionGPU:
         mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
     ) raises:
-        """`mo.mha.no_cache` is a hand-fused operator which does
+        """`attention.mha.no_cache` is a hand-fused operator which does
         something analogous to the following list of operations.
 
         **Step 0:
@@ -1303,9 +1304,9 @@ struct FlashAttentionGPU:
         )
 
 
-@extensibility.register("mo.mha.no_cache", type="cpu")
+@extensibility.register("attention.mha.no_cache", type="cpu")
 struct FlashAttentionCPU:
-    """Registers the CPU kernel of the `mo.mha.no_cache` graph op with the
+    """Registers the CPU kernel of the `attention.mha.no_cache` graph op with the
     graph compiler."""
 
     @staticmethod
@@ -1326,7 +1327,7 @@ struct FlashAttentionCPU:
         mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
     ) raises:
-        """`mo.mha.no_cache` on CPU: the GPU kernel's computation, with `k`
+        """`attention.mha.no_cache` on CPU: the GPU kernel's computation, with `k`
         and `v` read through loads so that their producers fuse into them.
 
         Parameters:
@@ -1374,9 +1375,9 @@ struct FlashAttentionCPU:
         dispatch_mask[mask_str, local_window_size](mask_operands, _run)
 
 
-@extensibility.register("mo.mha.padded.no_cache")
+@extensibility.register("attention.mha.padded.no_cache")
 struct PaddedFlashAttentionGPU:
-    """Registers the `mo.mha.padded.no_cache` graph op with the graph compiler.
+    """Registers the `attention.mha.padded.no_cache` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -1443,9 +1444,9 @@ struct PaddedFlashAttentionGPU:
         dispatch_mask[mask_str, local_window_size](_dispatch_flash_attention)
 
 
-@extensibility.register("mo.mha.ragged.no_cache")
+@extensibility.register("attention.mha.ragged.no_cache")
 struct RaggedFlashAttentionGPU:
-    """Registers the `mo.mha.ragged.no_cache` graph op with the graph compiler.
+    """Registers the `attention.mha.ragged.no_cache` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -1466,7 +1467,7 @@ struct RaggedFlashAttentionGPU:
         mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
     ) raises:
-        """`mo.mha.ragged.no_cache` computes flash attention for ragged inputs without KV cache.
+        """`attention.mha.ragged.no_cache` computes flash attention for ragged inputs without KV cache.
 
         The inputs q, k, v are in ragged format with shape [total_seq_len, num_heads, head_dim].
         input_row_offsets indicates where each sequence starts and ends in the ragged tensors.
@@ -1542,9 +1543,9 @@ struct RaggedFlashAttentionGPU:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.padded.paged")
+@extensibility.register("kv_cache.fused_qkv_matmul.padded.paged")
 struct Struct_fused_qkv_matmul_padded_paged:
-    """Registers the `mo.fused_qkv_matmul.padded.paged` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.padded.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1606,9 +1607,9 @@ struct Struct_fused_qkv_matmul_padded_paged:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged")
+@extensibility.register("kv_cache.fused_qkv_matmul.ragged.paged")
 struct Struct_fused_qkv_matmul_padded_ragged:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1668,9 +1669,9 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged.quantized")
+@extensibility.register("kv_cache.fused_qkv_matmul.ragged.paged.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_quantized:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged.quantized` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged.quantized` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1742,9 +1743,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged.bias")
+@extensibility.register("kv_cache.fused_qkv_matmul.ragged.paged.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_bias:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged.bias` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged.bias` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1810,9 +1811,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale")
+@extensibility.register("kv_cache.fused_qkv_matmul.ragged.paged.scale")
 struct Struct_fused_qkv_matmul_padded_ragged_scale:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged.scale` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1922,9 +1923,9 @@ def _imm_pointer_tile(
     )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.float4")
+@extensibility.register("kv_cache.fused_qkv_matmul.ragged.paged.scale.float4")
 struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.float4` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged.scale.float4` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2007,9 +2008,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.mxfp8")
+@extensibility.register("kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp8")
 struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.mxfp8` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp8` graph op with the graph compiler.
     """
 
     # Delegates to the NVFP4 entry point, which is dual-mode and also handles
@@ -2096,9 +2097,11 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.mxfp8.amd")
+@extensibility.register(
+    "kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp8.amd"
+)
 struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.mxfp8.amd` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp8.amd` graph op with the graph compiler.
     """
 
     # CDNA4 sibling of the struct above, delegating to the same dual-mode entry
@@ -2186,9 +2189,11 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.mxfp6.amd")
+@extensibility.register(
+    "kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp6.amd"
+)
 struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp6_amd:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.mxfp6.amd` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp6.amd` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2280,9 +2285,11 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp6_amd:
         )
 
 
-@extensibility.register("mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8")
+@extensibility.register(
+    "kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp8"
+)
 struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
-    """Registers the `mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp8` graph op with the graph compiler.
     """
 
     # Dual-cache fused QKV + index-QK matmul for MiniMax-M3. Like the
@@ -2428,10 +2435,10 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
 
 
 @extensibility.register(
-    "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8.amd"
+    "kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp8.amd"
 )
 struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
-    """Registers the `mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8.amd` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp8.amd` graph op with the graph compiler.
     """
 
     # CDNA4 sibling of the struct above, delegating to the same dual-mode
@@ -2577,10 +2584,10 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
 
 
 @extensibility.register(
-    "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp6.amd"
+    "kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp6.amd"
 )
 struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
-    """Registers the `mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp6.amd` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp6.amd` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2720,7 +2727,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
         )
 
 
-@extensibility.register("mo.fused_qkv_index_matmul.ragged.paged")
+@extensibility.register("kv_cache.fused_qkv_index_matmul.ragged.paged")
 struct Struct_fused_qkv_index_matmul_padded_ragged:
     # BF16 (non-scaled) dual-cache fused QKV + index-QK matmul for MiniMax-M3.
     # Non-scaled analog of the mxfp8 struct above: same dual-cache column routing
@@ -2838,9 +2845,9 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.bias")
+@extensibility.register("kv_cache.fused_qkv_matmul.ragged.paged.scale.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.bias` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged.scale.bias` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2938,9 +2945,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
         )
 
 
-@extensibility.register("mo.fused_qkv_matmul.ragged.paged.bias.quantized")
+@extensibility.register("kv_cache.fused_qkv_matmul.ragged.paged.bias.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
-    """Registers the `mo.fused_qkv_matmul.ragged.paged.bias.quantized` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qkv_matmul.ragged.paged.bias.quantized` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -3016,9 +3023,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         )
 
 
-@extensibility.register("mo.fused_qk_rope.ragged.paged.with_position_id")
+@extensibility.register("kv_cache.fused_qk_rope.ragged.paged.with_position_id")
 struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
-    """Registers the `mo.fused_qk_rope.ragged.paged.with_position_id` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qk_rope.ragged.paged.with_position_id` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -3093,9 +3100,9 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
         )
 
 
-@extensibility.register("mo.fused_qk_rope.ragged.paged")
+@extensibility.register("kv_cache.fused_qk_rope.ragged.paged")
 struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
-    """Registers the `mo.fused_qk_rope.ragged.paged` graph op with the graph compiler.
+    """Registers the `kv_cache.fused_qk_rope.ragged.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -3169,9 +3176,10 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         )
 
 
-@extensibility.register("mo.mha.padded.paged")
+@extensibility.register("attention.mha.padded.paged")
 struct Struct_mha_padded_paged:
-    """Registers the `mo.mha.padded.paged` graph op with the graph compiler."""
+    """Registers the `attention.mha.padded.paged` graph op with the graph compiler.
+    """
 
     @inline(.always)
     @staticmethod
@@ -3236,9 +3244,9 @@ struct Struct_mha_padded_paged:
         )
 
 
-@extensibility.register("mo.mha.ragged.paged")
+@extensibility.register("attention.mha.ragged.paged")
 struct Struct_mha_ragged_paged_scalar_args:
-    """Registers the `mo.mha.ragged.paged` graph op with the graph compiler.
+    """Registers the `attention.mha.ragged.paged` graph op with the graph compiler.
 
     `mixed_step_split` is the KV cache's split record
     (`kv_cache.mixed_step_split`). On NVIDIA, a valid record runs the decode
@@ -3364,7 +3372,7 @@ def _execute_mha_ragged_paged[
     mask_operands: TensorTuple[*MaskIns],
     context: DeviceContext,
 ) raises:
-    """Runs `mo.mha.ragged.paged`: split by `mixed_step_split` where the
+    """Runs `attention.mha.ragged.paged`: split by `mixed_step_split` where the
     record and the operands allow it, else one launch."""
     # Mask operands are indexed by the whole batch's sequence ids, which a
     # split view renumbers.
@@ -3534,9 +3542,9 @@ def _mha_ragged_mixed_step_split[
     return False
 
 
-@extensibility.register("mo.mha.ragged.paged.sink_weights")
+@extensibility.register("attention.mha.ragged.paged.sink_weights")
 struct Struct_mha_ragged_paged_sink_weights_scalar_args:
-    """Registers the `mo.mha.ragged.paged.sink_weights` graph op with the graph compiler.
+    """Registers the `attention.mha.ragged.paged.sink_weights` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -3617,9 +3625,9 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         )
 
 
-@extensibility.register("mo.mla.decode.ragged.paged")
+@extensibility.register("attention.mla.decode.ragged.paged")
 struct Struct_mla_decode_ragged_paged:
-    """Registers the `mo.mla.decode.ragged.paged` graph op with the graph compiler.
+    """Registers the `attention.mla.decode.ragged.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -3688,9 +3696,9 @@ struct Struct_mla_decode_ragged_paged:
         )
 
 
-@extensibility.register("mo.mla.decode.ragged.paged.scaled")
+@extensibility.register("attention.mla.decode.ragged.paged.scaled")
 struct Struct_mla_decode_ragged_paged_scaled:
-    """Registers the `mo.mla.decode.ragged.paged.scaled` graph op with the graph compiler.
+    """Registers the `attention.mla.decode.ragged.paged.scaled` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -3817,9 +3825,9 @@ struct Struct_mla_decode_ragged_paged_scaled:
         )
 
 
-@extensibility.register("mo.mla.prefill.ragged.paged")
+@extensibility.register("attention.mla.prefill.ragged.paged")
 struct Struct_mla_prefill_ragged_paged:
-    """Registers the `mo.mla.prefill.ragged.paged` graph op with the graph compiler.
+    """Registers the `attention.mla.prefill.ragged.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -3898,9 +3906,9 @@ struct Struct_mla_prefill_ragged_paged:
         )
 
 
-@extensibility.register("mo.mla.prefill.ragged.plan")
+@extensibility.register("attention.mla.prefill.ragged.plan")
 struct Struct_mla_prefill_ragged_plan:
-    """Registers the `mo.mla.prefill.ragged.plan` graph op with the graph compiler.
+    """Registers the `attention.mla.prefill.ragged.plan` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -3984,9 +3992,9 @@ struct Struct_mla_prefill_ragged_plan:
         )
 
 
-@extensibility.register("mo.mla.decompress.k.cache.ragged.paged")
+@extensibility.register("attention.mla.decompress.k.cache.ragged.paged")
 struct Struct_mla_decompress_k_cache_ragged_paged:
-    """Registers the `mo.mla.decompress.k.cache.ragged.paged` graph op with the graph compiler.
+    """Registers the `attention.mla.decompress.k.cache.ragged.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -4055,9 +4063,9 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         )
 
 
-@extensibility.register("mo.mla.graph.prefill.paged.fp8")
+@extensibility.register("attention.mla.graph.prefill.paged.fp8")
 struct Struct_mla_prefill_graph_paged:
-    """Registers the `mo.mla.graph.prefill.paged.fp8` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.prefill.paged.fp8` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -4145,7 +4153,7 @@ struct Struct_mla_prefill_graph_paged:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.prefill.paged.fp8 is only supported on GPU"
+        ](), "attention.mla.graph.prefill.paged.fp8 is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -4189,9 +4197,9 @@ struct Struct_mla_prefill_graph_paged:
         )
 
 
-@extensibility.register("mo.mla.graph.decode.paged.fp8")
+@extensibility.register("attention.mla.graph.decode.paged.fp8")
 struct Struct_mla_decode_graph_paged_fp8:
-    """Registers the `mo.mla.graph.decode.paged.fp8` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.decode.paged.fp8` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -4278,7 +4286,7 @@ struct Struct_mla_decode_graph_paged_fp8:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.decode.paged.fp8 is only supported on GPU"
+        ](), "attention.mla.graph.decode.paged.fp8 is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -4301,7 +4309,7 @@ struct Struct_mla_decode_graph_paged_fp8:
         )
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged.fp8",
+            "attention.mla.graph.decode.paged.fp8",
             task_id=get_safe_task_id(context),
         ):
             mla_decode_branch_fp8[
@@ -4494,9 +4502,9 @@ def _amd_sparse_decode_partitions(
     return None
 
 
-@extensibility.register("mo.mla.graph.decode.paged.fp8.sparse")
+@extensibility.register("attention.mla.graph.decode.paged.fp8.sparse")
 struct Struct_mla_decode_graph_paged_fp8_sparse:
-    """Registers the `mo.mla.graph.decode.paged.fp8.sparse` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.decode.paged.fp8.sparse` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -4516,7 +4524,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         target: StaticString,
         indices_stride: Int,
         # Whether `sparse_indices` holds the indexer's paged physical rows
-        # (`mo.mla.indexer.ragged.float8.paged.remap`) rather than logical
+        # (`attention.mla.indexer.ragged.float8.paged.remap`) rather than logical
         # token positions, which the kernels look up in the page table.
         physical_indices: Bool,
         # Read-once shared-index MTP fold (KERN-3141). Set from the Python
@@ -4575,9 +4583,10 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
             max_cache_length,
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "mo.mla.graph.decode.paged.fp8.sparse is only supported on GPU"
+        comptime assert is_gpu[target](), (
+            "attention.mla.graph.decode.paged.fp8.sparse is only supported"
+            " on GPU"
+        )
         comptime assert not (index_share and physical_indices), (
             "index_share masks a shared row by logical key position, so it"
             " needs logical sparse_indices"
@@ -4614,7 +4623,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 logical_indices_ptr = sparse_indices.unsafe_ptr()
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged.fp8.sparse",
+            "attention.mla.graph.decode.paged.fp8.sparse",
             task_id=get_safe_task_id(context),
         ):
             var gather_indices = _sparse_indices_ptr[indices_stride](
@@ -4668,9 +4677,9 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
             )
 
 
-@extensibility.register("mo.mla.graph.prefill.paged")
+@extensibility.register("attention.mla.graph.prefill.paged")
 struct Struct_mla_prefill_graph_bf16_paged:
-    """Registers the `mo.mla.graph.prefill.paged` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.prefill.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -4746,7 +4755,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.prefill.paged is only supported on GPU"
+        ](), "attention.mla.graph.prefill.paged is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -4785,9 +4794,9 @@ struct Struct_mla_prefill_graph_bf16_paged:
         )
 
 
-@extensibility.register("mo.mla.graph.decode.paged")
+@extensibility.register("attention.mla.graph.decode.paged")
 struct Struct_mla_decode_graph_bf16_paged:
-    """Registers the `mo.mla.graph.decode.paged` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.decode.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -4862,7 +4871,7 @@ struct Struct_mla_decode_graph_bf16_paged:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.decode.paged is only supported on GPU"
+        ](), "attention.mla.graph.decode.paged is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -4885,7 +4894,7 @@ struct Struct_mla_decode_graph_bf16_paged:
         )
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged",
+            "attention.mla.graph.decode.paged",
             task_id=get_safe_task_id(context),
         ):
             mla_decode_branch_bf16[
@@ -4910,9 +4919,9 @@ struct Struct_mla_decode_graph_bf16_paged:
             )
 
 
-@extensibility.register("mo.mla.graph.decode.paged.sparse")
+@extensibility.register("attention.mla.graph.decode.paged.sparse")
 struct Struct_mla_decode_graph_bf16_paged_sparse:
-    """Registers the `mo.mla.graph.decode.paged.sparse` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.decode.paged.sparse` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -4926,7 +4935,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
         target: StaticString,
         indices_stride: Int,
         # Whether `sparse_indices` holds the indexer's paged physical rows
-        # (`mo.mla.indexer.ragged.float8.paged.remap`) rather than logical
+        # (`attention.mla.indexer.ragged.float8.paged.remap`) rather than logical
         # token positions, which the kernels look up in the page table.
         physical_indices: Bool,
         # The sparse index producer's row layout (`SparseRowLayout`), which
@@ -4977,7 +4986,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.decode.paged.sparse is only supported on GPU"
+        ](), "attention.mla.graph.decode.paged.sparse is only supported on GPU"
 
         @inline(.always)
         def kv_input_fn[
@@ -5002,7 +5011,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged.sparse",
+            "attention.mla.graph.decode.paged.sparse",
             task_id=get_safe_task_id(context),
         ):
             var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
@@ -5056,11 +5065,11 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
             _ = scratch_sparse_indices^
 
 
-@extensibility.register("mo.mla.graph.decode.paged.sparse.nvfp4")
+@extensibility.register("attention.mla.graph.decode.paged.sparse.nvfp4")
 struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4:
-    """Registers the `mo.mla.graph.decode.paged.sparse.nvfp4` graph op.
+    """Registers the `attention.mla.graph.decode.paged.sparse.nvfp4` graph op.
 
-    `mo.mla.graph.decode.paged.sparse` over an NVFP4 latent cache: packed E2M1
+    `attention.mla.graph.decode.paged.sparse` over an NVFP4 latent cache: packed E2M1
     rows (`uint8`, two elements per byte) with one E4M3 scale per 16 elements.
     The fused write quantizes into it and the SM100 sparse kernels dequantize
     it to FP8. The scale operands sit right after `max_cache_length`, where
@@ -5069,7 +5078,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4:
     Each row of `sparse_indices` is `indices_stride` wide: `indices_stride / 2`
     physical value rows, then that many rows in the scale pool, which the
     cache pages apart from its values (see
-    `mo.mla.indexer.ragged.float8.paged.remap.nvfp4`).
+    `attention.mla.indexer.ragged.float8.paged.remap.nvfp4`).
     """
 
     @inline(.always)
@@ -5116,9 +5125,10 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4:
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
-        comptime assert is_gpu[
-            target
-        ](), "mo.mla.graph.decode.paged.sparse.nvfp4 is only supported on GPU"
+        comptime assert is_gpu[target](), (
+            "attention.mla.graph.decode.paged.sparse.nvfp4 is only supported"
+            " on GPU"
+        )
         comptime assert physical_indices, (
             "an NVFP4 MLA cache needs the indexer's physical and scale rows,"
             " not token positions"
@@ -5149,7 +5159,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4:
         )
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged.sparse.nvfp4",
+            "attention.mla.graph.decode.paged.sparse.nvfp4",
             task_id=get_safe_task_id(context),
         ):
             var gather_indices = _sparse_indices_ptr[indices_stride](
@@ -5189,9 +5199,9 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4:
             )
 
 
-@extensibility.register("mo.mla.graph.prefill.decode.paged.fp8")
+@extensibility.register("attention.mla.graph.prefill.decode.paged.fp8")
 struct Struct_mla_prefill_graph_decode_paged_fp8:
-    """Registers the `mo.mla.graph.prefill.decode.paged.fp8` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.prefill.decode.paged.fp8` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -5291,9 +5301,10 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "mo.mla.graph.prefill.decode.paged.fp8 is only supported on GPU"
+        comptime assert is_gpu[target](), (
+            "attention.mla.graph.prefill.decode.paged.fp8 is only supported"
+            " on GPU"
+        )
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -5316,7 +5327,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
         )
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged.fp8",
+            "attention.mla.graph.prefill.decode.paged.fp8",
             task_id=get_safe_task_id(context),
         ):
             mla_prefill_decode_graph_fp8[
@@ -5352,9 +5363,9 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
             )
 
 
-@extensibility.register("mo.mla.graph.prefill.decode.paged.fp8.sparse")
+@extensibility.register("attention.mla.graph.prefill.decode.paged.fp8.sparse")
 struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
-    """Registers the `mo.mla.graph.prefill.decode.paged.fp8.sparse` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.prefill.decode.paged.fp8.sparse` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -5374,7 +5385,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         target: StaticString,
         indices_stride: Int,
         # Whether `sparse_indices` holds the indexer's paged physical rows
-        # (`mo.mla.indexer.ragged.float8.paged.remap`) rather than logical
+        # (`attention.mla.indexer.ragged.float8.paged.remap`) rather than logical
         # token positions, which decode looks up in the page table and prefill
         # remaps first.
         physical_indices: Bool,
@@ -5435,8 +5446,8 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         )
 
         comptime assert is_gpu[target](), (
-            "mo.mla.graph.prefill.decode.paged.fp8.sparse is only supported"
-            " on GPU"
+            "attention.mla.graph.prefill.decode.paged.fp8.sparse is only"
+            " supported on GPU"
         )
 
         @inline(.always)
@@ -5465,7 +5476,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         )
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged.fp8.sparse",
+            "attention.mla.graph.prefill.decode.paged.fp8.sparse",
             task_id=get_safe_task_id(context),
         ):
             var decode_indices = _sparse_indices_ptr[indices_stride](
@@ -5546,9 +5557,9 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
             _ = scratch_sparse_indices^
 
 
-@extensibility.register("mo.mla.graph.prefill.decode.paged")
+@extensibility.register("attention.mla.graph.prefill.decode.paged")
 struct Struct_mla_prefill_graph_decode_bf16_paged:
-    """Registers the `mo.mla.graph.prefill.decode.paged` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.prefill.decode.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -5635,7 +5646,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
+        ](), "attention.mla.graph.prefill.decode.paged is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -5658,7 +5669,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         )
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged",
+            "attention.mla.graph.prefill.decode.paged",
             task_id=get_safe_task_id(context),
         ):
             mla_prefill_decode_graph_bf16[
@@ -5688,9 +5699,9 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             )
 
 
-@extensibility.register("mo.mla.store.ragged.paged")
+@extensibility.register("attention.mla.store.ragged.paged")
 struct Struct_mla_store_ragged_paged:
-    """Registers the `mo.mla.store.ragged.paged` graph op with the graph
+    """Registers the `attention.mla.store.ragged.paged` graph op with the graph
     compiler.
     """
 
@@ -5719,7 +5730,7 @@ struct Struct_mla_store_ragged_paged:
     ) raises:
         """Stores raw MLA latent rows into the paged cache, normed and roped.
 
-        The store half of `mo.mla.graph.prefill.decode.paged` without the
+        The store half of `attention.mla.graph.prefill.decode.paged` without the
         attention: each row of `kv` -- a request's `token_idx`-th row, found
         via `input_row_offsets` -- is RMSNormed on its first `kv_lora_rank`
         elements against `kv_norm_gamma`, roped on its trailing rope slice at
@@ -5749,7 +5760,7 @@ struct Struct_mla_store_ragged_paged:
         """
         comptime assert is_gpu[
             target
-        ](), "mo.mla.store.ragged.paged is only supported on GPU"
+        ](), "attention.mla.store.ragged.paged is only supported on GPU"
         comptime cache_head_size = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime kv_norm_dim = Int(kv_norm_gamma.static_spec.shape_tuple[0])
         comptime assert (
@@ -5775,7 +5786,7 @@ struct Struct_mla_store_ragged_paged:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.store.ragged.paged",
+            "attention.mla.store.ragged.paged",
             task_id=get_safe_task_id(context),
         ):
             mla_store_ragged_paged(
@@ -5791,7 +5802,7 @@ struct Struct_mla_store_ragged_paged:
             )
 
 
-@extensibility.register("mo.mla.graph.prefill.decode.paged.sparse")
+@extensibility.register("attention.mla.graph.prefill.decode.paged.sparse")
 struct Struct_mla_prefill_graph_decode_paged_sparse:
     @inline(.always)
     @staticmethod
@@ -5804,7 +5815,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
         target: StaticString,
         indices_stride: Int,
         # Whether `sparse_indices` holds the indexer's paged physical rows
-        # (`mo.mla.indexer.ragged.float8.paged.remap`) rather than logical
+        # (`attention.mla.indexer.ragged.float8.paged.remap`) rather than logical
         # token positions, which decode looks up in the page table and prefill
         # remaps first.
         physical_indices: Bool,
@@ -5858,9 +5869,10 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
             max_cache_length,
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "mo.mla.graph.prefill.decode.paged.sparse is only supported on GPU"
+        comptime assert is_gpu[target](), (
+            "attention.mla.graph.prefill.decode.paged.sparse is only supported"
+            " on GPU"
+        )
 
         @inline(.always)
         def kv_input_fn[
@@ -5888,7 +5900,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
         )
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged.sparse",
+            "attention.mla.graph.prefill.decode.paged.sparse",
             task_id=get_safe_task_id(context),
         ):
             comptime decode_physical = _sparse_decode_physical[
@@ -5972,12 +5984,12 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
             _ = scratch_sparse_indices^
 
 
-@extensibility.register("mo.mla.graph.prefill.decode.paged.sparse.nvfp4")
+@extensibility.register("attention.mla.graph.prefill.decode.paged.sparse.nvfp4")
 struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4:
-    """Registers the `mo.mla.graph.prefill.decode.paged.sparse.nvfp4` graph op.
+    """Registers the `attention.mla.graph.prefill.decode.paged.sparse.nvfp4` graph op.
 
-    `mo.mla.graph.prefill.decode.paged.sparse` over an NVFP4 latent cache; see
-    `mo.mla.graph.decode.paged.sparse.nvfp4` for the format and operand order.
+    `attention.mla.graph.prefill.decode.paged.sparse` over an NVFP4 latent cache; see
+    `attention.mla.graph.decode.paged.sparse.nvfp4` for the format and operand order.
     """
 
     @inline(.always)
@@ -6033,8 +6045,8 @@ struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), (
-            "mo.mla.graph.prefill.decode.paged.sparse.nvfp4 is only supported"
-            " on GPU"
+            "attention.mla.graph.prefill.decode.paged.sparse.nvfp4 is only"
+            " supported on GPU"
         )
         comptime assert physical_indices, (
             "an NVFP4 MLA cache needs the indexer's physical and scale rows,"
@@ -6083,7 +6095,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4:
         )
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged.sparse.nvfp4",
+            "attention.mla.graph.prefill.decode.paged.sparse.nvfp4",
             task_id=get_safe_task_id(context),
         ):
             var decode_indices = _sparse_indices_ptr[indices_stride](
@@ -6150,9 +6162,9 @@ struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4:
             _ = scratch_sparse_indices^
 
 
-@extensibility.register("mo.mla.graph.prefill.decode.paged.quantized")
+@extensibility.register("attention.mla.graph.prefill.decode.paged.quantized")
 struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
-    """Registers the `mo.mla.graph.prefill.decode.paged.quantized` graph op with the graph compiler.
+    """Registers the `attention.mla.graph.prefill.decode.paged.quantized` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -6240,8 +6252,8 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         )
 
         comptime assert is_gpu[target](), (
-            "mo.mla.graph.prefill.decode.paged.quantized is only supported"
-            " on GPU"
+            "attention.mla.graph.prefill.decode.paged.quantized is only"
+            " supported on GPU"
         )
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
@@ -6265,7 +6277,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         )
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged.quantized",
+            "attention.mla.graph.prefill.decode.paged.quantized",
             task_id=get_safe_task_id(context),
         ):
             mla_prefill_decode_graph_bf16[
@@ -6295,9 +6307,9 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
             )
 
 
-@extensibility.register("mo.cross_attention.ragged.paged")
+@extensibility.register("attention.cross.ragged.paged")
 struct Struct_cross_attention_ragged_paged:
-    """Registers the `mo.cross_attention.ragged.paged` graph op with the graph compiler.
+    """Registers the `attention.cross.ragged.paged` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -6380,9 +6392,9 @@ struct Struct_cross_attention_ragged_paged:
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.latent_sparse_attention.ragged.paged")
+@extensibility.register("attention.latent_sparse.ragged.paged")
 struct Struct_latent_sparse_attention_ragged_paged:
-    """Registers the `mo.latent_sparse_attention.ragged.paged` graph op with the graph compiler.
+    """Registers the `attention.latent_sparse.ragged.paged` graph op with the graph compiler.
 
     Sparse attention over a shared K=V latent read from two paged leaves: the
     sliding-window leaf by position range and the compressed leaf by an
@@ -6501,9 +6513,9 @@ struct Struct_latent_sparse_attention_ragged_paged:
         )
 
 
-@extensibility.register("mo.indexer_score.ragged.paged")
+@extensibility.register("attention.indexer_score.ragged.paged")
 struct Struct_indexer_score_ragged_paged:
-    """Registers the `mo.indexer_score.ragged.paged` graph op with the graph compiler.
+    """Registers the `attention.indexer_score.ragged.paged` graph op with the graph compiler.
 
     DeepSeek-V4 lightning-indexer scores: every query row against the live
     entries of one layer of a paged compressed leaf, relu'd, weighted per
@@ -6575,9 +6587,9 @@ struct Struct_indexer_score_ragged_paged:
         )
 
 
-@extensibility.register("mo.compress_windows.ragged.paged")
+@extensibility.register("attention.compress_windows.ragged.paged")
 struct Struct_compress_windows_ragged_paged:
-    """Registers the `mo.compress_windows.ragged.paged` graph op with the graph compiler.
+    """Registers the `attention.compress_windows.ragged.paged` graph op with the graph compiler.
 
     DeepSeek-V4's compressor over the windows of a ragged chunk, reading the
     positions before the chunk from a paged state leaf. See

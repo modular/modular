@@ -393,7 +393,7 @@ def test_every_indexer_seeds_its_tail_twice(fused: Graph) -> None:
     """Checks each indexer over the window, the draft's included, gets a
     deferred seed and a replay."""
     indexers = NUM_SPARSE + 1
-    assert _symbol_count(fused, "mo.mla.kpool.seed_tail") == 2 * indexers
+    assert _symbol_count(fused, "attention.mla.kpool.seed_tail") == 2 * indexers
 
 
 def test_the_fused_graph_compiles() -> None:
@@ -414,4 +414,4 @@ def test_the_base_graph_runs_no_speculative_state_op(base: Graph) -> None:
     ):
         assert _symbol_count(base, symbol) == 0, symbol
     assert _symbol_count(base, "gated_delta_conv1d_fwd") == NUM_KDA
-    assert _symbol_count(base, "mo.mla.kpool.seed_tail") == NUM_SPARSE
+    assert _symbol_count(base, "attention.mla.kpool.seed_tail") == NUM_SPARSE

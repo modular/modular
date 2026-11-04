@@ -92,10 +92,10 @@ def _fuses_whole_epilogue(model: Model, epilogue: str) -> bool:
     no other kernel runs any of them."""
     ops = _EPILOGUE_OPS[epilogue]
     chain = re.compile(
-        r"mo\.grouped\.matmul\.ragged.*" + ".*".join(map(re.escape, ops))
+        r"matmul\.grouped\.ragged.*" + ".*".join(map(re.escape, ops))
     )
     summaries = model.kernel_summaries
-    others = [s for s in summaries if "mo.grouped.matmul.ragged" not in s]
+    others = [s for s in summaries if "matmul.grouped.ragged" not in s]
     return any(chain.search(s) for s in summaries) and not any(
         op in s for s in others for op in ops
     )

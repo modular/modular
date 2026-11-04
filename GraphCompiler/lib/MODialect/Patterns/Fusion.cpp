@@ -1278,26 +1278,21 @@ struct RMSNormResidualAddPattern
 };
 
 struct RMSNormFusedQuantizeDynamicScaledFP8Pattern
-    : public MO::DeviceAwareRewritePattern<OpRewritePattern, MO::CustomOp> {
+    : public MO::DeviceAwareRewritePattern<
+          OpRewritePattern, MO::Composite::QuantizeDynamicScaledFP8Op> {
   DeviceRefAttr targetDevice;
   RMSNormFusedQuantizeDynamicScaledFP8Pattern(MLIRContext *ctx,
                                               DeviceRefAttr targetDevice)
       : DeviceAwareRewritePattern(ctx, 3), targetDevice(targetDevice) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::CustomOp op,
+  deviceAwareMatchAndRewrite(MO::Composite::QuantizeDynamicScaledFP8Op op,
                              MO::DeviceAwareRewriter &rewriter) const override {
-    if (op.getSymbol() != "mo.quantize_dynamic_scaled_float8")
-      return rewriter.notifyMatchFailure(op, "not a quantize operation");
-    if (op.getOperands().size() != 2)
-      return rewriter.notifyMatchFailure(op,
-                                         "unexpected quantize operand count");
-
     DeviceRefAttr device = getTargetDevice(op, targetDevice);
     if (!device || device.getLabel() != M::kGPULabel)
       return rewriter.notifyMatchFailure(op, "fused op requires GPU");
 
-    TensorValue input = dyn_cast<TensorValue>(op.getOperand(0));
+    TensorValue input = cast<TensorValue>(op.getInput());
     if (!input.hasOneUse())
       return rewriter.notifyMatchFailure(op, "input has multiple uses");
 
@@ -1305,30 +1300,13 @@ struct RMSNormFusedQuantizeDynamicScaledFP8Pattern
     if (!rmsNormOp)
       return rewriter.notifyMatchFailure(op, "input not a rms_norm operation");
 
+    // The fused kernel derives the scale itself and has no amax floor.
+    if (op.getAmaxFloor())
+      return rewriter.notifyMatchFailure(op, "amax_floor is set");
     TensorType inputTy = input.getType();
-    if (!inputTy.hasRank())
-      return rewriter.notifyMatchFailure(op, "missing input rank");
-    size_t rank = inputTy.getRank();
-    if (rank == 0)
-      return rewriter.notifyMatchFailure(op, "unexpected input rank");
-
-    DictionaryAttr opParams = op.getParameters();
-    if (opParams.size() != 1)
-      return rewriter.notifyMatchFailure(op,
-                                         "missing or unexpected parameters");
-
-    Attribute groupSizeAttr = opParams.get("group_size_or_per_token");
-    if (!groupSizeAttr)
-      return rewriter.notifyMatchFailure(op, "missing group_size_or_per_token");
-    if (auto groupSizeIntAttr = dyn_cast<IntegerAttr>(groupSizeAttr)) {
-      int64_t groupSize = groupSizeIntAttr.getInt();
-      if (groupSize != -1 && groupSize != inputTy.getIntDim(rank - 1))
-        return rewriter.notifyMatchFailure(op,
-                                           "tokenwise quantization required");
-    } else {
-      return rewriter.notifyMatchFailure(op,
-                                         "wrong group_size_or_per_token type");
-    }
+    int64_t groupSize = op.getGroupSizeOrPerToken().getSExtValue();
+    if (groupSize != -1 && groupSize != inputTy.getIntDim(1))
+      return rewriter.notifyMatchFailure(op, "tokenwise quantization required");
 
     if (!rmsNormOp.getMultiplyBeforeCast())
       return rewriter.notifyMatchFailure(op, "multiply_before_cast required");
@@ -1336,7 +1314,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8Pattern
     rewriter.replaceOpWithNewOp<
         MO::Composite::RMSNormFusedQuantizeDynamicScaledFP8Op>(
         op, op.getResultTypes(), rmsNormOp.getInput(), rmsNormOp.getWeight(),
-        /*scaleUb=*/op.getOperand(1), rmsNormOp.getEpsilonAttr(),
+        op.getScaleUb(), rmsNormOp.getEpsilonAttr(),
         rmsNormOp.getWeightOffsetAttr());
 
     return mlir::success();
@@ -1380,15 +1358,15 @@ static bool matchRMSNormOp(Value val, MO::ReduceRMSNormOp &rmsNormOp) {
   return false;
 }
 
-/// Finds an `mo.custom` consumer of `val` whose symbol equals `customOpName`.
-static bool matchCustomOp(Value val, MO::CustomOp &customOp,
-                          StringRef customOpName) {
+/// Finds an `mo.composite.quantize_dynamic_scaled_fp8` consumer of `val`.
+static bool
+matchQuantizeOp(Value val,
+                MO::Composite::QuantizeDynamicScaledFP8Op &quantizeOp) {
   for (Operation *user : val.getUsers()) {
-    auto op = dyn_cast<MO::CustomOp>(user);
-    if (!op || op.getSymbol() != customOpName)
-      continue;
-    customOp = op;
-    return true;
+    if (auto op = dyn_cast<MO::Composite::QuantizeDynamicScaledFP8Op>(user)) {
+      quantizeOp = op;
+      return true;
+    }
   }
   return false;
 }
@@ -1397,9 +1375,10 @@ static bool matchCustomOp(Value val, MO::CustomOp &customOp,
 /// `inputTy` is the tensor type entering the add op (the allreduce output on
 /// the relevant device); a null `quantizeOp` is the chain that stops at the
 /// norm, which the kernel serves in the input dtype.
-static bool verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
-                                     MO::ReduceRMSNormOp rmsNormOp,
-                                     MO::CustomOp quantizeOp) {
+static bool
+verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
+                         MO::ReduceRMSNormOp rmsNormOp,
+                         MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp) {
   if (!inputTy.hasRank())
     return false;
   // The fused kernel needs P2P between the peers and flattens to [rows, cols].
@@ -1410,20 +1389,13 @@ static bool verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
   if (rank < 2)
     return false;
   if (quantizeOp) {
-    if (quantizeOp.getOperand(0) != rmsNormOp.getResult())
+    if (quantizeOp.getInput() != rmsNormOp.getResult())
       return false;
-    DictionaryAttr quantizeOpParams = quantizeOp.getParameters();
     // The fused kernel derives the scale itself and has no amax floor, so a
     // quantize op that asks for one must stay unfused.
-    if (quantizeOpParams.get("amax_floor"))
+    if (quantizeOp.getAmaxFloor())
       return false;
-    Attribute groupSizeAttr = quantizeOpParams.get("group_size_or_per_token");
-    if (!groupSizeAttr)
-      return false;
-    auto groupSizeIntAttr = dyn_cast<IntegerAttr>(groupSizeAttr);
-    if (!groupSizeIntAttr)
-      return false;
-    int64_t groupSize = groupSizeIntAttr.getInt();
+    int64_t groupSize = quantizeOp.getGroupSizeOrPerToken().getSExtValue();
     if (groupSize != -1 && groupSize != inputTy.getIntDim(rank - 1))
       return false;
   } else {
@@ -1548,7 +1520,8 @@ private:
   OpBuilder builder;
   llvm::DenseMap<DeviceRefAttr, MO::AddOp> residualOps;
   llvm::DenseMap<DeviceRefAttr, MO::ReduceRMSNormOp> rmsNormOps;
-  llvm::DenseMap<DeviceRefAttr, MO::CustomOp> quantizeOps;
+  llvm::DenseMap<DeviceRefAttr, MO::Composite::QuantizeDynamicScaledFP8Op>
+      quantizeOps;
   llvm::DenseMap<DeviceRefAttr, Value> residualValues;
   bool quantizes = false;
   // Stands in for `scale_ub`; the kernel's scale clamp never reads it.
@@ -1579,10 +1552,10 @@ private:
 
     MO::AddOp residualOp;
     MO::ReduceRMSNormOp rmsNormOp;
-    MO::CustomOp quantizeOp;
+    MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp;
     Value residualValue;
 
-    // Match add + rms_norm + custom["mo.quantize_dynamic_scaled_float8"]
+    // Match add + rms_norm + mo.composite.quantize_dynamic_scaled_fp8
     if (!matchResidualOp(allReduceOut, residualOp, residualValue))
       return false;
 
@@ -1590,8 +1563,7 @@ private:
       return false;
 
     // Optional; a null quantizeOp selects the kernel's no-quantize path.
-    matchCustomOp(rmsNormOp.getResult(), quantizeOp,
-                  "mo.quantize_dynamic_scaled_float8");
+    matchQuantizeOp(rmsNormOp.getResult(), quantizeOp);
 
     if (!verifyFusedAllReducePath(allReduceOut.getType(), residualOp, rmsNormOp,
                                   quantizeOp))
@@ -1620,8 +1592,7 @@ private:
 //   // Per-device chain, OUTSIDE the parallel:
 //   %add_i  = mo.add(%residual_i, %r_i)
 //   %norm_i = mo.reduce.rms_norm(%add_i, %gamma_i, %eps, %wo)
-//   %q_i:2  = mo.custom { "mo.quantize_dynamic_scaled_float8" }
-//               (%norm_i, %scale_ub)
+//   %q_i:2  = mo.composite.quantize_dynamic_scaled_fp8(%norm_i, %scale_ub)
 //
 // rebuilds the parallel with two extra bundle inputs (residuals, gammas)
 // and three bundle results (FP8 outputs, scales, post-add residuals),
@@ -1685,7 +1656,7 @@ private:
   // Per-launch operand chains.
   SmallVector<MO::AddOp> addOps;
   SmallVector<MO::ReduceRMSNormOp> rmsNormOps;
-  SmallVector<MO::CustomOp> quantizeOps;
+  SmallVector<MO::Composite::QuantizeDynamicScaledFP8Op> quantizeOps;
   SmallVector<Value> residualValues;
   SmallVector<Value> gammaValues;
   // Captured (same SSA value across launches).
@@ -1748,13 +1719,12 @@ private:
       MO::AddOp addOp;
       Value residualValue;
       MO::ReduceRMSNormOp rmsNormOp;
-      MO::CustomOp quantizeOp;
+      MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp;
       if (!matchResidualOp(launchAllredOut, addOp, residualValue))
         return false;
       if (!matchRMSNormOp(addOp.getResult(), rmsNormOp))
         return false;
-      if (!matchCustomOp(rmsNormOp.getResult(), quantizeOp,
-                         "mo.quantize_dynamic_scaled_float8"))
+      if (!matchQuantizeOp(rmsNormOp.getResult(), quantizeOp))
         return false;
       auto launchTy = dyn_cast<TensorType>(launchAllredOut.getType());
       if (!launchTy)

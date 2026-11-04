@@ -2760,7 +2760,7 @@ struct CompletionFlag(ImplicitlyCopyable):
 
         Intended for graph-op execute methods that extract a packed
         pointer from a payload buffer (mirroring how
-        `mo.launch_host_func` rebuilds its trampoline/user-data
+        `runtime.launch_host_func` rebuilds its trampoline/user-data
         pointers). The caller asserts that ``unsafe_from_address``
         points to a valid ``M::Driver::CompletionFlag`` and that the
         underlying object outlives any in-flight use.

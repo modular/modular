@@ -21,7 +21,7 @@ bf16 MMA, so they must agree to bf16-MMA tolerance.
 This exercises the full Apple weight-only lowering chain:
 ``Linear.__call__ -> linear() -> quantized_matmul() -> _matmul_float4() ->
 (Apple branch) _apple_weight_only_block_scaled_matmul() ->
-mo.matmul.weight.only.block.scaled.apple -> enqueue_apple_fp4_matmul`` plus the
+matmul.weight.only.block.scaled.apple -> enqueue_apple_fp4_matmul`` plus the
 graph-level ``weight_scale_2`` fold.
 
 Unlike the NVIDIA SM100 path, the activation stays in bf16 (it is *not*

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Mixed bf16-A x fp32-B router-gate GEMV op (KERN-3098).
 
-Covers the graph custom op (`mo.router.gate.mixed.gemv`) shape/dtype contract
+Covers the graph custom op (`moe.router.gate.mixed.gemv`) shape/dtype contract
 and numerics, including the tiny-M GEMV and large-M matmul fallback paths.
 """
 

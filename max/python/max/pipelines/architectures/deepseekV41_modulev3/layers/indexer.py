@@ -13,7 +13,7 @@
 """The V4.1 lightning indexer: two-level top-k over compressed entries.
 
 The registered-op route: every store, score and selection runs on
-main's ``mo.csa.indexer.*`` graph ops (``...deepseekV41.layers.
+main's ``attention.csa.indexer.*`` graph ops (``...deepseekV41.layers.
 indexer``), bound through :mod:`.index_ops` -- there is no dense
 ``[T, cap]`` scorer route and no replay planning.
 

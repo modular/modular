@@ -14,7 +14,7 @@
 
 Exercises the host-side API in isolation (allocation, reset, signal,
 load). The producer/consumer methods (``DeviceQueue.wait_for_host_value``,
-``mo.wait_host_value``) that actually use the flag's device pointer land
+``runtime.wait_host_value``) that actually use the flag's device pointer land
 in follow-on PRs in the same stack and have their own GPU tests.
 """
 

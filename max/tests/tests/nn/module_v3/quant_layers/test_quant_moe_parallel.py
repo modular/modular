@@ -86,7 +86,7 @@ _SEQ_LEN = 4
 _FP8_HIDDEN_DIM = 256
 _FP8_MOE_DIM = 512
 
-_MEGA_FFN_OP = "mo.grouped.ffn.blockwise.fp8.amd"
+_MEGA_FFN_OP = "moe.grouped.ffn.blockwise.fp8.amd"
 
 
 def _stack_blockwise_mega_ffn_b(
@@ -737,11 +737,11 @@ def test_expert_parallel_moe_blockwise_mega_ffn_needs_registered_op(
         # One preshuffled gate/up stack and one down stack per device.
         assert stacked == [local_experts] * 2 * len(devices)
         assert calls == [local_experts] * len(devices)
-        assert "grouped.matmul" not in ir
+        assert "matmul.grouped" not in ir
     else:
         assert stacked == []
         assert calls == []
-        assert ir.count('"mo.grouped.matmul.dynamic.scaled.fp8"') == (
+        assert ir.count('"matmul.grouped.dynamic.scaled.fp8"') == (
             2 * len(devices)
         )
 

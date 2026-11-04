@@ -13,7 +13,7 @@
 #
 # Per-kernel fuzz target: generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4
 # (the MiniMax-M3-MXFP8 fused QKV projection, op
-#  `mo.fused_qkv_matmul.ragged.paged.scale.mxfp8`; the dual-mode NVFP4/MXFP8
+#  `kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp8`; the dual-mode NVFP4/MXFP8
 #  entry point in nn/kv_cache_ragged.mojo). MXFP8 mode: `float8_e4m3fn` input +
 #  weights with `float8_e8m0fnu` (E8M0) block scales over 32-element K blocks
 #  in the rank-5 SF-atom layout, fp32 accum. In one launch it computes the

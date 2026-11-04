@@ -262,7 +262,7 @@ def _mla_op_graphs() -> list[mlir.Operation]:
     for op in graph._mlir_op.regions[0].blocks[0].operations:
         if op.name == "mo.custom" and mlir.StringAttr(
             op.attributes["symbol"]
-        ).value.startswith(("mo.mla.decode", "mo.mla.prefill")):
+        ).value.startswith(("attention.mla.decode", "attention.mla.prefill")):
             found.append(op)
     assert len(found) == 3, [
         mlir.StringAttr(op.attributes["symbol"]).value for op in found

@@ -502,7 +502,7 @@ def test_ep_moe_mxfp8_mega_ffn_default_amd(
         moe_dim=3072,
     )
     graph = _lower_ep_moe(moe, n_devices, hidden_dim, "EPMoE_MXFP8_MegaFFN")
-    assert "mo.grouped.ffn.block.scaled.amd" in str(graph)
+    assert "moe.grouped.ffn.block.scaled.amd" in str(graph)
     capacity = ep_config.get_max_recv_tokens() + ep_config.max_tokens_per_rank
     assert NUM_EXPERTS // n_devices + 1 + capacity // 128 > 4096
     assert sized and set(sized) == {capacity}

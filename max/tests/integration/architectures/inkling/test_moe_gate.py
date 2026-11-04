@@ -14,7 +14,7 @@
 
 The kernel's own shape coverage lives in the Mojo unit test
 (``max/kernels/test/gpu/nn/test_sink_gate_router.mojo``); this one exists to
-keep the Python binding and the ``mo.moe.sink.gate.router`` registration
+keep the Python binding and the ``moe.sink.gate.router`` registration
 honest, so one shape is enough. It evaluates the production path and its
 unfused reference in one graph, so the two see identical weights and inputs.
 """

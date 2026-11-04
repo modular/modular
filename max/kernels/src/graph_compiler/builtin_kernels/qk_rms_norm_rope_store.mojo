@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Muse Spark's attention prologue and epilogue norms as graph ops.
 
-`mo.qk_rms_norm_rope_split_store.ragged.paged`: of the `[q | k | v | ...]`
+`kv_cache.qk_rms_norm_rope_split_store.ragged.paged`: of the `[q | k | v | ...]`
 projection, a weightless per-head qk-norm, a Q pre-scale, RoPE and the KV
 store in one launch:
 
@@ -20,7 +20,7 @@ store in one launch:
     k = rope(rms_norm(k))               -> key cache
     v                                   -> value cache
 
-`mo.head_rms_norm_sigmoid_gate`: `rms_norm(x) * sigmoid(gate)` per head,
+`norm.head_rms_norm_sigmoid_gate`: `rms_norm(x) * sigmoid(gate)` per head,
 with the gate the projection's last columns.
 
 Both run `nn.head_rms_norm_rope` (the prologue below SM-count tokens runs a
@@ -77,9 +77,10 @@ def _out[T: DType](t: OutputTensor[dtype=T, ...]) -> Out[DType.bfloat16]:
     )
 
 
-@extensibility.register("mo.qk_rms_norm_rope_split_store.ragged.paged")
+@extensibility.register("kv_cache.qk_rms_norm_rope_split_store.ragged.paged")
 struct QKRMSNormRopeSplitStore:
-    """Registers the `mo.qk_rms_norm_rope_split_store.ragged.paged` graph op."""
+    """Registers the `kv_cache.qk_rms_norm_rope_split_store.ragged.paged` graph op.
+    """
 
     @staticmethod
     def execute[
@@ -192,9 +193,9 @@ struct QKRMSNormRopeSplitStore:
         )
 
 
-@extensibility.register("mo.head_rms_norm_sigmoid_gate")
+@extensibility.register("norm.head_rms_norm_sigmoid_gate")
 struct HeadRMSNormSigmoidGate:
-    """Registers the `mo.head_rms_norm_sigmoid_gate` graph op."""
+    """Registers the `norm.head_rms_norm_sigmoid_gate` graph op."""
 
     @staticmethod
     def execute[
@@ -229,7 +230,7 @@ struct HeadRMSNormSigmoidGate:
         """
         comptime assert is_gpu[
             target
-        ](), "mo.head_rms_norm_sigmoid_gate is GPU only"
+        ](), "norm.head_rms_norm_sigmoid_gate is GPU only"
         comptime width = n_heads * HEAD_DIM
         comptime qkvg_width = Int(qkvg.static_spec.shape_tuple[1])
         comptime assert qkvg_width >= width, "qkvg has no gate"

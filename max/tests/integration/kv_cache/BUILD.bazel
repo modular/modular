@@ -264,7 +264,7 @@ modular_py_test(
     tags = [
         "gpu",
     ],
-    # Needs mo.msa.attention.ragged.paged, registered only by the closed-source kernels.
+    # Needs attention.msa.ragged.paged, registered only by the closed-source kernels.
     target_compatible_with = ["//:mi355_gpu"] + REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/driver",
@@ -324,7 +324,7 @@ modular_py_test(
     tags = [
         "gpu",
     ],
-    # Needs mo.msa.attention.ragged.paged, registered only by the closed-source kernels.
+    # Needs attention.msa.ragged.paged, registered only by the closed-source kernels.
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max:tree",

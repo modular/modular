@@ -79,7 +79,7 @@ _AMD_BLOCKWISE_MEGA_FFN_SHAPES = frozenset({(6144, 2048), (4096, 2048)})
 """``(hidden, expert width)`` pairs the blockwise-FP8 AMD MegaFFN is
 validated on: GLM-5.3 and GLM-5.3-Flash."""
 
-_AMD_BLOCKWISE_MEGA_FFN_OP = "mo.grouped.ffn.blockwise.fp8.amd"
+_AMD_BLOCKWISE_MEGA_FFN_OP = "moe.grouped.ffn.blockwise.fp8.amd"
 """The blockwise-FP8 AMD MegaFFN op, registered only by the closed-source
 kernel packages."""
 

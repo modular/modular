@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Graph-level A/B of the AMD MXFP8 MoE FFN op (`mo.grouped.ffn.block.scaled.amd`)
+"""Graph-level A/B of the AMD MXFP8 MoE FFN op (`moe.grouped.ffn.block.scaled.amd`)
 against the production two-op chain it replaces (gate/up with the fused
 SwiGLU + MXFP8 requantize, then down), byte for byte, and of the
-blockwise-FP8 op (`mo.grouped.ffn.blockwise.fp8.amd`) against the GLM-5.3
+blockwise-FP8 op (`moe.grouped.ffn.blockwise.fp8.amd`) against the GLM-5.3
 chain (grouped FP8 gate/up into bf16, the SwiGLU fused into the row-bounded
 quantize, grouped FP8 down).
 
@@ -844,7 +844,7 @@ def test_mega_ffn_amd_blockwise_rejects_small_buffers(fault: str) -> None:
             1 if fault == "act_scales" else rows + 128 * (n_experts + 1)
         )
         outputs = ops.inplace_custom(
-            "mo.grouped.ffn.blockwise.fp8.amd",
+            "moe.grouped.ffn.blockwise.fp8.amd",
             device=x_t.device,
             values=args,
             out_types=[
@@ -1001,12 +1001,12 @@ def test_blockwise_mega_ffn_layer_reads_checkpoint_experts(
         return mlir, CompiledCallable(staged, registry, session=session)
 
     mega_mlir, mega = compile_layer()
-    assert '"mo.grouped.ffn.blockwise.fp8.amd"' in mega_mlir
+    assert '"moe.grouped.ffn.blockwise.fp8.amd"' in mega_mlir
     monkeypatch.setattr(
         ExpertParallelMoE, "_blockwise_mega_ffn_amd_eligible", lambda _: False
     )
     chain_mlir, chain = compile_layer()
-    assert '"mo.grouped.ffn.blockwise.fp8.amd"' not in chain_mlir
+    assert '"moe.grouped.ffn.blockwise.fp8.amd"' not in chain_mlir
 
     offsets = np.zeros(n_experts + 1, dtype=np.uint32)
     offsets[1:] = np.cumsum(tokens_per_expert)

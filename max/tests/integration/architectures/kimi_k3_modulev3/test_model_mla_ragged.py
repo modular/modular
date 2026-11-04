@@ -205,7 +205,7 @@ def _assert_close(
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_model_decompressed_ragged_matches_padded() -> None:
     out_padded, out_ragged = _run_padded_and_ragged(_config(), 20261022)
@@ -213,7 +213,7 @@ def test_model_decompressed_ragged_matches_padded() -> None:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_model_deep_residual_stack_matches_padded() -> None:
     """Three layers at ``attn_res_block_size`` 1 grow the residual stack

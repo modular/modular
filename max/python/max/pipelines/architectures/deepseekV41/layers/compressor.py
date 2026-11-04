@@ -238,7 +238,7 @@ class DeepseekV41Compressor(Module):
         weight = self.norm.weight.cast(DType.float32).to(device)
         if self.compress_ratio == 1:
             return ops.custom(
-                "mo.csa.compress",
+                "attention.csa.compress",
                 device=device,
                 values=[*values, weight],
                 out_types=out_types,
@@ -247,7 +247,7 @@ class DeepseekV41Compressor(Module):
         assert state is not None and slots is not None
         assert save_slots is not None and layer_idx is not None
         return ops.inplace_custom(
-            "mo.csa.compress.paged",
+            "attention.csa.compress.paged",
             device=device,
             values=[
                 *values,

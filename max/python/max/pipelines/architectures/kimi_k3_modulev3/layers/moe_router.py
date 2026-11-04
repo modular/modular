@@ -28,7 +28,7 @@ weight to fp32 *before* the matmul. Constructing the router inside a fp32
 default dtype is at construction time, so it becomes fp32 too.
 
 On gfx950, a bf16 activation on an accelerator device takes the fused mixed
-router GEMV (``mo.router.gate.mixed.gemv``): the activation is widened to
+router GEMV (``moe.router.gate.mixed.gemv``): the activation is widened to
 fp32 in registers and dotted against the unchanged fp32 gate weight in one
 launch, replacing the inherited path's tiled fp32 GEMM, which at the small-M
 decode row count pays a full gate-weight read to produce a handful of rows.

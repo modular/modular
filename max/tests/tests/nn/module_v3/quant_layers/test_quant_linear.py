@@ -341,7 +341,7 @@ def test_linear_nvfp4_fake_quant_forward_uses_packed_weight(
 
     bf16_weight = f"!mo.tensor<[{_FFN_DIM}, {_HIDDEN_DIM}], bf16"
     packed_weight = f"!mo.tensor<[{_FFN_DIM}, {_HIDDEN_DIM // 2}], ui8"
-    matmuls = _custom_signatures(ir, "mo.matmul.dynamic.block.scaled")
+    matmuls = _custom_signatures(ir, "matmul.dynamic.block.scaled")
     assert len(matmuls) == 2
     matmul_operands, _ = matmuls[0]
     assert packed_weight in matmul_operands
@@ -351,7 +351,7 @@ def test_linear_nvfp4_fake_quant_forward_uses_packed_weight(
     weight_quant = [
         (inputs, outputs)
         for inputs, outputs in _custom_signatures(
-            ir, "mo.quantize.dynamic.block.scaled"
+            ir, "quantization.quantize.dynamic.block.scaled"
         )
         if bf16_weight in inputs
     ]

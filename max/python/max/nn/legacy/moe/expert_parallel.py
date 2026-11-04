@@ -194,7 +194,7 @@ def _ep_forward(
 
             if not _eplb_remap_logged and i == 0:
                 logger.info(
-                    "EPLB: fused mo.moe.single.group.router.eplb installed "
+                    "EPLB: fused moe.single.group.router.eplb installed "
                     "in compiled graph (layer_idx=%s, max_replicas=%d)",
                     shard.layer_idx,
                     batch_mgr.config.max_replicas,
@@ -224,7 +224,7 @@ def _ep_forward(
                 layer_idx_t = layer_idx_per_device[device.id]
                 if not _eplb_remap_logged and i == 0:
                     logger.info(
-                        "EPLB: fused mo.moe.eplb.remap installed in compiled graph "
+                        "EPLB: fused moe.eplb.remap installed in compiled graph "
                         "(layer_idx=%s, max_replicas=%d)",
                         shard.layer_idx,
                         batch_mgr.config.max_replicas,
@@ -480,7 +480,7 @@ def _eplb_remap(
 ) -> TensorValue:
     """Fused EPLB logical-to-physical id remap.
 
-    Single Mojo kernel (``mo.moe.eplb.remap``) that replaces the legacy
+    Single Mojo kernel (``moe.eplb.remap``) that replaces the legacy
     7-op chain (gather logcnt -> range -> mod -> mul + adds -> gather
     log2phy). Caches the current layer's slice of ``logcnt`` and
     ``log2phy`` in SMEM and writes physical ids in one launch.

@@ -46,7 +46,7 @@ from max.pipelines.architectures.qwen3_5.state_cache import (
 )
 from test_common.mixed_step_split_ops import record_sources
 
-MHA_OP = "mo.mha.ragged.paged"
+MHA_OP = "attention.mha.ragged.paged"
 HIDDEN = 64
 HEADS = 4
 KV_HEADS = 2

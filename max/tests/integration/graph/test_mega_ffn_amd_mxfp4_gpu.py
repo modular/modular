@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Graph-level A/B of the AMD MoE FFN op (`mo.grouped.ffn.block.scaled.amd`)
+"""Graph-level A/B of the AMD MoE FFN op (`moe.grouped.ffn.block.scaled.amd`)
 at MXFP4, MiniMax-M3's expert shape, against the three-op chain it replaces:
 gate/up into bf16 (W1 split `[gate | up]`), `ep.fused_silu.mxfp4`, down,
 byte for byte.

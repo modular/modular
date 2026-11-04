@@ -122,7 +122,7 @@ def _build_layer(
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_decoder_layer_mla_decompressed_ragged_matches_padded() -> None:
     hidden, heads, qk_nope, qk_rope, v_head, q_lora, kv_lora, inter = (
@@ -186,7 +186,7 @@ def test_decoder_layer_mla_decompressed_ragged_matches_padded() -> None:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_decoder_layer_mla_latent_ragged_matches_padded() -> None:
     # The fused MLA prefill/decode kernel only instantiates for a 576-wide

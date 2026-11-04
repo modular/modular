@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``mo.rms_norm_quantize_dynamic_scaled_float8`` against the unfused pair.
+"""``quantization.rms_norm_quantize_dynamic_scaled_float8`` against the unfused pair.
 
 The fused op must produce the same FP8 activation and the same
 ``[K // group, M_padded]`` group scales as ``ops.rms_norm`` followed by

@@ -57,7 +57,7 @@ def short_conv_ring(
         Same shape and dtype as ``x``.
     """
     return ops.inplace_custom(
-        "mo.short_conv_ring",
+        "conv.short_conv_ring",
         device=x.device,
         values=[
             x,

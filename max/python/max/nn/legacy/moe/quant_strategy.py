@@ -934,7 +934,7 @@ class Mxfp6Strategy:
         from graph primitives plus a standalone quantize -- an IR diff against
         MXFP8 showed that costing an extra ``split``/``sigmoid``/``mul``/``max``
         per MoE layer per device (456 of each at dp=2/ep=8) and an extra
-        ``mo.quantize.dynamic.block.scaled.mxfp6``.
+        ``quantization.quantize.dynamic.block.scaled.mxfp6``.
 
         The kernel writes the E8M0 scale straight into the grouped matmul's
         per-expert slot at the ``max_padded_M`` stride. The slot layout is

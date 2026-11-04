@@ -432,7 +432,7 @@ def test_reduction_valid() -> None:
             "takes one input, got 2",
         ),
         (
-            "mo.reduce.arg_max.tmp",
+            "reduction.arg_max.tmp",
             [[8, 128]],
             [(DType.float32, [8, 1])],
             "has 2 output fields, but the op has 1 results",
@@ -462,7 +462,7 @@ def test_reduction_valid() -> None:
             "results must be tensors of the input's rank",
         ),
         (
-            "mo.reduce.arg_max.tmp",
+            "reduction.arg_max.tmp",
             [[4, 16]],
             [(DType.float32, [4, 1]), (DType.int64, [1, 16])],
             "results reduce different axes",

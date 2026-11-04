@@ -276,7 +276,7 @@ def _build(
     reason="MXFP4 W4A8 AMD grouped matmul is CDNA4-only",
 )
 @pytest.mark.compile_on_gpu(
-    "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
+    "moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_amd_w4a8_matches_dense_from_decoded_weights() -> None:
     """The MXFP4 dispatch must match a dense run of what it is supposed to

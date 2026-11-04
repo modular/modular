@@ -185,7 +185,7 @@ def test_dense_mlp_rejects_width_not_divisible_by_tp() -> None:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
+    "moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
 @pytest.mark.parametrize(
     ("dtype", "hidden"),

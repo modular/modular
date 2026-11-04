@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """GPU test for the fused mHC boundary against the composed chain it replaced.
 
-``mhc_fused_post_pre`` runs main's ``mo.mega_mhc`` (the write-back, the gate
+``mhc_fused_post_pre`` runs main's ``hyper_connection.mega_mhc`` (the write-back, the gate
 step, the collapse and the sublayer's RMSNorm in one kernel); the oracle is
 the composed ``mhc_post``, ``mhc_pre`` and ``RMSNorm`` on the same inputs.
 The gate projection runs in TF32 in both, which sets the gate tolerance.

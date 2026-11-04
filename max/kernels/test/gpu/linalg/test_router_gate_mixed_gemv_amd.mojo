@@ -14,7 +14,7 @@
 
 `router_gate_mixed_gemv` is a host-side launcher generic over `static_N` plus
 six layout/storage parameters, so its body is only type-checked once something
-specializes it. Its sole production caller is the `mo.router.gate.mixed.gemv`
+specializes it. Its sole production caller is the `moe.router.gate.mixed.gemv`
 custom op, reachable only from a `manual`-tagged target -- which is how #91194
 ("Treat Int and UInt as non-device passable") swept the `Int32(...)` casts
 through `gemv.mojo` while silently skipping this launch site and breaking

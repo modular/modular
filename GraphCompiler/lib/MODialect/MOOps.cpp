@@ -4906,6 +4906,32 @@ LogicalResult Composite::ReduceRMSNormRoPEOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// QuantizeDynamicScaledFP8Op
+//===----------------------------------------------------------------------===//
+
+LogicalResult Composite::QuantizeDynamicScaledFP8Op::verify() {
+  auto inputTy = cast<TensorType>(getInput().getType());
+  if (inputTy.getRank() != 2)
+    return emitOpError("the input must be [rows, cols]");
+  if (cast<TensorType>(getOutput().getType()).getShape() != inputTy.getShape())
+    return emitOpError("the output must have the same shape as the input");
+  if (cast<TensorType>(getScales().getType()).getRank() != 2)
+    return emitOpError("the scales must be rank 2");
+
+  int64_t groupSize = getGroupSizeOrPerToken().getSExtValue();
+  if (groupSize != -1 && groupSize <= 0)
+    return emitOpError("group_size_or_per_token must be -1 or positive");
+
+  if (std::optional<ElementsAttr> floor = getAmaxFloor()) {
+    auto values = floor->tryGetValues<Attribute>();
+    auto value = values ? dyn_cast<FloatAttr>(*values->begin()) : nullptr;
+    if (!value || !value.getValue().isFinite() || value.getValue().isNegative())
+      return emitOpError("amax_floor must be finite and non-negative");
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // DebugTensorPrintOp
 //===----------------------------------------------------------------------===//
 

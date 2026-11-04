@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Which split record ``flash_attention_ragged`` hands to ragged MHA.
 
-The graphs are only built, never run. ``mo.mha.ragged.paged`` takes the KV
+The graphs are only built, never run. ``attention.mha.ragged.paged`` takes the KV
 leaf's declared record after its own operands, or a zeros constant when the
 leaf has none (a draft forward drops it). Relative-logit calls take it too,
 though the kernel doesn't split a mask that reads operands. Sink calls go to
@@ -32,13 +32,13 @@ from max.nn.legacy.kernels import flash_attention_ragged
 from max.nn.legacy.kv_cache import MHAKVCacheParams
 from test_common.mixed_step_split_ops import record_source
 
-MHA_OP = "mo.mha.ragged.paged"
+MHA_OP = "attention.mha.ragged.paged"
 NUM_HEADS = 8
 HEAD_DIM = 128
 OP_NAMES = {
     "plain": MHA_OP,
     "split_head_dim": MHA_OP,
-    "sink": "mo.mha.ragged.paged.sink_weights",
+    "sink": "attention.mha.ragged.paged.sink_weights",
     "rel_logits": MHA_OP,
 }
 

@@ -13,7 +13,7 @@
 #
 # Per-kernel fuzz target: fused_qk_rms_norm_ragged_paged
 # (the MiniMax-M3 per-head QK RMSNorm over Q and the newly-written K rows in the
-#  paged KV cache, op `mo.fused_qk_rms_norm.ragged.paged`; kernel in
+#  paged KV cache, op `kv_cache.fused_qk_rms_norm.ragged.paged`; kernel in
 #  nn/kv_cache.mojo). Distinct from the MLA `fused_rope_rmsnorm` target: here the
 #  cache is a standard MHA-style paged cache (num_kv_heads > 1, K/V dim, is_mla=
 #  False) and the kernel RMSNorms the FULL head_dim of Q AND K (no RoPE).

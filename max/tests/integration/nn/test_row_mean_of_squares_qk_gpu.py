@@ -14,7 +14,7 @@
 
 Mirrors the kernel-level Mojo test (test_row_mean_of_squares_qk.mojo) but
 exercises the full graph-op path: ops.custom ->
-mo.reduce.row_mean_of_squares_qk -> row_mean_of_squares_qk_gpu. The reference is
+reduction.row_mean_of_squares_qk -> row_mean_of_squares_qk_gpu. The reference is
 computed in float64 so the only error is the input's representational error
 (bf16) plus the f32 accumulation. Also checks equivalence with two separate
 row_mean_of_squares calls + concat.

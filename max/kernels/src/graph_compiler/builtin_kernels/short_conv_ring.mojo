@@ -24,7 +24,7 @@ from nn.short_conv_ring import (
 )
 
 
-@extensibility.register("mo.short_conv_ring")
+@extensibility.register("conv.short_conv_ring")
 struct Struct_short_conv_ring:
     """`x + conv(x)` over a ragged batch, pre-chunk taps from the ring; with
     `commit`, also writes each sequence's last inputs into its ring slot."""
@@ -74,7 +74,7 @@ struct Struct_short_conv_ring:
         )
 
 
-@extensibility.register("mo.fused_qk_rms_norm_short_conv.ragged.paged")
+@extensibility.register("kv_cache.fused_qk_rms_norm_short_conv.ragged.paged")
 struct Struct_fused_qk_rms_norm_short_conv_ragged_paged:
     """The fused prologue of a short-conv attention block; see
     `fused_qk_rms_norm_short_conv_ragged_paged` in `nn/short_conv_ring.mojo`."""

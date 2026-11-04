@@ -293,6 +293,13 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- Built-in custom ops are now named after their class instead of `mo.`,
+  which is kept for the graph compiler's own ops. For example,
+  `mo.launch_host_func` and `mo.inplace_memcpy` are now
+  `runtime.launch_host_func` and `runtime.inplace_memcpy`, and
+  `mo.matmul_swiglu` is now `matmul.swiglu`. Update the name passed to
+  `ops.custom()` in graphs that call these ops directly.
+
 - On AMD MI355X (CDNA4), the fused gated activation now quantizes to MXFP4 as
   well as MXFP8, so a `uint8` / `float8_e8m0fnu` request from
   `swiglu_quantize_dynamic_block_scaled` runs as one kernel. Such a request

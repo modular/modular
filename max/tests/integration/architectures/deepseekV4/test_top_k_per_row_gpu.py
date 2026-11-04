@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``mo.top_k.per_row`` against ``mo.top_k`` in the same graph.
+"""``reduction.top_k.per_row`` against ``mo.top_k`` in the same graph.
 
 The DeepSeek-V4 indexer's shape: 2048 candidates, 512 kept, a masked tail of
 ``-inf`` past each row's live candidates, and a pick count per row equal to

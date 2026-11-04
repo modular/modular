@@ -13,11 +13,11 @@
 """MXFP8 projections on the cluster split-K matmul.
 
 At decode sizes one CTA per 128-row weight tile leaves most SMs idle, so
-``mo.matmul.mxfp8.cluster_splitk`` splits each tile's K over a cluster of
+``matmul.mxfp8.cluster_splitk`` splits each tile's K over a cluster of
 CTAs where that pays. For the weight shapes and M its measured tables name
 it runs a pair-CTA GEMM (the swap-AB decode GEMM or the prefill GEMM), and
 the production block-scaled matmul elsewhere.
-``mo.matmul.mxfp8.cluster_splitk.block_diagonal`` splits the
+``matmul.mxfp8.cluster_splitk.block_diagonal`` splits the
 block-diagonal (grouped) projection the same way, and runs the production
 block-diagonal matmul where no split pays.
 """
@@ -101,7 +101,7 @@ def mxfp8_linear(
         layer.weight_scale.to(x.device), sf_vector_size=_MXFP8_BLOCK_SIZE
     )
     out = ops.custom(
-        "mo.matmul.mxfp8.cluster_splitk",
+        "matmul.mxfp8.cluster_splitk",
         device=x.device,
         values=[x_fp8, weight, x_scales, w_scales],
         out_types=[
@@ -143,7 +143,7 @@ def mxfp8_block_diagonal(
             x, weight, x_scales, weight_scales, groups
         )
     return ops.custom(
-        "mo.matmul.mxfp8.cluster_splitk.block_diagonal",
+        "matmul.mxfp8.cluster_splitk.block_diagonal",
         device=x.device,
         values=[x, weight, x_scales, weight_scales],
         out_types=[
@@ -210,7 +210,7 @@ def mxfp8_linear_rope_tail(
         layer.weight_scale.to(x.device), sf_vector_size=_MXFP8_BLOCK_SIZE
     )
     out = ops.custom(
-        "mo.matmul.mxfp8.rope_tail",
+        "matmul.mxfp8.rope_tail",
         device=x.device,
         values=[
             x_fp8,

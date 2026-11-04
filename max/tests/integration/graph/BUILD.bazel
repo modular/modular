@@ -393,7 +393,7 @@ modular_py_test(
         "gpu",
         "manual",
     ],
-    # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
+    # Needs moe.grouped.ffn.block.scaled.amd, registered only by the
     # closed-source kernels.
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -425,7 +425,7 @@ modular_py_test(
         "gpu",
         "manual",
     ],
-    # Needs mo.grouped.ffn.blockwise.fp8.amd, registered only by the
+    # Needs moe.grouped.ffn.blockwise.fp8.amd, registered only by the
     # closed-source kernels.
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -459,7 +459,7 @@ modular_py_test(
         "gpu",
         "manual",
     ],
-    # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
+    # Needs moe.grouped.ffn.block.scaled.amd, registered only by the
     # closed-source kernels.
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [

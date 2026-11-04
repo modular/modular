@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Correctness tests for the FP8 quantize fusion consumers.
 
-``mo.quantize_static_scaled_float8`` takes a ``FusedInputTensor`` so a
+``quantization.quantize_static_scaled_float8`` takes a ``FusedInputTensor`` so a
 single-use elementwise producer (relu, add, cast) fuses INTO the quantize
 load lambda instead of materializing a separate HBM tensor + kernel launch.
 The quantized math must stay bit-identical to the unfused path: cast to

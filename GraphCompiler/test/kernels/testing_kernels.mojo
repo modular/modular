@@ -2373,7 +2373,7 @@ def custom_op_that_raises_shape(
     return rebind[IndexList[type_of(x).rank]](out_shape)
 
 
-@extensibility.register("mo.test.failing_constraint")
+@extensibility.register("test.failing_constraint")
 struct OpThatAlwaysFailsConstraint:
     @staticmethod
     def execute[
@@ -2387,7 +2387,7 @@ struct OpThatAlwaysFailsConstraint:
         ), "Expected constraint failure for error message testing"
 
 
-@extensibility.register("mo.test.return_error")
+@extensibility.register("test.return_error")
 struct OpThatAlwaysRaises:
     @staticmethod
     def execute[

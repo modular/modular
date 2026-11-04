@@ -21,7 +21,7 @@ switches to TF32 tensor cores, so those rows are checked against an fp64 host
 reference instead.
 
 Shapes mirror MiniMax-M3's router gate (`N = 128`, `K = 6144`) with runtime
-`M`, as the `mo.router.gate.mixed.gemv` custom op calls it. An odd `N`
+`M`, as the `moe.router.gate.mixed.gemv` custom op calls it. An odd `N`
 exercises the `check_bounds_n` guard of the `tile_n = 2` buckets.
 """
 

@@ -309,7 +309,7 @@ modular_py_test(
     ],
 )
 
-# Holds mo.matmul.mxfp8.cluster_splitk (Kernels/lib/graph_compiler, built
+# Holds matmul.mxfp8.cluster_splitk (Kernels/lib/graph_compiler, built
 # by layers/mxfp8_matmul.py) to the production MXFP8 matmul, bit for bit,
 # through a graph at every DeepSeek-V4.1 weight shape: cluster split-K, the
 # pair-CTA GEMM and the block-scaled fallback.
@@ -323,7 +323,7 @@ modular_py_test(
     gpu_constraints = ["//:b200_gpu"],
     precompile_mefs = True,
     tags = ["gpu"],
-    # Needs mo.matmul.mxfp8.cluster_splitk, registered only by the
+    # Needs matmul.mxfp8.cluster_splitk, registered only by the
     # closed-source kernels.
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -440,7 +440,7 @@ modular_py_test(
     # Importing it registers the architectures the pairing resolves.
     ignore_extra_deps = ["//max/python/max/pipelines"],
     tags = ["gpu"],
-    # Needs mo.engram.hash_gather and mo.engram.hash_gather_shard, registered
+    # Needs engram.hash_gather and engram.hash_gather_shard, registered
     # only by the closed-source kernels.
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -597,7 +597,7 @@ modular_py_test(
     ],
 )
 
-# Guards mo.matmul.mxfp8.rope_tail (Kernels/lib/graph_compiler/mxfp8_rope.mojo)
+# Guards matmul.mxfp8.rope_tail (Kernels/lib/graph_compiler/mxfp8_rope.mojo)
 # against the MXFP8 matmul followed by apply_rope_tail.
 modular_py_test(
     name = "test_mxfp8_rope_tail_gpu",

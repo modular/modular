@@ -3871,7 +3871,7 @@ class OverlapTextGenerationPipeline(
         iteration's D2H runs later, in ``_execute_spec_decode``). The kickoff
         trampoline lands on the device default stream after that D2H, so the
         worker observes complete data; it signals the completion flag the next
-        iter's in-graph ``mo.wait_host_value_with_dep`` gates the H2D on. The
+        iter's in-graph ``runtime.wait_host_value_with_dep`` gates the H2D on. The
         FSM advance + bitmask compute run on a separate AsyncRT worker, so they
         overlap this iteration's target forward.
 
@@ -4532,7 +4532,7 @@ class OverlapTextGenerationPipeline(
                     )
 
                 # FSM is advanced asynchronously by the host callback enqueued
-                # just above. The captured graph's ``mo.wait_host_value_with_dep``
+                # just above. The captured graph's ``runtime.wait_host_value_with_dep``
                 # blocks the in-graph H2D until the worker signals, so the FSM
                 # advancement is observed before the sampler runs.
                 curr_batch = self._execute_spec_decode(

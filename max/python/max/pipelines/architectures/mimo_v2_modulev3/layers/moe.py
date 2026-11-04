@@ -278,7 +278,7 @@ class MiMoV2MoE(Module[..., Tensor]):
         # stacks strands allocator granules the KV cache cannot use. The
         # scale interleave's device temporaries are small enough to ignore.
         # TODO(DISTINF-813): F.stack(device=...) would place the shares
-        # directly, but its mo.shard_and_stack copies each device's slice
+        # directly, but its gather_scatter.shard_and_stack copies each device's slice
         # out of the checkpoint mapping serially (TP4 init 118 s -> 264 s
         # from a cold page cache). Return to it once DISTINF-813 is fixed.
         # Alternating gate and up makes a device's [2e, md/n, k] share

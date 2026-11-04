@@ -107,7 +107,7 @@ def _pointer_and_load(
 
 
 def _segment(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
-    # `mo.mha.ragged.no_cache` builds the mask from its trailing operands.
+    # `attention.mha.ragged.no_cache` builds the mask from its trailing operands.
     return [
         flash_attention_ragged_gpu(
             x["q"],
@@ -140,7 +140,7 @@ def _load(
 def _builtin_additive(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
     q = x["q"]
     builtin = ops.custom(
-        "mo.mha.ragged.no_cache",
+        "attention.mha.ragged.no_cache",
         device=DeviceRef.GPU(),
         values=[
             q,
@@ -201,7 +201,7 @@ def _dense(mask_name: str) -> Build:
             values=[q, k, v, _scale(), mask],
             out_types=[TensorType(q.dtype, q.shape, device=DeviceRef.GPU())],
         )[0].tensor
-        # `mo.mha.no_cache` with `mask_str = "additive"`.
+        # `attention.mha.no_cache` with `mask_str = "additive"`.
         return [pointer, masked_flash_attention_gpu(q, k, v, mask, SCALE)]
 
     return build

@@ -1437,7 +1437,7 @@ struct IRFFT:
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.chunked_qkv_rope_store.ragged.paged")
+@extensibility.register("kv_cache.chunked_qkv_rope_store.ragged.paged")
 struct Struct_chunked_qkv_rope_store_ragged_paged[
     qk_head_dim: Int,
     v_head_dim: Int,
@@ -1528,9 +1528,9 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
         )
 
 
-@extensibility.register("mo.rope_split_store.ragged.paged")
+@extensibility.register("kv_cache.rope_split_store.ragged.paged")
 struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
-    """Registers the `mo.rope_split_store.ragged.paged` graph op with the graph compiler.
+    """Registers the `kv_cache.rope_split_store.ragged.paged` graph op with the graph compiler.
 
     Parameters:
         interleaved: Whether RoPE pairs adjacent real and imaginary
@@ -1601,9 +1601,11 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         )
 
 
-@extensibility.register("mo.rope_split_store.ragged.paged.with_position_id")
+@extensibility.register(
+    "kv_cache.rope_split_store.ragged.paged.with_position_id"
+)
 struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
-    """Registers the `mo.rope_split_store.ragged.paged.with_position_id` graph op with the graph compiler.
+    """Registers the `kv_cache.rope_split_store.ragged.paged.with_position_id` graph op with the graph compiler.
 
     Parameters:
         interleaved: Whether RoPE pairs adjacent real and imaginary
@@ -1805,9 +1807,9 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
         )
 
 
-@extensibility.register("mo.rope.ragged.with_position_id")
+@extensibility.register("rope.ragged.with_position_id")
 struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
-    """Registers the `mo.rope.ragged.with_position_id` graph op with the graph compiler.
+    """Registers the `rope.ragged.with_position_id` graph op with the graph compiler.
 
     Parameters:
         interleaved: Whether RoPE pairs adjacent real and imaginary
@@ -2065,10 +2067,9 @@ def _execute_mha_ragged_paged_scalar_args[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.moe.create.indices")
+@extensibility.register("moe.create.indices")
 struct Struct_moe_create_indices:
-    """Registers the `mo.moe.create.indices` graph op with the graph compiler.
-    """
+    """Registers the `moe.create.indices` graph op with the graph compiler."""
 
     @inline(.always)
     @staticmethod
@@ -2110,9 +2111,9 @@ struct Struct_moe_create_indices:
         )
 
 
-@extensibility.register("mo.moe.finalize")
+@extensibility.register("moe.finalize")
 struct Struct_moe_finalize:
-    """Registers the `mo.moe.finalize` graph op with the graph compiler."""
+    """Registers the `moe.finalize` graph op with the graph compiler."""
 
     @inline(.always)
     @staticmethod
@@ -2144,9 +2145,9 @@ struct Struct_moe_finalize:
         )
 
 
-@extensibility.register("mo.moe.router.group.limited")
+@extensibility.register("moe.router.group.limited")
 struct Struct_moe_router_group_limited:
-    """Registers the `mo.moe.router.group.limited` graph op with the graph compiler.
+    """Registers the `moe.router.group.limited` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2210,9 +2211,9 @@ struct Struct_moe_router_group_limited:
         )
 
 
-@extensibility.register("mo.moe.create.indices.with.scales.offset")
+@extensibility.register("moe.create.indices.with.scales.offset")
 struct Struct_moe_create_indices_with_scales_offset:
-    """Registers the `mo.moe.create.indices.with.scales.offset` graph op with the graph compiler.
+    """Registers the `moe.create.indices.with.scales.offset` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2263,9 +2264,9 @@ struct Struct_moe_create_indices_with_scales_offset:
         )
 
 
-@extensibility.register("mo.moe.create.indices.with.slots")
+@extensibility.register("moe.create.indices.with.slots")
 struct Struct_moe_create_indices_with_slots:
-    """Registers the `mo.moe.create.indices.with.slots` graph op with the graph compiler.
+    """Registers the `moe.create.indices.with.slots` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2340,9 +2341,9 @@ struct Struct_moe_create_indices_with_slots:
         )
 
 
-@extensibility.register("mo.moe.single.group.router.eplb")
+@extensibility.register("moe.single.group.router.eplb")
 struct Struct_moe_single_group_router_eplb:
-    """Registers the `mo.moe.single.group.router.eplb` graph op with the graph compiler.
+    """Registers the `moe.single.group.router.eplb` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2424,9 +2425,9 @@ struct Struct_moe_single_group_router_eplb:
         )
 
 
-@extensibility.register("mo.moe.single.group.router")
+@extensibility.register("moe.single.group.router")
 struct Struct_moe_single_group_router:
-    """Registers the `mo.moe.single.group.router` graph op with the graph compiler.
+    """Registers the `moe.single.group.router` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2486,9 +2487,9 @@ struct Struct_moe_single_group_router:
         )
 
 
-@extensibility.register("mo.moe.single.group.router.image.bias")
+@extensibility.register("moe.single.group.router.image.bias")
 struct Struct_moe_single_group_router_image_bias:
-    """Registers the `mo.moe.single.group.router.image.bias` graph op.
+    """Registers the `moe.single.group.router.image.bias` graph op.
 
     The single-group router selecting with `image_bias` for tokens whose id
     is `image_token_id` and with `expert_bias` for the rest.
@@ -2562,9 +2563,9 @@ struct Struct_moe_single_group_router_image_bias:
         )
 
 
-@extensibility.register("mo.moe.sigmoid.gemv.single.group.router")
+@extensibility.register("moe.sigmoid.gemv.single.group.router")
 struct Struct_moe_sigmoid_gemv_single_group_router:
-    """Registers the `mo.moe.sigmoid.gemv.single.group.router` graph op.
+    """Registers the `moe.sigmoid.gemv.single.group.router` graph op.
 
     Fuses the router GEMV and sigmoid into the single-group router.
     """
@@ -2612,10 +2613,9 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
         )
 
 
-@extensibility.register("mo.moe.sink.gate.router")
+@extensibility.register("moe.sink.gate.router")
 struct Struct_moe_sink_gate_router:
-    """Registers the `mo.moe.sink.gate.router` graph op with the graph compiler.
-    """
+    """Registers the `moe.sink.gate.router` graph op with the graph compiler."""
 
     @inline(.always)
     @staticmethod
@@ -2664,9 +2664,9 @@ struct Struct_moe_sink_gate_router:
         )
 
 
-@extensibility.register("mo.moe.eplb.remap")
+@extensibility.register("moe.eplb.remap")
 struct Struct_moe_eplb_remap:
-    """Registers the `mo.moe.eplb.remap` graph op with the graph compiler."""
+    """Registers the `moe.eplb.remap` graph op with the graph compiler."""
 
     @inline(.always)
     @staticmethod
@@ -2715,9 +2715,9 @@ struct Struct_moe_eplb_remap:
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.hyper_connection.gates")
+@extensibility.register("hyper_connection.gates")
 struct Struct_hyper_connection_gates:
-    """Registers the `mo.hyper_connection.gates` graph op with the graph compiler.
+    """Registers the `hyper_connection.gates` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2766,9 +2766,10 @@ struct Struct_hyper_connection_gates:
         )
 
 
-@extensibility.register("mo.mhc.pre")
+@extensibility.register("hyper_connection.mhc.pre")
 struct Struct_mhc_pre:
-    """Registers the `mo.mhc.pre` graph op with the graph compiler."""
+    """Registers the `hyper_connection.mhc.pre` graph op with the graph compiler.
+    """
 
     @inline(.always)
     @staticmethod
@@ -2797,7 +2798,7 @@ struct Struct_mhc_pre:
         # `mhc_pre_supports`.
         comptime assert (
             _accelerator_arch() == "amdgpu:gfx950"
-        ), "mo.mhc.pre requires gfx950"
+        ), "hyper_connection.mhc.pre requires gfx950"
         comptime assert conforms_to(type_of(post), TileTensorable)
         comptime assert conforms_to(type_of(comb), TileTensorable)
         comptime assert conforms_to(type_of(collapsed), TileTensorable)
@@ -2840,9 +2841,10 @@ struct Struct_mhc_pre:
         )
 
 
-@extensibility.register("mo.mhc.post")
+@extensibility.register("hyper_connection.mhc.post")
 struct Struct_mhc_post:
-    """Registers the `mo.mhc.post` graph op with the graph compiler."""
+    """Registers the `hyper_connection.mhc.post` graph op with the graph compiler.
+    """
 
     @inline(.always)
     @staticmethod
@@ -3008,7 +3010,7 @@ def _layout_transform_conv_filter_from_fcrs[
 # Matmul KV cache
 #
 # Expected kernel name format:
-# mo.kv_matmul.ragged.paged
+# kv_cache.kv_matmul.ragged.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -3016,7 +3018,7 @@ def _layout_transform_conv_filter_from_fcrs[
 # Matmul K cache
 #
 # Expected kernel name format:
-# mo.k_matmul.ragged.paged
+# kv_cache.k_matmul.ragged.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -3644,9 +3646,9 @@ def _partitioned_scratch_requirement[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.eagle_prefill_shift_tokens")
+@extensibility.register("speculative.eagle_prefill_shift_tokens")
 struct EaglePrefillShiftTokens:
-    """Registers the `mo.eagle_prefill_shift_tokens` graph op with the graph compiler.
+    """Registers the `speculative.eagle_prefill_shift_tokens` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -3722,9 +3724,9 @@ struct Learnable2DInterpPosEmb:
         )
 
 
-@extensibility.register("mo.spatial_merge")
+@extensibility.register("vision.spatial_merge")
 struct SpatialMerge:
-    """Registers the `mo.spatial_merge` graph op with the graph compiler."""
+    """Registers the `vision.spatial_merge` graph op with the graph compiler."""
 
     @inline(.always)
     @staticmethod
@@ -6069,9 +6071,9 @@ def gated_group_rmsnorm_shape(
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.sleep")
+@extensibility.register("runtime.sleep")
 struct Sleep:
-    """Registers the `mo.sleep` graph op with the graph compiler."""
+    """Registers the `runtime.sleep` graph op with the graph compiler."""
 
     @staticmethod
     def execute[
@@ -6206,7 +6208,7 @@ struct StateSpaceCopyRows:
                     ] = src_tt.unsafe_ptr()[src_row * row_size + col]
 
 
-@extensibility.register("mo.inplace_memcpy")
+@extensibility.register("runtime.inplace_memcpy")
 struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
     """Copies the contents of `src` into `dst` in place.
 
@@ -6277,7 +6279,7 @@ struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.launch_host_func")
+@extensibility.register("runtime.launch_host_func")
 struct LaunchHostFunc:
     """Enqueues a pre-packed host callback on the device's default stream.
 
@@ -6296,7 +6298,7 @@ struct LaunchHostFunc:
     @staticmethod
     def execute(
         # A mutable input buffer prevents the op from being DCE'd (see
-        # `mo.sleep` above; tracked in GEX-3080).
+        # `runtime.sleep` above; tracked in GEX-3080).
         payload: Some[MutableInput & Tensor],
         ctx: DeviceContext,
     ) raises:
@@ -6313,13 +6315,13 @@ struct LaunchHostFunc:
         ctx.stream().enqueue_host_func(tr_fn, ud_ptr)
 
 
-@extensibility.register("mo.wait_host_value")
+@extensibility.register("runtime.wait_host_value")
 struct WaitHostValue:
     """Stalls the stream until a host-visible flag reaches a given value.
 
     Lowers to CUDA's `cuStreamWaitValue64` via
     `DeviceStream.wait_for_host_value`. Accepts a 1-D int64 buffer of
-    shape `[2]`, mirroring `mo.launch_host_func`'s payload shape:
+    shape `[2]`, mirroring `runtime.launch_host_func`'s payload shape:
 
     - `payload[0]`: raw address of a `M::Driver::CompletionFlag` (as
       u64). Typically obtained from
@@ -6340,7 +6342,7 @@ struct WaitHostValue:
 
     @staticmethod
     def execute(
-        # A `MutableInput` payload mirrors `mo.launch_host_func` so this op is
+        # A `MutableInput` payload mirrors `runtime.launch_host_func` so this op is
         # not DCE'd. Both the CompletionFlag pointer and the expected
         # value encode into 64-bit elements.
         payload: Some[MutableInput & Tensor],
@@ -6356,15 +6358,15 @@ struct WaitHostValue:
         ctx.stream().wait_for_host_value(flag, value)
 
 
-@extensibility.register("mo.wait_host_value_with_dep")
+@extensibility.register("runtime.wait_host_value_with_dep")
 struct WaitHostValueWithDep:
-    """Variant of `mo.wait_host_value` that takes a fake mutable
+    """Variant of `runtime.wait_host_value` that takes a fake mutable
     dependency operand.
 
-    Behaves identically to `mo.wait_host_value` at runtime -- the `dep`
+    Behaves identically to `runtime.wait_host_value` at runtime -- the `dep`
     tensor is never read or written by the kernel body -- but the
     graph compiler sees `dep` as mutated by this op, which forces any
-    downstream op that consumes `dep` (e.g. `mo.inplace_memcpy(scratch,
+    downstream op that consumes `dep` (e.g. `runtime.inplace_memcpy(scratch,
     dep)`) to chain after this wait.
 
     Use this when you need the wait to gate a `cuStreamWaitValue64`

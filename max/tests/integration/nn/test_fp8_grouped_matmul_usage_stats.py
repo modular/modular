@@ -60,7 +60,7 @@ _N = 256
 _M = 64
 # A host read of the device stats; the weights' host-to-device transfers differ.
 _D2H = 'to <"cpu"'
-_FP8_OP = "mo.grouped.matmul.dynamic.scaled.fp8"
+_FP8_OP = "matmul.grouped.dynamic.scaled.fp8"
 
 
 def _fp8_config() -> QuantConfig:

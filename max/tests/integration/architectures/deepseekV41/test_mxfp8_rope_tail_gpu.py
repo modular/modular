@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests ``mo.matmul.mxfp8.rope_tail`` against the matmul then RoPE."""
+"""Tests ``matmul.mxfp8.rope_tail`` against the matmul then RoPE."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def _build_fused(n: int, device: DeviceRef) -> Graph:
             out_type=DType.float8_e4m3fn,
         )
         fused = ops.custom(
-            "mo.matmul.mxfp8.rope_tail",
+            "matmul.mxfp8.rope_tail",
             device=device,
             values=[
                 x_fp8,

@@ -93,7 +93,7 @@ __all__ = [
 # A forward whose requests each bring at most this many query tokens runs
 # the decode attention, which reads the records in place; a longer one
 # dequantizes the records it names once, first (the registered V2 model's
-# split, host-flag driven inside ``mo.csa2.attention``).
+# split, host-flag driven inside ``attention.csa2``).
 _DECODE_MAX_QUERY_TOKENS = 8
 
 # The V2 CSA2 graph ops, bridged into the experimental-tensor world: the
@@ -136,7 +136,7 @@ def _csa2_index_list(
 ) -> TensorValue:
     """Each query's ``[T, 640]`` absolute-slot list, built in one launch.
 
-    Main's ``mo.csa2.index_list`` (V2's ``index_list``, whose layer
+    Main's ``attention.csa2.index_list`` (V2's ``index_list``, whose layer
     arguments are baked constants): the window slots of positions
     ``p, p - 1, ..., p - 127`` first, then the compressed slots of the
     selected groups, ``-1`` for none. A position below 0 or ``valid_from``
@@ -158,10 +158,10 @@ def _csa2_index_list(
         "window_layers": int(window_blocks.shape[2]),
         "has_floor": True,
     }
-    name = "mo.csa2.index_list.window_only"
+    name = "attention.csa2.index_list.window_only"
     if selected is not None:
         assert comp is not None
-        name = "mo.csa2.index_list"
+        name = "attention.csa2.index_list"
         parameters["comp_page"] = records_per_page(comp.kv_blocks)
         parameters["comp_layers"] = int(comp.kv_blocks.shape[2])
         parameters["ratio"] = ratio

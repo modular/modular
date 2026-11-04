@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Validates the mHC stream write-back op against a float64 reference.
 
-`mo.mhc.post` computes ``post * y + comb^T @ streams`` per token in float32
+`hyper_connection.mhc.post` computes ``post * y + comb^T @ streams`` per token in float32
 and rounds once, so it is held to the float64 result rounded once plus the
 float32 accumulation slack.
 """

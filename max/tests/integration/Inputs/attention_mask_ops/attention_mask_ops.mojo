@@ -206,7 +206,7 @@ struct RaggedAttentionPointerMask:
 @extensibility.register("test_dense_attention_pointer_mask")
 struct DenseAttentionPointerMask:
     """Dense `[batch, seq, heads, depth]` attention with the mask read through
-    its pointer, as `mo.composite.masked_flash_attention_gpu` did."""
+    its pointer, as `attention.masked_flash_attention_gpu` did."""
 
     @staticmethod
     def execute[

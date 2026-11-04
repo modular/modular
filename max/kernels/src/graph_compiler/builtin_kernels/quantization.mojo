@@ -249,11 +249,11 @@ def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape(
     )
 
 
-@extensibility.register("mo.rms_norm_quantize_dynamic_scaled_float8")
+@extensibility.register("quantization.rms_norm_quantize_dynamic_scaled_float8")
 struct RMSNormQuantizeDynamicScaledFloat8:
-    """Registers the `mo.rms_norm_quantize_dynamic_scaled_float8` graph op:
+    """Registers the `quantization.rms_norm_quantize_dynamic_scaled_float8` graph op:
     `mo.reduce.rms_norm` fused with a group-scaled (blockwise-FP8)
-    `mo.quantize_dynamic_scaled_float8`. Same outputs and scale layout as the
+    `mo.composite.quantize_dynamic_scaled_fp8`. Same outputs and scale layout as the
     unfused pair; `group_size_or_per_token` must be a proper divisor of the
     row (per-token scales stay on the rms_norm + quantize composite).
     """
@@ -990,9 +990,9 @@ def GPTQ_gpu_repack_b4_g128_desc_act_shape(
     return IndexList[2](Int(shape_list[1]), Int(shape_list[0]))
 
 
-@extensibility.register("mo.quantize.dynamic.block.scaled")
+@extensibility.register("quantization.quantize.dynamic.block.scaled")
 struct Struct_quantize_dynamic_block_scaled:
-    """Registers the `mo.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """Registers the `quantization.quantize.dynamic.block.scaled` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1029,9 +1029,9 @@ struct Struct_quantize_dynamic_block_scaled:
         )
 
 
-@extensibility.register("mo.swiglu.quantize.dynamic.block.scaled")
+@extensibility.register("quantization.swiglu.quantize.dynamic.block.scaled")
 struct Struct_swiglu_quantize_dynamic_block_scaled:
-    """Registers the `mo.swiglu.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """Registers the `quantization.swiglu.quantize.dynamic.block.scaled` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1097,9 +1097,9 @@ struct Struct_swiglu_quantize_dynamic_block_scaled:
         )
 
 
-@extensibility.register("mo.rope.quantize.dynamic.block.scaled")
+@extensibility.register("quantization.rope.quantize.dynamic.block.scaled")
 struct Struct_rope_quantize_dynamic_block_scaled:
-    """Registers the `mo.rope.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """Registers the `quantization.rope.quantize.dynamic.block.scaled` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1162,9 +1162,9 @@ struct Struct_rope_quantize_dynamic_block_scaled:
         )
 
 
-@extensibility.register("mo.rms_norm.quantize.mxfp8.q_kv")
+@extensibility.register("quantization.rms_norm.quantize.mxfp8.q_kv")
 struct Struct_rms_norm_quantize_mxfp8_q_kv:
-    """Registers the `mo.rms_norm.quantize.mxfp8.q_kv` graph op with the graph compiler.
+    """Registers the `quantization.rms_norm.quantize.mxfp8.q_kv` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1224,9 +1224,9 @@ struct Struct_rms_norm_quantize_mxfp8_q_kv:
         )
 
 
-@extensibility.register("mo.grouped.quantize.dynamic.block.scaled")
+@extensibility.register("quantization.grouped.quantize.dynamic.block.scaled")
 struct Struct_grouped_quantize_dynamic_block_scaled:
-    """Registers the `mo.grouped.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """Registers the `quantization.grouped.quantize.dynamic.block.scaled` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1273,15 +1273,15 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
 
 
 @extensibility.register(
-    "mo.grouped.quantize.dynamic.block.scaled.with_row_indices"
+    "quantization.grouped.quantize.dynamic.block.scaled.with_row_indices"
 )
 struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
-    """Registers the `mo.grouped.quantize.dynamic.block.scaled.with_row_indices` graph op with the graph compiler.
+    """Registers the `quantization.grouped.quantize.dynamic.block.scaled.with_row_indices` graph op with the graph compiler.
 
-    Row-gather variant of `mo.grouped.quantize.dynamic.block.scaled`: output
+    Row-gather variant of `quantization.grouped.quantize.dynamic.block.scaled`: output
     row `i` quantizes input row `row_indices[i] // row_index_divisor`, which
     fuses the MoE expert permutation gather into the quantize loads. MoE
-    passes the routing slot order straight from `mo.moe.create.indices` with
+    passes the routing slot order straight from `moe.create.indices` with
     the top-k as the divisor, so no kernel runs between the two to map slots
     to tokens. A separate op carries the extra operand because graph ops have
     no optional inputs, and the fusion lives in the kernel because prologue
@@ -1341,15 +1341,15 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
         )
 
 
-@extensibility.register("mo.grouped.quantize.nvfp4.row_scaled")
+@extensibility.register("quantization.grouped.quantize.nvfp4.row_scaled")
 struct Struct_grouped_quantize_nvfp4_row_scaled:
-    """Registers the `mo.grouped.quantize.nvfp4.row_scaled` graph op with the graph compiler.
+    """Registers the `quantization.grouped.quantize.nvfp4.row_scaled` graph op with the graph compiler.
 
     Quantizes grouped BF16 rows to NVFP4 with a global scale per row, taken
     from the row's amax inside the kernel, and returns the scales for the
     grouped matmul's `a_row_scales`. The result is bit-identical to the
     chain of a row amax, two BF16 roundings and
-    `mo.grouped.quantize.dynamic.block.scaled` with a tensor-wise scale of 1.
+    `quantization.grouped.quantize.dynamic.block.scaled` with a tensor-wise scale of 1.
     `apply_relu2` quantizes `relu(x) * relu(x)` in place of `x`, with
     `relu` from `nn.activations`.
     """
@@ -1404,11 +1404,13 @@ struct Struct_grouped_quantize_nvfp4_row_scaled:
         )
 
 
-@extensibility.register("mo.grouped.quantize.nvfp4.row_scaled.with_row_indices")
+@extensibility.register(
+    "quantization.grouped.quantize.nvfp4.row_scaled.with_row_indices"
+)
 struct Struct_grouped_quantize_nvfp4_row_scaled_with_row_indices:
-    """Registers the `mo.grouped.quantize.nvfp4.row_scaled.with_row_indices` graph op with the graph compiler.
+    """Registers the `quantization.grouped.quantize.nvfp4.row_scaled.with_row_indices` graph op with the graph compiler.
 
-    The row-gather variant of `mo.grouped.quantize.nvfp4.row_scaled`: output
+    The row-gather variant of `quantization.grouped.quantize.nvfp4.row_scaled`: output
     row `i` quantizes input row `row_indices[i] // row_index_divisor`, with
     that row's own scale. A separate op carries the extra operand because
     graph ops have no optional inputs.
@@ -1474,9 +1476,9 @@ struct Struct_grouped_quantize_nvfp4_row_scaled_with_row_indices:
         )
 
 
-@extensibility.register("mo.quantize.dynamic.block.scaled.mxfp4")
+@extensibility.register("quantization.quantize.dynamic.block.scaled.mxfp4")
 struct Struct_quantize_dynamic_block_scaled_mxfp4:
-    """Registers the `mo.quantize.dynamic.block.scaled.mxfp4` graph op with the graph compiler.
+    """Registers the `quantization.quantize.dynamic.block.scaled.mxfp4` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1508,9 +1510,9 @@ struct Struct_quantize_dynamic_block_scaled_mxfp4:
         )
 
 
-@extensibility.register("mo.dequant.mxfp4")
+@extensibility.register("quantization.dequant.mxfp4")
 struct Struct_dequant_mxfp4:
-    """Registers the `mo.dequant.mxfp4` graph op with the graph compiler.
+    """Registers the `quantization.dequant.mxfp4` graph op with the graph compiler.
 
     Rank-2 scales with bfloat16 or float8_e4m3fn output on a GPU take the
     original H100-oriented kernel. Float32 output and the rank-5 SM100
@@ -1588,9 +1590,9 @@ struct Struct_dequant_mxfp4:
             )
 
 
-@extensibility.register("mo.dequant.mxfp8")
+@extensibility.register("quantization.dequant.mxfp8")
 struct Struct_dequant_mxfp8:
-    """Registers the `mo.dequant.mxfp8` graph op with the graph compiler.
+    """Registers the `quantization.dequant.mxfp8` graph op with the graph compiler.
 
     Dequantizes MXFP8 weights (`float8_e4m3fn`, `[N, K]`) with
     `float8_e8m0fnu` block-32 scales to bfloat16 or float32. `scales` is either
@@ -1646,9 +1648,9 @@ struct Struct_dequant_mxfp8:
         )
 
 
-@extensibility.register("mo.dequant.nvfp4")
+@extensibility.register("quantization.dequant.nvfp4")
 struct Struct_dequant_nvfp4:
-    """Registers the `mo.dequant.nvfp4` graph op with the graph compiler.
+    """Registers the `quantization.dequant.nvfp4` graph op with the graph compiler.
 
     Dequantizes packed NVFP4 weights to bfloat16 or float32. `scales` is either
     the rank-2 `[N, K // 16]` checkpoint layout or the rank-5 SM100 interleaved
@@ -1709,9 +1711,10 @@ struct Struct_dequant_nvfp4:
         )
 
 
-@extensibility.register("mo.quantize.dynamic.block.scaled.mxfp6")
+@extensibility.register("quantization.quantize.dynamic.block.scaled.mxfp6")
 struct Struct_quantize_dynamic_block_scaled_mxfp6:
-    """Registers the `mo.quantize.dynamic.block.scaled.mxfp6` graph op."""
+    """Registers the `quantization.quantize.dynamic.block.scaled.mxfp6` graph op.
+    """
 
     @inline(.always)
     @staticmethod
@@ -1748,9 +1751,10 @@ struct Struct_quantize_dynamic_block_scaled_mxfp6:
         )
 
 
-@extensibility.register("mo.dequant.mxfp6")
+@extensibility.register("quantization.dequant.mxfp6")
 struct Struct_dequant_mxfp6:
-    """Registers the `mo.dequant.mxfp6` graph op with the graph compiler."""
+    """Registers the `quantization.dequant.mxfp6` graph op with the graph compiler.
+    """
 
     @inline(.always)
     @staticmethod
@@ -1805,9 +1809,9 @@ struct Struct_dequant_mxfp6:
         )
 
 
-@extensibility.register("mo.interleave.block.scales")
+@extensibility.register("quantization.interleave.block.scales")
 struct Struct_interleave_block_scales:
-    """Registers the `mo.interleave.block.scales` graph op with the graph compiler.
+    """Registers the `quantization.interleave.block.scales` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1837,7 +1841,7 @@ struct Struct_interleave_block_scales:
         )
 
 
-@extensibility.register("mo.block.scaled.preshuffle.b.5d")
+@extensibility.register("quantization.block.scaled.preshuffle.b.5d")
 struct Struct_block_scaled_preshuffle_b_5d:
     """Run the AMD CDNA4 MXFP4 B 5D preshuffle as a custom op.
 
@@ -1857,9 +1861,10 @@ struct Struct_block_scaled_preshuffle_b_5d:
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
-        comptime assert is_gpu[
-            target
-        ](), "mo.block.scaled.preshuffle.b.5d is GPU-only (AMD CDNA4 consumer)"
+        comptime assert is_gpu[target](), (
+            "quantization.block.scaled.preshuffle.b.5d is GPU-only (AMD CDNA4"
+            " consumer)"
+        )
 
         comptime assert type_of(output).rank == 3
         comptime assert type_of(input).rank == 3
@@ -1873,7 +1878,9 @@ struct Struct_block_scaled_preshuffle_b_5d:
         )
 
 
-@extensibility.register("mo.block.scaled.preshuffle.scale.4d_per_expert")
+@extensibility.register(
+    "quantization.block.scaled.preshuffle.scale.4d_per_expert"
+)
 struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
     """Per-step A-scale preshuffle for the AMD CDNA4 preb grouped matmul.
 
@@ -1906,9 +1913,10 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
         comptime assert type_of(expert_start_indices).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "mo.block.scaled.preshuffle.scale.4d_per_expert is GPU-only"
+        comptime assert is_gpu[target](), (
+            "quantization.block.scaled.preshuffle.scale.4d_per_expert is"
+            " GPU-only"
+        )
 
         # E8M0 bytes feed the launcher as raw uint8 (the cell-packing is
         # byte-level). Bitcast the tiles so dtype metadata matches the
@@ -1934,9 +1942,11 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
         )
 
 
-@extensibility.register("mo.unfused_qkv_matmul.ragged.paged.gguf_quantized")
+@extensibility.register(
+    "kv_cache.unfused_qkv_matmul.ragged.paged.gguf_quantized"
+)
 struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
-    """Registers the `mo.unfused_qkv_matmul.ragged.paged.gguf_quantized` graph op with the graph compiler.
+    """Registers the `kv_cache.unfused_qkv_matmul.ragged.paged.gguf_quantized` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2011,9 +2021,9 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
         )
 
 
-@extensibility.register("mo.quantize_static_scaled_float8")
+@extensibility.register("quantization.quantize_static_scaled_float8")
 struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
-    """Registers the `mo.quantize_static_scaled_float8` graph op with the graph compiler.
+    """Registers the `quantization.quantize_static_scaled_float8` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2077,9 +2087,9 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         ](quant_fn, output.shape().flatten(), ctx)
 
 
-@extensibility.register("mo.quantize_tensor_dynamic_scaled_float8")
+@extensibility.register("quantization.quantize_tensor_dynamic_scaled_float8")
 struct QuantizeTensorDynamicScaledFloat8:
-    """Registers the `mo.quantize_tensor_dynamic_scaled_float8` graph op with the graph compiler.
+    """Registers the `quantization.quantize_tensor_dynamic_scaled_float8` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2133,9 +2143,9 @@ struct QuantizeTensorDynamicScaledFloat8:
         )
 
 
-@extensibility.register("mo.quantize_dynamic_scaled_float8")
+@extensibility.register("mo.composite.quantize_dynamic_scaled_fp8")
 struct QuantizeDynamicScaledFloat8:
-    """Registers the `mo.quantize_dynamic_scaled_float8` graph op with the graph compiler.
+    """Registers the `mo.composite.quantize_dynamic_scaled_fp8` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2193,19 +2203,20 @@ struct QuantizeDynamicScaledFloat8:
         )
 
 
-@extensibility.register("mo.quantize_dynamic_scaled_float8.row_bounded")
+@extensibility.register(
+    "quantization.quantize_dynamic_scaled_float8.row_bounded"
+)
 struct QuantizeDynamicScaledFloat8RowBounded:
-    """Registers the `mo.quantize_dynamic_scaled_float8.row_bounded` graph op.
+    """Registers the `quantization.quantize_dynamic_scaled_float8.row_bounded` graph op.
 
-    Same numerics as `mo.quantize_dynamic_scaled_float8`, but the rows it
+    Same numerics as `mo.composite.quantize_dynamic_scaled_fp8`, but the rows it
     touches stop at a count the GPU publishes rather than at the height of the
     input tensor. The EP MoE down projection needs this: its activation buffer
     is sized for the worst-case dispatch, the dispatch kernel writes the live
     row count into `row_offsets`, and the host never learns that count.
 
-    A separate symbol rather than an operand on the shared op, because the
-    graph compiler's RMS-norm and all-reduce fusion patterns match the shared
-    op by its two-operand signature.
+    A custom op rather than an operand on the composite, whose RMS-norm and
+    all-reduce fusion patterns read only its input and `scale_ub`.
     """
 
     @inline(.always)

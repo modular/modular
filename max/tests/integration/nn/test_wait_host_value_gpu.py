@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Integration test for the ``mo.wait_host_value`` custom op.
+"""Integration test for the ``runtime.wait_host_value`` custom op.
 
-Builds a Graph that contains both ``mo.launch_host_func`` and
-``mo.wait_host_value``. The host callback (running on a CUDA driver
+Builds a Graph that contains both ``runtime.launch_host_func`` and
+``runtime.wait_host_value``. The host callback (running on a CUDA driver
 thread, after the launch_host_func node fires) sleeps briefly to ensure
 the wait_value node has been issued on the stream, then atomic-stores 1
 to the flag. The wait_value node observes the store and lets execution
@@ -75,7 +75,9 @@ def test_wait_host_value_releases_on_callback_store(
 ) -> None:
     """The graph runs callback -> wait, observing the callback's flag store."""
     if accelerator.api not in ("cuda", "hip"):
-        pytest.skip("mo.wait_host_value is only supported on CUDA/HIP devices")
+        pytest.skip(
+            "runtime.wait_host_value is only supported on CUDA/HIP devices"
+        )
 
     flag = CompletionFlag(accelerator)
 
@@ -89,9 +91,9 @@ def test_wait_host_value_releases_on_callback_store(
         # before we publish, making the test exercise the wait path
         # rather than a fast-path "value already set" early return.
         # The host callback signals the flag directly because it runs
-        # through `mo.launch_host_func` (synchronous), not the
+        # through `runtime.launch_host_func` (synchronous), not the
         # async-host-func trampoline that auto-signals from its worker.
-        # `mo.wait_host_value` observes the store via the device-mapped
+        # `runtime.wait_host_value` observes the store via the device-mapped
         # alias.
         callback_thread_id.append(threading.get_ident())
         time.sleep(0.002)
@@ -134,7 +136,9 @@ def test_wait_host_value_passes_when_flag_already_set(
     from the main thread, and confirms the graph executes without hang.
     """
     if accelerator.api not in ("cuda", "hip"):
-        pytest.skip("mo.wait_host_value is only supported on CUDA/HIP devices")
+        pytest.skip(
+            "runtime.wait_host_value is only supported on CUDA/HIP devices"
+        )
 
     flag = CompletionFlag(accelerator)
     flag.signal(1)

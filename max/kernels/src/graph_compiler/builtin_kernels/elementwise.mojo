@@ -499,9 +499,9 @@ struct Tanh(ElementwiseUnaryOp):
         return tanh(x)
 
 
-@extensibility.register("mo.acos")
+@extensibility.register("elementwise.acos")
 struct ACos(ElementwiseUnaryOp):
-    """Registers the `mo.acos` graph op with the graph compiler."""
+    """Registers the `elementwise.acos` graph op with the graph compiler."""
 
     @staticmethod
     def elementwise[

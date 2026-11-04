@@ -168,7 +168,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
         )
 
     comptime name = String(
-        t"mo.fused_qkv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        t"kv_cache.fused_qkv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -257,7 +257,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
         )
 
     comptime name = String(
-        t"mo.fused_qkv_matmul.ragged.paged.bias.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        t"kv_cache.fused_qkv_matmul.ragged.paged.bias.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -373,7 +373,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
         )
 
     comptime name = String(
-        t"mo.fused_qkv_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}.m_scale_granularity_{scales_granularity_mnk[0]}.n_scale_granularity_{scales_granularity_mnk[1]}.k_scale_granularity_{scales_granularity_mnk[2]}"
+        t"kv_cache.fused_qkv_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}.m_scale_granularity_{scales_granularity_mnk[0]}.n_scale_granularity_{scales_granularity_mnk[1]}.k_scale_granularity_{scales_granularity_mnk[2]}"
     )
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -496,7 +496,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         )
 
     comptime name = String(
-        t"mo.fused_qkv_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        t"kv_cache.fused_qkv_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -1709,7 +1709,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
         )
 
     comptime name = String(
-        t"mo.fused_qkv_index_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        t"kv_cache.fused_qkv_index_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -2029,7 +2029,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
 # epilogue are identical to the `_scale_float4` variant above (see its comment
 # block for the detailed routing rationale); this variant only drops the
 # block-scaling machinery and swaps in the plain `_matmul_common` primitive used
-# by the single-cache `mo.fused_qkv_matmul.ragged.paged` kernel.
+# by the single-cache `kv_cache.fused_qkv_matmul.ragged.paged` kernel.
 #
 # Column routing over col in [0, N_total) with
 #   N_total = q_dim + 2*kv_dim + iq_dim + ik_dim:
@@ -2102,7 +2102,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
         )
 
     comptime name = String(
-        t"mo.fused_qkv_index_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        t"kv_cache.fused_qkv_index_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -2744,7 +2744,7 @@ def kv_matmul_ragged_paged[
 
     with Trace[TraceLevel.OP, target=target](
         String(
-            t"mo.kv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+            t"kv_cache.kv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
@@ -2947,7 +2947,7 @@ def k_matmul_ragged_paged[
 
     with Trace[TraceLevel.OP, target=target](
         String(
-            t"mo.k_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+            t"kv_cache.k_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
@@ -3125,7 +3125,7 @@ def k_matmul_ragged_paged_scale[
 
     with Trace[TraceLevel.OP, target=target](
         String(
-            t"mo.k_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+            t"kv_cache.k_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
@@ -3338,7 +3338,7 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
         String(
-            t"mo.kv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}.quantization_encoding_q="
+            t"kv_cache.kv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}.quantization_encoding_q="
         )
         + quantization_encoding_q
         + ".quantization_encoding_k="
@@ -3716,7 +3716,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
         )
 
     comptime name = String(
-        t"mo.fused_qk_rope.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        t"kv_cache.fused_qk_rope.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -3840,7 +3840,7 @@ def generic_flash_attention_kv_cache_ragged[
         desc_parts.append("sink=False")
         return String(";").join(desc_parts)
 
-    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + String(
+    comptime name = "attention.mha.ragged." + collection_t.name_str + "." + mask_str + String(
         t".nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
     )
 
@@ -4057,7 +4057,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
         desc_parts.append("sink=True")
         return String(";").join(desc_parts)
 
-    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + String(
+    comptime name = "attention.mha.ragged." + collection_t.name_str + "." + mask_str + String(
         t".nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
     )
 
@@ -4227,7 +4227,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mla.decode.ragged."
+        "attention.mla.decode.ragged."
         + collection_t.name_str
         + "."
         + mask_str
@@ -4537,7 +4537,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mla.prefill.ragged."
+        "attention.mla.prefill.ragged."
         + collection_t.name_str
         + "."
         + mask_str
@@ -4686,7 +4686,8 @@ def generic_flare_mla_prefill_ragged_paged_plan[
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mla.prefill.ragged.paged.plan", task_id=Int(context.device().id)
+        "attention.mla.prefill.ragged.paged.plan",
+        task_id=Int(context.device().id),
     ):
         mla_prefill_plan(
             buffer_row_offsets,
@@ -5062,7 +5063,7 @@ def generic_cross_attention_kv_cache[
         return
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.cross_attention.ragged."
+        "attention.cross.ragged."
         + collection_t.name_str
         + "."
         + mask_str

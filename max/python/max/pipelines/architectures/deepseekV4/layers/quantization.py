@@ -290,7 +290,7 @@ class DeepseekV4Fp8Linear(Linear):
     ``fast_round_scale``), and the checkpoint was trained that way. So this
     quantizes with e8m0 scales -- the kernel's e8m0 branch is exactly
     ``2 ** ceil(log2(amax / 448))`` and divides by the (exact) power of two --
-    then widens the scales to float32 for ``mo.matmul_dynamic_scaled_fp8``,
+    then widens the scales to float32 for ``matmul.dynamic_scaled_fp8``,
     which accepts nothing else. Verified bit-identical to the reference
     ``act_quant`` on the G4 experiment (PROGRESS-194-QUANT §1).
 

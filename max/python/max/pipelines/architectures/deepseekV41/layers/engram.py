@@ -212,12 +212,12 @@ class Engram(Module):
             TensorValue(self.q_weight).to(device),
             TensorValue(self.k_weight).to(device),
         ]
-        name = "mo.engram.gate"
+        name = "engram.gate"
         if token_mask is not None:
             values.append(
                 token_mask.rebind((hidden_states.shape[0],)).to(device)
             )
-            name = "mo.engram.gate_masked"
+            name = "engram.gate_masked"
         return ops.custom(
             name,
             device=device,

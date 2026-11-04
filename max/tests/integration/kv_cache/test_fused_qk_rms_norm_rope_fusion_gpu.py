@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input-prologue fusion for ``mo.fused_qk_rms_norm_rope.ragged.paged``.
+"""Input-prologue fusion for ``kv_cache.fused_qk_rms_norm_rope.ragged.paged``.
 
 The kernel reads Q through a ``FusedInputTensor`` load lambda. When Q is a view
 over a wider producer -- e.g. a ``slice`` + ``reshape`` that carves Q out of a

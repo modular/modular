@@ -467,7 +467,7 @@ INDEX_LIST_FUSED_ENV = "MAX_DSV41_INDEX_LIST_FUSED"
 def index_list_fused_enabled() -> bool:
     """Whether a GPU layer builds its CSA2 index list in one launch.
 
-    On (default): one ``mo.csa2.index_list`` kernel writes the layer's
+    On (default): one ``attention.csa2.index_list`` kernel writes the layer's
     ``[T, 640]`` window and compressed slots
     (:func:`~.layers.csa2.index_list`). Off
     (``MAX_DSV41_INDEX_LIST_FUSED=0``): the graph ops of

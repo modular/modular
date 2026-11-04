@@ -55,7 +55,7 @@ struct CompletionFlag {
   /// so that any stores the caller performed before ``signal`` are
   /// visible to whichever side first observes ``value``. Primary use
   /// from Python is priming the flag at setup time so the first
-  /// captured-graph replay's ``mo.wait_host_value`` passes immediately,
+  /// captured-graph replay's ``runtime.wait_host_value`` passes immediately,
   /// before any async kickoff has run.
   void signal(std::uint64_t value) { ref_->signal(value); }
 

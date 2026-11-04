@@ -334,7 +334,7 @@ def hyper_connection_gates[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.hyper_connection.gates", task_id=Int(gpu_ctx.device().id)
+        "hyper_connection.gates", task_id=Int(gpu_ctx.device().id)
     ):
         comptime kernel = hyper_connection_gates_kernel[
             pre.LayoutType,
@@ -1615,7 +1615,7 @@ def mhc_pre[
     var gpu_ctx = context
     comptime fn_terms_used = 1 if hc_fn.dtype == .bfloat16 else fn_terms
     with Trace[TraceLevel.OP, target=target](
-        "mo.mhc.pre", task_id=Int(gpu_ctx.device().id)
+        "hyper_connection.mhc.pre", task_id=Int(gpu_ctx.device().id)
     ):
         if k_splits == 1:
             comptime kernel = mhc_pre_kernel[
@@ -2038,7 +2038,7 @@ def mhc_post[
         non_temporal = force_non_temporal.value()
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mhc.post", task_id=Int(gpu_ctx.device().id)
+        "hyper_connection.mhc.post", task_id=Int(gpu_ctx.device().id)
     ):
 
         @always_inline

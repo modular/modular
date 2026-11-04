@@ -225,7 +225,7 @@ def _assign_weights(
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache and gated_delta_conv1d_fwd are both staged as undeclared"
+    "attention.mha.no_cache and gated_delta_conv1d_fwd are both staged as undeclared"
     " custom ops the interpreter can't bind"
 )
 def test_model_tp1_matches_tp2() -> None:
