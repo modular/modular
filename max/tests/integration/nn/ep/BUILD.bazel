@@ -410,6 +410,8 @@ modular_py_test(
     mojo_deps = [
         "//max:shmem",
     ],
+    precompile_device_count = 2,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "requires-network",
