@@ -379,7 +379,7 @@ struct Process:
 
     @staticmethod
     def run(var path: String, argv: List[String]) raises -> Process:
-        """Spawn new process from file executable.
+        """Spawn new process, inheriting the parent's environment.
 
         Args:
           path: The path to the file.
@@ -391,14 +391,67 @@ struct Process:
         Raises:
             Error: If the process fails to spawn.
         """
+        return Self._spawn(path, argv, _get_environ())
 
+    @staticmethod
+    def run(
+        var path: String,
+        argv: List[String],
+        *,
+        env: List[String],
+    ) raises -> Process:
+        """Spawn new process with an explicit environment.
+
+        The child receives exactly the environment given in `env`; the
+        parent's environment is not inherited unless the caller copies it.
+
+        Args:
+          path: The path to the file.
+          argv: A list of string arguments to be passed to executable.
+          env: Environment variables for the child as `KEY=VALUE` strings.
+
+        Returns:
+          An instance of `Process` struct.
+
+        Raises:
+            Error: If the process fails to spawn.
+        """
+        var c_env = env.copy()
+        var envp_list = List[Optional[CStringSlice[ImmutAnyOrigin]]](
+            length=len(c_env) + 1, fill={}
+        )
+        for i in range(len(c_env)):
+            envp_list[i] = rebind[CStringSlice[ImmutAnyOrigin]](
+                c_env[i].as_c_string_slice()
+            )
+        return Self._spawn(
+            path,
+            argv,
+            Optional(
+                rebind[
+                    Pointer[
+                        Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
+                    ]
+                ](envp_list.unsafe_ptr())
+            ),
+        )
+
+    @staticmethod
+    def _spawn(
+        var path: String,
+        argv: List[String],
+        envp: OptionalPointer[
+            Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
+        ],
+    ) raises -> Process:
         comptime assert (
             CompilationTarget.is_linux() or CompilationTarget.is_macos()
         ), "Unknown platform process execution not implemented"
         var parts = path.split(sep)
         var file_name = String(parts[len(parts) - 1])
 
-        var arg_count = len(argv)
+        var c_argv = argv.copy()
+        var arg_count = len(c_argv)
         var argv_array_ptr_cstr_ptr = List[
             Optional[CStringSpan[ImmutAnyOrigin]]
         ](
@@ -412,13 +465,12 @@ struct Process:
         )
         offset += 1
 
-        for var arg in argv:
+        for i in range(len(c_argv)):
             argv_array_ptr_cstr_ptr[offset] = rebind[
                 CStringSpan[ImmutAnyOrigin]
             ](arg.as_c_string_span())
             offset += 1
 
-        # `argv` ptr array terminates with NULL PTR
         argv_array_ptr_cstr_ptr[offset] = {}
 
         var pid: c_pid_t = 0
@@ -428,7 +480,7 @@ struct Process:
             path.as_c_string_span(),
             # Safety: `argv_array_ptr_cstr_ptr` has at least 2 elements so is non-null
             argv_array_ptr_cstr_ptr.unsafe_ptr(),
-            _get_environ(),  # inherit parent's environment
+            envp,
         )
 
         if has_error_code > 0:
