@@ -140,17 +140,15 @@ void printAllGatherRMSNormQuantMXFP6Attrs(OpAsmPrinter &p, Operation *,
                                           IntegerAttr groupSize,
                                           IntegerAttr fp6Format);
 
-ParseResult parseGroupedMatmulSwigluNvfp4Attrs(OpAsmParser &p,
-                                               StringAttr &activation,
-                                               ElementsAttr &swigluAlpha,
-                                               ElementsAttr &swigluLimit,
-                                               BoolAttr &hasARowScales);
+ParseResult parseGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmParser &p, StringAttr &activation, ElementsAttr &swigluAlpha,
+    ElementsAttr &swigluLimit, BoolAttr &hasARowScales, IntegerAttr &maxTotalM,
+    BoolAttr &prefillDynamicClaim);
 
-void printGroupedMatmulSwigluNvfp4Attrs(OpAsmPrinter &p, Operation *,
-                                        StringAttr activation,
-                                        ElementsAttr swigluAlpha,
-                                        ElementsAttr swigluLimit,
-                                        BoolAttr hasARowScales);
+void printGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmPrinter &p, Operation *, StringAttr activation,
+    ElementsAttr swigluAlpha, ElementsAttr swigluLimit, BoolAttr hasARowScales,
+    IntegerAttr maxTotalM, BoolAttr prefillDynamicClaim);
 
 ParseResult parseCustomAttrs(OpAsmParser &p, StringAttr &symbol,
                              DeviceRefAttr &device, DictionaryAttr &parameters);

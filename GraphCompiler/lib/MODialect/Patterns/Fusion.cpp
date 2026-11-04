@@ -4920,15 +4920,20 @@ public:
     // Sized to bound `total_m_blocks` (sum over experts of
     // `ceildiv(tokens_e, MMA_N)`): with the smallest tile MMA_N=8 and at most
     // `numExperts` partial blocks, `ceildiv(M, 8) + numExperts + 1` suffices.
-    // Over-allocation is safe. This needs static M and numExperts; the EP path
-    // uses statically-shaped activation buffers.
+    // Over-allocation is safe. This needs an upper bound on M and a static
+    // numExperts. The EP path has a statically-shaped activation buffer; a
+    // dynamic row count (the TP path, whose rows are tokens * top_k) takes its
+    // bound from L1's `max_total_m`, and the kernel op checks the actual row
+    // count against the buffer before it launches.
     int64_t m =
         cast<MO::TensorType>(l1.getHiddenStates().getType()).getIntDim(0);
+    if (m == mlir::ShapedType::kDynamic && l1.getMaxTotalM() > 0)
+      m = l1.getMaxTotalM();
     if (m == mlir::ShapedType::kDynamic ||
         numExperts == mlir::ShapedType::kDynamic)
       return rewriter.notifyMatchFailure(
-          downOp, "mega_ffn needs a static token count and num_experts to size "
-                  "the arrival_count buffer");
+          downOp, "mega_ffn needs a static token count (or max_total_m) and "
+                  "num_experts to size the arrival_count buffer");
 
     constexpr int64_t kAtomicPad = 32;
     constexpr int64_t kMinTokenBlock = 8;
@@ -4969,7 +4974,8 @@ public:
         /*down_num_active_experts=*/downOp.getNumActiveExperts(),
         /*arrival_count=*/arrivalBuf,
         /*inChain=*/inChain,
-        /*has_gate_up_a_row_scales=*/l1.getHasARowScales());
+        /*has_gate_up_a_row_scales=*/l1.getHasARowScales(),
+        /*prefill_dynamic_claim=*/l1.getPrefillDynamicClaim());
 
     // Forward L1's gated activation; the fused kernel builds it from these at
     // compile time, so dropping one would silently change the numerics.

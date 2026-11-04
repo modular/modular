@@ -925,6 +925,12 @@ def MOComposite_GroupedMatmulSwigluNvfp4Op
     When `has_a_row_scales` is set, `a_row_scales` holds one bf16 scale per
     `hidden_states` row, applied with its expert scale before the SwiGLU.
     Otherwise it is an unread placeholder.
+
+    `max_total_m` is an upper bound on the `hidden_states` row count that the
+    MegaFFN fusion sizes its arrival buffer from when that count is dynamic;
+    0 means unknown. `prefill_dynamic_claim` asks a MegaFFN that this op fuses
+    into to claim its 2-CTA prefill tiles from a shared counter; see
+    `mo.composite.mega_ffn_nvfp4`. The kernel itself ignores both.
   }];
 
   let arguments = (ins
@@ -943,13 +949,17 @@ def MOComposite_GroupedMatmulSwigluNvfp4Op
     DefaultValuedAttr<StrAttr, "\"silu\"">:$activation,
     MO_F32ScalarAttr:$swiglu_alpha,
     MO_F32ScalarAttr:$swiglu_limit,
-    DefaultValuedAttr<BoolAttr, "false">:$has_a_row_scales
+    DefaultValuedAttr<BoolAttr, "false">:$has_a_row_scales,
+    DefaultValuedAttr<I64Attr, "0">:$max_total_m,
+    DefaultValuedAttr<BoolAttr, "false">:$prefill_dynamic_claim
   );
   let results = (outs MO_Tensor:$c_packed, MO_Tensor:$c_swiglu_scales);
   let assemblyFormat = [{
     `(` operands `)`
     `` custom<GroupedMatmulSwigluNvfp4Attrs>($activation, $swiglu_alpha,
-                                             $swiglu_limit, $has_a_row_scales)
+                                             $swiglu_limit, $has_a_row_scales,
+                                             $max_total_m,
+                                             $prefill_dynamic_claim)
     attr-dict `:` functional-type(operands, results)
   }];
 }
@@ -1028,6 +1038,12 @@ def MOComposite_MegaFFNNvfp4Op : MO_CompositeOp<"mega_ffn_nvfp4", [
 
     `gate_up_a_row_scales`/`has_gate_up_a_row_scales` are the gate-up leg's
     per-row input scales (see `mo.composite.grouped_matmul_swiglu_nvfp4`).
+
+    `prefill_dynamic_claim`, copied from the gate-up leg, makes the 2-CTA
+    prefill walk claim every tile from a shared counter instead of a
+    round-robin share. It is for a layer that runs beside a kernel holding
+    SMs, such as a pipeline stage's NCCL send: the round-robin walk stalls
+    until that kernel ends, the claimed walk does not.
   }];
 
   let arguments = (ins
@@ -1049,12 +1065,14 @@ def MOComposite_MegaFFNNvfp4Op : MO_CompositeOp<"mega_ffn_nvfp4", [
     MO_Tensor:$down_num_active_experts,
     MO_Buffer:$arrival_count,
     MO_Chain:$inChain,
-    DefaultValuedAttr<BoolAttr, "false">:$has_gate_up_a_row_scales
+    DefaultValuedAttr<BoolAttr, "false">:$has_gate_up_a_row_scales,
+    DefaultValuedAttr<BoolAttr, "false">:$prefill_dynamic_claim
   );
   let results = (outs MO_Tensor:$output, MO_Chain:$outChain);
   let assemblyFormat = [{
     `(` operands `)`
     (` ` `[` `has_gate_up_a_row_scales` `=` $has_gate_up_a_row_scales^ `]`)?
+    (`prefill_dynamic_claim` `=` $prefill_dynamic_claim^)?
     attr-dict `:` functional-type(operands, results)
   }];
 }

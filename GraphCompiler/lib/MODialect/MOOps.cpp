@@ -323,29 +323,34 @@ void printAllGatherRMSNormQuantMXFP6Attrs(OpAsmPrinter &p, Operation *,
                      nonDefault("fp6_format", fp6Format, 0)});
 }
 
-ParseResult parseGroupedMatmulSwigluNvfp4Attrs(OpAsmParser &p,
-                                               StringAttr &activation,
-                                               ElementsAttr &swigluAlpha,
-                                               ElementsAttr &swigluLimit,
-                                               BoolAttr &hasARowScales) {
+ParseResult parseGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmParser &p, StringAttr &activation, ElementsAttr &swigluAlpha,
+    ElementsAttr &swigluLimit, BoolAttr &hasARowScales, IntegerAttr &maxTotalM,
+    BoolAttr &prefillDynamicClaim) {
   Type i1 = p.getBuilder().getIntegerType(1);
+  Type i64 = p.getBuilder().getIntegerType(64);
   return parseAttrGroup(
       p, {{"activation", [&] { return p.parseAttribute(activation); }},
           {"swiglu_alpha", [&] { return p.parseAttribute(swigluAlpha); }},
           {"swiglu_limit", [&] { return p.parseAttribute(swigluLimit); }},
           {"has_a_row_scales",
-           [&] { return p.parseAttribute(hasARowScales, i1); }}});
+           [&] { return p.parseAttribute(hasARowScales, i1); }},
+          {"max_total_m", [&] { return p.parseAttribute(maxTotalM, i64); }},
+          {"prefill_dynamic_claim",
+           [&] { return p.parseAttribute(prefillDynamicClaim, i1); }}});
 }
 
-void printGroupedMatmulSwigluNvfp4Attrs(OpAsmPrinter &p, Operation *,
-                                        StringAttr activation,
-                                        ElementsAttr swigluAlpha,
-                                        ElementsAttr swigluLimit,
-                                        BoolAttr hasARowScales) {
-  printAttrGroup(p, {nonDefault("activation", activation, "silu"),
-                     {"swiglu_alpha", swigluAlpha},
-                     {"swiglu_limit", swigluLimit},
-                     nonDefault("has_a_row_scales", hasARowScales, false)});
+void printGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmPrinter &p, Operation *, StringAttr activation,
+    ElementsAttr swigluAlpha, ElementsAttr swigluLimit, BoolAttr hasARowScales,
+    IntegerAttr maxTotalM, BoolAttr prefillDynamicClaim) {
+  printAttrGroup(
+      p, {nonDefault("activation", activation, "silu"),
+          {"swiglu_alpha", swigluAlpha},
+          {"swiglu_limit", swigluLimit},
+          nonDefault("has_a_row_scales", hasARowScales, false),
+          nonDefault("max_total_m", maxTotalM, 0),
+          nonDefault("prefill_dynamic_claim", prefillDynamicClaim, false)});
 }
 
 ParseResult parseCustomAttrs(OpAsmParser &p, StringAttr &symbol,

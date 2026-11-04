@@ -988,6 +988,8 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         swiglu_alpha: Float32,
         swiglu_limit: Float32,
         has_a_row_scales: Bool,
+        max_total_m: Int,
+        prefill_dynamic_claim: Bool,
         target: StaticString,
     ](
         c_packed: Some[Output & Tensor],
@@ -1021,6 +1023,11 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             swiglu_limit: The activation's clamp limit.
             has_a_row_scales: Whether `a_row_scales` holds per-row input
                 scales.
+            max_total_m: Upper bound on `a`'s row count for the MegaFFN
+                fusion's arrival buffer, or 0; unused by this kernel.
+            prefill_dynamic_claim: Whether a MegaFFN this op fuses into
+                claims its prefill tiles from a shared counter; unused by
+                this kernel.
             target: The target GPU device.
 
         Args:

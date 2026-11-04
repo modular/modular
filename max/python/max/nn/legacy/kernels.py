@@ -9918,6 +9918,8 @@ def grouped_matmul_blocked_swiglu(
     estimated_total_m: TensorValue | None = None,
     activation: GatedActivation | None = None,
     a_row_scales: TensorValue | None = None,
+    max_total_m: int = 0,
+    prefill_dynamic_claim: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
     """Performs fused grouped block-scaled matmul + SwiGLU for NVIDIA MoE.
 
@@ -9965,6 +9967,18 @@ def grouped_matmul_blocked_swiglu(
             ``[total_tokens]``. Dtype must be bfloat16. Row ``m``'s gate and up
             values are multiplied by ``a_row_scales[m]`` together with the
             expert scale before the SwiGLU. NVFP4 only.
+        max_total_m: An upper bound on ``total_tokens`` when its dim is
+            dynamic, or 0 when unknown. The MegaFFN fusion sizes its arrival
+            buffer from it, and the fused kernel checks the real row count
+            against that buffer before it launches. Without a bound, a
+            dynamic row count keeps the two-kernel pair.
+        prefill_dynamic_claim: Whether a MegaFFN this op fuses into claims
+            its prefill tiles from a shared counter instead of a round-robin
+            share. Set it for a layer that runs beside a kernel holding SMs,
+            such as a pipeline stage's NCCL send, where the round-robin walk
+            stalls until that kernel ends. With nothing else resident it
+            measured up to 6% slower at some shapes. NVFP4 only; MXFP8 and
+            W4A8 ignore this flag.
 
     Returns:
         Tuple ``(c_packed, c_swiglu_scales)`` where ``c_packed`` is packed
@@ -10105,6 +10119,8 @@ def grouped_matmul_blocked_swiglu(
         activation=builtin.StringAttr(activation_name),
         swiglu_alpha=_float32_attr(swiglu_alpha),
         swiglu_limit=_float32_attr(swiglu_limit),
+        max_total_m=builtin.IntegerAttr(builtin.IntegerType(64), max_total_m),
+        prefill_dynamic_claim=builtin.BoolAttr(prefill_dynamic_claim),
     )
 
     return results[0].tensor, results[1].tensor
