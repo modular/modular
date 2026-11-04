@@ -763,70 +763,155 @@ struct Struct_grouped_matmul_ragged:
     activation runs in the matmul's store instead of as its own kernel. A
     value-to-value consumer is applied before the matmul's own store, which
     keeps the SM100 kernel's TMA store.
+
+    Two `execute` overloads under one registration: the graph compiler calls
+    the fused one when the output has a fused epilogue and the plain one when
+    it has none, in which case the matmul writes the output directly. The pair
+    is grandfathered on the graph compiler's allow list; new kernels declare
+    one `execute` with a `StoreAccess` output.
     """
 
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        a_type: DType,
-        b_type: DType,
-        //,
-        has_epilogue_fusion: Bool,
         target: StaticString,
     ](
-        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=a_type, rank=2, ...],
-        b: InputTensor[dtype=b_type, rank=3, ...],
-        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
-        expert_usage_stats: InputTensor[dtype=.uint32, rank=1, ...],
+        c: Some[Output & Fused & _LegacyComputeOutput],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        expert_usage_stats: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime dtype = type_of(c).dtype
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 3
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
         comptime assert is_gpu[target](), "grouped matmul only support GPUs"
 
-        @inline(.always)
-        def epilogue_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var c}:
+        # The epilogue runs in the kernels the matmul launches, so it
+        # copy-captures the access-enabled view rather than the host proxy.
+        comptime assert conforms_to(type_of(c), UnsafeFusedView)
+
+        # The compute form keeps the output's own buffer, while the store form
+        # has none (a fused cast or reshape, or compute lambdas disabled), so
+        # its epilogue owns every write and the kernel gets only the output's
+        # shape.
+        comptime if conforms_to(type_of(c), _LegacyComputable):
+            var c_view = unsafe_fused_view(c)
             comptime assert (
-                coords.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            c._lambda_store[width=_width, element_alignment=alignment](
-                coords,
-                rebind[SIMD[c_type, _width]](val),
+                conforms_to(type_of(c_view), Output)
+                and conforms_to(type_of(c_view), _LegacyComputable)
+                and conforms_to(type_of(c_view), TileTensorable)
             )
 
-        @inline(.always)
-        def output_compute_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var c} -> SIMD[
-            _dtype, _width
-        ]:
-            comptime assert (
-                coords.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda[element_alignment=alignment](
-                    coords, rebind[SIMD[c_type, _width]](val)
+            @inline(.always)
+            def output_compute_fn[
+                _dtype: DType, _width: SIMDLength, *, alignment: Int
+            ](coords: Coord, val: SIMD[_dtype, _width]) {var c_view} -> SIMD[
+                _dtype, _width
+            ]:
+                comptime assert (
+                    coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                return rebind[SIMD[_dtype, _width]](
+                    c_view.compute[
+                        width=Int(_width), element_alignment=alignment
+                    ](
+                        coords,
+                        rebind[SIMD[type_of(c_view).dtype, Int(_width)]](val),
+                    )
                 )
+
+            grouped_matmul[has_epilogue_fn=False, has_compute_fn=True](
+                c_view.to_tile_tensor(),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
+                expert_usage_stats.to_tile_tensor[.uint32](),
+                context,
+                compute_fn=output_compute_fn,
+            )
+        else:
+            var c_view = unsafe_fused_view(c)
+            comptime assert conforms_to(type_of(c_view), Storable)
+
+            @inline(.always)
+            def epilogue_fn[
+                _dtype: DType, _width: SIMDLength, *, alignment: Int
+            ](coords: Coord, val: SIMD[_dtype, _width]) {var c_view}:
+                comptime assert (
+                    coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                c_view.store[width=Int(_width), element_alignment=alignment](
+                    coords,
+                    rebind[SIMD[type_of(c_view).dtype, Int(_width)]](val),
+                )
+
+            # The grouped matmul accepts a dangling output when an epilogue
+            # owns every store, as the LoRA grouped matmuls rely on.
+            var c_ptr: Optional[
+                MutPointer[Scalar[dtype], MutUntrackedOrigin]
+            ] = None
+            grouped_matmul[has_epilogue_fn=True](
+                TileTensor(c_ptr._unsafe_nullable(), row_major(c.shape())),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
+                expert_usage_stats.to_tile_tensor[.uint32](),
+                context,
+                epilogue_fn=epilogue_fn,
             )
 
-        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        c: Some[Output & TileTensorable],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        expert_usage_stats: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises where not conforms_to(type_of(c), Fused):
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 3
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert is_gpu[target](), "grouped matmul only support GPUs"
 
-        grouped_matmul[
-            has_epilogue_fn=has_epilogue_fusion and not has_compute_lambda,
-            has_compute_fn=has_epilogue_fusion and has_compute_lambda,
-        ](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_usage_stats.to_tile_tensor[.int64](),
+        grouped_matmul(
+            c.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            expert_start_indices.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            expert_usage_stats.to_tile_tensor[.uint32](),
             context,
-            epilogue_fn=epilogue_fn,
-            compute_fn=output_compute_fn,
         )
 
 
