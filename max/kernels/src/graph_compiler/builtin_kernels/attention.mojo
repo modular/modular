@@ -1190,108 +1190,14 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
         )
 
 
-@extensibility.register("mo.composite.masked_flash_attention_gpu")
-struct MaskedFlashAttentionGPU:
-    """Registers the `mo.composite.masked_flash_attention_gpu` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        output: Some[Output & Tensor],
-        q: Some[Input & Tensor],
-        k: Some[Input & Tensor],
-        v: Some[Input & Tensor],
-        mask: Some[Input & Tensor],
-        scale: Float32,
-        ctx: DeviceContext,
-    ) raises:
-        """`masked_flash_attention_gpu` is a hand-fused operator which does
-        something analogous to the following list of operations.
-
-        **Step 0:
-        Transpose:
-        query_processed = transpose(query) # BSHD --> BHSD
-        key_processed = transpose(key)     # BSHD --> BHDS
-        value_processed = transpose(value) # BSHD --> BHSD
-
-        **Step 1:
-        attentionMatrix = query_processed @ key_processed
-
-        **Step 2:
-        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
-
-        **Step 3:
-        # Normalize and apply masking
-        attentionMatrixNorm = attentionMatrix * scale
-
-        # Note attention_mask is HSS and auto-broadcasts
-        attentionMatrixNormMasked = attentionMatrixNorm + attention_mask
-
-        **Step 4:
-        # Apply softmax and reproject result
-        attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
-        answer = attentionMatrixSoftMax @ value_processed
-        answer = transpose(answer) # BHSD --> BSHD
-
-        Compared to the CPU patterns the notable differences are:
-        1. The mask is rank 3 and is of shape BSS
-        2. The transposes are part of the kernel itself
-
-        Finally, this pattern supports grouped attention patterns. That is if we
-        have G groups, then let h = H / G. Key and value are allowed to be BShD
-        in these scenarios. Both key and value must be BShD if one is. If this is
-        true the following is equivalently run before Step 0:
-
-        ** Step -1:
-        key = concat(key, ...) # concat BShD --> BSHD
-        value = concat(value, ...) # concat BShD --> BSHD
-
-        The underlying fusion follows ideas taken from the 2022 FlashAttention paper
-        by Tri Dao et al.
-
-        Parameters:
-            target: Target device identifier; must resolve to a GPU.
-
-        Args:
-            output: Output attention tensor with the same shape as `q`.
-            q: Query tensor in BSHD layout.
-            k: Key tensor in BSHD layout, or BShD for grouped attention.
-            v: Value tensor in BSHD layout, or BShD for grouped attention.
-            mask: Attention mask tensor of rank 3 and shape BSS, added to
-                the scaled attention scores before softmax.
-            scale: Scaling factor applied to attention scores before softmax.
-            ctx: Device context for GPU execution.
-        """
-        comptime assert conforms_to(type_of(output), TileTensorable)
-        comptime assert conforms_to(type_of(q), TileTensorable)
-        comptime assert conforms_to(type_of(k), TileTensorable)
-        comptime assert conforms_to(type_of(v), TileTensorable)
-        comptime assert conforms_to(type_of(mask), TileTensorable)
-        comptime rank = type_of(output).rank
-        comptime assert type_of(q).rank == rank
-        comptime assert type_of(k).rank == rank
-        comptime assert type_of(v).rank == rank
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
-        flash_attention(
-            output.to_tile_tensor(),
-            q.to_tile_tensor(),
-            k.to_tile_tensor(),
-            v.to_tile_tensor(),
-            mask.to_tile_tensor(),
-            scale,
-            context=ctx,
-        )
-
-
 @extensibility.register("mo.mha.no_cache")
 struct FlashAttentionGPU:
     """Registers the `mo.mha.no_cache` graph op with the graph compiler."""
 
     @staticmethod
     def execute[
+        MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
+        //,
         target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
@@ -1301,6 +1207,7 @@ struct FlashAttentionGPU:
         k: Some[Input & Tensor],
         v: Some[Input & Tensor],
         scale: Float32,
+        mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
     ) raises:
         """`mo.mha.no_cache` is a hand-fused operator which does
@@ -1328,9 +1235,6 @@ struct FlashAttentionGPU:
         answer = attentionMatrixSoftMax @ value_processed
         answer = transpose(answer) # BHSD --> BSHD
 
-        Compared to the CPU patterns the notable differences are:
-        1. The transposes are part of the kernel itself
-
         Finally, this pattern supports grouped attention patterns. That is if we
         have G groups, then let h = H / G. Key and value are allowed to be BShD
         in these scenarios. Both key and value must be BShD if one is. If this is
@@ -1344,6 +1248,7 @@ struct FlashAttentionGPU:
         by Tri Dao et al.
 
         Parameters:
+            MaskIns: The mask operand types.
             target: Target device identifier; must resolve to a GPU.
             mask_str: Attention mask type string passed to
                 `dispatch_mask` to select the mask functor.
@@ -1356,6 +1261,8 @@ struct FlashAttentionGPU:
             k: Key tensor in BSHD layout, or BShD for grouped attention.
             v: Value tensor in BSHD layout, or BShD for grouped attention.
             scale: Scaling factor applied to attention scores before softmax.
+            mask_operands: The mask's operands; `dispatch_mask` lists what
+                each mask reads.
             ctx: Device context for GPU execution.
         """
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -1392,7 +1299,80 @@ struct FlashAttentionGPU:
                 ctx,
             )
 
-        dispatch_mask[mask_str, local_window_size](_dispatch_flash_attention)
+        dispatch_mask[mask_str, local_window_size](
+            mask_operands, _dispatch_flash_attention
+        )
+
+
+@extensibility.register("mo.mha.no_cache", type="cpu")
+struct FlashAttentionCPU:
+    """Registers the CPU kernel of the `mo.mha.no_cache` graph op with the
+    graph compiler."""
+
+    @staticmethod
+    def execute[
+        MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
+        //,
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        q: InputTensor[dtype=dtype, rank=rank, ...],
+        k: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        v: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        scale: Float32,
+        mask_operands: TensorTuple[*MaskIns],
+        ctx: DeviceContext,
+    ) raises:
+        """`mo.mha.no_cache` on CPU: the GPU kernel's computation, with `k`
+        and `v` read through loads so that their producers fuse into them.
+
+        Parameters:
+            MaskIns: The mask operand types.
+            dtype: Element type of `q`, `k`, `v` and the output.
+            rank: Rank of `q`, `k`, `v` and the output.
+            target: Target device identifier; must resolve to a CPU.
+            mask_str: Attention mask type string passed to `dispatch_mask`.
+            local_window_size: Sliding window size for windowed attention
+                (defaults to -1, meaning no window).
+
+        Args:
+            output: Output attention tensor with the same shape as `q`.
+            q: Query tensor in BSHD layout.
+            k: Key tensor in BSHD layout, or BShD for grouped attention.
+            v: Value tensor in BSHD layout, or BShD for grouped attention.
+            scale: Scaling factor applied to attention scores before softmax.
+            mask_operands: The mask's operands; `dispatch_mask` lists what
+                each mask reads.
+            ctx: Device context for CPU execution.
+        """
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
+        @inline(.always)
+        def k_input_fn[width: Int](coords: Coord) {imm} -> SIMD[dtype, width]:
+            return k._lambda_load[width=width](coords)
+
+        @inline(.always)
+        def v_input_fn[width: Int](coords: Coord) {imm} -> SIMD[dtype, width]:
+            return v._lambda_load[width=width](coords)
+
+        def _run[mask_t: MHAMask](mask: mask_t) raises {imm}:
+            nn_flash_attention(
+                k_input_fn,
+                v_input_fn,
+                q.to_tile_tensor[.int64]().as_imm(),
+                k.shape(),
+                v.shape(),
+                output.to_tile_tensor[.int64](),
+                mask,
+                scale,
+                ctx=Optional(ctx.assert_cpu_target()),
+            )
+
+        dispatch_mask[mask_str, local_window_size](mask_operands, _run)
 
 
 @extensibility.register("mo.mha.padded.no_cache")
@@ -1560,101 +1540,6 @@ struct RaggedFlashAttentionGPU:
 
         dispatch_mask[mask_str, local_window_size](
             mask_operands, _dispatch_flash_attention
-        )
-
-
-@extensibility.register("mo.composite.no_mask_flash_attention_cpu")
-struct NoMaskFlashAttentionCPU:
-    """Registers the `mo.composite.no_mask_flash_attention_cpu` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        q: InputTensor[dtype=dtype, rank=rank, ...],
-        k: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        v: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        scale: Scalar[dtype=DType.float32],
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert is_cpu[target](), "only valid on CPUs"
-
-        @inline(.always)
-        def k_input_fn[width: Int](coords: Coord) {imm} -> SIMD[k.dtype, width]:
-            return k._lambda_load[width=width](coords)
-
-        @inline(.always)
-        def v_input_fn[width: Int](coords: Coord) {imm} -> SIMD[v.dtype, width]:
-            return v._lambda_load[width=width](coords)
-
-        @inline(.always)
-        def mask_input_fn[width: Int](idx: Coord) -> SIMD[dtype, width]:
-            return SIMD[dtype, width](0)
-
-        nn_flash_attention(
-            k_input_fn,
-            v_input_fn,
-            mask_input_fn,
-            q.to_tile_tensor[.int64](),
-            k.shape(),
-            v.shape(),
-            IndexList[0](),
-            output.to_tile_tensor[.int64](),
-            scale.cast[.float32](),
-            ctx=Optional(ctx.assert_cpu_target()),
-        )
-
-
-@extensibility.register("mo.composite.masked_flash_attention_cpu")
-struct WithMaskFlashAttentionCPU:
-    """Registers the `mo.composite.masked_flash_attention_cpu` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        q: InputTensor[dtype=dtype, rank=rank, ...],
-        k: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        v: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        mask: FusedInputTensor[dtype=dtype, ...],
-        scale: Scalar[dtype=DType.float32],
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert is_cpu[target](), "only valid on CPUs"
-
-        @inline(.always)
-        def k_input_fn[width: Int](coords: Coord) {imm} -> SIMD[k.dtype, width]:
-            return k._lambda_load[width=width](coords)
-
-        @inline(.always)
-        def v_input_fn[width: Int](coords: Coord) {imm} -> SIMD[v.dtype, width]:
-            return v._lambda_load[width=width](coords)
-
-        @inline(.always)
-        def mask_input_fn[
-            width: Int
-        ](coords: Coord) {imm} -> SIMD[mask.dtype, width]:
-            return mask._lambda_load[width=width](coords)
-
-        nn_flash_attention(
-            k_input_fn,
-            v_input_fn,
-            mask_input_fn,
-            q.to_tile_tensor[.int64](),
-            k.shape(),
-            v.shape(),
-            mask.shape(),
-            output.to_tile_tensor[.int64](),
-            scale.cast[.float32](),
-            ctx=Optional(ctx.assert_cpu_target()),
         )
 
 

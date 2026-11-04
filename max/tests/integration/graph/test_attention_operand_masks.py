@@ -204,13 +204,14 @@ def _relative_logits_bf16_odd(
 def _dense(mask_name: str) -> Build:
     def build(x: dict[str, TensorValue]) -> Sequence[TensorValue]:
         q, k, v, mask = x["dq"], x["dk"], x["dv"], x[mask_name]
-        load = ops.custom(
-            "test_dense_attention_load_mask",
+        pointer = ops.custom(
+            "test_dense_attention_pointer_mask",
             device=DeviceRef.GPU(),
             values=[q, k, v, _scale(), mask],
             out_types=[TensorType(q.dtype, q.shape, device=DeviceRef.GPU())],
         )[0].tensor
-        return [masked_flash_attention_gpu(q, k, v, mask, SCALE), load]
+        # `mo.mha.no_cache` with `mask_str = "additive"`.
+        return [pointer, masked_flash_attention_gpu(q, k, v, mask, SCALE)]
 
     return build
 

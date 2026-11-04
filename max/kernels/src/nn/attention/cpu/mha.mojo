@@ -984,24 +984,25 @@ struct _FlashAttention[
 
 
 @inline(.always)
-def _flash_attention[
+def _flash_attention_mask_fn[
     dtype: DType,
     rank: Int,
-    mask_rank: Int,
     q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     InputKFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
     InputVFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
-    InputMaskFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
+    MaskFnType: def[simd_width: SIMDLength](
+        Coord, SIMD[dtype, simd_width], Int
+    ) -> SIMD[dtype, simd_width],
     //,
+    mask_rank: Int,
 ](
     input_k_fn: InputKFnType,
     input_v_fn: InputVFnType,
-    input_mask_fn: InputMaskFnType,
+    mask_fn: MaskFnType,
     q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
-    mask_shape: IndexList[mask_rank],
     output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
@@ -1039,18 +1040,6 @@ def _flash_attention[
         return output.ptr_at_offset(coords)
 
     @inline(.always)
-    def mask_fn[
-        simd_width: SIMDLength
-    ](
-        idx: Coord,
-        score_vec: SIMD[dtype, simd_width],
-        kv_cache_len: Int,
-    ) {
-        imm
-    } -> SIMD[dtype, simd_width]:
-        return score_vec + input_mask_fn[simd_width](idx)
-
-    @inline(.always)
     def kv_cache_length_fn(batch: Int) {var kv_cache_len} -> Int:
         return kv_cache_len
 
@@ -1075,6 +1064,56 @@ def _flash_attention[
         depth_dim,
         num_kv_heads,
         max_seq_len,
+        scale,
+        sink_weights,
+        ctx,
+    )
+
+
+@inline(.always)
+def _flash_attention[
+    dtype: DType,
+    rank: Int,
+    mask_rank: Int,
+    q_origin: ImmOrigin,
+    output_origin: Origin[mut=True],
+    InputKFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
+    InputVFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
+    InputMaskFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
+    //,
+](
+    input_k_fn: InputKFnType,
+    input_v_fn: InputVFnType,
+    input_mask_fn: InputMaskFnType,
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    k_shape: IndexList[rank],
+    v_shape: IndexList[rank],
+    mask_shape: IndexList[mask_rank],
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    scale: Float32,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
+):
+    @inline(.always)
+    def mask_fn[
+        simd_width: SIMDLength
+    ](
+        idx: Coord,
+        score_vec: SIMD[dtype, simd_width],
+        kv_cache_len: Int,
+    ) {
+        imm
+    } -> SIMD[dtype, simd_width]:
+        return score_vec + input_mask_fn[simd_width](idx)
+
+    _flash_attention_mask_fn[mask_rank](
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
+        q,
+        k_shape,
+        v_shape,
+        output,
         scale,
         sink_weights,
         ctx,
@@ -1149,6 +1188,84 @@ def flash_attention[
         scale,
         sink_weights,
         ctx,
+    )
+
+
+def flash_attention[
+    dtype: DType,
+    rank: Int,
+    q_origin: ImmOrigin,
+    output_origin: Origin[mut=True],
+    InputKFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
+    InputVFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
+    mask_t: MHAMask,
+    //,
+](
+    input_k_fn: InputKFnType,
+    input_v_fn: InputVFnType,
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    k_shape: IndexList[rank],
+    v_shape: IndexList[rank],
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    mask: mask_t,
+    scale: Float32,
+    ctx: Optional[DeviceContext.CPU] = None,
+):
+    """Computes scaled dot-product flash attention on CPU under an `MHAMask`.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        rank: The number of dimensions in the query, key, value, and output
+            tensors, either 3 or 4 (inferred).
+        q_origin: The memory origin of the read-only query tensor
+            (inferred).
+        output_origin: The memory origin of the writable output tensor
+            (inferred).
+        InputKFnType: The type of `input_k_fn` (inferred).
+        InputVFnType: The type of `input_v_fn` (inferred).
+        mask_t: The `MHAMask` type (inferred).
+
+    Args:
+        input_k_fn: Function loading a `SIMD` vector of key elements at a
+            given `Coord` index.
+        input_v_fn: Function loading a `SIMD` vector of value elements at a
+            given `Coord` index.
+        q: Query tensor in BSHD or BSD layout.
+        k_shape: Shape of the key tensor.
+        v_shape: Shape of the value tensor.
+        output: Output tensor to write the attention results into.
+        mask: The mask applied to the scaled query-key scores.
+        scale: Scaling factor applied to the query-key dot products.
+        ctx: Optional device context for controlling parallelism.
+    """
+
+    @inline(.always)
+    def mask_fn[
+        simd_width: SIMDLength
+    ](
+        idx: Coord,
+        score_vec: SIMD[dtype, simd_width],
+        kv_cache_len: Int,
+    ) {
+        imm
+    } -> SIMD[dtype, simd_width]:
+        # Shift the query position from local to global space.
+        return mask.mask(
+            (Int(idx[0]), Int(idx[1]), Int(idx[2]) + kv_cache_len, Int(idx[3])),
+            score_vec,
+        )
+
+    _flash_attention_mask_fn[4](
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
+        q,
+        k_shape,
+        v_shape,
+        output,
+        scale,
+        ctx=ctx,
     )
 
 

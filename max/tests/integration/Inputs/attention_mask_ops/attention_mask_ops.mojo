@@ -241,14 +241,13 @@ struct RaggedAttentionPointerMask:
                 comptime assert False, "unknown mask: " + mask
 
 
-@extensibility.register("test_dense_attention_load_mask")
-struct DenseAttentionLoadMask:
-    """Dense `[batch, seq, heads, depth]` attention with an `AdditiveMask`."""
+@extensibility.register("test_dense_attention_pointer_mask")
+struct DenseAttentionPointerMask:
+    """Dense `[batch, seq, heads, depth]` attention with the mask read through
+    its pointer, as `mo.composite.masked_flash_attention_gpu` did."""
 
     @staticmethod
     def execute[
-        MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
-        //,
         target: StaticString,
     ](
         output: Some[Output & TileTensorable],
@@ -256,7 +255,7 @@ struct DenseAttentionLoadMask:
         k: Some[Input & TileTensorable],
         v: Some[Input & TileTensorable],
         scale: Float32,
-        mask_operands: TensorTuple[*MaskIns],
+        mask: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -265,7 +264,7 @@ struct DenseAttentionLoadMask:
             q.to_tile_tensor(),
             k.to_tile_tensor(),
             v.to_tile_tensor(),
-            AdditiveMask[].make(mask_operands),
+            mask.to_tile_tensor(),
             scale,
-            ctx,
+            context=ctx,
         )

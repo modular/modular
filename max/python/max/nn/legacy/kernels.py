@@ -27,7 +27,6 @@ from collections.abc import (
 from typing import Any, ParamSpec, TypeVar, cast
 
 import numpy as np
-from max._core import Operation
 from max._core.dialects import builtin, kgen, mo
 from max.driver import (
     Device,
@@ -4837,64 +4836,7 @@ def masked_flash_attention_gpu(
         Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
     """
     _validate_dense_attention(q, k, v, mask)
-    return _dense_attention_op(
-        mo.CompositeMaskedFlashAttentionGpuOp, q, k, v, mask, scale
-    )
-
-
-def flash_attention_cpu(
-    q: TensorValue,
-    k: TensorValue,
-    v: TensorValue,
-    scale: float,
-) -> TensorValue:
-    """Computes flash attention on CPU, without a mask.
-
-    Args:
-        q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
-        k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
-        v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
-        scale: Scaling factor for attention scores.
-
-    Returns:
-        Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
-    """
-    _validate_dense_attention(q, k, v, None)
-    return _dense_attention_op(
-        mo.CompositeNoMaskFlashAttentionCpuOp, q, k, v, None, scale
-    )
-
-
-def masked_flash_attention_cpu(
-    q: TensorValue,
-    k: TensorValue,
-    v: TensorValue,
-    mask: TensorValue,
-    scale: float,
-) -> TensorValue:
-    """Computes flash attention on CPU using a materialized additive mask.
-
-    Args:
-        q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
-        k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
-        v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
-        mask: Additive mask tensor with the dtype of ``q``. Rank 3 of shape
-            [batch, q_seq_len, kv_seq_len] broadcasts across attention
-            heads. Rank 4 of shape [batch, num_heads, q_seq_len,
-            kv_seq_len] applies a per-head bias.
-        scale: Scaling factor for attention scores.
-
-    Returns:
-        Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
-    """
-    _validate_dense_attention(q, k, v, mask)
-    if mask.dtype != q.dtype:
-        raise ValueError(
-            f"mask dtype ({mask.dtype}) must match q dtype ({q.dtype})"
-        )
-    return _dense_attention_op(
-        mo.CompositeMaskedFlashAttentionCpuOp, q, k, v, mask, scale
-    )
+    return _dense_attention(q, k, v, scale, mask)
 
 
 def flash_attention(
@@ -4926,9 +4868,8 @@ def flash_attention(
     if mask is not None:
         mask = TensorValue(mask).cast(q.dtype)
     if q.device.is_cpu():
-        if mask is None:
-            return flash_attention_cpu(q, k, v, scale)
-        return masked_flash_attention_cpu(q, k, v, mask, scale)
+        _validate_dense_attention(q, k, v, mask)
+        return _dense_attention(q, k, v, scale, mask)
     # TODO(GEX-4477): The GPU kernel's flash path covers few head dims, and
     # its naive fallback is slower than separate ops (0.6-0.8x at head dim 32
     # on B200). Drop this once the kernel covers small head dims.
@@ -4939,9 +4880,8 @@ def flash_attention(
     )
     if not flash_head_dim and q.shape[2] == k.shape[2]:
         return _unfused_attention(q, k, v, scale, mask)
-    if mask is None:
-        return flash_attention_gpu(q, k, v, MHAMaskVariant.NULL_MASK, scale)
-    return masked_flash_attention_gpu(q, k, v, mask, scale)
+    _validate_dense_attention(q, k, v, mask)
+    return _dense_attention(q, k, v, scale, mask)
 
 
 def _unfused_attention(
@@ -5032,32 +4972,30 @@ def _validate_dense_attention(
     _validate_argument_tensor("mask", mask, device=q.device)
 
 
-def _dense_attention_op(
-    op: type[Operation],
+def _dense_attention(
     q: TensorValue,
     k: TensorValue,
     v: TensorValue,
-    mask: TensorValue | None,
     scale: float,
+    mask: TensorValue | None,
 ) -> TensorValue:
-    out_type = TensorType(dtype=q.dtype, shape=q.shape, device=q.device)
-    scale_const = ops.constant(
-        scale, dtype=DType.float32, device=DeviceRef.CPU()
-    )
-    # ``_add_op_generated`` passes operands straight to the generated op
-    # constructor without coercing ``HasTensorValue`` inputs (unlike
-    # ``ops.custom``). Under the experimental ``functional`` dispatch the
-    # q/k/v/mask arrive as ``max.tensor.Tensor`` rather than
-    # ``TensorValue``, so coerce them explicitly to match ``scale_const``.
-    masks = [] if mask is None else [TensorValue(mask)]
-    return Graph.current._add_op_generated(
-        op,
-        out_type,
-        TensorValue(q),
-        TensorValue(k),
-        TensorValue(v),
-        *masks,
-        scale_const,
+    values = [
+        q,
+        k,
+        v,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    parameters: dict[str, int | str | DType] = {"mask_str": "null"}
+    if mask is not None:
+        # The additive mask's operand trails the op's own.
+        values.append(mask)
+        parameters = {"mask_str": "additive"}
+    return ops.custom(
+        "mo.mha.no_cache",
+        device=q.device,
+        values=values,
+        out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
+        parameters=parameters,
     )[0].tensor
 
 
