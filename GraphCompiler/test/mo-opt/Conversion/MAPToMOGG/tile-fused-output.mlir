@@ -1,8 +1,8 @@
-// RUN: mo-opt %s --split-input-file --mogg-import-packages --mo-to-map --map-fuse-kernels --map-allocate-accumulating-buffers --map-to-mogg | FileCheck %s
-// RUN: mo-opt %s --split-input-file --mogg-import-packages --mo-to-map --map-fuse-kernels --map-allocate-accumulating-buffers --map-outline-structured-kernel-bodies --canonicalize --cse --map-to-mogg | FileCheck %s --check-prefix=FOREACH
+// RUN: mo-opt %s --split-input-file --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" --mo-to-map --map-fuse-kernels --map-allocate-accumulating-buffers --map-to-mogg | FileCheck %s
+// RUN: mo-opt %s --split-input-file --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" --mo-to-map --map-fuse-kernels --map-allocate-accumulating-buffers --map-outline-structured-kernel-bodies --canonicalize --cse --map-to-mogg | FileCheck %s --check-prefix=FOREACH
 
-// With `tile_based_fusion = true` the sm_100a `mo.matmul` / `mo.reduce.rms_norm`
-// registrations are the tile kernels, whose outputs are
+// With `tile_based_fusion = true` the sm_100a `mo.matmul` registration and
+// the `tile_rms_norm` test kernel are tile kernels, whose outputs are
 // `_FusedComputeOutputTileTensor` / `_FusedOutputTileTensor`, whose epilogues
 // lower to `mogg.tile.create.epilogue`.
 
@@ -24,7 +24,7 @@ mo.graph @matmul(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.tensor<[256, 25
 // CHECK:       mogg.tile.create.epilogue {{.*}} lane = store, device = "gpu"
 module attributes {mo.device_info_mapping = {gpu = #M.device_info<"gpu", "cuda", "sm_100a", "", tile_based_fusion = true>}} {
 mo.graph @rms_norm(%x: !mo.tensor<[256, 256], f32, gpu:0>, %gamma: !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0> {
-  %0 = mo.reduce.rms_norm(%x, %gamma) {epsilon = #M.dense_array<1.0e-05> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[256, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0>
+  %0 = mo.custom [symbol = "tile_rms_norm", device = #M.device_ref<"gpu", 0>](%x, %gamma) : (!mo.tensor<[256, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0>
   mo.output %0 : !mo.tensor<[256, 256], f32, gpu:0>
 }
 }
@@ -57,7 +57,7 @@ mo.graph @matmul_add(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.tensor<[256
 // CHECK-NEXT:    mogg.tile.store %[[OUT]][%[[IDX]]] = %[[PROD]] : !mogg.tensor, !mogg.tile_coord<2>, !mogg.tile<f32>
 module attributes {mo.device_info_mapping = {gpu = #M.device_info<"gpu", "cuda", "sm_100a", "", tile_based_fusion = true>}} {
 mo.graph @rms_norm_mul(%x: !mo.tensor<[256, 256], f32, gpu:0>, %gamma: !mo.tensor<[256], f32, gpu:0>, %scale: !mo.tensor<[256, 256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0> {
-  %0 = mo.reduce.rms_norm(%x, %gamma) {epsilon = #M.dense_array<1.0e-05> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[256, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0>
+  %0 = mo.custom [symbol = "tile_rms_norm", device = #M.device_ref<"gpu", 0>](%x, %gamma) : (!mo.tensor<[256, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0>
   %1 = mo.mul(%0, %scale) : !mo.tensor<[256, 256], f32, gpu:0>
   mo.output %1 : !mo.tensor<[256, 256], f32, gpu:0>
 }

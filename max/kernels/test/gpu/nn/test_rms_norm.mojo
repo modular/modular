@@ -257,7 +257,7 @@ def run_rms_norm_row_based[
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     """Drives the row-based `rms_norm` entry point, not `rms_norm_gpu`.
 
-    `mo.reduce.rms_norm` lowers through this overload, so its epilogue-closure
+    `mo.composite.reduce.rms_norm` lowers through this overload, so its epilogue-closure
     contract needs coverage of its own; the `run_rms_norm_gpu` cases above
     exercise a different function. A positive `static_cols` passes the row
     width as a `ComptimeInt`, as the graph compiler does for a static hidden
@@ -476,7 +476,7 @@ def main() raises:
             ctx, Index(4, 5120), rtol=2e-2
         )
 
-        # Row-based `rms_norm` (the `mo.reduce.rms_norm` lowering path), across
+        # Row-based `rms_norm` (the `mo.composite.reduce.rms_norm` lowering path), across
         # both `multiply_before_cast` branches and the narrow/wide dispatch.
         run_rms_norm_row_based[DType.float32](ctx, Index(2, 5))
         run_rms_norm_row_based[DType.float32](ctx, Index(7, 557))

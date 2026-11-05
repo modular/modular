@@ -814,9 +814,10 @@ def reduce_layer_norm_shape(
     )
 
 
-@extensibility.register("mo.reduce.rms_norm")
+@extensibility.register("mo.composite.reduce.rms_norm")
 struct ReduceRMSNorm:
-    """Registers the `mo.reduce.rms_norm` graph op with the graph compiler."""
+    """Registers the `mo.composite.reduce.rms_norm` graph op with the graph compiler.
+    """
 
     @staticmethod
     def execute[
@@ -830,7 +831,7 @@ struct ReduceRMSNorm:
         gamma: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        """Executes the `mo.reduce.rms_norm` graph op.
+        """Executes the `mo.composite.reduce.rms_norm` graph op.
 
         Parameters:
             target: Compilation target string.
@@ -926,12 +927,12 @@ struct ReduceRMSNorm:
             )
 
 
-@extensibility.register_shape_function("mo.reduce.rms_norm")
+@extensibility.register_shape_function("mo.composite.reduce.rms_norm")
 def reduce_rms_norm_shape(
     input: Some[Tensor],
     gamma: Some[Tensor],
 ) -> IndexList[type_of(input).rank]:
-    """Computes the output shape for the `mo.reduce.rms_norm` graph op.
+    """Computes the output shape for the `mo.composite.reduce.rms_norm` graph op.
 
     Args:
         input: Input tensor normalized across the last dimension.

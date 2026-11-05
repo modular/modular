@@ -4905,6 +4905,16 @@ void Composite::DistributedAllReduceRMSNormOp::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// ReduceRMSNormOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult Composite::ReduceRMSNormOp::verify() {
+  if (cast<TensorType>(getWeight().getType()).getRank() != 1)
+    return emitOpError("weight must be rank 1");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ReduceRMSNormRoPEOp
 //===----------------------------------------------------------------------===//
 

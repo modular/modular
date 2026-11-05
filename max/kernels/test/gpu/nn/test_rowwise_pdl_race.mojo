@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""PDL race test for the row-wise kernels behind `mo.reduce.rms_norm`,
+"""PDL race test for the row-wise kernels behind `mo.composite.reduce.rms_norm`,
 layer norm, softmax and the reduce-shaped argmax.
 
 A real PDL chain with no host sync between the launches:

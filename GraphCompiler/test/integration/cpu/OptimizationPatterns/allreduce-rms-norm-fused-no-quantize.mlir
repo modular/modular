@@ -16,10 +16,10 @@ mo.graph @all_reduce_add_rms_norm_bf16<seq>(
   %allred:2, %out_chain = mo.distributed.allreduce.sum(%in0, %in1, %sig0, %sig1, %c) : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.buffer<[4096], ui8, gpu:0>, !mo.buffer<[4096], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.chain)
 
   %add0 = mo.add(%res0, %allred#0) : !mo.tensor<[seq, 8], bf16, gpu:0>
-  %norm0 = mo.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[seq, 8], bf16, gpu:0>
+  %norm0 = mo.composite.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[seq, 8], bf16, gpu:0>
 
   %add1 = mo.add(%res1, %allred#1) : !mo.tensor<[seq, 8], bf16, gpu:1>
-  %norm1 = mo.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[seq, 8], bf16, gpu:1>
+  %norm1 = mo.composite.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[seq, 8], bf16, gpu:1>
 
   mo.output %norm0, %norm1, %out_chain : !mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.chain
 }
@@ -45,10 +45,10 @@ mo.graph @all_reduce_add_rms_norm_cpu<seq>(
   %allred:2, %out_chain = mo.distributed.allreduce.sum(%in0, %in1, %sig0, %sig1, %c) : (!mo.tensor<[seq, 8], f32, cpu:0>, !mo.tensor<[seq, 8], f32, cpu:1>, !mo.buffer<[4096], ui8, cpu:0>, !mo.buffer<[4096], ui8, cpu:1>, !mo.chain) -> (!mo.tensor<[seq, 8], f32, cpu:0>, !mo.tensor<[seq, 8], f32, cpu:1>, !mo.chain)
 
   %add0 = mo.add(%res0, %allred#0) : !mo.tensor<[seq, 8], f32, cpu:0>
-  %norm0 = mo.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], f32, cpu:0>, !mo.tensor<[8], f32, cpu:0>) -> !mo.tensor<[seq, 8], f32, cpu:0>
+  %norm0 = mo.composite.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], f32, cpu:0>, !mo.tensor<[8], f32, cpu:0>) -> !mo.tensor<[seq, 8], f32, cpu:0>
 
   %add1 = mo.add(%res1, %allred#1) : !mo.tensor<[seq, 8], f32, cpu:1>
-  %norm1 = mo.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], f32, cpu:1>, !mo.tensor<[8], f32, cpu:1>) -> !mo.tensor<[seq, 8], f32, cpu:1>
+  %norm1 = mo.composite.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], f32, cpu:1>, !mo.tensor<[8], f32, cpu:1>) -> !mo.tensor<[seq, 8], f32, cpu:1>
 
   mo.output %norm0, %norm1, %out_chain : !mo.tensor<[seq, 8], f32, cpu:0>, !mo.tensor<[seq, 8], f32, cpu:1>, !mo.chain
 }
@@ -73,10 +73,10 @@ mo.graph @all_reduce_add_rms_norm_mismatched_epsilon<seq>(
   %allred:2, %out_chain = mo.distributed.allreduce.sum(%in0, %in1, %sig0, %sig1, %c) : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.buffer<[4096], ui8, gpu:0>, !mo.buffer<[4096], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.chain)
 
   %add0 = mo.add(%res0, %allred#0) : !mo.tensor<[seq, 8], bf16, gpu:0>
-  %norm0 = mo.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[seq, 8], bf16, gpu:0>
+  %norm0 = mo.composite.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[seq, 8], bf16, gpu:0>
 
   %add1 = mo.add(%res1, %allred#1) : !mo.tensor<[seq, 8], bf16, gpu:1>
-  %norm1 = mo.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-05> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[seq, 8], bf16, gpu:1>
+  %norm1 = mo.composite.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-05> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[seq, 8], bf16, gpu:1>
 
   mo.output %norm0, %norm1, %out_chain : !mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.chain
 }
@@ -101,10 +101,10 @@ mo.graph @all_reduce_add_rms_norm_cast_first<seq>(
   %allred:2, %out_chain = mo.distributed.allreduce.sum(%in0, %in1, %sig0, %sig1, %c) : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.buffer<[4096], ui8, gpu:0>, !mo.buffer<[4096], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.chain)
 
   %add0 = mo.add(%res0, %allred#0) : !mo.tensor<[seq, 8], bf16, gpu:0>
-  %norm0 = mo.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[seq, 8], bf16, gpu:0>
+  %norm0 = mo.composite.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[seq, 8], bf16, gpu:0>
 
   %add1 = mo.add(%res1, %allred#1) : !mo.tensor<[seq, 8], bf16, gpu:1>
-  %norm1 = mo.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[seq, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[seq, 8], bf16, gpu:1>
+  %norm1 = mo.composite.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[seq, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[seq, 8], bf16, gpu:1>
 
   mo.output %norm0, %norm1, %out_chain : !mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.chain
 }
@@ -128,10 +128,10 @@ mo.graph @all_reduce_add_rms_norm_mixed_cast_order<seq>(
   %allred:2, %out_chain = mo.distributed.allreduce.sum(%in0, %in1, %sig0, %sig1, %c) : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.buffer<[4096], ui8, gpu:0>, !mo.buffer<[4096], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.chain)
 
   %add0 = mo.add(%res0, %allred#0) : !mo.tensor<[seq, 8], bf16, gpu:0>
-  %norm0 = mo.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[seq, 8], bf16, gpu:0>
+  %norm0 = mo.composite.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[seq, 8], bf16, gpu:0>
 
   %add1 = mo.add(%res1, %allred#1) : !mo.tensor<[seq, 8], bf16, gpu:1>
-  %norm1 = mo.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[seq, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[seq, 8], bf16, gpu:1>
+  %norm1 = mo.composite.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[seq, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[seq, 8], bf16, gpu:1>
 
   mo.output %norm0, %norm1, %out_chain : !mo.tensor<[seq, 8], bf16, gpu:0>, !mo.tensor<[seq, 8], bf16, gpu:1>, !mo.chain
 }

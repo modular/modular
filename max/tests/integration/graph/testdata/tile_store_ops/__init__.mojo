@@ -10,19 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Transitional tile-codegen scaffolding: the naive `mo.reduce.rms_norm` tile
-driver, exercising the STORE variant of the tile-based epilogue.
+"""A naive rms_norm tile kernel for the tile-based fusion tests.
 
-Companion to `_naive_tile_matmul.mojo`, which exercises the COMPUTE variant
-(`ComputeOutputFusionTile` / `TileOperation`, non-terminal). The graph compiler
-registers one primary kernel per op, so a kernel author picks store or compute
-fusion for that op; this file picks store (`OutputFusionTile` / `TileConsumer`,
-terminal) for `mo.reduce.rms_norm`.
-
-This is transitional scaffolding for bringing up the tile-based codegen path,
-not the intended end state. It (and the `tile_based_fusion` plumbing it rides
-on) is expected to be removed once every kernel for the target device has been
-ported to `TileTensor` and the tile path is productionized (see GEX-3919).
+It exercises the STORE variant of the tile-based epilogue (`OutputFusionTile`
+/ `TileConsumer`, terminal), where `_naive_tile_matmul.mojo` in the builtin
+kernels exercises the COMPUTE variant. It runs as the custom op
+`tile_rms_norm`, so the tests don't depend on how the graph compiler lowers
+`mo.composite.reduce.rms_norm`.
 """
 
 import extensibility
@@ -37,11 +31,12 @@ from std.utils import IndexList
 from linalg.utils import TileConsumer
 from extensibility import (
     InputTensor,
+    OutputTensor,
     _FusedOutputTileTensor,
     get_kernel_tile_shape,
 )
 
-from ._tile_fusion import _tile_store_consumer
+from builtin_kernels._tile_fusion import _tile_store_consumer
 
 
 @fieldwise_init
@@ -126,30 +121,38 @@ struct _NaiveRMSNormTileAdapter[
         )
 
 
-# Transitional tile-codegen scaffolding (remove per GEX-3941): a SEPARATE,
-# device-specific `mo.reduce.rms_norm` registration for sm_100a (B200). It
-# declares the tile fused-output IOSpec (`_FusedOutputTileTensor`); the
-# generic SIMD `ReduceRMSNorm` in `reductions.mojo` stays untouched and keeps
-# serving non-tile devices. Registering the tile kernel as its own struct
-# (rather than a second `execute` overload) avoids the importer's single-
-# `execute`-slot collapse. It must NOT become the canonical B200 rms_norm: the
-# graph-compiler selection filter in `MojoRegistry::getResolvedKernel`
-# discounts this tile candidate unless the target device has
-# `tile_based_fusion` set, so a default B200 (flag off) resolves to the
-# generic SIMD `mo.reduce.rms_norm` and only the tile-codegen path (flag on)
-# selects this kernel. Expected to be removed once the tile path is
-# productionized (see GEX-3919).
-@extensibility.register(
-    "mo.reduce.rms_norm", type="gpu", api="cuda", arch="sm_100a"
-)
+# The graph resolves a custom op's kernel when it is built, before it knows
+# about `tile_based_fusion`, and skips tile kernels then. This generic
+# registration lets it resolve; the sm_100a tile kernel below outranks it when
+# the flag is set.
+@extensibility.register("tile_rms_norm")
+struct RMSNormTileFallback:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        raise Error("tile_rms_norm runs only with tile_based_fusion")
+
+
+# Registered for sm_100a (B200) only, with the tile fused-output IOSpec
+# (`_FusedOutputTileTensor`): the graph compiler selects it only when the
+# target has `tile_based_fusion` set.
+@extensibility.register("tile_rms_norm", type="gpu", api="cuda", arch="sm_100a")
 struct RMSNormTileSM100:
     @staticmethod
     def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
-        epsilon: Float32,
-        weight_offset: Float32,
+        epsilon: Float32 = 1e-6,
+        weight_offset: Float32 = 0.0,
         multiply_before_cast: Bool = True,
     ](
         output: _FusedOutputTileTensor[dtype=dtype, rank=rank, ...],

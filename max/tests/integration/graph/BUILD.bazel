@@ -912,6 +912,10 @@ modular_py_test(
         "conftest.py",
         "test_tile_based_fusion.py",
     ],
+    data = ["//max/tests/integration/graph/testdata/tile_store_ops"],
+    env = {
+        "MODULAR_TILE_STORE_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/tile_store_ops)",
+    },
     # NVIDIA-only: tile-based fusion is not yet validated on AMD/Apple GPUs —
     # a coverage gate, not a hardware incompatibility (the codegen path emits
     # generic Mojo via `foreach_fusion_tile` with no NVIDIA-specific branch).

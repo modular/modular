@@ -18,7 +18,8 @@ The EP dispatch packs a device's routed rows from row 0, and the last
 expert offset counts them. That count lives on the device, so the launch
 covers the whole static buffer and every row past it returns at once; rows
 past it are left unwritten. The body is `rms_norm`'s, on the same launch, so
-the routed rows match `mo.reduce.rms_norm` of the scaled input bit for bit.
+the routed rows match `mo.composite.reduce.rms_norm` of the scaled input bit
+for bit.
 
 `norm.routed_rows_rms_norm_finalize` folds that norm into `moe.finalize`
 (`nn.routed_rows_finalize`): each token sums its routed rows' norms by router

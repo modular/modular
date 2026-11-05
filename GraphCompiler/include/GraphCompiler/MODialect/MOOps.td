@@ -2230,52 +2230,6 @@ def MO_ReduceMaxOp : MO_ImplicitAxisReductionOp<"reduce.max"> {
 // Normalization ops
 //===----------------------------------------------------------------------===//
 
-def MO_ReduceRMSNormOp : MO_TensorOp<"reduce.rms_norm", [
-  AllDTypesMatch<["input", "result"]>,
-  AllShapeAttrsMatch<["input", "result"]>,
-  MO_ParamDeclaration,
-  MO_SingleDevice,
-  Pure,
-]> {
-  let summary = "RMS normalization operation";
-  let description = [{
-    Computes `input / sqrt(mean(input^2) + epsilon) * (weight + weight_offset)`.
-
-    `epsilon` and `weight_offset` are compile-time constants: targets that
-    need scalar constants as attributes cannot take them as operands.
-
-    `multiply_before_cast` false (Llama-style) casts to the output dtype
-    before multiplying by the weight; true (Gemma-style) multiplies first.
-
-    Example:
-
-    ```mlir
-      %res = mo.reduce.rms_norm(%input, %weight)
-        {epsilon = #M.dense_array<9.99999997E-7> : tensor<f32>,
-         weight_offset = #M.dense_array<0.0> : tensor<f32>,
-         multiply_before_cast = false} :
-        (!mo.tensor<[2, 3], bf16, gpu:0>, !mo.tensor<[3], bf16, gpu:0>)
-        -> !mo.tensor<[2, 3], bf16, gpu:0>
-    ```
-  }];
-
-  let arguments = (ins
-    MO_Tensor:$input,
-    MO_Tensor:$weight,
-    MO_F32ScalarAttr:$epsilon,
-    MO_F32ScalarAttr:$weight_offset,
-    BoolAttr:$multiply_before_cast,
-    MO_ParamDecls:$outputParamDecls
-  );
-  let results = (outs MO_Tensor:$result);
-  let assemblyFormat = [{
-    `` custom<ParamDecls>($outputParamDecls) `(` operands `)`
-    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
-    `multiply_before_cast` `=` $multiply_before_cast `}` attr-dict `:`
-    functional-type(operands, results)
-  }];
-}
-
 def MO_ReduceGroupNormOp : MO_TensorOp<"reduce.group_norm", [
   AllShapeAttrsMatch<["input", "result"]>,
   MO_ParamDeclaration,

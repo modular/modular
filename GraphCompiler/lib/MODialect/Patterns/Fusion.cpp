@@ -247,7 +247,7 @@ struct DecomposeSmallReduceAddPattern
   static bool feedsRmsNorm(Value v) {
     while (v.hasOneUse()) {
       Operation *user = *v.getUsers().begin();
-      if (isa<MO::ReduceRMSNormOp>(user))
+      if (isa<MO::Composite::ReduceRMSNormOp>(user))
         return true;
       if (isa<MO::CastOp, MO::RebindOp>(user)) {
         v = user->getResult(0);
@@ -1161,12 +1161,12 @@ struct LayerNormPattern
 
 struct RMSNormFusedResidualAddPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
-                                           MO::ReduceRMSNormOp> {
+                                           MO::Composite::ReduceRMSNormOp> {
   RMSNormFusedResidualAddPattern(MLIRContext *ctx)
       : DeviceAwareRewritePattern(ctx, 3) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::ReduceRMSNormOp op,
+  deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp op,
                              MO::DeviceAwareRewriter &rewriter) const override {
     // Matches rms_norm(rms_norm(input) + residual_input).
     auto addOp = op.getInput().getDefiningOp<MO::AddOp>();
@@ -1180,11 +1180,13 @@ struct RMSNormFusedResidualAddPattern
 
     Value innerRmsNormResult = addOp.getOperand(0);
     Value residualInput = addOp.getOperand(1);
-    auto innerRmsNorm = innerRmsNormResult.getDefiningOp<MO::ReduceRMSNormOp>();
+    auto innerRmsNorm =
+        innerRmsNormResult.getDefiningOp<MO::Composite::ReduceRMSNormOp>();
     if (!innerRmsNorm) {
       innerRmsNormResult = addOp.getOperand(1);
       residualInput = addOp.getOperand(0);
-      innerRmsNorm = innerRmsNormResult.getDefiningOp<MO::ReduceRMSNormOp>();
+      innerRmsNorm =
+          innerRmsNormResult.getDefiningOp<MO::Composite::ReduceRMSNormOp>();
       if (!innerRmsNorm)
         return rewriter.notifyMatchFailure(op, "inner rms_norm not found");
     }
@@ -1230,12 +1232,12 @@ struct RMSNormFusedResidualAddPattern
 // higher-benefit `RMSNormFusedResidualAddPattern`.
 struct RMSNormResidualAddPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
-                                           MO::ReduceRMSNormOp> {
+                                           MO::Composite::ReduceRMSNormOp> {
   RMSNormResidualAddPattern(MLIRContext *ctx)
       : DeviceAwareRewritePattern(ctx, 2) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::ReduceRMSNormOp op,
+  deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp op,
                              MO::DeviceAwareRewriter &rewriter) const override {
     auto addOp = op.getInput().getDefiningOp<MO::AddOp>();
     if (!addOp)
@@ -1247,8 +1249,8 @@ struct RMSNormResidualAddPattern
 
     Value lhs = addOp.getOperand(0);
     Value rhs = addOp.getOperand(1);
-    if (lhs.getDefiningOp<MO::ReduceRMSNormOp>() ||
-        rhs.getDefiningOp<MO::ReduceRMSNormOp>())
+    if (lhs.getDefiningOp<MO::Composite::ReduceRMSNormOp>() ||
+        rhs.getDefiningOp<MO::Composite::ReduceRMSNormOp>())
       return rewriter.notifyMatchFailure(
           op, "double-norm topology handled by RMSNormFusedResidualAddPattern");
 
@@ -1296,7 +1298,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8Pattern
     if (!input.hasOneUse())
       return rewriter.notifyMatchFailure(op, "input has multiple uses");
 
-    auto rmsNormOp = input.getDefiningOp<MO::ReduceRMSNormOp>();
+    auto rmsNormOp = input.getDefiningOp<MO::Composite::ReduceRMSNormOp>();
     if (!rmsNormOp)
       return rewriter.notifyMatchFailure(op, "input not a rms_norm operation");
 
@@ -1345,11 +1347,12 @@ static bool matchResidualOp(Value val, MO::AddOp &residualOp,
   return false;
 }
 
-/// Finds an `mo.reduce.rms_norm` consumer of `val` and returns it via
+/// Finds an `mo.composite.reduce.rms_norm` consumer of `val` and returns it via
 /// `rmsNormOp`.
-static bool matchRMSNormOp(Value val, MO::ReduceRMSNormOp &rmsNormOp) {
+static bool matchRMSNormOp(Value val,
+                           MO::Composite::ReduceRMSNormOp &rmsNormOp) {
   for (Operation *user : val.getUsers()) {
-    auto op = dyn_cast<MO::ReduceRMSNormOp>(user);
+    auto op = dyn_cast<MO::Composite::ReduceRMSNormOp>(user);
     if (!op)
       continue;
     rmsNormOp = op;
@@ -1377,7 +1380,7 @@ matchQuantizeOp(Value val,
 /// norm, which the kernel serves in the input dtype.
 static bool
 verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
-                         MO::ReduceRMSNormOp rmsNormOp,
+                         MO::Composite::ReduceRMSNormOp rmsNormOp,
                          MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp) {
   if (!inputTy.hasRank())
     return false;
@@ -1447,7 +1450,7 @@ public:
       return;
     // The composite carries one epsilon, weight_offset and cast order for
     // every device.
-    MO::ReduceRMSNormOp firstNorm = rmsNormOps.begin()->second;
+    MO::Composite::ReduceRMSNormOp firstNorm = rmsNormOps.begin()->second;
     for (auto &[device, rmsNormOp] : rmsNormOps)
       if (rmsNormOp.getEpsilonAttr() != firstNorm.getEpsilonAttr() ||
           rmsNormOp.getWeightOffsetAttr() != firstNorm.getWeightOffsetAttr() ||
@@ -1469,7 +1472,7 @@ public:
     llvm::SmallVector<Value> scaleUbOperands;
     for (Value out : allReduceOp.getOutputs()) {
       DeviceRefAttr device = cast<TensorValue>(out).getType().getDeviceRef();
-      MO::ReduceRMSNormOp rmsNormOp = rmsNormOps.at(device);
+      MO::Composite::ReduceRMSNormOp rmsNormOp = rmsNormOps.at(device);
       outputTypes.push_back(normedResultFor(device).getType());
       outScaleTypes.push_back(scaleTypeFor(device));
       scaleUbOperands.push_back(scaleUbFor(device));
@@ -1501,7 +1504,7 @@ public:
     for (auto [i, out] : llvm::enumerate(allReduceOp.getOutputs())) {
       DeviceRefAttr device = cast<TensorValue>(out).getType().getDeviceRef();
       MO::AddOp residualOp = residualOps.at(device);
-      MO::ReduceRMSNormOp rmsNormOp = rmsNormOps.at(device);
+      MO::Composite::ReduceRMSNormOp rmsNormOp = rmsNormOps.at(device);
       // Replace the intermediate result.
       residualOp.getResult().replaceAllUsesExcept(
           allReduceFusedOp.getOutResidual()[i], rmsNormOp);
@@ -1519,7 +1522,7 @@ private:
   DeviceRefAttr targetDevice;
   OpBuilder builder;
   llvm::DenseMap<DeviceRefAttr, MO::AddOp> residualOps;
-  llvm::DenseMap<DeviceRefAttr, MO::ReduceRMSNormOp> rmsNormOps;
+  llvm::DenseMap<DeviceRefAttr, MO::Composite::ReduceRMSNormOp> rmsNormOps;
   llvm::DenseMap<DeviceRefAttr, MO::Composite::QuantizeDynamicScaledFP8Op>
       quantizeOps;
   llvm::DenseMap<DeviceRefAttr, Value> residualValues;
@@ -1551,7 +1554,7 @@ private:
       return false;
 
     MO::AddOp residualOp;
-    MO::ReduceRMSNormOp rmsNormOp;
+    MO::Composite::ReduceRMSNormOp rmsNormOp;
     MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp;
     Value residualValue;
 
@@ -1591,7 +1594,7 @@ private:
 //   %r0..N = mo.tensor.unbundle(%bundle_result)
 //   // Per-device chain, OUTSIDE the parallel:
 //   %add_i  = mo.add(%residual_i, %r_i)
-//   %norm_i = mo.reduce.rms_norm(%add_i, %gamma_i, %eps, %wo)
+//   %norm_i = mo.composite.reduce.rms_norm(%add_i, %gamma_i, %eps, %wo)
 //   %q_i:2  = mo.composite.quantize_dynamic_scaled_fp8(%norm_i, %scale_ub)
 //
 // rebuilds the parallel with two extra bundle inputs (residuals, gammas)
@@ -1655,7 +1658,7 @@ private:
   size_t yieldOperandIdx = 0;
   // Per-launch operand chains.
   SmallVector<MO::AddOp> addOps;
-  SmallVector<MO::ReduceRMSNormOp> rmsNormOps;
+  SmallVector<MO::Composite::ReduceRMSNormOp> rmsNormOps;
   SmallVector<MO::Composite::QuantizeDynamicScaledFP8Op> quantizeOps;
   SmallVector<Value> residualValues;
   SmallVector<Value> gammaValues;
@@ -1718,7 +1721,7 @@ private:
       Value launchAllredOut = unbundleOp.getResult(i);
       MO::AddOp addOp;
       Value residualValue;
-      MO::ReduceRMSNormOp rmsNormOp;
+      MO::Composite::ReduceRMSNormOp rmsNormOp;
       MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp;
       if (!matchResidualOp(launchAllredOut, addOp, residualValue))
         return false;
@@ -2011,12 +2014,12 @@ static MO::AddOp followToAdd(Value v, SmallVectorImpl<Operation *> &chain) {
 /// traversed transparently.
 struct ReduceRMSNormRoPEPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
-                                           MO::ReduceRMSNormOp> {
+                                           MO::Composite::ReduceRMSNormOp> {
   ReduceRMSNormRoPEPattern(MLIRContext *ctx)
       : DeviceAwareRewritePattern(ctx, 2) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::ReduceRMSNormOp rmsNormOp,
+  deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp rmsNormOp,
                              MO::DeviceAwareRewriter &rewriter) const override {
     Value normed = rmsNormOp.getResult();
     auto normedTy = cast<MO::TensorType>(normed.getType());
@@ -3421,7 +3424,8 @@ public:
 // Graph pattern detected:
 //   %gemv = mo.matmul(%x, %W) [transpose_b = true] : [1, K] x [N, K] -> [1, N]
 //   %normed_slice = mo.slice(%gemv) : [1, N] -> [1, N_normed]
-//   %normed = mo.reduce.rms_norm(%normed_slice, %gamma, ...) : [1, N_normed]
+//   %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma, ...)
+//       : [1, N_normed]
 //   %unnormed_slice = mo.slice(%gemv) : [1, N] -> [1, N - N_normed]
 //
 // Fused into:
@@ -3431,12 +3435,12 @@ public:
 
 struct MatmulFusedPartialRMSNormPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
-                                           MO::ReduceRMSNormOp> {
+                                           MO::Composite::ReduceRMSNormOp> {
   MatmulFusedPartialRMSNormPattern(MLIRContext *ctx)
       : DeviceAwareRewritePattern(ctx, 2) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::ReduceRMSNormOp rmsNormOp,
+  deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp rmsNormOp,
                              MO::DeviceAwareRewriter &rewriter) const override {
     auto normedOutputTy = cast<MO::TensorType>(rmsNormOp.getResult().getType());
     DeviceRefAttr device = normedOutputTy.getDeviceRef();

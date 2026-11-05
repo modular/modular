@@ -252,7 +252,7 @@ def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape(
 @extensibility.register("quantization.rms_norm_quantize_dynamic_scaled_float8")
 struct RMSNormQuantizeDynamicScaledFloat8:
     """Registers the `quantization.rms_norm_quantize_dynamic_scaled_float8` graph op:
-    `mo.reduce.rms_norm` fused with a group-scaled (blockwise-FP8)
+    `mo.composite.reduce.rms_norm` fused with a group-scaled (blockwise-FP8)
     `mo.composite.quantize_dynamic_scaled_fp8`. Same outputs and scale layout as the
     unfused pair; `group_size_or_per_token` must be a proper divisor of the
     row (per-token scales stay on the rms_norm + quantize composite).

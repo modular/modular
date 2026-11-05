@@ -217,7 +217,7 @@ def run_case[
     var shape = Coord(rows, cols)
     var scale_shape = Coord(groups, rows_pad)
 
-    # Unfused pair, exactly as `mo.reduce.rms_norm` + the group quantize run.
+    # Unfused pair, exactly as `mo.composite.reduce.rms_norm` + the group quantize run.
     launch_rms_norm[
         in_dtype, cols, eps_f32, sep_weight_offset, multiply_before_cast
     ](
