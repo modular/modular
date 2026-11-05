@@ -33,7 +33,6 @@ def matrix_band_part[
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](Coord) -> SIMD[dtype, width],
-    target: StaticString = "cpu",
 ](
     input_0_fn: InputFnType,
     input_shape: Coord,
@@ -57,8 +56,6 @@ def matrix_band_part[
         simd_width: SIMD width for the elementwise kernel launch.
         InputFnType: Callable type returning the input element at a given
             index as a `SIMD` vector.
-        target: Target device for the elementwise kernel (defaults to
-            `"cpu"`).
 
     Args:
         input_0_fn: Function returning the input element at a given index.
@@ -69,7 +66,6 @@ def matrix_band_part[
         output: Mutable output tensor receiving the band-part result.
         ctx: Device context used to launch the elementwise kernel.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     var lower_diagonal_index = Int(num_lower.load[1](coord[0]))
     var upper_diagonal_index = Int(num_upper.load[1](coord[0]))
@@ -91,7 +87,6 @@ def matrix_band_part[
             rank,
             simd_width,
             exclude=exclude,
-            target=target,
         ](
             input_0_fn,
             input_shape,
@@ -115,7 +110,6 @@ def _matrix_band_part_impl[
     & RegisterPassable
     & def[width: Int](Coord) -> SIMD[dtype, width],
     exclude: Bool,
-    target: StaticString = "cpu",
 ](
     input_0_fn: InputFnType,
     input_shape: Coord,
@@ -138,7 +132,6 @@ def _matrix_band_part_impl[
         output: Mutable output tensor receiving the band-part result.
         ctx: Device context used to launch the elementwise kernel.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     comptime assert rank >= 2, "Matrix band only supports rank >=2"
 

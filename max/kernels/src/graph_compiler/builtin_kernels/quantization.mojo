@@ -264,7 +264,6 @@ struct RMSNormQuantizeDynamicScaledFloat8:
         //,
         group_size_or_per_token: Int,
         multiply_before_cast: Bool,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -290,7 +289,7 @@ struct RMSNormQuantizeDynamicScaledFloat8:
         var input_view = unsafe_fused_view(input)
         comptime assert conforms_to(type_of(input_view), Loadable)
 
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
         comptime num_cols = type_of(input)._shape_types[1].static_value
         comptime assert (
             num_cols != UNKNOWN_VALUE
@@ -331,7 +330,6 @@ struct ResizeNearest:
     def execute[
         coordinate_transform_mode: Int,
         round_mode: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -346,7 +344,6 @@ struct ResizeNearest:
         resize_nearest_neighbor[
             CoordinateTransformationMode(coordinate_transform_mode),
             RoundMode(round_mode),
-            target=target,
         ](
             input.to_tile_tensor[dtype](),
             output.to_tile_tensor(),
@@ -376,7 +373,6 @@ struct ResizeLinear:
     def execute[
         coordinate_transform_mode: Int,
         antialias: Bool,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -388,7 +384,7 @@ struct ResizeLinear:
         comptime dtype = type_of(output).dtype
         comptime assert type_of(input).rank == type_of(output).rank
         comptime assert type_of(size).rank == 1
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             resize_linear[
                 CoordinateTransformationMode(coordinate_transform_mode),
                 antialias,
@@ -428,7 +424,6 @@ struct ResizeBicubic:
     @staticmethod
     def execute[
         antialias: Bool,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -464,12 +459,12 @@ struct ResizeBicubic:
                 " non-empty output"
             )
         comptime if not antialias:
-            resize_bicubic[dtype=dtype, target=target](
+            resize_bicubic[dtype=dtype](
                 output.to_tile_tensor(),
                 input.to_tile_tensor[dtype](),
                 ctx,
             )
-        elif not is_cpu[target]():
+        elif not ctx.target.is_cpu():
             raise Error("an antialiased mo.resize.bicubic runs on the CPU")
         elif dtype != DType.float32 and dtype != DType.uint8:
             raise Error(
@@ -565,7 +560,6 @@ struct VroomQ40Matmul:
     @inline(.always)
     def execute[
         _trace_name: StaticString,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -575,7 +569,7 @@ struct VroomQ40Matmul:
         comptime assert conforms_to(type_of(c), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
-        comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert ctx.target.is_cpu(), "only valid on CPUs"
         comptime assert type_of(c).rank == 2
         comptime assert type_of(a).rank == 2
         comptime assert type_of(b).rank == 2
@@ -676,7 +670,6 @@ struct VroomQ4KMatmul:
     @inline(.always)
     def execute[
         _trace_name: StaticString,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -686,7 +679,7 @@ struct VroomQ4KMatmul:
         comptime assert conforms_to(type_of(c), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
-        comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert ctx.target.is_cpu(), "only valid on CPUs"
         comptime assert type_of(c).rank == 2
         comptime assert type_of(a).rank == 2
         comptime assert type_of(b).rank == 2
@@ -791,7 +784,6 @@ struct VroomQ6KMatmul:
     @inline(.always)
     def execute[
         _trace_name: StaticString,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -801,7 +793,7 @@ struct VroomQ6KMatmul:
         comptime assert conforms_to(type_of(c), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
-        comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert ctx.target.is_cpu(), "only valid on CPUs"
         comptime assert type_of(c).rank == 2
         comptime assert type_of(a).rank == 2
         comptime assert type_of(b).rank == 2
@@ -999,7 +991,6 @@ struct Struct_quantize_dynamic_block_scaled:
     @staticmethod
     def execute[
         SF_VECTOR_SIZE: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -1012,7 +1003,7 @@ struct Struct_quantize_dynamic_block_scaled:
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
         )
@@ -1038,7 +1029,6 @@ struct Struct_swiglu_quantize_dynamic_block_scaled:
         activation: StaticString,
         swiglu_alpha: Float32,
         swiglu_limit: Float32,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -1054,7 +1044,6 @@ struct Struct_swiglu_quantize_dynamic_block_scaled:
                 attribute; the activation is built at compile time.
             swiglu_alpha: The activation's alpha constant.
             swiglu_limit: The activation's clamp limit.
-            target: The target GPU device.
 
         Args:
             output: The quantized activation of shape `[M, N]` (or `N // 2`
@@ -1076,7 +1065,7 @@ struct Struct_swiglu_quantize_dynamic_block_scaled:
             type_of(scales).rank == 2 or type_of(scales).rank == 5
         ), "scales must be rank 2 (AMD) or rank 5 (SM100/SM120)"
         comptime assert type_of(gate_up).rank == 2
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "gated block-scaled quantization only supports GPUs with native"
             " block scaled support"
         )
@@ -1105,7 +1094,6 @@ struct Struct_rope_quantize_dynamic_block_scaled:
         SF_VECTOR_SIZE: Int,
         head_dim: Int,
         inverse: Bool,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -1120,7 +1108,6 @@ struct Struct_rope_quantize_dynamic_block_scaled:
             SF_VECTOR_SIZE: Elements per block scale.
             head_dim: Columns per head.
             inverse: Whether to rotate by the conjugate of each frequency.
-            target: The target GPU device.
 
         Args:
             output: The quantized input of shape `[M, N]` (or `N // 2`
@@ -1143,7 +1130,7 @@ struct Struct_rope_quantize_dynamic_block_scaled:
         comptime assert type_of(scales).rank == 5
         comptime assert type_of(input).rank == 2
         comptime assert type_of(freqs).rank == 2
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "RoPE block-scaled quantization only supports GPUs with native"
             " block scaled support"
         )
@@ -1166,9 +1153,7 @@ struct Struct_rms_norm_quantize_mxfp8_q_kv:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
         kv_output: Some[Output & Tensor],
@@ -1179,9 +1164,6 @@ struct Struct_rms_norm_quantize_mxfp8_q_kv:
         context: DeviceContext,
     ) raises:
         """RMS-normalizes the q and kv parts of each row, quantizing q to MXFP8.
-
-        Parameters:
-            target: The target GPU device.
 
         Args:
             output: The quantized q of shape `[M, q_cols]`.
@@ -1205,7 +1187,7 @@ struct Struct_rms_norm_quantize_mxfp8_q_kv:
         comptime assert type_of(input).rank == 2
         comptime assert type_of(q_gamma).rank == 1
         comptime assert type_of(kv_gamma).rank == 1
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "RMS norm MXFP8 quantization only supports GPUs with native"
             " block scaled support"
         )
@@ -1228,9 +1210,7 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -1253,9 +1233,9 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
         comptime assert type_of(scales_offsets).rank == 1
         comptime assert type_of(expert_ids).rank == 1
         comptime assert type_of(sf_tensor).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped quantize dynamic block scaled only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped quantize dynamic block scaled only supports GPUs"
 
         grouped_quantize_dynamic_scaled_fp4_async(
             output.to_tile_tensor(),
@@ -1290,7 +1270,6 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
     @staticmethod
     def execute[
         row_index_divisor: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -1318,9 +1297,9 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
         comptime assert type_of(expert_ids).rank == 1
         comptime assert type_of(sf_tensor).rank == 1
         comptime assert type_of(row_indices).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped quantize dynamic block scaled only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped quantize dynamic block scaled only supports GPUs"
 
         grouped_quantize_dynamic_scaled_fp4_async[
             row_indices_dtype=row_indices_dtype,
@@ -1355,7 +1334,6 @@ struct Struct_grouped_quantize_nvfp4_row_scaled:
     @staticmethod
     def execute[
         apply_relu2: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -1376,9 +1354,9 @@ struct Struct_grouped_quantize_nvfp4_row_scaled:
         comptime assert type_of(input).rank == 2
         comptime assert type_of(row_offsets).rank == 1
         comptime assert type_of(scales_offsets).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped quantize nvfp4 row scaled only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped quantize nvfp4 row scaled only supports GPUs"
 
         @inline(.always)
         def input_fn[
@@ -1418,7 +1396,6 @@ struct Struct_grouped_quantize_nvfp4_row_scaled_with_row_indices:
     def execute[
         apply_relu2: Int,
         row_index_divisor: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -1443,9 +1420,9 @@ struct Struct_grouped_quantize_nvfp4_row_scaled_with_row_indices:
         comptime assert type_of(row_offsets).rank == 1
         comptime assert type_of(scales_offsets).rank == 1
         comptime assert type_of(row_indices).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped quantize nvfp4 row scaled only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped quantize nvfp4 row scaled only supports GPUs"
 
         @inline(.always)
         def input_fn[
@@ -1480,9 +1457,7 @@ struct Struct_quantize_dynamic_block_scaled_mxfp4:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -1494,7 +1469,7 @@ struct Struct_quantize_dynamic_block_scaled_mxfp4:
         comptime assert type_of(output).rank == 2
         comptime assert type_of(scales).rank == 2
         comptime assert type_of(input).rank == 2
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
         )
@@ -1520,9 +1495,7 @@ struct Struct_dequant_mxfp4:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         scales: Some[Input & Tensor],
@@ -1537,7 +1510,9 @@ struct Struct_dequant_mxfp4:
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
         comptime scales_rank = type_of(scales).rank
-        comptime assert is_gpu[target](), "MXFP4 dequant only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "MXFP4 dequant only supports GPUs"
         comptime assert (
             in_type == .uint8
         ), "MXFP4 dequant input must be uint8 (packed FP4)"
@@ -1577,7 +1552,7 @@ struct Struct_dequant_mxfp4:
                 "MXFP4 dequant output must be bfloat16 or float32 with rank-5"
                 " scales; float8_e4m3fn needs rank-2 scales"
             )
-            dequant_mx[target](
+            dequant_mx(
                 context,
                 out_tt,
                 in_tt,
@@ -1599,9 +1574,7 @@ struct Struct_dequant_mxfp8:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         scales: Some[Input & Tensor],
@@ -1635,7 +1608,7 @@ struct Struct_dequant_mxfp8:
         var scales_tt = scales.to_tile_tensor()
         var out_tt = output.to_tile_tensor()
 
-        dequant_mx[target](
+        dequant_mx(
             context,
             out_tt,
             in_tt,
@@ -1656,9 +1629,7 @@ struct Struct_dequant_nvfp4:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         scales: Some[Input & Tensor],
@@ -1697,7 +1668,7 @@ struct Struct_dequant_nvfp4:
         # num_cols is the unpacked column count (2x packed)
         var num_cols = Int(in_tt.dim[1]()) * 2
 
-        dequant_nvfp4[target](
+        dequant_nvfp4(
             context,
             out_tt,
             in_tt,
@@ -1717,7 +1688,6 @@ struct Struct_quantize_dynamic_block_scaled_mxfp6:
     @staticmethod
     def execute[
         FP6_FORMAT: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -1730,11 +1700,9 @@ struct Struct_quantize_dynamic_block_scaled_mxfp6:
         comptime assert type_of(output).rank == 2
         comptime assert type_of(scales).rank == 2
         comptime assert type_of(input).rank == 2
-        comptime assert is_gpu[
-            target
-        ](), (
-            "MXFP6 quantization requires a GPU with native block-scaled support"
-        )
+        comptime assert (
+            context.target.is_gpu()
+        ), "MXFP6 quantization requires a GPU with native block-scaled support"
         comptime assert FP6_FORMAT in (
             0,
             1,
@@ -1757,7 +1725,6 @@ struct Struct_dequant_mxfp6:
     @staticmethod
     def execute[
         FP6_FORMAT: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -1773,7 +1740,9 @@ struct Struct_dequant_mxfp6:
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
         comptime assert type_of(scales).rank == 2
-        comptime assert is_gpu[target](), "MXFP6 dequant only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "MXFP6 dequant only supports GPUs"
         comptime assert out_type in (
             DType.bfloat16,
             DType.float8_e4m3fn,
@@ -1815,7 +1784,6 @@ struct Struct_interleave_block_scales:
     @staticmethod
     def execute[
         SF_VECTOR_SIZE: Int,
-        target: StaticString,
     ](
         output_scales: Some[Output & Tensor],
         input_scales: Some[Input & Tensor],
@@ -1826,7 +1794,7 @@ struct Struct_interleave_block_scales:
         comptime scales_type = type_of(output_scales).dtype
         comptime assert type_of(output_scales).rank == 5
         comptime assert type_of(input_scales).rank == 2
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
         )
@@ -1849,16 +1817,14 @@ struct Struct_block_scaled_preshuffle_b_5d:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "quantization.block.scaled.preshuffle.b.5d is GPU-only (AMD CDNA4"
             " consumer)"
         )
@@ -1892,9 +1858,7 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         expert_start_indices: Some[Input & Tensor],
@@ -1910,7 +1874,7 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
         comptime assert type_of(expert_start_indices).rank == 1
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "quantization.block.scaled.preshuffle.scale.4d_per_expert is"
             " GPU-only"
         )
@@ -2093,7 +2057,6 @@ struct QuantizeTensorDynamicScaledFloat8:
     @staticmethod
     def execute[
         group_size_or_per_token: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -2114,7 +2077,7 @@ struct QuantizeTensorDynamicScaledFloat8:
         var input_view = unsafe_fused_view(input)
         comptime assert conforms_to(type_of(input_view), Loadable)
 
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         @inline(.always)
         def input_fn[
@@ -2149,7 +2112,6 @@ struct QuantizeDynamicScaledFloat8:
     @staticmethod
     def execute[
         group_size_or_per_token: Int,
-        target: StaticString,
         amax_floor: Float32 = 0,
     ](
         output: Some[Output & Tensor],
@@ -2171,7 +2133,7 @@ struct QuantizeDynamicScaledFloat8:
         var input_view = unsafe_fused_view(input)
         comptime assert conforms_to(type_of(input_view), Loadable)
 
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         # The `0` default leaves the dynamic-scale floor unset.
 
@@ -2220,7 +2182,6 @@ struct QuantizeDynamicScaledFloat8RowBounded:
     @staticmethod
     def execute[
         group_size_or_per_token: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
@@ -2244,7 +2205,7 @@ struct QuantizeDynamicScaledFloat8RowBounded:
         var input_view = unsafe_fused_view(input)
         comptime assert conforms_to(type_of(input_view), Loadable)
 
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         @inline(.always)
         def input_fn[

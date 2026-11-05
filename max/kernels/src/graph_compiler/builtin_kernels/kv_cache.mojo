@@ -113,7 +113,6 @@ struct Struct_kv_cache_store_paged:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         key_or_value: Int,
         v_head_dim: Int = -1,
     ](
@@ -202,7 +201,7 @@ struct Struct_kv_cache_store_paged:
                 )
             )
 
-        kv_cache_store_ragged[target=target, head_dim_offset=head_dim_offset](
+        kv_cache_store_ragged[head_dim_offset=head_dim_offset](
             cache,
             inputs.shape(),
             input_row_offsets.to_tile_tensor[.uint32](),
@@ -223,7 +222,6 @@ struct Struct_kv_cache_gather_rows_ragged_paged:
     @staticmethod
     def execute[
         key_or_value: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         slots: Some[Input & Tensor],
@@ -272,7 +270,7 @@ struct Struct_kv_cache_gather_rows_ragged_paged:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        kv_cache_gather_rows_ragged[target=target](
+        kv_cache_gather_rows_ragged(
             output.to_tile_tensor[kv_type](),
             slots.to_tile_tensor[.int32](),
             row_offsets.to_tile_tensor[.uint32](),
@@ -289,8 +287,6 @@ struct Struct_kv_cache_store_k_scales_paged:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
-        //,
         quantization_granularity: Int,
     ](
         input_k_scales: Some[Input & Fused & LoadAccess],
@@ -416,9 +412,9 @@ struct Struct_kv_cache_store_k_scales_paged:
             )
 
         comptime simd_width = (
-            simd_width_of[scale_dtype, target=context.target]() if is_gpu[
-                target
-            ]() else simd_width_of[
+            simd_width_of[
+                scale_dtype, target=context.target
+            ]() if context.target.is_gpu() else simd_width_of[
                 scale_dtype, target=CompilationTarget.current()
             ]()
         )
@@ -436,7 +432,7 @@ struct Struct_kv_cache_store_padded:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString, key_or_value: Int
+        key_or_value: Int
     ](
         inputs: Some[Input & Fused & LoadAccess],
         kv_blocks: Some[MutableInput & Tensor],
@@ -498,7 +494,7 @@ struct Struct_kv_cache_store_padded:
                 inputs_view.load[width=width, element_alignment=alignment](idx)
             )
 
-        kv_cache_store_padded[target=target](
+        kv_cache_store_padded(
             cache,
             inputs.shape(),
             valid_lengths.to_tile_tensor[.uint32](),
@@ -518,7 +514,6 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         multiply_before_cast: Bool,
         per_head_norm: Bool,
         //,
-        target: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
     ](
@@ -559,7 +554,6 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             max_cache_length.to_tile_tensor[.uint32](),
         )
         rms_norm_kv_cache_ragged_paged[
-            target=target,
             multiply_before_cast=multiply_before_cast,
             per_head_norm=per_head_norm,
             epsilon=epsilon,
@@ -585,7 +579,6 @@ struct Struct_fused_qk_rms_norm_ragged_paged:
         dtype: DType,
         multiply_before_cast: Bool,
         //,
-        target: StaticString,
     ](
         q_output: Some[Output & Tensor],
         q_proj: Some[Input & Tensor],
@@ -634,7 +627,6 @@ struct Struct_fused_qk_rms_norm_ragged_paged:
             max_cache_length.to_tile_tensor[.uint32](),
         )
         fused_qk_rms_norm_ragged_paged[
-            target=target,
             multiply_before_cast=multiply_before_cast,
         ](
             q_proj.to_tile_tensor[dtype](),
@@ -668,7 +660,6 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
         multiply_before_cast: Bool,
         cache_dtype: DType,
         //,
-        target: StaticString,
     ](
         q_output: OutputTensor[dtype=q_out_dtype, rank=3, ...],
         q_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
@@ -711,7 +702,6 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
             )
 
         fused_qk_rms_norm_rope_ragged_paged[
-            target=target,
             multiply_before_cast=multiply_before_cast,
             interleaved=Self.interleaved,
         ](
@@ -757,7 +747,6 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         main_cache_dtype: DType,
         index_cache_dtype: DType,
         //,
-        target: StaticString,
     ](
         q_main_output: OutputTensor[dtype=q_main_out_dtype, rank=3, ...],
         q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
@@ -830,7 +819,6 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
             ]((token, head, col))
 
         fused_dual_qk_rms_norm_rope_ragged_paged[
-            target=target,
             multiply_before_cast=multiply_before_cast,
             interleaved=Self.interleaved,
         ](
@@ -889,7 +877,6 @@ def fused_dual_qk_rms_norm_rope_nvfp4_from_graph[
     main_collection_t: KVCollectionT,
     index_collection_t: KVCollectionT,
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
 ](
@@ -924,7 +911,6 @@ def fused_dual_qk_rms_norm_rope_nvfp4_from_graph[
         freq_dtype: RoPE table dtype.
         main_collection_t: Main cache collection type.
         index_collection_t: Index-K cache collection type.
-        target: Target device.
         multiply_before_cast: RMSNorm rounding order.
         interleaved: Whether RoPE rotates adjacent pairs.
 
@@ -982,7 +968,6 @@ def fused_dual_qk_rms_norm_rope_nvfp4_from_graph[
         return load_staged_row[width, alignment](k_index_proj, token, head, col)
 
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
-        target=target,
         multiply_before_cast=multiply_before_cast,
         interleaved=interleaved,
     ](
@@ -1039,7 +1024,6 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual_nvfp4[interleaved: Bool]:
         main_scale_dtype: DType,
         index_cache_dtype: DType,
         //,
-        target: StaticString,
     ](
         q_main_output: OutputTensor[dtype=q_main_out_dtype, rank=3, ...],
         q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
@@ -1098,7 +1082,6 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual_nvfp4[interleaved: Bool]:
         )
 
         fused_dual_qk_rms_norm_rope_nvfp4_from_graph[
-            target=target,
             multiply_before_cast=multiply_before_cast,
             interleaved=Self.interleaved,
         ](
@@ -1161,7 +1144,6 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual_nvfp4_nvfp4_index[
         index_cache_dtype: DType,
         index_scale_dtype: DType,
         //,
-        target: StaticString,
     ](
         q_main_output: OutputTensor[dtype=q_main_out_dtype, rank=3, ...],
         q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
@@ -1228,7 +1210,6 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual_nvfp4_nvfp4_index[
         )
 
         fused_dual_qk_rms_norm_rope_nvfp4_from_graph[
-            target=target,
             multiply_before_cast=multiply_before_cast,
             interleaved=Self.interleaved,
         ](
@@ -1266,7 +1247,6 @@ struct Struct_rms_norm_value_cache_ragged_paged:
         multiply_before_cast: Bool,
         per_head_norm: Bool,
         //,
-        target: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
     ](
@@ -1307,7 +1287,6 @@ struct Struct_rms_norm_value_cache_ragged_paged:
             max_cache_length.to_tile_tensor[.uint32](),
         )
         rms_norm_value_cache_ragged_paged[
-            target=target,
             multiply_before_cast=multiply_before_cast,
             per_head_norm=per_head_norm,
             epsilon=epsilon,
@@ -1451,7 +1430,6 @@ struct Struct_k_matmul_ragged_paged_scale:
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
-        target: StaticString,
     ](
         hidden_state: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1500,7 +1478,6 @@ struct Struct_k_matmul_ragged_paged_scale:
             max_cache_length.to_tile_tensor[.uint32](),
         )
         k_matmul_ragged_paged_scale[
-            target=target,
             scales_granularity_mnk=(
                 m_scale_granularity,
                 n_scale_granularity,
@@ -1525,9 +1502,7 @@ struct Struct_kv_cache_row_offsets_ragged_paged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         cache_row_offsets: Some[Output & Tensor],
         input_row_offsets: Some[Input & Tensor],
         cache_lengths: Some[Input & Tensor],
@@ -1536,7 +1511,7 @@ struct Struct_kv_cache_row_offsets_ragged_paged:
         comptime assert conforms_to(type_of(cache_row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
-        kv_cache_row_offsets_ragged_paged[target=target](
+        kv_cache_row_offsets_ragged_paged(
             cache_row_offsets.to_tile_tensor[.uint32](),
             input_row_offsets.to_tile_tensor[.uint32](),
             cache_lengths.to_tile_tensor[.uint32](),
@@ -1551,9 +1526,7 @@ struct Struct_kv_cache_ragged_paged_radd:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         a: Some[Input & Tensor],
         kv_blocks: Some[MutableInput & Tensor],
         page_stride: Some[Input & Tensor],
@@ -1592,7 +1565,7 @@ struct Struct_kv_cache_ragged_paged_radd:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        generic_kv_cache_radd_dispatch[target=target,](
+        generic_kv_cache_radd_dispatch(
             a.to_tile_tensor[dtype](),
             kv_collection,
             input_row_offsets.to_tile_tensor[.uint32](),
@@ -1609,9 +1582,7 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         kv: Some[Input & Tensor],
         kv_blocks: Some[MutableInput & Tensor],
         page_stride: Some[Input & Tensor],
@@ -1660,7 +1631,7 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
         if kv_tensor.dim[0]() == 0:
             return
 
-        kv_cache_2m_iadd_dispatch[target=target,](
+        kv_cache_2m_iadd_dispatch(
             kv_tensor,
             kv_collection,
             input_row_offsets.to_tile_tensor[.uint32](),

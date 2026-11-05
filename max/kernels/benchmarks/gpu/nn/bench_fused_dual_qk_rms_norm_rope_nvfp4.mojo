@@ -402,7 +402,6 @@ def bench_case(
     @inline(.always)
     def launch_row(c: DeviceContext[]) raises {imm}:
         fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
-            target="gpu",
             multiply_before_cast=True,
             interleaved=False,
             launch=NVFP4_QK_LAUNCH_ROW,
@@ -432,7 +431,6 @@ def bench_case(
     @inline(.always)
     def launch_warp(c: DeviceContext[]) raises {imm}:
         fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
-            target="gpu",
             multiply_before_cast=True,
             interleaved=False,
             launch=NVFP4_QK_LAUNCH_WARP,

@@ -598,7 +598,6 @@ def _validate_argsort[
 def argsort[
     *,
     ascending: Bool = True,
-    target: StaticString = "cpu",
     IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
     InputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
@@ -613,7 +612,6 @@ def argsort[
 
     Parameters:
         ascending: Sort direction (True for ascending, False for descending).
-        target: Target device ("cpu" or "gpu").
         IndicesEngine: Engine of the output (indices) tile.
         InputEngine: Engine of the input tile.
 
@@ -624,13 +622,13 @@ def argsort[
     """
     comptime assert input.flat_rank == 1
     comptime assert output.flat_rank == 1
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "argsort",
         task_id=get_safe_task_id(ctx),
     ):
         _validate_argsort[IndicesEngine, InputEngine](input, output)
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             return _argsort_cpu[ascending=ascending](output, input)
         else:
             return _argsort_gpu[ascending=ascending](output, input, ctx)

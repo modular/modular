@@ -1558,7 +1558,6 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     b_scales_type: DType,
     //,
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, Engine=_, ...],
@@ -1597,7 +1596,6 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
         a_scales_type: Per-token activation scale dtype (``float32``).
         b_scales_type: Per-channel weight scale dtype (``float32``).
         transpose_b: Must be ``True``; ``b`` is ``[E, N, K]``.
-        target: Compilation target string.
         pdl_level: Programmatic dependent launch level; above ``PDLLevel.OFF``
             the kernel waits on its predecessor grid before its first read and
             releases dependent grids when it finishes.
@@ -1632,7 +1630,7 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     comptime assert (
         a_scales_type == .float32 and b_scales_type == .float32
     ), "A and B scales must be float32 for rowwise/per-token granularity"
-    comptime assert is_gpu[target](), (
+    comptime assert ctx.target.is_gpu(), (
         "grouped rowwise dynamic scaled fp8 matmul only supports GPUs with"
         " native FP8 support"
     )

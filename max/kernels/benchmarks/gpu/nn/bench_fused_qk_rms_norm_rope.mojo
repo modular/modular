@@ -266,9 +266,7 @@ def bench_fused_qk_rms_norm_rope[
                 max_prompt_len,
                 max_cache_len,
             )
-            fused_qk_rms_norm_ragged_paged[
-                target="gpu", multiply_before_cast=True
-            ](
+            fused_qk_rms_norm_ragged_paged[multiply_before_cast=True,](
                 q_tile.as_imm(),
                 kv_ref,
                 gamma_q_tile.as_imm(),
@@ -283,7 +281,8 @@ def bench_fused_qk_rms_norm_rope[
             # rope output goes to q_tile (original Q buf) — avoids aliasing
             # q_out_ref_tile as both mutable output and immutable input.
             fused_qk_rope_ragged[
-                kv_ref.CacheType, interleaved=False, target="gpu"
+                kv_ref.CacheType,
+                interleaved=False,
             ](
                 q_proj=q_out_ref_tile.as_imm(),
                 input_row_offsets=row_offsets_tile.as_imm(),
@@ -343,7 +342,6 @@ def bench_fused_qk_rms_norm_rope[
                 return q_src.load[width=width]((token, head, col))
 
             fused_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](

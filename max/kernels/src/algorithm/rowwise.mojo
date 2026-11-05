@@ -52,7 +52,7 @@ def reduce_sum[...](shape, target="cpu", ctx=None) raises:
     # `num_phases=1` if the output collapses the axis (one value per
     # row); `num_phases>1` if the output keeps the input shape
     # (per-element emission along axis).
-    rowwise.launch[body, axis=..., simd_width=..., target=target, num_phases=1, ...](shape, ctx)
+    rowwise.launch[body, axis=..., simd_width=..., num_phases=1, ...](shape, ctx)
 ```
 
 The body never branches on `target` directly. `rowwise.reduce` /

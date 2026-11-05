@@ -610,7 +610,6 @@ def latent_sparse_attention_ragged_paged[
     q_type: DType,
     out_type: DType,
     //,
-    target: StaticString,
     window: Int,
     split_k: Bool = True,
     portable_p_bf16: Bool = False,
@@ -632,7 +631,6 @@ def latent_sparse_attention_ragged_paged[
     Parameters:
         q_type: Query element type (inferred).
         out_type: Output element type (inferred).
-        target: Compilation target string, selects the CPU or GPU path.
         window: Sliding window length in tokens; a query at ``pos`` sees
             positions ``max(0, pos - window + 1) .. pos``.
         split_k: Whether the SM100 route may split a row's keys across
@@ -656,9 +654,10 @@ def latent_sparse_attention_ragged_paged[
         scale: Softmax scale applied to the scores.
         ctx: Device context used to enqueue the GPU kernel.
     """
-    comptime if not is_cpu[target]() and _is_sm10x_gpu(ctx.default_device_info):
+    comptime if not ctx.target.is_cpu() and _is_sm10x_gpu(
+        ctx.default_device_info
+    ):
         latent_sparse_attention_ragged_paged_sm100[
-            target=target,
             window=window,
             split_k=split_k,
             portable_p_bf16=portable_p_bf16,
@@ -675,7 +674,6 @@ def latent_sparse_attention_ragged_paged[
         )
     else:
         latent_sparse_attention_ragged_paged_portable[
-            target=target,
             window=window,
             split_k=split_k,
             portable_p_bf16=portable_p_bf16,
@@ -696,7 +694,6 @@ def latent_sparse_attention_ragged_paged_sm100[
     q_type: DType,
     out_type: DType,
     //,
-    target: StaticString,
     window: Int,
     split_k: Bool = True,
     portable_p_bf16: Bool = False,
@@ -759,7 +756,7 @@ def latent_sparse_attention_ragged_paged_sm100[
 
     comptime q_heads = q.static_shape[1]
     comptime use_sm100 = (
-        not is_cpu[target]()
+        not ctx.target.is_cpu()
         and _is_sm10x_gpu(ctx.default_device_info)
         and q_type == .bfloat16
         and out_type == .bfloat16
@@ -816,7 +813,6 @@ def latent_sparse_attention_ragged_paged_sm100[
             return
 
     latent_sparse_attention_ragged_paged_portable[
-        target=target,
         window=window,
         split_k=split_k,
         portable_p_bf16=portable_p_bf16,
@@ -837,7 +833,6 @@ def latent_sparse_attention_ragged_paged_portable[
     q_type: DType,
     out_type: DType,
     //,
-    target: StaticString,
     window: Int,
     split_k: Bool = True,
     portable_p_bf16: Bool = False,
@@ -898,7 +893,7 @@ def latent_sparse_attention_ragged_paged_portable[
     var idx_ptr = comp_indices.unsafe_ptr().as_unsafe_any_origin()
     var sink_ptr = attn_sink.unsafe_ptr().as_unsafe_any_origin()
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         _latent_sparse_attention_cpu[head_dim=head_dim, window=window](
             out_ptr,
             q_ptr,

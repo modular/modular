@@ -2141,7 +2141,6 @@ struct DistributedAllGatherGatedResidualRMSNorm:
         Gates: TypeList[Trait=Input & Tensor, ...],
         NormWeights: TypeList[Trait=Input & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         post_eps: Float32,
         norm_eps: Float32,
@@ -2170,7 +2169,6 @@ struct DistributedAllGatherGatedResidualRMSNorm:
             PostWeights: The element types of `post_weights` (inferred).
             Gates: The element types of `gates` (inferred).
             NormWeights: The element types of `norm_weights` (inferred).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             post_eps: The branch norm's epsilon.
             norm_eps: The next pre-norm's epsilon.
@@ -3218,7 +3216,6 @@ struct LamportAllreduceRMSNorm:
     def execute[
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         //,
-        target: StaticString,
         my_rank: Int,
     ](
         output: Some[Output & Tensor],
@@ -3227,7 +3224,9 @@ struct LamportAllreduceRMSNorm:
         signal_buffers: TensorTuple[*Sigs],
         ctx: DeviceContext,
     ) raises:
-        comptime assert target == "gpu", "lamport_allreduce_rmsnorm: gpu only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "lamport_allreduce_rmsnorm: gpu only"
         comptime ngpus = len(Sigs)
         comptime assert (
             ngpus >= 2 and ngpus <= MAX_GPUS

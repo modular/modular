@@ -488,9 +488,7 @@ struct SqueezeShape:
     """Registers the `mo.squeeze_shape` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output_shape: Some[Output & Tensor],
         input_shape: Some[Input & Tensor],
         remove_indices: Some[Input & Tensor],
@@ -526,7 +524,7 @@ struct SqueezeShape:
         var indices_ptr = remove_tt.unsafe_ptr().as_imm()
         var indices_stride = Int(remove_tt.dynamic_stride(0))
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             _squeeze_shape(
                 output_ptr,
                 output_stride,
@@ -578,9 +576,7 @@ struct UnsqueezeShape:
     """Registers the `mo.unsqueeze_shape` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output_shape: Some[Output & Tensor],
         input_shape: Some[Input & Tensor],
         padding_indices: Some[Input & Tensor],
@@ -616,7 +612,7 @@ struct UnsqueezeShape:
         var indices_ptr = padding_tt.unsafe_ptr().as_imm()
         var indices_stride = Int(padding_tt.dynamic_stride(0))
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             _unsqueeze_shape(
                 output_ptr,
                 output_stride,

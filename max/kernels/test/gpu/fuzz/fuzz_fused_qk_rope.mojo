@@ -504,7 +504,8 @@ def run_one_case(
 
     # === Kernel under test ===================================================
     fused_qk_rope_ragged[
-        kv_collection.CacheType, interleaved=INTERLEAVED, target="gpu"
+        kv_collection.CacheType,
+        interleaved=INTERLEAVED,
     ](
         q_proj=q_proj,
         input_row_offsets=row_offsets.as_imm(),

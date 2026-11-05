@@ -66,7 +66,7 @@ def test_argsort[
         row_major(N),
     )
 
-    argsort[ascending=ascending, target="gpu"](
+    argsort[ascending=ascending](
         device_indices_tensor, device_input_tensor, ctx
     )
 

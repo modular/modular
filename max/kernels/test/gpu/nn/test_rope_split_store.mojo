@@ -302,14 +302,14 @@ def execute_test[
         )
         return v_ptr.unsafe_offset(flat).unsafe_load[width=width]()
 
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         unfused_k_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
         k_load_fn,
         ctx,
     )
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         unfused_v_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
@@ -345,7 +345,6 @@ def execute_test[
     fused_qk_rope_ragged[
         unfused_kv_collection.CacheType,
         interleaved=interleaved,
-        target="gpu",
     ](
         q_proj=q_tile,
         input_row_offsets=row_offsets_tile,
@@ -715,14 +714,14 @@ def execute_test_with_position_ids[
         )
         return v_ptr.unsafe_offset(flat).unsafe_load[width=width]()
 
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         unfused_k_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
         k_load_fn,
         ctx,
     )
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         unfused_v_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
@@ -758,7 +757,6 @@ def execute_test_with_position_ids[
     fused_qk_rope_ragged[
         unfused_kv_collection.CacheType,
         interleaved=interleaved,
-        target="gpu",
     ](
         q_proj=q_tile,
         input_row_offsets=row_offsets_tile,

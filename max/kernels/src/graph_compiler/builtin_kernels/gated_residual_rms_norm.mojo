@@ -54,8 +54,6 @@ struct GatedResidualRMSNorm:
 
     @staticmethod
     def execute[
-        target: StaticString,
-        //,
         scale_branch: Bool,
     ](
         stream_out: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
@@ -74,7 +72,6 @@ struct GatedResidualRMSNorm:
         """Writes the gated residual stream and its next pre-norm.
 
         Parameters:
-            target: Compilation target.
             scale_branch: Whether the branch is scaled by `1 + post_weight`
                 before its norm; otherwise `post_weight` is not read.
 
@@ -95,7 +92,9 @@ struct GatedResidualRMSNorm:
         Raises:
             Error: If the launch fails.
         """
-        comptime assert is_gpu[target](), "gated_residual_rms_norm is GPU only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "gated_residual_rms_norm is GPU only"
         comptime assert (
             Int(branch.static_spec.shape_tuple[1]) == HIDDEN
         ), "gated_residual_rms_norm takes 8192 channels"

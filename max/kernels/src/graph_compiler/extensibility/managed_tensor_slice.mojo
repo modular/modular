@@ -2806,7 +2806,6 @@ def foreach[
         tensor: The output tensor slice which receives the return values from `func`.
         ctx: The call context (forward this from the custom operation).
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     def wrapper[
         width: Int, alignment: Int = 1

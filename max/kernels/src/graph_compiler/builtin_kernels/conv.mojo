@@ -295,14 +295,14 @@ struct PadConstant:
         # flat pointer this aborts at run time rather than compile time.
         var paddings_ptr = padding.to_tile_tensor().ptr
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             pad_constant(
                 output_tile,
                 input_tile,
                 paddings_ptr,
                 constant,
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             pad_constant_gpu(
                 output_tile.ptr,
                 output_tile.layout.shape_coord(),
@@ -313,7 +313,7 @@ struct PadConstant:
                 ctx,
             )
         else:
-            comptime assert False, "Unknown target " + target
+            comptime assert False, "Unknown target"
 
 
 @extensibility.register_shape_function("mo.pad.constant")
@@ -368,9 +368,9 @@ struct PadRepeat:
         # See the note in `mo.pad.constant` on the raw `paddings` pointer.
         var paddings_ptr = padding.to_tile_tensor().ptr
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             pad_repeat(output_tile, input_tile, paddings_ptr)
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             pad_repeat_gpu(
                 output_tile.ptr,
                 output_tile.layout.shape_coord(),
@@ -380,7 +380,7 @@ struct PadRepeat:
                 ctx,
             )
         else:
-            comptime assert False, "Unknown target " + target
+            comptime assert False, "Unknown target"
 
 
 @extensibility.register_shape_function("mo.pad.repeat")
@@ -425,9 +425,9 @@ struct PadReflect:
         # See the note in `mo.pad.constant` on the raw `paddings` pointer.
         var paddings_ptr = padding.to_tile_tensor().ptr
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             pad_reflect(output_tile, input_tile, paddings_ptr)
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             pad_reflect_gpu(
                 output_tile.ptr,
                 output_tile.layout.shape_coord(),
@@ -437,7 +437,7 @@ struct PadReflect:
                 ctx,
             )
         else:
-            comptime assert False, "Unknown target " + target
+            comptime assert False, "Unknown target"
 
 
 @extensibility.register_shape_function("mo.pad.reflect")
@@ -814,7 +814,6 @@ struct Conv2dResidualAdd:
         pad_left: Int,
         pad_right: Int,
         has_bias: Bool,
-        target: StaticString,
     ](
         output: FusedOutputTensor[...],
         input: InputTensor[dtype=output.dtype, rank=4, ...],
@@ -842,9 +841,9 @@ struct Conv2dResidualAdd:
                 coords, rebind[SIMD[output.dtype, _width]](result)
             )
 
-        comptime assert not is_cpu[
-            target
-        ](), "conv2d_residual_add is only supported on GPU"
+        comptime assert (
+            not ctx.target.is_cpu()
+        ), "conv2d_residual_add is only supported on GPU"
 
         var input_tt = input.to_tile_tensor[.int64]()
         var filter_tt = filter.to_tile_tensor[.int64]()

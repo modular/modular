@@ -3051,9 +3051,9 @@ def foreach_fusion_tile[
         into `tile_shape`. Partial-tile / remainder handling and a CPU path are
         documented follow-ups.
     """
-    comptime assert is_accelerator[
-        target
-    ](), "foreach_fusion_tile currently supports GPU targets only"
+    comptime assert (
+        ctx.target.is_accelerator()
+    ), "foreach_fusion_tile currently supports GPU targets only"
     comptime assert (
         rank == 2
     ), "foreach_fusion_tile currently supports rank-2 tensors only"

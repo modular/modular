@@ -490,9 +490,7 @@ def run_one_case(
     var row_offsets = TileTensor(row_offsets_device, row_major(batch_size + 1))
 
     # === Kernel under test ===================================================
-    fused_qk_rms_norm_ragged_paged[
-        target="gpu", multiply_before_cast=multiply_before_cast
-    ](
+    fused_qk_rms_norm_ragged_paged[multiply_before_cast=multiply_before_cast,](
         q_proj.as_imm(),
         kv_collection,
         q_gamma.as_imm(),

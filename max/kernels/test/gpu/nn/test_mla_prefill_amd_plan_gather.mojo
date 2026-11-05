@@ -245,7 +245,7 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
         buffer_lengths_device, row_major(Idx[MAX_CHUNKS])
     )
 
-    generic_flare_mla_prefill_ragged_paged_plan[target="gpu"](
+    generic_flare_mla_prefill_ragged_paged_plan(
         input_row_offsets_tt,
         kv_collection,
         UInt32(0),  # layer_idx

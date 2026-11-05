@@ -133,9 +133,7 @@ def _dequant_nvfp4_block[
 
 
 @inline(.always)
-def dequant_nvfp4[
-    target: StaticString
-](
+def dequant_nvfp4(
     ctx: DeviceContext,
     output: TileTensor[mut=True, ...],
     input: TileTensor,
@@ -145,9 +143,6 @@ def dequant_nvfp4[
     num_cols: Int,
 ) raises:
     """Dequantize NVFP4 packed weights to bfloat16 or float32.
-
-    Parameters:
-        target: The compilation target. Must be a GPU.
 
     Args:
         ctx: Device context for kernel launch.
@@ -168,7 +163,7 @@ def dequant_nvfp4[
         kernels read scales on trust, so a short scale tensor would otherwise
         be an out-of-bounds read.
     """
-    comptime assert is_gpu[target](), "NVFP4 dequant only supports GPUs"
+    comptime assert ctx.target.is_gpu(), "NVFP4 dequant only supports GPUs"
 
     comptime out_dtype = output.dtype
     comptime in_dtype = input.dtype

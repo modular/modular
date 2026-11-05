@@ -343,7 +343,6 @@ def _run_arm[
         n_scale_granularity=N_SCALE_GRAN,
         k_scale_granularity=K_SCALE_GRAN,
         mask_str="causal",
-        target="gpu",
         sparse_mla=True,
         fp8_q=fp8_q,
         kernels=SM100MLAGraph,

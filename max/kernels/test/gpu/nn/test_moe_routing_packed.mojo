@@ -54,7 +54,7 @@ def test_router_packed[
     ](coords: Coord) {var scores_t} -> SIMD[DType.float32, width]:
         return scores_t.load[width=width](coords)
 
-    single_group_router[n_experts, top_k, True, "gpu", packed=True](
+    single_group_router[n_experts, top_k, True, packed=True](
         TileTensor(ids, row_major((tokens, Idx[top_k]))),
         TileTensor(weights, row_major((tokens, Idx[top_k]))),
         scores_t.layout,

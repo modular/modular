@@ -1199,7 +1199,6 @@ struct FlashAttentionGPU:
     def execute[
         MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
@@ -1250,7 +1249,6 @@ struct FlashAttentionGPU:
 
         Parameters:
             MaskIns: The mask operand types.
-            target: Target device identifier; must resolve to a GPU.
             mask_str: Attention mask type string passed to
                 `dispatch_mask` to select the mask functor.
             local_window_size: Sliding window size for windowed attention
@@ -1274,7 +1272,7 @@ struct FlashAttentionGPU:
         comptime assert type_of(q).rank == rank
         comptime assert type_of(k).rank == rank
         comptime assert type_of(v).rank == rank
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         var output_buffer = output.to_tile_tensor()
         var q_buffer = q.to_tile_tensor()
@@ -1316,7 +1314,6 @@ struct FlashAttentionCPU:
         //,
         dtype: DType,
         rank: Int,
-        target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
@@ -1335,7 +1332,6 @@ struct FlashAttentionCPU:
             MaskIns: The mask operand types.
             dtype: Element type of `q`, `k`, `v` and the output.
             rank: Rank of `q`, `k`, `v` and the output.
-            target: Target device identifier; must resolve to a CPU.
             mask_str: Attention mask type string passed to `dispatch_mask`.
             local_window_size: Sliding window size for windowed attention
                 (defaults to -1, meaning no window).
@@ -1350,7 +1346,7 @@ struct FlashAttentionCPU:
                 each mask reads.
             ctx: Device context for CPU execution.
         """
-        comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert ctx.target.is_cpu(), "only valid on CPUs"
 
         @inline(.always)
         def k_input_fn[width: Int](coords: Coord) {imm} -> SIMD[dtype, width]:
@@ -1383,7 +1379,6 @@ struct PaddedFlashAttentionGPU:
 
     @staticmethod
     def execute[
-        target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
@@ -1405,7 +1400,7 @@ struct PaddedFlashAttentionGPU:
         comptime assert type_of(k).rank == rank
         comptime assert type_of(v).rank == rank
         comptime assert type_of(valid_length).rank == 1
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         var output_buffer = output.to_tile_tensor()
         var q_buffer = q.to_tile_tensor()
@@ -1454,7 +1449,6 @@ struct RaggedFlashAttentionGPU:
     def execute[
         MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
@@ -1475,7 +1469,6 @@ struct RaggedFlashAttentionGPU:
 
         Parameters:
             MaskIns: The mask operand types.
-            target: Target device identifier; must resolve to a GPU.
             mask_str: Attention mask type string passed to
                 `dispatch_mask` to select the mask functor.
             local_window_size: Sliding window size for windowed attention
@@ -1509,7 +1502,7 @@ struct RaggedFlashAttentionGPU:
         comptime assert type_of(v).rank == rank
         comptime assert type_of(input_row_offsets).rank == 1
         comptime assert type_of(q_max_seq_len).rank == 1
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         var output_buffer = output.to_tile_tensor()
         var q_buffer = q.to_tile_tensor()
@@ -3033,7 +3026,6 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     @staticmethod
     def execute[
         mrope_section: StaticString,
-        target: StaticString,
         cache_dtype: DType,
     ](
         output: Some[Output & Tensor],
@@ -3086,7 +3078,6 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
         generic_fused_qk_rope_bshd_paged_ragged[
             interleaved=Self.interleaved,
             has_position_ids=True,
-            target=target,
             mrope_types=mrope.element_types,
             mrope_section=mrope,
         ](
@@ -3109,7 +3100,6 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         cache_dtype: DType,
         v_head_dim: Int = -1,
     ](
@@ -3164,7 +3154,6 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         generic_fused_qk_rope_bshd_paged_ragged[
             interleaved=Self.interleaved,
             has_position_ids=False,
-            target=target,
         ](
             q_proj.to_tile_tensor[type_of(output).dtype](),
             input_row_offsets.to_tile_tensor[.uint32](),
@@ -3185,7 +3174,6 @@ struct Struct_mha_padded_paged:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
@@ -3231,7 +3219,6 @@ struct Struct_mha_padded_paged:
         )
 
         generic_flash_attention_kv_cache_padded[
-            target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
         ](
@@ -3262,7 +3249,6 @@ struct Struct_mha_ragged_paged_scalar_args:
     def execute[
         MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
         v_head_dim: Int = -1,
@@ -3309,7 +3295,6 @@ struct Struct_mha_ragged_paged_scalar_args:
         comptime assert type_of(mha_decode_dispatch_metadata).rank == 1
         comptime assert type_of(mixed_step_split).rank == 1
         _execute_mha_ragged_paged[
-            target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
             v_head_dim=v_head_dim,
@@ -3338,7 +3323,6 @@ def _execute_mha_ragged_paged[
     MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
     //,
     *,
-    target: StaticString,
     mask_str: StaticString,
     local_window_size: Int,
     v_head_dim: Int,
@@ -3380,11 +3364,10 @@ def _execute_mha_ragged_paged[
     comptime if (
         v_head_dim == -1
         and len(MaskIns) == 0
-        and is_gpu[target]()
+        and context.target.is_gpu()
         and context.target.is_nvidia_gpu()
     ):
         if _mha_ragged_mixed_step_split[
-            target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
         ](
@@ -3404,7 +3387,6 @@ def _execute_mha_ragged_paged[
         ):
             return
     _execute_mha_ragged_paged_scalar_args[
-        target=target,
         mask_str=mask_str,
         local_window_size=local_window_size,
         v_head_dim=v_head_dim,
@@ -3431,7 +3413,6 @@ def _mha_ragged_mixed_step_split[
     out_dtype: DType,
     //,
     *,
-    target: StaticString,
     mask_str: StaticString,
     local_window_size: Int,
 ](
@@ -3515,7 +3496,6 @@ def _mha_ragged_mixed_step_split[
                 view.lengths_slot,
             )
             generic_flash_attention_kv_cache_ragged[
-                target=target,
                 mask_str=mask_str,
                 local_window_size=local_window_size,
                 output_dtype=out_dtype,
@@ -3551,7 +3531,6 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
         v_head_dim: Int = -1,
@@ -3602,7 +3581,6 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
             type_of(q).dtype
         ]().as_imm()
         _execute_mha_ragged_paged_scalar_args[
-            target=target,
             mask_str=mask_str,
             sink=True,
             local_window_size=local_window_size,
@@ -3638,7 +3616,6 @@ trait _MLADecodeRaggedPagedOp:
     @staticmethod
     def execute[
         mask_str: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -3686,7 +3663,6 @@ trait _MLADecodeRaggedPagedOp:
             max_cache_length.to_tile_tensor[.uint32](),
         )
         generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             kernels=Self.kernels.Kernels,
         ](
@@ -3747,7 +3723,6 @@ trait _MLADecodeRaggedPagedScaledOp:
     @staticmethod
     def execute[
         mask_str: StaticString,
-        target: StaticString,
         per_token_scale_rope_aware: Int = 0,
         quantization_granularity: Int = 640,
     ](
@@ -3851,7 +3826,6 @@ trait _MLADecodeRaggedPagedScaledOp:
         )
 
         generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             per_token_scale_rope_aware=per_token_scale_rope_aware != 0,
             kernels=Self.kernels.Kernels,
@@ -3923,7 +3897,6 @@ trait _MLAPrefillRaggedPagedOp:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         mask_str: StaticString,
     ](
         output: Some[Output & Tensor],
@@ -3979,7 +3952,6 @@ trait _MLAPrefillRaggedPagedOp:
             max_cache_length.to_tile_tensor[.uint32](),
         )
         generic_flare_mla_prefill_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             kernels=Self.kernels.Kernels,
         ](
@@ -4038,9 +4010,7 @@ struct Struct_mla_prefill_ragged_plan:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         buffer_row_offsets: Some[Output & Tensor],
         cache_offsets: Some[Output & Tensor],
         buffer_lengths: Some[Output & Tensor],
@@ -4105,7 +4075,7 @@ struct Struct_mla_prefill_ragged_plan:
                 max_cache_length.to_tile_tensor[.uint32]().as_imm()
             ),
         )
-        generic_flare_mla_prefill_ragged_paged_plan[target=target](
+        generic_flare_mla_prefill_ragged_paged_plan(
             input_row_offsets.to_tile_tensor[.uint32](),
             kv_collection,
             layer_idx,
@@ -4381,7 +4351,6 @@ trait _MLADecodeGraphPagedFP8Op:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -4456,9 +4425,9 @@ trait _MLADecodeGraphPagedFP8Op:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "attention.mla.graph.decode.paged.fp8 is only supported on GPU"
+        comptime assert (
+            context.target.is_gpu()
+        ), "attention.mla.graph.decode.paged.fp8 is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -4480,7 +4449,7 @@ trait _MLADecodeGraphPagedFP8Op:
             )
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged.fp8",
             task_id=get_safe_task_id(context),
         ):
@@ -4489,7 +4458,6 @@ trait _MLADecodeGraphPagedFP8Op:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                target=target,
                 kernels=Self.kernels,
             ](
                 output.to_tile_tensor(),
@@ -4574,7 +4542,6 @@ def _sparse_indices_ptr[
 
 @inline(.always)
 def _sparse_gather_indices[
-    target: StaticString,
     page_size: Int,
     indices_stride: Int,
     cache_dtype: DType,
@@ -4592,7 +4559,7 @@ def _sparse_gather_indices[
     """
     var buf = ctx.enqueue_create_buffer[.int32](sparse_indices.size())
     var ptr = buf.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
-    paged_sparse_kv_index_remap[target, page_size, indices_stride, cache_dtype](
+    paged_sparse_kv_index_remap[page_size, indices_stride, cache_dtype](
         ptr,
         sparse_indices,
         input_row_offsets,
@@ -4606,7 +4573,6 @@ def _sparse_gather_indices[
 
 @inline(.always)
 def _sparse_decode_indices[
-    target: StaticString,
     page_size: Int,
     indices_stride: Int,
     cache_dtype: DType,
@@ -4630,9 +4596,7 @@ def _sparse_decode_indices[
         sparse_indices, num_tokens
     )
     comptime if ctx.target.is_amd_gpu() and not physical_indices:
-        return _sparse_gather_indices[
-            target, page_size, indices_stride, cache_dtype
-        ](
+        return _sparse_gather_indices[page_size, indices_stride, cache_dtype](
             scratch,
             sparse_indices,
             input_row_offsets,
@@ -4651,7 +4615,6 @@ def _sparse_decode_physical[physical_indices: Bool]() -> Bool:
 
 @inline(.always)
 def _sparse_prefill_indices[
-    target: StaticString,
     page_size: Int,
     indices_stride: Int,
     cache_dtype: DType,
@@ -4680,7 +4643,7 @@ def _sparse_prefill_indices[
             cache_dtype, num_heads, sparse_mla=True
         ](max_seq_len):
             return _sparse_gather_indices[
-                target, page_size, indices_stride, cache_dtype
+                page_size, indices_stride, cache_dtype
             ](
                 scratch,
                 sparse_indices,
@@ -4736,7 +4699,6 @@ trait _MLADecodeGraphPagedFP8SparseOp:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        target: StaticString,
         indices_stride: Int,
         # Whether `sparse_indices` holds the indexer's paged physical rows
         # (`attention.mla.indexer.ragged.float8.paged.remap`) rather than logical
@@ -4798,7 +4760,7 @@ trait _MLADecodeGraphPagedFP8SparseOp:
             max_cache_length,
         )
 
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "attention.mla.graph.decode.paged.fp8.sparse is only supported"
             " on GPU"
         )
@@ -4837,7 +4799,7 @@ trait _MLADecodeGraphPagedFP8SparseOp:
             if max_prompt_length.unsafe_ptr()[0] > 1:
                 logical_indices_ptr = sparse_indices.unsafe_ptr()
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged.fp8.sparse",
             task_id=get_safe_task_id(context),
         ):
@@ -4850,7 +4812,6 @@ trait _MLADecodeGraphPagedFP8SparseOp:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                target=target,
                 sparse_mla=True,
                 fold_shared_index=index_share,
                 physical_indices=physical_indices,
@@ -5108,7 +5069,6 @@ trait _MLADecodeGraphBF16PagedOp:
     @staticmethod
     def execute[
         mask_str: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -5174,9 +5134,9 @@ trait _MLADecodeGraphBF16PagedOp:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "attention.mla.graph.decode.paged is only supported on GPU"
+        comptime assert (
+            context.target.is_gpu()
+        ), "attention.mla.graph.decode.paged is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -5198,13 +5158,12 @@ trait _MLADecodeGraphBF16PagedOp:
             )
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged",
             task_id=get_safe_task_id(context),
         ):
             mla_decode_branch_bf16[
                 mask_str=mask_str,
-                target=target,
                 kernels=Self.kernels,
             ](
                 output.to_tile_tensor[.bfloat16](),
@@ -5275,7 +5234,6 @@ trait _MLADecodeGraphBF16PagedSparseOp:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        target: StaticString,
         indices_stride: Int,
         # Whether `sparse_indices` holds the indexer's paged physical rows
         # (`attention.mla.indexer.ragged.float8.paged.remap`) rather than logical
@@ -5327,9 +5285,9 @@ trait _MLADecodeGraphBF16PagedSparseOp:
             max_cache_length,
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "attention.mla.graph.decode.paged.sparse is only supported on GPU"
+        comptime assert (
+            context.target.is_gpu()
+        ), "attention.mla.graph.decode.paged.sparse is only supported on GPU"
 
         @inline(.always)
         def kv_input_fn[
@@ -5353,13 +5311,12 @@ trait _MLADecodeGraphBF16PagedSparseOp:
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged.sparse",
             task_id=get_safe_task_id(context),
         ):
             var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
             var gather_indices = _sparse_decode_indices[
-                target,
                 mla_page_size,
                 indices_stride,
                 kv_dtype,
@@ -5375,7 +5332,6 @@ trait _MLADecodeGraphBF16PagedSparseOp:
             )
             mla_decode_branch_bf16[
                 mask_str=mask_str,
-                target=target,
                 sparse_mla=True,
                 physical_indices=_sparse_decode_physical[physical_indices](),
                 sparse_row=SparseRowLayout(
@@ -5472,7 +5428,6 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        target: StaticString,
         indices_stride: Int,
         physical_indices: Bool,
         index_kpool: Int = 1,
@@ -5509,7 +5464,7 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "attention.mla.graph.decode.paged.sparse.nvfp4 is only supported"
             " on GPU"
         )
@@ -5542,7 +5497,7 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
             attn_sink.unsafe_ptr()
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged.sparse.nvfp4",
             task_id=get_safe_task_id(context),
         ):
@@ -5551,7 +5506,6 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
             )
             mla_decode_branch_bf16[
                 mask_str=mask_str,
-                target=target,
                 sparse_mla=True,
                 physical_indices=physical_indices,
                 sparse_row=SparseRowLayout(
@@ -5972,7 +5926,6 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
             )
             var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
             var prefill_indices = _sparse_prefill_indices[
-                target,
                 mla_page_size,
                 indices_stride,
                 cache_dtype,
@@ -6301,7 +6254,6 @@ struct Struct_mla_store_ragged_paged:
         freq_dtype: DType,
         gamma_dtype: DType,
         //,
-        target: StaticString,
     ](
         kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
@@ -6347,9 +6299,9 @@ struct Struct_mla_store_ragged_paged:
             epsilon: RMSNorm epsilon.
             context: Device context for GPU execution.
         """
-        comptime assert is_gpu[
-            target
-        ](), "attention.mla.store.ragged.paged is only supported on GPU"
+        comptime assert (
+            context.target.is_gpu()
+        ), "attention.mla.store.ragged.paged is only supported on GPU"
         comptime cache_head_size = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime kv_norm_dim = Int(kv_norm_gamma.static_spec.shape_tuple[0])
         comptime assert (
@@ -6374,7 +6326,7 @@ struct Struct_mla_store_ragged_paged:
         ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.store.ragged.paged",
             task_id=get_safe_task_id(context),
         ):
@@ -6503,7 +6455,6 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
             ]()
             var scratch_decode_indices = Optional[DeviceBuffer[DType.int32]]()
             var decode_indices = _sparse_decode_indices[
-                target,
                 mla_page_size,
                 indices_stride,
                 cache_dtype,
@@ -6519,7 +6470,6 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
             )
             var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
             var prefill_indices = _sparse_prefill_indices[
-                target,
                 mla_page_size,
                 indices_stride,
                 cache_dtype,
@@ -6747,7 +6697,6 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
             )
             var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
             var prefill_indices = _sparse_prefill_indices[
-                target,
                 mla_page_size,
                 indices_stride,
                 DType.uint8,
@@ -7063,7 +7012,6 @@ struct Struct_cross_attention_ragged_paged:
     @staticmethod
     def execute[
         mask_str: StaticString,
-        target: StaticString,
         local_window_size: Int = -1,
     ](
         output: Some[Output & Tensor],
@@ -7119,7 +7067,6 @@ struct Struct_cross_attention_ragged_paged:
         generic_cross_attention_kv_cache[
             mask_str=mask_str,
             local_window_size=local_window_size,
-            target=target,
             output_dtype=out_dtype,
         ](
             q.to_tile_tensor(),
@@ -7151,7 +7098,6 @@ trait _LatentSparseAttentionRaggedPagedOp:
     @staticmethod
     def execute[
         window: Int,
-        target: StaticString,
         split_k: Bool = True,
         portable_p_bf16: Bool = False,
     ](
@@ -7241,7 +7187,6 @@ trait _LatentSparseAttentionRaggedPagedOp:
             comp_max_cache_length.to_tile_tensor[.uint32](),
         )
         Self.kernels.latent_sparse_attention[
-            target=target,
             window=window,
             split_k=split_k,
             portable_p_bf16=portable_p_bf16,
@@ -7319,7 +7264,6 @@ struct Struct_indexer_score_ragged_paged:
     @staticmethod
     def execute[
         num_heads: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -7368,7 +7312,7 @@ struct Struct_indexer_score_ragged_paged:
             max_prompt_length.to_tile_tensor[.uint32](),
             max_cache_length.to_tile_tensor[.uint32](),
         )
-        indexer_score_ragged_paged[target=target, num_heads=num_heads](
+        indexer_score_ragged_paged[num_heads=num_heads](
             output.to_tile_tensor[.float32](),
             q.to_tile_tensor(),
             weights.to_tile_tensor[.float32](),

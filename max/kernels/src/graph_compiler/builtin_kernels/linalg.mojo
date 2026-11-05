@@ -700,9 +700,7 @@ struct LinalgBandPart:
     """Registers the `mo.linalg.band_part` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Fused & LoadAccess],
         num_lower: Some[Input & Tensor],
@@ -740,7 +738,6 @@ struct LinalgBandPart:
         matrix_band_part[
             rank=rank,
             simd_width=simd_width_of[dtype](),
-            target=target,
         ](
             input_fn,
             input.shape().flatten(),
@@ -770,9 +767,7 @@ struct Struct_grouped_matmul_ragged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Fused & _LegacyComputeOutput],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -795,7 +790,9 @@ struct Struct_grouped_matmul_ragged:
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
         comptime assert type_of(expert_usage_stats).rank == 1
-        comptime assert is_gpu[target](), "grouped matmul only support GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped matmul only support GPUs"
 
         # The epilogue runs in the kernels the matmul launches, so it
         # copy-captures the access-enabled view rather than the host proxy.
@@ -875,9 +872,7 @@ struct Struct_grouped_matmul_ragged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & TileTensorable],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -899,7 +894,9 @@ struct Struct_grouped_matmul_ragged:
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
         comptime assert type_of(expert_usage_stats).rank == 1
-        comptime assert is_gpu[target](), "grouped matmul only support GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped matmul only support GPUs"
 
         grouped_matmul(
             c.to_tile_tensor(),
@@ -924,7 +921,6 @@ struct Struct_grouped_matmul_block_scaled:
     @staticmethod
     def execute[
         has_a_row_scales: Bool,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -951,7 +947,6 @@ struct Struct_grouped_matmul_block_scaled:
         Parameters:
             has_a_row_scales: Whether `a_row_scales` holds per-row input
                 scales. Constraints: NVFP4 only.
-            target: The target GPU device.
 
         Args:
             c: The output tensor of shape (total_tokens, N).
@@ -999,9 +994,9 @@ struct Struct_grouped_matmul_block_scaled:
         comptime assert type_of(a_scale_offsets).rank == 1
         comptime assert type_of(expert_scales).rank == 1
         comptime assert type_of(a_row_scales).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
         comptime if has_a_row_scales:
@@ -1069,7 +1064,6 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         has_a_row_scales: Bool,
         max_total_m: Int,
         prefill_dynamic_claim: Bool,
-        target: StaticString,
     ](
         c_packed: Some[Output & Tensor],
         c_swiglu_scales: Some[Output & Tensor],
@@ -1107,7 +1101,6 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             prefill_dynamic_claim: Whether a MegaFFN this op fuses into
                 claims its prefill tiles from a shared counter; unused by
                 this kernel.
-            target: The target GPU device.
 
         Args:
             c_packed: Packed NVFP4 output of shape (total_tokens, D // 2).
@@ -1159,9 +1152,9 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         comptime assert type_of(expert_scales).rank == 1
         comptime assert type_of(a_row_scales).rank == 1
         comptime assert type_of(c_input_scales).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "fused SwiGLU+NVFP4 grouped matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "fused SwiGLU+NVFP4 grouped matmul only supports GPUs"
         if num_active_experts == 0:
             return
         comptime act = get_swiglu_activation[
@@ -1237,7 +1230,6 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         static_grid_z: Bool,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -1267,7 +1259,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "grouped dynamic scaled matmul only support GPUs with native"
             " FP8 support"
         )
@@ -1308,9 +1300,7 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -1338,15 +1328,12 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "grouped rowwise dynamic scaled matmul only supports GPUs with"
             " native FP8 support"
         )
         var cuda_ctx = context
-        grouped_matmul_rowwise_dynamic_scaled_fp8[
-            transpose_b=True,
-            target=target,
-        ](
+        grouped_matmul_rowwise_dynamic_scaled_fp8[transpose_b=True,](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
             b.to_tile_tensor(),
@@ -1378,9 +1365,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -1396,9 +1381,6 @@ struct Struct_grouped_matmul_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
         context: DeviceContext,
     ) raises:
         """Computes C = A @ B^T over expert groups with MXFP6 operands.
-
-        Parameters:
-            target: The target GPU device.
 
         Args:
             c: The output tensor of shape (total_tokens, N).
@@ -1437,9 +1419,9 @@ struct Struct_grouped_matmul_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped block-scaled matmul only supports GPUs"
         comptime assert (
             size_of[a_type]() == 1 and size_of[b_type]() == 1
         ), "MXFP6 operands are packed into uint8; four codes per three bytes"
@@ -1495,9 +1477,7 @@ struct Struct_grouped_matmul_block_scaled_amd[
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -1516,9 +1496,6 @@ struct Struct_grouped_matmul_block_scaled_amd[
 
         Computes C = A @ B^T for multiple expert groups where A and B are
         block-scaled (e.g. MXFP4: 4-bit floating point packed as uint8).
-
-        Parameters:
-            target: The target GPU device.
 
         Args:
             c: The output tensor of shape (total_tokens, N).
@@ -1562,9 +1539,9 @@ struct Struct_grouped_matmul_block_scaled_amd[
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped block-scaled matmul only supports GPUs"
         # The kernel takes raw byte operands and derives the format from
         # `lane_bytes`, so view either dtype as `uint8`: both are one byte
         # wide, leaving the layout untouched.
@@ -1651,7 +1628,6 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         activation: StaticString = "silu",
         swiglu_alpha: Float32 = 0.0,
         swiglu_limit: Float32 = 0.0,
@@ -1674,7 +1650,6 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
         """Executes gemm1 with the SwiGLU and MXFP8 requantize fused in.
 
         Parameters:
-            target: The target GPU device.
             activation: The gated activation the epilogue applies, built at
                 compile time with `swiglu_alpha` and `swiglu_limit`.
             swiglu_alpha: The activation's alpha.
@@ -1717,9 +1692,9 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped block-scaled matmul only supports GPUs"
         comptime assert Self.lane_bytes == 32, (
             "the fused SwiGLU+MXFP8 epilogue is MXFP8-only, so a lane always"
             " covers 32 bytes"
@@ -1772,7 +1747,6 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -1791,7 +1765,7 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         comptime assert type_of(b).rank == 3
         comptime assert type_of(a_scales).rank == 3
         comptime assert type_of(b_scales).rank == 3
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "batched dynamic scaled matmul only support GPUs with native"
             " FP8 support"
         )
@@ -1906,7 +1880,6 @@ struct Struct_matmul_dynamic_block_scaled_block_diagonal:
     def execute[
         groups: Int,
         SF_VECTOR_SIZE: Int,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -1927,7 +1900,7 @@ struct Struct_matmul_dynamic_block_scaled_block_diagonal:
         comptime assert type_of(b).rank == 2
         comptime assert type_of(a_scales).rank == 5
         comptime assert type_of(b_scales).rank == 5
-        comptime assert is_gpu[target]() and _is_sm10x_gpu(
+        comptime assert context.target.is_gpu() and _is_sm10x_gpu(
             context.default_device_info
         ), "the block-diagonal block-scaled matmul runs on SM100 only"
         block_scaled_matmul_block_diagonal[
@@ -1957,9 +1930,7 @@ struct Struct_matmul_dynamic_block_scaled_amd[lane_bytes: Int = 16]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -1979,7 +1950,7 @@ struct Struct_matmul_dynamic_block_scaled_amd[lane_bytes: Int = 16]:
         comptime assert type_of(b).rank == 2
         comptime assert type_of(a_scales).rank == 2
         comptime assert type_of(b_scales).rank == 2
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "dynamic block scaled matmul only support GPUs with native"
             " block scaled support"
         )
@@ -2022,9 +1993,7 @@ struct Struct_matmul_dynamic_block_scaled_mxfp6[
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2044,7 +2013,7 @@ struct Struct_matmul_dynamic_block_scaled_mxfp6[
         comptime assert type_of(b).rank == 2
         comptime assert type_of(a_scales).rank == 2
         comptime assert type_of(b_scales).rank == 2
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "MXFP6 block-scaled matmul requires a GPU with native block-scaled"
             " support"
         )
@@ -2085,9 +2054,7 @@ struct Struct_matmul_weight_only_block_scaled_apple:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2099,9 +2066,9 @@ struct Struct_matmul_weight_only_block_scaled_apple:
         comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert conforms_to(type_of(b_scales), TileTensorable)
         comptime c_type = type_of(c).dtype
-        comptime assert is_gpu[
-            target
-        ](), "Apple weight-only block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "Apple weight-only block-scaled matmul only supports GPUs"
         comptime assert context.target.is_apple_gpu(), (
             "matmul.weight.only.block.scaled.apple requires an Apple"
             " (Metal) GPU accelerator"
@@ -2133,9 +2100,7 @@ struct Struct_matmul_weight_only_scaled_float8_apple:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2145,9 +2110,9 @@ struct Struct_matmul_weight_only_scaled_float8_apple:
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
         comptime c_type = type_of(c).dtype
-        comptime assert is_gpu[
-            target
-        ](), "Apple weight-only scaled FP8 matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "Apple weight-only scaled FP8 matmul only supports GPUs"
         comptime assert context.target.is_apple_gpu(), (
             "matmul.weight.only.scaled.float8.apple requires an Apple"
             " (Metal) GPU accelerator"
@@ -2163,7 +2128,8 @@ struct Struct_matmul_weight_only_scaled_float8_apple:
 
 @inline(.always)
 def _apple_int8_w8a8_dispatch[
-    c_type: DType, has_bias: Bool, target: StaticString
+    c_type: DType,
+    has_bias: Bool,
 ](
     c_tt: TileTensor[mut=True, c_type, ...],
     a_tt: TileTensor[DType.bfloat16, ...],
@@ -2183,9 +2149,9 @@ def _apple_int8_w8a8_dispatch[
     per-output-channel weight scale (+ bias iff `has_bias`). Both enqueue fns are
     tested at the Klein shapes in `test_apple_int8_matmul.mojo`.
     """
-    comptime assert is_gpu[
-        target
-    ](), "Apple int8 W8A8 matmul only supports GPUs"
+    comptime assert (
+        context.target.is_gpu()
+    ), "Apple int8 W8A8 matmul only supports GPUs"
     comptime assert (
         context.target.is_apple_gpu()
     ), "matmul.int8.w8a8.apple requires an Apple (Metal) GPU accelerator"
@@ -2236,9 +2202,7 @@ struct Struct_matmul_int8_w8a8_apple:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2255,7 +2219,7 @@ struct Struct_matmul_int8_w8a8_apple:
         # path ignores it). Reuse `b_scale` as the dummy source (same dtype is
         # not required -- it is never read -- but a valid 1-elem view is).
         var dummy_bias = c_tt.reshape(row_major(Int64(1))).as_imm()
-        _apple_int8_w8a8_dispatch[c_type, has_bias=False, target=target](
+        _apple_int8_w8a8_dispatch[c_type, has_bias=False](
             c_tt,
             a.to_tile_tensor[.bfloat16](),
             b.to_tile_tensor[.int8](),
@@ -2277,9 +2241,7 @@ struct Struct_matmul_int8_w8a8_apple_bias:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2293,7 +2255,7 @@ struct Struct_matmul_int8_w8a8_apple_bias:
         comptime assert conforms_to(type_of(b_scale), TileTensorable)
         comptime assert conforms_to(type_of(bias), TileTensorable)
         comptime c_type = type_of(c).dtype
-        _apple_int8_w8a8_dispatch[c_type, has_bias=True, target=target](
+        _apple_int8_w8a8_dispatch[c_type, has_bias=True](
             c.to_tile_tensor(),
             a.to_tile_tensor[.bfloat16](),
             b.to_tile_tensor[.int8](),
@@ -2607,9 +2569,7 @@ struct MergeRaggedTensors:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         output_row_offsets: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -2631,7 +2591,7 @@ struct MergeRaggedTensors:
         comptime assert type_of(a_row_offsets).rank == 1
         comptime assert type_of(b).rank == rank
         comptime assert type_of(b_row_offsets).rank == 1
-        merge_ragged_tensors[rank=rank, target=target](
+        merge_ragged_tensors[rank=rank](
             output.to_tile_tensor(),
             output_row_offsets.to_tile_tensor[.uint32](),
             a.to_tile_tensor[dtype](),
@@ -2649,9 +2609,7 @@ struct Struct_lora_sgmv_ragged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2670,7 +2628,7 @@ struct Struct_lora_sgmv_ragged:
         comptime assert type_of(b).rank == 3
         comptime assert type_of(input_row_offsets).rank == 1
         comptime assert type_of(lora_ids).rank == 1
-        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
+        comptime assert context.target.is_gpu(), "SGMV only supported on GPUs"
 
         if Int(a.shape()[0].value()) == 0:
             return
@@ -2694,9 +2652,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2715,7 +2671,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         comptime assert type_of(b).rank == 3
         comptime assert type_of(input_row_offsets).rank == 1
         comptime assert type_of(lora_ids).rank == 1
-        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
+        comptime assert context.target.is_gpu(), "SGMV only supported on GPUs"
 
         if Int(a.shape()[0].value()) == 0:
             return
@@ -2843,9 +2799,7 @@ struct CompositeMatmulSwiGLUBias:
 struct Struct_lora_sgmv_qkv_expand_ragged:
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         q_out: Some[Output & Tensor],
         kv_out: Some[Output & Tensor],
         p: Some[Input & Tensor],
@@ -2869,7 +2823,7 @@ struct Struct_lora_sgmv_qkv_expand_ragged:
         comptime assert type_of(b).rank == 3
         comptime assert type_of(lora_grouped_offsets).rank == 1
         comptime assert type_of(lora_ids).rank == 1
-        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
+        comptime assert context.target.is_gpu(), "SGMV only supported on GPUs"
 
         if Int(p.shape()[1].value()) == 0:
             return

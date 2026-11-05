@@ -178,10 +178,7 @@ def execute_sink_prefill_repro[
     # sink=True and sink=False specializations to compile — which is the
     # distinguishing property of the gemma4 graph compile.
     var ctx_ptr = ctx
-    generic_flash_attention_kv_cache_ragged[
-        target="gpu",
-        mask_str="causal",
-    ](
+    generic_flash_attention_kv_cache_ragged[mask_str="causal",](
         q_ragged.device_tensor(),
         input_row_offsets.device_tensor(),
         kv_collection_paged_device,

@@ -98,7 +98,6 @@ struct Struct_ep_init:
         dispatch_scale_dtype: DType,
         dispatch_fmt_str: StaticString,
         //,
-        target: StaticString,
         *,
         nvfp4_dyn_global_scales: Bool = False,
     ](
@@ -122,7 +121,6 @@ struct Struct_ep_init:
             n_nodes: Number of physical nodes.
             dispatch_scale_dtype: DType of the dispatch scale.
             dispatch_fmt_str: String indicating the dispatch format.
-            target: Target for this kernel.
             nvfp4_dyn_global_scales: Whether the `BLOCK_SCALED_NV` messages
                 carry a per-token global scale, which makes them larger.
 
@@ -144,7 +142,7 @@ struct Struct_ep_init:
         comptime assert type_of(atomic_counters_0).rank == 1
         comptime assert type_of(atomic_counters_1).rank == 1
         # Ensure this kernel only runs on GPU targets
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
         var gpu_ctx = context
 
         # Calculate buffer sizes for dispatch phase
@@ -355,7 +353,6 @@ struct Struct_ep_dispatch_async:
         n_nodes: Int,
         dispatch_fmt_str: StaticString,
         //,
-        target: StaticString,
     ](
         atomic_counters: Some[MutableInput & Tensor],
         input_tokens: Some[Input & Tensor],
@@ -386,7 +383,6 @@ struct Struct_ep_dispatch_async:
             dispatch_fmt_str: String selecting the dispatch token
                 format, either `"BlockwiseFP8"` or `"BF16"`
                 (inferred).
-            target: Compile-time device target.
 
         Args:
             atomic_counters: Atomic counters coordinating work across
@@ -431,7 +427,6 @@ struct Struct_ep_dispatch_async:
                     max_token_per_rank,
                     n_gpus_per_node,
                     n_nodes,
-                    target,
                 ](
                     atomic_counters.to_tile_tensor[.int32](),
                     input_tokens.to_tile_tensor().as_imm(),
@@ -453,7 +448,6 @@ struct Struct_ep_dispatch_async:
                     max_token_per_rank,
                     n_gpus_per_node,
                     n_nodes,
-                    target,
                 ](
                     atomic_counters.to_tile_tensor[.int32](),
                     input_tokens.to_tile_tensor().as_imm(),
@@ -487,7 +481,6 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
     ](
         atomic_counters: Some[MutableInput & Tensor],
         input_tokens: Some[Input & Tensor],
@@ -516,7 +509,6 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
                 (inferred).
             n_gpus_per_node: Number of GPUs per node (inferred).
             n_nodes: Number of physical nodes (inferred).
-            target: Compile-time device target.
 
         Args:
             atomic_counters: Atomic counters coordinating work across
@@ -571,7 +563,6 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             atomic_counters.to_tile_tensor[.int32](),
             input_tokens.to_tile_tensor().as_imm(),
@@ -601,7 +592,6 @@ struct Struct_ep_dispatch_async_mxfp4:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
         *,
         MX_FORMAT: StaticString = "auto",
     ](
@@ -632,7 +622,6 @@ struct Struct_ep_dispatch_async_mxfp4:
                 (inferred).
             n_gpus_per_node: Number of GPUs per node (inferred).
             n_nodes: Number of physical nodes (inferred).
-            target: Compile-time device target.
             MX_FORMAT: Name of the MX element format, or `auto` to take it
                 from the dtype. See `MXFormat.from_name`. Names the MX
                 encoding of the wire payload. It cannot be inferred from
@@ -685,7 +674,6 @@ struct Struct_ep_dispatch_async_mxfp4:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             atomic_counters.to_tile_tensor[.int32](),
             input_tokens.to_tile_tensor().as_imm(),
@@ -726,7 +714,6 @@ struct Struct_ep_dispatch_wait:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
         num_input_tokens: Int = -1,
     ](
         output_tokens: Some[Output & Tensor],
@@ -770,7 +757,6 @@ struct Struct_ep_dispatch_wait:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             format_handler,
             row_offsets.to_tile_tensor[.uint32](),
@@ -799,7 +785,6 @@ struct Struct_ep_dispatch_wait_fp8:
         n_nodes: Int,
         dispatch_scale_granularity: StaticString,
         //,
-        target: StaticString,
         num_input_tokens: Int = -1,
     ](
         output_tokens: Some[Output & Tensor],
@@ -849,7 +834,6 @@ struct Struct_ep_dispatch_wait_fp8:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             format_handler,
             row_offsets.to_tile_tensor[.uint32](),
@@ -878,7 +862,6 @@ struct Struct_ep_dispatch_wait_block_scaled_nv:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
         num_input_tokens: Int = -1,
     ](
         output_tokens: Some[Output & Tensor],
@@ -933,7 +916,6 @@ struct Struct_ep_dispatch_wait_block_scaled_nv:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             format_handler,
             row_offsets.to_tile_tensor[.uint32](),
@@ -962,7 +944,6 @@ struct Struct_ep_dispatch_wait_mxfp4:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
         num_input_tokens: Int = -1,
         *,
         MX_FORMAT: StaticString = "auto",
@@ -1033,7 +1014,6 @@ struct Struct_ep_dispatch_wait_mxfp4:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             format_handler,
             row_offsets.to_tile_tensor[.uint32](),
@@ -1064,7 +1044,6 @@ struct Struct_ep_dispatch:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Tensor],
         row_offsets: Some[Output & Tensor],
@@ -1105,7 +1084,6 @@ struct Struct_ep_dispatch:
                 (inferred).
             allreduce_world_size: Number of ranks participating in
                 the allreduce following dispatch (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Output tensor storing the received tokens
@@ -1165,7 +1143,6 @@ struct Struct_ep_dispatch:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1201,7 +1178,6 @@ struct Struct_ep_dispatch_fp8:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Tensor],
         output_scales: Some[Output & Tensor],
@@ -1255,7 +1231,6 @@ struct Struct_ep_dispatch_fp8:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1291,7 +1266,6 @@ struct Struct_ep_dispatch_block_scaled_nv:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Tensor],
         output_scales: Some[Output & Tensor],
@@ -1329,7 +1303,6 @@ struct Struct_ep_dispatch_block_scaled_nv:
                 (inferred).
             allreduce_world_size: Number of ranks participating in
                 the allreduce following dispatch (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Output tensor storing the received tokens
@@ -1413,7 +1386,6 @@ struct Struct_ep_dispatch_block_scaled_nv:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1470,7 +1442,6 @@ struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Tensor],
         output_scales: Some[Output & Tensor],
@@ -1514,7 +1485,6 @@ struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales:
                 (inferred).
             allreduce_world_size: Number of ranks participating in
                 the allreduce following dispatch (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Output tensor storing the received tokens
@@ -1602,7 +1572,6 @@ struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1637,7 +1606,6 @@ struct Struct_ep_dispatch_mxfp4:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
         *,
         MX_FORMAT: StaticString = "auto",
     ](
@@ -1711,7 +1679,6 @@ struct Struct_ep_dispatch_mxfp4:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1757,7 +1724,6 @@ struct DistributedEPDispatchBlockScaledNV:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output_tokens: TensorTuple[*OutTokens],
@@ -1805,7 +1771,6 @@ struct DistributedEPDispatchBlockScaledNV:
             n_nodes: Number of physical nodes (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -1938,7 +1903,6 @@ struct DistributedEPDispatchBlockScaledNV:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
                 # A prefill chunk's dispatch waited on the monitor's serial
                 # per-expert scan and sent one token per CTA at a time; the
                 # histogram count and the warp-per-token send keep the same
@@ -1995,7 +1959,6 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output_tokens: TensorTuple[*OutTokens],
@@ -2047,7 +2010,6 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
             n_nodes: Number of physical nodes (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -2189,7 +2151,6 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
             ](
                 format_handler,
                 row_offsets[index].to_tile_tensor[.uint32](),
@@ -2233,7 +2194,6 @@ struct DistributedEPDispatchMXFP4:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
         *,
         mx_format: StaticString = "auto",
@@ -2279,7 +2239,6 @@ struct DistributedEPDispatchMXFP4:
             n_nodes: Number of physical nodes (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
             mx_format: Name of the MX element format, or `auto` to take it
                 from the dtype. See `MXFormat.from_name`. Names the MX
@@ -2405,7 +2364,6 @@ struct DistributedEPDispatchMXFP4:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
             ](
                 format_handler,
                 row_offsets[index].to_tile_tensor[.uint32](),
@@ -2448,7 +2406,6 @@ struct DistributedEPDispatch:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output_tokens: TensorTuple[*OutTokens],
@@ -2485,7 +2442,6 @@ struct DistributedEPDispatch:
             n_nodes: Number of physical nodes (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -2583,7 +2539,6 @@ struct DistributedEPDispatch:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
             ](
                 format_handler,
                 row_offsets[index].to_tile_tensor[.uint32](),
@@ -2628,7 +2583,6 @@ struct DistributedEPDispatchFP8:
         dispatch_scale_granularity: StaticString,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output_tokens: TensorTuple[*OutTokens],
@@ -2674,7 +2628,6 @@ struct DistributedEPDispatchFP8:
                 FP8 quantization scales (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -2780,7 +2733,6 @@ struct DistributedEPDispatchFP8:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
             ](
                 format_handler,
                 row_offsets[index].to_tile_tensor[.uint32](),
@@ -2821,7 +2773,6 @@ struct DistributedEPCombine:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output_tokens: TensorTuple[*Outs],
@@ -2853,7 +2804,6 @@ struct DistributedEPCombine:
             n_nodes: Number of physical nodes.
             fused_shared_expert: Whether a shared expert is fused into the
                 combine kernel.
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -2971,7 +2921,6 @@ struct DistributedEPCombine:
                 max_token_per_rank,
                 n_gpus_per_node,
                 n_nodes,
-                target,
                 fused_shared_expert=fused_shared_expert,
             ](
                 coord_to_index_list(output_tokens[index].shape())[0],
@@ -3004,7 +2953,6 @@ struct Struct_ep_combine_async:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
     ](
         atomic_counters: Some[MutableInput & Tensor],
         input_tokens: Some[Input & Tensor],
@@ -3033,7 +2981,6 @@ struct Struct_ep_combine_async:
                 (inferred).
             n_gpus_per_node: Number of GPUs per node (inferred).
             n_nodes: Number of physical nodes (inferred).
-            target: Compile-time device target.
 
         Args:
             atomic_counters: Atomic counters coordinating work across
@@ -3070,7 +3017,6 @@ struct Struct_ep_combine_async:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             atomic_counters.to_tile_tensor[.int32](),
             input_tokens.to_tile_tensor[combine_dtype](),
@@ -3097,7 +3043,6 @@ struct Struct_ep_combine_wait:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         n_nodes: Int,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Fused & StoreAccess],
         atomic_counters: Some[MutableInput & Tensor],
@@ -3122,7 +3067,6 @@ struct Struct_ep_combine_wait:
                 receive.
             n_gpus_per_node: Number of GPUs per physical node.
             n_nodes: Number of physical nodes in the deployment.
-            target: Compile-time device target.
 
         Args:
             output_tokens: Fused output tensor storing the weighted
@@ -3190,7 +3134,6 @@ struct Struct_ep_combine_wait:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             coord_to_index_list(output_tokens.shape())[0],
             atomic_counters.to_tile_tensor[.int32](),
@@ -3450,7 +3393,6 @@ struct Struct_ep_combine:
         fused_shared_expert: Bool,
         skip_a2a: Bool,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Fused & StoreAccess],
         atomic_counters: Some[MutableInput & Tensor],
@@ -3486,7 +3428,6 @@ struct Struct_ep_combine:
                 expert outputs (inferred).
             skip_a2a: Whether to skip the all-to-all communication and
                 send tokens only within the current device (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Fused output tensor storing the weighted
@@ -3569,7 +3510,6 @@ struct Struct_ep_combine:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
         ](
@@ -3603,7 +3543,6 @@ struct Struct_ep_combine_skip_a2a:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Fused & StoreAccess],
         atomic_counters: Some[MutableInput & Tensor],
@@ -3645,7 +3584,6 @@ struct Struct_ep_combine_skip_a2a:
                 (inferred).
             allreduce_world_size: World size for the local allreduce
                 used when `skip_a2a` is set (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Fused output tensor storing the weighted
@@ -3730,7 +3668,6 @@ struct Struct_ep_combine_skip_a2a:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
@@ -3756,7 +3693,6 @@ struct Struct_ep_fused_silu:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         activation: StaticString = "silu",
         swiglu_alpha: Float32 = 0.0,
         swiglu_limit: Float32 = 0.0,
@@ -3792,7 +3728,7 @@ struct Struct_ep_fused_silu:
         comptime assert type_of(input).rank == 2
         comptime assert type_of(row_offsets).rank == 1
         # Ensure this kernel only runs on GPU targets
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
 
         var output_tensor = output.to_tile_tensor()
         var input_tensor = input.to_tile_tensor().as_imm()
@@ -3831,7 +3767,7 @@ struct Struct_ep_fused_silu:
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "ep.fused_silu",
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
@@ -3853,7 +3789,6 @@ struct Struct_ep_fused_silu_mxfp4:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         *,
         max_padded_M: Int,
         activation: StaticString = "silu",
@@ -3905,7 +3840,7 @@ struct Struct_ep_fused_silu_mxfp4:
         comptime assert type_of(input).rank == 2
         comptime assert type_of(row_offsets).rank == 1
         # Ensure this kernel only runs on GPU targets
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
         comptime assert (
             max_padded_M > 0 and max_padded_M % 32 == 0
         ), "max_padded_M must be a positive multiple of 32"
@@ -3950,7 +3885,7 @@ struct Struct_ep_fused_silu_mxfp4:
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             trace_name,
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
@@ -3974,7 +3909,6 @@ struct Struct_ep_fused_silu_mxfp8:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         *,
         max_padded_M: Int,
         activation: StaticString = "silu",
@@ -4004,7 +3938,6 @@ struct Struct_ep_fused_silu_mxfp8:
         comptime assert type_of(input).rank == 2
         comptime assert type_of(row_offsets).rank == 1
         Struct_ep_fused_silu_mxfp4.execute[
-            target=target,
             max_padded_M=max_padded_M,
             activation=activation,
             swiglu_alpha=swiglu_alpha,
@@ -4020,7 +3953,6 @@ struct Struct_ep_fused_silu_mxfp6:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         *,
         max_padded_M: Int,
         FP6_FORMAT: Int = 0,
@@ -4058,7 +3990,7 @@ struct Struct_ep_fused_silu_mxfp6:
         comptime assert type_of(scales).rank == 2
         comptime assert type_of(input).rank == 2
         comptime assert type_of(row_offsets).rank == 1
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
         comptime assert (
             max_padded_M > 0 and max_padded_M % 32 == 0
         ), "max_padded_M must be a positive multiple of 32"
@@ -4103,7 +4035,7 @@ struct Struct_ep_fused_silu_mxfp6:
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "ep.fused_silu.mxfp6",
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
@@ -4127,7 +4059,6 @@ struct Struct_ep_fused_silu_nvfp4:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         activation: StaticString = "silu",
         swiglu_alpha: Float32 = 0.0,
         swiglu_limit: Float32 = 0.0,
@@ -4171,7 +4102,7 @@ struct Struct_ep_fused_silu_nvfp4:
         comptime assert type_of(scales_offsets).rank == 1
         comptime assert type_of(input_scales).rank == 1
         # Ensure this kernel only runs on GPU targets
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
 
         var output_tensor = output.to_tile_tensor()
         var scales_tensor = scales.to_tile_tensor()
@@ -4227,7 +4158,7 @@ struct Struct_ep_fused_silu_nvfp4:
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "ep.fused_silu.nvfp4",
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),

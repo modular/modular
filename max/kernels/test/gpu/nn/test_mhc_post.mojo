@@ -88,7 +88,6 @@ def run_mhc_post[
     mhc_post[
         hc_mult=hc,
         hidden_size=hidden,
-        target="gpu",
         block_size=mhc_post_block_size[dtype, hidden](),
     ](
         TileTensor(out_d, streams_shape),
@@ -165,7 +164,7 @@ def test_mhc_post_rejects_bad_layouts(ctx: DeviceContext) raises:
         ),
     ).as_imm()
     with assert_raises(contains="unit inner strides"):
-        mhc_post[hc_mult=hc, hidden_size=hidden, target="gpu"](
+        mhc_post[hc_mult=hc, hidden_size=hidden](
             output, strided, y, post, comb, ctx
         )
 
@@ -174,7 +173,7 @@ def test_mhc_post_rejects_bad_layouts(ctx: DeviceContext) raises:
         streams_d.unsafe_ptr().unsafe_offset(1), streams_shape
     ).as_imm()
     with assert_raises(contains="unit inner strides"):
-        mhc_post[hc_mult=hc, hidden_size=hidden, target="gpu"](
+        mhc_post[hc_mult=hc, hidden_size=hidden](
             output, misaligned, y, post, comb, ctx
         )
 
@@ -189,7 +188,7 @@ def test_mhc_post_zero_rows(ctx: DeviceContext) raises:
     var comb_d = ctx.enqueue_create_buffer[.float32](hc * hc)
     var out_d = ctx.enqueue_create_buffer[.bfloat16](hc * hidden)
     var streams_shape = row_major((0, hc, hidden))
-    mhc_post[hc_mult=hc, hidden_size=hidden, target="gpu"](
+    mhc_post[hc_mult=hc, hidden_size=hidden](
         TileTensor(out_d, streams_shape),
         TileTensor(streams_d, streams_shape).as_imm(),
         TileTensor(y_d, row_major((0, hidden))).as_imm(),

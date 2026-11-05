@@ -334,7 +334,6 @@ def _run_amd_decode_arm[
         n_scale_granularity=GLM_N_SCALE_GRAN,
         k_scale_granularity=GLM_K_SCALE_GRAN,
         mask_str="causal",
-        target="gpu",
         kernels=AMDMLAGraph,
     ](
         out_tt,

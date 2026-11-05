@@ -193,7 +193,7 @@ def run_case[
     # With num_comp == 0 the single column is all -1, so nothing is read
     # from the compressed leaf; the graph-level test covers a true [rows, 0].
     latent_sparse_attention_ragged_paged_portable[
-        target="gpu", window=WINDOW, split_k=split_k
+        window=WINDOW, split_k=split_k
     ](
         out.device_tensor(),
         q.device_tensor(),

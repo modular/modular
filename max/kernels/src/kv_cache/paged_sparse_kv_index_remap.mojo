@@ -497,7 +497,6 @@ def _paged_sparse_kv_index_remap_row_offs_kernel(
 
 
 def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
-    target: StaticString,
     page_size: Int,
 ](
     physical_out: MutPointer[Int32, _],
@@ -521,7 +520,6 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
     use ``(logical_stride0, logical_stride1)`` like MOGG graph tensors.
 
     Parameters:
-        target: StaticString identifying the dispatch target, used to select CPU versus GPU.
         page_size: Number of tokens per KV cache page.
 
     Args:
@@ -541,7 +539,7 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
         logical_stride1: Column stride for indexing the logical tensor.
         ctx: Device context used to enqueue the GPU kernel.
     """
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         for i in range(num_indices):
             var r = i // indices_stride
             var c = i - r * indices_stride
@@ -586,7 +584,6 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
 
 @inline(.always)
 def paged_sparse_kv_index_remap[
-    target: StaticString,
     page_size: Int,
     indices_stride: Int,
     cache_dtype: DType,
@@ -605,7 +602,6 @@ def paged_sparse_kv_index_remap[
     ``paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch``.
 
     Parameters:
-        target: StaticString identifying the dispatch target, used to select CPU versus GPU.
         page_size: Number of tokens per KV cache page.
         indices_stride: Stride used to split a flat slot index into row and column.
         cache_dtype: DType of the ``kv_blocks`` tensor.
@@ -626,7 +622,7 @@ def paged_sparse_kv_index_remap[
     var log_stride0 = Int(si_tt.dynamic_stride(0))
     var log_stride1 = Int(si_tt.dynamic_stride(1))
     paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
-        target, page_size
+        page_size
     ](
         physical_out,
         rebind[MutPointer[Int32, MutAnyOrigin]](si_tt.ptr),

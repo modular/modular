@@ -124,7 +124,8 @@ def run_case(q_len: Int, cache_len: Int, extra: Int, ctx: DeviceContext) raises:
     ](1, q_len, seq_len + extra, ctx)
     var out = HostDeviceTileTensor[bf16](q_layout, ctx)
     generic_flash_attention_kv_cache_ragged[
-        target="gpu", mask_str="causal", output_dtype=bf16
+        mask_str="causal",
+        output_dtype=bf16,
     ](
         q.device_tensor().as_imm(),
         row_offsets.device_tensor().as_imm(),

@@ -718,7 +718,6 @@ def bench_combine[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
             use_shmem=False,
         ](
             get_atomic_counters_tt(dev_idx, slot_idx),
@@ -751,7 +750,6 @@ def bench_combine[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
         ](
             n_tokens_per_rank,
             get_atomic_counters_tt(dev_idx, slot_idx),
@@ -787,7 +785,6 @@ def bench_combine[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
             use_shmem=False,
         ](
             n_tokens_per_rank,

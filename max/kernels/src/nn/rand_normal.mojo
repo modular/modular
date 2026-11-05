@@ -24,7 +24,6 @@ from std.utils.coord import Coord
 def random_normal[
     dtype: DType,
     //,
-    target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength](idx: Coord, val: SIMD[dtype, width]),
@@ -54,7 +53,6 @@ def random_normal[
 
     Parameters:
         dtype: The data type to generate.
-        target: The target to run on.
         OutputFn: The type of the function which stores the generated values.
 
     Args:
@@ -66,7 +64,6 @@ def random_normal[
         ctx: The device context.
         output_fn: The function which stores the generated values.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     if stddev <= 0:
         raise Error("stddev must be positive")
@@ -87,7 +84,7 @@ def random_normal[
     # to within_thread = 0 for every element.
     var grid_block: Int
 
-    comptime if target == "gpu":
+    comptime if ctx.target.is_gpu():
         comptime info = DeviceContext[].default_device_info
         comptime MAX_GRID = (
             info.sm_count * (info.threads_per_multiprocessor // BLOCK_SIZE)

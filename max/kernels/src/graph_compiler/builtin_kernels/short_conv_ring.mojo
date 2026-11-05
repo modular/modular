@@ -34,7 +34,6 @@ struct Struct_short_conv_ring:
     def execute[
         commit: Bool,
         //,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         x: Some[Input & Tensor],
@@ -61,7 +60,7 @@ struct Struct_short_conv_ring:
         comptime assert type_of(input_row_offsets).rank == 1
         comptime assert type_of(positions).rank == 1
         comptime assert type_of(conv_rows).rank == 2
-        short_conv_ring[target=target, commit=commit](
+        short_conv_ring[commit=commit](
             x.to_tile_tensor[dtype](),
             weight.to_tile_tensor[dtype](),
             ring.to_tile_tensor(),
@@ -86,7 +85,6 @@ struct Struct_fused_qk_rms_norm_short_conv_ragged_paged:
         apply_log_scaling: Bool,
         commit: Bool,
         //,
-        target: StaticString,
     ](
         q_output: Some[Output & Tensor],
         qkvr: Some[Input & Tensor],
@@ -162,7 +160,6 @@ struct Struct_fused_qk_rms_norm_short_conv_ragged_paged:
             max_cache_length.to_tile_tensor[.uint32](),
         )
         fused_qk_rms_norm_short_conv_ragged_paged[
-            target=target,
             multiply_before_cast=multiply_before_cast,
             apply_log_scaling=apply_log_scaling,
             commit=commit,

@@ -439,7 +439,6 @@ def main() raises:
             MAX_TOK,
             N_RANKS,
             1,
-            "gpu",
             use_shmem=False,
         ](
             rows,

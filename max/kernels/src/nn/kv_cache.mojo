@@ -388,7 +388,6 @@ def generic_flash_attention_kv_cache_padded[
     dtype: DType,
     //,
     *,
-    target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
     num_heads: Int = -1,
@@ -419,7 +418,7 @@ def generic_flash_attention_kv_cache_padded[
             )
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "attention.mha.padded."
         + collection_t.name_str
         + "."
@@ -431,7 +430,6 @@ def generic_flash_attention_kv_cache_padded[
         task_id=get_safe_task_id(context),
     ):
         return _flash_attention_dispatch[
-            target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
         ](
@@ -451,7 +449,6 @@ def _flash_attention_dispatch[
     collection_t: KVCollectionT,
     //,
     *,
-    target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
 ](
@@ -470,7 +467,7 @@ def _flash_attention_dispatch[
     def _dispatch_flash_attention[
         mask_t: MHAMask
     ](mask: mask_t) raises {var k, var v, imm}:
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
             return flash_attention_kv_cache_cpu(
                 q,
                 k,
@@ -640,7 +637,6 @@ def fused_qk_rms_norm_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
 ](
     q_proj: TileTensor[mut=False, dtype, ...],
@@ -661,9 +657,9 @@ def fused_qk_rms_norm_ragged_paged[
 ) raises:
     """Applies per-head RMSNorm to Q and new K-cache entries in one GPU launch.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_qk_rms_norm_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_qk_rms_norm_ragged_paged is GPU-only"
     comptime assert q_proj.flat_rank == 3, "q_proj must be rank 3"
     comptime assert q_output.flat_rank == 3, "q_output must be rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must be rank 1"
@@ -702,7 +698,7 @@ def fused_qk_rms_norm_ragged_paged[
             t";layer_idx={layer_idx};num_heads={params.num_heads};head_size={params.head_size}"
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_qk_rms_norm_ragged_paged_nhead_{params.num_heads}.hdim_{params.head_size}"
         ),
@@ -1126,7 +1122,6 @@ def fused_qk_rms_norm_rope_ragged_paged[
         dtype, width
     ],
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
 ](
@@ -1163,9 +1158,9 @@ def fused_qk_rms_norm_rope_ragged_paged[
     `[0, rope_dim)` of each head (non-interleaved layout) and the suffix is left
     un-roped, matching `fused_qk_rope_ragged`'s `has_nope_prefix` path.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_qk_rms_norm_rope_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_qk_rms_norm_rope_ragged_paged is GPU-only"
     comptime assert q_output.flat_rank == 3, "q_output must be rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must be rank 1"
     comptime assert k_gamma.flat_rank == 1, "k_gamma must be rank 1"
@@ -1220,7 +1215,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             t";layer_idx={layer_idx};num_heads={params.num_heads};head_size={params.head_size};rope_dim={rope_dim}"
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_qk_rms_norm_rope_ragged_paged_nhead_{params.num_heads}.hdim_{params.head_size}.rope_{rope_dim}"
         ),
@@ -1516,7 +1511,6 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
         dtype, width
     ],
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
 ](
@@ -1569,9 +1563,9 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     indexer stays partial-64) trips a compile-time assert rather than silently
     mis-roping a band.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_dual_qk_rms_norm_rope_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_dual_qk_rms_norm_rope_ragged_paged is GPU-only"
     comptime assert q_main_output.flat_rank == 3, "q_main_output must be rank 3"
     comptime assert (
         q_index_output.flat_rank == 3
@@ -1660,7 +1654,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             t";layer_idx={layer_idx};main_num_heads={main_params.num_heads};index_num_heads={index_params.num_heads};head_size={main_params.head_size};rope_dim={rope_dim}"
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_dual_qk_rms_norm_rope_ragged_paged_nhead_{main_params.num_heads}.hdim_{main_params.head_size}.rope_{rope_dim}"
         ),
@@ -2829,7 +2823,6 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
         dtype, width
     ],
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
     launch: Int = NVFP4_QK_LAUNCH_AUTO,
@@ -2896,9 +2889,9 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
     Raises:
         If the kernel launch fails.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged is GPU-only"
     comptime assert q_main_output.flat_rank == 3, "q_main_output must be rank 3"
     comptime assert (
         q_index_output.flat_rank == 3
@@ -2948,7 +2941,7 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
             t";layer_idx={layer_idx};main_num_heads={main_collection_t.kv_params.num_heads};index_num_heads={index_collection_t.kv_params.num_heads};head_dim={head_dim};rope_dim={rope_dim}"
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_nhead_{main_collection_t.kv_params.num_heads}.hdim_{head_dim}.rope_{rope_dim}"
         ),
@@ -3144,7 +3137,6 @@ def rms_norm_kv_cache_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
     epsilon: Float32,
@@ -3276,7 +3268,7 @@ def rms_norm_kv_cache_ragged_paged[
             val=val.cast[cache_dtype](),
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"rms_norm_kv_cache_ragged_paged_nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
@@ -3303,7 +3295,6 @@ def rms_norm_value_cache_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
     epsilon: Float32,
@@ -3416,7 +3407,7 @@ def rms_norm_value_cache_ragged_paged[
             val=val.cast[cache_dtype](),
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"rms_norm_value_cache_ragged_paged_nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),

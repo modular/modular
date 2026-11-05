@@ -69,7 +69,7 @@ def bench_mhc_post[
     ) raises {
         mut cb_streams, mut cb_out, mut cb_y, mut cb_post, mut cb_comb, imm
     }:
-        mhc_post[hc_mult=hc, hidden_size=hidden, target="gpu"](
+        mhc_post[hc_mult=hc, hidden_size=hidden](
             TileTensor(cb_out.offset_ptr(iteration), streams_shape),
             TileTensor(
                 cb_streams.offset_ptr(iteration), streams_shape

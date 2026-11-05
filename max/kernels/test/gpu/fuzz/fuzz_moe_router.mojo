@@ -248,7 +248,7 @@ def run_one_case(
     var expert_indices = TileTensor(idx_dev, row_major(nt, Idx[TOPK]))
     var expert_weights = TileTensor(w_dev, row_major(nt, Idx[TOPK]))
 
-    single_group_router[N_EXPERTS, TOPK, NORM, "gpu"](
+    single_group_router[N_EXPERTS, TOPK, NORM](
         expert_indices,
         expert_weights,
         expert_scores,

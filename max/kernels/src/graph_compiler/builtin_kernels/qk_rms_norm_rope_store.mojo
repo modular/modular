@@ -200,7 +200,6 @@ struct HeadRMSNormSigmoidGate:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
         //,
         n_heads: Int,
     ](
@@ -215,7 +214,6 @@ struct HeadRMSNormSigmoidGate:
 
         Parameters:
             dtype: Element type.
-            target: Compilation target.
             n_heads: Heads in `x` (this device's).
 
         Args:
@@ -228,9 +226,9 @@ struct HeadRMSNormSigmoidGate:
         Raises:
             Error: If the launch fails.
         """
-        comptime assert is_gpu[
-            target
-        ](), "norm.head_rms_norm_sigmoid_gate is GPU only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "norm.head_rms_norm_sigmoid_gate is GPU only"
         comptime width = n_heads * HEAD_DIM
         comptime qkvg_width = Int(qkvg.static_spec.shape_tuple[1])
         comptime assert qkvg_width >= width, "qkvg has no gate"

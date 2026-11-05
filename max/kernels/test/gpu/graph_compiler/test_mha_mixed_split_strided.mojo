@@ -317,7 +317,6 @@ def run_op(
     ](output_d.unsafe_ptr(), (total_q, NUM_Q_HEADS, HEAD_DIM))
 
     _execute_mha_ragged_paged[
-        target="gpu",
         mask_str="causal",
         local_window_size=-1,
         v_head_dim=-1,

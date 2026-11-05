@@ -310,7 +310,6 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
             Self.n_ranks,
             1,
             False,
-            "gpu",
             dispatch_warp_min_tokens=min_tokens,
         ](
             self.handlers[r],

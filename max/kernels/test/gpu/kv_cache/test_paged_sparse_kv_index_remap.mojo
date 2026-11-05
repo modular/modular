@@ -167,7 +167,7 @@ def main() raises:
         ctx.enqueue_copy(d_lut, h_lut)
 
         paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
-            "gpu", PAGE_SIZE
+            PAGE_SIZE
         ](
             d_out.unsafe_ptr(),
             d_log.unsafe_ptr(),

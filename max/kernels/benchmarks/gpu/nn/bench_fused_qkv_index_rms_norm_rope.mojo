@@ -432,7 +432,6 @@ def bench_fused_qkv_index_rms_norm_rope[
                 return q_index_src.load[width=width]((token, head, col))
 
             fused_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](
@@ -449,7 +448,6 @@ def bench_fused_qkv_index_rms_norm_rope[
                 ctx,
             )
             fused_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](
@@ -555,7 +553,6 @@ def bench_fused_qkv_index_rms_norm_rope[
             # into one. It takes a per-band epsilon, so `main_epsilon`/`index_epsilon`
             # are passed twice below with the same value the unfused pair uses.
             fused_dual_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](

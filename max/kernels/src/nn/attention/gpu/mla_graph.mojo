@@ -319,7 +319,6 @@ trait MLAGraphKernels:
         q_type: DType,
         out_type: DType,
         //,
-        target: StaticString,
         window: Int,
         split_k: Bool = True,
         portable_p_bf16: Bool = False,
@@ -344,7 +343,6 @@ trait MLAGraphKernels:
         Parameters:
             q_type: Query element type (inferred).
             out_type: Output element type (inferred).
-            target: Compilation target string.
             window: Sliding window length in tokens.
             split_k: Whether the SM100 route may split a row's keys.
             portable_p_bf16: Diagnostic; see
@@ -405,7 +403,6 @@ struct AMDMLAGraph(MLAGraphKernels):
         q_type: DType,
         out_type: DType,
         //,
-        target: StaticString,
         window: Int,
         split_k: Bool = True,
         portable_p_bf16: Bool = False,
@@ -426,7 +423,6 @@ struct AMDMLAGraph(MLAGraphKernels):
     ) raises:
         """Runs the portable GPU kernel."""
         latent_sparse_attention_ragged_paged_portable[
-            target=target,
             window=window,
             split_k=split_k,
             portable_p_bf16=portable_p_bf16,
@@ -592,7 +588,6 @@ struct SM100MLAGraph(MLAGraphKernels):
         q_type: DType,
         out_type: DType,
         //,
-        target: StaticString,
         window: Int,
         split_k: Bool = True,
         portable_p_bf16: Bool = False,
@@ -613,7 +608,6 @@ struct SM100MLAGraph(MLAGraphKernels):
     ) raises:
         """Runs the SM100 decode where it applies."""
         latent_sparse_attention_ragged_paged_sm100[
-            target=target,
             window=window,
             split_k=split_k,
             portable_p_bf16=portable_p_bf16,
@@ -670,7 +664,6 @@ struct LegacyNVMLAGraph(MLAGraphKernels):
         q_type: DType,
         out_type: DType,
         //,
-        target: StaticString,
         window: Int,
         split_k: Bool = True,
         portable_p_bf16: Bool = False,
@@ -691,7 +684,6 @@ struct LegacyNVMLAGraph(MLAGraphKernels):
     ) raises:
         """Runs the portable GPU kernel."""
         latent_sparse_attention_ragged_paged_portable[
-            target=target,
             window=window,
             split_k=split_k,
             portable_p_bf16=portable_p_bf16,
@@ -1840,7 +1832,6 @@ def mla_prefill_branch_fp8[
         convert_bf16_to_fp8_e4m3fn(v_view, v_fp8, ctx)
 
         generic_flare_mla_prefill_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             kernels=kernels.Kernels,
         ](
@@ -1858,7 +1849,6 @@ def mla_prefill_branch_fp8[
         )
     else:
         generic_flare_mla_prefill_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             kernels=kernels.Kernels,
         ](
@@ -2390,7 +2380,6 @@ def mla_decode_branch_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     mask_str: StaticString,
-    target: StaticString = "cpu",
     sparse_mla: Bool = False,
     # Read-once shared-index MTP fold; threaded to flare_mla_decoding (fp8-KV
     # only; bf16 branch is parity plumbing, always False).
@@ -2476,7 +2465,6 @@ def mla_decode_branch_fp8[
         k_scale_granularity: Granularity of the scale for K dimension of the
             matrix multiplication.
         mask_str: Mask variant.
-        target: Target device.
         sparse_mla: Whether to use sparse MLA.
         fold_shared_index: Whether to enable the default-off read-once
             shared-index fold on the sparse FP8 decode path, which packs the
@@ -2897,7 +2885,6 @@ def mla_decode_branch_fp8[
             _ = valid_lengths_buf^
     else:
         generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             sparse_mla=sparse_mla,
             fold_shared_index=fold_shared_index,
@@ -3602,7 +3589,6 @@ def mla_prefill_decode_graph_fp8[
             n_scale_granularity=n_scale_granularity,
             k_scale_granularity=k_scale_granularity,
             mask_str=mask_str,
-            target=target,
             sparse_mla=sparse_mla,
             fold_shared_index=fold_shared_index,
             fp8_q=fp8_q,
@@ -4048,7 +4034,6 @@ def mla_prefill_branch_bf16[
 
         # Pass FP8 tensors to attention kernel
         generic_flare_mla_prefill_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             kernels=kernels.Kernels,
         ](
@@ -4107,7 +4092,6 @@ def mla_prefill_branch_bf16[
         )
 
         generic_flare_mla_prefill_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             kernels=kernels.Kernels,
         ](
@@ -4137,7 +4121,6 @@ def mla_decode_branch_bf16[
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
     //,
     mask_str: StaticString,
-    target: StaticString = "cpu",
     sparse_mla: Bool = False,
     physical_indices: Bool = True,
     # How the sparse index producer packs each row; see flare_mla_decoding.
@@ -4184,7 +4167,6 @@ def mla_decode_branch_bf16[
         KVInputFnType: Type of the closure that loads the KV latent
             values (inferred).
         mask_str: Mask variant.
-        target: Target device (defaults to "cpu").
         sparse_mla: Whether to use sparse MLA (defaults to False).
         physical_indices: Whether `d_indices` holds paged physical rows rather
             than token positions (defaults to True); see `flare_mla_decoding`.
@@ -4413,7 +4395,6 @@ def mla_decode_branch_bf16[
         _ = zero_row_buf^
     else:
         generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             sparse_mla=sparse_mla,
             physical_indices=physical_indices,
@@ -4815,7 +4796,6 @@ def mla_prefill_decode_graph_bf16[
     def decode_branch[skip_masked_tiles: Bool]() raises {imm}:
         mla_decode_branch_bf16[
             mask_str=mask_str,
-            target=target,
             sparse_mla=sparse_mla,
             physical_indices=physical_indices,
             sparse_row=sparse_row,

@@ -759,7 +759,6 @@ def bench_dispatch_common[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
             use_shmem=False,
         ](
             get_atomic_counters_tensor(dev_idx, slot_idx),
@@ -782,7 +781,6 @@ def bench_dispatch_common[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
         ](
             format_handler,
             get_row_offsets_tensor(dev_idx, slot_idx),
@@ -811,7 +809,6 @@ def bench_dispatch_common[
             n_ranks,
             1,
             False,
-            "gpu",
             use_shmem=False,
         ](
             format_handler,

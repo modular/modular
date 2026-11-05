@@ -457,7 +457,6 @@ def run_one_case(
 
     # === Kernel under test ==================================================
     generic_flare_mla_decode_kv_cache_ragged[
-        target="gpu",
         mask_str=MASK,
         kernels=SM100MLA,
     ](
@@ -790,7 +789,8 @@ def run_schedule_case(
     var np = Optional[Int](2) if pin_partitions else Optional[Int]()
 
     generic_flare_mla_decode_kv_cache_ragged[
-        target="gpu", mask_str=MASK, kernels=SM100MLA
+        mask_str=MASK,
+        kernels=SM100MLA,
     ](
         q_tt,
         row_offsets_tt,
@@ -809,7 +809,8 @@ def run_schedule_case(
 
     for _ in range(repeats - 1):
         generic_flare_mla_decode_kv_cache_ragged[
-            target="gpu", mask_str=MASK, kernels=SM100MLA
+            mask_str=MASK,
+            kernels=SM100MLA,
         ](
             q_tt,
             row_offsets_tt,

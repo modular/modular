@@ -371,7 +371,7 @@ def run_shape[
         imm cmp,
         imm scale,
     }:
-        SM100MLAGraph.latent_sparse_attention[target="gpu", window=WINDOW](
+        SM100MLAGraph.latent_sparse_attention[window=WINDOW](
             out_tt, q_tt, offs_tt, idx_tt, sink_tt, win, cmp, scale, launch_ctx
         )
 
@@ -388,9 +388,7 @@ def run_shape[
         imm cmp,
         imm scale,
     }:
-        SM100MLAGraph.latent_sparse_attention[
-            target="gpu", window=WINDOW, split_k=False
-        ](
+        SM100MLAGraph.latent_sparse_attention[window=WINDOW, split_k=False](
             out_nosplit_tt,
             q_tt,
             offs_tt,

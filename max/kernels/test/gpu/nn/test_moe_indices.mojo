@@ -349,7 +349,7 @@ def test_moe_create_indices[
     var scales_offset_buffer = ctx.enqueue_create_buffer[.uint32](num_experts)
 
     comptime if test_scales_offset:
-        moe_create_indices["gpu"](
+        moe_create_indices(
             token_expert_order,
             expert_start_indices,
             restore_token_order,
@@ -360,7 +360,7 @@ def test_moe_create_indices[
             scales_offset_p=scales_offset_buffer.unsafe_ptr().as_unsafe_any_origin(),
         )
     else:
-        moe_create_indices["gpu"](
+        moe_create_indices(
             token_expert_order,
             expert_start_indices,
             restore_token_order,
@@ -517,7 +517,7 @@ def test_moe_create_indices_with_slots[
     ctx.enqueue_copy(w_d, w_h)
     ctx.enqueue_copy(ss_d, ss_h)
 
-    moe_create_indices_with_slots[slot_stride, "gpu"](
+    moe_create_indices_with_slots[slot_stride](
         TileTensor(order_d, row_major(num_slots)),
         TileTensor(start_d, row_major(num_groups + 1)),
         TileTensor(restore_d, row_major(num_slots)),

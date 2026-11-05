@@ -213,7 +213,6 @@ def execute_kv_cache_ragged_rope[
             fused_qk_rope_ragged[
                 kv_collection_device.CacheType,
                 interleaved=False,
-                target="gpu",
             ](
                 TileTensor(q_device, q_layout),
                 TileTensor(input_row_offsets_device, row_major(batch_size + 1)),

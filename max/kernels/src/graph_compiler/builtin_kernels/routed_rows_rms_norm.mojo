@@ -187,7 +187,6 @@ struct RoutedRowsRMSNormFinalize:
 
     @staticmethod
     def execute[
-        target: StaticString,
         out_dtype: DType,
     ](
         output: OutputTensor[dtype=out_dtype, rank=2, ...],
@@ -202,7 +201,6 @@ struct RoutedRowsRMSNormFinalize:
         """Sums each token's normalized routed rows by router weight.
 
         Parameters:
-            target: Compilation target.
             out_dtype: The output's dtype, float32 or bf16 (rounded once
                 from the float32 sum).
 
@@ -221,9 +219,9 @@ struct RoutedRowsRMSNormFinalize:
         Raises:
             Error: If the launch fails.
         """
-        comptime assert is_gpu[
-            target
-        ](), "norm.routed_rows_rms_norm_finalize is GPU only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "norm.routed_rows_rms_norm_finalize is GPU only"
         comptime assert (
             Int(input.static_spec.shape_tuple[1]) == HIDDEN
         ), "the hidden size must be 4096"

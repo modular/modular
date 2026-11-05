@@ -233,17 +233,12 @@ struct ArgNonZero:
     """Registers the `mo.arg_nonzero` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output_buffer: Some[Output & Tensor],
         input_buffer: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.arg_nonzero` graph op.
-
-        Parameters:
-            target: Compilation target string.
 
         Args:
             output_buffer: Output tensor receiving the nonzero indices.
@@ -254,7 +249,7 @@ struct ArgNonZero:
         comptime assert conforms_to(type_of(input_buffer), TileTensorable)
         comptime assert type_of(output_buffer).rank == 2
 
-        arg_nonzero.arg_nonzero[target=target](
+        arg_nonzero.arg_nonzero(
             input_buffer.to_tile_tensor(),
             output_buffer.to_tile_tensor(),
             ctx,
@@ -1792,9 +1787,7 @@ struct BottomK:
     """Registers the `mo.bottom_k` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         values: Some[Output & Tensor],
         indices: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -1804,9 +1797,6 @@ struct BottomK:
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.bottom_k` graph op.
-
-        Parameters:
-            target: Compilation target string.
 
         Args:
             values: See the graph op signature.
@@ -1831,7 +1821,6 @@ struct BottomK:
         top_k[
             KEngine=type_of(input_tile).Engine,
             largest=False,
-            target=target,
         ](
             input_tile,
             Int(k),
@@ -1878,7 +1867,6 @@ struct TopK:
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         values: Some[Output & Tensor],
@@ -1892,7 +1880,6 @@ struct TopK:
         """Executes the `mo.top_k` graph op.
 
         Parameters:
-            target: Compilation target string.
             _trace_name: Name used for tracing and debugging.
 
         Args:
@@ -1918,7 +1905,6 @@ struct TopK:
         top_k[
             KEngine=type_of(input_tile).Engine,
             largest=True,
-            target=target,
         ](
             input_tile,
             Int(k),
@@ -1976,7 +1962,6 @@ struct TopKPerRow:
     @staticmethod
     def execute[
         max_k: Int,
-        target: StaticString,
     ](
         values: Some[Output & Tensor],
         indices: Some[Output & Tensor],
@@ -1988,7 +1973,6 @@ struct TopKPerRow:
 
         Parameters:
             max_k: Output width, the largest count any row may ask for.
-            target: Compilation target string.
 
         Args:
             values: `[rows, max_k]` selected values.
@@ -2012,7 +1996,7 @@ struct TopKPerRow:
         # `top_k` fixes the layout of its `k`; the kernels it forwards to
         # infer it, the way `sampler.fused_token_sampling` calls them.
         var k_tt = k.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm()
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             _top_k_cpu[largest=True](
                 input.to_tile_tensor[dtype](),
                 max_k,
@@ -2260,17 +2244,12 @@ struct ArgSort[*, ascending: Bool]:
     """Registers the `mx.argsort` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         indices: Some[Output & Tensor],
         input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mx.argsort` graph op.
-
-        Parameters:
-            target: Compilation target string.
 
         Args:
             indices: See the graph op signature.
@@ -2288,9 +2267,7 @@ struct ArgSort[*, ascending: Bool]:
         var indices_tensor = indices.to_tile_tensor()
         var input_tensor = input.to_tile_tensor()
 
-        comptime if target == "cpu":
+        comptime if ctx.target.is_cpu():
             argsort[ascending=Self.ascending](indices_tensor, input_tensor)
         else:
-            argsort[ascending=Self.ascending, target=target](
-                indices_tensor, input_tensor, ctx
-            )
+            argsort[ascending=Self.ascending](indices_tensor, input_tensor, ctx)
