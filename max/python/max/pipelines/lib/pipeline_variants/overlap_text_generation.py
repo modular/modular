@@ -297,7 +297,14 @@ def _next_draft_tokens_dtype(model: object) -> DType:
     narrower ones (DeepSeek-V4.1's ModuleV3 DSpark drafts int32), so the
     buffers that receive them follow the graph and widen where they feed an
     int64 input.
+
+    A virtual-device boot never runs a step, and the compile-only stand-in
+    its load returns refuses the metadata read, so the default serves it:
+    the only consumers are the pinned staging buffers and the step path,
+    both of which a virtual boot never reaches.
     """
+    if is_virtual_device_mode():
+        return DType.int64
     if isinstance(
         model, (_UnifiedSpecDecodeModelMixin, SpecDecodePipelineModel)
     ):

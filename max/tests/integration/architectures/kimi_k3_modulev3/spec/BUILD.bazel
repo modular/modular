@@ -58,6 +58,15 @@ modular_py_library(
     name = "_tiny_pair",
     srcs = ["_tiny_pair.py"],
     imports = ["."],
+    # The Mach fixture test (//mach/tools/gen-mef:k3_inferact_fixture_test)
+    # builds its export pair here, at the production widths the frozen
+    # contract pins.
+    visibility = [
+        "//:__pkg__",
+        "//mach/tools/gen-mef:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         requirement("numpy"),
         requirement("safetensors"),

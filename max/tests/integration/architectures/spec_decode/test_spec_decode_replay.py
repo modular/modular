@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import Mock
 
@@ -130,6 +131,9 @@ def test_load_registers_the_fused_graph_unless_it_replays(
     for module in (modules.target, modules.draft):
         module.state_dict.return_value = {}
         module.raw_state_dict.return_value = {}
+    # A graph-API target's layers carry `mlp`, not `ffn`; loading must not
+    # assume K3's layer shape.
+    modules.target.layers = (SimpleNamespace(mlp=Mock()),)
     spec, decoder, compiled, wrapped = Mock(), Mock(), Mock(), Mock()
     graph_callable = Mock(return_value=wrapped)
     monkeypatch.setattr(

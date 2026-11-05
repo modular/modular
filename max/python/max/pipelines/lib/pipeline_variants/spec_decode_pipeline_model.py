@@ -1503,12 +1503,17 @@ class SpecDecodePipelineModel(
 
     @property
     def routed_expert_row_bound(self) -> int | None:
-        """The target's compiled routed-expert row grid, if it sizes one.
-
-        It an export's sidecar records.
-        """
+        """Returns the target's compiled routed-expert row grid, if any."""
+        compiled = getattr(self, "_compiled_routed_expert_row_bound", None)
+        if compiled is not None:
+            return compiled
         config = self.arch_config_as(SpecDecodeArchConfig)
-        return getattr(config.target, "routed_expert_row_bound", None)
+        bound = getattr(config.target, "routed_expert_row_bound", None)
+        return (
+            bound
+            if isinstance(bound, int) and not isinstance(bound, bool)
+            else None
+        )
 
     def release(self, request_id: RequestID) -> None:
         """Frees what the target's batching holds for a finished request."""
@@ -1576,6 +1581,14 @@ class SpecDecodePipelineModel(
         modules = self._build_modules(session)
         self._target_config = modules.target_config
         target, draft = modules.target, modules.draft
+        self._compiled_routed_expert_row_bound = next(
+            (
+                layer.ffn.max_tokens_per_expert
+                for layer in getattr(target, "layers", ())
+                if getattr(getattr(layer, "ffn", None), "amd_tp_w4a8", False)
+            ),
+            None,
+        )
         # A draft without its own embedding or head reads the target's, so
         # those weights load once. Drafts declare it as vLLM's do.
         registration = self.pairing.draft.draft

@@ -20,6 +20,13 @@ while the capture test serves the production geometry, whose 576-wide
 latent runs the same fused latent kernels the real K3 does and reads the
 prefill-plan extent it guards. The two targets' streams are not
 comparable, and no test compares them.
+
+The export-contract fixture (``mach/tools/gen-mef``) builds here too, at
+the production latent widths and the production KDA widths
+(``PRODUCTION_KDA``, 96 heads of width 128) with the published drafter's
+depth, because the frozen Inferact export contract pins those widths while
+a reduced layer count still keeps its checkpoint tiny. The default widths
+(``KDA``, two layers) stay what the numerics and parity tests build.
 """
 
 from __future__ import annotations
@@ -79,6 +86,14 @@ class LatentGeometry:
     v_dim: int
 
 
+@dataclass(frozen=True)
+class KdaWidths:
+    """The KDA state's head geometry, the fixture's second dial."""
+
+    heads: int
+    head_dim: int
+
+
 FUSED_LATENT = LatentGeometry(kv_lora=512, qk_nope=128, qk_rope=64, v_dim=128)
 """The production per-head geometry: the target's verify instantiates the
 same fused latent kernels the real K3 does."""
@@ -89,7 +104,19 @@ NARROW_LATENT = LatentGeometry(kv_lora=12, qk_nope=8, qk_rope=4, v_dim=8)
 under test instead of the fused one."""
 
 
-def _text_config(geometry: LatentGeometry) -> dict[str, object]:
+KDA = KdaWidths(heads=KDA_HEADS, head_dim=KDA_HEAD_DIM)
+"""The stock reduced KDA widths, which keep the state cheap for the
+numerics and parity tests."""
+
+PRODUCTION_KDA = KdaWidths(heads=96, head_dim=128)
+"""The production KDA widths, 96 heads of width 128: the shared K3 shape
+the Inferact export contract pins
+(mach/docs/models/kimi-k3-inferact-dspark.md), whose validator refuses a
+sidecar recorded from any other state geometry. Heads and conv width both
+divide at TP2 (48 heads, 18,432 conv channels per device)."""
+
+
+def _text_config(geometry: LatentGeometry, kda: KdaWidths) -> dict[str, object]:
     return {
         "model_type": "kimi_linear",
         "architectures": ["KimiLinearForCausalLM"],
@@ -126,8 +153,8 @@ def _text_config(geometry: LatentGeometry) -> dict[str, object]:
         "linear_attn_config": {
             "kda_layers": KDA_LAYERS,
             "full_attn_layers": FULL_LAYERS,
-            "num_heads": KDA_HEADS,
-            "head_dim": KDA_HEAD_DIM,
+            "num_heads": kda.heads,
+            "head_dim": kda.head_dim,
             "short_conv_kernel_size": KDA_CONV_KERNEL,
             "gate_lower_bound": -5.0,
         },
@@ -280,9 +307,10 @@ def _weights(
 
 def _target_shapes(
     geometry: LatentGeometry,
+    kda: KdaWidths,
 ) -> dict[str, tuple[int, ...]]:
     """The checkpoint's tensors, under the HF names the adapter reads."""
-    kda_inner = KDA_HEADS * KDA_HEAD_DIM
+    kda_inner = kda.heads * kda.head_dim
     q_b = MLA_HEADS * (geometry.qk_nope + geometry.qk_rope)
     kv_a = geometry.kv_lora + geometry.qk_rope
     kv_b = MLA_HEADS * (geometry.qk_nope + geometry.v_dim)
@@ -316,14 +344,14 @@ def _target_shapes(
                     f"{attn}.q_conv1d.weight": (kda_inner, 1, KDA_CONV_KERNEL),
                     f"{attn}.k_conv1d.weight": (kda_inner, 1, KDA_CONV_KERNEL),
                     f"{attn}.v_conv1d.weight": (kda_inner, 1, KDA_CONV_KERNEL),
-                    f"{attn}.f_a_proj.weight": (KDA_HEAD_DIM, HIDDEN),
-                    f"{attn}.f_b_proj.weight": (kda_inner, KDA_HEAD_DIM),
-                    f"{attn}.b_proj.weight": (KDA_HEADS, HIDDEN),
+                    f"{attn}.f_a_proj.weight": (kda.head_dim, HIDDEN),
+                    f"{attn}.f_b_proj.weight": (kda_inner, kda.head_dim),
+                    f"{attn}.b_proj.weight": (kda.heads, HIDDEN),
                     f"{attn}.g_proj.weight": (kda_inner, HIDDEN),
-                    f"{attn}.o_norm.weight": (KDA_HEAD_DIM,),
+                    f"{attn}.o_norm.weight": (kda.head_dim,),
                     f"{attn}.o_proj.weight": (HIDDEN, kda_inner),
-                    f"{attn}.A_log": (KDA_HEADS,),
-                    f"{attn}.dt_bias": (KDA_HEADS * KDA_HEAD_DIM,),
+                    f"{attn}.A_log": (kda.heads,),
+                    f"{attn}.dt_bias": (kda_inner,),
                 }
             )
         else:
@@ -386,7 +414,7 @@ def _target_shapes(
     return shapes
 
 
-def _draft_shapes() -> dict[str, tuple[int, ...]]:
+def _draft_shapes(draft_layers: int) -> dict[str, tuple[int, ...]]:
     q_b = MLA_HEADS * (DRAFT_QK_NOPE + DRAFT_QK_ROPE)
     kv_a = DRAFT_KV_LORA + DRAFT_QK_ROPE
     kv_b = MLA_HEADS * (DRAFT_QK_NOPE + DRAFT_V_DIM)
@@ -401,7 +429,7 @@ def _draft_shapes() -> dict[str, tuple[int, ...]]:
         "confidence_head.proj.weight": (1, HIDDEN + MARKOV_RANK),
         "confidence_head.proj.bias": (1,),
     }
-    for i in range(DRAFT_LAYERS):
+    for i in range(draft_layers):
         src = f"layers.{i}"
         shapes.update(
             {
@@ -457,12 +485,16 @@ def build_tiny_pair(
     base: Path,
     prompt_rows: Sequence[Sequence[int]],
     geometry: LatentGeometry = FUSED_LATENT,
+    kda: KdaWidths = KDA,
+    draft_layers: int = DRAFT_LAYERS,
 ) -> TinyPair:
     """Builds the tiny pair with the given token-id prompt rows.
 
     The weights are drawn from one seeded generator in a fixed order, so
     the same geometry, call path and rows always build byte-identical
-    checkpoints.
+    checkpoints. ``kda`` and ``draft_layers`` widen the KDA state and deepen
+    the drafter for the export-contract fixture, whose validator pins the
+    production KDA widths and the published drafter's five layers.
     """
     rng = np.random.default_rng(0)
     target = _checkpoint(
@@ -473,9 +505,9 @@ def build_tiny_pair(
             "model_type": "kimi_k3",
             "dtype": "bfloat16",
             "tie_word_embeddings": False,
-            "text_config": _text_config(geometry),
+            "text_config": _text_config(geometry, kda),
         },
-        _target_shapes(geometry),
+        _target_shapes(geometry, kda),
         {
             f"language_model.model.layers.{layer - 1}.self_attn.{name}"
             for layer in KDA_LAYERS
@@ -491,8 +523,8 @@ def build_tiny_pair(
     )
     drafter = _checkpoint(
         base / "drafter",
-        _DRAFT_CONFIG,
-        _draft_shapes(),
+        {**_DRAFT_CONFIG, "num_hidden_layers": draft_layers},
+        _draft_shapes(draft_layers),
         set(),
         rng,
     )
