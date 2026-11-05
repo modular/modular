@@ -74,6 +74,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
 from nn.attention.mha_mask import CausalMask, MaskName
 from nn.attention.mha_utils import MHAConfig
 from std.benchmark import BenchId
+from nn.attention.gpu.mla import SM100MLA
 
 comptime fp8 = DType.float8_e4m3fn
 comptime KV_LATENT_DIM = 512
@@ -480,6 +481,7 @@ def run_config[
                     config=MHAConfig[fp8](h, Q_DEPTH),
                     ragged=True,
                     sparse=True,
+                    kernels=SM100MLA,
                 ](
                     out_tt,
                     q_mla,

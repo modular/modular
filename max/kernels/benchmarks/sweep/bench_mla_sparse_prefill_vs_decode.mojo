@@ -117,6 +117,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_utils import MHAConfig, NullPointer
 from std.benchmark import BenchId
+from nn.attention.gpu.mla import SM100MLA
 
 comptime fp8 = DType.float8_e4m3fn
 comptime bf16 = DType.bfloat16
@@ -403,6 +404,7 @@ def _decode[
         ragged=True,
         sparse=True,
         skip_masked_tiles=skip,
+        kernels=SM100MLA,
     ](
         output,
         q,

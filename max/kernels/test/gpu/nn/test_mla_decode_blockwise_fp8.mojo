@@ -39,7 +39,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import NullMask
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -417,6 +417,7 @@ def run_test_blockwise_fp8[
         rank=3,
         config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -859,6 +860,7 @@ def run_bench_blockwise_fp8[
             rank=3,
             config=MHAConfig[q_type](num_heads, DEPTH),
             ragged=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,

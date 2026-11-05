@@ -44,7 +44,11 @@ from max.gpu.host import DeviceContext, default_accelerator
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from layout.layout import Layout
-from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_decoding_rows
+from nn.attention.gpu.mla import (
+    AMDMLA,
+    flare_mla_decoding,
+    flare_mla_decoding_rows,
+)
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_GATHER_VEC,
     _amd_sparse_mla_gather_kv_rows_and_lengths,
@@ -279,6 +283,7 @@ def _bench(
         flare_mla_decoding[
             config=MHAConfig[dtype](NUM_HEADS, K_CACHE_DIM),
             decoding_warp_split_k=False,
+            kernels=AMDMLA,
         ](
             out_gather_tt,
             q_tt,

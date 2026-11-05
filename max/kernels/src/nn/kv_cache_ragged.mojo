@@ -86,12 +86,13 @@ from nn.attention.mha_utils import (
     unread_pointer,
 )
 from nn.attention.gpu.mla import (
+    MLAKernels,
     _k_cache_to_buffer,
     flare_mla_decoding,
     flare_mla_prefill,
     mla_prefill_plan,
 )
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import SparseRowLayout
+from nn.attention.gpu.mla_common import SparseRowLayout
 from quantization.qmatmul import matmul_qint4
 from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
@@ -4113,6 +4114,8 @@ def generic_flare_mla_decode_kv_cache_ragged[
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     *,
+    # Selects the vendor's decode and prefill kernels; see `MLAKernels`.
+    kernels: MLAKernels,
 ](
     q: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -4175,6 +4178,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             (inferred).
         TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
             `extra_topk_lengths` (inferred).
+        kernels: The vendor's MLA kernels; see `MLAKernels`.
 
     Args:
         q: Query tile tensor with shape (batch_size, num_heads, q_head_size).
@@ -4247,6 +4251,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             skip_masked_tiles=skip_masked_tiles,
             has_extra_k=has_extra_k,
             physical_indices=physical_indices,
+            kernels=kernels,
         ](
             q,
             input_row_offsets,
@@ -4294,6 +4299,8 @@ def _flare_mla_decode_kv_cache_ragged[
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     *,
+    # Selects the vendor's decode and prefill kernels; see `MLAKernels`.
+    kernels: MLAKernels,
 ](
     q: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -4416,6 +4423,7 @@ def _flare_mla_decode_kv_cache_ragged[
             physical_indices=physical_indices,
             sparse_row=sparse_row,
             skip_masked_tiles=skip_masked_tiles,
+            kernels=kernels,
         ](
             output,
             q,
@@ -4455,6 +4463,9 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
+    *,
+    # Selects the vendor's decode and prefill kernels; see `MLAKernels`.
+    kernels: MLAKernels,
 ](
     q: TileTensor[mut=False, input_dtype, address_space=.GENERIC, ...],
     k: TileTensor[mut=False, input_dtype, address_space=.GENERIC, ...],
@@ -4486,6 +4497,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
             target.
         local_window_size: Sliding-window size in tokens for windowed masks;
             -1 for masks that ignore it (defaults to -1).
+        kernels: The vendor's MLA kernels; see `MLAKernels`.
 
     Args:
         q: Query tile tensor with shape (total_seq_len, num_heads, q_head_size).
@@ -4550,6 +4562,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
             mask_str=mask_str,
             target=target,
             local_window_size=local_window_size,
+            kernels=kernels,
         ](
             q,
             k,
@@ -4574,6 +4587,9 @@ def _flare_mla_prefill_kv_cache_ragged[
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
+    *,
+    # Selects the vendor's decode and prefill kernels; see `MLAKernels`.
+    kernels: MLAKernels,
 ](
     q: TileTensor[mut=False, input_dtype, address_space=.GENERIC, ...],
     k: TileTensor[mut=False, input_dtype, address_space=.GENERIC, ...],
@@ -4615,7 +4631,7 @@ def _flare_mla_prefill_kv_cache_ragged[
     def _mla_dispatch[
         mask_t: MHAMask
     ](mask: mask_t) raises {var k_rope, var k, var v, imm}:
-        flare_mla_prefill[rank=3,](
+        flare_mla_prefill[rank=3, kernels=kernels](
             output,
             q,
             k,

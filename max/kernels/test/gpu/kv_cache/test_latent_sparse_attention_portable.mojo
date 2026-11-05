@@ -10,15 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GPU test for `latent_sparse_attention_ragged_paged`.
+"""GPU test for `latent_sparse_attention_ragged_paged_portable`.
 
 Two paged leaves of one shared latent head -- a window leaf paged by token and
 a compressed leaf paged by entry -- read by the GPU kernel and by a plain
 full-softmax reference on the host built from the same host-side cache views.
 Covers a ragged prefill batch, a decode batch with non-zero cache lengths,
 a multi-token extend, `-1` holes and padding in the compressed list, and an
-empty compressed list. The float32 cases run the portable kernel; the bfloat16
-cases take the SM100 sparse MLA decode route on B200.
+empty compressed list, all on the portable kernel; the SM100 route has its
+own test.
 """
 
 from std.math import ceildiv, exp
@@ -31,7 +31,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.attention.latent_sparse_attention import (
-    latent_sparse_attention_ragged_paged,
+    latent_sparse_attention_ragged_paged_portable,
 )
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
@@ -192,7 +192,7 @@ def run_case[
     )
     # With num_comp == 0 the single column is all -1, so nothing is read
     # from the compressed leaf; the graph-level test covers a true [rows, 0].
-    latent_sparse_attention_ragged_paged[
+    latent_sparse_attention_ragged_paged_portable[
         target="gpu", window=WINDOW, split_k=split_k
     ](
         out.device_tensor(),

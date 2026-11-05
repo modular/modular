@@ -75,11 +75,21 @@ from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
 from kv_cache.types import KVCacheStaticParams
 from nn.kv_cache import KVCollectionT, KVCacheT
+from kv_cache.types import PagedKVCache
+from nn.attention.latent_sparse_attention import (
+    latent_sparse_attention_ragged_paged,
+    latent_sparse_attention_ragged_paged_portable,
+    latent_sparse_attention_ragged_paged_sm100,
+)
 from nn.kv_cache_ragged import (
     generic_flare_mla_decode_kv_cache_ragged,
     generic_flare_mla_prefill_kv_cache_ragged,
 )
 from nn.attention.gpu.mla import (
+    AMDMLA,
+    LegacyNVMLA,
+    MLAKernels,
+    SM100MLA,
     _k_cache_to_buffer,
     flare_mla_decoding,
     flare_mla_decoding_rows,
@@ -90,7 +100,7 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_decode_num_partitions,
 )
 from nn.attention.mha_operand import KVCacheMHAOperand, SparseRowsMHAOperand
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
+from nn.attention.gpu.mla_common import (
     SparseRowLayout,
     assert_sparse_row_packed,
 )
@@ -232,6 +242,469 @@ def _mla_sparse_prefill_topk_lengths[
     else:
         return rebind[MutPointer[Int32, MutAnyOrigin]](
             as_optional_reg(topk_lengths).value()
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Per-vendor graph kernels
+# ===-----------------------------------------------------------------------===#
+
+
+trait MLAGraphKernels:
+    """A GPU vendor's kernels for the MLA graph branches.
+
+    Each branch takes one as `kernels`, so a graph op registered for one vendor
+    reaches only that vendor's kernels; see `MLAKernels`.
+    """
+
+    comptime Kernels: MLAKernels
+    """The vendor's MLA decode and prefill dispatch."""
+
+    @staticmethod
+    def sparse_prefill[
+        collection_t: KVCollectionT,
+        AttnSinkPtrType: OptionalPointer,
+        //,
+        num_heads: Int,
+        k_cache_dim: Int,
+        kv_latent_dim: Int,
+        indices_stride: Int,
+        nvfp4_convert_ratio: Int = 0,
+        nvfp4_convert_max_rows: Int = 0,
+    ](
+        raw_output: TileTensor[mut=True, address_space=.GENERIC, ...],
+        q: TileTensor[address_space=.GENERIC, ...],
+        kv_collection: collection_t,
+        layer_idx: UInt32,
+        input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+        d_indices: MutPointer[Int32, MutAnyOrigin],
+        topk_lengths: MutPointer[Int32, MutAnyOrigin],
+        attn_sink_ptr: AttnSinkPtrType,
+        attn_sink_opt: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """Runs sparse MLA prefill attention over the paged latent cache.
+
+        Parameters:
+            collection_t: KV collection type (inferred).
+            AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+                (inferred).
+            num_heads: Number of query heads.
+            k_cache_dim: Width of a latent cache row.
+            kv_latent_dim: Width of the latent (value) part of a row.
+            indices_stride: Top-k slots per query token.
+            nvfp4_convert_ratio: See `nvfp4_prefill_converts_once`; 0 always
+                runs the NVFP4 kernel.
+            nvfp4_convert_max_rows: See `nvfp4_prefill_converts_once`.
+
+        Args:
+            raw_output: Latent attention output, `[seq_len, heads, latent]`.
+            q: Absorbed Q, `[seq_len, heads, k_cache_dim]`, staged in FP8 for
+                an FP8 or NVFP4 cache.
+            kv_collection: Paged latent cache collection.
+            layer_idx: Layer whose cache is read.
+            input_row_offsets: Ragged query row offsets.
+            d_indices: Physical cache rows, `[seq_len, indices_stride]`.
+            topk_lengths: Valid slots per query token, `[seq_len]`.
+            attn_sink_ptr: Attention sink, typed for the NVFP4 convert path.
+            attn_sink_opt: The same sink, nullable at runtime.
+            scale: Softmax scale.
+            ctx: Device context.
+        """
+        ...
+
+    @staticmethod
+    def latent_sparse_attention[
+        q_type: DType,
+        out_type: DType,
+        //,
+        target: StaticString,
+        window: Int,
+        split_k: Bool = True,
+        portable_p_bf16: Bool = False,
+    ](
+        output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
+        q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+        input_row_offsets: TileTensor[
+            mut=False, .uint32, address_space=.GENERIC, ...
+        ],
+        comp_indices: TileTensor[
+            mut=False, .int32, address_space=.GENERIC, ...
+        ],
+        attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+        swa_cache: PagedKVCache[...],
+        comp_cache: PagedKVCache[...],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """Runs latent sparse attention; see
+        `latent_sparse_attention_ragged_paged`.
+
+        Parameters:
+            q_type: Query element type (inferred).
+            out_type: Output element type (inferred).
+            target: Compilation target string.
+            window: Sliding window length in tokens.
+            split_k: Whether the SM100 route may split a row's keys.
+            portable_p_bf16: Diagnostic; see
+                `latent_sparse_attention_ragged_paged`.
+
+        Args:
+            output: ``[num_rows, num_heads, head_dim]``.
+            q: ``[num_rows, num_heads, head_dim]``.
+            input_row_offsets: ``[batch + 1]`` ragged row offsets of ``q``.
+            comp_indices: ``[num_rows, num_comp]`` compressed entry indices.
+            attn_sink: ``[num_heads]`` per-head sink logits.
+            swa_cache: This layer's sliding-window leaf.
+            comp_cache: This layer's compressed leaf.
+            scale: Softmax scale.
+            ctx: Device context.
+        """
+        ...
+
+
+struct AMDMLAGraph(MLAGraphKernels):
+    """AMD MLA graph kernels."""
+
+    comptime Kernels = AMDMLA
+
+    @staticmethod
+    def sparse_prefill[
+        collection_t: KVCollectionT,
+        AttnSinkPtrType: OptionalPointer,
+        //,
+        num_heads: Int,
+        k_cache_dim: Int,
+        kv_latent_dim: Int,
+        indices_stride: Int,
+        nvfp4_convert_ratio: Int = 0,
+        nvfp4_convert_max_rows: Int = 0,
+    ](
+        raw_output: TileTensor[mut=True, address_space=.GENERIC, ...],
+        q: TileTensor[address_space=.GENERIC, ...],
+        kv_collection: collection_t,
+        layer_idx: UInt32,
+        input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+        d_indices: MutPointer[Int32, MutAnyOrigin],
+        topk_lengths: MutPointer[Int32, MutAnyOrigin],
+        attn_sink_ptr: AttnSinkPtrType,
+        attn_sink_opt: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """AMD runs sparse prefill on its decode kernel; see
+        `mla_prefill_branch_sparse_fp8`."""
+        comptime assert False, (
+            "AMD sparse MLA prefill runs the decode kernel over each query"
+            " token's rows"
+        )
+
+    @staticmethod
+    def latent_sparse_attention[
+        q_type: DType,
+        out_type: DType,
+        //,
+        target: StaticString,
+        window: Int,
+        split_k: Bool = True,
+        portable_p_bf16: Bool = False,
+    ](
+        output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
+        q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+        input_row_offsets: TileTensor[
+            mut=False, .uint32, address_space=.GENERIC, ...
+        ],
+        comp_indices: TileTensor[
+            mut=False, .int32, address_space=.GENERIC, ...
+        ],
+        attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+        swa_cache: PagedKVCache[...],
+        comp_cache: PagedKVCache[...],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """Runs the portable GPU kernel."""
+        latent_sparse_attention_ragged_paged_portable[
+            target=target,
+            window=window,
+            split_k=split_k,
+            portable_p_bf16=portable_p_bf16,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            comp_indices,
+            attn_sink,
+            swa_cache,
+            comp_cache,
+            scale,
+            ctx,
+        )
+
+
+struct SM100MLAGraph(MLAGraphKernels):
+    """SM100 (B100, B200, B300) MLA graph kernels."""
+
+    comptime Kernels = SM100MLA
+
+    @staticmethod
+    def sparse_prefill[
+        collection_t: KVCollectionT,
+        AttnSinkPtrType: OptionalPointer,
+        //,
+        num_heads: Int,
+        k_cache_dim: Int,
+        kv_latent_dim: Int,
+        indices_stride: Int,
+        nvfp4_convert_ratio: Int = 0,
+        nvfp4_convert_max_rows: Int = 0,
+    ](
+        raw_output: TileTensor[mut=True, address_space=.GENERIC, ...],
+        q: TileTensor[address_space=.GENERIC, ...],
+        kv_collection: collection_t,
+        layer_idx: UInt32,
+        input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+        d_indices: MutPointer[Int32, MutAnyOrigin],
+        topk_lengths: MutPointer[Int32, MutAnyOrigin],
+        attn_sink_ptr: AttnSinkPtrType,
+        attn_sink_opt: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """Runs the SM100 sparse prefill kernels; see `MLAGraphKernels`."""
+        var seq_len = Int(q.dim(0))
+        # `d_indices` / `topk_lengths` are int32 buffers reinterpreted as
+        # uint32: invalid `-1` slots become 0xFFFFFFFF and are rejected by the
+        # kernel's `idx >= 0` gather producer.
+        var indices_tt = TileTensor(
+            d_indices.unsafe_bitcast[UInt32](),
+            row_major(seq_len * indices_stride),
+        )
+        var topk_lengths_tt = TileTensor(
+            topk_lengths.unsafe_bitcast[UInt32](),
+            row_major(seq_len),
+        )
+        var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+        comptime if (
+            collection_t.CacheType.dtype.is_float8()
+            or collection_t.CacheType.dtype == .uint8
+        ):
+            # An FP8 cache whose head count the native-FP8 tile does not
+            # serve has no prefill kernel left: the FP8/BF16-Q prefill kernel
+            # went with the route that reached it, and the sparse decode
+            # kernel serves every FP8-cache prefill shape.
+            comptime assert q.dtype == .float8_e4m3fn, (
+                "an FP8 latent cache prefills on the sparse decode kernel at"
+                " every head count it can reach; see"
+                " `mla_sparse_prefill_on_decode_kernel`"
+            )
+            # Native-FP8 sparse prefill: the kernel reads the unit-scale FP8
+            # latent cache with no dequant. Config knobs follow the kernel's
+            # validated tactics: head=128 runs the 2-CTA f8f6f4 tile at
+            # b_topk=128/num_mbars=2; head<=64 runs the single-CTA shared-KV
+            # tile at b_topk=64 (its only correct PV mn-major layout) with
+            # num_mbars=4.
+            comptime cta_group = 2 if num_heads == 128 else 1
+            comptime b_topk = 128 if cta_group == 2 else 64
+            comptime num_mbars = 2 if cta_group == 2 else 4
+            comptime config = MLASparseConfig[
+                DType.bfloat16,
+                b_topk_=b_topk,
+                num_mbars_=num_mbars,
+                cta_group_=cta_group,
+            ](
+                num_q_heads=num_heads,
+                num_kv_heads=1,
+                # Tile stays laid out for 576. The kernel zero-fills the NoPE tail.
+                qk_depth=kv_latent_dim + 64,
+                input_qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+                group=num_heads,
+            )
+            var converted = False
+            comptime if _mla_nvfp4_prefill_can_convert[
+                collection_t.CacheType, indices_stride, nvfp4_convert_ratio
+            ]():
+                if _mla_nvfp4_prefill_converts_once[
+                    indices_stride,
+                    nvfp4_convert_ratio,
+                    nvfp4_convert_max_rows,
+                ](kv_collection, layer_idx, input_row_offsets, seq_len):
+                    mla_prefill_sparse_nvfp4_via_fp8[
+                        config=config,
+                        group=num_heads,
+                        q_depth=k_cache_dim,
+                        # The converted copy's rows are causal and packed, so
+                        # the decode core's bound-only softmax arm is sound
+                        # for them.
+                        causal=True,
+                    ](
+                        raw_output,
+                        q,
+                        k_cache,
+                        d_indices,
+                        indices_stride,
+                        topk_lengths_tt,
+                        input_row_offsets,
+                        attn_sink_ptr,
+                        scale,
+                        ctx,
+                    )
+                    converted = True
+            if not converted:
+                mla_prefill_sparse_qkv_fp8[
+                    config=config,
+                    group=num_heads,
+                    q_depth=k_cache_dim,
+                    scale_block_size=0,
+                ](
+                    raw_output,
+                    q,
+                    k_cache,
+                    indices_tt,
+                    topk_lengths_tt,
+                    attn_sink_opt,
+                    scale,
+                    Int32(indices_stride),
+                    ctx,
+                )
+        else:
+            mla_sm100_prefill_sparse[
+                num_q_heads=num_heads,
+                qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+            ](
+                raw_output,
+                q,
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_opt,
+                scale,
+                ctx,
+            )
+
+    @staticmethod
+    def latent_sparse_attention[
+        q_type: DType,
+        out_type: DType,
+        //,
+        target: StaticString,
+        window: Int,
+        split_k: Bool = True,
+        portable_p_bf16: Bool = False,
+    ](
+        output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
+        q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+        input_row_offsets: TileTensor[
+            mut=False, .uint32, address_space=.GENERIC, ...
+        ],
+        comp_indices: TileTensor[
+            mut=False, .int32, address_space=.GENERIC, ...
+        ],
+        attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+        swa_cache: PagedKVCache[...],
+        comp_cache: PagedKVCache[...],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """Runs the SM100 decode where it applies."""
+        latent_sparse_attention_ragged_paged_sm100[
+            target=target,
+            window=window,
+            split_k=split_k,
+            portable_p_bf16=portable_p_bf16,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            comp_indices,
+            attn_sink,
+            swa_cache,
+            comp_cache,
+            scale,
+            ctx,
+        )
+
+
+struct LegacyNVMLAGraph(MLAGraphKernels):
+    """Pre-SM100 NVIDIA MLA graph kernels."""
+
+    comptime Kernels = LegacyNVMLA
+
+    @staticmethod
+    def sparse_prefill[
+        collection_t: KVCollectionT,
+        AttnSinkPtrType: OptionalPointer,
+        //,
+        num_heads: Int,
+        k_cache_dim: Int,
+        kv_latent_dim: Int,
+        indices_stride: Int,
+        nvfp4_convert_ratio: Int = 0,
+        nvfp4_convert_max_rows: Int = 0,
+    ](
+        raw_output: TileTensor[mut=True, address_space=.GENERIC, ...],
+        q: TileTensor[address_space=.GENERIC, ...],
+        kv_collection: collection_t,
+        layer_idx: UInt32,
+        input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+        d_indices: MutPointer[Int32, MutAnyOrigin],
+        topk_lengths: MutPointer[Int32, MutAnyOrigin],
+        attn_sink_ptr: AttnSinkPtrType,
+        attn_sink_opt: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """Sparse MLA prefill has no pre-SM100 NVIDIA kernel."""
+        comptime assert False, (
+            "Sparse MLA prefill is implemented only for SM100 (B200) and AMD"
+            " (gfx950)"
+        )
+
+    @staticmethod
+    def latent_sparse_attention[
+        q_type: DType,
+        out_type: DType,
+        //,
+        target: StaticString,
+        window: Int,
+        split_k: Bool = True,
+        portable_p_bf16: Bool = False,
+    ](
+        output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
+        q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+        input_row_offsets: TileTensor[
+            mut=False, .uint32, address_space=.GENERIC, ...
+        ],
+        comp_indices: TileTensor[
+            mut=False, .int32, address_space=.GENERIC, ...
+        ],
+        attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+        swa_cache: PagedKVCache[...],
+        comp_cache: PagedKVCache[...],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """Runs the portable GPU kernel."""
+        latent_sparse_attention_ragged_paged_portable[
+            target=target,
+            window=window,
+            split_k=split_k,
+            portable_p_bf16=portable_p_bf16,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            comp_indices,
+            attn_sink,
+            swa_cache,
+            comp_cache,
+            scale,
+            ctx,
         )
 
 
@@ -1025,6 +1498,9 @@ def mla_prefill_branch_fp8[
     k_scale_granularity: Int,
     mask_str: StaticString,
     target: StaticString = "cpu",
+    *,
+    # Selects the vendor's kernels; see `MLAGraphKernels`.
+    kernels: MLAGraphKernels,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -1069,6 +1545,7 @@ def mla_prefill_branch_fp8[
             matrix multiplication.
         mask_str: Mask variant.
         target: Target device.
+        kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -1365,6 +1842,7 @@ def mla_prefill_branch_fp8[
         generic_flare_mla_prefill_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
+            kernels=kernels.Kernels,
         ](
             q_fp8,
             k_fp8,
@@ -1382,6 +1860,7 @@ def mla_prefill_branch_fp8[
         generic_flare_mla_prefill_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
+            kernels=kernels.Kernels,
         ](
             q,
             k,
@@ -1933,6 +2412,8 @@ def mla_decode_branch_fp8[
     # AMD sparse arm never reads it, so a live sink must fail loudly.
     attn_sink_inert: Bool = False,
     *,
+    # Selects the vendor's kernels; see `MLAGraphKernels`.
+    kernels: MLAGraphKernels,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -2021,6 +2502,7 @@ def mla_decode_branch_fp8[
         attn_sink_inert: Whether the caller guarantees `attn_sink_ptr` holds
             the inert -1e38 constant. The AMD sparse arm never reads the sink
             and rejects one otherwise.
+        kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -2394,6 +2876,7 @@ def mla_decode_branch_fp8[
                     num_heads, k_cache_dim
                 ),
                 decoding_warp_split_k=False,
+                kernels=AMDMLA,
             ](
                 raw_output_padded,
                 q_padded,
@@ -2422,6 +2905,7 @@ def mla_decode_branch_fp8[
             skip_masked_tiles=skip_masked_tiles,
             has_extra_k=has_extra_k,
             physical_indices=physical_indices,
+            kernels=kernels.Kernels,
         ](
             mla_decode_input,
             input_row_offsets,
@@ -2483,6 +2967,9 @@ def mla_prefill_branch_sparse_fp8[
     indices_stride: Int,
     # See `mla_decode_branch_fp8`; this path does not read the sink either.
     attn_sink_inert: Bool = False,
+    *,
+    # Selects the vendor's kernels; see `MLAGraphKernels`.
+    kernels: MLAGraphKernels,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -2628,17 +3115,6 @@ def mla_prefill_branch_sparse_fp8[
         row_major(seq_len, Idx[num_heads], Idx[kv_latent_dim]),
     )
 
-    # `d_indices` / `topk_lengths` are int32 buffers reinterpreted as uint32:
-    # invalid `-1` slots become 0xFFFFFFFF and are rejected by the kernel's
-    # `idx >= 0` gather producer.
-    var indices_tt = TileTensor(
-        d_indices.unsafe_bitcast[UInt32](),
-        row_major(seq_len * indices_stride),
-    )
-    var topk_lengths_tt = TileTensor(
-        topk_lengths.unsafe_bitcast[UInt32](),
-        row_major(seq_len),
-    )
     var attn_sink_opt = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
     if case .Some(attn_sink_ptr) = attn_sink_ptr:
         attn_sink_opt = ImmPointer[Float32, ImmutAnyOrigin](attn_sink_ptr)
@@ -2734,84 +3210,54 @@ def mla_prefill_branch_sparse_fp8[
             and _is_sm10x_gpu(ctx.default_device_info)
             and sm100_sparse_mla_heads_ok[num_heads]()
         )
-        comptime if (
-            collection_t.CacheType.dtype.is_float8()
-            or collection_t.CacheType.dtype == .uint8
-        ):
-            comptime assert native_fp8_sparse or (
-                collection_t.CacheType.dtype != .uint8
-            ), "an NVFP4 latent cache needs the SM100 FP8-Q sparse prefill"
-            comptime if native_fp8_sparse:
-                var q_fp8_buf = ctx.enqueue_create_buffer[.float8_e4m3fn](
-                    seq_len * num_heads * k_cache_dim
-                )
-                var q_fp8 = TileTensor(
-                    q_fp8_buf,
-                    row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
-                )
-                var mla_decode_input_bf16 = mla_decode_input.bitcast[
-                    DType.bfloat16
-                ]().reshape(
-                    row_major(seq_len, Idx[num_heads], Idx[k_cache_dim])
-                )
-                convert_bf16_to_fp8_e4m3fn(mla_decode_input_bf16, q_fp8, ctx)
-
-                comptime cta_group = 2 if num_heads == 128 else 1
-                comptime b_topk = 128 if cta_group == 2 else 64
-                comptime num_mbars = 2 if cta_group == 2 else 4
-                comptime config = MLASparseConfig[
-                    DType.bfloat16,
-                    b_topk_=b_topk,
-                    num_mbars_=num_mbars,
-                    cta_group_=cta_group,
-                ](
-                    num_q_heads=num_heads,
-                    num_kv_heads=1,
-                    # Tile stays laid out for 576. The kernel zero-fills the NoPE tail.
-                    qk_depth=kv_latent_dim + 64,
-                    input_qk_depth=k_cache_dim,
-                    v_depth=kv_latent_dim,
-                    indices_stride=indices_stride,
-                    group=num_heads,
-                )
-                mla_prefill_sparse_qkv_fp8[
-                    config=config,
-                    group=num_heads,
-                    q_depth=k_cache_dim,
-                    scale_block_size=0,
-                ](
-                    raw_output,
-                    q_fp8,
-                    k_cache,
-                    indices_tt,
-                    topk_lengths_tt,
-                    attn_sink_opt,
-                    scale,
-                    Int32(indices_stride),
-                    ctx,
-                )
-            else:
-                # An FP8 cache whose head count the native-FP8 tile does not
-                # serve has no prefill kernel left: the FP8/BF16-Q prefill
-                # kernel went with the route that reached it, and the sparse
-                # decode kernel serves every FP8-cache prefill shape.
-                comptime assert False, (
-                    "an FP8 latent cache prefills on the sparse decode kernel"
-                    " at every head count it can reach; see"
-                    " `mla_sparse_prefill_on_decode_kernel`"
-                )
+        comptime assert native_fp8_sparse or (
+            collection_t.CacheType.dtype != .uint8
+        ), "an NVFP4 latent cache needs the SM100 FP8-Q sparse prefill"
+        comptime if native_fp8_sparse:
+            var q_fp8_buf = ctx.enqueue_create_buffer[.float8_e4m3fn](
+                seq_len * num_heads * k_cache_dim
+            )
+            var q_fp8 = TileTensor(
+                q_fp8_buf,
+                row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
+            )
+            var mla_decode_input_bf16 = mla_decode_input.bitcast[
+                DType.bfloat16
+            ]().reshape(row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]))
+            convert_bf16_to_fp8_e4m3fn(mla_decode_input_bf16, q_fp8, ctx)
+            kernels.sparse_prefill[
+                num_heads=num_heads,
+                k_cache_dim=k_cache_dim,
+                kv_latent_dim=kv_latent_dim,
+                indices_stride=indices_stride,
+            ](
+                raw_output,
+                q_fp8,
+                kv_collection,
+                layer_idx,
+                input_row_offsets,
+                d_indices,
+                topk_lengths,
+                NullPointer[DType.float32](),
+                attn_sink_opt,
+                scale,
+                ctx,
+            )
         else:
-            mla_sm100_prefill_sparse[
-                num_q_heads=num_heads,
-                qk_depth=k_cache_dim,
-                v_depth=kv_latent_dim,
+            kernels.sparse_prefill[
+                num_heads=num_heads,
+                k_cache_dim=k_cache_dim,
+                kv_latent_dim=kv_latent_dim,
                 indices_stride=indices_stride,
             ](
                 raw_output,
                 mla_decode_input,
-                k_cache,
-                indices_tt,
-                topk_lengths_tt,
+                kv_collection,
+                layer_idx,
+                input_row_offsets,
+                d_indices,
+                topk_lengths,
+                NullPointer[DType.float32](),
                 attn_sink_opt,
                 scale,
                 ctx,
@@ -2996,6 +3442,8 @@ def mla_prefill_decode_graph_fp8[
     # Forwarded to both branches; see `mla_decode_branch_fp8`.
     attn_sink_inert: Bool = False,
     *,
+    # Selects the vendor's kernels; see `MLAGraphKernels`.
+    kernels: MLAGraphKernels,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -3076,6 +3524,7 @@ def mla_prefill_decode_graph_fp8[
             `extra_topk_lengths` (inferred, defaults to `NullPointer`).
         attn_sink_inert: Whether the caller guarantees an inert attention
             sink; see `mla_decode_branch_fp8`.
+        kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -3162,6 +3611,7 @@ def mla_prefill_decode_graph_fp8[
             sparse_row=sparse_row,
             skip_masked_tiles=skip_masked_tiles,
             attn_sink_inert=attn_sink_inert,
+            kernels=kernels,
         ](
             output,
             q,
@@ -3248,6 +3698,7 @@ def mla_prefill_decode_graph_fp8[
             k_scale_granularity=k_scale_granularity,
             indices_stride=sparse_indices_stride,
             attn_sink_inert=attn_sink_inert,
+            kernels=kernels,
         ](
             output,
             q,
@@ -3281,6 +3732,7 @@ def mla_prefill_decode_graph_fp8[
             k_scale_granularity=k_scale_granularity,
             mask_str=mask_str,
             target=target,
+            kernels=kernels,
         ](
             output,
             q,
@@ -3374,6 +3826,9 @@ def mla_prefill_branch_bf16[
     //,
     mask_str: StaticString,
     target: StaticString = "cpu",
+    *,
+    # Selects the vendor's kernels; see `MLAGraphKernels`.
+    kernels: MLAGraphKernels,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -3403,6 +3858,7 @@ def mla_prefill_branch_bf16[
             values (inferred).
         mask_str: Mask variant.
         target: Target device (defaults to "cpu").
+        kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -3594,6 +4050,7 @@ def mla_prefill_branch_bf16[
         generic_flare_mla_prefill_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
+            kernels=kernels.Kernels,
         ](
             q_fp8,
             k_fp8,
@@ -3652,6 +4109,7 @@ def mla_prefill_branch_bf16[
         generic_flare_mla_prefill_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
+            kernels=kernels.Kernels,
         ](
             q,
             k,
@@ -3690,6 +4148,8 @@ def mla_decode_branch_bf16[
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     *,
+    # Selects the vendor's kernels; see `MLAGraphKernels`.
+    kernels: MLAGraphKernels,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -3737,6 +4197,7 @@ def mla_decode_branch_bf16[
             (inferred, defaults to `NullPointer`).
         TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
             `extra_topk_lengths` (inferred, defaults to `NullPointer`).
+        kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -3958,6 +4419,7 @@ def mla_decode_branch_bf16[
             physical_indices=physical_indices,
             sparse_row=sparse_row,
             skip_masked_tiles=skip_masked_tiles,
+            kernels=kernels.Kernels,
         ](
             mla_decode_input,
             input_row_offsets,
@@ -4018,6 +4480,9 @@ def mla_prefill_branch_sparse_bf16[
     nvfp4_convert_ratio: Int = 0,
     nvfp4_convert_max_rows: Int = 0,
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    *,
+    # Selects the vendor's kernels; see `MLAGraphKernels`.
+    kernels: MLAGraphKernels,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -4148,17 +4613,6 @@ def mla_prefill_branch_sparse_bf16[
         row_major(seq_len, Idx[num_heads], Idx[kv_latent_dim]),
     )
 
-    # `d_indices` / `topk_lengths` are int32 buffers reinterpreted as uint32:
-    # invalid `-1` slots become 0xFFFFFFFF and are rejected by the kernel's
-    # `idx >= 0` gather producer.
-    var indices_tt = TileTensor(
-        d_indices.unsafe_bitcast[UInt32](),
-        row_major(seq_len * indices_stride),
-    )
-    var topk_lengths_tt = TileTensor(
-        topk_lengths.unsafe_bitcast[UInt32](),
-        row_major(seq_len),
-    )
     # The NVFP4 convert-once path keeps the sink's comptime type; the other
     # sparse prefill kernels branch on it at runtime.
     var attn_sink_opt = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
@@ -4167,111 +4621,26 @@ def mla_prefill_branch_sparse_bf16[
     ](as_optional_reg(attn_sink_ptr)):
         attn_sink_opt = ImmPointer[Float32, ImmutAnyOrigin](attn_sink)
 
-    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    comptime if (
-        collection_t.CacheType.dtype.is_float8()
-        or collection_t.CacheType.dtype == .uint8
-    ):
-        comptime assert native_fp8_sparse or (
-            collection_t.CacheType.dtype != .uint8
-        ), "an NVFP4 latent cache needs the SM100 FP8-Q sparse prefill"
-        comptime if native_fp8_sparse:
-            # Native-FP8 sparse prefill: Q was staged in FP8 above, and the
-            # kernel reads the unit-scale FP8 latent cache with no dequant.
-            # Config knobs follow the kernel's validated tactics: head=128
-            # runs the 2-CTA f8f6f4 tile at b_topk=128/num_mbars=2; head<=64
-            # runs the single-CTA shared-KV tile at b_topk=64 (its only
-            # correct PV mn-major layout) with num_mbars=4.
-            comptime cta_group = 2 if num_heads == 128 else 1
-            comptime b_topk = 128 if cta_group == 2 else 64
-            comptime num_mbars = 2 if cta_group == 2 else 4
-            comptime config = MLASparseConfig[
-                DType.bfloat16,
-                b_topk_=b_topk,
-                num_mbars_=num_mbars,
-                cta_group_=cta_group,
-            ](
-                num_q_heads=num_heads,
-                num_kv_heads=1,
-                # Tile stays laid out for 576. The kernel zero-fills the NoPE tail.
-                qk_depth=kv_latent_dim + 64,
-                input_qk_depth=k_cache_dim,
-                v_depth=kv_latent_dim,
-                indices_stride=indices_stride,
-                group=num_heads,
-            )
-            var converted = False
-            comptime if _mla_nvfp4_prefill_can_convert[
-                collection_t.CacheType, indices_stride, nvfp4_convert_ratio
-            ]():
-                if _mla_nvfp4_prefill_converts_once[
-                    indices_stride,
-                    nvfp4_convert_ratio,
-                    nvfp4_convert_max_rows,
-                ](kv_collection, layer_idx, input_row_offsets, seq_len):
-                    mla_prefill_sparse_nvfp4_via_fp8[
-                        config=config,
-                        group=num_heads,
-                        q_depth=k_cache_dim,
-                        # The converted copy's rows are causal and packed,
-                        # so the decode core's bound-only softmax arm is
-                        # sound for them.
-                        causal=True,
-                    ](
-                        raw_output,
-                        mla_decode_input,
-                        k_cache,
-                        d_indices,
-                        indices_stride,
-                        topk_lengths_tt,
-                        input_row_offsets,
-                        attn_sink_ptr,
-                        scale,
-                        ctx,
-                    )
-                    converted = True
-            if not converted:
-                mla_prefill_sparse_qkv_fp8[
-                    config=config,
-                    group=num_heads,
-                    q_depth=k_cache_dim,
-                    scale_block_size=0,
-                ](
-                    raw_output,
-                    mla_decode_input,
-                    k_cache,
-                    indices_tt,
-                    topk_lengths_tt,
-                    attn_sink_opt,
-                    scale,
-                    Int32(indices_stride),
-                    ctx,
-                )
-        else:
-            # See `mla_prefill_branch_sparse_fp8`: no prefill kernel is left
-            # for an FP8 cache at a head count the sparse decode kernel does
-            # not serve.
-            comptime assert False, (
-                "an FP8 latent cache prefills on the sparse decode kernel at"
-                " every head count it can reach; see"
-                " `mla_sparse_prefill_on_decode_kernel`"
-            )
-    else:
-        mla_sm100_prefill_sparse[
-            num_q_heads=num_heads,
-            qk_depth=k_cache_dim,
-            v_depth=kv_latent_dim,
-            indices_stride=indices_stride,
-        ](
-            raw_output,
-            mla_decode_input,
-            k_cache,
-            indices_tt,
-            topk_lengths_tt,
-            attn_sink_opt,
-            scale,
-            ctx,
-        )
+    kernels.sparse_prefill[
+        num_heads=num_heads,
+        k_cache_dim=k_cache_dim,
+        kv_latent_dim=kv_latent_dim,
+        indices_stride=indices_stride,
+        nvfp4_convert_ratio=nvfp4_convert_ratio,
+        nvfp4_convert_max_rows=nvfp4_convert_max_rows,
+    ](
+        raw_output,
+        mla_decode_input,
+        kv_collection,
+        layer_idx,
+        input_row_offsets,
+        d_indices,
+        topk_lengths,
+        attn_sink_ptr,
+        attn_sink_opt,
+        scale,
+        ctx,
+    )
 
     var raw_output_t = TileTensor(
         raw_output_buf,
@@ -4319,6 +4688,8 @@ def mla_prefill_decode_graph_bf16[
     nvfp4_convert_ratio: Int = 0,
     nvfp4_convert_max_rows: Int = 0,
     *,
+    # Selects the vendor's kernels; see `MLAGraphKernels`.
+    kernels: MLAGraphKernels,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -4378,6 +4749,7 @@ def mla_prefill_decode_graph_bf16[
             once (defaults to 0, never); see `nvfp4_prefill_converts_once`.
         nvfp4_convert_max_rows: Most rows that conversion may allocate
             (defaults to 0).
+        kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -4448,6 +4820,7 @@ def mla_prefill_decode_graph_bf16[
             physical_indices=physical_indices,
             sparse_row=sparse_row,
             skip_masked_tiles=skip_masked_tiles,
+            kernels=kernels,
         ](
             output,
             q,
@@ -4505,6 +4878,7 @@ def mla_prefill_decode_graph_bf16[
             nvfp4_convert_ratio=nvfp4_convert_ratio,
             nvfp4_convert_max_rows=nvfp4_convert_max_rows,
             AttnSinkPtrType=AttnSinkPtrType,
+            kernels=kernels,
         ](
             output,
             q,
@@ -4565,6 +4939,7 @@ def mla_prefill_decode_graph_bf16[
         mla_prefill_branch_bf16[
             mask_str=mask_str,
             target=target,
+            kernels=kernels,
         ](
             output,
             q,

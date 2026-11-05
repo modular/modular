@@ -46,6 +46,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
+from nn.attention.gpu.mla import AMDMLA, LegacyNVMLA, MLAKernels, SM100MLA
 
 
 def bench_decode[
@@ -56,6 +57,8 @@ def bench_decode[
     group: Int = 1,
     decoding_warp_split_k: Bool = False,
     cache_busting: Bool = True,
+    *,
+    kernels: MLAKernels,
 ](
     mut m: Bench,
     seq_len: Int,
@@ -121,6 +124,7 @@ def bench_decode[
             flare_mla_decoding[
                 config=MHAConfig[qkv_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
+                kernels=kernels,
             ](
                 output_device.as_unsafe_any_origin(),
                 q_device,
@@ -173,6 +177,8 @@ def bench_prefill[
     cache_depth: Int,
     cache_num_heads: Int,
     cache_busting: Bool = True,
+    *,
+    kernels: MLAKernels,
 ](
     mut m: Bench,
     seq_len: Int,
@@ -287,7 +293,7 @@ def bench_prefill[
                 row_major(batch_size * seq_len, Idx[num_heads], Idx[kv_depth]),
             )
 
-            flare_mla_prefill[rank=q_device.rank](
+            flare_mla_prefill[rank=q_device.rank, kernels=kernels](
                 output_device,
                 q_device,
                 k_device,
@@ -581,6 +587,49 @@ struct MLA_cfg(ImplicitlyCopyable, Writable):
     var sparse_q_tmem_depth: Int
 
 
+def bench_dense[
+    cfg: MLA_cfg, kernels: MLAKernels
+](
+    mut m: Bench,
+    seq_len: Int,
+    num_keys: Int,
+    batch_size: Int,
+    num_partitions: Int,
+    mode: String,
+    ctx: DeviceContext[],
+) raises:
+    bench_decode[
+        cfg.qkv_type,
+        cfg.output_type,
+        cfg.depth,
+        cfg.num_heads,
+        cfg.group,
+        cfg.decoding_warp_split_k,
+        cfg.cache_busting,
+        kernels=kernels,
+    ](
+        m,
+        seq_len,
+        num_keys,
+        batch_size,
+        num_partitions,
+        mode,
+        ctx,
+    )
+
+    bench_prefill[
+        cfg.qkv_type,
+        cfg.output_type,
+        cfg.prefill_depth,
+        cfg.num_heads,
+        cfg.kv_depth,
+        cfg.cache_depth,
+        cfg.cache_num_heads,
+        cache_busting=cfg.cache_busting,
+        kernels=kernels,
+    ](m, seq_len, num_keys, batch_size, ctx)
+
+
 def main() raises:
     comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
     comptime output_type = get_defined_dtype["output_type", .bfloat16]()
@@ -629,34 +678,18 @@ def main() raises:
     var m = Bench()
     with DeviceContext() as ctx:
         if mode != "sparse_prefill":
-            bench_decode[
-                cfg.qkv_type,
-                cfg.output_type,
-                cfg.depth,
-                cfg.num_heads,
-                cfg.group,
-                cfg.decoding_warp_split_k,
-                cfg.cache_busting,
-            ](
-                m,
-                seq_len,
-                num_keys,
-                batch_size,
-                num_partitions,
-                mode,
-                ctx,
-            )
-
-            bench_prefill[
-                cfg.qkv_type,
-                cfg.output_type,
-                cfg.prefill_depth,
-                cfg.num_heads,
-                cfg.kv_depth,
-                cfg.cache_depth,
-                cfg.cache_num_heads,
-                cache_busting=cfg.cache_busting,
-            ](m, seq_len, num_keys, batch_size, ctx)
+            comptime if _is_sm10x_gpu(ctx.default_device_info):
+                bench_dense[cfg, SM100MLA](
+                    m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+                )
+            elif ctx.target.is_amd_gpu():
+                bench_dense[cfg, AMDMLA](
+                    m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+                )
+            else:
+                bench_dense[cfg, LegacyNVMLA](
+                    m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+                )
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
             bench_prefill_sparse[

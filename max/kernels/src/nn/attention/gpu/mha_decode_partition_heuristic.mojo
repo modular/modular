@@ -380,7 +380,7 @@ def amd_sparse_mla_decode_num_partitions(
     `topk` tokens of context the kernel's work no longer grows. The count
     is a function of `(batch_size, topk, num_heads, sm_count)` only, so the
     decode kernel and the device-graph capture key
-    (`mla_decode_dispatch_scalars`) compute the same value from the same
+    (`amd_mla_decode_dispatch_scalars`) compute the same value from the same
     inputs.
 
     With `num_heads <= 16` every token is one CTA per partition, and the
@@ -601,3 +601,78 @@ def mha_decoding_max_num_partitions(
     return mha_decoding_num_partitions(
         batch_size, num_keys, heads_per_group, ctx
     )
+
+
+def amd_mla_decode_dispatch_scalars(
+    batch_size: Int,
+    max_cache_valid_length: Int,
+    q_max_seq_len: Int,
+    num_heads: Int,
+    is_fp8_kv: Bool,
+    ctx: DeviceContext,
+    sparse_indices_stride: Int = 0,
+) raises -> Tuple[Int, Int, Int]:
+    """Returns the AMD MLA decode dispatch metadata.
+
+    Returns `(batch_size, q_max_seq_len, num_partitions)`. The AMD MLA decode
+    kernel bakes its split-K grid from `mha_decoding_num_partitions(...,
+    is_mla=True)` at dispatch time and never reads `num_partitions` from the
+    scalar buffer, so the value serves only as the device-graph capture key.
+    To keep that key equal to the baked grid, dense MLA passes the raw
+    `max_cache_valid_length` and `num_heads` (`kv_heads == 1` for MLA), with
+    no `q_max_seq_len` adjustment.
+
+    No AMD sparse op (`sparse_indices_stride > 0`) reads the value either.
+    The FP8-weight sparse ops size their split with
+    `amd_sparse_mla_inplace_decode_num_partitions` of their own token count,
+    and the BF16-weight arm with `amd_sparse_mla_bf16_num_partitions`, so the
+    key depends on `batch_size` and `q_max_seq_len` alone. It matches the
+    BF16 arm on a BF16 cache and, at one query token with an FP8 cache, the
+    FP8-weight ops.
+
+    Args:
+        batch_size: Current decode batch size.
+        max_cache_valid_length: Max valid KV-cache length across the batch.
+        q_max_seq_len: Max query sequence length (1 for decode).
+        num_heads: Number of Q attention heads.
+        is_fp8_kv: Whether the KV cache is FP8.
+        ctx: Device context used to read the CU count.
+        sparse_indices_stride: Selected rows per token for sparse MLA, the
+            sparse index row stride; 0 for dense MLA.
+
+    Returns:
+        The packed `(batch_size, q_max_seq_len, num_partitions)` metadata.
+    """
+    var np: Int
+    if sparse_indices_stride > 0:
+        var sm_count = ctx.device().get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
+        if q_max_seq_len == 1 and is_fp8_kv:
+            np = amd_sparse_mla_inplace_decode_num_partitions(
+                batch_size, sparse_indices_stride, num_heads, sm_count
+            )
+        elif not is_fp8_kv:
+            np = amd_sparse_mla_bf16_num_partitions(
+                batch_size * q_max_seq_len,
+                sparse_indices_stride,
+                num_heads,
+                sm_count,
+            )
+        else:
+            np = mha_decoding_num_partitions(
+                batch_size * q_max_seq_len,
+                sparse_indices_stride,
+                num_heads,
+                ctx,
+                is_mla=True,
+            )
+        return (batch_size, q_max_seq_len, np)
+    np = mha_decoding_num_partitions(
+        batch_size,
+        max_cache_valid_length,
+        num_heads,
+        ctx,
+        is_mla=True,
+    )
+    return (batch_size, q_max_seq_len, np)

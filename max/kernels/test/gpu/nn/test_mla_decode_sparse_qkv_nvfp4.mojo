@@ -61,7 +61,7 @@ from layout import Idx, TileTensor, row_major
 from layout.tile_tensor import NullableTileTensor
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_utils import MHAConfig, maybe_null_pointer
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     compute_mla_dispatch_scalars,
 )
@@ -201,6 +201,7 @@ def _decode[
             ragged=True,
             sparse=True,
             skip_masked_tiles=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -223,6 +224,7 @@ def _decode[
                 config=MHAConfig[.float8_e4m3fn](num_heads, ROW_DEPTH),
                 ragged=True,
                 sparse=True,
+                kernels=SM100MLA,
             ](
                 out_tt,
                 q_tt,
@@ -244,6 +246,7 @@ def _decode[
                 config=MHAConfig[.float8_e4m3fn](num_heads, ROW_DEPTH),
                 ragged=True,
                 sparse=True,
+                kernels=SM100MLA,
             ](
                 out_tt,
                 q_tt,
