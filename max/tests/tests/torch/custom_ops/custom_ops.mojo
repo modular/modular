@@ -18,12 +18,9 @@ from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 from extensibility import (
     Input,
-    InputTensor,
     Output,
-    OutputTensor,
     Tensor,
     TileTensorable,
-    foreach,
     get_kernel_simd_width,
 )
 
@@ -178,20 +175,39 @@ struct ScalarAdd:
 @register("unsupported_type_op")
 struct UnsupportedTypeOp:
     @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         message: String,  # String is not a supported type for PyTorch custom ops
         ctx: DeviceContext,
     ) raises:
         # This operation is for testing error handling only
         # The String parameter should cause a validation error
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+        var out_tile = output.to_tile_tensor[dtype]()
+        var in_tile = input.to_tile_tensor[dtype]().as_imm()
+
         @inline(.always)
         def copy[
-            simd_width: Int
-        ](idx: Coord) {var} -> SIMD[output.dtype, simd_width]:
-            return input.load[simd_width](idx)
+            simd_width: Int, element_alignment: Int = 1
+        ](idx: Coord) {var out_tile, var in_tile}:
+            out_tile.store[
+                width=simd_width,
+                alignment=min(
+                    type_of(output).alignment,
+                    element_alignment * align_of[dtype](),
+                ),
+            ](
+                idx,
+                in_tile.load[width=simd_width, alignment=align_of[dtype]()](
+                    idx
+                ),
+            )
 
-        foreach[target="cpu"](copy, output, ctx)
+        elementwise[simd_width=get_kernel_simd_width[dtype, "cpu"]()](
+            copy, output.shape(), ctx
+        )
