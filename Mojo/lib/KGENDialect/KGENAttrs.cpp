@@ -1267,6 +1267,23 @@ inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
   return specializedType;
 }
 
+/// Returns true if the result of `bindParams` is a partially specialized
+/// version of its body generator (in contrast to a nested generator).
+static bool isCurriedBinding(BindParamsAttr bindParams) {
+  auto genType = sugarCast<GeneratorType>(bindParams.getGenerator().getType());
+  ArrayRef<TypedAttr> values = bindParams.getParamValues();
+  if (values.size() != genType.getInputParamTypes().size() ||
+      llvm::any_of(values, llvm::IsaPred<UnboundAttr>))
+    return true;
+
+  PogListAttr metadata = genType.getParamListAttrs();
+  size_t numConstraints = metadata ? metadata.getBodyConstraints().size() : 0;
+  DenseBoolArrayAttr discharged = bindParams.getDischarged();
+  size_t numDischarged =
+      discharged ? llvm::count(discharged.asArrayRef(), true) : 0;
+  return numDischarged != numConstraints || !isEagerlyInstantiatable(genType);
+}
+
 Type BindParamsAttr::inferResultType(
     TypedAttr generator, ArrayRef<TypedAttr> paramValues,
     DenseBoolArrayAttr discharged,
@@ -1299,9 +1316,11 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
       isEqualCanon(generator.getType(), type))
     return generator;
 
-  // If the generator is itself a BindParamsAttr, flatten the new bindings into
-  // the existing ones.
-  if (auto bindParams = sugarDynCast<BindParamsAttr>(generator)) {
+  // If the generator is a curried BindParamsAttr, flatten the new bindings into
+  // the existing ones. A non-curried one has instantiated its body, so the
+  // new bindings belong to that body instead.
+  auto bindParams = sugarDynCast<BindParamsAttr>(generator);
+  if (bindParams && isCurriedBinding(bindParams)) {
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(bindParams.getParamValues(), paramValues);
     DenseBoolArrayAttr innerMask = bindParams.getDischarged();
