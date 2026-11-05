@@ -126,11 +126,12 @@ void printMatmulReduceScatterSumAttrs(OpAsmPrinter &p, Operation *,
 
 ParseResult parseReduceScatterRMSNormAttrs(OpAsmParser &p,
                                            IntegerAttr &groupSize,
-                                           BoolAttr &hasResidual);
+                                           BoolAttr &hasResidual,
+                                           IntegerAttr &quantBits);
 
 void printReduceScatterRMSNormAttrs(OpAsmPrinter &p, Operation *,
-                                    IntegerAttr groupSize,
-                                    BoolAttr hasResidual);
+                                    IntegerAttr groupSize, BoolAttr hasResidual,
+                                    IntegerAttr quantBits);
 
 ParseResult parseAllGatherRMSNormQuantMXFP6Attrs(OpAsmParser &p,
                                                  IntegerAttr &groupSize,

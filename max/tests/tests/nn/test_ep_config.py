@@ -319,6 +319,17 @@ def test_ffn_combine_send_rejects_fused_shared_expert() -> None:
         )
 
 
+def test_combine_mx_accepts_the_split_combine() -> None:
+    """The happy path must not raise, or the negative case proves nothing."""
+    dataclasses.replace(_base_ep_config(), combine_mx_min_tokens=2048)
+
+
+def test_combine_mx_rejects_ffn_combine_send() -> None:
+    """The fused send writes bfloat16, which the MXFP8 wait would misread."""
+    with pytest.raises(ValueError, match="fused FFN combine send"):
+        dataclasses.replace(_ffn_send_config(), combine_mx_min_tokens=2048)
+
+
 def _nvfp4_quant_config() -> QuantConfig:
     return QuantConfig(
         input_scale=InputScaleSpec(

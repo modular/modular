@@ -390,12 +390,19 @@ def _store_bypassing_l2(address: Int, data: SIMD[DType.uint32, 4]):
     stay there until flushed to L3/xGMI. See
     https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
 
+    The trailing `s_nop 1` is the two wait states CDNA3 and CDNA4 require
+    before a VALU instruction overwrites the data registers of a store wider
+    than 8 bytes. The compiler inserts them after its own stores but cannot
+    tell that this assembly is one, so a caller whose next VALU work reuses
+    the registers, as the MXFP8 combine send does, otherwise stores whatever
+    they hold when the store reads them, which varies with memory pressure.
+
     Args:
         address: The 16-byte aligned destination address.
         data: The bytes to store.
     """
     inlined_assembly[
-        "global_store_dwordx4 $0, $1, off sc0 sc1",
+        "global_store_dwordx4 $0, $1, off sc0 sc1\n\ts_nop 1",
         NoneType,
         constraints="v,v,~{memory}",
         has_side_effect=True,
@@ -511,6 +518,95 @@ def _store_token_index(
         ptr.unsafe_store[alignment=EP_TOKEN_INDEX_BYTES](
             SIMD[DType.int32, width](token)
         )
+
+
+comptime EP_MX_MSG_GROUP = 32
+"""Elements sharing one E8M0 scale in an MXFP8 combine message."""
+
+
+@inline(.always)
+def ep_mx_msg_bytes(hid_dim: Int) -> Int:
+    """Bytes of an MXFP8 combine message: E4M3 values, then E8M0 scales."""
+    return hid_dim + hid_dim // EP_MX_MSG_GROUP
+
+
+@inline(.always)
+def _store_peer_bytes[
+    dst_addr_space: AddressSpace, //, width: Int, bypass_l2: Bool
+](
+    dst_p: MutPointer[UInt8, _, address_space=dst_addr_space],
+    data: SIMD[DType.uint8, width],
+) -> None:
+    """Stores `data`; with `bypass_l2` on MI355X, as `block_memcpy` does, so the
+    bytes skip the per-chiplet L2 and are visible to other agents once the
+    caller publishes them."""
+    comptime if bypass_l2 and _is_amd_mi355x():
+        comptime if width == 16:
+            _store_bypassing_l2(Int(dst_p), bitcast[DType.uint32, 4](data))
+        else:
+            comptime assert width == 1, "peer stores are 16 bytes or 1 byte"
+            inlined_assembly[
+                "global_store_byte $0, $1, off sc0 sc1",
+                NoneType,
+                constraints="v,v,~{memory}",
+                has_side_effect=True,
+            ](Int(dst_p), UInt32(data[0]))
+    else:
+        dst_p.unsafe_store[alignment=width](0, data)
+
+
+@inline(.always)
+def _copy_token_mxfp8[
+    input_type: DType,
+    dst_addr_space: AddressSpace,
+    src_addr_space: AddressSpace,
+    //,
+    hid_dim: Int,
+    block_size: Int,
+    bypass_l2: Bool,
+](
+    dst_p: MutPointer[UInt8, _, address_space=dst_addr_space],
+    src_p: ImmPointer[Scalar[input_type], _, address_space=src_addr_space],
+    thread_idx: Int,
+) -> None:
+    """Writes one token as an MXFP8 combine message (`ep_mx_msg_bytes`).
+
+    Each thread quantizes 16 consecutive elements, so the two threads of a
+    32-element group share its E8M0 scale through a lane-pair max. All
+    `block_size` threads must call it, and `block_size` must be even.
+    """
+    comptime per_thread = 16
+    comptime n_vec = hid_dim // per_thread
+    comptime lanes_per_group = EP_MX_MSG_GROUP // per_thread
+    comptime assert (
+        hid_dim % EP_MX_MSG_GROUP == 0
+    ), "hid_dim must be a multiple of the MX group"
+    comptime assert block_size % lanes_per_group == 0
+    for i in range(thread_idx, n_vec, block_size):
+        var vals = src_p.unsafe_load[
+            width=per_thread, alignment=16, invariant=True
+        ](i * per_thread).cast[DType.float32]()
+        var group_max = warp.lane_group_max[num_lanes=lanes_per_group](
+            abs(vals).reduce_max()
+        )
+        var scale: Scalar[DType.float8_e8m0fnu]
+        var multiplier: Float32
+        var block_is_dead: Bool
+        scale, multiplier, block_is_dead = compute_mxfp8_block_scale[
+            DType.float8_e8m0fnu
+        ](group_max)
+        var data = type_of(vals)(0.0) if block_is_dead else vals
+        _store_peer_bytes[per_thread, bypass_l2](
+            dst_p.unsafe_offset(i * per_thread),
+            bitcast[DType.uint8, per_thread](
+                (data * multiplier).cast[DType.float8_e4m3fn]()
+            ),
+        )
+        if i % lanes_per_group == 0:
+            _store_peer_bytes[1, bypass_l2](
+                dst_p.unsafe_offset(hid_dim + i // lanes_per_group),
+                bitcast[DType.uint8, 1](scale),
+            )
 
 
 @inline(.always)
@@ -5570,6 +5666,7 @@ struct EPCombineKernel[
     use_shmem: Bool = True,
     fused_shared_expert: Bool = False,
     skip_a2a: Bool = False,
+    mx_msg: Bool = False,
 ]:
     """Implements combine_async and combine_wait kernel logic for Expert Parallelism.
 
@@ -5596,6 +5693,9 @@ struct EPCombineKernel[
         fused_shared_expert: Whether to filter out the shared expert's outputs.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
             receive tokens from the current device.
+        mx_msg: Whether each message is the token as MXFP8 (`ep_mx_msg_bytes`)
+            rather than its raw bytes: the send quantizes in groups of 32
+            elements and the reduce dequantizes. Lossy, and peer-to-peer only.
     """
 
     comptime n_local_experts = Self.n_experts // Self.n_ranks
@@ -5774,9 +5874,17 @@ struct EPCombineKernel[
         comptime assert src_info.flat_rank >= 2, "src_info expects rank >= 2"
         comptime hid_dim = input_tokens.static_shape[1]
 
-        comptime assert (
-            Self.msg_bytes == hid_dim * size_of[Scalar[input_type]]()
-        ), "EP combine_async: input shape doesn't match message size."
+        comptime if Self.mx_msg:
+            comptime assert Self.msg_bytes == ep_mx_msg_bytes(
+                hid_dim
+            ), "EP combine_async: MXFP8 message size doesn't match hid_dim."
+            comptime assert (
+                not Self.use_shmem
+            ), "EP combine_async: MXFP8 messages are peer-to-peer only."
+        else:
+            comptime assert (
+                Self.msg_bytes == hid_dim * size_of[Scalar[input_type]]()
+            ), "EP combine_async: input shape doesn't match message size."
 
         # Comm-local thread / warp indices (== absolute when base == 0, so the
         # standalone kernel is byte-identical).
@@ -5974,28 +6082,38 @@ struct EPCombineKernel[
                         var ti = Int(smem_start[pair]) + k
                         var sti = src_info.load[width=2]((ti, Idx[0]))
                         if Self._recv_offset_in_bounds(sti[0], sti[1]):
-                            block_memcpy[
-                                hid_dim * size_of[input_type](),
-                                WARP_SIZE,
-                                bypass_l2=True,
-                            ](
-                                recv_buf_ptrs[rl].unsafe_offset(
-                                    Self.recv_buf_layout(
-                                        (sti[0], sti[1], Idx[0])
-                                    )
-                                ),
-                                input_tokens.ptr_at_offset(
-                                    (ti, Idx[0])
-                                ).unsafe_bitcast[UInt8](),
-                                lane,
+                            var dst = recv_buf_ptrs[rl].unsafe_offset(
+                                Self.recv_buf_layout((sti[0], sti[1], Idx[0]))
                             )
+                            comptime if Self.mx_msg:
+                                _copy_token_mxfp8[
+                                    hid_dim, WARP_SIZE, bypass_l2=True
+                                ](
+                                    dst,
+                                    input_tokens.ptr_at_offset(
+                                        (ti, Idx[0])
+                                    ).as_imm(),
+                                    lane,
+                                )
+                            else:
+                                block_memcpy[
+                                    hid_dim * size_of[input_type](),
+                                    WARP_SIZE,
+                                    bypass_l2=True,
+                                ](
+                                    dst,
+                                    input_tokens.ptr_at_offset(
+                                        (ti, Idx[0])
+                                    ).unsafe_bitcast[UInt8](),
+                                    lane,
+                                )
 
                     pend[n_pend] = Int32(pair)
                     n_pend += 1
                     if n_pend == FLUSH:
                         flush_pending()
                 flush_pending()
-            else:
+            elif not Self.mx_msg:
                 # Below that, at decode sizes, the CTA sends its pairs
                 # together. The per-pair loop below would walk them one after
                 # another, each with its own count load, row-at-a-time block
@@ -6014,7 +6132,7 @@ struct EPCombineKernel[
                 comptime vec = simd_width_of[DType.uint8]()
                 comptime n_vec = Self.msg_bytes // vec
                 comptime assert (
-                    Self.msg_bytes % vec == 0
+                    Self.mx_msg or Self.msg_bytes % vec == 0
                 ), "flat send copies whole 16-byte units"
                 var f_start = unsafe_stack_allocation[
                     FP, Int32, address_space=.SHARED
@@ -6212,15 +6330,27 @@ struct EPCombineKernel[
                                 (src_idx, src_topk_idx, Idx[0])
                             )
                         )
-                        block_memcpy[
-                            hid_dim * size_of[input_type](), Self.num_threads
-                        ](
-                            dst_recv_buf_ptr,
-                            input_tokens.ptr_at_offset(
-                                (token_idx, Idx[0])
-                            ).unsafe_bitcast[UInt8](),
-                            tid,
-                        )
+                        comptime if Self.mx_msg:
+                            _copy_token_mxfp8[
+                                hid_dim, Self.num_threads, bypass_l2=False
+                            ](
+                                dst_recv_buf_ptr,
+                                input_tokens.ptr_at_offset(
+                                    (token_idx, Idx[0])
+                                ).as_imm(),
+                                tid,
+                            )
+                        else:
+                            block_memcpy[
+                                hid_dim * size_of[input_type](),
+                                Self.num_threads,
+                            ](
+                                dst_recv_buf_ptr,
+                                input_tokens.ptr_at_offset(
+                                    (token_idx, Idx[0])
+                                ).unsafe_bitcast[UInt8](),
+                                tid,
+                            )
 
                 # If the target device is on a different node, we need to send the
                 # tokens to the target device using the SHMEM API.
@@ -6475,7 +6605,9 @@ struct EPCombineKernel[
         comptime dst_simd_width = simd_width_of[output_type]()
         comptime byte_simd_width = simd_width_of[DType.uint8]()
 
-        comptime hid_dim = Self.msg_bytes // size_of[Scalar[output_type]]()
+        comptime hid_dim = (
+            Self.msg_bytes * EP_MX_MSG_GROUP // (EP_MX_MSG_GROUP + 1)
+        ) if Self.mx_msg else Self.msg_bytes // size_of[Scalar[output_type]]()
         comptime _align = align_of[SIMD[.uint8, byte_simd_width]]()
         # `_align` is in bytes; stores take an alignment in elements.
         comptime store_align = _align // size_of[Scalar[output_type]]()
@@ -6533,24 +6665,45 @@ struct EPCombineKernel[
                     ):
                         continue
 
-                var recv_buf_ptr = recv_buf_p.unsafe_offset(
-                    Self.recv_buf_layout(
-                        (
-                            token_idx,
-                            topk_idx,
-                            chunk_idx_in_token * n_chunk_bytes,
+                var recv_chunk: SIMD[output_type, dst_simd_width]
+                comptime if Self.mx_msg:
+                    var msg_p = recv_buf_p.unsafe_offset(
+                        Self.recv_buf_layout((token_idx, topk_idx, Idx[0]))
+                    )
+                    var elem = (
+                        chunk_idx_in_token * n_chunk_elems
+                        + lane_id() * dst_simd_width
+                    )
+                    var scale = bitcast[DType.float8_e8m0fnu](
+                        msg_p.unsafe_load(hid_dim + elem // EP_MX_MSG_GROUP)
+                    ).cast[.float32]()
+                    recv_chunk = (
+                        bitcast[DType.float8_e4m3fn, dst_simd_width](
+                            msg_p.unsafe_load[
+                                width=dst_simd_width, alignment=dst_simd_width
+                            ](elem)
+                        ).cast[.float32]()
+                        * scale
+                    ).cast[output_type]()
+                else:
+                    var recv_buf_ptr = recv_buf_p.unsafe_offset(
+                        Self.recv_buf_layout(
+                            (
+                                token_idx,
+                                topk_idx,
+                                chunk_idx_in_token * n_chunk_bytes,
+                            )
                         )
                     )
-                )
-                # recv_buf is fresh peer data each round: not invariant.
-                var recv_chunk = bitcast[output_type, dst_simd_width](
-                    recv_buf_ptr.unsafe_load[
-                        width=byte_simd_width,
-                        alignment=_align,
-                    ](
-                        lane_id() * byte_simd_width,
+                    # recv_buf is fresh peer data each round: not invariant.
+                    recv_chunk = bitcast[output_type, dst_simd_width](
+                        recv_buf_ptr.unsafe_load[
+                            width=byte_simd_width,
+                            alignment=_align,
+                        ](
+                            lane_id() * byte_simd_width,
+                        )
                     )
-                )
 
                 comptime if has_router_weights:
                     var weight = router_weights_fn[1](token_idx, topk_idx)
@@ -6596,6 +6749,7 @@ def combine_async_kernel[
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     use_shmem: Bool = True,
+    mx_msg: Bool = False,
     *,
     # Callers bind this kernel before the call, so there is no tile argument
     # to infer the engines from.
@@ -6639,6 +6793,7 @@ def combine_async_kernel[
         max_tokens_per_rank: The maximum number of tokens per rank.
         p2p_world_size: Size of a High-speed GPU interconnect group.
         use_shmem: Whether to use the SHMEM API for the communication.
+        mx_msg: Whether to send each token as an MXFP8 message.
         InputTokensEngine: Storage engine backing the `input_tokens` tile.
         SrcInfoEngine: Storage engine backing the `src_info` tile.
 
@@ -6672,6 +6827,7 @@ def combine_async_kernel[
         max_tokens_per_rank,
         p2p_world_size,
         use_shmem,
+        mx_msg=mx_msg,
     ]
 
     var atomic_counter = ep_counters.get_combine_async_ptr()
@@ -6715,6 +6871,7 @@ def combine_wait_kernel[
     StoreFnType: EPCombineStoreFn,
     RouterWeightsFnType: RouterWeightsFn,
     has_router_weights: Bool,
+    mx_msg: Bool = False,
 ](
     num_tokens: Int32,
     recv_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
@@ -6743,6 +6900,7 @@ def combine_wait_kernel[
         RouterWeightsFnType: The type of `router_weights_fn`.
         has_router_weights: Whether all routed experts' outputs for a token
             are weighted by `router_weights_fn` and summed.
+        mx_msg: Whether each received message is an MXFP8 token.
 
     Args:
         num_tokens: The number of output tokens.
@@ -6771,6 +6929,7 @@ def combine_wait_kernel[
         max_tokens_per_rank,
         1,  # p2p world size is not used in combine_wait
         use_shmem=False,
+        mx_msg=mx_msg,
     ]
 
     var atomic_counter = ep_counters.get_combine_wait_ptr()

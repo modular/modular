@@ -45,6 +45,10 @@ from max.support.math import ceildiv
 # dispatch buffers for the next iteration.
 NUM_GROUPS = 2
 
+EP_COMBINE_MX_MIN_TOKENS = 2048
+"""Step size, in tokens across all ranks, from which a model that asks for an
+MXFP8 combine sends it; below it the combine is latency-bound and stays exact."""
+
 
 @dataclass
 class EPConfig:
@@ -151,6 +155,13 @@ class EPConfig:
     max_batch_size: int = 0
     """Decode concurrency cap sizing the AMD MXFP4 preb direct grid.y on the
     decode bands. 0 disables (full-stride fallback)."""
+
+    combine_mx_min_tokens: int = 0
+    """Steps of at least this many tokens across all ranks send the combine
+    back as MXFP8 (E4M3 values with an E8M0 scale per 32 elements), about half
+    the bytes of bfloat16, at some accuracy cost. 0 keeps every combine exact.
+    Only the split ``ep_combine_async`` / ``ep_combine_wait`` path on a single
+    node takes it."""
 
     # EPLB parameters (used only when eplb_enabled is True)
     eplb_enabled: bool = False
@@ -281,6 +292,19 @@ class EPConfig:
         if self.use_allreduce and self.n_nodes > 1:
             raise ValueError(
                 "Using allreduce as communication backend is not supported when n_nodes > 1"
+            )
+
+        if self.combine_mx_min_tokens > 0 and (
+            self.n_nodes > 1
+            or self.use_allreduce
+            or self.fused_shared_expert
+            or self.fuse_ffn_combine_send
+            or self.combine_dtype != DType.bfloat16
+        ):
+            raise ValueError(
+                "combine_mx_min_tokens needs a single-node, all-to-all"
+                " bfloat16 combine without a fused shared expert or the fused"
+                " FFN combine send"
             )
 
         if self.n_nodes > 1:

@@ -414,18 +414,28 @@ def _ep_forward(
         # When the FFN epilogue already sent, there is nothing to launch here:
         # the payload is in the peer buffers and the arrival signal is
         # published, so the wait below is the only remaining step.
+        step_tokens = (
+            total_tokens.cast(DType.uint32)
+            if batch_mgr.config.combine_mx_min_tokens > 0
+            else None
+        )
         if not ffn_sent:
             for i, shard in enumerate(moe_shards):
                 shard.ep_batch_manager.ep_combine_async(
-                    all_down_projs[i], device_ids[i]
+                    all_down_projs[i], device_ids[i], total_tokens=step_tokens
                 )
         combine_results = [
             shard.ep_batch_manager.ep_combine_wait(
-                all_router_weights[i], device_ids[i]
+                all_router_weights[i], device_ids[i], total_tokens=step_tokens
             )
             for i, shard in enumerate(moe_shards)
         ]
     else:
+        if batch_mgr.config.combine_mx_min_tokens > 0:
+            raise NotImplementedError(
+                "combine_mx_min_tokens is served by the split"
+                " ep_combine_async / ep_combine_wait path only"
+            )
         # Multi-device combine (single op).
         combine_results = batch_mgr.ep_combine_all(
             all_down_projs, all_router_weights, device_ids

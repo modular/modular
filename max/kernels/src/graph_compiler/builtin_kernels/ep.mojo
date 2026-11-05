@@ -3202,6 +3202,238 @@ struct Struct_ep_combine_wait:
         )
 
 
+@extensibility.register("ep.combine_async.mx")
+struct Struct_ep_combine_async_mx:
+    """Registers the `ep.combine_async.mx` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        combine_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        //,
+        target: StaticString,
+        *,
+        mx_min_tokens: Int,
+    ](
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        src_info: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        total_tokens: UInt32,
+        context: DeviceContext,
+    ) raises:
+        """`ep.combine_async` that sends MXFP8 messages for large steps.
+
+        When `total_tokens` reaches `mx_min_tokens`, each expert output goes
+        back to its rank as MXFP8 (E4M3 values with an E8M0 scale per 32
+        elements, about half the bytes), which is lossy; smaller steps send it
+        exactly. `total_tokens` must be the same on every rank, and the
+        matching `ep.combine_wait.mx` must get the same value and threshold.
+
+        Parameters:
+            combine_dtype: Expert output dtype (inferred).
+            hidden_size: Model hidden size (inferred).
+            top_k: Experts each token is routed to (inferred).
+            n_experts: Experts across all GPUs (inferred).
+            max_token_per_rank: Most tokens per GPU (inferred).
+            n_gpus_per_node: GPUs per node (inferred).
+            n_nodes: Physical nodes (inferred).
+            target: Compile-time device target.
+            mx_min_tokens: Smallest `total_tokens` sent as MXFP8.
+
+        Args:
+            atomic_counters: Atomic counters coordinating the combine.
+            input_tokens: Expert outputs. Shape `[num_tokens, hidden_size]`.
+            src_info: Each row's originating rank and token from the dispatch.
+            send_ptrs: Send buffer pointers for the combine phase.
+            recv_ptrs: Receive buffer pointers for the combine phase.
+            recv_count_ptrs: Receive count buffer pointers.
+            total_tokens: Tokens of the step across all ranks.
+            context: GPU device context for the current device.
+        """
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(input_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(src_info), TileTensorable)
+        comptime assert conforms_to(type_of(send_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(input_tokens).rank == 2
+        comptime assert type_of(src_info).rank == 2
+        comptime assert type_of(send_ptrs).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        var atomic_counters_tile = atomic_counters.to_tile_tensor[.int32]()
+        var input_tokens_tile = input_tokens.to_tile_tensor[combine_dtype]()
+        var src_info_tile = src_info.to_tile_tensor[.int32]()
+        var send_ptrs_tile = send_ptrs.to_tile_tensor[.uint64]()
+        var recv_ptrs_tile = recv_ptrs.to_tile_tensor[.uint64]()
+        var recv_count_ptrs_tile = recv_count_ptrs.to_tile_tensor[.uint64]()
+
+        @inline(.always)
+        def launch[mx_msg: Bool]() raises {imm}:
+            ep_combine_async_kernel_api[
+                combine_dtype,
+                hidden_size,
+                top_k,
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                target,
+                mx_msg=mx_msg,
+            ](
+                atomic_counters_tile,
+                input_tokens_tile,
+                src_info_tile,
+                send_ptrs_tile,
+                recv_ptrs_tile,
+                recv_count_ptrs_tile,
+                context,
+            )
+
+        if Int(total_tokens) >= mx_min_tokens:
+            launch[True]()
+        else:
+            launch[False]()
+
+
+@extensibility.register("ep.combine_wait.mx")
+struct Struct_ep_combine_wait_mx:
+    """Registers the `ep.combine_wait.mx` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        combine_dtype: DType,
+        //,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        target: StaticString,
+        *,
+        mx_min_tokens: Int,
+    ](
+        output_tokens: Some[Output & Fused & StoreAccess],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        router_weights: Some[Input & Tensor],
+        total_tokens: UInt32,
+        context: DeviceContext,
+    ) raises:
+        """`ep.combine_wait` for the messages `ep.combine_async.mx` sent.
+
+        Reads MXFP8 messages when `total_tokens` reaches `mx_min_tokens` and
+        exact ones otherwise, then computes each token's weighted sum of its
+        routed expert outputs.
+
+        Parameters:
+            combine_dtype: Output dtype (inferred).
+            hidden_size: Model hidden size.
+            top_k: Experts each token is routed to.
+            n_experts: Experts across all GPUs.
+            max_token_per_rank: Most tokens any GPU can receive.
+            n_gpus_per_node: GPUs per physical node.
+            n_nodes: Physical nodes.
+            target: Compile-time device target.
+            mx_min_tokens: Smallest `total_tokens` sent as MXFP8.
+
+        Args:
+            output_tokens: `[num_tokens, hidden_size]` weighted sums.
+            atomic_counters: Atomic counters coordinating the combine.
+            recv_ptrs: Receive buffer pointers for the combine phase.
+            recv_count_ptrs: Receive count buffer pointers.
+            router_weights: `[num_tokens, top_k]` router weights.
+            total_tokens: Tokens of the step across all ranks.
+            context: GPU device context for the current device.
+        """
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(router_weights), TileTensorable)
+        comptime assert type_of(output_tokens).dtype == combine_dtype
+        comptime assert type_of(output_tokens).rank == 2
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        comptime assert type_of(router_weights).rank == 2
+        comptime assert (
+            type_of(output_tokens)._shape_types[1].static_value == hidden_size
+        ), "EP combine: output tokens shape doesn't match hidden size."
+        var router_weights_tensor = router_weights.to_tile_tensor()
+        comptime assert router_weights_tensor.flat_rank == 2
+
+        comptime assert conforms_to(type_of(output_tokens), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output_tokens)
+        comptime assert conforms_to(type_of(out_view), Storable)
+
+        @inline(.always)
+        def router_weights_fn[
+            width: Int
+        ](token_idx: Int, topk_id: Int) {var router_weights_tensor} -> SIMD[
+            .float32, width
+        ]:
+            return router_weights_tensor.load[width=width](
+                (token_idx, topk_id)
+            ).cast[.float32]()
+
+        @inline(.always)
+        def output_fn[
+            dtype: DType,
+            width: SIMDLength,
+            *,
+            alignment: Int = 1,
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=alignment](
+                coords,
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
+            )
+
+        var num_tokens = coord_to_index_list(output_tokens.shape())[0]
+        var atomic_counters_tile = atomic_counters.to_tile_tensor[.int32]()
+        var recv_ptrs_tile = recv_ptrs.to_tile_tensor[.uint64]()
+        var recv_count_ptrs_tile = recv_count_ptrs.to_tile_tensor[.uint64]()
+
+        @inline(.always)
+        def launch[mx_msg: Bool]() raises {imm}:
+            ep_combine_wait_kernel_api[
+                combine_dtype,
+                hidden_size,
+                top_k,
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                target,
+                mx_msg=mx_msg,
+            ](
+                num_tokens,
+                atomic_counters_tile,
+                recv_ptrs_tile,
+                recv_count_ptrs_tile,
+                context,
+                output_fn,
+                router_weights_fn,
+            )
+
+        if Int(total_tokens) >= mx_min_tokens:
+            launch[True]()
+        else:
+            launch[False]()
+
+
 @extensibility.register("ep.combine")
 struct Struct_ep_combine:
     """Registers the `ep.combine` graph op with the graph compiler."""

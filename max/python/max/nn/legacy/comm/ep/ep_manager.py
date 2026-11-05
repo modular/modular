@@ -688,7 +688,10 @@ class EPBatchManager:
         return (*results[:-1], self._common_grouped_matmul_metadata())
 
     def ep_combine_async(
-        self, input_tokens: TensorLike, device_id: int
+        self,
+        input_tokens: TensorLike,
+        device_id: int,
+        total_tokens: TensorValue | None = None,
     ) -> None:
         """Initiate Expert Parallelism combine phase (async).
 
@@ -700,6 +703,8 @@ class EPBatchManager:
             input_tokens: Expert output tensors from the current device.
                 A TensorValue with shape (max_recv_tokens, hidden_size).
             device_id: Device ID for the current device.
+            total_tokens: The step's token count across all ranks, a host
+                ``uint32`` scalar; required with ``combine_mx_min_tokens``.
         """
         COMBINE_GROUP = 1
         # always use group 0 atomic counters unless we enable
@@ -719,6 +724,7 @@ class EPBatchManager:
             self.recv_buf_ptrs[COMBINE_GROUP],
             self.recv_count_ptrs[COMBINE_GROUP],
             self.config,
+            total_tokens=total_tokens,
         )
 
         # reset src_info to None to avoid reusing it for the next batch
@@ -911,7 +917,10 @@ class EPBatchManager:
         )
 
     def ep_combine_wait(
-        self, router_weight: TensorLike, device_id: int
+        self,
+        router_weight: TensorLike,
+        device_id: int,
+        total_tokens: TensorValue | None = None,
     ) -> TensorLike:
         """Wait for Expert Parallelism combine phase completion.
 
@@ -923,6 +932,7 @@ class EPBatchManager:
             router_weight: Router weights for the current device.
                 A TensorValue with shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
+            total_tokens: The scalar :meth:`ep_combine_async` got.
 
         Returns:
             Final output tensor with shape (num_local_tokens, hidden_size).
@@ -944,6 +954,7 @@ class EPBatchManager:
             self.config,
             dispatch_dim,
             router_weight_val,
+            total_tokens=total_tokens,
         )
 
         return _as_input_type(router_weight, results)

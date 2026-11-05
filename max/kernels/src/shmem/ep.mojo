@@ -28,6 +28,7 @@ from std.ffi import external_call, _get_global_or_null
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (
     EP_PDL_MAX_RANKS,
+    ep_mx_msg_bytes,
     EPLocalSyncCounters,
     TokenFormat,
     dispatch_async_kernel,
@@ -991,6 +992,7 @@ def ep_combine_async_kernel_api[
     n_nodes: Int,
     target: StaticString,
     use_shmem: Bool = (n_nodes > 1),
+    mx_msg: Bool = False,
 ](
     atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     input_tokens: TileTensor[
@@ -1027,6 +1029,8 @@ def ep_combine_async_kernel_api[
         n_nodes: Number of physical nodes.
         target: Target.
         use_shmem: Whether to enable SHMEM communication.
+        mx_msg: Send each token as MXFP8 (lossy, peer-to-peer only); the
+            matching `ep_combine_wait_kernel_api` must take it too.
 
     Arguments:
         output_tokens: Output tokens for the shared experts.
@@ -1057,7 +1061,9 @@ def ep_combine_async_kernel_api[
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
-    comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
+    comptime combine_msg_size = ep_mx_msg_bytes(
+        hidden_size
+    ) if mx_msg else hidden_size * size_of[combine_dtype]()
     comptime n_ranks = n_gpus_per_node * n_nodes
 
     comptime combine_async = combine_async_kernel[
@@ -1073,6 +1079,7 @@ def ep_combine_async_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,
         use_shmem=use_shmem,
+        mx_msg=mx_msg,
         InputTokensEngine=input_tokens.Engine,
         SrcInfoEngine=src_info.Engine,
     ]
@@ -1247,6 +1254,7 @@ def ep_combine_wait_kernel_api[
     n_nodes: Int,
     target: StaticString,
     has_router_weights: Bool = True,
+    mx_msg: Bool = False,
 ](
     num_tokens: Int,
     atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
@@ -1280,6 +1288,8 @@ def ep_combine_wait_kernel_api[
         has_router_weights: Whether the routed expert outputs are weighted by
             `router_weights_fn` and summed. The overload without
             `router_weights_fn` passes `False`.
+        mx_msg: The messages are MXFP8, as `ep_combine_async_kernel_api`
+            sent them with `mx_msg`.
 
     Arguments:
         num_tokens: Number of output tokens.
@@ -1313,7 +1323,9 @@ def ep_combine_wait_kernel_api[
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
-    comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
+    comptime combine_msg_size = ep_mx_msg_bytes(
+        hidden_size
+    ) if mx_msg else hidden_size * size_of[combine_dtype]()
     comptime n_ranks = n_gpus_per_node * n_nodes
 
     comptime combine_wait = combine_wait_kernel[
@@ -1328,6 +1340,7 @@ def ep_combine_wait_kernel_api[
         StoreFnType,
         RouterWeightsFnType,
         has_router_weights,
+        mx_msg=mx_msg,
     ]
 
     @inline(.always)

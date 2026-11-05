@@ -60,6 +60,11 @@ from comm.lamport import Lamport
 from max.gpu import WARP_SIZE
 from comm.reducescatter import ReduceScatterConfig, reducescatter
 from comm.reducescatter_rmsnorm import _dispatch_rs_norm, reducescatter_rmsnorm
+from comm.reducescatter_quant import (
+    RS_QUANT_GROUP,
+    reducescatter_quant,
+    rs_quant_scratch_bytes,
+)
 from nn.normalization import rms_norm_gpu
 from comm.broadcast import broadcast
 from comm.device_collective import _launch_device_collective
@@ -1450,6 +1455,7 @@ struct DistributedReduceScatterRMSNorm:
         weight_offset: Float32,
         group_size: Int = 0,
         has_residual: Bool = False,
+        quant_bits: Int = 0,
     ](
         outputs_normed: TensorTuple[*Normed],
         outputs_sum: TensorTuple[*Sums],
@@ -1459,7 +1465,7 @@ struct DistributedReduceScatterRMSNorm:
         residuals: TensorTuple[*Residuals],
         dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
-        """Fused reduce-scatter sum + RMSNorm + residual add (bf16, no quant).
+        """Fused reduce-scatter sum + RMSNorm + residual add (bf16 out).
 
         Reduce-scatters `inputs` (one `[rows, cols]` tensor per device) along
         rows, adds `residuals`, and RMSNorm-normalizes each owned shard in the
@@ -1496,6 +1502,10 @@ struct DistributedReduceScatterRMSNorm:
                 attribute default is not a usable value.
             has_residual: Fold `residuals` into the reduce-scatter sum. Off
                 leaves both arms byte-for-byte the plain reduce-scatter + norm.
+            quant_bits: 4 or 8 to send the two-launch arm's peer traffic
+                quantized (INT4 or MXFP8, lossy) when the whole world reduces
+                together, the columns are a multiple of 32 and the signal
+                buffers hold the scratch; 0 keeps it exact.
 
         Args:
             outputs_normed: Per-device normed output shards.
@@ -1533,8 +1543,25 @@ struct DistributedReduceScatterRMSNorm:
             num_devices % group_size == 0
         ), "group_size must evenly divide the number of devices"
 
-        # Like plain reduce-scatter, no scratch: only the Signal struct.
-        _check_signal_buffer_size(Int(signal_buffers[0].shape().product()), 0)
+        # Like plain reduce-scatter, no scratch: only the Signal struct. The
+        # quantized arm checks its own scratch and column alignment below and
+        # falls back without them.
+        var signal_bytes = Int(signal_buffers[0].shape().product())
+        _check_signal_buffer_size(signal_bytes, 0)
+        comptime assert quant_bits in (0, 4, 8), "quant_bits must be 0, 4 or 8"
+        comptime quantize = quant_bits > 0 and group_size == num_devices
+        var quant_scratch_fits = False
+        comptime if quantize:
+            var rs_cols = Int(inputs[0].shape()[rank - 1].value())
+            var rs_rows = Int(inputs[0].shape().product()) // rs_cols
+            quant_scratch_fits = (
+                rs_cols % RS_QUANT_GROUP == 0
+                and signal_bytes
+                >= size_of[Signal]()
+                + rs_quant_scratch_bytes[quant_bits, num_devices](
+                    rs_rows, rs_cols
+                )
+            )
 
         # World-view input tensors and signals, indexed by GLOBAL device rank;
         # `reducescatter`/`_dispatch_rs_norm` do their own group-local slicing
@@ -1609,6 +1636,7 @@ struct DistributedReduceScatterRMSNorm:
             index: Int
         ]() raises {
             imm in_tensors,
+            imm quant_scratch_fits,
             imm rank_sigs,
             imm world_sum_bufs,
             imm world_res_ptrs,
@@ -1642,7 +1670,7 @@ struct DistributedReduceScatterRMSNorm:
             )
 
             @inline(.always)
-            def two_launch() raises {imm}:
+            def rs_exact() raises {imm}:
                 comptime if has_residual:
                     # Handed to `reducescatter` as a residual rather than as
                     # an epilogue: an epilogue would rule out the relay path,
@@ -1675,6 +1703,28 @@ struct DistributedReduceScatterRMSNorm:
                         dev_ctxs_input[index],
                         my_rank=index,
                     )
+
+            @inline(.always)
+            def two_launch() raises {imm}:
+                comptime if quantize:
+                    if quant_scratch_fits:
+                        var rs_cols = Int(sum_buf.dim[rank - 1]())
+                        reducescatter_quant[
+                            dtype, num_devices, quant_bits, has_residual
+                        ](
+                            in_tensors[index].ptr.as_unsafe_any_origin(),
+                            sum_buf.ptr.as_unsafe_any_origin(),
+                            world_res_ptrs[index],
+                            in_tensors[index].num_elements() // rs_cols,
+                            rs_cols,
+                            rank_sigs,
+                            index,
+                            dev_ctxs_input[index],
+                        )
+                    else:
+                        rs_exact()
+                else:
+                    rs_exact()
 
                 # The `{var}` copies are REQUIRED: run by the `rms_norm_gpu`
                 # device kernel, a local `var` (`sum_buf`/`normed_buf`)

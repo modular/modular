@@ -290,21 +290,24 @@ void printMatmulReduceScatterSumAttrs(OpAsmPrinter &p, Operation *,
 
 ParseResult parseReduceScatterRMSNormAttrs(OpAsmParser &p,
                                            IntegerAttr &groupSize,
-                                           BoolAttr &hasResidual) {
+                                           BoolAttr &hasResidual,
+                                           IntegerAttr &quantBits) {
   Builder &b = p.getBuilder();
   return parseAttrGroup(
       p, {{"group_size",
            [&] { return p.parseAttribute(groupSize, b.getIntegerType(64)); }},
-          {"has_residual", [&] {
-             return p.parseAttribute(hasResidual, b.getIntegerType(1));
-           }}});
+          {"has_residual",
+           [&] { return p.parseAttribute(hasResidual, b.getIntegerType(1)); }},
+          {"quant_bits",
+           [&] { return p.parseAttribute(quantBits, b.getIntegerType(64)); }}});
 }
 
 void printReduceScatterRMSNormAttrs(OpAsmPrinter &p, Operation *,
-                                    IntegerAttr groupSize,
-                                    BoolAttr hasResidual) {
+                                    IntegerAttr groupSize, BoolAttr hasResidual,
+                                    IntegerAttr quantBits) {
   printAttrGroup(p, {nonDefault("group_size", groupSize, 0),
-                     nonDefault("has_residual", hasResidual, false)});
+                     nonDefault("has_residual", hasResidual, false),
+                     nonDefault("quant_bits", quantBits, 0)});
 }
 
 ParseResult parseAllGatherRMSNormQuantMXFP6Attrs(OpAsmParser &p,

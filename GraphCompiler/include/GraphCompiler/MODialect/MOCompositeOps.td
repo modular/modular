@@ -694,6 +694,13 @@ def MOComposite_DistributedReduceScatterRMSNormOp : MO_DistributedOp<"composite.
     into contiguous groups that reduce independently (TP-within-DP). It must
     be at least 2 and divide the device count. The builder always sets it;
     the `0` default is not usable.
+
+    A nonzero `quant_bits` (4 or 8) makes the reduce-scatter of shards too
+    large to fuse send each device's contribution to its peers quantized, in
+    groups of 32 elements: symmetric INT4 with a bf16 scale, or MXFP8. That is
+    lossy. Each device's own contribution and the residual stay exact. It
+    applies only to a full-world reduce-scatter (`group_size` equal to the
+    device count); the fused small-shard path never quantizes.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -704,7 +711,8 @@ def MOComposite_DistributedReduceScatterRMSNormOp : MO_DistributedOp<"composite.
     MO_F32ScalarAttr:$epsilon,
     MO_F32ScalarAttr:$weight_offset,
     DefaultValuedAttr<I64Attr, "0">:$group_size,
-    DefaultValuedAttr<BoolAttr, "false">:$has_residual
+    DefaultValuedAttr<BoolAttr, "false">:$has_residual,
+    DefaultValuedAttr<I64Attr, "0">:$quant_bits
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -714,7 +722,8 @@ def MOComposite_DistributedReduceScatterRMSNormOp : MO_DistributedOp<"composite.
   let assemblyFormat = [{
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
-    `` custom<ReduceScatterRMSNormAttrs>($group_size, $has_residual)
+    `` custom<ReduceScatterRMSNormAttrs>($group_size, $has_residual,
+        $quant_bits)
     attr-dict `:` functional-type(operands, results)
   }];
 }

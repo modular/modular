@@ -606,6 +606,7 @@ def call_ep_combine_async(
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
+    total_tokens: TensorValue | None = None,
 ) -> None:
     """Initiate Expert Parallelism token combine phase (async).
 
@@ -633,6 +634,10 @@ def call_ep_combine_async(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_experts,)
         config: EP configuration.
+        total_tokens: The step's token count across all ranks, a host
+            ``uint32`` scalar, the same on every rank. Required when
+            ``config.combine_mx_min_tokens`` is set: steps of at least that
+            many tokens send MXFP8 messages.
 
     Note:
         This is a non-blocking operation. Call call_ep_combine_wait() to wait
@@ -643,6 +648,15 @@ def call_ep_combine_async(
 
     op_name = "ep.combine_async"
     out_types: list[TensorType] = []
+    mx_values: list[TensorValue] = []
+    if config.combine_mx_min_tokens > 0:
+        if total_tokens is None:
+            raise ValueError(
+                "combine_mx_min_tokens needs the step's total token count"
+            )
+        op_name += ".mx"
+        parameters["mx_min_tokens"] = config.combine_mx_min_tokens
+        mx_values.append(total_tokens)
 
     assert not config.fused_shared_expert, (
         "Fused shared expert is not supported when using combine_async."
@@ -658,6 +672,7 @@ def call_ep_combine_async(
             send_buf_ptrs,
             recv_buf_ptrs,
             recv_count_ptrs,
+            *mx_values,
         ],
         out_types=out_types,
         parameters=parameters,
@@ -1007,6 +1022,7 @@ def call_ep_combine_wait(
     config: EPConfig,
     num_tokens: Dim,
     router_weights: TensorValue,
+    total_tokens: TensorValue | None = None,
 ) -> TensorValue:
     """Wait for Expert Parallelism token combine and return final outputs.
 
@@ -1029,6 +1045,8 @@ def call_ep_combine_wait(
             are received, all routed experts' outputs for each token will be
             weighted and summed to produce the final output for the token.
             Shape: (num_tokens, top_k)
+        total_tokens: The same host scalar :func:`call_ep_combine_async` got.
+            Required when ``config.combine_mx_min_tokens`` is set.
 
     Returns:
         output_tokens: Final output tensor with expert results.
@@ -1044,10 +1062,27 @@ def call_ep_combine_wait(
 
     device_ref = atomic_counter.device
 
+    op_name = "ep.combine_wait"
+    mx_values: list[TensorValue] = []
+    if config.combine_mx_min_tokens > 0:
+        if total_tokens is None:
+            raise ValueError(
+                "combine_mx_min_tokens needs the step's total token count"
+            )
+        op_name += ".mx"
+        parameters["mx_min_tokens"] = config.combine_mx_min_tokens
+        mx_values.append(total_tokens)
+
     result = ops.inplace_custom(
-        "ep.combine_wait",
+        op_name,
         device=device_ref,
-        values=[atomic_counter, recv_buf_ptrs, recv_count_ptrs, router_weights],
+        values=[
+            atomic_counter,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            router_weights,
+            *mx_values,
+        ],
         out_types=[
             TensorType(
                 dtype=config.combine_dtype,
