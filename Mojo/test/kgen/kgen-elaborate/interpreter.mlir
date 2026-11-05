@@ -432,7 +432,7 @@ kgen.generator export @constexpr_elif() -> index {
 
 // -----
 
-kgen.func @pack_load() -> !kgen.struct<(si4, ui8) isParamPack> {
+kgen.func @pack_load() -> !kgen.struct<[si4, ui8] isParamPack value> {
   %i0 = kgen.param.constant: si4 = <-5>
   %i1 = kgen.param.constant: ui8 = <42>
   %p0 = pop.stack_allocation 1 x si4
@@ -441,14 +441,14 @@ kgen.func @pack_load() -> !kgen.struct<(si4, ui8) isParamPack> {
   pop.store %i1, %p1 : !kgen.pointer<ui8>
   %pack = kgen.struct.create(%p0, %p1) : !kgen.struct<(pointer<si4>, pointer<ui8>) isParamPack>
   %loaded_pack = kgen.struct.load_indirect %pack : !kgen.struct<(pointer<si4>, pointer<ui8>) isParamPack>
-  hlcf.return %loaded_pack : !kgen.struct<(si4, ui8) isParamPack>
+  hlcf.return %loaded_pack : !kgen.struct<[si4, ui8] isParamPack value>
 }
 
 // CHECK-LABEL: kgen.func export @interpret_pack_load
-kgen.generator export @interpret_pack_load() -> !kgen.struct<(si4, ui8) isParamPack> {
-  // CHECK-NEXT: %{{.*}} = kgen.param.constant: struct<(si4, ui8) isParamPack> = <{ -5, 42 }>
-  %0 = kgen.param.constant: !kgen.struct<(si4, ui8) isParamPack> = <apply(:() -> !kgen.struct<(si4, ui8) isParamPack> @pack_load)>
-  hlcf.return %0 : !kgen.struct<(si4, ui8) isParamPack>
+kgen.generator export @interpret_pack_load() -> !kgen.struct<[si4, ui8] isParamPack value> {
+  // CHECK-NEXT: %{{.*}} = kgen.param.constant: struct<[si4, ui8] isParamPack value> = <{ -5, 42 }>
+  %0 = kgen.param.constant: !kgen.struct<[si4, ui8] isParamPack value> = <apply(:() -> !kgen.struct<[si4, ui8] isParamPack value> @pack_load)>
+  hlcf.return %0 : !kgen.struct<[si4, ui8] isParamPack value>
 }
 
 // -----
