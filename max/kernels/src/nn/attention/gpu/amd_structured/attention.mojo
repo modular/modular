@@ -165,6 +165,13 @@ struct Attention[
     # head(row) = row % H. The fold invariant `query_rows % heads_inner == 0`
     # is asserted in `__init__` (comptime asserts must live in a function body).
     comptime heads_inner = Self._fold_heads if Self._fold_active else Self.group
+    # Multi-tile S>1 fold: the folded rows span more than one grid.y M-tile
+    # (query_rows > BM). Only this path compiles the tile-offset row math
+    # (valid_rows clamp, absolute stat-write and mask rows) below; single-tile
+    # folds and every non-fold path keep the tile-local forms, byte-identical.
+    comptime _fold_multi_tile = (
+        Self._fold_active and Self.q_seq_len > 1 and Self.query_rows > Self.BM
+    )
 
     comptime accum_type = get_accum_type[Self.q_type]()
 
@@ -452,9 +459,12 @@ struct Attention[
     var warp_col: Int
 
     var mask_block_row: UInt32
-    # Mask offsets: `mask_warp_row = warp_row * WM` is a cache (never mutated).
-    # `mask_warp_col` starts at `warp_col * WN` but is advanced by `BN` each
-    # K-tile (see `mask_advance`) so it tracks the current K-tile column.
+    # Mask offsets: `mask_warp_row` is a cache (never mutated) —
+    # `warp_row * WM` on a single-tile launch, absolute
+    # (`q_tile_idx() * BM + warp_row * WM`) on the multi-tile fold (see
+    # `__init__`). `mask_warp_col` starts at `warp_col * WN` but is advanced
+    # by `BN` each K-tile (see `mask_advance`) so it tracks the current
+    # K-tile column.
     var mask_warp_row: UInt32
     var mask_warp_col: UInt32
     var kv_start_row: UInt32
@@ -649,7 +659,17 @@ struct Attention[
         # `query_rows` and prefill its per-tile `min(BM, ...)`.
         var valid_rows: UInt32
         comptime if Self._fold_active and Self.q_seq_len > 1:
-            valid_rows = UInt32(Self.heads_inner) * UInt32(seq_len)
+            comptime if Self._fold_multi_tile:
+                # The tile's slice of the H*seq_len live rows — 0 for a
+                # fully-dead tile (a 0-row view maps to num_records=0, so the
+                # Q read and the output store clamp to nothing).
+                var live_rows = UInt32(Self.heads_inner) * UInt32(seq_len)
+                var tile_base_row = UInt32(Self.q_tile_idx()) * UInt32(Self.BM)
+                valid_rows = min(
+                    UInt32(Self.BM), live_rows - min(live_rows, tile_base_row)
+                )
+            else:
+                valid_rows = UInt32(Self.heads_inner) * UInt32(seq_len)
         elif Self.token_gen and Self.mla_mode:
             # The bound is relative to this head tile, so cap it at the rows
             # the tile owns; otherwise a partial last tile (24 heads at BM=16)
@@ -702,7 +722,16 @@ struct Attention[
 
         self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
         self.warp_row, self.warp_col = get_warp_coords[Self.BN, Self.WN]()
-        self.mask_warp_row = UInt32(self.warp_row * Self.WM)
+        comptime if Self._fold_multi_tile:
+            # Absolute warp row so the mask's per-token decompositions
+            # (token = row // H, head = row % H) see the tile offset — a
+            # tile-local row would mask tile 1's tokens as 0..S/2-1 and
+            # silently drop the newest keys.
+            self.mask_warp_row = UInt32(
+                self.q_tile_idx() * Self.BM + self.warp_row * Self.WM
+            )
+        else:
+            self.mask_warp_row = UInt32(self.warp_row * Self.WM)
         self.mask_warp_col = UInt32(self.warp_col * Self.WN)
 
         self.batch_idx = batch_idx
@@ -1017,7 +1046,8 @@ struct Attention[
 
         Like `_fma`, but uses `Softmax.exp_pkfma` which folds the
         `score * scale - max * scale` into a single packed FMA per score
-        pair (matches aiter's softmax inner loop). Has the small FMA
+        pair (the same fold the fastest open-source ROCm decode kernels
+        use in their softmax inner loop). Has the small FMA
         precision gap noted on `exp_pkfma`; safe under the FP8 tolerance
         envelope where the row-sum normalization absorbs it.
 
@@ -1254,11 +1284,24 @@ struct Attention[
             var live_rows = Int(Self.heads_inner) * Int(self.seq_len)
             var head_base = block_idx.y * Self._fold_head_base_stride
             comptime for m_mma in range(Self.num_m_mmas):
-                var r = (
-                    self.warp_row * Self.WM
-                    + m_mma * Self.mma_shape[0]
-                    + lane_row
-                )
+                # Multi-tile fold: `r` is the ABSOLUTE folded row (tile
+                # offset included) — the (token, head) decomposition and the
+                # live-row test key on it. Single-tile folds keep the
+                # tile-local form, byte-identical.
+                var r: Int
+                comptime if Self._fold_multi_tile:
+                    r = (
+                        Self.q_tile_idx() * Self.BM
+                        + self.warp_row * Self.WM
+                        + m_mma * Self.mma_shape[0]
+                        + lane_row
+                    )
+                else:
+                    r = (
+                        self.warp_row * Self.WM
+                        + m_mma * Self.mma_shape[0]
+                        + lane_row
+                    )
                 var token: Int
                 var head: Int
                 token, head = udivmod(r, Self.heads_inner)
