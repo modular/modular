@@ -846,6 +846,7 @@ modular_cc_library(
         "lib/Driver/DeviceContext/MemoryManager.h",
         "lib/Driver/DeviceContext/Metal/MetalDeviceContext.h",
         "lib/Driver/DeviceContext/Metal/MetalDriver.h",
+        "lib/Driver/DeviceContext/PinnedCompletionFlag.h",
         "lib/Driver/DeviceContext/Virtual/VirtualDeviceContext.h",
     ],
     # This IS the legacy DeviceContext implementation: it always compiles against

@@ -2620,12 +2620,17 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         flag: CompletionFlag,
         value: UInt64,
     ) raises:
-        """Stalls this stream until ``flag``'s 64-bit value equals ``value``.
+        """Stalls this stream until ``flag`` holds at least ``value``.
 
-        Corresponds to CUDA's `cuStreamWaitValue64`. The stream blocks
-        at this node until the 64-bit slot owned by ``flag`` (allocated
-        in device-mapped pinned host memory by its owning C++
-        ``DeviceContext``) holds ``value``. A CPU thread, or the
+        Keep values below 2^63: HIP compares them as signed.
+
+        While the wait is pending, the thread that signals ``flag`` must not
+        block on this stream first: no `synchronize()`, no device-to-host
+        copy into pageable memory, no large host-to-device copy from
+        pageable memory, and don't drop the flag. Stage through a
+        `HostBuffer` or signal from another thread.
+
+        A CPU thread, or the
         AsyncRT worker dispatched by `enqueue_host_func`, calling the
         C++ producer-side ``signal(value)`` lets the GPU stream
         synchronize on CPU-produced data without a second stream or a
@@ -2636,16 +2641,15 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         node, so this operation can be placed between graph-captured
         kernels to gate a downstream consumer on CPU-produced data.
 
-        Currently only implemented for CUDA streams; other backends raise.
+        Implemented for CUDA, HIP and Metal streams; other backends raise.
 
         Args:
-            flag: A non-owning handle to a ``M::Driver::CompletionFlag``
-                allocated by the same device's C++ context.
-            value: The 64-bit value to wait for (equality).
+            flag: A flag allocated by the same device's context.
+            value: The 64-bit value to wait for.
 
         Raises:
-            If the underlying device does not support stream memory ops,
-            or if the driver rejects the enqueue.
+            If the underlying device does not support flag waits, or if the
+            driver rejects the enqueue.
         """
         # const char *AsyncRT_DeviceStream_enqueueWaitOnFlag(
         #     const DeviceStream *stream, CompletionFlag *flag, uint64_t value)
@@ -2728,26 +2732,10 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
 
 
 struct CompletionFlag(ImplicitlyCopyable):
-    """Non-owning handle to an MLRT ``CompletionFlag``.
+    """Refcounted handle to a host-signaled flag that streams wait on.
 
-    A ``CompletionFlag`` is an 8-byte slot in pinned host memory mapped
-    into a device's address space. A CPU thread (or an AsyncRT worker
-    dispatched by `DeviceStream.enqueue_host_func`) writes a 64-bit
-    value to the slot; the GPU side waits on the same slot via
-    `DeviceStream.wait_for_flag`. The pairing lets a CUDA stream
-    block on a value produced by a host thread without a second stream
-    or a blocking host callback on the consumer's critical path.
-
-    This struct is intentionally non-owning. The C++
-    ``M::Driver::CompletionFlag`` it points to is allocated and
-    freed elsewhere (typically by `max.driver.CompletionFlag` on the
-    Python side), and the caller is responsible for keeping the
-    underlying allocation alive for the duration of any in-flight
-    use. Constructed from a raw pointer extracted from a graph-op
-    payload buffer; do not allocate or free through this wrapper.
-
-    Currently usable only on CUDA-backed devices, matching
-    `DeviceStream.wait_for_flag`.
+    Allocate one with `DeviceContext.allocate_completion_flag`, or wrap a
+    C++ ``M::Driver::CompletionFlag`` from a graph-op payload.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -2760,21 +2748,53 @@ struct CompletionFlag(ImplicitlyCopyable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @doc_hidden
     @inline(.always)
-    def __init__(out self, *, handle: _CompletionFlagPtr[mut=True]):
-        """Constructs a non-owning handle from a raw pointer to the C++
-        ``M::Driver::CompletionFlag``.
+    def __init__(out self, ctx: DeviceContext) raises:
+        """Allocates a flag on the given context's device.
 
         Args:
-            handle: Opaque pointer to an existing
-                ``M::Driver::CompletionFlag``. Lifetime is the caller's
-                responsibility.
+            ctx: The device context to allocate the flag on.
+
+        Raises:
+            If the device does not support completion flags.
         """
+        var result: _CompletionFlagPtr[mut=True] = {}
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_allocateCompletionFlag",
+                _CString[],
+            ](Pointer(to=result), ctx._handle)
+        )
+        self._handle = result
+
+    @inline(.always)
+    def __init__(out self, *, handle: _CompletionFlagPtr[mut=True]):
+        """Wraps a C++ ``M::Driver::CompletionFlag``, taking a reference.
+
+        Args:
+            handle: The C++ flag.
+        """
+        external_call["AsyncRT_CompletionFlag_retain", NoneType](handle)
         self._handle = handle
+
+    @doc_hidden
+    def __init__(out self, *, copy: Self):
+        """Copies a flag by incrementing its reference count.
+
+        Args:
+            copy: The flag to copy.
+        """
+        external_call["AsyncRT_CompletionFlag_retain", NoneType](copy._handle)
+        self._handle = copy._handle
+
+    def __deinit__(deinit self):
+        """Releases this flag's reference."""
+        external_call["AsyncRT_CompletionFlag_release", NoneType](self._handle)
 
     @inline(.always)
     def __init__(out self, *, unsafe_from_address: Int):
-        """Constructs a non-owning handle from an integer address.
+        """Wraps the C++ flag at an integer address, taking a reference.
 
         Intended for graph-op execute methods that extract a packed
         pointer from a payload buffer (mirroring how
@@ -2791,26 +2811,42 @@ struct CompletionFlag(ImplicitlyCopyable):
         self._handle = Pointer[_CompletionFlagCpp, MutUntrackedOrigin](
             unsafe_from_address=unsafe_from_address
         )
+        external_call["AsyncRT_CompletionFlag_retain", NoneType](self._handle)
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
     @inline(.always)
-    def device_ptr(self) -> UInt64:
-        """Returns the device-visible 64-bit address of the flag's slot.
+    def signal(self, value: UInt64):
+        """Stores ``value`` in the flag with release ordering.
 
-        This is the same value the host-side ``signal()`` writes through
-        and that the GPU's ``cuStreamWaitValue64`` polls.
+        Args:
+            value: The value to store.
+        """
+        external_call["AsyncRT_CompletionFlag_signal", NoneType](
+            self._handle, value
+        )
+
+    @inline(.always)
+    def load(self) -> UInt64:
+        """Loads the flag's value with acquire ordering.
 
         Returns:
-            Device-visible address of the 8-byte slot.
+            The value the flag holds.
         """
-        # uint64_t AsyncRT_CompletionFlag_devicePtr(const CompletionFlag *flag)
-        return external_call[
-            "AsyncRT_CompletionFlag_devicePtr",
-            UInt64,
-        ](self._handle)
+        return external_call["AsyncRT_CompletionFlag_load", UInt64](
+            self._handle
+        )
+
+    @inline(.always)
+    def reset(self):
+        """Stores 0 in the flag.
+
+        Don't reset while a stream is still waiting on the flag, and don't
+        signal a lower value without a reset.
+        """
+        external_call["AsyncRT_CompletionFlag_reset", NoneType](self._handle)
 
 
 struct DeviceEvent(ImplicitlyCopyable):
@@ -6849,6 +6885,25 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def stream(self) raises -> DeviceStream:
         return DeviceStream(self)
+
+    def allocate_completion_flag(self) raises -> CompletionFlag:
+        """Allocates a `CompletionFlag`, initialized to 0, on this device.
+
+        Returns:
+            The new flag.
+
+        Raises:
+            If the device does not support completion flags.
+        """
+        return CompletionFlag(self)
+
+    def supports_flag_wait(self) -> Bool:
+        """Returns whether this device supports completion flags.
+
+        Returns:
+            True on CUDA, HIP and Metal devices.
+        """
+        return self.api() in ("cuda", "hip", "metal")
 
     @inline(.always)
     def create_event(self) raises -> DeviceEvent:

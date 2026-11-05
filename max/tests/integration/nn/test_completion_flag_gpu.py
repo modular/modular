@@ -38,19 +38,6 @@ def test_completion_flag_construction_initializes_to_zero(
     assert flag.load() == 0
 
 
-def test_completion_flag_device_ptr_is_nonzero(
-    accelerator: Accelerator,
-) -> None:
-    """``device_ptr`` is the device-visible address of the flag, suitable
-    for passing to graph ops or stream APIs that wait on a memory value.
-    Must be non-null."""
-    if accelerator.api not in ("cuda", "hip"):
-        pytest.skip("CompletionFlag is only supported on CUDA/HIP")
-
-    flag = CompletionFlag(accelerator)
-    assert flag.device_ptr != 0
-
-
 def test_completion_flag_signal_then_load_round_trip(
     accelerator: Accelerator,
 ) -> None:
@@ -97,32 +84,30 @@ def test_completion_flag_unsafe_ptr_is_distinct_nonzero(
 ) -> None:
     """``_unsafe_ptr`` returns the raw address of the underlying C++
     ``M::Driver::CompletionFlag`` for packing into a graph-op payload.
-    Must be non-null and distinct from ``device_ptr`` (which addresses
-    the 8-byte flag slot; this one addresses the wrapper object
-    itself)."""
+    Must be non-null."""
     if accelerator.api not in ("cuda", "hip"):
         pytest.skip("CompletionFlag is only supported on CUDA/HIP")
 
     flag = CompletionFlag(accelerator)
     assert flag._unsafe_ptr != 0
-    assert flag._unsafe_ptr != flag.device_ptr
 
 
 def test_completion_flag_multiple_allocations_are_independent(
     accelerator: Accelerator,
 ) -> None:
     """Two flags allocated against the same device must have distinct
-    storage; mutating one through ``reset()`` should not affect the other.
-    Catches a regression where someone might accidentally cache a single
-    pinned page across allocations.
-
-    We can only observe ``reset() == 0`` from Python, so the strongest
-    portable check is that the two ``device_ptr``s differ.
+    storage; mutating one should not affect the other. Catches a
+    regression where someone might accidentally cache a single pinned page
+    across allocations.
     """
     if accelerator.api not in ("cuda", "hip"):
         pytest.skip("CompletionFlag is only supported on CUDA/HIP")
 
     a = CompletionFlag(accelerator)
     b = CompletionFlag(accelerator)
-    assert a.device_ptr != b.device_ptr
     assert a._unsafe_ptr != b._unsafe_ptr
+    a.signal(7)
+    b.signal(9)
+    a.reset()
+    assert a.load() == 0
+    assert b.load() == 9

@@ -380,6 +380,29 @@ AsyncRT_DeviceStream_enqueueWaitOnFlag(DeviceStream *stream,
 }
 
 MODULAR_EXPORT const char *
+AsyncRT_DeviceContext_allocateCompletionFlag(CompletionFlag **result,
+                                             DeviceContext *ctx) {
+  return checkRef(result, ctx->allocateCompletionFlag());
+}
+
+MODULAR_EXPORT void AsyncRT_CompletionFlag_retain(CompletionFlag *flag) {
+  CompletionFlagRef::lowLevelAddRef(flag);
+}
+
+MODULAR_EXPORT void AsyncRT_CompletionFlag_release(CompletionFlag *flag) {
+  CompletionFlagRef::lowLevelDropRef(flag);
+}
+
+MODULAR_EXPORT void AsyncRT_CompletionFlag_signal(CompletionFlag *flag,
+                                                  uint64_t value) {
+  flag->signal(value);
+}
+
+MODULAR_EXPORT uint64_t AsyncRT_CompletionFlag_load(CompletionFlag *flag) {
+  return flag->load();
+}
+
+MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_isGraphCapturing(bool *result, DeviceContext *ctx) {
   TRACY_ZONE_SCOPED_NC("AsyncRT_DeviceContext_isGraphCapturing",
                        TRACY_COLOR_GRAY);
@@ -387,8 +410,8 @@ AsyncRT_DeviceContext_isGraphCapturing(bool *result, DeviceContext *ctx) {
   return nullptr;
 }
 
-MODULAR_EXPORT uint64_t AsyncRT_CompletionFlag_devicePtr(CompletionFlag *flag) {
-  return flag->devicePtr();
+MODULAR_EXPORT void AsyncRT_CompletionFlag_reset(CompletionFlag *flag) {
+  flag->reset();
 }
 
 MODULAR_EXPORT const char *AsyncRT_DeviceEvent_synchronize(DeviceEvent *event) {

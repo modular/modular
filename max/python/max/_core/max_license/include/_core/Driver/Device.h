@@ -249,7 +249,7 @@ struct DeviceStream : public std::enable_shared_from_this<DeviceStream> {
                             uint64_t value, const CPU &cpu) const;
 
   /// Wraps MLRT's `DeviceStream::enqueueWaitOnFlag`. Stalls the stream
-  /// until the 64-bit value at `flag.devicePtr()` equals `value`.
+  /// until `flag` holds at least `value`.
   /// Typically paired with `enqueueAsyncHostFunc` to gate the GPU stream
   /// on a CPU task dispatched by the kickoff callback.
   void waitForHostValue(const CompletionFlag &flag, uint64_t value) const;

@@ -888,15 +888,16 @@ public:
     return Error("enqueueHostFunc is not supported on this device");
   }
 
-  /// Enqueues a wait-value node on this stream: subsequent stream
-  /// operations stall until the 64-bit value held by `flag` equals
-  /// `value`. The call itself returns immediately after enqueuing
-  /// (it does NOT block the caller waiting on the host value). The
-  /// flag must have been allocated via the same device's
-  /// `DeviceContext::allocateCompletionFlag`. Lets a host producer
-  /// (typically calling `flag.signal(value)`) gate stream-side
-  /// consumers on a CPU-produced result, without a second stream or
-  /// a blocking host callback on the consumer's critical path.
+  /// Holds later work on this stream, without blocking the host, until
+  /// `flag` is at least `value`. `flag` must come from this device's
+  /// `DeviceContext::allocateCompletionFlag`. Keep values below 2^63: HIP
+  /// compares them as signed.
+  ///
+  /// While the wait is pending, the thread that signals the flag must not
+  /// block on this stream first: no `synchronize`, no device-to-host copy into
+  /// pageable memory, no large host-to-device copy from pageable memory, and
+  /// don't drop the flag. Stage through a host buffer or signal from another
+  /// thread.
   virtual ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
                                            uint64_t value) const {
     return Error("enqueueWaitOnFlag is not supported on this device");
@@ -963,42 +964,30 @@ private:
   DeviceContextRef context_;
 };
 
-/// 8-byte completion flag in pinned host memory mapped into the device
-/// address space. The CPU side reads / writes the value via
-/// `reset()` / `signal()` / `load()`; the GPU side waits for a value
-/// via `DeviceStream::enqueueWaitOnFlag`. Allocated by
-/// `DeviceContext::allocateCompletionFlag()`; freed by the destructor
-/// (which routes through `DeviceContext::freeCompletionFlag`).
+/// A 64-bit value the host sets with `signal()` and a stream waits on with
+/// `DeviceStream::enqueueWaitOnFlag`.
 ///
 /// Refcounted so a single flag can be held simultaneously by, e.g., a
 /// Python-side wrapper and a host-function trampoline that needs to keep
 /// it alive until its AsyncRT worker signals.
-class CompletionFlag final : public ReferenceCounted<CompletionFlag> {
+class CompletionFlag : public ReferenceCounted<CompletionFlag> {
 public:
-  // Constructed only by `DeviceContext::allocateCompletionFlag`.
-  CompletionFlag(DeviceContext &context, void *hostPtr, uint64_t devicePtr);
-  ~CompletionFlag();
+  CompletionFlag() = default;
+  virtual ~CompletionFlag() = default;
 
   CompletionFlag(const CompletionFlag &) = delete;
   CompletionFlag &operator=(const CompletionFlag &) = delete;
 
-  /// Device-visible address (suitable for
-  /// `DeviceStream::enqueueWaitOnFlag`).
-  uint64_t devicePtr() const { return devicePtr_; }
-
-  /// Relaxed store of 0 to clear the flag.
-  void reset();
-
-  /// Release-ordered store of `value` to the flag.
-  void signal(uint64_t value);
+  /// Release-ordered store of `value` to the flag. On Metal the value never
+  /// decreases: a lower `value` is ignored until `reset()`.
+  virtual void signal(uint64_t value) = 0;
 
   /// Acquire load of the current flag value.
-  uint64_t load() const;
+  virtual uint64_t load() const = 0;
 
-private:
-  DeviceContextRef context_;
-  void *hostPtr_;
-  uint64_t devicePtr_;
+  /// Stores 0. Don't reset while a wait on the flag is pending, and don't
+  /// signal a lower value without a reset.
+  virtual void reset() = 0;
 };
 
 class DeviceContext : public ReferenceCounted<DeviceContext> {
@@ -1038,14 +1027,7 @@ public:
   /// CUDA, HIP and Metal only. Rejected while recording a device graph.
   ErrorOr<DeviceBufferRef> wrapHostMemory(void *ptr, size_t byteSize);
 
-  /// Allocates an 8-byte `CompletionFlag` in pinned host memory mapped
-  /// into this device's address space (CUDA:
-  /// `cuMemHostAlloc(... CU_MEMHOSTALLOC_DEVICEMAP)` +
-  /// `cuMemHostGetDevicePointer_v2`). Returns a refcounted handle; the
-  /// allocation is freed when the last ref is dropped via
-  /// `freeCompletionFlag`.
-  ///
-  /// Only implemented for CUDA. Other backends return an error.
+  /// Allocates a `CompletionFlag` holding 0. CUDA, HIP and Metal only.
   virtual ErrorOr<CompletionFlagRef> allocateCompletionFlag() {
     return Error("allocateCompletionFlag is not supported on this device");
   }
@@ -1407,7 +1389,7 @@ protected:
   void setPendingError(Error err);
 
 private:
-  friend class CompletionFlag;
+  friend class PinnedCompletionFlag;
   friend class MemoryManagerFreeList;
   friend class DeviceBuffer;
   // Frees run from a `DeviceBuffer` destructor, so a failure can only be
