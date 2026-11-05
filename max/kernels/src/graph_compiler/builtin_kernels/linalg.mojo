@@ -1010,7 +1010,6 @@ struct Struct_grouped_matmul_block_scaled:
             ), "per-row input scales must be bfloat16"
             grouped_matmul_block_scaled_dispatch[
                 transpose_b=True,
-                target=target,
                 RowScalesT=RealRowScales,
             ](
                 c.to_tile_tensor(),
@@ -1035,9 +1034,7 @@ struct Struct_grouped_matmul_block_scaled:
             )
         else:
             _ = a_row_scales
-            grouped_matmul_block_scaled_dispatch[
-                transpose_b=True, target=target
-            ](
+            grouped_matmul_block_scaled_dispatch[transpose_b=True,](
                 c.to_tile_tensor(),
                 a.to_tile_tensor(),
                 b.to_tile_tensor(),
@@ -1178,7 +1175,6 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             ), "per-row input scales must be bfloat16"
             grouped_matmul_block_scaled_swiglu_sm100_dispatch[
                 transpose_b=True,
-                target=target,
                 activation=act,
                 RowScalesT=RealRowScales,
             ](
@@ -1208,7 +1204,6 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             _ = a_row_scales
             grouped_matmul_block_scaled_swiglu_sm100_dispatch[
                 transpose_b=True,
-                target=target,
                 activation=act,
             ](
                 c_packed.to_tile_tensor(),
@@ -1284,7 +1279,6 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             k_scale_granularity,
             transpose_b=True,
             static_grid_z=static_grid_z,
-            target=target,
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -1811,7 +1805,6 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
             n_scale_granularity,
             k_scale_granularity,
             transpose_b=True,
-            target=target,
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -2824,9 +2817,7 @@ struct MatmulSwiGLUBias:
 @extensibility.register("mo.composite.matmul_swiglu", type="gpu")
 struct CompositeMatmulSwiGLU:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2838,9 +2829,7 @@ struct CompositeMatmulSwiGLU:
 @extensibility.register("mo.composite.matmul_swiglu_bias", type="gpu")
 struct CompositeMatmulSwiGLUBias:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],

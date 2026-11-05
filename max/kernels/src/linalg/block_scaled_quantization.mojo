@@ -3358,7 +3358,6 @@ def quantize_dynamic_block_scaled[
     //,
     *,
     SF_VECTOR_SIZE: Int,
-    target: StaticString = "cpu",
 ](
     output_device: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
     scales_device: TileTensor[
@@ -3385,8 +3384,6 @@ def quantize_dynamic_block_scaled[
             (inferred). Must be `bfloat16`.
         SF_VECTOR_SIZE: Number of elements covered by each block scale
             factor: 16 for NVFP4 or 32 for MXFP8.
-        target: Trace target string identifying the device in
-            profiling output (defaults to `"cpu"`).
     Args:
         output_device: Output quantized tensor of packed FP4 `uint8`
             or `float8_e4m3fn` for MXFP8.
@@ -3795,7 +3792,6 @@ def block_scales_interleave[
     //,
     *,
     SF_VECTOR_SIZE: Int,
-    target: StaticString = "cpu",
 ](
     output_scales_device: TileTensor[
         mut=True, scales_dtype, address_space=.GENERIC, ...
@@ -3815,8 +3811,6 @@ def block_scales_interleave[
             (inferred).
         SF_VECTOR_SIZE: Number of elements covered by each block scale
             factor: 16 for NVFP4 or 32 for MXFP4.
-        target: Trace target string identifying the device in
-            profiling output (defaults to `"cpu"`).
     Args:
         output_scales_device: Output rank-5 scale-factor tensor in the
             5D TCGEN interleaved layout.

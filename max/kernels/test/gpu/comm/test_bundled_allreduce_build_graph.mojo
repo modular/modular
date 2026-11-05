@@ -212,7 +212,7 @@ def bundled_allreduce_build_graph_test[
             _StoreOutFusion(out_ptr)
         )
 
-        BundledAllReduceSum.build_graph[dtype, 1, "gpu", "bundled_allreduce"](
+        BundledAllReduceSum.build_graph[dtype, 1, "bundled_allreduce"](
             output, inputs, signals, builder
         )
 

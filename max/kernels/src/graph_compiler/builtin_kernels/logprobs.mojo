@@ -100,7 +100,7 @@ comptime offset_dtype = DType.uint32
 
 
 def compute_log_probabilities_1tok[
-    target: StaticString, levels: Int
+    levels: Int
 ](
     output_token_index: Int,
     lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
@@ -115,7 +115,6 @@ def compute_log_probabilities_1tok[
     """Computes log probabilities for a single token position from its logits row.
 
     Parameters:
-        target: Compilation target string, such as `"cpu"` or `"gpu"`.
         levels: Number of heap levels controlling the top-k width; the output
             stores `2**levels` entries per token. When `levels <= 0`, only
             the sampled token's log probability is emitted.
@@ -247,7 +246,7 @@ struct LogProbabilitiesRagged:
         comptime if is_cpu[target]():
 
             def lp_idx_kernel(output_token_index: Int) {imm} -> None:
-                compute_log_probabilities_1tok[target, levels](
+                compute_log_probabilities_1tok[levels](
                     output_token_index=output_token_index,
                     lp_logits=lp_logits,
                     lp_tokens=lp_tokens,
@@ -283,7 +282,7 @@ struct LogProbabilitiesRagged:
             }:
                 var output_token_index = global_idx.x
                 if output_token_index < Int(num_output_tokens_dev):
-                    compute_log_probabilities_1tok[target, levels](
+                    compute_log_probabilities_1tok[levels](
                         output_token_index=output_token_index,
                         lp_logits=lp_logits,
                         lp_tokens=lp_tokens,

@@ -583,7 +583,6 @@ def run_dense[
             n_scale_granularity=N_SCALE_GRAN,
             k_scale_granularity=K_SCALE_GRAN,
             indices_stride=TOP_K,
-            target="gpu",
         ](
             ref_tt,
             q_tt,
@@ -990,7 +989,7 @@ def run_nvfp4[
 
     @inline(.always)
     def mirror_launch(launch_ctx: DeviceContext[]) raises {mut mirror_tt, imm}:
-        mla_prefill_branch_sparse_bf16[indices_stride=TOP_K, target="gpu"](
+        mla_prefill_branch_sparse_bf16[indices_stride=TOP_K](
             mirror_tt,
             q_tt,
             row_offsets_tt,
@@ -1084,9 +1083,7 @@ def run_nvfp4[
     def packed_prefill_launch(
         launch_ctx: DeviceContext[],
     ) raises {mut packed_prefill_tt, imm}:
-        mla_prefill_branch_sparse_bf16[
-            indices_stride=indices_stride, target="gpu"
-        ](
+        mla_prefill_branch_sparse_bf16[indices_stride=indices_stride,](
             packed_prefill_tt,
             q_tt,
             row_offsets_tt,

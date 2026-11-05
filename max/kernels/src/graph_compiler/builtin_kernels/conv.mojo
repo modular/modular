@@ -80,7 +80,6 @@ struct ConvertE4M3FNToE4M3FNUZ:
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output: Some[Output & Tensor],
@@ -531,7 +530,6 @@ struct ConvCPU:
         static_strides: Coord,
         static_dilations: Coord,
         static_padding: Coord,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[...],
@@ -688,7 +686,6 @@ struct ConvGPU:
         static_strides: Coord,
         static_dilations: Coord,
         static_padding: Coord,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output: Some[Output & Fused & StoreAccess],
@@ -746,7 +743,6 @@ struct ConvGPU:
         static_strides: Coord,
         static_dilations: Coord,
         static_padding: Coord,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output: Some[Output & TileTensorable],
@@ -1018,7 +1014,6 @@ struct ConvTransposeCPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Fused & StoreAccess],
         input: Some[Input & Tensor],
@@ -1071,7 +1066,6 @@ struct ConvTransposeCPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -1158,7 +1152,6 @@ struct ConvTransposeGPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Fused & StoreAccess],
         input: Some[Input & Tensor],
@@ -1219,7 +1212,6 @@ struct ConvTransposeGPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],

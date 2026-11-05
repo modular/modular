@@ -883,7 +883,6 @@ def _check_attn_sink_guard(ctx: DeviceContext) raises:
             n_scale_granularity=n_scale_gran,
             k_scale_granularity=k_scale_gran,
             indices_stride=indices_stride,
-            target="gpu",
         ](
             out_tt,
             q_tt,

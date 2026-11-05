@@ -2613,7 +2613,6 @@ def batched_matmul_dynamic_scaled_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
-    target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
@@ -2645,7 +2644,6 @@ def batched_matmul_dynamic_scaled_fp8[
         n_scale_granularity: N-direction scale granularity (`64` or `128`).
         k_scale_granularity: K-direction scale granularity (`64` or `128`).
         transpose_b: Whether the RHS input is transposed.
-        target: Target platform string.
 
     Args:
         c: Rank-3 output tensor of shape `(batch, m, n)`.
@@ -2664,7 +2662,6 @@ def batched_matmul_dynamic_scaled_fp8[
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         transpose_b=transpose_b,
-        target=target,
     ](c, a, b, a_scales, b_scales, ctx)
 
 
@@ -2681,7 +2678,6 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
-    target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],

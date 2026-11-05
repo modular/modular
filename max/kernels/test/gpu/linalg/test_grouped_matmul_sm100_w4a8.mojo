@@ -255,7 +255,7 @@ def _test_w4a8_grouped[
     ctx.enqueue_copy(expert_scales_dev, expert_scales_host)
     ctx.enqueue_memset(c_dev, Scalar[c_type](0))
 
-    grouped_matmul_block_scaled_sm100_dispatch[transpose_b=True, target="gpu"](
+    grouped_matmul_block_scaled_sm100_dispatch[transpose_b=True](
         TileTensor(c_dev, row_major(M, Idx[N])).as_unsafe_any_origin(),
         TileTensor(a_dev, row_major(M, Idx[K])).as_unsafe_any_origin(),
         TileTensor(

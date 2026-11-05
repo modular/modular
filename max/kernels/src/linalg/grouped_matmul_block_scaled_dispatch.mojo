@@ -33,7 +33,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
 
 def grouped_matmul_block_scaled_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     RowScalesT: RowScales = NullRowScales,
 ](
@@ -57,7 +56,6 @@ def grouped_matmul_block_scaled_dispatch[
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
-        target: Target device (unused, for MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
         RowScalesT: Per-row output scales type. Defaults to the no-op
             `NullRowScales`; only NVFP4 supports others.
@@ -82,7 +80,7 @@ def grouped_matmul_block_scaled_dispatch[
     ), "Only support SM100 for grouped block-scaled matmul"
 
     grouped_matmul_block_scaled_sm100_dispatch[
-        transpose_b, target, pdl_level=pdl_level, RowScalesT=RowScalesT
+        transpose_b, pdl_level=pdl_level, RowScalesT=RowScalesT
     ](
         c,
         a,

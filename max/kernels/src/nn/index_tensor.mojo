@@ -169,10 +169,9 @@ def index_tensor[
     """
 
     comptime if is_cpu[target]():
-        return _index_tensor_1d[
-            batch_dims,
-            target=target,
-        ](data, indices, output, Optional(ctx.assert_cpu_target()))
+        return _index_tensor_1d[batch_dims,](
+            data, indices, output, Optional(ctx.assert_cpu_target())
+        )
     else:
         return _index_tensor_impl[
             batch_dims,
@@ -188,7 +187,6 @@ def _index_tensor_1d[
     indices_type: DType,
     //,
     batch_dims: Int,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],

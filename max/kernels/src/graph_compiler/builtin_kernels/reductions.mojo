@@ -485,9 +485,7 @@ struct ApplyQKRMSNorm:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         q_out: Some[Output & Tensor],
         k_out: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -499,9 +497,6 @@ struct ApplyQKRMSNorm:
         ctx: DeviceContext,
     ) raises:
         """Executes the `norm.apply_qk_rms_norm` graph op.
-
-        Parameters:
-            target: Compilation target string.
 
         Args:
             q_out: Output tensor receiving the normalized `q`.
@@ -1309,9 +1304,7 @@ struct ReduceGroupNorm:
     """Registers the `mo.reduce.group_norm` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Fused & LoadAccess],
         gamma: Some[Input & Fused & LoadAccess],
@@ -1321,9 +1314,6 @@ struct ReduceGroupNorm:
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.reduce.group_norm` graph op.
-
-        Parameters:
-            target: Compilation target string.
 
         Args:
             output: Output tensor receiving the result.
@@ -2366,7 +2356,6 @@ struct CumSum:
 
     @staticmethod
     def execute[
-        target: StaticString,
         exclusive: Int,
         reverse: Int,
         axis: Int,
@@ -2378,7 +2367,6 @@ struct CumSum:
         """Executes the `mo.cumsum` graph op.
 
         Parameters:
-            target: Compilation target string.
             exclusive: See the graph op signature.
             reverse: See the graph op signature.
             axis: Dimension along which to reduce.

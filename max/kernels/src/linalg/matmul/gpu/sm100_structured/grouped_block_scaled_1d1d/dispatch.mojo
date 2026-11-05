@@ -281,7 +281,6 @@ def _launch_grouped_block_scaled[
 
 def grouped_matmul_nvfp4_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     override: Bool = False,
     AB_swapped: Bool = True,
     mma_bn: Int = 8,
@@ -324,7 +323,6 @@ def grouped_matmul_nvfp4_dispatch[
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
-        target: Target device (unused, for MOGG interface compatibility).
         override: If True, use caller's config params directly.
             If False, use tuning table.
         AB_swapped: A/B swap (only used when override=True).
@@ -534,7 +532,6 @@ def grouped_matmul_nvfp4_dispatch[
 
 def grouped_matmul_mxfp8_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     fuse_swiglu: Bool = False,
     SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[
@@ -588,7 +585,6 @@ def grouped_matmul_mxfp8_dispatch[
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
-        target: Target device (unused, MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
         fuse_swiglu: When True, the kernel fuses SwiGLU + MXFP8 quant
             into the epilogue.
@@ -697,7 +693,6 @@ def grouped_matmul_mxfp8_dispatch[
 
 def grouped_matmul_block_scaled_sm100_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     RowScalesT: RowScales = NullRowScales,
 ](
@@ -722,7 +717,6 @@ def grouped_matmul_block_scaled_sm100_dispatch[
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
-        target: Target device (unused, for MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
         RowScalesT: Per-row output scales type. Defaults to the no-op
             `NullRowScales`; only NVFP4 supports others.
@@ -754,7 +748,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
     # FP4 TMA copy pads the weights on the way in -- so it takes the same
     # regime-tuned launcher.
     comptime if is_w4a8_operand_pair[a.dtype, b.dtype]():
-        grouped_matmul_mxfp8_dispatch[transpose_b, target, pdl_level=pdl_level](
+        grouped_matmul_mxfp8_dispatch[transpose_b, pdl_level=pdl_level](
             c,
             a,
             b,
@@ -770,7 +764,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
         )
     elif scaling_kind == UMMAKind.KIND_MXF4NVF4:
         grouped_matmul_nvfp4_dispatch[
-            transpose_b, target, pdl_level=pdl_level, RowScalesT=RowScalesT
+            transpose_b, pdl_level=pdl_level, RowScalesT=RowScalesT
         ](
             c,
             a,

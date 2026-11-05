@@ -197,7 +197,6 @@ struct DistributedAllReduceSum:
         Ins: TypeList[Trait=Input & Tensor, ...],
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         group_size: Int = 0,
     ](
@@ -212,7 +211,6 @@ struct DistributedAllReduceSum:
             Outs: The element types of `outputs` (inferred).
             Ins: The element types of `inputs` (inferred).
             Sigs: The element types of `signal_buffers` (inferred).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             group_size: Number of devices per independent allreduce group;
                 must evenly divide the total number of devices. Zero (the
@@ -423,7 +421,6 @@ struct DistributedReduceScatterSum:
         Ins: TypeList[Trait=Input & Tensor, ...],
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         axis: Int = 0,
         group_size: Int = 0,
@@ -439,7 +436,6 @@ struct DistributedReduceScatterSum:
             Outs: The element types of `outputs` (inferred).
             Ins: The element types of `inputs` (inferred).
             Sigs: The element types of `signal_buffers` (inferred).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             axis: Axis along which to scatter the reduced result
                 (defaults to 0).
@@ -587,7 +583,6 @@ struct DistributedAllGather:
         Ins: TypeList[Trait=Input & Tensor, ...],
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         group_size: Int = 0,
         slice_rows: Bool = False,
@@ -603,7 +598,6 @@ struct DistributedAllGather:
             Outs: The element types of `outputs` (inferred).
             Ins: The element types of `inputs` (inferred).
             Sigs: The element types of `signal_buffers` (inferred).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             group_size: Number of devices per allgather group; must be at
                 least 1 and must evenly divide the total number of devices
@@ -805,7 +799,6 @@ struct DistributedBroadcast:
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         //,
         root: Int,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         outputs: TensorTuple[*Outs],
@@ -819,7 +812,6 @@ struct DistributedBroadcast:
             Outs: The element types of `outputs` (inferred).
             Sigs: The element types of `signal_buffers` (inferred).
             root: Index of the root GPU (source of data).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
 
         Args:
@@ -922,7 +914,6 @@ struct DistributedScatter:
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         //,
         root: Int,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         outputs: TensorTuple[*Outs],
@@ -1025,7 +1016,6 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         Gammas: TypeList[Trait=Input & Tensor, ...],
         ScalesUb: TypeList[Trait=Input & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
@@ -1193,7 +1183,6 @@ struct DistributedAllReduceRMSNorm:
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         Gammas: TypeList[Trait=Input & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
@@ -1221,7 +1210,6 @@ struct DistributedAllReduceRMSNorm:
             Ins: The element types of `inputs` (inferred).
             Sigs: The element types of `signal_buffers` (inferred).
             Gammas: The element types of `gammas` (inferred).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             epsilon: RMSNorm epsilon, shared by every device.
             weight_offset: Gamma offset, shared by every device.
@@ -1457,7 +1445,6 @@ struct DistributedReduceScatterRMSNorm:
         Gammas: TypeList[Trait=Input & Tensor, ...],
         Residuals: TypeList[Trait=Input & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
@@ -1499,7 +1486,6 @@ struct DistributedReduceScatterRMSNorm:
             Sigs: The element types of `signal_buffers` (inferred).
             Gammas: The element types of `gammas` (inferred).
             Residuals: The element types of `residuals` (inferred).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             epsilon: RMSNorm epsilon, shared by every device.
             weight_offset: Gamma offset, shared by every device.
@@ -1780,7 +1766,6 @@ struct DistributedAllGatherRMSNorm:
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         Gammas: TypeList[Trait=Input & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
@@ -1808,7 +1793,6 @@ struct DistributedAllGatherRMSNorm:
             Ins: The element types of `inputs` (inferred).
             Sigs: The element types of `signal_buffers` (inferred).
             Gammas: The element types of `gammas` (inferred).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             epsilon: RMSNorm epsilon, shared by every device.
             weight_offset: Gamma offset, shared by every device.
@@ -2270,7 +2254,6 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         Gammas: TypeList[Trait=Input & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
@@ -2300,7 +2283,6 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
             Ins: The element types of `inputs` (inferred).
             Sigs: The element types of `signal_buffers` (inferred).
             Gammas: The element types of `gammas` (inferred).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             epsilon: RMSNorm epsilon, shared by every device.
             weight_offset: Gamma offset, shared by every device.
@@ -2812,7 +2794,6 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         Gammas: TypeList[Trait=Input & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         fp6_format: Int,
         epsilon: Float32,
@@ -2842,7 +2823,6 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
             Ins: The element types of `inputs` (inferred).
             Sigs: The element types of `signal_buffers` (inferred).
             Gammas: The element types of `gammas` (inferred).
-            target: Target device string for tracing.
             _trace_name: Trace name for profiling.
             fp6_format: FP6 encoding, 0 for E2M3 and 1 for E3M2.
             epsilon: RMSNorm epsilon, shared by every device.

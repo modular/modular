@@ -270,7 +270,6 @@ def _run[
             n_scale_granularity=SCALE_GRAN,
             k_scale_granularity=SCALE_GRAN,
             indices_stride=TOPK,
-            target="gpu",
             attn_sink_inert=True,
         ](
             out_tt,

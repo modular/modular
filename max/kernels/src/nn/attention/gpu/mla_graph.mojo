@@ -1411,7 +1411,6 @@ def quantize_and_bmm_fp8_helper[
     m_scale_granularity: Int,
     n_scale_granularity: Int,
     k_scale_granularity: Int,
-    target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_dtype, address_space=.GENERIC, ...],
     a: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -1437,8 +1436,6 @@ def quantize_and_bmm_fp8_helper[
         k_scale_granularity: Granularity of the scale for the K dimension of
             the batched matrix multiplication, also the quantization group
             size for `a`.
-        target: Target device for the batched matrix multiplication (defaults
-            to "cpu").
 
     Args:
         c: Output tensor for the batched matrix multiplication result. Shape:
@@ -1505,7 +1502,6 @@ def quantize_and_bmm_fp8_helper[
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         transpose_b=True,
-        target=target,
     ](
         c,
         fp8_a,
@@ -2213,7 +2209,6 @@ def mla_decode_branch_fp8[
         m_scale_granularity=m_scale_granularity,
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
-        target=target,
     ](mla_decode_input_nope, q_nope, w_uk, w_uk_scale, ctx)
 
     # =========================================================================#
@@ -2469,7 +2464,6 @@ def mla_decode_branch_fp8[
         m_scale_granularity=m_scale_granularity,
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
-        target=target,
     ](output_t, raw_output, w_uv, w_uv_scale, ctx)
 
 
@@ -2487,7 +2481,6 @@ def mla_prefill_branch_sparse_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     indices_stride: Int,
-    target: StaticString = "cpu",
     # See `mla_decode_branch_fp8`; this path does not read the sink either.
     attn_sink_inert: Bool = False,
 ](
@@ -2598,7 +2591,6 @@ def mla_prefill_branch_sparse_fp8[
         m_scale_granularity=m_scale_granularity,
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
-        target=target,
     ](mla_decode_input_nope, q_nope, w_uk, w_uk_scale, ctx)
 
     var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
@@ -2838,7 +2830,6 @@ def mla_prefill_branch_sparse_fp8[
         m_scale_granularity=m_scale_granularity,
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
-        target=target,
     ](output_t, raw_output, w_uv, w_uv_scale, ctx)
 
 
@@ -3256,7 +3247,6 @@ def mla_prefill_decode_graph_fp8[
             n_scale_granularity=n_scale_granularity,
             k_scale_granularity=k_scale_granularity,
             indices_stride=sparse_indices_stride,
-            target=target,
             attn_sink_inert=attn_sink_inert,
         ](
             output,
@@ -4024,7 +4014,6 @@ def mla_prefill_branch_sparse_bf16[
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
     //,
     indices_stride: Int,
-    target: StaticString = "cpu",
     # See `nvfp4_prefill_converts_once`; 0 always runs the NVFP4 kernel.
     nvfp4_convert_ratio: Int = 0,
     nvfp4_convert_max_rows: Int = 0,
@@ -4513,7 +4502,6 @@ def mla_prefill_decode_graph_bf16[
         # cache prefills on the sparse decode kernel instead.
         mla_prefill_branch_sparse_bf16[
             indices_stride=sparse_indices_stride,
-            target=target,
             nvfp4_convert_ratio=nvfp4_convert_ratio,
             nvfp4_convert_max_rows=nvfp4_convert_max_rows,
             AttnSinkPtrType=AttnSinkPtrType,

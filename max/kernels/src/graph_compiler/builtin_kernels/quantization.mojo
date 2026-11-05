@@ -1017,10 +1017,7 @@ struct Struct_quantize_dynamic_block_scaled:
             " block scaled support"
         )
 
-        quantize_dynamic_block_scaled[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            target=target,
-        ](
+        quantize_dynamic_block_scaled[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
             output.to_tile_tensor(),
             scales.to_tile_tensor(),
             input.to_tile_tensor(),
@@ -1834,7 +1831,7 @@ struct Struct_interleave_block_scales:
             " block scaled support"
         )
 
-        block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
+        block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             output_scales.to_tile_tensor(),
             input_scales.to_tile_tensor[scales_type](),
             context,

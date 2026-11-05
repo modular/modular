@@ -1692,7 +1692,7 @@ def matmul_gpu_qint4[
     comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.value()
 
-    matmul_gpu_qint4_impl[group_size, target](c_tt, a_tt, b_tt, cuda_ctx)
+    matmul_gpu_qint4_impl[group_size](c_tt, a_tt, b_tt, cuda_ctx)
 
 
 @inline(.always)
@@ -1739,7 +1739,7 @@ def matmul_gpu_qint4[
     comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.value()
 
-    matmul_gpu_qint4_impl[group_size, target, has_epilogue_fn=True](
+    matmul_gpu_qint4_impl[group_size, has_epilogue_fn=True](
         c_tt, a_tt, b_tt, cuda_ctx, epilogue_fn
     )
 
@@ -1751,7 +1751,6 @@ def matmul_gpu_qint4_impl[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     //,
     group_size: Int,
-    target: StaticString,
     *,
     has_epilogue_fn: Bool = False,
 ](
@@ -1771,7 +1770,6 @@ def matmul_gpu_qint4_impl[
         a_type: The dtype of the A matrix elements.
         EpilogueFnType: Type of `epilogue_fn` (inferred).
         group_size: The number of K elements sharing a single scale.
-        target: The target platform string, which must identify a GPU.
         has_epilogue_fn: Whether `epilogue_fn` stores the output instead of
             the kernel.
 

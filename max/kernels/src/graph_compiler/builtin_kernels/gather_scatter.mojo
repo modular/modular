@@ -662,9 +662,7 @@ struct ScatterND:
     """Registers the `mo.scatter_nd` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -712,9 +710,7 @@ struct ScatterNDSkipOobIndices:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -750,9 +746,7 @@ struct ScatterNDAdd:
     """Registers the `mo.scatter_nd.add` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -801,9 +795,7 @@ struct ScatterNDMul:
     """Registers the `mo.scatter_nd.mul` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -861,9 +853,7 @@ struct ScatterNDMin:
     """Registers the `mo.scatter_nd.min` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -921,9 +911,7 @@ struct ScatterNDMax:
     """Registers the `mo.scatter_nd.max` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -985,7 +973,6 @@ struct ApplyPackedBitmask:
     def execute[
         dtype: DType,
         //,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         logits: Some[Input & Tensor],
@@ -1017,7 +1004,6 @@ struct ScatterSetConstant:
     def execute[
         data_type: DType,
         //,
-        target: StaticString,
     ](
         data: Some[MutableInput & Tensor],
         indices: Some[Input & Tensor],
@@ -1042,7 +1028,6 @@ struct Scatter:
 
     @staticmethod
     def execute[
-        target: StaticString,
         axis: Int,
     ](
         output: Some[Output & Tensor],
@@ -1104,9 +1089,7 @@ struct ScatterAdd:
     """Registers the `mo.scatter.add` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -1166,9 +1149,7 @@ struct ScatterMax:
     """Registers the `mo.scatter.max` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -1236,9 +1217,7 @@ struct ScatterMin:
     """Registers the `mo.scatter.min` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -1306,9 +1285,7 @@ struct ScatterMul:
     """Registers the `mo.scatter.mul` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         updates: Some[Input & Tensor],
@@ -2016,7 +1993,6 @@ struct MutableStore(ElementwiseUnaryOp):
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         buffer: Some[MutableInput & Tensor],
@@ -2033,9 +2009,7 @@ struct MutableStoreSlice:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         to_buffer: Some[MutableInput & Tensor],
         in_slice: Some[Input & Tensor],
         starts: Some[Input & Tensor],
@@ -2070,7 +2044,6 @@ struct GatherND:
     @staticmethod
     def execute[
         batchDims: Int,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output: Some[Output & Tensor],
@@ -2114,7 +2087,6 @@ struct Gather:
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
         axis: Int,
     ](
@@ -2215,9 +2187,7 @@ struct GatherSum:
     """Registers the `mo.gather_sum` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         indices: Some[Input & Tensor],
@@ -2245,9 +2215,7 @@ struct Tile:
     """Registers the `mo.tile` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         repeats: Some[Input & Tensor],
@@ -2311,7 +2279,6 @@ struct Concat:
     def execute[
         Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
         axis: Int,
     ](
         output: Some[Output & Fused & StoreAccess],
@@ -2404,7 +2371,6 @@ struct Split:
     def execute[
         Outs: TypeList[Trait=Output & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         axis: Int,
     ](
@@ -2550,9 +2516,7 @@ struct Struct_sliced_add_ragged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],

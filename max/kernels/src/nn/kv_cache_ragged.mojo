@@ -2436,7 +2436,6 @@ def _qmatmul_common[
     )
 
     matmul_gpu_qint4_impl[
-        target=target,
         group_size=group_size,
         has_epilogue_fn=True,
     ](
