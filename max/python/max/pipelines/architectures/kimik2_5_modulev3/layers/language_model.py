@@ -41,7 +41,6 @@ from max.tensor.sharding import (
     DeviceMapping,
     Replicated,
     Sharded,
-    auto_reshard,
 )
 
 from ...deepseekV3_modulev3.deepseekV3 import (
@@ -136,7 +135,6 @@ class KimiK2_5Decoder(Module[[DecoderInputs], DecoderOutputs]):
         )
         return DecoderOutputs(next_token_logits=logits)
 
-    @auto_reshard(mode="raise")
     def _run_text_model(
         self,
         tokens: Tensor,
