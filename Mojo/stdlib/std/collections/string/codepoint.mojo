@@ -214,7 +214,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
             return None
 
     @staticmethod
-    def ord(string: StringSlice[_]) raises -> Codepoint:
+    def ord(string: StringSpan[_]) raises -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
         string.
 
@@ -242,7 +242,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
             )
 
         # SAFETY:
-        #   This is safe because `StringSlice` is guaranteed to point to valid
+        #   This is safe because `StringSpan` is guaranteed to point to valid
         #   UTF-8, and we verified above that the input is non-empty.
         var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
             string.as_bytes()

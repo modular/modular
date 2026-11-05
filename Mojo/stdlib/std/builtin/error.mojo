@@ -109,7 +109,7 @@ struct StackTrace(ImplicitlyCopyable, Movable, Writable):
             writer: The object to write to.
         """
         writer.write_string(
-            StringSlice(
+            StringSpan(
                 unsafe_from_utf8=CStringSpan(
                     unsafe_from_ptr=self._data[].ptr().unsafe_bitcast[c_char]()
                 )

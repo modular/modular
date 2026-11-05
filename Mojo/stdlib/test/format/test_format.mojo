@@ -43,12 +43,12 @@ def test_string_constructor() raises:
 def test_format_string() raises:
     assert_equal("{}".format(TestWritable(42)), "write_to: 42")
     assert_equal(String("{}").format(TestWritable(42)), "write_to: 42")
-    assert_equal(StringSlice("{}").format(TestWritable(42)), "write_to: 42")
+    assert_equal(StringSpan("{}").format(TestWritable(42)), "write_to: 42")
 
     assert_equal("{!r}".format(TestWritable(42)), "write_repr_to: 42")
     assert_equal(String("{!r}").format(TestWritable(42)), "write_repr_to: 42")
     assert_equal(
-        StringSlice("{!r}").format(TestWritable(42)), "write_repr_to: 42"
+        StringSpan("{!r}").format(TestWritable(42)), "write_repr_to: 42"
     )
 
 
@@ -221,7 +221,7 @@ def test_write_sequence_to_custom_delimiters() raises:
 
 
 struct NullWriter(Writer):
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         keep(string)
 
 

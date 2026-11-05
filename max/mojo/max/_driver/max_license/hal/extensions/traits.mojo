@@ -48,9 +48,7 @@ trait HALExtensions(Deinitable, HALPluginConstructable, Movable):
         Self, SupportsPeerAccessV1
     )
 
-    def __init__(
-        out self, lib: _DLHandle, so_path: StringSlice
-    ) raises HALError:
+    def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         ...
 
 
@@ -139,7 +137,5 @@ trait PeerAccessV1(TrivialRegisterPassable):
 struct DefaultHALExtensions(HALExtensions):
     """`HALExtensions` implementation used when no plugin is active."""
 
-    def __init__(
-        out self, lib: _DLHandle, so_path: StringSlice
-    ) raises HALError:
+    def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         pass

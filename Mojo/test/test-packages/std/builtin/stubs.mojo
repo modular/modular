@@ -549,7 +549,7 @@ struct StringSpan[origin: ImmOrigin](TrivialRegisterPassable):
         return self._slice._len
 
 
-comptime StaticString = StringSlice[ImmStaticOrigin]
+comptime StaticString = StringSpan[ImmStaticOrigin]
 
 
 struct InlineLevel(ImplicitlyCopyable, TrivialRegisterPassable):
@@ -618,13 +618,13 @@ struct String(ErrorConversionTrait, ImplicitlyCopyable, KeyElement):
     def __len__(self) -> Int:
         return 0
 
-    def __contains__(self, substr: StringSlice) -> Bool:
+    def __contains__(self, substr: StringSpan) -> Bool:
         return True
 
-    def __add__(self, other: StringSlice) -> String:
+    def __add__(self, other: StringSpan) -> String:
         pass
 
-    def __iadd__(mut self, rhs: StringSlice):
+    def __iadd__(mut self, rhs: StringSpan):
         pass
 
     def byte_length(self) -> Int:

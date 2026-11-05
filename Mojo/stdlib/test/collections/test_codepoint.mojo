@@ -349,7 +349,7 @@ def test_char_from_stringliteral() raises:
 
 
 def test_ord() raises:
-    assert_equal(Codepoint.ord(StringSlice("🔥")).to_u32(), 0x1F525)
+    assert_equal(Codepoint.ord(StringSpan("🔥")).to_u32(), 0x1F525)
     assert_equal(Codepoint.ord(String("a")).to_u32(), 97)
 
     with assert_raises(contains="but got an empty string"):

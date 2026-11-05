@@ -140,7 +140,7 @@ struct _DirHandle:
         ](self._handle):
             ref name = ep.unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
-            var name_str = StringSlice(
+            var name_str = StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=name_ptr,
                     length=Int(
@@ -167,7 +167,7 @@ struct _DirHandle:
         ](self._handle):
             ref name = ep.unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
-            var name_str = StringSlice(
+            var name_str = StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=name_ptr,
                     length=Int(

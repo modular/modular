@@ -499,7 +499,7 @@ struct OwnedDLHandle(Boolable, Movable):
 
     def get_symbol[
         mut: Bool, origin: Origin[mut=mut], //, result_type: AnyType
-    ](ref[origin] self, name: StringSlice) -> Optional[
+    ](ref[origin] self, name: StringSpan) -> Optional[
         Pointer[result_type, origin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -809,7 +809,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
     def get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> Optional[
+    ](self, name: StringSpan) -> Optional[
         Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -930,7 +930,7 @@ def _get_dylib_function[
     var new_func = dylib._get_function[func_name, result_type]()
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(func_cache_name),
+        StringSpan(func_cache_name),
         Pointer(to=new_func).unsafe_bitcast[
             OpaquePointer[MutUntrackedOrigin]
         ]()[],
@@ -1164,7 +1164,7 @@ def _get_global[
 
 @inline(.always)
 def _get_global_or_null(
-    name: StringSlice,
+    name: StringSpan,
 ) -> Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]:
     return external_call[
         "KGEN_CompilerRT_GetGlobalOrNull",

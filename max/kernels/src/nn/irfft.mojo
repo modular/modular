@@ -43,7 +43,7 @@ def global_cache_insert(key: String, value: OpaquePointer):
         value: Opaque pointer value to store under the key.
     """
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(key),
+        StringSpan(key),
         value,
     )
 

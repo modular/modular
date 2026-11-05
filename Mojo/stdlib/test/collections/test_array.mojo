@@ -498,7 +498,7 @@ def test_array_batched_copy_and_move_llvm_ir() raises:
     # runtime loop, unlike the 4-element case above which unrolls at compile
     # time. A callsite marker is expected for the live loop, so this checks
     # only the range attribute.
-    def _test(ir: StringSlice) raises:
+    def _test(ir: StringSpan) raises:
         assert_true("initializes((0, 512))" in ir)
 
     var move_info = compile_info[
@@ -512,7 +512,7 @@ def test_array_batched_copy_and_move_llvm_ir() raises:
 
 
 def test_array_copy_and_move_llvm_ir() raises:
-    def _test(ir: StringSlice) raises:
+    def _test(ir: StringSpan) raises:
         assert_true("initializes((0, 16))" in ir)
         assert_false('asm sideeffect "nop"' in ir)
 

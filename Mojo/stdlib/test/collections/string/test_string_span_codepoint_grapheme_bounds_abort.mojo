@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 #
 # Verifies that invalid `codepoint=`/`grapheme=` `ContiguousSlice` indexing
-# (out of bounds, reversed, or negative) aborts on `StringSlice` and `String`
+# (out of bounds, reversed, or negative) aborts on `StringSpan` and `String`
 # instead of silently clamping. Mirrors
 # `test_string_slice_bounds_abort.mojo`'s coverage of `byte=` slicing.
 #
@@ -35,44 +35,44 @@ def main() raises:
     comptime TEST = get_defined_int["test"]()
     comptime if TEST == 1:
         # 3 codepoints: one flag emoji per codepoint slot.
-        var s = StringSlice("🔄🔥🔄")
+        var s = StringSpan("🔄🔥🔄")
         # CHECK_1: {{.*}}: Assert Error: slice end index 100 is out of bounds, valid range is 0 to 3
         _ = s[codepoint=0:100]
     elif TEST == 2:
-        var s = StringSlice("🔄🔥🔄")
+        var s = StringSpan("🔄🔥🔄")
         # CHECK_2: {{.*}}: Assert Error: slice start index 3 is greater than slice end index 1
         _ = s[codepoint=3:1]
     elif TEST == 3:
-        var s = StringSlice("🔄🔥🔄")
+        var s = StringSpan("🔄🔥🔄")
         # CHECK_3: {{.*}}: Assert Error: slice start index -1 is out of bounds, valid range is 0 to 3
         _ = s[codepoint= -1:]
     elif TEST == 4:
         # Through `String`'s `codepoint=` accessor, which delegates to
-        # `StringSlice`.
+        # `StringSpan`.
         var s = String("🔄🔥🔄")
         # CHECK_4: {{.*}}: Assert Error: slice end index 100 is out of bounds, valid range is 0 to 3
         _ = s[codepoint=0:100]
     elif TEST == 5:
         # "cafe" + combining acute accent -- 4 graphemes, 5 codepoints.
-        var s = StringSlice("café")
+        var s = StringSpan("café")
         # CHECK_5: {{.*}}: Assert Error: slice end index 100 is out of bounds, valid range is 0 to 4
         _ = s[grapheme=0:100]
     elif TEST == 6:
-        var s = StringSlice("café")
+        var s = StringSpan("café")
         # CHECK_6: {{.*}}: Assert Error: slice start index 3 is greater than slice end index 1
         _ = s[grapheme=3:1]
     elif TEST == 7:
-        var s = StringSlice("café")
+        var s = StringSpan("café")
         # CHECK_7: {{.*}}: Assert Error: slice start index -1 is out of bounds, valid range is 0 to 4
         _ = s[grapheme= -1:]
     elif TEST == 8:
-        var s = StringSlice("café")
+        var s = StringSpan("café")
         # An out-of-range start with no end still requires a full scan to
         # discover the real grapheme count for the abort message.
         # CHECK_8: {{.*}}: Assert Error: slice start index 100 is out of bounds, valid range is 0 to 4
         _ = s[grapheme=100:]
     elif TEST == 9:
-        var s = StringSlice("café")
+        var s = StringSpan("café")
         # CHECK_9: {{.*}}: Assert Error: slice end index -1 is out of bounds, valid range is 0 to 4
         _ = s[grapheme=0:-1]
     else:

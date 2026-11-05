@@ -531,7 +531,7 @@ struct StringSpan[origin: ImmOrigin](
             If the Python runtime is not initialized or conversion fails.
         """
         ref cpy = Python().cpython()
-        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # TODO: This should not be necessary, as `StringSpan` is guaranteed to
         # be valid UTF-8.
         var unicode = cpy.PyUnicode_DecodeUTF8(self)
         if not unicode:

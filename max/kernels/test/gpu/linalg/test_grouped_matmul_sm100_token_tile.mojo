@@ -303,7 +303,7 @@ comptime PREFILL_COUNTS = """
 """
 
 
-def parse_counts(s: StringSlice) raises -> List[Int]:
+def parse_counts(s: StringSpan) raises -> List[Int]:
     var out = List[Int]()
     for part in s.split(","):
         out.append(Int(part.strip()))

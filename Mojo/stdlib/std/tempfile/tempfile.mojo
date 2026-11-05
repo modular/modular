@@ -94,7 +94,7 @@ def _get_default_tempdir() raises -> String:
     raise Error("No usable temporary directory found")
 
 
-def _try_to_create_file(dir: StringSlice) -> Bool:
+def _try_to_create_file(dir: StringSpan) -> Bool:
     for _ in range(TMP_MAX):
         var name = _get_random_name()
         # TODO use os.join when it exists

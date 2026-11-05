@@ -343,7 +343,7 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
     var ptr = alloc(AllocLayout[Communicators].single()).unsafe_leak()
     ptr.unsafe_write(c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(NAME), ptr.unsafe_bitcast[NoneType]()
+        StringSpan(NAME), ptr.unsafe_bitcast[NoneType]()
     )
     return ptr[]
 

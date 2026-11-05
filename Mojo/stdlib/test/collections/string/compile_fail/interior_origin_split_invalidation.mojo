@@ -13,7 +13,7 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-# The `List[StringSlice]` returned by `String.split` carries interior origins, so
+# The `List[StringSpan]` returned by `String.split` carries interior origins, so
 # its elements are invalidated when the source string is mutated.
 
 

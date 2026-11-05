@@ -50,7 +50,7 @@ struct RawPluginPeerAccess(PeerAccessV1, RawPluginComponent):
 
     @staticmethod
     def load(
-        lib: _DLHandle, so_path: StringSlice
+        lib: _DLHandle, so_path: StringSpan
     ) raises HALError -> OptionalReg[Self]:
         """Resolves the group, or None when `lib` exports neither symbol."""
         # TODO(DRIV-4): drop once a `Device`'s spec follows its loaded plugin.

@@ -112,9 +112,9 @@ struct TVMFFIErrorCell(
     # Unused fields omitted (update_backtrace, cause_chain, extra_context)
 
     def write_to(self, mut writer: Some[std.format.Writer]):
-        writer.write(StringSlice(unsafe_from_utf8=self.kind))
+        writer.write(StringSpan(unsafe_from_utf8=self.kind))
         writer.write(": ")
-        writer.write(StringSlice(unsafe_from_utf8=self.message))
+        writer.write(StringSpan(unsafe_from_utf8=self.message))
 
     def write_repr_to(self, mut writer: Some[std.format.Writer]):
         writer.write("TVMFFIErrorCell('")
