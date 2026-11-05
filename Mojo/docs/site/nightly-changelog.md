@@ -107,6 +107,11 @@ This version is still a work in progress.
   and yields the elements the predicate accepts:
   `filter(items, lambda (x: Int) -> Bool: x > 0)`.
 
+- `take_while()` and `drop_while()` in `std.itertools` now take the predicate
+  as an argument instead of a compile-time parameter, so it can be a closure
+  that captures values. Write `take_while(items, pred)` instead of
+  `take_while[pred](items)`.
+
 - `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
   now raise an `Error` instead of aborting when the string is empty. They also
   raise when the string holds more than one codepoint; previously they
