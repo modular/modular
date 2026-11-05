@@ -1398,7 +1398,12 @@ modular_cc_test(
     data = [
         "DriverCAPIHeaderCheck.c",
         "//MLRT:Driver/CAPIShim",
-    ],
+    ] + select({
+        # The shim's HAL implementation needs this library at load time, and
+        # dlopen finds it only next to the test's runfiles.
+        "//:hal_device_context_enabled": ["//MLRT:Driver/MojoRuntimeBindings"],
+        "//conditions:default": [],
+    }),
     env = {
         "M_DRIVER_CAPI_HEADER_CHECK": "$(rootpath DriverCAPIHeaderCheck.c)",
         "M_DRIVER_CAPI_SHIM": "$(rootpath //MLRT:Driver/CAPIShim)",
