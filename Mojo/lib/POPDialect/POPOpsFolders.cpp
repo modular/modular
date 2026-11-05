@@ -2217,7 +2217,7 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "failed to get array element stride");
   int64_t addr = ptr.getAddr() + index.getInt() * *stride;
   return state.mapResults(
-      PointerAttr::get(addr, PointerType::get(elementType)));
+      state.getPointer(addr, PointerType::get(elementType)));
 }
 
 ErrorTreeOrSuccess
@@ -2241,7 +2241,7 @@ ArrayGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "failed to get array element stride");
   int64_t addr = ptr.getAddr() + index.getInt() * *stride;
   return state.mapResults(
-      PointerAttr::get(addr, PointerType::get(elementType)));
+      state.getPointer(addr, PointerType::get(elementType)));
 }
 
 LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,

@@ -30,11 +30,10 @@ constexpr llvm::StringLiteral kStructTargetAlignError =
 /// Returns the offset after aligning to the type's alignment and advancing by
 /// its size. Returns an error containing `errorMessage` if the size or
 /// alignment cannot be determined (e.g. for unresolved parametric types).
-ErrorOr<int64_t> advanceOffset(int64_t offset, DataLayoutInterface dl,
-                               TargetInfoAttr target,
+ErrorOr<int64_t> advanceOffset(int64_t offset, Type type,
+                               InterpreterState &state,
                                llvm::StringLiteral errorMessage) {
-  std::optional<int64_t> align = dl.getTypeAlign(target);
-  std::optional<int64_t> size = dl.getTypeSize(target);
+  auto [size, align] = state.getTypeLayout(type);
   if (!align || !size)
     return Error(errorMessage);
   return llvm::alignTo(offset, *align) + *size;
@@ -1005,8 +1004,7 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
 
   for (unsigned i = 0; i != index; ++i) {
     ErrorOr<int64_t> next =
-        advanceOffset(offset, cast<DataLayoutInterface>(elementTypes[i]),
-                      state.getTarget(), kStructElemLayoutError);
+        advanceOffset(offset, elementTypes[i], state, kStructElemLayoutError);
     if (next.isError())
       return ErrorTree(getLoc(), next.takeError());
     offset = next.takeValue();
@@ -1014,12 +1012,11 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
 
   // Align the address to the target element.
   Type targetType = elementTypes[index];
-  std::optional<int64_t> targetAlign =
-      cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget());
+  std::optional<int64_t> targetAlign = state.getTypeLayout(targetType).align;
   if (!targetAlign)
     return ErrorTree(getLoc(), kStructTargetAlignError);
   offset = llvm::alignTo(offset, *targetAlign);
-  return state.mapResults(PointerAttr::get(ptr.getAddr() + offset, getType()));
+  return state.mapResults(state.getPointer(ptr.getAddr() + offset, getType()));
 }
 
 ErrorTreeOrSuccess
@@ -1047,9 +1044,8 @@ StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "struct element types not resolved");
 
   for (unsigned i = 0; i != index; ++i) {
-    ErrorOr<int64_t> next =
-        advanceOffset(offset, cast<DataLayoutInterface>((*elementTypes)[i]),
-                      state.getTarget(), kStructElemLayoutError);
+    ErrorOr<int64_t> next = advanceOffset(offset, (*elementTypes)[i], state,
+                                          kStructElemLayoutError);
     if (next.isError())
       return ErrorTree(getLoc(), next.takeError());
     offset = next.takeValue();
@@ -1057,12 +1053,11 @@ StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
 
   // Align the address to the target element.
   Type targetType = (*elementTypes)[index];
-  std::optional<int64_t> targetAlign =
-      cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget());
+  std::optional<int64_t> targetAlign = state.getTypeLayout(targetType).align;
   if (!targetAlign)
     return ErrorTree(getLoc(), kStructTargetAlignError);
   offset = llvm::alignTo(offset, *targetAlign);
-  return state.mapResults(PointerAttr::get(ptr.getAddr() + offset,
+  return state.mapResults(state.getPointer(ptr.getAddr() + offset,
                                            state.getReboundType(getType())));
 }
 
