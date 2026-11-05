@@ -69,6 +69,12 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
   M_DriverStatus (*device_allocation_range)(const M_DriverDevice *,
                                             const void *, void **, uint64_t *) =
       M_DriverDeviceAllocationRange;
+  M_DriverStatus (*device_allocator_memory_info)(const M_DriverDevice *,
+                                                 uint64_t *, uint64_t *) =
+      M_DriverDeviceAllocatorMemoryInfo;
+  M_DriverStatus (*device_get_attribute)(const M_DriverDevice *,
+                                         M_DriverDeviceAttribute, int64_t *) =
+      M_DriverDeviceGetAttribute;
   M_DriverStatus (*enable_all_peer_access)(void) = M_DriverEnableAllPeerAccess;
   M_DriverStatus (*all_peer_access_enabled)(bool *) =
       M_DriverAllPeerAccessEnabled;
@@ -86,6 +92,8 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
   M_DriverStatus (*stream_from_native)(const M_DriverDevice *, void *,
                                        M_DriverStream **) =
       M_DriverStreamFromNativeHandle;
+  M_DriverStatus (*device_stream)(const M_DriverDevice *, M_DriverStream **) =
+      M_DriverDeviceStream;
   M_DriverStatus (*stream_destroy)(M_DriverStream *) = M_DriverStreamDestroy;
   M_DriverStatus (*stream_native_handle)(const M_DriverStream *, void **) =
       M_DriverStreamNativeHandle;
@@ -110,6 +118,9 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
   M_DriverStatus (*stream_record_event)(const M_DriverStream *,
                                         const M_DriverEvent *) =
       M_DriverStreamRecordEvent;
+  M_DriverStatus (*stream_enqueue_host_function)(const M_DriverStream *,
+                                                 void (*)(void *), void *) =
+      M_DriverStreamEnqueueHostFunction;
 
   // Events.
   M_DriverStatus (*event_create)(const M_DriverDevice *, bool,
@@ -174,6 +185,8 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
   M_DriverStatus (*copy_device_to_device)(const M_DriverStream *, void *,
                                           const void *, uint64_t) =
       M_DriverCopyDeviceToDevice;
+  M_DriverStatus (*memset_device)(const M_DriverStream *, void *, uint8_t,
+                                  uint64_t) = M_DriverMemset;
   M_DriverStatus (*copy_peer_to_peer)(
       const M_DriverStream *, const M_DriverDevice *, void *,
       const M_DriverDevice *, const void *, uint64_t) = M_DriverCopyPeerToPeer;
@@ -192,8 +205,10 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          device_uuid != NULL && device_can_access != NULL &&
          device_enable_peer_access != NULL && device_synchronize != NULL &&
          device_memory_info != NULL && device_allocation_range != NULL &&
-         enable_all_peer_access != NULL && all_peer_access_enabled != NULL &&
-         device_context_handle != NULL &&
+         device_allocator_memory_info != NULL && device_get_attribute != NULL &&
+         device_stream != NULL && stream_enqueue_host_function != NULL &&
+         memset_device != NULL && enable_all_peer_access != NULL &&
+         all_peer_access_enabled != NULL && device_context_handle != NULL &&
          device_bind_to_current_thread != NULL &&
          unbind_from_current_thread != NULL && stream_create != NULL &&
          stream_from_context != NULL && stream_from_native != NULL &&

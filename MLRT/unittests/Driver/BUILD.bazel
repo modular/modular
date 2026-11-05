@@ -1271,6 +1271,61 @@ modular_cc_test(
     ],
 )
 
+# Under --config=hal-device-context every context, the CPU one included, comes
+# from a driver plugin, so the C API tests carry the plugins for the host's
+# accelerator. Gated on HAL so the legacy GPU lanes do not rerun these tests
+# whenever plugin code changes.
+config_setting(
+    name = "capi_test_hal_nvidia",
+    constraint_values = ["//:nvidia_gpu"],
+    flag_values = {"//:hal_device_context": "true"},
+)
+
+config_setting(
+    name = "capi_test_hal_amd",
+    constraint_values = ["//:amd_gpu"],
+    flag_values = {"//:hal_device_context": "true"},
+)
+
+config_setting(
+    name = "capi_test_hal_apple",
+    constraint_values = ["//:apple_gpu"],
+    flag_values = {"//:hal_device_context": "true"},
+)
+
+_CAPI_TEST_PLUGINS = select({
+    ":capi_test_hal_nvidia": [
+        "//Target:CPUPlugin.so",
+        "//Target:CUDAPlugin.so",
+    ],
+    ":capi_test_hal_amd": [
+        "//Target:CPUPlugin.so",
+        "//Target:HIPPlugin.so",
+    ],
+    ":capi_test_hal_apple": [
+        "//Target:CPUPlugin.so",
+        "//Target:MetalPlugin.so",
+    ],
+    "//:hal_device_context_enabled": ["//Target:CPUPlugin.so"],
+    "//conditions:default": [],
+})
+
+_CAPI_TEST_PLUGIN_ENV = select({
+    ":capi_test_hal_nvidia": {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);CUDA@$(rootpath //Target:CUDAPlugin.so)",
+    },
+    ":capi_test_hal_amd": {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);HIP@$(rootpath //Target:HIPPlugin.so)",
+    },
+    ":capi_test_hal_apple": {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);Metal@$(rootpath //Target:MetalPlugin.so)",
+    },
+    "//:hal_device_context_enabled": {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so)",
+    },
+    "//conditions:default": {},
+})
+
 # Exercises the driver C API (MLRT/Driver/CAPI/DriverCAPI.h) on one device.
 # The CPU cases run everywhere, but the GPU lanes run only tagged tests, and
 # the CUDA, HIP and Metal paths this covers are what matters, so it asks for a
@@ -1285,11 +1340,14 @@ modular_cc_test(
         # consumable without a C++ compiler.
         "DriverCAPIHeaderCheck.c",
     ],
+    data = _CAPI_TEST_PLUGINS,
+    env = _CAPI_TEST_PLUGIN_ENV,
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
     ],
@@ -1303,13 +1361,29 @@ modular_cc_test(
         "CAPIPeerTest.cpp",
         "CAPITestHelpers.h",
     ],
+    data = _CAPI_TEST_PLUGINS,
+    env = _CAPI_TEST_PLUGIN_ENV,
     gpu_constraints = ["//:has_multi_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
+    ],
+)
+
+# The C API tests under --config=hal-device-context, which no CI lane runs on
+# a GPU. Run with that config plus a remote GPU config, for example
+# `--config=hal-device-context --config=remote-b200`.
+test_suite(
+    name = "CAPIHALTests",
+    tags = ["manual"],
+    tests = [
+        ":CAPIConcurrencyTest",
+        ":CAPIPeerTest",
+        ":CAPITest",
     ],
 )
 
@@ -1338,11 +1412,14 @@ modular_cc_test(
     name = "CAPIConcurrencyTest",
     size = "small",
     srcs = ["CAPIConcurrencyTest.cpp"],
+    data = _CAPI_TEST_PLUGINS,
+    env = _CAPI_TEST_PLUGIN_ENV,
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
     ],
