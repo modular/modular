@@ -94,9 +94,10 @@ using AsyncDeviceGraphRef = AsyncValueRef<DeviceGraphRef>;
 /// Device enumeration and identity.
 class MODULAR_CXX_EXPORT Device final : public ReferenceCounted<Device> {
 public:
-  // API is a constexpr StringLiteral for fast comparison, while being
-  // printable as a string.
-  using API = StringLiteral;
+  // A StringRef rather than the legacy driver's StringLiteral: a plugin names
+  // its own API at runtime, and `api()` reports that name as the legacy
+  // driver's backends report theirs.
+  using API = StringRef;
   static constexpr API cpuAPI = "cpu";     // Generic CPU device
   static constexpr API gpuAPI = "gpu";     // Generic GPU device
   static constexpr API cudaAPI = "cuda";   // NVIDIA CUDA device
