@@ -128,12 +128,12 @@ class CustomOpLibrary:
         @register("grayscale")
         struct Grayscale:
             @staticmethod
-            fn execute[
+            def execute[
                 # The kind of device this is running on: "cpu" or "gpu"
                 target: StaticString,
             ](
-                img_out: OutputTensor[dtype = DType.uint8, rank=2],
-                img_in: InputTensor[dtype = DType.uint8, rank=3],
+                img_out: Some[Output & Tensor],
+                img_in: Some[Input & Tensor],
                 ctx: DeviceContext,
             ) raises:
                 ...
