@@ -219,8 +219,6 @@ modular_eager_py_test(
     },
     gpu_constraints = ["//:mi355_gpu"],
     tags = [
-        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
-        "exclusive-if-local",
         "gpu",
     ],
     # Needs mo.grouped.ffn.block.scaled.amd, registered only by the

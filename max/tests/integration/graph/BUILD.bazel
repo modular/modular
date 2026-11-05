@@ -394,8 +394,6 @@ modular_py_test(
     # MI355-only: the op's MegaFFN is the gfx950 decode kernel.
     precompile_mefs = True,
     tags = [
-        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
-        "exclusive-if-local",
         "gpu",
         "manual",
     ],
@@ -431,8 +429,6 @@ modular_py_test(
     gpu_constraints = ["//:mi355_gpu"],
     precompile_mefs = True,
     tags = [
-        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
-        "exclusive-if-local",
         "gpu",
     ],
     # Needs moe.grouped.ffn.block.scaled.amd, registered only by the
@@ -461,7 +457,6 @@ modular_py_test(
     # No precompile_mefs: the model compiles in a spawned child, which needs
     # the capped pool from its start and which the record cannot see.
     tags = [
-        "exclusive-if-local",
         "gpu",
         "manual",
     ],
@@ -494,8 +489,6 @@ modular_py_test(
     # MI355-only: the op's MegaFFN is the gfx950 decode kernel.
     precompile_mefs = True,
     tags = [
-        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
-        "exclusive-if-local",
         "gpu",
         "manual",
     ],
