@@ -1504,9 +1504,11 @@ def broadcast_shape_fn(
     return IndexList[1](max(lhs_dim, rhs_dim))
 
 
-@extensibility.register("mo.static.broadcast_to")
 struct StaticBroadcastTo:
-    """Registers the `mo.static.broadcast_to` graph op with the graph compiler.
+    """Copies a broadcast view of its input.
+
+    Not registered: the graph compiler lowers `mo.static.broadcast_to` to an
+    index loop itself, and a backend that needs a kernel registers its own.
     """
 
     @inline(.always)
@@ -1604,9 +1606,12 @@ struct StaticBroadcastTo:
         ](z, x_view, ctx)
 
 
-@extensibility.register("mo.static.reshape")
 struct StaticReshape:
-    """Registers the `mo.static.reshape` graph op with the graph compiler."""
+    """Copies a reshaped view of its input.
+
+    Not registered: the graph compiler lowers `mo.static.reshape` to an index
+    loop itself, and a backend that needs a kernel registers its own.
+    """
 
     @staticmethod
     def input_view[
@@ -1691,9 +1696,12 @@ def reshape_shape_fn[
     )
 
 
-@extensibility.register("mo.transpose")
 struct Transpose:
-    """Registers the `mo.transpose` graph op with the graph compiler."""
+    """Copies a transposed view of its input, and computes the op's shape.
+
+    Not registered: the graph compiler lowers `mo.transpose` to an index loop
+    itself, and a backend that needs a kernel registers its own.
+    """
 
     @inline(.always)
     @staticmethod
@@ -1802,9 +1810,12 @@ def transpose_shape_fn(
     return Transpose.shape_impl(input, permutations)
 
 
-@extensibility.register("mo.slice")
 struct Slice:
-    """Registers the `mo.slice` graph op with the graph compiler."""
+    """Copies a sliced view of its input.
+
+    Not registered: the graph compiler lowers `mo.slice` to an index loop
+    itself, and a backend that needs a kernel registers its own.
+    """
 
     @staticmethod
     def get_view_alignment[

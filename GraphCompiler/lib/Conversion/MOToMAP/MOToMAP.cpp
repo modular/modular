@@ -705,8 +705,27 @@ LogicalResult lowerReductionToRowwise(Operation *op,
 FailureOr<Operation *> lowerOp(Operation *op, MOGG::MojoRegistry &registry) {
   ErrorOr<MOGG::KernelDeclAdaptor> adaptor =
       MOGG::getMojoKernelAdaptor(registry, op);
-  if (adaptor.isError())
+  if (adaptor.isError()) {
+    // The builtin view ops register no kernel: each lowers to an index loop
+    // that fuses with its neighbors, or raises back to a view when it stays
+    // unfused. A backend whose kernels take whole tensors registers one of
+    // them instead, and then it is called like any other op below. Any
+    // other op without a kernel stays as it is, as it does when the pass
+    // runs without a kernel package.
+    LogicalResult viewResult = success();
+    if (auto sliceOp = dyn_cast<MO::SliceOp>(op)) {
+      viewResult = lowerSliceToForeach(sliceOp);
+    } else if (auto broadcastOp = dyn_cast<MO::Static::BroadcastToOp>(op)) {
+      viewResult = lowerBroadcastToForeach(broadcastOp);
+    } else if (auto reshapeOp = dyn_cast<MO::Static::ReshapeOp>(op)) {
+      viewResult = lowerReshapeToForeach(reshapeOp);
+    } else if (auto transposeOp = dyn_cast<MO::TransposeOp>(op)) {
+      viewResult = lowerTransposeToForeach(transposeOp);
+    }
+    if (failed(viewResult))
+      return failure();
     return nullptr;
+  }
 
   if (auto mutableStoreOp = dyn_cast<MO::MutableStoreOp>(op)) {
     if (failed(lowerMutableStoreToForeach(mutableStoreOp, *adaptor)))
@@ -740,25 +759,12 @@ FailureOr<Operation *> lowerOp(Operation *op, MOGG::MojoRegistry &registry) {
     return failure();
   }
 
-  LogicalResult foreachResult = success();
   if (isa<MO::InvokeShapeFuncOp>(op)) {
     op->emitOpError("MOToMAP: shape-function kernels are not yet supported");
     return failure();
-  } else if (auto sliceOp = dyn_cast<MO::SliceOp>(op)) {
-    foreachResult = lowerSliceToForeach(sliceOp);
-  } else if (auto broadcastOp = dyn_cast<MO::Static::BroadcastToOp>(op)) {
-    foreachResult = lowerBroadcastToForeach(broadcastOp);
-  } else if (auto reshapeOp = dyn_cast<MO::Static::ReshapeOp>(op)) {
-    foreachResult = lowerReshapeToForeach(reshapeOp);
-  } else if (auto transposeOp = dyn_cast<MO::TransposeOp>(op)) {
-    foreachResult = lowerTransposeToForeach(transposeOp);
-  } else {
-    return lowerToOpaque(op, *adaptor, *mapping);
   }
 
-  if (failed(foreachResult))
-    return failure();
-  return nullptr;
+  return lowerToOpaque(op, *adaptor, *mapping);
 }
 
 struct MOToMAPPass : public M::MO::impl::MOToMAPBase<MOToMAPPass> {
