@@ -1451,6 +1451,34 @@ struct Row[
                     emit_tile,
                 )
 
+    @staticmethod
+    @inline(.always)
+    def splat_lane[
+        value_dtype: DType
+    ](value: SIMD[value_dtype, Self.params.emit_tile_width]) -> SIMD[
+        value_dtype, Self._W
+    ]:
+        """Spreads a per-row value, read with one lane per row, over the width
+        of a fold's result: every lane when the participant handles one row,
+        and unchanged on the tiled tier, where each lane is its own row.
+
+        Parameters:
+            value_dtype: The value's element type.
+
+        Args:
+            value: The per-row value, one lane per row.
+
+        Returns:
+            The value at `simd_width` lanes.
+        """
+        comptime if Self.params.emit_tile_width == 1:
+            return SIMD[value_dtype, Self._W](value[0])
+        else:
+            comptime assert (
+                Self.params.emit_tile_width == Self._W
+            ), "a tiled tier emits one output per lane"
+            return rebind[SIMD[value_dtype, Self._W]](value)
+
     @inline(.always)
     def emit[
         Write: ImplicitlyCopyable

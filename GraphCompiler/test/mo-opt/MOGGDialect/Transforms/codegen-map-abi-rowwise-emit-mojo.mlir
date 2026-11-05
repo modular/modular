@@ -1,7 +1,8 @@
 // RUN: mo-opt %s --gc-pipeline-pre-jit="dump-mojo-text=true" -o /dev/null 2>&1 | FileCheck %s
 
 // A rowwise kernel prints as a Row API body: a load of the primary input, a
-// `Row`, one `row.reduce` per fold, and per-row stores in `row.emit`. The
+// `Row`, one `row.reduce` per fold, one `row.elementwise` per map phase, and
+// per-row stores in `row.emit`. The
 // launch parameters come from the op, and `mogg.call.rowwise` picks the SIMD
 // width.
 

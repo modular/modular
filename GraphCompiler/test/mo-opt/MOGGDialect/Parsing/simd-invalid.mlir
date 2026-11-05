@@ -55,7 +55,7 @@ func.func @scalar_epilogue_value(%ptr: !mogg.pointer, %cp: !mogg.pointer) {
 
 func.func @scalar_rowwise_contribution(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %f: f32) {
   mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cap = %x : !mogg.tensor} device = "cpu" {
-    // expected-error @below{{body must yield !mogg.simd contributions, got 'f32'}}
+    // expected-error @below{{body must yield a !mogg.simd contribution, got 'f32'}}
     %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
       mogg.yield %f : f32
     }

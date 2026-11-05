@@ -288,8 +288,11 @@ def RowwiseBindMonoids: Pass<"mogg-rowwise-bind-monoids", "ModuleOp"> {
 def RowwiseGroupRowStores: Pass<"mogg-rowwise-group-row-stores", "ModuleOp"> {
   let summary = "Move per-row stores into one emit. For testing only.";
   let description = [{
-    Moves the stores at the row index of each `mogg.call.rowwise` into one
-    `mogg.rowwise.emit` at the end of its body.
+    Moves the stores at the row index of each `mogg.call.rowwise`, and the
+    row-level ops only they read, into one `mogg.rowwise.emit` at the end of
+    its body. A load at the row index left in the body, which feeds a value a
+    phase reads, becomes a `mogg.rowwise.load_lane` spread by a
+    `mogg.rowwise.splat_lane`.
   }];
 
   let dependentDialects = ["MOGG::MOGGDialect"];
@@ -300,10 +303,20 @@ def RowwiseSetLaunchParams
   let summary = "Set each rowwise kernel's launch parameters. For testing "
                 "only.";
   let description = [{
-    Sets the launch parameters of each `mogg.call.rowwise`, and `cols` when
-    the reduced axis is static. Runs after `mogg-rowwise-group-row-stores`: a
-    body is reduce-shaped when all its stores are in the emit. Only
-    reduce-shaped bodies are supported.
+    Sets the launch parameters of each `mogg.call.rowwise` as the
+    hand-written kernels set them, and `cols` when the reduced axis is
+    static:
+
+    - A body that writes one value per row has `num_phases` 1 and
+      `dtype_size` 0, and is expensive when its per-element cost reaches
+      the threshold.
+    - A body that writes every element has `num_phases` folds + 1, and is
+      expensive. `dtype_size` is the row's element size, which lets a long
+      row split, when every fold keeps one field (as in rms_norm and
+      softmax), else 0 (as in layer_norm).
+
+    Runs after `mogg-rowwise-group-row-stores`, which leaves no store
+    directly in the body.
   }];
 
   let options = [

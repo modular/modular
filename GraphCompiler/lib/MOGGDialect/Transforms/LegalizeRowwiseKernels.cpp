@@ -25,6 +25,7 @@
 #include "GraphCompiler/MOSHDialect/MOSHAttrs.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/LITDialect/LITAttrs.h"
+#include "Support/AssertStream.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/SymbolTable.h"
@@ -58,11 +59,16 @@ auto folds(CallRowwiseOp op) {
   return op.getBody().front().getOps<RowwiseReduceOp>();
 }
 
-// Loads of `tensor` at `fold`'s own index.
-SmallVector<TensorLoadOp> elementLoads(RowwiseReduceOp fold, Value tensor) {
-  Value index = fold.getBody().front().getArgument(0);
+auto phases(CallRowwiseOp op) {
+  return op.getBody().front().getOps<RowwisePhaseOpInterface>();
+}
+
+// Loads of `tensor` at `phase`'s own index.
+SmallVector<TensorLoadOp> elementLoads(RowwisePhaseOpInterface phase,
+                                       Value tensor) {
+  Value index = phase.getIndexArg();
   SmallVector<TensorLoadOp> loads;
-  fold.getBody().walk([&](TensorLoadOp load) {
+  phase->getRegion(0).walk([&](TensorLoadOp load) {
     if (load.getTensor() == tensor && load.getIndex() == index)
       loads.push_back(load);
   });
@@ -95,12 +101,12 @@ LogicalResult selectPrimaryInput(CallRowwiseOp op) {
 
   Value tensor = captureArgs(op)[*primary];
   Type dtype;
-  unsigned foldsReadingPrimary = 0;
-  for (RowwiseReduceOp fold : folds(op)) {
-    SmallVector<TensorLoadOp> loads = elementLoads(fold, tensor);
+  unsigned phasesReadingPrimary = 0;
+  for (RowwisePhaseOpInterface phase : phases(op)) {
+    SmallVector<TensorLoadOp> loads = elementLoads(phase, tensor);
     if (loads.empty())
       continue;
-    ++foldsReadingPrimary;
+    ++phasesReadingPrimary;
     for (TensorLoadOp load : loads) {
       OpBuilder builder(load);
       auto value =
@@ -112,7 +118,7 @@ LogicalResult selectPrimaryInput(CallRowwiseOp op) {
   }
   op.setPrimary(*primary);
   op.setDtype(dtype);
-  op.setIsCached(foldsReadingPrimary > 1);
+  op.setIsCached(phasesReadingPrimary > 1);
   return success();
 }
 
@@ -185,19 +191,40 @@ LogicalResult bindMonoids(CallRowwiseOp op) {
   return success();
 }
 
+// Moves the stores at the row index, and the row-level ops only they read, into
+// one emit at the end of the body, which prints them one lane per output. A
+// load at the row index left in the body feeds a value a phase reads, so it
+// becomes a `mogg.rowwise.load_lane` spread by a `mogg.rowwise.splat_lane`.
 LogicalResult groupRowStores(CallRowwiseOp op) {
   Block &body = op.getBody().front();
   SmallVector<TensorStoreOp> stores;
   for (TensorStoreOp store : body.getOps<TensorStoreOp>())
     if (store.getIndex() == rowArg(op))
       stores.push_back(store);
-  if (stores.empty())
-    return success();
-  OpBuilder builder = OpBuilder::atBlockEnd(&body);
-  auto emit = RowwiseEmitOp::create(builder, op.getLoc());
-  Block *emitBody = builder.createBlock(&emit.getBody());
-  for (TensorStoreOp store : stores)
-    store->moveBefore(emitBody, emitBody->end());
+  if (!stores.empty()) {
+    OpBuilder builder = OpBuilder::atBlockEnd(&body);
+    auto emit = RowwiseEmitOp::create(builder, op.getLoc());
+    Block *emitBody = builder.createBlock(&emit.getBody());
+    for (TensorStoreOp store : stores)
+      store->moveBefore(emitBody, emitBody->end());
+    auto readByEmit = [&](Operation *user) { return emit->isAncestor(user); };
+    for (Operation &o : llvm::make_early_inc_range(llvm::reverse(body)))
+      if (!o.use_empty() && !isa<RowwisePhaseOpInterface>(o) &&
+          llvm::all_of(o.getUsers(), readByEmit))
+        o.moveBefore(emitBody, emitBody->begin());
+  }
+  for (TensorLoadOp load :
+       llvm::make_early_inc_range(body.getOps<TensorLoadOp>())) {
+    if (load.getIndex() != rowArg(op))
+      continue;
+    OpBuilder builder(load);
+    auto lane =
+        RowwiseLoadLaneOp::create(builder, load.getLoc(), load.getType(),
+                                  load.getTensor(), load.getIndex());
+    load.replaceAllUsesWith(
+        RowwiseSplatLaneOp::create(builder, load.getLoc(), lane).getResult());
+    load.erase();
+  }
   return success();
 }
 
@@ -225,30 +252,42 @@ LogicalResult setLaunchParams(CallRowwiseOp op,
   if (rowFolds.empty())
     return op.emitOpError("has no fold");
 
-  // TODO(GEX-3348): a normalize-shaped body writes every element. It needs
-  // `num_phases` = folds + 1, and `dtype_size` when it may split the row.
-  WalkResult strayStore = op.getBody().walk([](TensorStoreOp store) {
-    return isa<RowwiseEmitOp>(store->getParentOp()) ? WalkResult::advance()
-                                                    : WalkResult::interrupt();
-  });
-  if (strayStore.wasInterrupted())
-    return op.emitOpError("stores outside its emit; only reduce-shaped "
-                          "bodies are supported");
-
+  Block &body = op.getBody().front();
   RowwiseReduceOp widest = rowFolds.front();
   for (RowwiseReduceOp fold : rowFolds)
     if (stateBits(fold) > stateBits(widest))
       widest = fold;
 
-  // Per-element work only: ops after the folds run once per row.
+  // Per-element work only: row-level ops run once per row.
   unsigned elementCost = 0;
   for (RowwiseReduceOp fold : rowFolds)
     fold.getBody().walk(
         [&](CallElementwiseOp call) { elementCost += cost(call); });
 
-  op.setNumPhases(1);
+  // The Row API's launch parameters, set as the hand-written kernels set
+  // them (rowwise_reductions.mojo, rowwise_normalization.mojo and
+  // rowwise_softmax.mojo):
+  //
+  //   body writes              num_phases  dtype_size       expensive
+  //   one value per row (sum)  1           0                cost >= threshold
+  //   every element (rms_norm) folds + 1   row bytes or 0   true
+  //
+  // `dtype_size` > 0 lets a long row split across blocks. rms_norm and
+  // softmax, whose folds keep one field, opt in; layer_norm, whose Welford
+  // fold keeps three, doesn't, so neither does a body with a multi-field
+  // fold. Every hand-written body that writes every element is expensive:
+  // it reads the row once per fold and writes it once.
+  bool writesEveryElement = !body.getOps<RowwiseMapOp>().empty();
+  bool oneFieldFolds = llvm::all_of(
+      rowFolds, [](RowwiseReduceOp fold) { return fold.getNumResults() == 1; });
+  op.setNumPhases(writesEveryElement ? rowFolds.size() + 1 : 1);
   op.setDtypeSize(0);
-  op.setComputationallyExpensive(elementCost >= expensiveCostThreshold);
+  if (writesEveryElement && oneFieldFolds) {
+    ASSERT_STREAM(op.getDtype(), << "the primary input is selected first");
+    op.setDtypeSize((op.getDtype()->getIntOrFloatBitWidth() + 7) / 8);
+  }
+  op.setComputationallyExpensive(writesEveryElement ||
+                                 elementCost >= expensiveCostThreshold);
   op.setSimdMonoidAttr(widest.getMonoidAttr());
   if (auto shape = op.getShape().getDefiningOp<ShapeCreateOp>())
     if (std::optional<int64_t> cols =

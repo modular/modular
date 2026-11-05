@@ -1,8 +1,8 @@
 // RUN: mo-opt %s --mogg-rowwise-select-primary-input | FileCheck %s
 
 // The primary input is the capture the first fold loads at its own index.
-// Those loads, in every fold, become `mogg.rowwise.primary`; other loads stay.
-// `dtype` is its element type, and `is_cached` says whether more than one fold
+// Those loads, in every phase, become `mogg.rowwise.primary`; other loads stay.
+// `dtype` is its element type, and `is_cached` says whether more than one phase
 // reads it.
 
 !DType = !lit.struct<@std::@builtin::@dtype::@DType>
@@ -71,6 +71,30 @@ func.func @twoFolds(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, 
       mogg.yield %d : !mogg.simd<f32>
     }
     mogg.tensor.store %co[%row] = %b : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+  }
+  return
+}
+
+// A map phase reads the primary input too, so the row is cached.
+// CHECK-LABEL: func.func @mapPhase
+// CHECK:       attributes {dtype = f32, is_cached, primary = 0 : i64}
+// CHECK:       mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum
+// CHECK-NEXT:    mogg.rowwise.primary : !mogg.simd<f32>
+// CHECK:       mogg.rowwise.map (%[[J:[[:alnum:]_]+]] : !map.index<2>) {
+// CHECK-NEXT:    %[[XV:.*]] = mogg.rowwise.primary : !mogg.simd<f32>
+// CHECK-NEXT:    %[[Y:.*]] = builtin.unrealized_conversion_cast %[[XV]], %{{.*}}
+// CHECK-NEXT:    mogg.tensor.store %{{.*}}[%[[J]]] = %[[Y]]
+func.func @mapPhase(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.tensor.load %cx[%j] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      %y = builtin.unrealized_conversion_cast %v, %acc : !mogg.simd<f32>, !mogg.simd<f32> to !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %y : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
   }
   return
 }

@@ -10,9 +10,9 @@
 // CHECK-NEXT:      %[[SQ:.*]] = mogg.call.elementwise @builtin_kernels.elementwise.Mul(%[[A]], %[[A]])
 // CHECK-NEXT:      mogg.yield %[[SQ]] : !mogg.simd<f32>
 // CHECK-NEXT:    } {fields = ["acc"], params = {dtype = f32}}
-// CHECK-NEXT:    %[[B:.*]] = mogg.tensor.load %cap1[%row]
-// CHECK-NEXT:    %[[Y:.*]] = mogg.call.elementwise @builtin_kernels.elementwise.Add(%[[ACC]], %[[B]])
 // CHECK-NEXT:    mogg.rowwise.emit {
+// CHECK-NEXT:      %[[B:.*]] = mogg.tensor.load %cap1[%row]
+// CHECK-NEXT:      %[[Y:.*]] = mogg.call.elementwise @builtin_kernels.elementwise.Add(%[[ACC]], %[[B]])
 // CHECK-NEXT:      mogg.tensor.store %cap2[%row] = %[[Y]]
 // CHECK-NEXT:    }
 // CHECK-NEXT:  }

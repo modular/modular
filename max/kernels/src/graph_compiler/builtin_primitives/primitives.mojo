@@ -19,8 +19,8 @@ from std.sys.info import CompilationTarget
 
 from max.algorithm.functional import elementwise
 from algorithm.reduce_op import ReduceOp
-from algorithm.rowwise import launch, pick_simd_width
-from algorithm.rowwise_types import RowBody
+from algorithm.rowwise import Row, launch, pick_simd_width
+from algorithm.rowwise_types import ContextParams, RowBody
 
 from extensibility import GridBlockLaunchConfig, StaticTensorSpec
 from extensibility import (
@@ -2380,11 +2380,18 @@ def _rowwise[
         accum: The type the folds' contributions are computed in.
         axis: The reduced axis.
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        num_phases: 1 for a reduce-shaped body.
-        computationally_expensive: Whether the folds' per-element work is
-            expensive enough to change the GPU block tier's threshold.
-        dtype_size: The byte size of `dtype` when the body may split the
-            row, else 0.
+        num_phases: 1 for a reduce-shaped body, which writes one value per
+            row; for a normalize-shaped body, which writes every element,
+            one per fold plus one for the write.
+        computationally_expensive: Whether the body's per-element work is
+            expensive enough to change the GPU block tier's threshold:
+            always for a normalize-shaped body, as every hand-written
+            normalization sets it; for a reduce-shaped body, when its
+            per-element cost reaches the compiler's threshold.
+        dtype_size: For a normalize-shaped body whose folds each keep one
+            field (as rms_norm and softmax), the byte size of `dtype`,
+            which lets a long row split across blocks; else 0 (as
+            layer_norm, and every reduce-shaped body).
 
     Args:
         body: The per-row body.
@@ -2402,6 +2409,44 @@ def _rowwise[
         computationally_expensive=computationally_expensive,
         dtype_size=dtype_size,
     ](body, shape, ctx)
+
+
+@register_internal("mogg.rowwise.splat_lane")
+@inline(.always)
+def _rowwise_splat_lane[
+    params: ContextParams,
+    accum: DType,
+    dtype: DType,
+    axis: Int,
+    rank: Int,
+    AxisSize: CoordLike,
+    is_cached: Bool,
+    value_dtype: DType,
+    //,
+](
+    row: Row[params, accum, dtype, axis, rank, AxisSize, is_cached],
+    value: SIMD[value_dtype, params.emit_tile_width],
+) -> SIMD[value_dtype, params.simd_width]:
+    """Spreads a per-row value over the width of the row's folds.
+
+    Parameters:
+        params: The launch's context parameters.
+        accum: The type the row's folds accumulate in.
+        dtype: The row's element type.
+        axis: The reduced axis.
+        rank: The rank of the iteration domain.
+        AxisSize: The reduced-axis length's type.
+        is_cached: Whether the row is cached.
+        value_dtype: The value's element type.
+
+    Args:
+        row: The row the value belongs to.
+        value: The per-row value, one lane per row.
+
+    Returns:
+        The value at the folds' width.
+    """
+    return row.splat_lane(value)
 
 
 comptime _MoggSliceStrideTypesTabulator[

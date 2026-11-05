@@ -629,6 +629,7 @@ def MAP_IterMapOp : MAP_Op<"iter.map", [
   NoTerminator,
   RecursiveMemoryEffects,
   MAP_RowwisePhaseOpInterface,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
 ]> {
   let summary = "A per-element phase over the current row";
   let description = [{

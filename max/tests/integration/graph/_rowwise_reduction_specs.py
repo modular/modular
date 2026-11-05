@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from test_common.reduction_graphs import PURE_REDUCTIONS, build_reduction
 
 
@@ -113,10 +113,19 @@ _INNER_CASES = (
     + [(op, DType.float16) for op in _INNER_BOTH]
 )
 
+# Fused graphs: a reduction with the elementwise ops around it, which the graph
+# compiler fuses into one rowwise kernel. `sum_plus_bias` adds a per-row input
+# to the sum, which the kernel loads once per row; on the non-inner axis the
+# GPU's tiled tier holds one output per lane.
+FUSED_OPS = ("sum_plus_bias",)
+_FUSED_CASES = [
+    (op, dtype) for op in FUSED_OPS for dtype in (DType.float32, DType.bfloat16)
+]
+
 INNER_SPECS = [
     _spec(op, dtype, -1, device)
     for device in _BOTH_DEVICES
-    for op, dtype in _INNER_CASES
+    for op, dtype in _INNER_CASES + _FUSED_CASES
 ]
 
 # Non-inner (reduce over axis 0): the pure arbitrary-axis reductions. Precision-
@@ -137,7 +146,7 @@ _NONINNER_CASES = [
 NONINNER_SPECS = [
     _spec(op, dtype, 0, device)
     for device in _BOTH_DEVICES
-    for op, dtype in _NONINNER_CASES
+    for op, dtype in _NONINNER_CASES + _FUSED_CASES
 ]
 
 # 8-byte elements, both axes -- CPU only (MAX's reduce dtype set has no 64-bit
@@ -233,15 +242,37 @@ def build_graph(spec: RowwiseSpec) -> Graph:
     """
     x_t = TensorType(spec.dtype, ["r", "c"], device=spec.device)
     w_t = TensorType(spec.dtype, ["c"], device=spec.device)
+    # A per-row input: one value per row of the reduction.
+    row_t = TensorType(
+        spec.dtype,
+        ["r", 1] if spec.axis == -1 else [1, "c"],
+        device=spec.device,
+    )
     if spec.op == "layer_norm":
         input_types = [x_t, w_t, w_t]  # x, gamma, beta
     elif spec.op == "rms_norm":
         input_types = [x_t, w_t]
+    elif spec.op == "sum_plus_bias":
+        input_types = [x_t, row_t]
     else:
         input_types = [x_t]
 
     with Graph(spec.name, input_types=input_types) as graph:
         x = graph.inputs[0].tensor
         weights = [inp.tensor for inp in graph.inputs[1:]]
-        graph.output(build_reduction(spec.op, x, spec.axis, weights=weights))
+        if spec.op in FUSED_OPS:
+            graph.output(_build_fused(spec.op, x, spec.axis, weights))
+        else:
+            graph.output(
+                build_reduction(spec.op, x, spec.axis, weights=weights)
+            )
     return graph
+
+
+def _build_fused(
+    op: str, x: TensorValue, axis: int, inputs: list[TensorValue]
+) -> TensorValue:
+    if op == "sum_plus_bias":
+        (bias,) = inputs
+        return ops.sum(x, axis=axis) + bias
+    raise ValueError(f"unknown fused graph {op!r}")

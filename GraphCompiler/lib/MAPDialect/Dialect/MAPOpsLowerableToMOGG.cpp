@@ -1134,6 +1134,22 @@ LogicalResult IterReduceOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
+// map.iter.map -> mogg.rowwise.map.
+LogicalResult IterMapOp::lowerToMOGG(MAPToMOGGState &state) {
+  Location loc = getLoc();
+  auto map = MOGG::RowwiseMapOp::create(state.builder, loc);
+  Block *mapBlock = state.builder.createBlock(&map.getBody());
+  state.mapping.map(getIndexArg(),
+                    mapBlock->addArgument(getIndexArg().getType(), loc));
+
+  state.builder.setInsertionPointToStart(mapBlock);
+  if (failed(state.lowerRegionBody(getBody().front())))
+    return failure();
+
+  state.builder.setInsertionPointAfter(map);
+  return success();
+}
+
 // map.iter.opaque -> mogg.kernel.
 LogicalResult IterOpaqueOp::lowerToMOGG(MAPToMOGGState &state) {
   MLIRContext *ctx = getContext();

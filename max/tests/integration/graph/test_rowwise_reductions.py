@@ -16,7 +16,9 @@ Covers every non-composite reduction routed through MAX's own Mojo Row API:
 the pure reductions (``reduce_sum/max/min/mean/product``, ``argmax``,
 ``argmin``, ``reduce_min_and_max``) and the last-axis norm-type ops
 (``softmax``, ``logsoftmax``, ``layer_norm``, ``rms_norm``,
-``row_mean_of_squares``). Each op is checked against a float32 torch reference
+``row_mean_of_squares``), plus graphs that fuse elementwise ops around a
+reduction into one generated kernel (``FUSED_OPS``). Each op is checked against
+a float32 torch reference
 across a few small column counts (even + odd), on the inner axis and -- for the
 pure arbitrary-axis reductions -- on a non-inner axis, in bfloat16, float16 and
 float32 where precision makes it meaningful, plus a CPU-only 8-byte-element
@@ -47,6 +49,7 @@ import numpy as np
 import pytest
 import torch
 from _rowwise_reduction_specs import (
+    FUSED_OPS,
     GPU_SPLITK_SPECS,
     GPU_SUBWORD_SPECS,
     INNER_SPECS,
@@ -145,7 +148,7 @@ def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
         # max/min and the selected argmax/argmin value are representable
         # exactly, so both dtypes match to a tight absolute tolerance.
         return 1e-3, 0.0, 0.0
-    if op == "reduce_sum":
+    if op in ("reduce_sum", "sum_plus_bias"):
         return (0.15, 5e-2, 2e-2) if half else (1e-2, 1e-3, 0.0)
     if op in ("reduce_mean", "row_mean_of_squares"):
         return (2e-2, 3e-2, 2e-2) if half else (1e-3, 1e-3, 0.0)
@@ -231,6 +234,9 @@ def _reference_and_check(
     got = _read_f32(outs[0])
     if op == "reduce_sum":
         ref = xf.sum(dim=axis).numpy()
+    elif op == "sum_plus_bias":
+        bias = weights[0].to(torch.float32)
+        ref = (xf.sum(dim=axis, keepdim=True) + bias).numpy()
     elif op == "reduce_max":
         ref = xf.amax(dim=axis).numpy()
     elif op == "reduce_min":
@@ -270,9 +276,22 @@ def test_rowwise_inner(session: InferenceSession, spec: RowwiseSpec) -> None:
             ]
         elif spec.op == "rms_norm":
             weights = [_make_weight(1, cols, spec.dtype)]
+        elif spec.op in FUSED_OPS:
+            weights = _fused_inputs(spec.op, _INNER_ROWS, cols, -1, spec.dtype)
         _reference_and_check(
             spec.op, spec.dtype, model, x, -1, weights, f"cols={cols}"
         )
+
+
+def _fused_inputs(
+    op: str, rows: int, cols: int, axis: int, dtype: DType
+) -> list[torch.Tensor]:
+    """The inputs a fused graph takes besides the reduced one."""
+    if op == "sum_plus_bias":
+        shape = (rows, 1) if axis == -1 else (1, cols)
+        torch.manual_seed(1)
+        return [torch.randn(shape).to(_torch_dtype(dtype))]
+    raise ValueError(f"no inputs for {op!r}")
 
 
 @pytest.mark.parametrize("spec", NONINNER_SPECS, ids=lambda s: s.name)
@@ -280,8 +299,13 @@ def test_rowwise_noninner(session: InferenceSession, spec: RowwiseSpec) -> None:
     model = session.load(build_graph(spec))
     for rows, cols in _NONINNER_SHAPES:
         x = _make_input(spec.op, rows, cols, spec.dtype)
+        inputs = (
+            _fused_inputs(spec.op, rows, cols, 0, spec.dtype)
+            if spec.op in FUSED_OPS
+            else []
+        )
         _reference_and_check(
-            spec.op, spec.dtype, model, x, 0, [], f"shape={rows}x{cols}"
+            spec.op, spec.dtype, model, x, 0, inputs, f"shape={rows}x{cols}"
         )
 
 
