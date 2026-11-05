@@ -434,21 +434,24 @@ modular_py_test(
 # pipelines/speculative block_driver.py and spec_input_types.py),
 # SpeculativeConfig, the KV cache input types from
 # nn/kv_cache MultiKVCacheParams, and the expert-parallel graph inputs from
-# nn/comm/ep EPBatchManager. Traces only, but needs a GPU because
-# the MXFP8 scale layout follows the host's accelerator.
+# nn/comm/ep EPBatchManager. Traces only, on SM100 virtual
+# devices, because the MXFP8 scale layout follows the host's accelerator.
 modular_py_test(
     name = "test_dspark_graph_construction",
     size = "large",
     srcs = ["test_dspark_graph_construction.py"],
     data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
-    gpu_constraints = ["//:b200_gpu"],
     # Importing it registers the architectures the pairing resolves.
     ignore_extra_deps = ["//max/python/max/pipelines"],
-    tags = ["gpu"],
     # Needs engram.hash_gather and engram.hash_gather_shard, registered
     # only by the closed-source kernels.
-    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    target_compatible_with = select({
+        # No NVPTX target for the staged sm_100a virtual devices.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + REQUIRES_INTERNAL_KERNELS,
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn:core",

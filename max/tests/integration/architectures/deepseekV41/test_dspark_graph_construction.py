@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Traces the DSpark pairing's speculative graph at the real V4.1 config.
 
-Tracing only, but the test needs a GPU because the MXFP8 scale layout is
-chosen from the host's accelerator rather than graph metadata.
+Tracing only. The MXFP8 scale layout is chosen from the host's accelerator
+rather than graph metadata, so the test stages on SM100 virtual devices
+instead of holding a B200.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal, cast
@@ -25,6 +27,12 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from max.driver import (
+    accelerator_architecture_name,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph import Module as GraphModule
@@ -64,6 +72,18 @@ from transformers import AutoConfig
 
 TESTDATA = Path(__file__).parent / "testdata"
 NUM_SPECULATIVE_TOKENS = 5
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _virtual_devices() -> Iterator[None]:
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_100a")
+    set_virtual_device_count(4)
+    assert accelerator_architecture_name() == "sm_100a"
+    try:
+        yield
+    finally:
+        set_virtual_device_count(0)
 
 
 def _speculative(
