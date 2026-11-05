@@ -84,6 +84,12 @@ public:
   static ErrorOr<PlatformPredicate>
   fromGenerator(KGEN::GeneratorAttr generator);
 
+  /// Returns the platform that a `device_info` registration selects: each
+  /// non-empty field must equal its value.
+  // TODO(GEX-4475): delete with `registration_device_info`, once every
+  // registration states a platform.
+  static PlatformPredicate fromDeviceInfo(DeviceInfoAttr device);
+
   bool holdsFor(const DeviceFields &device) const;
   bool holdsFor(const SymbolicDevice &device) const;
 

@@ -109,6 +109,26 @@ PlatformPredicate::fromGenerator(KGEN::GeneratorAttr generator) {
   return PlatformPredicate(root.takeValue());
 }
 
+PlatformPredicate PlatformPredicate::fromDeviceInfo(DeviceInfoAttr device) {
+  Node conjunction;
+  conjunction.kind = Node::Kind::And;
+  DeviceFields fields = getDeviceFields(device);
+  for (unsigned i = 0; i < kNumDeviceFields; ++i) {
+    if (fields[i].empty())
+      continue;
+    Node equals;
+    equals.kind = Node::Kind::Equals;
+    equals.field = static_cast<DeviceField>(i);
+    equals.literal = fields[i].str();
+    conjunction.operands.push_back(std::move(equals));
+  }
+  if (conjunction.operands.empty())
+    return PlatformPredicate();
+  if (conjunction.operands.size() == 1)
+    return PlatformPredicate(std::move(conjunction.operands.front()));
+  return PlatformPredicate(std::move(conjunction));
+}
+
 ErrorOr<PlatformPredicate::Node> PlatformPredicate::parse(TypedAttr expr) {
   expr = KGEN::SugarAttr::strip(expr);
 

@@ -566,6 +566,26 @@ def TestKernelRegistrations
   }];
 }
 
+def ValidateKernelRegistry
+    : Pass<"mogg-validate-kernel-registry", "ModuleOp"> {
+  let summary = "Checks that no kernel selection is ambiguous";
+  let description = [{
+    For each op with more than one `mogg.kernel.decl`, applies kernel
+    selection on every representative device of the registrations'
+    platforms, and reports an error for each op and set of kernels that tie.
+    A device that no registration matches is not an error.
+
+    With `builtins-only`, only built-in registrations take part, as in a
+    registry without user packages. User registrations only shadow built-ins,
+    so they can hide an ambiguity among built-ins but never cause or resolve
+    one within the built-in group.
+  }];
+  let options = [
+    Option<"builtinsOnly", "builtins-only", "bool", /*default=*/"false",
+           "Consider only built-in registrations">,
+  ];
+}
+
 def DumpKernels: Pass<"mogg-dump-kernels", "ModuleOp"> {
   let summary = "Prints the internal representation of kernels";
   let description = [{
