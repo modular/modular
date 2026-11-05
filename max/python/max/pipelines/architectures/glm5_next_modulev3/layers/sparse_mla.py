@@ -34,14 +34,12 @@ from max import functional as F
 from max.dtype import DType
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.functional_kernels import (
-    mla_decode_graph,
-)
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_mla import (
     QuantizedLatentAttention,
     tensor_parallel_latent_attention_with_rope,
 )
+from max.nn.kernels import mla_decode_graph
 from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
 

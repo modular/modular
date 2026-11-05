@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING, NoReturn
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )

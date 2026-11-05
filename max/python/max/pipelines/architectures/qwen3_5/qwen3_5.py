@@ -37,6 +37,7 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
+from max.nn._graph_ops.state_space import GatedDeltaReplayInputs
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
@@ -50,7 +51,6 @@ from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.state_space import GatedDeltaReplayInputs
 from max.nn.legacy.transformer import DecoderOutputs, forward_sequential_layers
 from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,

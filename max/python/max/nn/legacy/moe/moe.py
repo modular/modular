@@ -23,18 +23,18 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops import (
+    grouped_matmul_ragged,
+    moe_create_indices,
+    moe_finalize,
+)
+from max.nn._graph_ops.ep import fused_silu
 from max.nn._identity import IdentityMap
 from max.nn.activation import GatedActivation
 from max.nn.quant_config import QuantConfig
 from typing_extensions import Self
 
 from ..comm.ep import EPBatchManager
-from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import (
-    grouped_matmul_ragged,
-    moe_create_indices,
-    moe_finalize,
-)
 from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
 

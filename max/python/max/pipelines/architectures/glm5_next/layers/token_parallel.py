@@ -72,7 +72,7 @@ def token_shard(
     A local slice rather than a collective: every rank already holds the whole
     tensor, so there is nothing to communicate. The result's row count is a
     freshly *named* dimension rather than an expression over the input's, the
-    same way :func:`~max.nn.legacy.data_parallelism.split_batch` names its splits --
+    same way :func:`~max.nn._graph_ops.data_parallel` names its splits --
     a named dimension is legal in the subgraph signature this crosses, and an
     expression is not.
 

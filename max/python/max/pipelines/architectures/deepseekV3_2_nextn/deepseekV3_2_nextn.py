@@ -30,14 +30,14 @@ from max.graph import (
     Value,
     ops,
 )
+from max.nn._graph_ops import mtp_eh_norm
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.embedding import VocabParallelEmbedding
 from max.nn.legacy.graph_groups import SparseIndices
-from max.nn.legacy.kernels import mtp_eh_norm
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm

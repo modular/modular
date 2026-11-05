@@ -21,7 +21,7 @@ from max.driver import accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     moe_create_indices_packed,
     moe_router_group_limited,
     moe_single_group_router_packed,

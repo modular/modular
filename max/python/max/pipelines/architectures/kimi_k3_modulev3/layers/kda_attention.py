@@ -53,12 +53,9 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import BufferValue, TensorType, TensorValue, ops
 from max.nn import Linear, Module
+from max.nn._graph_ops.state_space import gated_delta_conv1d_verify_fwd
+from max.nn._graph_ops.state_space.kimi_delta import STATE_LAYOUT, KdaGateMode
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.state_space import gated_delta_conv1d_verify_fwd
-from max.nn.legacy.state_space.kimi_delta import (
-    STATE_LAYOUT,
-    KdaGateMode,
-)
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 from max.tensor.sharding.action import PerShard

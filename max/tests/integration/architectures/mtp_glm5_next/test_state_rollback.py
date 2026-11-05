@@ -33,14 +33,14 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.legacy.kernels import mla_kpool_seed_tail
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops import mla_kpool_seed_tail
+from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     kda_decode,
-    kda_verify_ring,
     verify_width_operand,
 )
+from max.nn._graph_ops.state_space.kimi_delta import kda_verify_ring
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     KpoolTailReplayInputs,
 )

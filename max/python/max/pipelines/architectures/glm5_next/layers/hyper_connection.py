@@ -14,7 +14,7 @@
 """Manifold-constrained hyper-connections (mHC) for GLM-5.3-Flash.
 
 Per-architecture, as DeepSeek-V4's ``layers/hyper_connection.py`` is. Both
-call the same :func:`~max.nn.legacy.kernels.hyper_connection_gates` kernel.
+call the same :func:`~max.nn._graph_ops.hyper_connection_gates` kernel.
 
 TODO(brodriguez): fold this into :class:`~max.nn.legacy.HyperConnection`, which now
 carries the same ragged layout. That swap renames the three weights and moves
@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     hyper_connection_gates,
     mhc_post,
     mhc_post_preferred,
@@ -293,7 +293,7 @@ class HyperConnection(Module, Shardable):
         """Places a sublayer output back into the residual streams.
 
         ``streams' = post * y + comb^T @ streams``. On AMD GPUs, for shapes
-        it supports, the :func:`~max.nn.legacy.kernels.mhc_post` kernel evaluates it
+        it supports, the :func:`~max.nn._graph_ops.mhc_post` kernel evaluates it
         in float32 and rounds once to the streams' dtype; elsewhere it is an
         outer product in the stream axis plus a small batched matmul, both in
         the streams' dtype.

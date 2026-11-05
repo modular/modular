@@ -27,9 +27,9 @@ from max import driver
 from max.driver import Accelerator, LaunchTraceEntry
 from max.driver.driver import accelerator_architecture_name
 from max.dtype import DType
+from max.nn import _graph_ops as kernels
 from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.common_layers.quant_tensor import FP8BlockTensor
-from max.nn.legacy import kernels
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,

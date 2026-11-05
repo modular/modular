@@ -47,18 +47,18 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     kda_chunk,
     kda_chunk_supports_head_dims,
     kda_decode,
+    verify_width_operand,
+)
+from max.nn._graph_ops.state_space.kimi_delta import (
+    KDA_GATE_LOWER_BOUND,
+    KdaStateLayout,
     kda_ring_record_elements,
     kda_state_fold,
     kda_verify_ring,
-    verify_width_operand,
-)
-from max.nn.legacy.state_space.kimi_delta import (
-    KDA_GATE_LOWER_BOUND,
-    KdaStateLayout,
 )
 
 # The chunk pipeline reassociates the fp32 arithmetic, so it is graded on

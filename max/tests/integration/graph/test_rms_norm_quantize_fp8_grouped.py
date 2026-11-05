@@ -28,7 +28,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     quantize_dynamic_scaled_float8,
     rms_norm_quantize_dynamic_scaled_float8,
 )

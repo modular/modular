@@ -28,17 +28,33 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
+from max.nn._graph_ops import _is_amd_gpu
+from max.nn._graph_ops import (
+    grouped_matmul_blocked_swiglu as _grouped_matmul_blocked_swiglu,
+)
+from max.nn._graph_ops.ep import uses_mx_ep_token_format
 from max.nn.activation import GatedActivation
-from max.nn.common_layers.functional_kernels import (
+from max.nn.ep_config import EPConfig
+from max.nn.kernels import (
+    block_scales_interleave,
+    dynamic_block_scaled_matmul,
+    dynamic_block_scaled_matmul_amd,
+    dynamic_scaled_matmul,
     fused_silu,
     fused_silu_quantized,
+    grouped_dynamic_scaled_fp8_matmul,
+    grouped_matmul_block_scaled,
     grouped_matmul_ragged,
+    grouped_quantize_dynamic_block_scaled,
+    quantize_dynamic_block_scaled,
+    quantize_dynamic_block_scaled_mxfp4,
+    quantize_dynamic_scaled_float8,
+    silu_quantize_fp8,
 )
-from max.nn.ep_config import EPConfig
-from max.nn.legacy.comm.ep.ep_kernels import uses_mx_ep_token_format
-from max.nn.legacy.kernels import _is_amd_gpu
-from max.nn.legacy.kernels import (
-    grouped_matmul_blocked_swiglu as _grouped_matmul_blocked_swiglu,
+from max.nn.kernels.quant import (
+    grouped_ffn_blockwise_fp8_amd,
+    grouped_matmul_blocked_swiglu,
+    stack_blockwise_mega_ffn_b,
 )
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -52,22 +68,6 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 from max.tensor.sharding.placements import Sharded
 
-from .quant_kernels import (
-    block_scales_interleave,
-    dynamic_block_scaled_matmul,
-    dynamic_block_scaled_matmul_amd,
-    dynamic_scaled_matmul,
-    grouped_dynamic_scaled_fp8_matmul,
-    grouped_ffn_blockwise_fp8_amd,
-    grouped_matmul_block_scaled,
-    grouped_matmul_blocked_swiglu,
-    grouped_quantize_dynamic_block_scaled,
-    quantize_dynamic_block_scaled,
-    quantize_dynamic_block_scaled_mxfp4,
-    quantize_dynamic_scaled_float8,
-    silu_quantize_fp8,
-    stack_blockwise_mega_ffn_b,
-)
 from .quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,

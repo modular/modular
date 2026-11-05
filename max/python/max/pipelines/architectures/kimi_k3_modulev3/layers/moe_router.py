@@ -43,8 +43,8 @@ from max import functional as F
 from max.driver import accelerator_architecture_name, accelerator_count
 from max.dtype import DType
 from max.graph import StaticDim
-from max.nn.common_layers.functional_kernels import moe_router_group_limited
-from max.nn.legacy.kernels import _router_gate_mixed_gemv
+from max.nn._graph_ops import _router_gate_mixed_gemv
+from max.nn.kernels import moe_router_group_limited
 from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
     DeepseekV3TopKRouter,
 )

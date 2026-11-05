@@ -28,9 +28,6 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, KernelLibrary
 from max.nn.common_layers import quant_moe, quant_ops
-from max.nn.common_layers.functional_kernels import (
-    moe_create_indices,
-)
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.common_layers.quant_moe import (
@@ -45,6 +42,7 @@ from max.nn.common_layers.quant_tensor import (
     QuantAwareTensor,
 )
 from max.nn.ep_config import NUM_GROUPS, EPConfig
+from max.nn.kernels import moe_create_indices
 from max.nn.legacy.comm.ep.ep_manager import (
     EPBatchManager,
     EPCommBuffers,

@@ -18,9 +18,9 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.nn._graph_ops import flash_attention
 from max.nn.legacy.conv import Conv1D
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kernels import flash_attention
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import LayerNorm

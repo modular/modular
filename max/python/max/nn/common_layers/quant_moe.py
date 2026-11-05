@@ -31,14 +31,12 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import DimLike, Graph, TensorValue
 from max.nn import Module
-from max.nn.common_layers.functional_kernels import (
-    moe_create_indices,
-    moe_finalize,
-    shard_and_stack,
-)
+from max.nn._graph_ops.ep import _SHARED_EXPERT_STREAM_ID
+from max.nn.common_layers._sharding import shard_and_stack
 from max.nn.common_layers.moe import MoEGate
+from max.nn.kernels import moe_create_indices, moe_finalize
+from max.nn.kernels.quant import moe_fp8_host_usage_stats
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.moe.expert_parallel import _SHARED_EXPERT_STREAM_ID
 from max.nn.quant_config import QuantConfig, QuantFormat
 from max.nn.sequential import ModuleList
 from max.tensor import (
@@ -57,7 +55,6 @@ from max.tensor.sharding import (
 from typing_extensions import Self
 
 from . import quant_ops
-from .quant_kernels import moe_fp8_host_usage_stats
 from .quant_linear import QuantizedMLP, tensor_parallel_mlp
 from .quant_ops import (
     EPDispatchPayload,

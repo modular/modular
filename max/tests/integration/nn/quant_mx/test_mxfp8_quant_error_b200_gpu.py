@@ -35,8 +35,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.quant_kernels import mxfp8_dequant
 from max.nn.common_layers.quant_tensor import MXFP8Quantizer
+from max.nn.kernels import mxfp8_dequant
 from max.nn.module import Module, module_dataclass
 from max.tensor import Tensor
 from max.tensor.tensor import TensorType

@@ -60,7 +60,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Module
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,
 )

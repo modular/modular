@@ -93,7 +93,7 @@ def causal_conv1d_varlen_fwd(
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import BufferType, DeviceRef, Graph, TensorType
-        from max.nn.legacy.state_space import causal_conv1d_varlen_fwd
+        from max.nn._graph_ops.state_space import causal_conv1d_varlen_fwd
 
         device = Accelerator() if accelerator_count() > 0 else CPU()
         device_ref = DeviceRef.from_device(device)

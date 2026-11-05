@@ -24,18 +24,18 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
+from max.nn._graph_ops import (
+    fused_qk_ragged_rope,
+    rope_ragged,
+    rope_ragged_with_position_ids,
+    rope_split_store_ragged,
+)
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.legacy import (
     DynamicRotaryEmbedding,
     Llama3RotaryEmbedding,
     LongRoPERotaryEmbedding,
     RotaryEmbedding,
-)
-from max.nn.legacy.kernels import (
-    fused_qk_ragged_rope,
-    rope_ragged,
-    rope_ragged_with_position_ids,
-    rope_split_store_ragged,
 )
 from max.nn.rope_scaling import Llama3RopeScalingParams, LongRoPEScalingParams
 from test_common.modular_graph_test import (

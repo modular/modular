@@ -32,7 +32,7 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import Segment
-from max.nn.legacy.quant_ops import quantized_matmul
+from max.nn._graph_ops.quant import quantized_matmul
 from max.nn.quant_config import QuantConfig, ScaleGranularity, fp4_packed_k
 from max.support.math import ceildiv
 

@@ -108,7 +108,7 @@ def test_warns_once_per_process() -> None:
         _legacy_warnings("""
             import max.nn.legacy
             from max.nn.legacy import Linear, Module
-            from max.nn.legacy.kernels import rope_ragged
+            from max.nn.legacy.norm import RMSNorm
             max.nn.legacy.Sequential
         """)
     )

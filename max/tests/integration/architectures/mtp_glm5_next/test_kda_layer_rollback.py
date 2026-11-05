@@ -34,7 +34,7 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.state_space import verify_width_operand
+from max.nn._graph_ops.state_space import verify_width_operand
 from max.pipelines.architectures.glm5_next.layers.kda import (
     KdaReplayInputs,
     KdaRing,

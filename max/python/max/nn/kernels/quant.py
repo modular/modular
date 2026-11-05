@@ -13,10 +13,10 @@
 
 """Quantized kernels as ``Tensor`` ops, with their sharding rules.
 
-Each kernel from :mod:`max.nn.legacy.kernels` is wrapped with
+Each kernel from :mod:`max.nn._graph_ops` is wrapped with
 :func:`~max.functional.functional` and the rule that says how it
-runs on sharded inputs. :mod:`.quant_ops` dispatches onto these, and the
-on-the-fly quantizers in :mod:`.quant_tensor` call them directly; this module
+runs on sharded inputs. :mod:`max.nn.common_layers.quant_ops` dispatches onto these, and the
+on-the-fly quantizers in :mod:`max.nn.common_layers.quant_tensor` call them directly; this module
 imports neither, so both can depend on it.
 """
 
@@ -28,58 +28,50 @@ from typing import Any
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferType, TensorValue, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     BLOCKWISE_FP8_LANE_BYTES,
     amd_mega_ffn_workspace_words,
     preshuffle_block_scaled_b,
     stack_blockwise_fp8_b,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave as _block_scales_interleave,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     dynamic_block_scaled_matmul as _dynamic_block_scaled_matmul,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     dynamic_block_scaled_matmul_amd as _dynamic_block_scaled_matmul_amd,
 )
-from max.nn.legacy.kernels import (
-    dynamic_scaled_matmul as _dynamic_scaled_matmul,
-)
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import dynamic_scaled_matmul as _dynamic_scaled_matmul
+from max.nn._graph_ops import (
     grouped_dynamic_scaled_fp8_matmul as _grouped_dynamic_scaled_fp8_matmul,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     grouped_ffn_blockwise_fp8_amd as _grouped_ffn_blockwise_fp8_amd,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     grouped_matmul_block_scaled as _grouped_matmul_block_scaled,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     grouped_matmul_blocked_swiglu as _grouped_matmul_blocked_swiglu,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     grouped_quantize_dynamic_block_scaled as _grouped_quantize_dynamic_block_scaled,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     moe_fp8_host_usage_stats as _moe_fp8_host_usage_stats,
 )
-from max.nn.legacy.kernels import (
-    mxfp4_dequant as _mxfp4_dequant,
-)
-from max.nn.legacy.kernels import (
-    mxfp8_dequant as _mxfp8_dequant,
-)
-from max.nn.legacy.kernels import (
-    nvfp4_dequant as _nvfp4_dequant,
-)
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import mxfp4_dequant as _mxfp4_dequant
+from max.nn._graph_ops import mxfp8_dequant as _mxfp8_dequant
+from max.nn._graph_ops import nvfp4_dequant as _nvfp4_dequant
+from max.nn._graph_ops import (
     quantize_dynamic_block_scaled as _quantize_dynamic_block_scaled,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     quantize_dynamic_block_scaled_mxfp4 as _quantize_dynamic_block_scaled_mxfp4,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
 )
 from max.nn.quant_config import InputScaleSpec, WeightScaleSpec
@@ -231,44 +223,6 @@ def _nvfp4_interleave_rule(
     return _follow_input_rows(scales)
 
 
-def _nvfp4_dequant_rule(
-    packed_weights: TensorLayout,
-    scales: TensorLayout,
-    tensor_sf: TensorLayout | float = 1.0,
-    out_type: DType = DType.bfloat16,
-) -> list[AxisAssignment]:
-    """Sharding rule for ``nvfp4_dequant``: rows in, rows out.
-
-    Packed weights and (rank-2) scales are both row-major in N, so sharding
-    rows shards the output rows. ``tensor_sf`` is a replicated scalar.
-    """
-    rows = [
-        AxisAssignment((R, R), (R,)),
-        AxisAssignment((Sharded(0), Sharded(0)), (Sharded(0),)),
-    ]
-    if isinstance(tensor_sf, TensorLayout):
-        rows = [
-            AxisAssignment((*row.needed_inputs, R), row.outputs) for row in rows
-        ]
-    return rows
-
-
-def _mx_dequant_rule(
-    weights: TensorLayout,
-    scales: TensorLayout,
-    out_type: DType = DType.bfloat16,
-) -> list[AxisAssignment]:
-    """Sharding rule for ``mxfp4_dequant`` / ``mxfp8_dequant``.
-
-    Pure block scaling, so there is no tensor-wide scale operand: weights and
-    rank-2 scales are both row-major in N and shard together.
-    """
-    return [
-        AxisAssignment((R, R), (R,)),
-        AxisAssignment((Sharded(0), Sharded(0)), (Sharded(0),)),
-    ]
-
-
 def _nvfp4_matmul_rule(
     a: TensorLayout,
     b: TensorLayout,
@@ -391,9 +345,6 @@ block_scales_interleave = F.functional(
 dynamic_block_scaled_matmul = F.functional(
     _dynamic_block_scaled_matmul, rule=_nvfp4_matmul_rule
 )
-nvfp4_dequant = F.functional(_nvfp4_dequant, rule=_nvfp4_dequant_rule)
-mxfp4_dequant = F.functional(_mxfp4_dequant, rule=_mx_dequant_rule)
-mxfp8_dequant = F.functional(_mxfp8_dequant, rule=_mx_dequant_rule)
 dynamic_block_scaled_matmul_amd = F.functional(
     _dynamic_block_scaled_matmul_amd, rule=_mx_matmul_amd_rule
 )
@@ -403,8 +354,6 @@ grouped_quantize_dynamic_block_scaled = F.functional(
 grouped_matmul_block_scaled = F.functional(
     _grouped_matmul_block_scaled, rule=_nvfp4_grouped_matmul_rule
 )
-# Per device only: the expert-parallel chain runs it on each rank's rows.
-grouped_matmul_blocked_swiglu = F.functional(_grouped_matmul_blocked_swiglu)
 
 
 def _silu_quantize_fp8(
@@ -439,6 +388,10 @@ def _silu_quantize_fp8(
 
 
 silu_quantize_fp8 = F.functional(_silu_quantize_fp8)
+
+
+# Per device only: the expert-parallel chain runs it on each rank's rows.
+grouped_matmul_blocked_swiglu = F.functional(_grouped_matmul_blocked_swiglu)
 moe_fp8_host_usage_stats = F.functional(_moe_fp8_host_usage_stats)
 
 
@@ -507,6 +460,48 @@ preshuffle_blockwise_fp8_b = F.functional(_preshuffle_blockwise_fp8_b)
 stack_blockwise_mega_ffn_b = F.functional(stack_blockwise_fp8_b)
 
 
+def _nvfp4_dequant_rule(
+    packed_weights: TensorLayout,
+    scales: TensorLayout,
+    tensor_sf: TensorLayout | float = 1.0,
+    out_type: DType = DType.bfloat16,
+) -> list[AxisAssignment]:
+    """Sharding rule for ``nvfp4_dequant``: rows in, rows out.
+
+    Packed weights and (rank-2) scales are both row-major in N, so sharding
+    rows shards the output rows. ``tensor_sf`` is a replicated scalar.
+    """
+    rows = [
+        AxisAssignment((R, R), (R,)),
+        AxisAssignment((Sharded(0), Sharded(0)), (Sharded(0),)),
+    ]
+    if isinstance(tensor_sf, TensorLayout):
+        rows = [
+            AxisAssignment((*row.needed_inputs, R), row.outputs) for row in rows
+        ]
+    return rows
+
+
+def _mx_dequant_rule(
+    weights: TensorLayout,
+    scales: TensorLayout,
+    out_type: DType = DType.bfloat16,
+) -> list[AxisAssignment]:
+    """Sharding rule for ``mxfp4_dequant`` / ``mxfp8_dequant``.
+
+    Pure block scaling, so there is no tensor-wide scale operand: weights and
+    rank-2 scales are both row-major in N and shard together.
+    """
+    return [
+        AxisAssignment((R, R), (R,)),
+        AxisAssignment((Sharded(0), Sharded(0)), (Sharded(0),)),
+    ]
+
+
+nvfp4_dequant = F.functional(_nvfp4_dequant, rule=_nvfp4_dequant_rule)
+mxfp4_dequant = F.functional(_mxfp4_dequant, rule=_mx_dequant_rule)
+mxfp8_dequant = F.functional(_mxfp8_dequant, rule=_mx_dequant_rule)
+
 __all__ = [
     "block_scales_interleave",
     "dynamic_block_scaled_matmul",
@@ -518,6 +513,9 @@ __all__ = [
     "grouped_matmul_blocked_swiglu",
     "grouped_quantize_dynamic_block_scaled",
     "moe_fp8_host_usage_stats",
+    "mxfp4_dequant",
+    "mxfp8_dequant",
+    "nvfp4_dequant",
     "preshuffle_blockwise_fp8_b",
     "quantize_dynamic_block_scaled",
     "quantize_dynamic_block_scaled_mxfp4",

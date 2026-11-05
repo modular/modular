@@ -24,17 +24,17 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     topk_fused_sampling_with_dist,
     topk_topp_masked_probs,
 )
-from max.nn.legacy.sampling import (
+from max.nn._graph_ops.sampling import (
     AcceptanceSampler,
-    MinPSampler,
     compute_synthetic_acceptance_base_rate,
     greedy_acceptance_sampler,
     stochastic_acceptance_sampler,
 )
+from max.nn.legacy.sampling import MinPSampler
 from max.pipelines.sampling import (
     SyntheticRunner,
     build_greedy_acceptance_sampler_graph,

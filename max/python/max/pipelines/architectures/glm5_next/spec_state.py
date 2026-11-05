@@ -44,10 +44,13 @@ from contextlib import contextmanager
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
+from max.nn._graph_ops import mla_kpool_seed_tail
+from max.nn._graph_ops.state_space import verify_width_operand
+from max.nn._graph_ops.state_space.kimi_delta import (
+    STATE_LAYOUT,
+    kda_state_fold,
+)
 from max.nn.kv_cache import RecurrentLeafInputs, RecurrentStateInputsPerDevice
-from max.nn.legacy.kernels import mla_kpool_seed_tail
-from max.nn.legacy.state_space import kda_state_fold, verify_width_operand
-from max.nn.legacy.state_space.kimi_delta import STATE_LAYOUT
 from max.pipelines.speculative.gated_delta_rollback import (
     accepted_lengths,
     accepted_row_plan,

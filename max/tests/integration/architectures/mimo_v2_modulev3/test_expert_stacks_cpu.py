@@ -47,7 +47,7 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.mimo_v2_modulev3.layers.moe import MiMoV2MoE
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2

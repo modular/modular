@@ -20,12 +20,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
 from max.graph.buffer_utils import cast_tensor_to
+from max.nn._graph_ops import fused_qk_ragged_rms_norm, rms_norm_key_cache
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
 )
-from max.nn.legacy.kernels import fused_qk_ragged_rms_norm, rms_norm_key_cache
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 

@@ -21,7 +21,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.functional import random
 from max.graph import Dim, DimLike, TensorValue
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     matmul_static_scaled_float8,
     quantize_static_scaled_float8,
 )

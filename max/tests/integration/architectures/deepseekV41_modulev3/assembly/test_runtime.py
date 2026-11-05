@@ -423,7 +423,7 @@ def test_real_trunk_traces_symbolic_rows_and_batch(
     monkeypatch: pytest.MonkeyPatch, all_roles: bool
 ) -> None:
     # Shape tracing targets SM100 while running on CPU; no kernel executes.
-    monkeypatch.setattr("max.nn.legacy.kernels._is_sm10x_gpu", lambda: True)
+    monkeypatch.setattr("max.nn._graph_ops._is_sm10x_gpu", lambda: True)
     text = text_config()
     if all_roles:
         text.num_hidden_layers = 12
@@ -522,7 +522,7 @@ def test_trunk_gates_read_the_checkpoint_norm_eps(
     checkpoint revision with a different ``config.json`` epsilon must move
     the gates with the norms and the Engram gate, not leave them behind.
     """
-    monkeypatch.setattr("max.nn.legacy.kernels._is_sm10x_gpu", lambda: True)
+    monkeypatch.setattr("max.nn._graph_ops._is_sm10x_gpu", lambda: True)
     text = text_config()
     text.rms_norm_eps = 1e-6
     interface = V41Config.from_hf({"text_config": vars(text)})

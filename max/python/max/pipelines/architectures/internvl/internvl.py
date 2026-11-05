@@ -41,6 +41,7 @@ from max.graph import Module as GraphModule
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
+from max.nn._graph_ops import flash_attention_gpu
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
@@ -53,7 +54,6 @@ from max.nn.legacy.attention import (
 )
 from max.nn.legacy.comm import Allreduce
 from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kernels import flash_attention_gpu
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import LayerNorm, RMSNorm

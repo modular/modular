@@ -15,16 +15,7 @@
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    WeightScaleSpec,
-)
-
-from .kernels import (
+from max.nn._graph_ops import (
     _apple_int8_w8a8_matmul,
     _apple_weight_only_block_scaled_matmul,
     _apple_weight_only_scaled_float8_matmul,
@@ -54,6 +45,14 @@ from .kernels import (
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
     quantize_tensor_dynamic_scaled_float8,
+)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    WeightScaleSpec,
 )
 
 
@@ -309,7 +308,7 @@ def _matmul_float8_mxfp8(
             ``[N, K // 32]`` as loaded from the checkpoint.
         x_scales: The activation's E8M0 block scales when ``x`` arrives
             already MXFP8 (from a fused activation + quantize), in the layout
-            :func:`~max.nn.legacy.kernels.quantize_dynamic_block_scaled` produces.
+            :func:`~max.nn._graph_ops.quantize_dynamic_block_scaled` produces.
             Skips the quantize.
 
     Returns:

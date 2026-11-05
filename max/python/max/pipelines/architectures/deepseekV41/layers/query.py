@@ -18,7 +18,7 @@ from typing import NamedTuple
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.legacy.kernels import _is_sm10x_gpu, rms_norm_quantize_mxfp8_q_kv
+from max.nn._graph_ops import _is_sm10x_gpu, rms_norm_quantize_mxfp8_q_kv
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm

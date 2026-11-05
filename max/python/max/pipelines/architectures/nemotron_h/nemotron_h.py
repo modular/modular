@@ -49,6 +49,19 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
+from max.nn._graph_ops import (
+    flash_attention_ragged,
+    grouped_matmul_ragged,
+    moe_create_indices,
+    moe_finalize,
+    store_k_cache_ragged,
+    store_v_cache_ragged,
+)
+from max.nn._graph_ops.state_space import (
+    causal_conv1d_varlen_fwd,
+    gated_group_rmsnorm,
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace,
+)
 from max.nn.activation import GatedActivation
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import (
@@ -58,23 +71,10 @@ from max.nn.kv_cache import (
     RecurrentStateInputsPerDevice,
 )
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kernels import (
-    flash_attention_ragged,
-    grouped_matmul_ragged,
-    moe_create_indices,
-    moe_finalize,
-    store_k_cache_ragged,
-    store_v_cache_ragged,
-)
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.moe import MoE, MoEGate
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.state_space import (
-    causal_conv1d_varlen_fwd,
-    gated_group_rmsnorm,
-    mamba2_ssd_chunk_scan_varlen_fwd_inplace,
-)
 from max.nn.legacy.transformer import logits_postprocess
 from max.nn.quant_config import QuantConfig
 from max.pipelines.lib.registration_graph_api import decoder_outputs

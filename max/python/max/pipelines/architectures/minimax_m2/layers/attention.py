@@ -30,10 +30,7 @@ from collections.abc import Callable, Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.attention_mask import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     apply_qk_rms_norm,
     flash_attention_ragged,
     fused_qk_ragged_rope,
@@ -43,9 +40,12 @@ from max.nn.legacy.kernels import (
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
+from max.nn._graph_ops.quant import quantized_fused_qkv_matmul
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_ops import quantized_fused_qkv_matmul
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.nn.quant_config import QuantConfig
 

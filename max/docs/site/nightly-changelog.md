@@ -230,6 +230,13 @@ This version is still a work in progress.
   `from max.nn.legacy.kv_cache import ...` to
   `from max.nn.kv_cache import ...`.
 
+- Removed `max.nn.legacy.kernels`, `max.nn.legacy.state_space`,
+  `max.nn.legacy.data_parallelism`, `max.nn.legacy.quant_ops`,
+  `max.nn.legacy.moe.quant_strategy`, `max.nn.legacy.sampling.penalties`, and
+  `max.nn.legacy.comm.ep.ep_kernels`. The graph ops they held are now internal
+  to MAX. `max.nn.kernels` provides the kernels `max.nn` modules use, and
+  `LogitPenalties` stays importable from `max.nn.legacy.sampling`.
+
 - Removed `max_single_alloc_size()` and `run_healthcheck()` from the Mojo
   `DeviceContext`. On NVIDIA and AMD GPUs the health check still runs when a
   device context is created. Python's `Device.max_single_alloc_size` is

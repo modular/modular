@@ -40,6 +40,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.attention.attention_with_rope import (
@@ -47,7 +48,6 @@ from max.nn.legacy.attention.attention_with_rope import (
     DataParallelAttentionWithRope,
     TensorParallelAttentionWithRope,
 )
-from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.embedding import VocabParallelEmbedding
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear

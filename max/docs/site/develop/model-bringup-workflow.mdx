@@ -517,7 +517,7 @@ class Olmo3(Module[[Tensor, Tensor, Tensor], ModuleV3Outputs]):
 
 Each attention layer stores its layer index and receives a `PagedCacheValues`.
 It calls fused kernels from
-`max.nn.common_layers.functional_kernels`:
+`max.nn.kernels`:
 `rope_split_store_ragged()` applies RoPE and writes keys and values to the
 cache, and `flash_attention_ragged()` reads them back. MAX manages the paged
 memory behind the cache, using the settings in

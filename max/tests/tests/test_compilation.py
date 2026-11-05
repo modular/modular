@@ -41,10 +41,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferType, BufferValue, DeviceRef, TensorType
 from max.nn.attention_mask import MHAMaskVariant
-from max.nn.common_layers.functional_kernels import (
-    flash_attention_ragged,
-)
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import MHAKVCacheParams
 from max.tensor import Tensor
 from max.tensor.compilation import (

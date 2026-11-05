@@ -18,12 +18,8 @@ import functools
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.legacy.moe import (
-    MoEQuantized,
-    NvMxf4f8Strategy,
-    QuantStrategy,
-    SigmoidTopKRouter,
-)
+from max.nn._graph_ops.moe_quant import NvMxf4f8Strategy, QuantStrategy
+from max.nn.legacy.moe import MoEQuantized, SigmoidTopKRouter
 from max.nn.quant_config import QuantConfig
 
 

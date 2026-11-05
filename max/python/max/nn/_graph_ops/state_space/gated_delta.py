@@ -41,7 +41,7 @@ into a long-lived pool, no per-step pool allocation.
 
     # Illustrative fragment: the pools and projected tensors come from a
     # live gated-deltanet layer, so it isn't runnable standalone.
-    from max.nn.legacy.state_space import (
+    from max.nn._graph_ops.state_space import (
         gated_delta_conv1d_fwd,
         gated_delta_recurrence_fwd,
     )
@@ -194,7 +194,7 @@ def gated_delta_conv1d_fwd(
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import BufferType, DeviceRef, Graph, TensorType
-        from max.nn.legacy.state_space import gated_delta_conv1d_fwd
+        from max.nn._graph_ops.state_space import gated_delta_conv1d_fwd
 
         total_seq_len, conv_dim, kernel_size, max_slots = 5, 8, 4, 3
         gpu = DeviceRef.GPU()

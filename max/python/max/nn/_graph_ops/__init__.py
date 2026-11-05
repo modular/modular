@@ -65,7 +65,11 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
-from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    WeightScaleSpec,
+)
 
 # Elements sharing one MX block scale, matching `MXFP8_SF_VECTOR_SIZE` /
 # `MXFP4_SF_VECTOR_SIZE` in `linalg` and the `sf_vector_size=32` the MX
@@ -358,7 +362,7 @@ def fused_chunked_qkv_rope_store_ragged(
     Query rows at or past ``input_row_offsets[-1]`` are left unwritten.
 
     A cache whose rows pack a key and a narrower value
-    (:attr:`~max.nn.kv_cache.KVCacheParams.v_head_dim`) is not padded: its
+    (:attr:`~max.nn.legacy.kv_cache.KVCacheParams.v_head_dim`) is not padded: its
     rows must be ``qk_head_dim + v_head_dim`` wide, keys go to the first
     ``qk_head_dim`` columns, values after them, and the queries are
     ``qk_head_dim`` wide.
@@ -2788,7 +2792,7 @@ def kv_cache_store_paged_ragged(
         key_or_value: Whether to store into the key or the value cache.
         v_head_dim: The value width of a cache whose rows pack a key and a
             value of different widths
-            (:attr:`~max.nn.kv_cache.KVCacheParams.v_head_dim`). Required
+            (:attr:`~max.nn.legacy.kv_cache.KVCacheParams.v_head_dim`). Required
             for exactly those caches; ``x_cache`` is then as wide as the key
             or the value it stores.
     """
@@ -4683,8 +4687,8 @@ def flash_attention_gpu(
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.attention import MHAMaskVariant
-        from max.nn.legacy.kernels import flash_attention_gpu
+        from max.nn.attention_mask import MHAMaskVariant
+        from max.nn._graph_ops import flash_attention_gpu
 
         batch, seq_len, num_heads, head_dim = 2, 8, 4, 128
         shape = [batch, seq_len, num_heads, head_dim]
@@ -5265,8 +5269,8 @@ def flash_attention_ragged_gpu(
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.attention import MHAMaskVariant
-        from max.nn.legacy.kernels import flash_attention_ragged_gpu
+        from max.nn.attention_mask import MHAMaskVariant
+        from max.nn._graph_ops import flash_attention_ragged_gpu
 
         seq_lens = [3, 5]
         total_seq_len, num_heads, head_dim = sum(seq_lens), 4, 128
@@ -7203,7 +7207,7 @@ def moe_create_indices(
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.kernels import moe_create_indices
+        from max.nn._graph_ops import moe_create_indices
 
         num_experts = 8
         topk_ids = np.array([3, 0, 3, 5, 0, 3, 7, 5], dtype=np.int32)
@@ -7592,7 +7596,7 @@ def moe_router_group_limited(
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.kernels import moe_router_group_limited
+        from max.nn._graph_ops import moe_router_group_limited
 
         num_tokens, n_routed_experts = 4, 16
 
@@ -8558,7 +8562,7 @@ def grouped_matmul_ragged(
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.kernels import grouped_matmul_ragged
+        from max.nn._graph_ops import grouped_matmul_ragged
 
         num_experts, total_tokens, in_features, out_features = 4, 8, 64, 32
         gpu = DeviceRef.GPU()
@@ -13633,7 +13637,7 @@ def merge_ragged_tensors(
         from max.driver import Accelerator, CPU, accelerator_count
         from max.dtype import DType
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.kernels import merge_ragged_tensors
+        from max.nn._graph_ops import merge_ragged_tensors
 
         device = Accelerator() if accelerator_count() > 0 else CPU()
         device_ref = DeviceRef.from_device(device)
@@ -14750,7 +14754,7 @@ def argmax_with_bias(
     )[0].tensor
 
 
-def sgmv_kernel(  # noqa: ANN201
+def sgmv_kernel(
     input: TensorValue,
     lora: TensorValue,
     lora_ids: TensorValue,
@@ -14759,7 +14763,7 @@ def sgmv_kernel(  # noqa: ANN201
     max_lora_seq_len: int,
     lora_end_idx: TensorValue | None = None,
     bias: TensorValue | None = None,
-):
+) -> TensorValue:
     """Performs the SGMV kernel for LoRA.
 
     LoRA agnostic, so the call can perform LoRA A or B.

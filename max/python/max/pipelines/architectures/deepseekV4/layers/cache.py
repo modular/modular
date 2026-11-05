@@ -52,8 +52,8 @@ from typing import Any
 from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn._graph_ops import store_k_cache_ragged, store_v_cache_ragged
 from max.nn.kv_cache import PagedCacheValues
-from max.nn.legacy.kernels import store_k_cache_ragged, store_v_cache_ragged
 from max.support.math import ceildiv as ceildiv
 
 from ..model_config import DeepseekV4Config

@@ -105,13 +105,13 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
+from max.nn import _graph_ops as kernels
 from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     spec_decode_cache_slack,
 )
-from max.nn.legacy import kernels
 from max.nn.outputs import ReturnLogits
 from max.pipelines.context import (
     EOSTracker,

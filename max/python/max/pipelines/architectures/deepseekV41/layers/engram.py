@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,
 )

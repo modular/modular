@@ -50,7 +50,9 @@ from typing import Any
 
 from max.driver import Device
 from max.graph import DeviceRef
-from max.nn.legacy.state_space.kimi_delta import amd_kda_chunk_workspace_bytes
+from max.nn._graph_ops.state_space.kimi_delta import (
+    amd_kda_chunk_workspace_bytes,
+)
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import override

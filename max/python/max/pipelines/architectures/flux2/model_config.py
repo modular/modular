@@ -170,7 +170,7 @@ def _is_apple_m5_or_newer(device: Device) -> bool:
     Metal devices report ``architecture_name`` as the M-series compute
     capability with an optional toolchain suffix (``"5"`` or ``"5-metal4"``
     for M5). Mirrors the ``_is_sm10x_gpu`` / ``_is_apple_gpu`` helpers in
-    ``max.nn.legacy.kernels``; ``architecture_name`` raises on CPU devices and on
+    ``max.nn._graph_ops``; ``architecture_name`` raises on CPU devices and on
     unrecognized Metal device names, so failures resolve to ``False``.
     """
     # NOTE: the Device API exposes no structured chip-series accessor for

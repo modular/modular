@@ -19,7 +19,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import flash_attention
+from max.nn._graph_ops import flash_attention
 
 BATCH, Q_LEN, K_LEN, HEADS, HEAD_DIM = 2, 7, 11, 3, 32
 SCALE = HEAD_DIM**-0.5

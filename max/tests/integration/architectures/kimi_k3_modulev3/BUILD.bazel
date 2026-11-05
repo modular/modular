@@ -32,7 +32,7 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -48,7 +48,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -73,7 +73,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",

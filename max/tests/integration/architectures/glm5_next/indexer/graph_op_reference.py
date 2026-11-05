@@ -66,8 +66,8 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.nn._graph_ops import quantize_dynamic_scaled_float8
 from max.nn.legacy import LayerNorm, Linear, Module
-from max.nn.legacy.kernels import quantize_dynamic_scaled_float8
 from max.nn.legacy.layer import Shardable
 from max.nn.quant_config import QuantConfig
 

@@ -37,15 +37,15 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     quantize_dynamic_block_scaled,
     rope_quantize_dynamic_block_scaled,
 )
+from max.nn._graph_ops.quant import _matmul_float8_mxfp8
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm
-from max.nn.legacy.quant_ops import _matmul_float8_mxfp8
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,

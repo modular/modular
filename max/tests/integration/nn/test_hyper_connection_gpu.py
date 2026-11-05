@@ -32,8 +32,8 @@ from max.driver import accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn._graph_ops import mhc_pre_supports
 from max.nn.legacy import HyperConnection
-from max.nn.legacy.kernels import mhc_pre_supports
 from test_common.hyper_connection_reference import hyper_connection_reference
 from torch.utils.dlpack import from_dlpack
 

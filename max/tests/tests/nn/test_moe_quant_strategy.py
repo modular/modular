@@ -33,11 +33,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn._graph_ops.moe_quant import NvMxf4f8Strategy, _gated_activation_ops
 from max.nn.activation import GatedActivation
-from max.nn.legacy.moe.quant_strategy import (
-    NvMxf4f8Strategy,
-    _gated_activation_ops,
-)
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,

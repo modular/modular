@@ -37,9 +37,7 @@ from max.dtype import DType
 from max.graph import DimLike, TensorType
 from max.nn import LayerNorm, Linear, Module, ModuleList
 from max.nn.attention_mask import MHAMaskVariant
-from max.nn.common_layers.functional_kernels import (
-    flash_attention_gpu,
-)
+from max.nn.kernels import flash_attention_gpu
 from max.tensor import Tensor
 
 from ..model_config import TransformerConfig

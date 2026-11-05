@@ -377,7 +377,6 @@
                     "__AUTOGEN:max.nn.legacy.comm__"
                   ]
                 },
-                "api/python/nn.legacy.kernels",
                 {
                   "type": "category",
                   "label": "graph_groups",
@@ -409,28 +408,6 @@
                   },
                   "items": [
                     "__AUTOGEN:max.nn.legacy.sampling__"
-                  ]
-                },
-                {
-                  "type": "category",
-                  "label": "state_space",
-                  "link": {
-                    "type": "doc",
-                    "id": "api/python/nn.legacy.state_space"
-                  },
-                  "items": [
-                    {
-                      "type": "category",
-                      "label": "kimi_delta",
-                      "link": {
-                        "type": "doc",
-                        "id": "api/python/nn.legacy.state_space.kimi_delta"
-                      },
-                      "items": [
-                        "__AUTOGEN:max.nn.legacy.state_space.kimi_delta__"
-                      ]
-                    },
-                    "__AUTOGEN:max.nn.legacy.state_space__"
                   ]
                 },
                 "__AUTOGEN:max.nn.legacy__"

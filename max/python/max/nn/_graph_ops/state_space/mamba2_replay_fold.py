@@ -36,7 +36,7 @@ def mamba2_replay_fold(
     ``width - 1`` accepted conv inputs and the SSM state folds in the
     accepted rows, all in one launch. The SSM state lands exactly where
     replaying those rows through
-    :func:`~max.nn.legacy.state_space.mamba2_ssd_chunk_scan_varlen_fwd_inplace` would
+    :func:`~max.nn._graph_ops.state_space.mamba2_ssd_chunk_scan_varlen_fwd_inplace` would
     put it. Every request continues its live state. GPU only.
 
     Args:

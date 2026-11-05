@@ -1527,7 +1527,7 @@ def mhc_pre[
     """
     comptime assert is_gpu[target](), "mhc_pre is only supported on GPU"
     # NOTE: keep these in sync with `mhc_pre_supports` in
-    # max/python/max/nn/legacy/kernels.py, which routes only shapes they
+    # max/python/max/nn/_graph_ops/__init__.py, which routes only shapes they
     # accept.
     comptime assert hc_mult == _mhc_pre_hc_mult, "mhc_pre supports hc_mult == 4"
     comptime assert (

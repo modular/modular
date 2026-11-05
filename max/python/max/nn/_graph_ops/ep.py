@@ -42,6 +42,11 @@ from max.nn.quant_config import QuantConfig
 # multiple of NVFP4_MN_GROUP_SIZE.
 NVFP4_MN_GROUP_SIZE = 128
 
+# Stream selector for the shared expert. Stream 0 is the default (routed/EP)
+# stream; binding the shared expert to a side stream lets it run concurrently
+# with the routed-expert dispatch/combine.
+_SHARED_EXPERT_STREAM_ID = 1
+
 
 def _reject_dyn_global_scales(config: EPConfig, caller: str) -> None:
     """Raises if a non-fused dispatch is asked for per-token global scales.
@@ -1531,7 +1536,7 @@ def fused_silu(
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.comm.ep.ep_kernels import fused_silu
+        from max.nn._graph_ops.ep import fused_silu
 
         max_recv_tokens, hidden_size = 8, 64
 
@@ -1641,7 +1646,7 @@ def fused_silu_quantized(
     SILU operation on the received tokens. Once the SILU operation is performed,
     the output will be quantized to the NVFP4, MXFP4, MXFP6 or MXFP8 format.
     Block-scaled FP8 (group size 128) has no kernel here: apply the gated
-    activation and call :func:`~max.nn.legacy.kernels.quantize_dynamic_scaled_float8`
+    activation and call :func:`~max.nn._graph_ops.quantize_dynamic_scaled_float8`
     with ``row_offsets``, which the graph compiler fuses into one kernel.
 
     Args:

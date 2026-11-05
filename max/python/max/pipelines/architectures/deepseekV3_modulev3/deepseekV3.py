@@ -24,6 +24,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Module, as_subgraph
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
@@ -33,7 +34,6 @@ from max.nn.common_layers.quant_moe import (
 )
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.norm import RMSNorm
 from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.nn.sequential import ModuleList

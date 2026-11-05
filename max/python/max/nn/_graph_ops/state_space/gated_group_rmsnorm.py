@@ -60,7 +60,7 @@ def gated_group_rmsnorm(
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.state_space import gated_group_rmsnorm
+        from max.nn._graph_ops.state_space import gated_group_rmsnorm
 
         device = Accelerator() if accelerator_count() > 0 else CPU()
         device_ref = DeviceRef.from_device(device)

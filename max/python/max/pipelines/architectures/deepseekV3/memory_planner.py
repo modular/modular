@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 
 from max.dtype import DType
+from max.nn._graph_ops import nvfp4_mla_prefill_convert_bytes
 from max.nn.ep_config import (
     EPConfig,
     _ep_fused_moe_requested,
@@ -27,7 +28,6 @@ from max.nn.legacy.comm.ep.ep_manager import (
     _bound_fused_moe_workspace,
     _ep_sync_counter_bytes,
 )
-from max.nn.legacy.kernels import nvfp4_mla_prefill_convert_bytes
 from max.pipelines.kv_cache import (
     cache_dtype_for_encoding,
     is_fp4_kv_cache_format,

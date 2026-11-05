@@ -19,7 +19,7 @@ here. Mirrors ``kimi_k3/tests/test_memory_planner.py``'s behaviours, adjusted
 for this planner's narrower scope (no DSpark, no KDA live-state term).
 
 The gfx950 chunk-workspace tests patch the driver queries inside
-``max.nn.legacy.state_space.kimi_delta``, the module whose helper decides the
+``max.nn._graph_ops.state_space.kimi_delta``, the module whose helper decides the
 reservation, so they run from any host.
 """
 
@@ -31,8 +31,8 @@ from typing import Any, cast
 
 import pytest
 from max.driver import Device, DeviceSpec
-from max.nn.legacy.state_space import kimi_delta
-from max.nn.legacy.state_space.kimi_delta import kda_chunk_workspace_bytes
+from max.nn._graph_ops.state_space import kimi_delta
+from max.nn._graph_ops.state_space.kimi_delta import kda_chunk_workspace_bytes
 from max.pipelines.architectures.kimi_k3_modulev3.memory_planner import (
     KimiK3ModuleV3MemoryPlanner,
     _layer_counts,

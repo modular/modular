@@ -41,6 +41,7 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
@@ -48,7 +49,6 @@ from max.nn.kv_cache import (
 )
 from max.nn.legacy.comm import Allreduce, Signals
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.embedding import VocabParallelEmbedding
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP as DenseMLP

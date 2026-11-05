@@ -34,7 +34,7 @@ def split_batch(
 
         from max.dtype import DType
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.data_parallelism import split_batch
+        from max.nn._graph_ops.data_parallel import split_batch
 
         cpu = DeviceRef.CPU()
         devices = [DeviceRef.CPU(0), DeviceRef.CPU(1)]
@@ -151,7 +151,7 @@ def split_batch_replicated(
 
         from max.dtype import DType
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.data_parallelism import split_batch_replicated
+        from max.nn._graph_ops.data_parallel import split_batch_replicated
 
         cpu = DeviceRef.CPU()
         devices = [DeviceRef.CPU(0), DeviceRef.CPU(1)]

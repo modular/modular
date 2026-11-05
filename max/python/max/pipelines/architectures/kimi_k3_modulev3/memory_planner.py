@@ -37,7 +37,9 @@ from typing import Any
 
 from max.driver import accelerator_api
 from max.dtype import DType
-from max.nn.legacy.state_space.kimi_delta import amd_kda_chunk_workspace_bytes
+from max.nn._graph_ops.state_space.kimi_delta import (
+    amd_kda_chunk_workspace_bytes,
+)
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig

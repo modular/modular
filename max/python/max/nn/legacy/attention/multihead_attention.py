@@ -27,8 +27,8 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops import flash_attention_gpu
 from max.nn.attention_mask import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu
 
 from ..comm import Allreduce
 from ..layer import Module

@@ -61,7 +61,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _is_apple_gpu,
     block_scales_interleave,
     grouped_matmul_block_scaled,

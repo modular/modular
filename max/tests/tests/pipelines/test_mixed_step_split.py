@@ -34,6 +34,14 @@ from max.graph import (
     Value,
     ops,
 )
+from max.nn._graph_ops import (
+    _mixed_step_split_value,
+    flare_mla_decode_ragged,
+    flare_mla_decode_ragged_scaled,
+    flare_mla_prefill_plan,
+    flare_mla_prefill_ragged,
+    mla_prefill_graph,
+)
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
@@ -42,14 +50,6 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
 )
 from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
-from max.nn.legacy.kernels import (
-    _mixed_step_split_value,
-    flare_mla_decode_ragged,
-    flare_mla_decode_ragged_scaled,
-    flare_mla_prefill_plan,
-    flare_mla_prefill_ragged,
-    mla_prefill_graph,
-)
 from max.pipelines.speculative.block_driver import (
     Accepted,
     BlockDriver,

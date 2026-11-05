@@ -29,7 +29,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.quant_ops import quantized_grouped_matmul
+from max.nn._graph_ops.quant import quantized_grouped_matmul
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,

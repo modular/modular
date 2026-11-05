@@ -37,9 +37,9 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops import moe_eplb_remap, moe_router_single_group_eplb
 
 from ..comm.ep.ep_manager import EPBatchManager
-from ..kernels import moe_eplb_remap, moe_router_single_group_eplb
 from ..layer import Module
 from ..transformer.distributed_transformer import forward_sharded_layers
 from .moe import MoE

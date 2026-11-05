@@ -32,22 +32,22 @@ from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import BufferValue, DimLike, TensorType, TensorValue, ops
 from max.nn import Linear, Module, RMSNorm
-from max.nn.common_layers.linear import col_parallel, row_parallel
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     kda_chunk,
     kda_decode,
-    kda_verify_ring,
 )
-from max.nn.legacy.state_space.kimi_delta import (
+from max.nn._graph_ops.state_space.kimi_delta import (
     STATE_LAYOUT,
     KdaGateMode,
     kda_chunk_predicate,
     kda_chunk_servable,
     kda_gate_mode,
+    kda_verify_ring,
 )
+from max.nn.common_layers.linear import col_parallel, row_parallel
+from max.nn.common_layers.mesh_axis import TP
 from max.pipelines.architectures.glm5_next.layers.kda import KdaReplayInputs
 from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
@@ -107,7 +107,7 @@ class KdaVerify:
     """``[num_kda_layers, batch_size]`` ring rows."""
     verify_width: TensorValue
     """The speculative graph's
-    :func:`~max.nn.legacy.state_space.verify_width_operand`."""
+    :func:`~max.nn._graph_ops.state_space.verify_width_operand`."""
     captures: list[list[KdaReplayInputs]]
     """Per-device sink every KDA layer appends its replay inputs to, in
     schedule order."""

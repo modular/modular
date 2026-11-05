@@ -39,6 +39,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.graph.weights import WeightData
+from max.nn._graph_ops.sampling import AcceptanceSampler
 from max.nn.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
@@ -49,7 +50,6 @@ from max.nn.kv_cache import (
 from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.layer import Module
-from max.nn.legacy.sampling import AcceptanceSampler
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash_mimo_v2 import (

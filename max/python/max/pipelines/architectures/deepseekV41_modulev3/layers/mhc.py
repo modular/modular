@@ -36,17 +36,13 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferType, Dim, TensorType, TensorValue, ops
-from max.nn.common_layers.functional_kernels import (
-    hyper_connection_gates,
-)
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _block_scaled_quantize_out_types,
     _is_sm10x_gpu,
     mhc_post_supports,
 )
-from max.nn.legacy.kernels import (
-    mhc_post as _mhc_post_kernel,
-)
+from max.nn._graph_ops import mhc_post as _mhc_post_kernel
+from max.nn.kernels import hyper_connection_gates
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
 

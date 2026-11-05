@@ -87,8 +87,14 @@ _COMMON_DEPS = [
     requirement("torch"),
 ]
 
-# Tests whose sources reach the shared nn configs.
+# Tests whose sources reach the shared nn configs, or the graph ops the EP and
+# quantized-matmul kernels live in.
 _NN_CONFIG_DEPS = ["//max/python/max/nn:core"]
+
+_NN_GRAPH_OP_DEPS = [
+    "//max/python/max/nn:core",
+    "//max/python/max/nn/_graph_ops",
+]
 
 modular_py_test(
     name = "ep_tests",
@@ -115,6 +121,7 @@ modular_py_test(
     deps = _COMMON_DEPS + [
         requirement("numpy"),
         "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
     ],
 )
 
@@ -187,7 +194,7 @@ modular_py_test(
         "gpu",
         "requires-network",
     ],
-    deps = _COMMON_DEPS + _NN_CONFIG_DEPS,
+    deps = _COMMON_DEPS + _NN_GRAPH_OP_DEPS,
 )
 
 # The EP8, EP4 and EP2 128-local fused tests' shared helpers.

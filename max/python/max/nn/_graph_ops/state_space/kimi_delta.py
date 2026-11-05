@@ -32,8 +32,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-
-from ..kernels import _check_dtype, _check_rank, _check_same_dtype
+from max.nn._graph_ops import _check_dtype, _check_rank, _check_same_dtype
 
 __all__ = [
     "KDA_GATE_LOWER_BOUND",
@@ -551,7 +550,7 @@ def _check_shapes(
     # The kernels index the pool at 64 bits but take its strides as 32-bit
     # values, so one slot (every head of one request) must stay below 2**32
     # elements. The slot count is a runtime dim; the slab binding in
-    # max.nn.kv_cache.cache_params bounds it.
+    # max.nn.legacy.kv_cache.cache_params bounds it.
     if all(
         isinstance(d, StaticDim)
         for d in (num_value_heads, key_head_dim, value_head_dim)
@@ -877,7 +876,7 @@ def kda_verify_ring(
     At a verify width of zero this is :func:`kda_decode` on ``state_pool``,
     and no ring is written. A request longer than the ring's ``RING_LEN``
     records nothing and commits ``state_pool`` itself, the same contract as
-    :func:`~max.nn.legacy.state_space.gated_delta_recurrence_verify_ring_fwd`.
+    :func:`~max.nn._graph_ops.state_space.gated_delta_recurrence_verify_ring_fwd`.
 
     Args:
         q: ``[total_tokens, num_key_heads, key_head_dim]``.
@@ -898,7 +897,7 @@ def kda_verify_ring(
             :func:`kda_ring_record_elements`.
         ring_indices: ``[batch_size]`` int32 ring row per sequence.
         verify_width: The operand
-            :func:`~max.nn.legacy.state_space.verify_width_operand` returns.
+            :func:`~max.nn._graph_ops.state_space.verify_width_operand` returns.
         output_dtype: Dtype of the returned tensor.
         gate_mode: Forget-gate form, as for :func:`kda_decode`.
         beta_mode: Whether the kernel applies the sigmoid to ``beta_logits``.
@@ -1003,7 +1002,7 @@ def kda_state_fold(
         row_offsets: ``[batch_size + 1]`` offsets of the verify's rows, the
             ``cu_seqlens`` :func:`kda_verify_ring` ran over.
         verify_width: The operand
-            :func:`~max.nn.legacy.state_space.verify_width_operand` returns.
+            :func:`~max.nn._graph_ops.state_space.verify_width_operand` returns.
         state_layout: Pool axis order; must match how the pool was allocated.
     """
     _check_dtype(DType.float32, ring=ring)

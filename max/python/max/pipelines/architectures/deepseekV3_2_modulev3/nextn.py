@@ -18,11 +18,11 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Linear, Module
-from max.nn.common_layers.functional_kernels import mtp_eh_norm
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
+from max.nn.kernels import mtp_eh_norm
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor

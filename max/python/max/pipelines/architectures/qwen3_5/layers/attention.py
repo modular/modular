@@ -30,15 +30,15 @@ import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.graph.weight import Segment
-from max.nn.attention_mask import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     rope_split_store_ragged,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm

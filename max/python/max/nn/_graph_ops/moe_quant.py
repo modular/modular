@@ -19,11 +19,7 @@ from typing import NamedTuple, Protocol
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
-from max.nn.activation import GatedActivation
-from max.nn.quant_config import QuantConfig
-
-from ..comm.ep.ep_kernels import fused_silu_quantized
-from ..kernels import (
+from max.nn._graph_ops import (
     MXFP6_LANE_BYTES,
     block_scales_interleave,
     grouped_dynamic_block_scaled_matmul_amd,
@@ -40,6 +36,9 @@ from ..kernels import (
     quantize_dynamic_block_scaled_mxfp6,
     quantize_dynamic_scaled_float8,
 )
+from max.nn._graph_ops.ep import fused_silu_quantized
+from max.nn.activation import GatedActivation
+from max.nn.quant_config import QuantConfig
 
 
 @dataclass
@@ -513,7 +512,7 @@ class NvMxf4f8Strategy:
         Equivalent to ``grouped_matmul`` followed by ``fused_silu_quantize``,
         but folds both into a single SM100 kernel. The caller must pass a
         sigma-permuted ``weight`` and ``weight_scales`` (see
-        ``max.nn.legacy.kernels.grouped_matmul_blocked_swiglu``); the layout is
+        ``max.nn._graph_ops.grouped_matmul_blocked_swiglu``); the layout is
         produced by :meth:`MoE.gate_up_proj` and
         :meth:`MoEQuantized.gate_up_proj_scales` when
         ``quant_config.can_use_fused_swiglu`` is set, or ships natively
@@ -966,7 +965,7 @@ def interleaved_block_scales_shape(rows: int, cols: int) -> list[int]:
     """Returns the SM100 interleaved layout's shape for ``[rows, cols]`` scales.
 
     The layout is ``[rows / 128, cols / 4, 32, 4, 4]``, the shape
-    :func:`~max.nn.legacy.kernels.block_scales_interleave` produces. Scale row ``r``,
+    :func:`~max.nn._graph_ops.block_scales_interleave` produces. Scale row ``r``,
     column ``c`` is stored at
     ``[r // 128, c // 4, r % 32, (r % 128) // 32, c % 4]``, so a range of whole
     row granules or whole column granules of the interleaved tensor is the

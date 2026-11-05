@@ -29,19 +29,19 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
-from max.nn.attention_mask import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.quant_config import QuantConfig
-
-from ..clamp import clamp
-from ..comm import Allreduce
-from ..kernels import (
+from max.nn._graph_ops import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul_quantized,
     rope_split_store_ragged,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.quant_config import QuantConfig
+
+from ..clamp import clamp
+from ..comm import Allreduce
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm

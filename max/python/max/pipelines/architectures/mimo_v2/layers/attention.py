@@ -20,15 +20,15 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.attention_mask import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     flash_attention_ragged,
     fused_chunked_qkv_rope_store_ragged,
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear, linear
 from max.nn.quant_config import QuantConfig

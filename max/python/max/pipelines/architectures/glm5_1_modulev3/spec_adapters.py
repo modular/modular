@@ -28,13 +28,13 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, DimLike, TensorType, TensorValue
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
 from max.nn.legacy.comm.ep import EPCommBuffers
-from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,

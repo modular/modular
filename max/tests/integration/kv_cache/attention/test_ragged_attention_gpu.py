@@ -30,16 +30,16 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
+from max.nn._graph_ops import (
+    cross_attention_ragged,
+    flash_attention_gpu,
+    flash_attention_ragged_gpu,
+)
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,
-)
-from max.nn.legacy.kernels import (
-    cross_attention_ragged,
-    flash_attention_gpu,
-    flash_attention_ragged_gpu,
 )
 from test_common.modular_graph_test import are_all_tensor_values
 from torch.nn.functional import scaled_dot_product_attention

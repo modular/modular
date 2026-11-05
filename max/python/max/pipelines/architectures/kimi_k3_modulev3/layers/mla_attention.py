@@ -55,18 +55,18 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.nn import Linear, Module
 from max.nn.attention_mask import MHAMaskVariant
-from max.nn.common_layers.functional_kernels import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
+from max.nn.kernels import (
     flare_mla_prefill_plan,
     flash_attention_gpu,
     flash_attention_ragged,
     mla_prefill_decode_graph,
     store_k_cache_ragged,
     store_v_cache_ragged,
-)
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.common_layers.multi_latent_attention import (
-    MLAPrefillMetadata,
 )
 from max.nn.kv_cache import KVCacheParams
 from max.nn.norm import RMSNorm

@@ -48,21 +48,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.activation import GatedActivation
-from max.nn.ep_config import (
-    _EP_LOCAL_SYNC_RESERVED_WORDS,
-    NUM_GROUPS,
-    EPConfig,
-    _ep_fused_moe_requested,
-)
-from max.support.human_readable_formatter import to_human_readable_bytes
-from max.support.math import ceildiv
-from max.tensor import Tensor
-from numpy.typing import NDArray
-
-from ...graph_groups import EPPayload
-from ...layer import Module
-from .ep_kernels import (
+from max.nn._graph_ops.ep import (
     _call_mega_ffn_ep_combine_send,
     _call_mega_ffn_ep_fused,
     _call_mega_ffn_ep_fused_init,
@@ -79,6 +65,20 @@ from .ep_kernels import (
     call_ep_dispatch_wait,
     call_ep_init,
 )
+from max.nn.activation import GatedActivation
+from max.nn.ep_config import (
+    _EP_LOCAL_SYNC_RESERVED_WORDS,
+    NUM_GROUPS,
+    EPConfig,
+    _ep_fused_moe_requested,
+)
+from max.support.human_readable_formatter import to_human_readable_bytes
+from max.support.math import ceildiv
+from max.tensor import Tensor
+from numpy.typing import NDArray
+
+from ...graph_groups import EPPayload
+from ...layer import Module
 
 logger = logging.getLogger("max.pipelines")
 
@@ -773,7 +773,7 @@ class EPBatchManager:
             estimated_total_m: Estimated total non-padded tokens.
             num_active_experts: Active expert slots.
             activation: The gated activation the kernel fuses; see
-                :func:`~max.nn.legacy.comm.ep.ep_kernels.fused_silu`.
+                :func:`~max.nn._graph_ops.ep.fused_silu`.
         """
         COMBINE_GROUP = 1
 
@@ -887,7 +887,7 @@ class EPBatchManager:
             down_expert_scales: Per-local-expert L2 alpha.
             c_input_scales: Per-local-expert L1->L2 requant scale.
             activation: The gated activation the kernel fuses; see
-                :func:`~max.nn.legacy.comm.ep.ep_kernels.fused_silu`.
+                :func:`~max.nn._graph_ops.ep.fused_silu`.
 
         Returns:
             The routed-expert MoE output ``(T, hidden)`` BF16.

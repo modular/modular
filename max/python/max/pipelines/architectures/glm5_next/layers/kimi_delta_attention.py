@@ -18,7 +18,7 @@ that state already predicts for ``k`` rather than adding to it. KDA's one
 change from Gated DeltaNet is that the forget gate decays the state **per
 channel** -- ``alpha_t`` is a ``head_dim``-wide vector per head, so
 ``S_t = diag(alpha_t) S_{t-1} + k_t delta_t^T``. MAX's
-:mod:`~max.nn.legacy.state_space.gated_delta` recurrence takes one decay per head per
+:mod:`~max.nn._graph_ops.state_space.gated_delta` recurrence takes one decay per head per
 token and cannot express that, which is why this is a sibling of Qwen3.5's
 ``GatedDeltaNet`` rather than a branch inside it.
 
@@ -64,23 +64,23 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     kda_chunk,
     kda_decode,
-    kda_verify_ring,
 )
-from max.nn.legacy.state_space.kimi_delta import (
+from max.nn._graph_ops.state_space.kimi_delta import (
     STATE_LAYOUT,
     kda_chunk_predicate,
     kda_chunk_servable,
     kda_gate_mode,
+    kda_verify_ring,
 )
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from ..model_config import Glm5NextConfig
 from .kda import KdaReplayInputs, KdaRing, KdaSublayerInputs
@@ -409,7 +409,7 @@ class KimiDeltaAttention(Module, Shardable):
                 writing ``recurrent_pool``, and the caller folds the accepted
                 records in before the pool is read again.
             verify_width: The speculative graph's
-                :func:`~max.nn.legacy.state_space.verify_width_operand`. A launch at
+                :func:`~max.nn._graph_ops.state_space.verify_width_operand`. A launch at
                 width zero lands both pools on the forward, and a wider one
                 leaves them for the rollback.
 

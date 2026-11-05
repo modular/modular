@@ -45,6 +45,7 @@ abstractions directly on :class:`~max.tensor.Tensor` values,
 executing each operation immediately, PyTorch-style.
 """
 
+from max.nn._graph_ops.data_parallel import split_batch, split_batch_replicated
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheMetrics,
@@ -84,7 +85,6 @@ from .clamp import clamp
 from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv2d, Conv3D
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
-from .data_parallelism import split_batch, split_batch_replicated
 from .embedding import Embedding, VocabParallelEmbedding
 from .hyper_connection import HyperConnection
 from .identity import Identity

@@ -41,7 +41,7 @@ from max.driver import (
 from max.dtype import DType
 from max.nn import GemmaRMSNorm, HyperConnection, Module, RMSNorm
 from max.nn import hyper_connection as hyper_connection_module
-from max.nn.legacy.kernels import mhc_pre_supports
+from max.nn._graph_ops import mhc_pre_supports
 from max.tensor import default_device, default_dtype
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import (

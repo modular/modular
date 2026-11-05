@@ -10,8 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Module for data parallelism utilities."""
 
-from .split_batch import split_batch, split_batch_replicated
+"""Normalization kernels as ``Tensor`` ops."""
 
-__all__ = ["split_batch", "split_batch_replicated"]
+from max import functional as F
+from max.nn._graph_ops import mtp_eh_norm as _mtp_eh_norm
+
+mtp_eh_norm = F.functional(_mtp_eh_norm)
+
+
+__all__ = [
+    "mtp_eh_norm",
+]

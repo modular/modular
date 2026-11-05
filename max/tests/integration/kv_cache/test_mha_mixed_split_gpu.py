@@ -45,6 +45,7 @@ from max.graph import (
     TensorType,
     ops,
 )
+from max.nn._graph_ops import flash_attention_ragged
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import (
     MHAKVCacheParams,
@@ -52,7 +53,6 @@ from max.nn.kv_cache import (
     packed_page_stride,
     padded_lut_cols,
 )
-from max.nn.legacy.kernels import flash_attention_ragged
 from test_common.graph_utils import is_b100_b200
 
 NUM_Q_HEADS = 24

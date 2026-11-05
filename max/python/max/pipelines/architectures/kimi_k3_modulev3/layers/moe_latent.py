@@ -76,17 +76,17 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Linear, Module
-from max.nn.common_layers.functional_kernels import (
+from max.nn._graph_ops import (
+    grouped_dynamic_block_scaled_matmul_amd,
+    quantize_dynamic_block_scaled,
+)
+from max.nn.common_layers._sharding import shard_and_stack
+from max.nn.common_layers.mesh_axis import EP, TP
+from max.nn.ep_config import EPConfig
+from max.nn.kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
-    shard_and_stack,
-)
-from max.nn.common_layers.mesh_axis import EP, TP
-from max.nn.ep_config import EPConfig
-from max.nn.legacy.kernels import (
-    grouped_dynamic_block_scaled_matmul_amd,
-    quantize_dynamic_block_scaled,
 )
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig

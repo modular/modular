@@ -51,15 +51,15 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
+from max.nn._graph_ops.state_space import (
+    GatedDeltaReplayInputs,
+    verify_width_operand,
+)
 from max.nn.kv_cache import (
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
     RecurrentStateRegion,
     recurrent_leaf,
-)
-from max.nn.legacy.state_space import (
-    GatedDeltaReplayInputs,
-    verify_width_operand,
 )
 from max.nn.legacy.transformer.transformer import (
     captures_by_device,

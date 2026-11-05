@@ -37,7 +37,7 @@ from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.state_space import kda_chunk, kda_decode
+from max.nn._graph_ops.state_space import kda_chunk, kda_decode
 from max.pipelines.architectures.glm5_next_modulev3.layers import (
     kda as modulev3_kda,
 )

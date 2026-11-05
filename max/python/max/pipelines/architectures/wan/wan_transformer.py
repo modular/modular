@@ -19,8 +19,8 @@ from math import prod
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.nn._graph_ops import flash_attention_gpu
 from max.nn.attention_mask import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.stacked_linear import StackedLinear

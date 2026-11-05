@@ -45,6 +45,11 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops import (
+    _kv_cache_row_offsets_ragged,
+    msa_sparse_attention_ragged,
+    msa_sparse_indexer,
+)
 from max.nn.kv_cache import (
     MSAKVCacheParams,
     PagedCacheValues,
@@ -52,11 +57,6 @@ from max.nn.kv_cache import (
     padded_lut_cols,
 )
 from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
-from max.nn.legacy.kernels import (
-    _kv_cache_row_offsets_ragged,
-    msa_sparse_attention_ragged,
-    msa_sparse_indexer,
-)
 from test_common.graph_utils import is_b100_b200
 
 HEAD_DIM = 128

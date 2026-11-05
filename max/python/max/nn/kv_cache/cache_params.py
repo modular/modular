@@ -3064,7 +3064,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
                 )
                 # The pool itself is indexed at 64 bits, but the row ids the
                 # kernels take are int32 (see the KDA ops in
-                # max.nn.legacy.state_space.kimi_delta), so a slab with more rows
+                # max.nn._graph_ops.state_space.kimi_delta), so a slab with more rows
                 # than that would silently alias deep rows onto the front.
                 if num_rows > _MAX_INT32_ROW_ID:
                     raise ValueError(

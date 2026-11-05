@@ -54,17 +54,17 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops import (
+    fused_dual_qk_rms_norm_rope_nvfp4_ragged,
+    msa_sparse_attention_ragged,
+    msa_sparse_attention_ragged_mxfp8,
+    msa_sparse_indexer,
+)
 from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,
-)
-from max.nn.legacy.kernels import (
-    fused_dual_qk_rms_norm_rope_nvfp4_ragged,
-    msa_sparse_attention_ragged,
-    msa_sparse_attention_ragged_mxfp8,
-    msa_sparse_indexer,
 )
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs

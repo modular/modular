@@ -16,7 +16,7 @@ import math
 
 from max.graph import TensorValue, TensorValueLike, ops
 from max.nn import Module
-from max.nn.common_layers.functional_kernels import flash_attention
+from max.nn.kernels.attention import flash_attention
 from max.nn.linear import Linear
 from max.tensor import Tensor
 

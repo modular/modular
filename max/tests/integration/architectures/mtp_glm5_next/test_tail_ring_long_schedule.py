@@ -31,7 +31,7 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     mla_kpool_compress,
     mla_kpool_ring_close,
     mla_kpool_seed_tail,

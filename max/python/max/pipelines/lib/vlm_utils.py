@@ -21,7 +21,7 @@ import numpy as np
 import numpy.typing as npt
 from max import functional as F
 from max.graph import TensorValue, ops
-from max.nn.legacy.kernels import scatter_nd_skip_oob_indices
+from max.nn._graph_ops import scatter_nd_skip_oob_indices
 from max.pipelines.context import TextAndVisionContext
 from max.tensor.sharding.rules import ternary_rule
 

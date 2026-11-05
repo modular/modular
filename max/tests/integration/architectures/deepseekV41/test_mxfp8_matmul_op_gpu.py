@@ -50,8 +50,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.graph.weights import WeightData
+from max.nn._graph_ops.quant import _matmul_float8_mxfp8
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_ops import _matmul_float8_mxfp8
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,

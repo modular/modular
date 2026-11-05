@@ -11,120 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Functional wrappers for MAX kernel operations used in attention layers."""
-
-from collections.abc import Sequence
+"""Mixture-of-experts kernels as ``Tensor`` ops, with their sharding rules."""
 
 from max import functional as F
 from max.dtype import DType
-from max.graph import TensorValue, ops
-from max.nn.activation import GatedActivation
-from max.nn.legacy.comm.ep.ep_kernels import (
-    fused_silu as _fused_silu,
-)
-from max.nn.legacy.comm.ep.ep_kernels import (
-    fused_silu_quantized as _fused_silu_quantized,
-)
-from max.nn.legacy.kernels import (
-    _moe_sigmoid_gemv_router,
-)
-from max.nn.legacy.kernels import (
-    flare_mla_prefill_plan as _flare_mla_prefill_plan,
-)
-from max.nn.legacy.kernels import (
-    flash_attention as _flash_attention,
-)
-from max.nn.legacy.kernels import (
-    flash_attention_gpu as _flash_attention_gpu,
-)
-from max.nn.legacy.kernels import (
-    flash_attention_ragged as _flash_attention_ragged,
-)
-from max.nn.legacy.kernels import (
-    flash_attention_ragged_gpu as _flash_attention_ragged_gpu,
-)
-from max.nn.legacy.kernels import (
-    fused_chunked_qkv_rope_store_ragged as _fused_chunked_qkv_rope_store_ragged,
-)
-from max.nn.legacy.kernels import (
-    fused_qk_ragged_rope as _fused_qk_ragged_rope,
-)
-from max.nn.legacy.kernels import (
-    grouped_matmul_ragged as _grouped_matmul_ragged,
-)
-from max.nn.legacy.kernels import (
-    hyper_connection_gates as _hyper_connection_gates,
-)
-from max.nn.legacy.kernels import (
-    mhc_post as _mhc_post,
-)
-from max.nn.legacy.kernels import (
-    mhc_pre as _mhc_pre,
-)
-from max.nn.legacy.kernels import (
-    mla_decode_graph as _mla_decode_graph,
-)
-from max.nn.legacy.kernels import (
-    mla_fp8_index_top_k as _mla_fp8_index_top_k,
-)
-from max.nn.legacy.kernels import (
-    mla_fp8_index_top_k_physical as _mla_fp8_index_top_k_physical,
-)
-from max.nn.legacy.kernels import (
-    mla_prefill_decode_graph as _mla_prefill_decode_graph,
-)
-from max.nn.legacy.kernels import (
-    mla_prefill_graph as _mla_prefill_graph,
-)
-from max.nn.legacy.kernels import (
-    moe_create_indices as _moe_create_indices,
-)
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import _moe_sigmoid_gemv_router
+from max.nn._graph_ops import grouped_matmul_ragged as _grouped_matmul_ragged
+from max.nn._graph_ops import moe_create_indices as _moe_create_indices
+from max.nn._graph_ops import (
     moe_create_indices_packed as _moe_create_indices_packed,
 )
-from max.nn.legacy.kernels import (
-    moe_finalize as _moe_finalize,
-)
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import moe_finalize as _moe_finalize
+from max.nn._graph_ops import (
     moe_router_group_limited as _moe_router_group_limited,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     moe_single_group_router_packed as _moe_single_group_router_packed,
 )
-from max.nn.legacy.kernels import (
-    mtp_eh_norm as _mtp_eh_norm,
-)
-from max.nn.legacy.kernels import (
-    quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
-)
-from max.nn.legacy.kernels import (
-    rms_norm_key_cache as _rms_norm_key_cache,
-)
-from max.nn.legacy.kernels import (
-    rope_ragged as _rope_ragged,
-)
-from max.nn.legacy.kernels import (
-    rope_split_store_ragged as _rope_split_store_ragged,
-)
-from max.nn.legacy.kernels import (
-    store_k_cache_ragged as _store_k_cache_ragged,
-)
-from max.nn.legacy.kernels import (
-    store_k_scale_cache_ragged as _store_k_scale_cache_ragged,
-)
-from max.nn.legacy.kernels import (
-    store_mla_latent_ragged as _store_mla_latent_ragged,
-)
-from max.nn.legacy.kernels import (
-    store_v_cache_ragged as _store_v_cache_ragged,
-)
-from max.tensor import Tensor
-from max.tensor.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Sharded,
-    Unknown,
-)
+from max.nn._graph_ops.ep import fused_silu as _fused_silu
+from max.nn._graph_ops.ep import fused_silu_quantized as _fused_silu_quantized
+from max.nn.activation import GatedActivation
+from max.tensor.sharding import Sharded, Unknown
 from max.tensor.sharding.action import AxisAssignment
 from max.tensor.sharding.cost import P, R
 from max.tensor.sharding.types import TensorLayout
@@ -219,38 +126,6 @@ def moe_finalize_rule(
 
 moe_finalize = F.functional(_moe_finalize, rule=moe_finalize_rule)
 
-inplace_custom = F.functional(ops.inplace_custom)
-shard_and_stack = F.functional(ops.shard_and_stack)
-
-
-# ─── Operations that should be dispatched per-device on distributed inputs ────
-
-
-flash_attention = F.functional(_flash_attention)
-flash_attention_gpu = F.functional(_flash_attention_gpu)
-flash_attention_ragged = F.functional(_flash_attention_ragged)
-flash_attention_ragged_gpu = F.functional(_flash_attention_ragged_gpu)
-rope_split_store_ragged = F.functional(_rope_split_store_ragged)
-rms_norm_key_cache = F.functional(_rms_norm_key_cache)
-flare_mla_prefill_plan = F.functional(_flare_mla_prefill_plan)
-mla_prefill_graph = F.functional(_mla_prefill_graph)
-mla_decode_graph = F.functional(_mla_decode_graph)
-mla_prefill_decode_graph = F.functional(_mla_prefill_decode_graph)
-hyper_connection_gates = F.functional(_hyper_connection_gates)
-mla_fp8_index_top_k = F.functional(_mla_fp8_index_top_k)
-mla_fp8_index_top_k_physical = F.functional(_mla_fp8_index_top_k_physical)
-rope_ragged = F.functional(_rope_ragged)
-quantize_dynamic_scaled_float8 = F.functional(_quantize_dynamic_scaled_float8)
-store_k_cache_ragged = F.functional(_store_k_cache_ragged)
-store_k_scale_cache_ragged = F.functional(_store_k_scale_cache_ragged)
-store_mla_latent_ragged = F.functional(_store_mla_latent_ragged)
-store_v_cache_ragged = F.functional(_store_v_cache_ragged)
-fused_qk_ragged_rope = F.functional(_fused_qk_ragged_rope)
-fused_chunked_qkv_rope_store_ragged = F.functional(
-    _fused_chunked_qkv_rope_store_ragged
-)
-mhc_pre = F.functional(_mhc_pre)
-
 
 def fused_silu_rule(
     x: TensorLayout,
@@ -272,31 +147,19 @@ def fused_silu_rule(
 
 
 fused_silu = F.functional(_fused_silu, rule=fused_silu_rule)
+
+
 # Fused SiLU+quantize for the FP4 and MX formats. The EP grouped_silu routes
 # through this so the down-projection reads an already-quantized activation
 # instead of a separate quantize pass; the block scale is shard-invariant.
 fused_silu_quantized = F.functional(_fused_silu_quantized)
+
 
 # Routing decisions must match the placement of the (replicated) router
 # scores so every device agrees on expert assignment under TP/EP.
 moe_router_group_limited = F.functional(_moe_router_group_limited)
 moe_single_group_router_packed = F.functional(_moe_single_group_router_packed)
 moe_create_indices_packed = F.functional(_moe_create_indices_packed)
-mtp_eh_norm = F.functional(_mtp_eh_norm)
-
-
-def _mhc_post_rule(
-    streams: TensorLayout,
-    y: TensorLayout,
-    post: TensorLayout,
-    comb: TensorLayout,
-) -> list[AxisAssignment]:
-    # The mHC streams are replicated on every device, as a single residual is,
-    # so the write-back only runs on replicated inputs.
-    return [AxisAssignment((R, R, R, R), (R,))]
-
-
-mhc_post = F.functional(_mhc_post, rule=_mhc_post_rule)
 
 
 def _moe_sigmoid_gemv_router_rule(
@@ -317,42 +180,14 @@ moe_sigmoid_gemv_router = F.functional(
 )
 
 
-def stack_device_shards(
-    shards: Sequence[Tensor], axis: int, mesh: DeviceMesh
-) -> Tensor:
-    """Reassembles a per-device weight-shard bundle into one ``Sharded`` tensor."""
-    if len(shards) == 1:
-        return shards[0]
-    mapping = DeviceMapping(mesh, (Sharded(axis=axis),))
-    return Tensor.from_shard_values([TensorValue(s) for s in shards], mapping)
-
-
 __all__ = [
-    "flash_attention",
-    "flash_attention_gpu",
-    "flash_attention_ragged",
-    "flash_attention_ragged_gpu",
-    "fused_chunked_qkv_rope_store_ragged",
-    "fused_qk_ragged_rope",
     "fused_silu",
+    "fused_silu_quantized",
     "grouped_matmul_ragged",
-    "hyper_connection_gates",
-    "mhc_post",
-    "mhc_pre",
-    "mla_fp8_index_top_k",
-    "mla_fp8_index_top_k_physical",
     "moe_create_indices",
+    "moe_create_indices_packed",
     "moe_finalize",
     "moe_router_group_limited",
     "moe_sigmoid_gemv_router",
-    "mtp_eh_norm",
-    "quantize_dynamic_scaled_float8",
-    "rms_norm_key_cache",
-    "rope_ragged",
-    "rope_split_store_ragged",
-    "stack_device_shards",
-    "store_k_cache_ragged",
-    "store_k_scale_cache_ragged",
-    "store_mla_latent_ragged",
-    "store_v_cache_ragged",
+    "moe_single_group_router_packed",
 ]
