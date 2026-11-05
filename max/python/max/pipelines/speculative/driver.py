@@ -55,8 +55,8 @@ from max.graph import (
     ops,
 )
 from max.nn import Module as ModuleV3
+from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.legacy.kernels import topk_fused_sampling_with_dist
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.sampling.penalties import LogitPenalties
 from max.nn.legacy.sampling.rejection_sampler import (

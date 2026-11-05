@@ -64,9 +64,7 @@ from max.driver import CPU, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
-from max.nn.legacy import Module
-from max.nn.legacy.graph_groups import Logits
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
     MLAKVCacheParams,
@@ -75,6 +73,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
     RecurrentStateRegion,
 )
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import Logits
 from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.outputs import ReturnLogits
 from max.pipelines import lib as pipelines_lib

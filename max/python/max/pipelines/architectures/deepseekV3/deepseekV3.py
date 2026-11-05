@@ -38,6 +38,11 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
@@ -51,11 +56,6 @@ from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.embedding import VocabParallelEmbedding
 from max.nn.legacy.graph_groups import BatchContext, EPLBProfile
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    PagedCacheValues,
-)
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear
 from max.nn.legacy.moe import MoE, MoEQuantized

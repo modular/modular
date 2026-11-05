@@ -31,9 +31,9 @@ from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.quant_moe import (
     QuantizedMoE,
 )
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.norm import RMSNorm
 from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.nn.sequential import ModuleList

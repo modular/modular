@@ -23,7 +23,7 @@ from typing import Any, Protocol, runtime_checkable
 from max.driver import CPU
 from max.engine import InferenceSession
 from max.graph import SymbolicDim
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheParams,
     KVLeafRegion,

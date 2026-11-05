@@ -35,8 +35,8 @@ from max.graph import (
     Value,
     ops,
 )
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.kernels import merge_ragged_tensors
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.transformer.distributed_transformer import (
     distributed_logits_postprocess,
 )

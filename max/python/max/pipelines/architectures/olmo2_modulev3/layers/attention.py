@@ -27,7 +27,7 @@ from max.nn.common_layers.functional_kernels import (
     rope_split_store_ragged,
 )
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.linear import Linear
 from max.tensor import Tensor
 

@@ -15,6 +15,7 @@
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -54,7 +55,6 @@ from .kernels import (
     quantize_static_scaled_float8,
     quantize_tensor_dynamic_scaled_float8,
 )
-from .kv_cache import KVCacheParams, PagedCacheValues
 
 
 def _reshape_pre_interleaved_scales(

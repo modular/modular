@@ -20,6 +20,12 @@ from typing import Any
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+    packed_page_stride,
+)
 from max.nn.legacy.kernels import (
     _fused_qkv_ragged_matmul_scaled_float4 as fused_qkv_ragged_matmul_scaled_float4,
 )
@@ -28,12 +34,6 @@ from max.nn.legacy.kernels import (
     dynamic_block_scaled_matmul,
     grouped_matmul_block_scaled,
     quantize_dynamic_block_scaled,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-    PagedCacheValues,
-    packed_page_stride,
 )
 
 

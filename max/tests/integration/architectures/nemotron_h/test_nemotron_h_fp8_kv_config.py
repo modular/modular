@@ -29,7 +29,7 @@ from typing import cast
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.nemotron_h.model_config import (
     ATTN_CACHE_KEY,
     NemotronHConfig,

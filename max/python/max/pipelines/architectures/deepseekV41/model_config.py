@@ -28,10 +28,7 @@ from max.driver import Buffer, accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
-from max.nn.legacy.kv_cache import (
-    KVCacheParamInterface,
-    spec_decode_cache_slack,
-)
+from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import (
     InputScaleSpec,

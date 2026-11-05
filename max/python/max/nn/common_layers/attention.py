@@ -22,7 +22,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Linear, Module
 from max.nn.attention_mask import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.tensor import Tensor
 
 from ..norm.rms_norm import rms_norm

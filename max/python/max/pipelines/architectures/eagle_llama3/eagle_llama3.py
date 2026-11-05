@@ -15,8 +15,8 @@
 from __future__ import annotations
 
 from max.graph import TensorValue, TensorValueLike, ops
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.identity import Identity
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.transformer import DecoderOutputs, TransformerBlock

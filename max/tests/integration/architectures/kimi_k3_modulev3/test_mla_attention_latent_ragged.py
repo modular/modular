@@ -29,7 +29,7 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MIXED_STEP_SPLIT_SIZE,
     MLAKVCacheParams,
     padded_lut_cols,

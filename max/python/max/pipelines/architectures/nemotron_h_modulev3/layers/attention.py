@@ -35,8 +35,8 @@ from max.nn.common_layers.linear import (
     col_parallel,
 )
 from max.nn.common_layers.mesh_axis import TP
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.kernels import fused_qkv_ragged_matmul
-from max.nn.legacy.kv_cache import KVCacheParams
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 

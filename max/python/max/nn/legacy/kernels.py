@@ -58,15 +58,14 @@ from max.graph.ops.rms_norm import _float32_attr
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.activation import GatedActivation
 from max.nn.attention_mask import AttentionMaskVariant, MHAMaskVariant
-from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
-
-from .kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from .kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
 # Elements sharing one MX block scale, matching `MXFP8_SF_VECTOR_SIZE` /
 # `MXFP4_SF_VECTOR_SIZE` in `linalg` and the `sf_vector_size=32` the MX
@@ -359,7 +358,7 @@ def fused_chunked_qkv_rope_store_ragged(
     Query rows at or past ``input_row_offsets[-1]`` are left unwritten.
 
     A cache whose rows pack a key and a narrower value
-    (:attr:`~max.nn.legacy.kv_cache.KVCacheParams.v_head_dim`) is not padded: its
+    (:attr:`~max.nn.kv_cache.KVCacheParams.v_head_dim`) is not padded: its
     rows must be ``qk_head_dim + v_head_dim`` wide, keys go to the first
     ``qk_head_dim`` columns, values after them, and the queries are
     ``qk_head_dim`` wide.
@@ -2789,7 +2788,7 @@ def kv_cache_store_paged_ragged(
         key_or_value: Whether to store into the key or the value cache.
         v_head_dim: The value width of a cache whose rows pack a key and a
             value of different widths
-            (:attr:`~max.nn.legacy.kv_cache.KVCacheParams.v_head_dim`). Required
+            (:attr:`~max.nn.kv_cache.KVCacheParams.v_head_dim`). Required
             for exactly those caches; ``x_cache`` is then as wide as the key
             or the value it stores.
     """

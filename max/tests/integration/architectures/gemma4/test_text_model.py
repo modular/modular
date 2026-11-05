@@ -51,8 +51,8 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.legacy.comm.allreduce import Signals
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.legacy.linear import MLP
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (

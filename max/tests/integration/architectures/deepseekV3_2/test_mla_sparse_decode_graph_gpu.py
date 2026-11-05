@@ -57,6 +57,12 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheQuantizationConfig,
+    MLAKVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
 )
@@ -64,12 +70,6 @@ from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
 from max.nn.legacy.kernels import mla_decode_graph, mla_prefill_decode_graph
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheQuantizationConfig,
-    MLAKVCacheParams,
-    MultiKVCacheParams,
-)
 from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from max.nn.quant_config import (
     InputScaleSpec,

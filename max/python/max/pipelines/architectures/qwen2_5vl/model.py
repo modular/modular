@@ -30,7 +30,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.legacy.layer import Module
 from max.nn.outputs import ReturnLogits
 from max.pipelines.context import TextAndVisionContext

@@ -30,7 +30,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.gemma4.gemma4 import Gemma4TextModel

@@ -40,7 +40,7 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
     DSparkDrafter,
 )

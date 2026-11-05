@@ -63,7 +63,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MLAKVCacheParams,
     MultiKVCacheParams,

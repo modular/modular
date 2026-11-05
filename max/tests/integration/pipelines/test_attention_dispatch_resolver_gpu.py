@@ -18,13 +18,13 @@ from max._kv_cache_ops import MLASparseKVForm
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.kv_cache.cache_params import _SPARSE_MLA_KEY_SATURATION
-from max.nn.legacy.kv_cache.utils import MLAAttnKey
+from max.nn.kv_cache.cache_params import _SPARSE_MLA_KEY_SATURATION
+from max.nn.kv_cache.utils import MLAAttnKey
 
 
 @pytest.fixture(scope="module")

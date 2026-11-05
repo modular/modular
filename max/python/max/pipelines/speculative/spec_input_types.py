@@ -29,12 +29,12 @@ from max.graph import (
     TensorValue,
     Value,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
+from max.nn.legacy.comm import Signals
 from max.tensor import Tensor
 from typing_extensions import TypeVar
 

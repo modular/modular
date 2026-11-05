@@ -23,13 +23,13 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.attention.multi_latent_attention import (
-    DataParallelLatentAttentionWithRope,
-)
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MLAKVCacheParams,
+)
+from max.nn.legacy.attention.multi_latent_attention import (
+    DataParallelLatentAttentionWithRope,
 )
 from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from max.nn.rope_scaling import DeepseekYarnRopeScalingParams

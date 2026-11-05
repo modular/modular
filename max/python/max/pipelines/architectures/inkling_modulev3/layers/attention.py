@@ -29,9 +29,9 @@ from max.nn.common_layers.linear import (
     RowParallelLinear,
     col_parallel,
 )
+from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import PagedCacheValues as PagedCacheGraphValues
 from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams
-from max.nn.legacy.kv_cache import PagedCacheValues as PagedCacheGraphValues
 from max.nn.linear import Linear
 from max.tensor import Tensor
 

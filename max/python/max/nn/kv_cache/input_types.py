@@ -41,7 +41,7 @@ MIXED_STEP_SPLIT_SIZE = 7
 class SplitKVHeadDims:
     """Marks a paged cache that packs keys and values of different widths.
 
-    See :attr:`~max.nn.legacy.kv_cache.KVCacheParams.has_split_head_dims`.
+    See :attr:`~max.nn.kv_cache.KVCacheParams.has_split_head_dims`.
 
     A tree node without leaves, so it rides through flatten, unflatten and an
     exported artifact's input structure without adding a graph input.

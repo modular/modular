@@ -40,7 +40,7 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
 from max.nn import Module
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh
 

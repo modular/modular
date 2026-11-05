@@ -23,8 +23,8 @@ from max import tree
 from max.driver import DLPackArray
 from max.graph import TensorValue
 from max.graph.weights import WeightData
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.data_parallelism import split_batch
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.layer import Module
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig

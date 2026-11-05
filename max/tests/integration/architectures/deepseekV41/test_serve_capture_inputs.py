@@ -31,7 +31,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import BatchCharacteristics, MHAAttnKey
+from max.nn.kv_cache import BatchCharacteristics, MHAAttnKey
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV41.model import (
     DeepseekV41BatchProcessor,

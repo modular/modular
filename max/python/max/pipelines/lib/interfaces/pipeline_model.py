@@ -35,7 +35,7 @@ from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn._weight_utils import _SAFE_CAST_DTYPES, log_casts
 from max.nn.ep_config import EPConfig
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheInputs,
     KVCacheInputsPerDevice,

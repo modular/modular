@@ -32,7 +32,7 @@ from max import functional as F
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.outputs import ReturnHiddenStates
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models

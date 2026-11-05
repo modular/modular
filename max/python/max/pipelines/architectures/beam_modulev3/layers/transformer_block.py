@@ -24,8 +24,8 @@ from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_linear import tensor_parallel_mlp
 from max.nn.common_layers.quant_moe import ExpertParallelMoE, QuantizedMoE
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
     DeepseekV3_2MLP,
 )

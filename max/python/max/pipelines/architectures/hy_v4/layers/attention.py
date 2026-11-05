@@ -42,7 +42,7 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_linear import QuantizedLinear
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, NamedMapping

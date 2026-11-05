@@ -26,7 +26,7 @@ from unittest.mock import Mock, patch
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.qwen2_5vl.model_config import Qwen2_5VLConfig
 from max.pipelines.architectures.qwen2_5vl.tokenizer import (

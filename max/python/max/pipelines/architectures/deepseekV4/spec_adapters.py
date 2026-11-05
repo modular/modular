@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import (

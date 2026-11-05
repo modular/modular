@@ -19,8 +19,8 @@ from max import functional as F
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.kv_cache import KVCacheParams
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 

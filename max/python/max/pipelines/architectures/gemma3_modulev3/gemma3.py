@@ -25,7 +25,7 @@ from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mlp import MLP
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.nn.rope_scaling import Llama3RopeScalingParams
 from max.nn.sequential import ModuleList

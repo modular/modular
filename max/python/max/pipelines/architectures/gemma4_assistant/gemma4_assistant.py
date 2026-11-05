@@ -27,11 +27,11 @@ from max.graph import (
     ops,
 )
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.attention import num_heads_for_device
 from max.nn.legacy.comm.allreduce import Allreduce
 from max.nn.legacy.graph_groups import HiddenStates
 from max.nn.legacy.kernels import cross_attention_ragged, rope_ragged
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.rotary_embedding import (

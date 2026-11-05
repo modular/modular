@@ -45,7 +45,7 @@ from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.tensor import Tensor
 from max.tensor.compilation import (
     CompiledCallable,

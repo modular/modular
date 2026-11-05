@@ -45,15 +45,15 @@ from max.graph import (
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.nn.ep_config import EPConfig
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import ColumnParallelLinear, Linear
 from max.nn.legacy.moe import (

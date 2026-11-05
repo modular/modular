@@ -23,7 +23,7 @@ from dataclasses import replace
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParamInterface, KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface, KVCacheParams
 from max.pipelines.lib import (
     CheckpointRole,
     KVCacheConfig,

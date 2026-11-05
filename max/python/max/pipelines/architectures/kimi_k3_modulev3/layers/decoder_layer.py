@@ -46,7 +46,7 @@ from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
 from max.nn.ep_config import EPConfig
-from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh
 

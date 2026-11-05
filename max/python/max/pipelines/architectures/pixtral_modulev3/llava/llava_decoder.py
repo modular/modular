@@ -19,10 +19,7 @@ from max.dtype import DType
 from max.graph import ops
 from max.nn import Module
 from max.nn.embedding import Embedding
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.outputs import ReturnLogits

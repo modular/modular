@@ -51,7 +51,7 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
     RecurrentStateRegion,

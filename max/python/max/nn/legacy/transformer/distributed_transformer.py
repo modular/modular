@@ -27,12 +27,12 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.comm.allreduce import Allreduce
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.tree import Tree
 
 from ..embedding import VocabParallelEmbedding
-from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding

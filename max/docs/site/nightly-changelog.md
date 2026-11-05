@@ -226,6 +226,10 @@ This version is still a work in progress.
   separate `gate_proj` and `up_proj` weights a checkpoint ships and fuses their
   matmuls in the graph.
 
+- `max.nn.legacy.kv_cache` moved to `max.nn.kv_cache`. Change
+  `from max.nn.legacy.kv_cache import ...` to
+  `from max.nn.kv_cache import ...`.
+
 - Removed `max_single_alloc_size()` and `run_healthcheck()` from the Mojo
   `DeviceContext`. On NVIDIA and AMD GPUs the health check still runs when a
   device context is created. Python's `Device.max_single_alloc_size` is

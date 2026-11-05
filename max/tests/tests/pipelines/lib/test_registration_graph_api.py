@@ -38,13 +38,13 @@ from max.graph import (
 )
 from max.graph.weights import WeightsFormat
 from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.graph_groups import (
     BatchContext,
     EPPayload,
     RaggedBatch,
     TPSignals,
 )
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.layer import Module
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext

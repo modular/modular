@@ -69,7 +69,7 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.multi_latent_attention import MLAPrefillMetadata
-from max.nn.legacy.kv_cache import MLAKVCacheParams, spec_decode_cache_slack
+from max.nn.kv_cache import MLAKVCacheParams, spec_decode_cache_slack
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor

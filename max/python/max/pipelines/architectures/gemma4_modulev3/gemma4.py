@@ -27,7 +27,7 @@ from max.nn.common_layers.quant_linear import (
     tensor_parallel_mlp,
 )
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,

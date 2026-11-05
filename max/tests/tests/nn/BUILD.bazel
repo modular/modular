@@ -42,6 +42,7 @@ modular_py_test(
         "//max/python/max/_artifact",
         "//max/python/max/mlir",
         "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         requirement("torch"),
     ],
 )

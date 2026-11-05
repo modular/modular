@@ -35,13 +35,13 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.nn.activation import GatedActivation
-from max.nn.legacy.graph_groups import HiddenStates
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
+from max.nn.legacy.graph_groups import HiddenStates
 from max.nn.legacy.layer import LayerList, MissingLayer, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.moe import MoE, MoEQuantized

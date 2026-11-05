@@ -27,7 +27,7 @@ import numpy as np
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MIXED_STEP_SPLIT_SIZE,
     PACKED_PAGE_STRIDE,
     KVCacheParams,

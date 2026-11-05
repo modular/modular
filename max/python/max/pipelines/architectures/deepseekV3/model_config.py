@@ -20,14 +20,12 @@ from typing import Any, ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.ep_config import EPConfig
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
     spec_decode_cache_slack,
 )
-from max.nn.legacy.kv_cache.cache_params import (
-    FP4_KV_CACHE_QUANTIZATION_GRANULARITY,
-)
+from max.nn.kv_cache.cache_params import FP4_KV_CACHE_QUANTIZATION_GRANULARITY
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding

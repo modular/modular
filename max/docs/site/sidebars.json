@@ -391,17 +391,6 @@
                 },
                 {
                   "type": "category",
-                  "label": "kv_cache",
-                  "link": {
-                    "type": "doc",
-                    "id": "api/python/nn.legacy.kv_cache"
-                  },
-                  "items": [
-                    "__AUTOGEN:max.nn.legacy.kv_cache__"
-                  ]
-                },
-                {
-                  "type": "category",
                   "label": "moe",
                   "link": {
                     "type": "doc",
@@ -445,6 +434,17 @@
                   ]
                 },
                 "__AUTOGEN:max.nn.legacy__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "kv_cache",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.kv_cache"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.kv_cache__"
               ]
             },
             {

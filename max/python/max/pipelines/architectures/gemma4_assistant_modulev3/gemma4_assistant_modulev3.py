@@ -42,10 +42,10 @@ from max.nn.common_layers.linear import (
 )
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.kernels import (
     cross_attention_ragged as _cross_attention_ragged,
 )
-from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma3_modulev3.layers.scaled_word_embedding import (

@@ -47,8 +47,8 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.kernels import _block_scaled_quantize_out_types
-from max.nn.legacy.kv_cache import PagedCacheValues
 
 HEAD_DIM = 512
 """Channels of a query head, a latent and a dequantized record."""

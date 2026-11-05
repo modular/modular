@@ -26,8 +26,8 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.type import Shape
 from max.graph.weights import WeightData
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.legacy import AttentionWithRope, RotaryEmbedding
-from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,

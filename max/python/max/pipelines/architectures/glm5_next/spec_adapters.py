@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, DimLike, TensorValue, ops
-from max.nn.legacy.kv_cache import RecurrentStateInputsPerDevice
+from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import BlockBatch

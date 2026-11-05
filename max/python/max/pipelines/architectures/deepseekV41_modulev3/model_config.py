@@ -37,10 +37,7 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.kv_cache import (
-    KVCacheParamInterface,
-    spec_decode_cache_slack,
-)
+from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import (
     InputScaleSpec,

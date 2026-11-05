@@ -27,15 +27,11 @@ from max.graph import (
     ops,
 )
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
 from max.nn.legacy.attention import num_heads_for_device
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear

@@ -42,7 +42,7 @@ from max.graph import (
     ops,
 )
 from max.nn import Module
-from max.nn.legacy.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
 from max.nn.legacy.state_space import verify_width_operand
 from max.pipelines.architectures.glm5_next.layers.kda import KdaReplayInputs
 from max.pipelines.architectures.glm5_next.spec_state import (

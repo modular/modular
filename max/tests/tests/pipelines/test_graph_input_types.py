@@ -53,15 +53,15 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.ep_config import EPConfig
-from max.nn.legacy import graph_groups
-from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.graph_groups import RaggedBatch
-from max.nn.legacy.kv_cache import MHAKVCacheParams, max_pages_per_request
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache import MHAKVCacheParams, max_pages_per_request
+from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     MultiKVCacheParams,
     RecurrentStateParams,
 )
+from max.nn.legacy import graph_groups
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.graph_groups import RaggedBatch
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2

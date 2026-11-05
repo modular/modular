@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Protocol, runtime_checkable
 
 from max.graph import TensorValue
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 
 __all__ = ["DraftPhase", "EagleDraft", "EagleDraftInputs", "EagleDraftOutputs"]
 

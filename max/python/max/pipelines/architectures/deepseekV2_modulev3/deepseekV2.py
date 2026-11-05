@@ -29,7 +29,7 @@ from max.nn.common_layers.multi_latent_attention import (
     LatentAttentionWithRope,
 )
 from max.nn.embedding import Embedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,

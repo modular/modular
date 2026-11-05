@@ -42,6 +42,13 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
 from max.nn.legacy.comm.allreduce import Allreduce
 from max.nn.legacy.embedding import VocabParallelEmbedding
@@ -49,13 +56,6 @@ from max.nn.legacy.graph_groups import MRoPEPositions
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    KVCacheParams,
-    MHAKVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear

@@ -34,12 +34,8 @@ from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
 from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MultiKVCacheParams,
-    PagedCacheValues,
-)
 from max.nn.norm import rms_norm
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs

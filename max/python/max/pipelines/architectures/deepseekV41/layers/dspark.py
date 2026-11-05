@@ -27,8 +27,8 @@ from typing import TypeVar
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear, linear
 from max.nn.legacy.norm.rms_norm import RMSNorm

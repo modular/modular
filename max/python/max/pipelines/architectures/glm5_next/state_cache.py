@@ -48,7 +48,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from max.dtype import DType
-from max.nn.legacy.kv_cache import RecurrentStateRegion
+from max.nn.kv_cache import RecurrentStateRegion
 from max.nn.legacy.state_space import kda_ring_record_elements
 
 from ..qwen3_5.state_cache import (

@@ -29,7 +29,7 @@ import abi_contract
 from max import functional as F
 from max.driver import CPU, DeviceSpec
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV41_modulev3.batch_processor import (
     DeepseekV41BatchProcessor,

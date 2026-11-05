@@ -98,7 +98,7 @@ def test_importing_a_legacy_submodule_warns() -> None:
     _assert_one_warning_at_caller(
         _legacy_warnings("""
             import max.nn
-            from max.nn.legacy.kv_cache import KVCacheParams
+            from max.nn.legacy.linear import Linear
         """)
     )
 

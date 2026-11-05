@@ -26,7 +26,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (

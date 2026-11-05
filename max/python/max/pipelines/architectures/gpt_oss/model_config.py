@@ -21,7 +21,7 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.nn.quant_config import QuantConfig
 from max.nn.rope_scaling import YarnScalingParams

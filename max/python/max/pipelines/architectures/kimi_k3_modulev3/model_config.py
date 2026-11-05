@@ -45,14 +45,14 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.mesh_axis import EP, TP
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MLAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
 )
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding

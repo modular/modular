@@ -36,8 +36,8 @@ from max.graph import (
 )
 from max.graph.weights import WeightData
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.transformer.transformer import forward_sharded_layers
 from typing_extensions import Self

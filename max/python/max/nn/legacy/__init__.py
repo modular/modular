@@ -45,6 +45,12 @@ abstractions directly on :class:`~max.tensor.Tensor` values,
 executing each operation immediately, PyTorch-style.
 """
 
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheMetrics,
+    KVCacheParams,
+    build_max_lengths_tensors,
+)
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -82,12 +88,6 @@ from .data_parallelism import split_batch, split_batch_replicated
 from .embedding import Embedding, VocabParallelEmbedding
 from .hyper_connection import HyperConnection
 from .identity import Identity
-from .kv_cache import (
-    KVCacheInputs,
-    KVCacheMetrics,
-    KVCacheParams,
-    build_max_lengths_tensors,
-)
 from .layer import Layer, LayerList, MissingLayer, Module, Shardable
 from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
 from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers

@@ -40,7 +40,7 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.linear import RowParallelLinear
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_tensor import FP8BlockTensor
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping

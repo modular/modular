@@ -24,8 +24,8 @@ from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
-from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.nn.outputs import ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,

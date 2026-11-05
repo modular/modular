@@ -30,8 +30,8 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import BufferType, TensorType
 from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import PipelineConfig

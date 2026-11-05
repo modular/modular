@@ -37,7 +37,7 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, Final
 
 from max.dtype import DType
-from max.nn.legacy.kv_cache import RecurrentStateRegion
+from max.nn.kv_cache import RecurrentStateRegion
 from typing_extensions import Self
 
 if TYPE_CHECKING:

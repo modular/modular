@@ -27,12 +27,12 @@ from max.nn import Module
 from max.nn.common_layers.attention import AttentionWithRope
 from max.nn.common_layers.mlp import MLP
 from max.nn.embedding import Embedding
-from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
+from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm, RMSNorm
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits

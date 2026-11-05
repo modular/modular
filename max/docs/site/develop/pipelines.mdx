@@ -501,9 +501,9 @@ The base class delegates the following through `model_config_cls`:
   `get_kv_params()` delegates to it. Architectures with multiple or hybrid
   caches (for example, separate sliding-window and full-attention caches) return
   a
-  [`MultiKVCacheParams`](/api/python/generated/max.nn.legacy.kv_cache.MultiKVCacheParams/)
+  [`MultiKVCacheParams`](/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
   tree instead, which the cache manager consumes through the shared
-  [`KVCacheParamInterface`](/api/python/generated/max.nn.legacy.kv_cache.KVCacheParamInterface/).
+  [`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
 
 You can override `calculate_max_seq_len()` (on the architecture config) or
 `get_kv_params()` if needed.

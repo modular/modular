@@ -57,13 +57,13 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     MultiKVCacheParams,
     PagedCacheValues,
 )
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.legacy.layer import Module
 from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits

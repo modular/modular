@@ -25,7 +25,7 @@ from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV41_modulev3 import registration
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (

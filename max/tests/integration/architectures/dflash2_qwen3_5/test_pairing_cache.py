@@ -36,11 +36,7 @@ from dflash2_pairing_harness import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
-    MHAKVCacheParams,
-    MultiKVCacheParams,
-    recurrent_leaf,
-)
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams, recurrent_leaf
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash2_qwen3_5.model_config import (
     DRAFT_SLIDING_WINDOW,

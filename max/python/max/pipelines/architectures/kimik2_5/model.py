@@ -33,12 +33,8 @@ from max.graph import DeviceRef, Graph
 from max.graph import Module as GraphModule
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface, KVCacheParams
 from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-    KVCacheParams,
-)
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import (
     InputScaleSpec,

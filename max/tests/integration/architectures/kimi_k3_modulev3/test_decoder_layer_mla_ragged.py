@@ -29,7 +29,7 @@ from _paged_cache_test_utils import build_paged_cache
 from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.layers.decoder_layer import (
     KimiK3DecoderLayer,
 )

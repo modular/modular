@@ -27,9 +27,9 @@ from max.nn import Module
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.deepseekV41.engram_lookback import (

@@ -29,6 +29,7 @@ from max.graph import (
     ops,
 )
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.quant_config import QuantConfig, fp4_packed_k
 from max.support.math import ceildiv
 
@@ -39,7 +40,6 @@ from ..kernels import (
     mla_prefill_decode_graph,
     mla_prefill_graph,
 )
-from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm

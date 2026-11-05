@@ -24,8 +24,8 @@ from typing import Any
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.lib import (
     CheckpointRole,
     KVCacheConfig,

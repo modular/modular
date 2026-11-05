@@ -62,7 +62,7 @@ def split_input_row_offsets(
 
         from max.dtype import DType
         from max.graph import DeviceRef, Graph, TensorType
-        from max.nn.legacy.kv_cache.data_parallelism_utils import (
+        from max.nn.kv_cache.data_parallelism_utils import (
             split_input_row_offsets,
         )
 

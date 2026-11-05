@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,
     build_spec_decode_input_types,

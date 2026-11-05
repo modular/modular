@@ -27,7 +27,7 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear, RowParallelLinear
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )

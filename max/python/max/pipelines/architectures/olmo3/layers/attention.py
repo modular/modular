@@ -28,7 +28,7 @@ from max.nn.common_layers.functional_kernels import (
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.olmo2_modulev3.layers.rms_norm import (
     Olmo2RMSNorm,
 )

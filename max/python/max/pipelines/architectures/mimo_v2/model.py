@@ -24,7 +24,7 @@ from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import MultiKVCacheParams, spec_decode_cache_slack
+from max.nn.kv_cache import MultiKVCacheParams, spec_decode_cache_slack
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.gpt_oss.batch_processor import (
     GptOssBatchProcessor,

@@ -24,8 +24,8 @@ from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.layer import Module
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (

@@ -53,7 +53,7 @@ import torch
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.legacy.layer import Module
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models

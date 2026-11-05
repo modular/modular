@@ -24,7 +24,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.qwen2_modulev3 import (
     Qwen2,

@@ -21,9 +21,9 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     EngramLookbackBatchState,
 )

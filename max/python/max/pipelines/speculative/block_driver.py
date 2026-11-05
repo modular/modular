@@ -46,13 +46,13 @@ from max.graph import (
     ops,
 )
 from max.nn import Module as ModuleV3
+from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.legacy.kernels import (
     _dspark_draft_sample,
     _is_amd_gpu,
     _is_sm10x_gpu,
     gumbel_argmax_from_probs,
 )
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.sampling.rejection_sampler import (
     AcceptanceSampler,

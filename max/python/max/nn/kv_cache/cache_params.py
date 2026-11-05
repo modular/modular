@@ -80,7 +80,7 @@ from .utils import (
 
 # Mirror of max.pipelines.speculative.config.SpeculativeMethod. Defined
 # inline rather than imported because max.pipelines.speculative depends
-# on max.nn.legacy (BUILD.bazel), so importing back would create a circular
+# on max.nn.kv_cache (BUILD.bazel), so importing back would create a circular
 # bazel dependency. The two definitions are structurally identical
 # Literals, so mypy treats them as the same type at use sites.
 SpeculativeMethod = Literal["eagle", "mtp", "dflash", "dflash2", "dspark"]

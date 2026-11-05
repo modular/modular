@@ -27,7 +27,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear, Module, ModuleList, as_subgraph
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     RecurrentStateInputsPerDevice,

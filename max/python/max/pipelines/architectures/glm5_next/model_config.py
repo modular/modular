@@ -27,7 +27,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache.cache_params import (
     CacheLeafParamInterface,
     KVCacheParamInterface,
     KVCacheQuantizationConfig,

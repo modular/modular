@@ -32,7 +32,7 @@ from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
 from max.nn import Module
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )

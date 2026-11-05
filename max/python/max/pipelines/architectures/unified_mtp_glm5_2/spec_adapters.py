@@ -17,8 +17,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max.graph import BufferType, DimLike, TensorType, TensorValue
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.legacy.graph_groups import SparseIndices
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.legacy.transformer.distributed_transformer import (
     forward_sharded_layers,
 )

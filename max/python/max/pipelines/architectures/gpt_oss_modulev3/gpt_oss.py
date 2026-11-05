@@ -28,7 +28,7 @@ from max.nn.common_layers.rotary_embedding import (
     YarnScalingParams,
 )
 from max.nn.embedding import Embedding
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.linear import Linear
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs

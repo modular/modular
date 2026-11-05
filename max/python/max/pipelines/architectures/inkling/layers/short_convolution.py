@@ -30,7 +30,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.state_space import short_conv_ring
 

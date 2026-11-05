@@ -59,9 +59,9 @@ from max.graph import (
     ops,
 )
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.comm import Allreduce
 from max.nn.legacy.kernels import mla_decode_graph
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.quant_ops import quantized_matmul
 from max.nn.legacy.rotary_embedding import RotaryEmbedding

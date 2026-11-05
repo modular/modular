@@ -29,8 +29,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 HEADS, KV_HEADS, HEAD_DIM, PAGE_SIZE = 8, 2, 64, 128

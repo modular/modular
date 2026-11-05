@@ -46,13 +46,13 @@ from max.graph import (
     ops,
 )
 from max.nn.attention_mask import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,
     padded_lut_cols,
 )
+from max.nn.legacy.kernels import flash_attention_ragged
 from test_common.graph_utils import is_b100_b200
 
 NUM_Q_HEADS = 24

@@ -23,7 +23,7 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (

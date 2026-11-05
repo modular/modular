@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     CheckpointRole,

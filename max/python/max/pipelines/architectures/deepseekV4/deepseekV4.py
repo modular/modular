@@ -64,9 +64,9 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.hyper_connection import HyperConnection
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm

@@ -62,9 +62,9 @@ from max.nn.common_layers.linear import col_parallel, row_parallel
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.kernels import fused_qk_ragged_rope as _fused_qk_ragged_rope
 from max.nn.legacy.kernels import store_v_cache_ragged as _store_v_cache_ragged
-from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (

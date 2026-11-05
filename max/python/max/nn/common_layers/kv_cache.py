@@ -20,10 +20,8 @@ from dataclasses import dataclass, fields
 from typing import TypeAlias, cast
 
 from max.graph import BufferValue, TensorValue
-from max.nn.legacy.kv_cache.input_types import KVCacheInputsPerDevice
-from max.nn.legacy.kv_cache.input_types import (
-    PagedCacheValues as _PagedCacheValues,
-)
+from max.nn.kv_cache.input_types import KVCacheInputsPerDevice
+from max.nn.kv_cache.input_types import PagedCacheValues as _PagedCacheValues
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
 

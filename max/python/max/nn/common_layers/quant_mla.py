@@ -34,7 +34,7 @@ from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor

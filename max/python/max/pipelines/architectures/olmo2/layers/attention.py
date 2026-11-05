@@ -21,13 +21,10 @@ from collections.abc import Callable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear

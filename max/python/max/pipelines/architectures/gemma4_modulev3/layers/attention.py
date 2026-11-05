@@ -36,7 +36,7 @@ from max.nn.common_layers.quant_linear import (
     QuantizedLinear,
 )
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
 

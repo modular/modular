@@ -101,6 +101,7 @@ from max.graph import BufferType, DeviceRef, TensorType, Type
 from max.graph.weights import WeightsAdapter
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPInit
 from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
 from max.nn.legacy.graph_groups import (
@@ -110,7 +111,6 @@ from max.nn.legacy.graph_groups import (
     VisionMerge,
 )
 from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule

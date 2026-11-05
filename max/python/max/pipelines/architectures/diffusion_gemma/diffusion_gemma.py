@@ -45,15 +45,11 @@ from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.activation import GatedActivation
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.legacy.graph_groups import LogitsName
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MultiKVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear

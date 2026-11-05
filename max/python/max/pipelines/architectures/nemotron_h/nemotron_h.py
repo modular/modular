@@ -51,6 +51,12 @@ from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 from max.nn.activation import GatedActivation
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+    PagedCacheValues,
+    RecurrentStateInputsPerDevice,
+)
 from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
@@ -59,12 +65,6 @@ from max.nn.legacy.kernels import (
     moe_finalize,
     store_k_cache_ragged,
     store_v_cache_ragged,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParams,
-    PagedCacheValues,
-    RecurrentStateInputsPerDevice,
 )
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, Linear

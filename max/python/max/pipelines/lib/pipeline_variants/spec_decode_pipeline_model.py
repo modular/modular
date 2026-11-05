@@ -58,9 +58,7 @@ from max.graph.weights import (
 )
 from max.nn import Module as ModuleV3
 from max.nn.ep_config import EPConfig
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheInputs,
     KVCacheInputsPerDevice,
@@ -69,6 +67,8 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.sampling.penalties import LogitPenalties
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import (

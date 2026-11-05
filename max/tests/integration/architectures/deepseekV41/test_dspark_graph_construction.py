@@ -29,7 +29,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph import Module as GraphModule
 from max.nn.ep_config import EPConfig
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.deepseekV41 import kv_leaves

@@ -19,12 +19,12 @@ import functools
 from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
+from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm

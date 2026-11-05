@@ -23,7 +23,7 @@ from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.config import (
     MAXModelConfig,

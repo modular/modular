@@ -21,7 +21,7 @@ from max.driver import Device
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (

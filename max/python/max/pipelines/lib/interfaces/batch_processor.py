@@ -33,16 +33,16 @@ from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache.cache_params import (
+    KVCacheParamInterface,
+    max_pages_per_request,
+)
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.graph_groups import (
     RaggedBatch,
     TPSignals,
     VisionMerge,
-)
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.kv_cache.cache_params import (
-    KVCacheParamInterface,
-    max_pages_per_request,
 )
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContext, TextContext

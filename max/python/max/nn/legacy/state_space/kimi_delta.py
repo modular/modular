@@ -551,7 +551,7 @@ def _check_shapes(
     # The kernels index the pool at 64 bits but take its strides as 32-bit
     # values, so one slot (every head of one request) must stay below 2**32
     # elements. The slot count is a runtime dim; the slab binding in
-    # max.nn.legacy.kv_cache.cache_params bounds it.
+    # max.nn.kv_cache.cache_params bounds it.
     if all(
         isinstance(d, StaticDim)
         for d in (num_value_heads, key_head_dim, value_head_dim)

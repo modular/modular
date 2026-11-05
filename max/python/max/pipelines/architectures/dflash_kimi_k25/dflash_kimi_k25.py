@@ -27,12 +27,12 @@ from max.graph import (
     ops,
 )
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.attention.attention_with_rope import (
     AttentionWithRope,
     DataParallelAttentionWithRope,
     TensorParallelAttentionWithRope,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.norm import RMSNorm

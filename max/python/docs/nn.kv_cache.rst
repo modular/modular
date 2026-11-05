@@ -1,15 +1,15 @@
-:title: max.nn.legacy.kv_cache
+:title: max.nn.kv_cache
 :type: module
 :lang: python
 :wrapper_class: rst-module-autosummary
 
-max.nn.legacy.kv\_cache
-=======================
+max.nn.kv\_cache
+================
 
-.. automodule:: max.nn.legacy.kv_cache
+.. automodule:: max.nn.kv_cache
    :no-members:
 
-.. currentmodule:: max.nn.legacy.kv_cache
+.. currentmodule:: max.nn.kv_cache
 
 Cache configuration
 -------------------

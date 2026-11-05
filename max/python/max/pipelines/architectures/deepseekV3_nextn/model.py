@@ -24,8 +24,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,

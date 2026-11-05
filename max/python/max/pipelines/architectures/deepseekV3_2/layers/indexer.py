@@ -28,6 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy import LayerNorm, Linear, Module
 from max.nn.legacy.kernels import (
     mla_fp8_index_top_k,
@@ -43,7 +44,6 @@ from max.nn.legacy.kernels import (
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Shardable
 from max.nn.quant_config import QuantConfig, QuantFormat
 
@@ -899,7 +899,7 @@ class Indexer(Module, Shardable):
         """Declared ``head_dim`` of the pooled-key cache: 128 / 4 = 32.
 
         The paged cache manager indexes one row per *token* and every leaf of a
-        :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams` shares one page table, so a
+        :class:`~max.nn.kv_cache.MultiKVCacheParams` shares one page table, so a
         cache holding one key per ``index_kpool`` tokens cannot be declared four
         times shorter. Declaring it ``index_head_dim / index_kpool`` wide
         instead spreads one 128-value pooled key across the ``index_kpool``

@@ -42,6 +42,13 @@ from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.legacy.kernels import (
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
@@ -50,13 +57,6 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_block_scaled,
     store_k_cache_ragged,
     store_v_cache_ragged,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParams,
-    MHAKVCacheParams,
-    MLAKVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.legacy.quant_ops import quantized_fused_qkv_index_matmul
 from max.nn.quant_config import (

@@ -32,8 +32,8 @@ from max.graph import TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_moe import QuantizedMoE
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor, default_dtype

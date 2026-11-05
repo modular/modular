@@ -48,8 +48,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,

@@ -31,6 +31,8 @@ from max import mlir, tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheQuantizationConfig, MLAKVCacheParams
+from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
     MLAPrefillMetadata,
@@ -44,8 +46,6 @@ from max.nn.legacy.kernels import (
     mla_fp8_index_top_k_with_physical,
     mla_prefill_decode_graph,
 )
-from max.nn.legacy.kv_cache import KVCacheQuantizationConfig, MLAKVCacheParams
-from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from max.nn.quant_config import (
     InputScaleSpec,

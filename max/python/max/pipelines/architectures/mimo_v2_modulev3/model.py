@@ -27,13 +27,13 @@ from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     MultiKVCacheParams,
     spec_decode_cache_slack,
 )
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (

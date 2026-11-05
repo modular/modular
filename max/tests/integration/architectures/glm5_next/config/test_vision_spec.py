@@ -25,7 +25,7 @@ import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.glm5_next.model import Glm5NextModel
 from max.pipelines.architectures.glm5_next.model_config import (
     Glm5NextConfig,

@@ -427,7 +427,7 @@ implementation:
 <!-- invisible-code-block: python
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 -->
@@ -456,12 +456,12 @@ def construct_kv_params(
 ```
 
 Most architectures return a flat
-[`KVCacheParams`](/api/python/generated/max.nn.legacy.kv_cache.KVCacheParams/).
+[`KVCacheParams`](/api/python/generated/max.nn.kv_cache.KVCacheParams/).
 Architectures with multiple or hybrid KV caches (for example, separate
 sliding-window and full-attention caches) return a
-[`MultiKVCacheParams`](/api/python/generated/max.nn.legacy.kv_cache.MultiKVCacheParams/)
+[`MultiKVCacheParams`](/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
 tree, which the cache manager consumes through the shared
-[`KVCacheParamInterface`](/api/python/generated/max.nn.legacy.kv_cache.KVCacheParamInterface/).
+[`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
 
 ### Pass the cache into the module
 
@@ -476,7 +476,7 @@ each cache in `PagedCacheValues` from
 <!-- invisible-code-block: python
 from max.nn import Module
 from max.tensor import Tensor
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.architectures.olmo3.model_config import Olmo3Config
 from max.pipelines.architectures.olmo3.olmo3 import (
     Olmo3TextModel,

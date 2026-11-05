@@ -31,7 +31,7 @@ from max.nn.common_layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.tensor import Tensor
 
 from .rms_norm import Gemma3RMSNorm

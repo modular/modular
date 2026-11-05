@@ -42,7 +42,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (

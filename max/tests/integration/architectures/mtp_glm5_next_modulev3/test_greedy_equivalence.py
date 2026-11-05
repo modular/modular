@@ -43,7 +43,7 @@ from max.driver import CPU, DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, Weights
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.glm5_next.model_config import (

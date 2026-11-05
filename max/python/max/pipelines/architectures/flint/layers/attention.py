@@ -33,7 +33,7 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.norm.rms_norm import rms_norm
 from max.tensor import Tensor
 

@@ -27,12 +27,12 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.tree import Tree
 
 from ..embedding import Embedding
 from ..graph_groups import DecoderOutputs, HiddenStates, Logits
-from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import (
     Layer,
     LayerList,

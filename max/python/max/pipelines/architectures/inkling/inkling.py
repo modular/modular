@@ -36,9 +36,7 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.embedding import Embedding, VocabParallelEmbedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafKind,
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
@@ -46,6 +44,8 @@ from max.nn.legacy.kv_cache import (
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.embedding import Embedding, VocabParallelEmbedding
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm

@@ -30,8 +30,8 @@ from max.graph import (
     ops,
 )
 from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
