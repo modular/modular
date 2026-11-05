@@ -122,7 +122,7 @@ def test_load_registers_the_fused_graph_unless_it_replays(
     model.pairing = Mock()
     model.pairing.draft.draft = None
     model.device_refs = []
-    model.signal_buffers = []
+    model.takes_signal_buffers = False
     model.replay_model = None
     modules = Mock()
     for module in (modules.target, modules.draft):

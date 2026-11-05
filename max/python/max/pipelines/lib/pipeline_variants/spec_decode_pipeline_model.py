@@ -1569,15 +1569,24 @@ class SpecDecodePipelineModel(
         return _Pairing.from_pipeline_config(self.pipeline_config)
 
     @cached_property
-    def signal_buffers(self) -> list[Buffer]:
-        """Returns the signal buffers the target's collectives need."""
+    def takes_signal_buffers(self) -> bool:
+        """Returns whether the graph takes signal buffers.
+
+        The graph's signature depends on this, not on :attr:`signal_buffers`,
+        which is empty under virtual devices.
+        """
         model = self.pairing.target.pipeline_model
         always = (
             model is not None and issubclass(model, AlwaysSignalBuffersMixin)
         ) or spec_adapters.signal_buffer_index(
             self.pairing.adapter_arch
         ) is not None
-        if len(self.devices) <= 1 and not always:
+        return len(self.devices) > 1 or always
+
+    @cached_property
+    def signal_buffers(self) -> list[Buffer]:
+        """Returns the signal buffers the target's collectives need."""
+        if not self.takes_signal_buffers:
             return []
         return Signals.allocate(self.devices)
 
@@ -1633,7 +1642,7 @@ class SpecDecodePipelineModel(
             self.pipeline_config,
             config.kv_params,
             self.device_refs,
-            include_signal_buffers=bool(self.signal_buffers),
+            include_signal_buffers=self.takes_signal_buffers,
             target=target,
             target_config=modules.target_config,
             draft=draft,
@@ -2471,7 +2480,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
                 self.pipeline_config,
                 config.kv_params,
                 self.device_refs,
-                include_signal_buffers=bool(self.signal_buffers),
+                include_signal_buffers=self.takes_signal_buffers,
                 target_config=modules.target_config,
                 draft_config=modules.draft_config,
                 hidden_states=modules.hidden_states,
