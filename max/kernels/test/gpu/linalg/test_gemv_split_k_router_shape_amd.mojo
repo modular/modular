@@ -24,13 +24,18 @@ separate `grid.x=1` launches catches indexing errors in multirow launches.
 
 from std.math import ceildiv
 from std.random import randn, random_float64, seed
-from std.sys import simd_width_of
+from std.sys import get_defined_bool, get_defined_int, simd_width_of
+from std.sys.info import _accelerator_arch
 from std.testing import assert_equal, assert_true
 
 from internal_utils import assert_almost_equal
 
 from layout import Idx, TileTensor, row_major
-from linalg.gemv import _amd_small_m_gemv_route, gemv_split_k
+from linalg.gemv import (
+    _amd_small_m_gemv_route,
+    _amd_small_m_static_k_threads,
+    gemv_split_k,
+)
 from linalg.matmul.gpu import _matmul_gpu
 from max.gpu.host import DeviceContext, default_accelerator
 
@@ -44,14 +49,71 @@ def _run_case[
     c_type: DType = .float32,
 ](ctx: DeviceContext) raises:
     """Checks direct GEMV and selected matmul dispatches against references."""
-    comptime row_sharing = use_b and (
-        (
-            M == 1
-            and a_type == .float32
-            and ((N == 32 and K in (4096, 6144)) or (N == 256 and K == 6144))
+    comptime gfx950 = _accelerator_arch() == "amdgpu:gfx950"
+    # The gfx950 bf16 128-thread static-K instantiation: K % 1024 == 0 but
+    # K % 2048 != 0, inside the config-B route, above the N >= 64 CTA floor,
+    # with the M bands the dispatch stages (2..8, plus the N=576 column at
+    # 9..16 mirroring the tuned 576x4096 cell).
+    comptime static_k_128 = (
+        use_b
+        and a_type == .bfloat16
+        and c_type in (DType.bfloat16, DType.float32)
+        and gfx950
+        and K > 0
+        and K % 1024 == 0
+        and K % 2048 != 0
+        and N >= 64
+        and (M >= 4 or N >= 576)
+        and (2 <= M <= 8 or (9 <= M <= 16 and N == 576))
+    )
+    # The gfx950 static-K tiers: rows per block the dispatch
+    # stages for the M bands past 16 and every N band past 576, mirroring
+    # `_amd_small_m_gemv_route`'s tiers and the arm cascade in
+    # `_gemv_gpu_dispatch_impl`; 0 keeps an arm below. N in (128, 576]
+    # has no tier: the static-K extension to M=24 there measured slower
+    # than the tiled GEMM warm and was rejected.
+    comptime sk_threads = _amd_small_m_static_k_threads[a_type, a_type, K]()
+    comptime sk_small_n_tier = (
+        gfx950 and use_b and a_type == .bfloat16 and N == 128 and sk_threads > 0
+    )
+    comptime sk_wide_n_tier = (
+        gfx950
+        and use_b
+        and a_type == .bfloat16
+        and N > 576
+        and (N <= 2048 or K >= 7168)
+        and sk_threads > 0
+    )
+    comptime sk_beta_tier = (
+        gfx950 and use_b and a_type == .float32 and N < 16 and sk_threads > 0
+    )
+    comptime tier_rpb = (
+        4 if (sk_small_n_tier and 17 <= M <= 64) else 2 if (
+            sk_wide_n_tier and N <= 2048 and M == 2
+        ) else 4 if (sk_wide_n_tier and N <= 2048 and 3 <= M <= 4) else 8 if (
+            sk_wide_n_tier and N <= 2048 and 5 <= M <= 8
+        ) else 2 if (
+            sk_wide_n_tier and N > 2048 and M == 2
+        ) else 2 if (
+            sk_beta_tier and 2 <= M <= 32
+        ) else 4 if (
+            sk_beta_tier and 33 <= M <= 64
+        ) else 0
+    )
+    comptime tier_static_k = tier_rpb > 0
+    comptime row_sharing = static_k_128 or tier_static_k or (
+        use_b
+        and (
+            (
+                M == 1
+                and a_type == .float32
+                and (
+                    (N == 32 and K in (4096, 6144)) or (N == 256 and K == 6144)
+                )
+            )
+            or (2 <= M <= 8 and a_type == .float32 and N == 32 and K == 4096)
+            or (2 <= M <= 16 and N in (128, 256, 288) and K in (4096, 6144))
         )
-        or (2 <= M <= 8 and a_type == .float32 and N == 32 and K == 4096)
-        or (2 <= M <= 16 and N in (128, 256, 288) and K in (4096, 6144))
     )
     comptime one_column_bf16 = (
         use_b
@@ -69,16 +131,23 @@ def _run_case[
         and a_type == .float32
         and N == 288
         and K == 4096
-        and M in (3, 4) else 256 if row_sharing else 128 if use_b else 256
+        and M
+        in (
+            3,
+            4,
+        ) else 128 if static_k_128 else sk_threads if tier_static_k else 256 if row_sharing else 128 if use_b else 256
     )
     comptime tile_n = 1 if row_sharing or one_column_bf16 else 2
     comptime unroll_factor = 2
     comptime tile_m = (
-        1 if (N == 32 and (row_sharing or a_type == .bfloat16))
-        or M == 1
-        or (M == 2 and not (tuned_m2m3 and N != 128)) else 2 if M <= 4
-        or (a_type == .float32 and N == 128 and M <= 8) else 4 if M <= 8 else 8
-    ) if row_sharing else 1
+        tier_rpb if tier_static_k else (
+            1 if (N == 32 and (row_sharing or a_type == .bfloat16))
+            or M == 1
+            or (M == 2 and not (tuned_m2m3 and N != 128)) else 2 if M <= 4
+            or (a_type == .float32 and N == 128 and M <= 8) else 4 if M
+            <= 8 else 8
+        ) if row_sharing else 1
+    )
     comptime k_chunk = (
         1 if row_sharing
         and (
@@ -159,6 +228,8 @@ def _run_case[
         )
         or (tuned_m2m3 and use_b)
         or (N == 256 and K == 6144 and M == 8 and use_b)
+        or static_k_128
+        or tier_static_k
     ):
         var dispatch_dev = ctx.enqueue_create_buffer[c_type](M * N)
         var dispatch_host = ctx.enqueue_create_host_buffer[c_type](M * N)
@@ -689,12 +760,33 @@ def main() raises:
 
     seed(0)
 
+    comptime tier_admitted = _accelerator_arch() == "amdgpu:gfx950"
+
+    comptime if (
+        get_defined_bool["AUTOTUNING_MODE", False]()
+        or get_defined_int["TUNE_4WAVE_KERNEL", 0]() != 0
+    ):
+        _check_bf16_route[576, 7168, .bfloat16](True)
+        _check_bf16_route[580, 7168, .bfloat16](False)
+        _check_bf16_route[2048, 7168, .bfloat16](False)
+        var wide = _amd_small_m_gemv_route[
+            .bfloat16, .bfloat16, .bfloat16, 4608, 7168
+        ](2)
+        assert_equal(wide[0], False)
+        var r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 2560](
+            8
+        )
+        assert_equal(r[0], False)
+        return
+
     _check_bf16_route[288, 4096, .bfloat16](True)
     _check_bf16_route[288, 4096, .float32](True)
     _check_bf16_route[384, 7168, .bfloat16](True)
     _check_bf16_route[576, 2048, .bfloat16](True)
     _check_bf16_route[128, 4096, .bfloat16](True)
-    _check_bf16_route[2048, 2048, .bfloat16](False)
+    # gfx950 admits bf16 N past 576 into the static-K tiers; 2048x2048
+    # reaches M=8 there, every other AMD target keeps N <= 576.
+    _check_bf16_route[2048, 2048, .bfloat16](tier_admitted)
     _check_bf16_route[4096, 4096, .bfloat16](False)
     _check_bf16_route[6144, 4096, .bfloat16](False)
     _check_bf16_route[128256, 4096, .bfloat16](False)
@@ -734,6 +826,172 @@ def main() raises:
     assert_equal(r[0], False)
     r = _amd_small_m_gemv_route[.float32, .float32, .float32, 1024, 4096](8)
     assert_equal(r[0], False)
+
+    # The narrow fp32 band (N in [8, 16); production shape: the KDA beta
+    # 12x7168 projection) is admitted on gfx950 only. Other AMD targets keep
+    # the N >= 16 band and the tiled split-K + reduce launch.
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 8, 7168](8)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 7168](2)
+    assert_equal(r[0], tier_admitted)
+    # Narrow fp32 keeps config A: the config-B floor is N >= 64 for fp32.
+    assert_equal(r[1], False)
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 7168](16)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 7168](1)
+    assert_equal(r[0], False)  # the m == 1 GEMV arm owns M=1
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 7168](17)
+    # The beta tier reaches M=64 through the static-K stage on gfx950;
+    # other AMD targets keep the tiled split-K arm above M=16.
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 7, 7168](8)
+    assert_equal(r[0], False)  # below the N floor
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 1024](8)
+    assert_equal(r[0], False)  # below the K floor
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 12, 7168](8)
+    assert_equal(r[0], False)  # bf16 keeps N >= 16
+
+    # The static-K stage needs K % (simd_width * num_threads) == 0. bf16
+    # K % 2048 == 0 keeps the 256-thread instantiation (the 576x2048 and
+    # 128x4096 cells); on gfx950, bf16 K = 7 x 1024 (the KDA f_a 128x7168
+    # and MLA kv_a 576x7168 projections) gets the 128-thread one instead.
+    # Other targets and dtypes keep the 256-thread tiling, and K % 1024 != 0
+    # takes no static-K stage at all.
+    assert_equal(
+        _amd_small_m_static_k_threads[.bfloat16, .bfloat16, 7168](),
+        128 if tier_admitted else 0,
+    )
+    assert_equal(
+        _amd_small_m_static_k_threads[.bfloat16, .bfloat16, 5120](),
+        128 if tier_admitted else 0,
+    )
+    assert_equal(
+        _amd_small_m_static_k_threads[.bfloat16, .bfloat16, 2048](), 256
+    )
+    assert_equal(
+        _amd_small_m_static_k_threads[.bfloat16, .bfloat16, 4096](), 256
+    )
+    assert_equal(_amd_small_m_static_k_threads[.bfloat16, .bfloat16, 2560](), 0)
+    assert_equal(_amd_small_m_static_k_threads[.float32, .float32, 7168](), 256)
+    # 128x7168 and 576x7168 at M=4 sit in the config-B route with a legal
+    # 128-thread static-K tiling, so the M-band arms stage them through the
+    # static-K instantiation instead of the cached-load config.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 128, 7168](4)
+    assert_equal(r[0], True)
+    assert_equal(r[1], True)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 576, 7168](4)
+    assert_equal(r[0], True)
+    assert_equal(r[1], True)
+
+    # gfx950 static-K tier band edges: first and last M of
+    # every tier plus one M outside, N-tier boundaries, and the K-legality
+    # gate. Other AMD targets keep every one of these points on the tiled
+    # GEMM (max_m=16 at N <= 576, nothing admitted above).
+    # bf16 N = 128 reaches M=64 (the 128x7168 KDA f_a projection); it is
+    # the only measured N in the tier, so every other N keeps M <= 16.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 128, 7168](17)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 128, 7168](24)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 128, 7168](64)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 128, 7168](65)
+    assert_equal(r[0], False)
+    # N = 64 was never measured: it keeps the M <= 16 band every N below
+    # 128 keeps, at every M past 16.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 64, 7168](17)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 64, 7168](24)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 64, 7168](64)
+    assert_equal(r[0], False)
+    # N below the static-K CTA floor keeps M <= 16.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 32, 7168](17)
+    assert_equal(r[0], False)
+    # bf16 N in (128, 576] keeps M=16: the static-K extension past 16 there
+    # measured slower than the tiled GEMM warm, so every M past the
+    # existing M=16 band keeps the tiled GEMM on every AMD target.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 576, 7168](17)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 576, 7168](24)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 576, 7168](25)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 132, 7168](24)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 132, 7168](25)
+    assert_equal(r[0], False)
+    # bf16 N in (576, 2048] reaches M=8 (the 1536x7168 KDA out-gate and the
+    # 2048x4096 GLM KDA projection).
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 1536, 7168](2)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 1536, 7168](8)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 1536, 7168](9)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 2048, 4096](8)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 2048, 4096](9)
+    assert_equal(r[0], False)
+    # bf16 N past 2048 admits M=2 only, and only at the measured K
+    # (K >= 7168: the 3584x7168 shared-expert gate/up and the 4608x7168
+    # KDA merged qkv). GLM's 4096x2048 KDA o_proj and every other in-band
+    # K below that keeps main's tiled GEMM arm.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 3584, 7168](2)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 3584, 7168](3)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 4608, 7168](2)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 4608, 7168](3)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 4096, 2048](2)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 4608, 5120](2)
+    assert_equal(r[0], False)
+    # N past the widened band keeps the tiled GEMM.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 4612, 7168](2)
+    assert_equal(r[0], False)
+    # The N-tier boundaries: the small-N tier is N=128 only, the wide
+    # tier takes over above N=576 (same M band as N=1536), and N past 2048
+    # admits M=2 only at K >= 7168.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 64, 7168](2)
+    assert_equal(r[0], True)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 64, 7168](16)
+    assert_equal(r[0], True)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 580, 7168](8)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 580, 7168](9)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 2049, 7168](2)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 2049, 4096](2)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 2049, 4096](3)
+    assert_equal(r[0], False)
+    # A K the static-K tiling cannot cover keeps the tiled GEMM at every
+    # tier point (N > 576 and M > 16 have static-K-only arms); the M <= 16
+    # band at N <= 576 keeps its cached-load arms.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 1536, 2560](2)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 128, 2816](17)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 128, 2816](8)
+    assert_equal(r[0], True)
+    # The fp32 beta tier: M 2..32 at rpb2, 33..64 at rpb4, one past the
+    # band and the K-legality gate.
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 7168](32)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 7168](33)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 7168](64)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 7168](65)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 2560](17)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 2560](8)
+    assert_equal(r[0], tier_admitted)
 
     with DeviceContext() as ctx:
         # The N=896 cells check direct GEMV even though dispatch uses tiled GEMM.
@@ -795,5 +1053,47 @@ def main() raises:
         _run_case[8, 128, 4096, True, .bfloat16, .bfloat16](ctx)
         _run_case[2, 288, 4096, False, .bfloat16, .float32](ctx)
         _run_case[8, 288, 4096, True, .bfloat16, .float32](ctx)
+        # The gfx950 bf16 128-thread static-K cells (K = 7 x 1024): the KDA
+        # f_a 128x7168 and MLA kv_a 576x7168 projections, at the M-band
+        # boundaries -- rpb 1 at M=2, 2 at M=4, 4 at M=8, 8 at M in 13..16
+        # (the N=576 column), with a bf16-to-fp32 output cell at M=4.
+        _run_case[2, 576, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[4, 128, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[4, 576, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[4, 128, 7168, True, .bfloat16, .float32](ctx)
+        _run_case[8, 128, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[8, 576, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[13, 576, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[16, 576, 7168, True, .bfloat16, .bfloat16](ctx)
+        # The gfx950 static-K tier cells (band widening): the M
+        # bands past 16 and the N bands past 576, including the partial
+        # last row blocks, both thread instantiations, and the fp32 beta
+        # tier at its rpb switch. Each is checked against the fp64 oracle,
+        # bit-exact against per-row launches, and against the production
+        # dispatch output.
+        _run_case[2, 1536, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[3, 1536, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[4, 1536, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[5, 1536, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[7, 1536, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[8, 1536, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[4, 1536, 7168, True, .bfloat16, .float32](ctx)
+        _run_case[2, 2048, 4096, True, .bfloat16, .bfloat16](ctx)
+        _run_case[4, 2048, 4096, True, .bfloat16, .bfloat16](ctx)
+        _run_case[8, 2048, 4096, True, .bfloat16, .bfloat16](ctx)
+        _run_case[2, 3584, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[2, 4608, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[17, 128, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[23, 128, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[32, 128, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[33, 128, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[63, 128, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[64, 128, 7168, True, .bfloat16, .bfloat16](ctx)
+        _run_case[32, 128, 4096, True, .bfloat16, .bfloat16](ctx)
+        _run_case[2, 12, 7168, True, .float32, .float32](ctx)
+        _run_case[17, 12, 7168, True, .float32, .float32](ctx)
+        _run_case[32, 12, 7168, True, .float32, .float32](ctx)
+        _run_case[33, 12, 7168, True, .float32, .float32](ctx)
+        _run_case[64, 12, 7168, True, .float32, .float32](ctx)
 
     print("ALL TESTS PASSED")
