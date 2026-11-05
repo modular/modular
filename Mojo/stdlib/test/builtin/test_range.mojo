@@ -383,9 +383,9 @@ def test_range_forward_scalar_properties() raises:
     # The seed is pinned: a property test that picks its own seed reports a
     # failure no one else can reproduce.
     comptime for dtype in DTYPES:
-        PropTest(config=PropTestConfig(runs=100, seed=0)).test[
-            _prop_forward_terminates[dtype]
-        ](SIMD[dtype, 4].strategy())
+        PropTest(config=PropTestConfig(runs=100, seed=0)).test(
+            SIMD[dtype, 4].strategy(), _prop_forward_terminates[dtype]
+        )
 
 
 def test_range_forward_step_past_int_limit() raises:
@@ -508,9 +508,9 @@ def test_range_reversed_scalar_properties() raises:
     # The seed is pinned: a property test that picks its own seed reports a
     # failure no one else can reproduce.
     comptime for dtype in DTYPES:
-        PropTest(config=PropTestConfig(runs=100, seed=0)).test[
-            _prop_reversed_matches[dtype]
-        ](SIMD[dtype, 4].strategy())
+        PropTest(config=PropTestConfig(runs=100, seed=0)).test(
+            SIMD[dtype, 4].strategy(), _prop_reversed_matches[dtype]
+        )
 
 
 def test_range_reversed_scalar_sequential() raises:

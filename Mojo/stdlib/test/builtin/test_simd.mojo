@@ -282,7 +282,7 @@ def test_from_to_bits_roundtrip_property_test() raises:
     var prop_test = PropTest()
 
     comptime for dtype, size in product(dtypes, sizes):
-        prop_test.test[properties[dtype, size]](SIMD[dtype, size].strategy())
+        prop_test.test(SIMD[dtype, size].strategy(), properties[dtype, size])
 
 
 def test_simd_variadic() raises:
