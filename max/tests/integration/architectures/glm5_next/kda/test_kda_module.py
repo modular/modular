@@ -37,7 +37,7 @@ import torch
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, ShardingStrategy, TensorValue
+from max.graph import DeviceRef, Graph, ShardingStrategy, TensorValue, ops
 from max.nn.legacy.layer import Module
 from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
     KimiDeltaAttention,
@@ -80,7 +80,9 @@ CHECKPOINT_WEIGHT_NAMES = frozenset(
         "self_attn.q_proj.weight",
         "self_attn.k_proj.weight",
         "self_attn.v_proj.weight",
-        "self_attn.conv1d.weight",
+        "self_attn.q_conv1d.weight",
+        "self_attn.k_conv1d.weight",
+        "self_attn.v_conv1d.weight",
         "self_attn.f_a_proj.weight",
         "self_attn.f_b_proj.weight",
         "self_attn.dt_bias",
@@ -92,13 +94,11 @@ CHECKPOINT_WEIGHT_NAMES = frozenset(
         "self_attn.o_proj.weight",
     }
 )
-"""What the weight adapter emits for a KDA layer, minus its ``layers.N.``.
+"""The checkpoint's names for a KDA layer, minus its ``layers.N.``.
 
-Read off ``checkpoint-facts.md``'s weight list plus ``weight_adapters.py``,
-which folds the three ``[qkv]_conv1d.weight`` tensors into one
-``conv1d.weight``. Rung 1 of the verification ladder for this layer: every
-checkpoint tensor maps to one declared weight, with nothing left over on either
-side.
+Read off ``checkpoint-facts.md``'s weight list; the weight rules keep them.
+Rung 1 of the verification ladder for this layer: every checkpoint tensor maps
+to one declared weight, with nothing left over on either side.
 """
 
 
@@ -130,7 +130,7 @@ class _Block(Module):
 
 
 def test_weight_names_match_the_checkpoint() -> None:
-    """The layer's FQNs are exactly what the weight adapter produces.
+    """The layer's FQNs are exactly the checkpoint's.
 
     ``raw_state_dict`` rather than ``state_dict`` because the latter would
     zero-initialise half a gigabyte of weights to answer a question about
@@ -182,7 +182,9 @@ def test_per_rank_shapes(num_devices: int) -> None:
         "q_proj": [qkv, HIDDEN],
         "k_proj": [qkv, HIDDEN],
         "v_proj": [qkv, HIDDEN],
-        "conv1d": [3 * qkv, 1, KERNEL],
+        "q_conv1d": [qkv, 1, KERNEL],
+        "k_conv1d": [qkv, 1, KERNEL],
+        "v_conv1d": [qkv, 1, KERNEL],
         "f_b_proj": [qkv, HEAD_DIM],
         "g_b_proj": [qkv, HEAD_DIM],
         "b_proj": [heads, HIDDEN],
@@ -212,14 +214,26 @@ def test_conv_shards_split_heads_within_each_projection(
     shards = layer.shard([DeviceRef.CPU()] * num_devices)
 
     def forward() -> list[TensorValue]:
+        # Concatenated per device, as the layer's call does.
         return [
-            TensorValue(shard.conv1d).cast(DType.float32) for shard in shards
+            ops.concat(
+                [shard.q_conv1d, shard.k_conv1d, shard.v_conv1d], axis=0
+            ).cast(DType.float32)
+            for shard in shards
         ]
 
     conv_weight = _conv_weight()
     graph = Graph(f"KdaConvShardsTp{num_devices}", forward, input_types=[])
     session = InferenceSession(devices=[CPU()])
-    model = session.load(graph, weights_registry={"conv1d.weight": conv_weight})
+    model = session.load(
+        graph,
+        weights_registry={
+            f"{part}_conv1d.weight": block
+            for part, block in zip(
+                "qkv", conv_weight.split(QKV_DIM), strict=True
+            )
+        },
+    )
     actual = [torch.from_dlpack(out).cpu() for out in model.execute()]
 
     heads = HEADS // num_devices

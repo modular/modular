@@ -11,10 +11,11 @@ modular_py_test(
     srcs = ["test_weight_adapter.py"],
     deps = [
         requirement("numpy"),
-        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
     ],
 )
 

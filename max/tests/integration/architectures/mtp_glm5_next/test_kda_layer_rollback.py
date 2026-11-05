@@ -104,7 +104,7 @@ def _sparse(
 
 def _weights() -> dict[str, np.ndarray]:
     rng = np.random.default_rng(29)
-    return {
+    weights = {
         "q_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
         "k_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
         "v_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
@@ -121,6 +121,13 @@ def _weights() -> dict[str, np.ndarray]:
         "o_norm.weight": np.ones(HEAD_DIM, dtype=np.float32),
         "o_proj.weight": _sparse(rng, HIDDEN, QKV_DIM, 0.5),
     }
+    # The checkpoint's three conv tensors, in the layer's q, k, v order.
+    conv = np.split(weights.pop("conv1d.weight"), 3)
+    weights.update(
+        (f"{part}_conv1d.weight", np.ascontiguousarray(block))
+        for part, block in zip("qkv", conv, strict=True)
+    )
+    return weights
 
 
 def _layer() -> KimiDeltaAttention:

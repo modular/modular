@@ -11,21 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Where the MTP layer's weights go on ModuleV3: dropped by the target's
-adapter, kept for the draft's."""
+rules, named for the draft's module by its own."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+from collections.abc import Callable, Sequence
 from unittest.mock import NonCallableMock
 
 import numpy as np
 from max.graph.weights import WeightData, Weights
 from max.pipelines.architectures.glm5_next_modulev3.weight_adapters import (
-    convert_glm5_next_state_dict,
+    glm5_next_mtp_weight_rules,
+    glm5_next_weight_rules,
+    glm5_next_with_mtp_weight_rules,
 )
-from max.pipelines.architectures.mtp_glm5_next_modulev3.weight_adapters import (
-    convert_glm5_next_with_mtp_state_dict,
-)
+from max.pipelines.lib import WeightRule, WeightTransform
+from transformers import PretrainedConfig
 
 NUM_HIDDEN_LAYERS = 4
 
@@ -60,20 +61,29 @@ def _checkpoint() -> dict[str, Weights]:
     return {name: _weight(name) for name in (*_MTP_KEYS, *_TARGET_KEYS)}
 
 
-def _hf_config() -> SimpleNamespace:
-    return SimpleNamespace(num_hidden_layers=NUM_HIDDEN_LAYERS)
+def _hf_config() -> PretrainedConfig:
+    return PretrainedConfig(
+        num_hidden_layers=NUM_HIDDEN_LAYERS,
+        quantization_config={"quant_method": "fp8"},
+    )
 
 
-def test_the_target_adapter_drops_the_mtp_layer() -> None:
-    out = convert_glm5_next_state_dict(_checkpoint(), _hf_config())
+def _apply(
+    rules: Callable[[PretrainedConfig], Sequence[WeightRule]],
+) -> dict[str, WeightData]:
+    return WeightTransform(rules(_hf_config()))(_checkpoint())
+
+
+def test_the_target_rules_drop_the_mtp_layer() -> None:
+    out = _apply(glm5_next_weight_rules)
     assert not [n for n in out if n.startswith("language_model.layers.4.")]
     assert "language_model.layers.3.self_attn.q_a_proj.weight" in out
 
 
-def test_the_draft_adapter_keeps_the_mtp_layer_under_modulev3_names() -> None:
+def test_the_mtp_layer_keeps_modulev3_names_for_the_precision_map() -> None:
     """Checks the layer keeps its FP8 scale's checkpoint name, as every
     ModuleV3 FP8 weight does, and the target's weights are unchanged."""
-    out = convert_glm5_next_with_mtp_state_dict(_checkpoint(), _hf_config())
+    out = _apply(glm5_next_with_mtp_weight_rules)
     mtp = {n for n in out if n.startswith("language_model.layers.4.")}
     assert mtp == {
         "language_model.layers.4.enorm.weight",
@@ -85,5 +95,19 @@ def test_the_draft_adapter_keeps_the_mtp_layer_under_modulev3_names() -> None:
         "language_model.layers.4.self_attn.q_a_proj.weight_scale_inv",
         "language_model.layers.4.mlp.gate.gate_score.weight",
     }
-    base = convert_glm5_next_state_dict(_checkpoint(), _hf_config())
-    assert set(out) - mtp == set(base)
+    assert set(out) - mtp == set(_apply(glm5_next_weight_rules))
+
+
+def test_the_draft_rules_name_only_the_mtp_layer() -> None:
+    """Checks the draft's rules name the layer as its module does and leave
+    the target's weights to the target."""
+    assert set(_apply(glm5_next_mtp_weight_rules)) == {
+        "enorm.weight",
+        "hnorm.weight",
+        "eh_proj.weight",
+        "shared_head_norm.weight",
+        "decoder_layer.input_layernorm.weight",
+        "decoder_layer.self_attn.q_a_proj.weight",
+        "decoder_layer.self_attn.q_a_proj.weight_scale_inv",
+        "decoder_layer.mlp.gate.gate_score.weight",
+    }

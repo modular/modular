@@ -16,12 +16,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from max.graph.weights import WeightsFormat
 from max.pipelines.modeling.types import InputModality
 
+from ..glm5_next_modulev3.weight_adapters import glm5_next_mtp_weight_rules
 from ..mtp_glm5_next.arch import mtp_glm5_next_draft_arch
 from .model import MTPGlm5NextModuleV3DraftArchConfig
-from .weight_adapters import convert_glm5_next_with_mtp_state_dict
 
 __all__ = ["mtp_glm5_next_modulev3_draft_arch"]
 
@@ -31,8 +30,7 @@ mtp_glm5_next_modulev3_draft_arch = replace(
     mtp_glm5_next_draft_arch,
     name="MTPGlm5NextDraftModel_ModuleV3",
     input_modalities={InputModality.TEXT},
-    weight_adapters={
-        WeightsFormat.safetensors: convert_glm5_next_with_mtp_state_dict,
-    },
+    weight_rules=glm5_next_mtp_weight_rules,
+    use_weight_rules=True,
     config=MTPGlm5NextModuleV3DraftArchConfig,
 )

@@ -118,8 +118,11 @@ def _weights() -> dict[str, np.ndarray]:
     rng = np.random.default_rng(29)
 
     def conv() -> np.ndarray:
-        return (rng.integers(-4, 5, size=(QKV_DIM, KERNEL)) / 8).astype(
-            np.float32
+        # The checkpoint's depthwise `[channels, 1, kernel]`.
+        return (
+            (rng.integers(-4, 5, size=(QKV_DIM, KERNEL)) / 8)
+            .astype(np.float32)
+            .reshape(QKV_DIM, 1, KERNEL)
         )
 
     weights = {

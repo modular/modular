@@ -296,15 +296,6 @@ def _tower_weights() -> dict[str, torch.Tensor]:
     tower = Glm5NextVisionTransformer(config, DeviceRef.CPU())
     weights: dict[str, torch.Tensor] = {}
     for name, (_, shape) in _shapes(tower).items():
-        if name == "patch_embed.proj.weight":
-            # The checkpoint stores the projection as its Conv3d.
-            shape = [
-                shape[0],
-                config.in_channels,
-                config.temporal_patch_size,
-                config.patch_size,
-                config.patch_size,
-            ]
         checkpoint_name = "model.visual." + name.replace(
             "attn.qkv_proj.", "attn.qkv."
         )
@@ -315,8 +306,11 @@ def _tower_weights() -> dict[str, torch.Tensor]:
 
 
 def _checkpoint_name(name: str) -> str:
-    """Undoes the one adapter rename a post-adapter name does not survive."""
-    return name.replace(
+    """Returns a parameter's checkpoint name, the one the rules rename to
+    ``name``."""
+    if name == "lm_head.weight":
+        return name
+    return "model.language_model." + name.replace(
         "indexer.index_kpool_compress_gate.weight",
         "indexer.index_kpool_compress_gate",
     )
@@ -328,8 +322,8 @@ def _draft_checkpoint_name(name: str) -> str:
     if name.startswith("decoder_layer."):
         return _checkpoint_name(prefix + name[len("decoder_layer.") :])
     if name.startswith("shared_head_norm."):
-        return prefix + "shared_head.norm." + name[len("shared_head_norm.") :]
-    return prefix + name
+        name = "shared_head.norm." + name[len("shared_head_norm.") :]
+    return _checkpoint_name(prefix + name)
 
 
 def _random_weights(

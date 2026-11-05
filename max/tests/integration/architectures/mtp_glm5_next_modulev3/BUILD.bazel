@@ -18,8 +18,9 @@ modular_py_test(
     deps = [
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
-        "//max/python/max/pipelines/architectures/mtp_glm5_next_modulev3",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
+        requirement("transformers"),
     ],
 )
 
@@ -129,7 +130,6 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
-        "//max/python/max/pipelines/architectures/mtp_glm5_next",
         "//max/python/max/pipelines/architectures/mtp_glm5_next_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",

@@ -33,7 +33,7 @@ modular_py_test(
     deps = [
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/glm5_next",
-        "//max/python/max/pipelines/architectures/mtp_glm5_next",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
