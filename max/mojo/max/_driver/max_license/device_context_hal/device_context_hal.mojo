@@ -2788,6 +2788,111 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         """
         return Int(self._ctx[]._device[].get_attribute(attr._value))
 
+    def multiprocessor_count(self) raises -> Int:
+        """Returns the number of multiprocessors on this device.
+
+        On a GPU, this is the number of streaming multiprocessors (NVIDIA) or
+        compute units (AMD) that run thread blocks concurrently. A device that
+        isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The number of multiprocessors.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+
+    def max_threads_per_block(self) raises -> Int:
+        """Returns the maximum number of threads in one thread block.
+
+        On a GPU, a kernel launch whose block has more threads than this
+        fails. A device that isn't a GPU reports whatever its driver
+        provides.
+
+        Returns:
+            The maximum number of threads per block.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK)
+
+    def max_shared_memory_per_block(self) raises -> Int:
+        """Returns the shared memory one thread block can use by default.
+
+        On a GPU, this is the per-block limit without opting in to a larger
+        dynamic allocation. A device that isn't a GPU reports whatever its
+        driver provides.
+
+        Returns:
+            The maximum shared memory per block in bytes.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
+
+    def max_grid_dim_x(self) raises -> Int:
+        """Returns the maximum number of blocks along x in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along x fails.
+        A device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum grid size along x.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_X)
+
+    def max_grid_dim_y(self) raises -> Int:
+        """Returns the maximum number of blocks along y in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along y fails.
+        A device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum grid size along y.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Y)
+
+    def max_grid_dim_z(self) raises -> Int:
+        """Returns the maximum number of blocks along z in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along z fails.
+        A device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum grid size along z.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Z)
+
+    def max_grid_dim(self) raises -> Dim:
+        """Returns the maximum grid dimensions for a kernel launch.
+
+        On a GPU, a launch whose grid exceeds this in any dimension fails.
+        Makes one driver query per dimension; to read a single limit, use
+        `max_grid_dim_x()`, `max_grid_dim_y()`, or `max_grid_dim_z()`. A
+        device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum number of blocks along x, y, and z.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return Dim(
+            self.max_grid_dim_x(), self.max_grid_dim_y(), self.max_grid_dim_z()
+        )
+
     def is_host_unified(self) raises -> Bool:
         """Returns True if this device and the host share one physical memory
         pool.
