@@ -120,6 +120,13 @@ This version is still a work in progress.
   including `--max-batch-size` and `--device-graph-capture` on an image
   model, raises an error before anything loads. Text models run as before.
 
+- `max benchmark` renames `--warmup-to-steady-state` to `--warmup-multiturn`,
+  since it applies only to multi-turn workloads and is unrelated to the
+  steady-state measurement window. The old flag, its workload and config
+  file keys, and `MODULAR_WARMUP_TO_STEADY_STATE` still work and log a
+  deprecation warning. Result files record the option as `warmup_multiturn`
+  under `client_args`.
+
 ## Python API
 
 - The eager `Module` framework moved from `max.experimental.nn` to `max.nn`,

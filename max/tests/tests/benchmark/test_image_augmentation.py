@@ -391,7 +391,7 @@ def test_augment_chat_samples_counts_sessions_that_still_fit() -> None:
 
 
 def test_sends_no_measured_turns_accounts_for_warmup_prefix() -> None:
-    """With --warmup-to-steady-state the first measured turn is at
+    """With --warmup-multiturn the first measured turn is at
     prefix_turns * 2 and carries the whole prefix, so a budget check that
     only looks at messages[0] and [1] passes a session the driver abandons."""
     session = _make_session(0, num_user_turns=4)

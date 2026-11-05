@@ -124,7 +124,7 @@ def test_resolve_skip_counts() -> None:
         request_rate: float = float("inf"),
         max_concurrency: int | None = None,
         ignore_first_turn_stats: bool = False,
-        warmup_to_steady_state: bool = False,
+        warmup_multiturn: bool = False,
     ) -> tuple[int, int]:
         return resolve_skip_counts(
             orig_skip_first=orig_skip_first,
@@ -132,7 +132,7 @@ def test_resolve_skip_counts() -> None:
             request_rate=request_rate,
             max_concurrency=max_concurrency,
             ignore_first_turn_stats=ignore_first_turn_stats,
-            warmup_to_steady_state=warmup_to_steady_state,
+            warmup_multiturn=warmup_multiturn,
         )
 
     # finite rate: auto-None → 0; explicit values are preserved
@@ -152,12 +152,12 @@ def test_resolve_skip_counts() -> None:
     # infinite rate, max_concurrency=None: unbounded → 0
     assert rsc(max_concurrency=None) == (0, 0)
 
-    # ignore_first_turn_stats resets skip_first unless warmup_to_steady_state
+    # ignore_first_turn_stats resets skip_first unless warmup_multiturn
     assert rsc(max_concurrency=4, ignore_first_turn_stats=True) == (0, 4)
     assert rsc(
         max_concurrency=4,
         ignore_first_turn_stats=True,
-        warmup_to_steady_state=True,
+        warmup_multiturn=True,
     ) == (4, 4)
     assert rsc(max_concurrency=4, ignore_first_turn_stats=False) == (4, 4)
 
