@@ -1024,8 +1024,8 @@ void *DeviceStream::ptr() const {
   return handle;
 }
 
-ErrorOrSuccess DeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                                    uint64_t value) const {
+ErrorOrSuccess DeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                               uint64_t value) const {
   if (device_->isVirtual())
     return virtualDeviceError("host-value waits");
   if (const char *err = MojoHAL_DeviceStream_waitOnHostValue(

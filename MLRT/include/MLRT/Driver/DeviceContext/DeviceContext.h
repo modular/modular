@@ -897,9 +897,9 @@ public:
   /// (typically calling `flag.signal(value)`) gate stream-side
   /// consumers on a CPU-produced result, without a second stream or
   /// a blocking host callback on the consumer's critical path.
-  virtual ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                                uint64_t value) const {
-    return Error("enqueueWaitOnHostValue is not supported on this device");
+  virtual ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                           uint64_t value) const {
+    return Error("enqueueWaitOnFlag is not supported on this device");
   }
 
   // Raw device driver pointer to enable passing to PyTorch and similar APIs.
@@ -966,7 +966,7 @@ private:
 /// 8-byte completion flag in pinned host memory mapped into the device
 /// address space. The CPU side reads / writes the value via
 /// `reset()` / `signal()` / `load()`; the GPU side waits for a value
-/// via `DeviceStream::enqueueWaitOnHostValue`. Allocated by
+/// via `DeviceStream::enqueueWaitOnFlag`. Allocated by
 /// `DeviceContext::allocateCompletionFlag()`; freed by the destructor
 /// (which routes through `DeviceContext::freeCompletionFlag`).
 ///
@@ -983,7 +983,7 @@ public:
   CompletionFlag &operator=(const CompletionFlag &) = delete;
 
   /// Device-visible address (suitable for
-  /// `DeviceStream::enqueueWaitOnHostValue`).
+  /// `DeviceStream::enqueueWaitOnFlag`).
   uint64_t devicePtr() const { return devicePtr_; }
 
   /// Relaxed store of 0 to clear the flag.

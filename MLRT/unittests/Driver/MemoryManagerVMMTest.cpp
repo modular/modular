@@ -269,7 +269,7 @@ TEST_F(MemoryManagerVMMTest, ViewFreeStaysUnreclaimableWhileBaseReadQueued) {
     ASSIGN_NO_ERR(void *, result, sideList.allocate(1 * kGiB, mode));
 
     flag->reset();
-    EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+    EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
     EXPECT_NO_ERR(base->enqueueCopyFromDevice(readback->ptr(), result, 64));
 
     EXPECT_NO_ERR(sideList.free(result));

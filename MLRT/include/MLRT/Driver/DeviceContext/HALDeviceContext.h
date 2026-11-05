@@ -442,8 +442,8 @@ public:
   ErrorOrSuccess enqueueWaitForEvent(DeviceEvent &event);
 
   /// Stalls the stream until the flag's slot holds `value`.
-  ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const;
+  ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                   uint64_t value) const;
 
   /// CUDA and HIP only, as in legacy.
   ErrorOrSuccess enqueueHostFunc(void (*fn)(void *), void *userData) const;

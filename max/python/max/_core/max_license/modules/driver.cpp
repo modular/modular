@@ -782,7 +782,7 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
            R"nbdoc(
           Stalls the queue until ``flag``'s 64-bit value equals ``value``.
 
-          Wraps the MLRT ``DeviceStream::enqueueWaitOnHostValue`` primitive
+          Wraps the MLRT ``DeviceStream::enqueueWaitOnFlag`` primitive
           (CUDA's ``cuStreamWaitValue64``). Typically paired with
           ``Device.__unsafe_enqueue_async_py_host_func`` to gate
           downstream GPU work on a host-side AsyncRT task that signals

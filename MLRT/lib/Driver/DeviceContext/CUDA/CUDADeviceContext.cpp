@@ -1443,9 +1443,8 @@ ErrorOrSuccess CUDADeviceStream::enqueueHostFunc(void (*fn)(void *),
   return success();
 }
 
-ErrorOrSuccess
-CUDADeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                         uint64_t value) const {
+ErrorOrSuccess CUDADeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                                   uint64_t value) const {
   const auto &cudaDevice = CUDADevice::cast(this->device());
   CUDA_WITH_DEV_ERR(cudaDevice);
   // Wait until *flag.devicePtr() == value. CU_STREAM_WAIT_VALUE_FLUSH is

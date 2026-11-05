@@ -305,6 +305,9 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- `DeviceStream.wait_for_host_value()` in `max.gpu.host` is deprecated; use
+  `DeviceStream.wait_for_flag()` instead.
+
 - Built-in custom ops are now named after their class instead of `mo.`,
   which is kept for the graph compiler's own ops. For example,
   `mo.launch_host_func` and `mo.inplace_memcpy` are now

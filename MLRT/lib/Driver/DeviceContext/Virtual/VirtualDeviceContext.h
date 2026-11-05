@@ -121,8 +121,8 @@ public:
   // from a failure.
   ErrorOrSuccess enqueueHostFunc(void (*fn)(void *),
                                  void *userData) const override;
-  ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const override;
+  ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                   uint64_t value) const override;
   ErrorOrSuccess beginCapture() const override;
   ErrorOr<DeviceGraphRef> endCapture() override;
 

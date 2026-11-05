@@ -371,11 +371,12 @@ AsyncRT_DeviceStream_enqueueHostFunc(DeviceStream *stream, void (*fn)(void *),
   return checkSuccess(stream->enqueueHostFunc(fn, userData));
 }
 
-MODULAR_EXPORT const char *AsyncRT_DeviceStream_enqueueWaitOnHostValue(
-    DeviceStream *stream, CompletionFlag *flag, uint64_t value) {
-  TRACY_ZONE_SCOPED_NC("AsyncRT_DeviceStream_enqueueWaitOnHostValue",
+MODULAR_EXPORT const char *
+AsyncRT_DeviceStream_enqueueWaitOnFlag(DeviceStream *stream,
+                                       CompletionFlag *flag, uint64_t value) {
+  TRACY_ZONE_SCOPED_NC("AsyncRT_DeviceStream_enqueueWaitOnFlag",
                        TRACY_COLOR_GRAY);
-  return checkSuccess(stream->enqueueWaitOnHostValue(*flag, value));
+  return checkSuccess(stream->enqueueWaitOnFlag(*flag, value));
 }
 
 MODULAR_EXPORT const char *

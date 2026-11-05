@@ -4024,7 +4024,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         event._event[] = Optional(hal_event^)
 
     @doc_hidden
-    def wait_for_host_value(
+    def wait_for_flag(
         self,
         flag: CompletionFlag,
         value: UInt64,
@@ -4046,6 +4046,24 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             "AsyncRT_CompletionFlag_devicePtr", UInt64
         ](flag._handle)
         self._stream[].wait_value64(device_addr, value)
+
+    @deprecated("Use `wait_for_flag` instead.")
+    @doc_hidden
+    def wait_for_host_value(
+        self,
+        flag: CompletionFlag,
+        value: UInt64,
+    ) raises:
+        """Stalls this stream until ``flag`` reaches ``value``.
+
+        Args:
+            flag: The flag to wait on.
+            value: The value to wait for.
+
+        Raises:
+            If the wait cannot be enqueued.
+        """
+        self.wait_for_flag(flag, value)
 
     def _native_stream[
         origin: Origin, //

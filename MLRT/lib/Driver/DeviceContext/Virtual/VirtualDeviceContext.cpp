@@ -157,8 +157,8 @@ ErrorOrSuccess VirtualDeviceStream::enqueueHostFunc(void (*fn)(void *),
 }
 
 ErrorOrSuccess
-VirtualDeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                            uint64_t value) const {
+VirtualDeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                       uint64_t value) const {
   RETURN_ERROR("VirtualDevice does not support host-value waits");
 }
 

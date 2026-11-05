@@ -1249,7 +1249,7 @@ TEST_F(GPUDeviceContextTest,
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
     flag->signal(1);
-    EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+    EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
     EXPECT_NO_ERR(stream->synchronize());
   }
 }
@@ -1267,7 +1267,7 @@ TEST_F(GPUDeviceContextTest, EnqueueWaitOnHostValueGatesUntilHostSignals) {
     ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
-    EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+    EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
 
     std::atomic<bool> workerDidRun{false};
     std::thread signaller([&] {
@@ -1311,7 +1311,7 @@ TEST_F(GPUDeviceContextTest, EnqueueWaitOnHostValueUnsupportedOnCpu) {
     ASSIGN_NO_ERR(DeviceContextRef, cpuCtx,
                   DeviceContext::create(Device::cpuAPI));
     ASSIGN_NO_ERR(DeviceStreamRef, cpuStream, cpuCtx->stream());
-    EXPECT_ERR_MSG(cpuStream->enqueueWaitOnHostValue(*flag, /*value=*/1),
+    EXPECT_ERR_MSG(cpuStream->enqueueWaitOnFlag(*flag, /*value=*/1),
                    "not supported");
   }
 }

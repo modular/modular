@@ -6433,7 +6433,7 @@ struct WaitHostValue:
     """Stalls the stream until a host-visible flag reaches a given value.
 
     Lowers to CUDA's `cuStreamWaitValue64` via
-    `DeviceStream.wait_for_host_value`. Accepts a 1-D int64 buffer of
+    `DeviceStream.wait_for_flag`. Accepts a 1-D int64 buffer of
     shape `[2]`, mirroring `runtime.launch_host_func`'s payload shape:
 
     - `payload[0]`: raw address of a `M::Driver::CompletionFlag` (as
@@ -6468,7 +6468,7 @@ struct WaitHostValue:
             unsafe_from_address=Int(payload_tile.load[width=1](Coord(0)))
         )
         var value = UInt64(Int(payload_tile.load[width=1](Coord(1))))
-        ctx.stream().wait_for_host_value(flag, value)
+        ctx.stream().wait_for_flag(flag, value)
 
 
 @extensibility.register("runtime.wait_host_value_with_dep")
@@ -6507,7 +6507,7 @@ struct WaitHostValueWithDep:
             unsafe_from_address=Int(payload_tile.load[width=1](Coord(0)))
         )
         var value = UInt64(Int(payload_tile.load[width=1](Coord(1))))
-        ctx.stream().wait_for_host_value(flag, value)
+        ctx.stream().wait_for_flag(flag, value)
 
 
 # ===-----------------------------------------------------------------------===#

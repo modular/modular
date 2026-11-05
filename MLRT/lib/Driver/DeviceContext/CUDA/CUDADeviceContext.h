@@ -298,8 +298,8 @@ public:
   ErrorOrSuccess enqueueHostFunc(void (*fn)(void *),
                                  void *userData) const override;
 
-  ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const override;
+  ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                   uint64_t value) const override;
 
   virtual ErrorOrSuccess enqueueFunctionExecDirect(
       const DeviceFunction &func, uint32_t gridX, uint32_t gridY,

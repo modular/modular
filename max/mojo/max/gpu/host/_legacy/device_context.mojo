@@ -2615,7 +2615,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         )
 
     @inline(.always)
-    def wait_for_host_value(
+    def wait_for_flag(
         self,
         flag: CompletionFlag,
         value: UInt64,
@@ -2647,14 +2647,32 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
             If the underlying device does not support stream memory ops,
             or if the driver rejects the enqueue.
         """
-        # const char *AsyncRT_DeviceStream_enqueueWaitOnHostValue(
+        # const char *AsyncRT_DeviceStream_enqueueWaitOnFlag(
         #     const DeviceStream *stream, CompletionFlag *flag, uint64_t value)
         _checked(
             external_call[
-                "AsyncRT_DeviceStream_enqueueWaitOnHostValue",
+                "AsyncRT_DeviceStream_enqueueWaitOnFlag",
                 _CString[],
             ](self._handle, flag._handle, value)
         )
+
+    @deprecated("Use `wait_for_flag` instead.")
+    @inline(.always)
+    def wait_for_host_value(
+        self,
+        flag: CompletionFlag,
+        value: UInt64,
+    ) raises:
+        """Stalls this stream until ``flag`` reaches ``value``.
+
+        Args:
+            flag: The flag to wait on.
+            value: The value to wait for.
+
+        Raises:
+            If the wait cannot be enqueued.
+        """
+        self.wait_for_flag(flag, value)
 
     @inline(.always)
     def enqueue_function[
@@ -2716,7 +2734,7 @@ struct CompletionFlag(ImplicitlyCopyable):
     into a device's address space. A CPU thread (or an AsyncRT worker
     dispatched by `DeviceStream.enqueue_host_func`) writes a 64-bit
     value to the slot; the GPU side waits on the same slot via
-    `DeviceStream.wait_for_host_value`. The pairing lets a CUDA stream
+    `DeviceStream.wait_for_flag`. The pairing lets a CUDA stream
     block on a value produced by a host thread without a second stream
     or a blocking host callback on the consumer's critical path.
 
@@ -2729,7 +2747,7 @@ struct CompletionFlag(ImplicitlyCopyable):
     payload buffer; do not allocate or free through this wrapper.
 
     Currently usable only on CUDA-backed devices, matching
-    `DeviceStream.wait_for_host_value`.
+    `DeviceStream.wait_for_flag`.
     """
 
     # ===-------------------------------------------------------------------===#

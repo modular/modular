@@ -1227,9 +1227,8 @@ internWaitValueNodeParams(hipCtx_t ctx, hipDeviceptr_t address,
   return &params->node;
 }
 
-ErrorOrSuccess
-HIPDeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const {
+ErrorOrSuccess HIPDeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                                  uint64_t value) const {
   const auto &hipDevice = HIPDevice::cast(this->device());
 
   HIP_WITH_DEV_ERR(hipDevice);
