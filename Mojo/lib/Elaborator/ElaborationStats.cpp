@@ -17,6 +17,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
+#include <ctime>
 #include <mutex>
 
 using namespace M;
@@ -50,11 +51,51 @@ struct LoopRow {
   int64_t resultOps = 0;
 };
 
-struct Summary {
+struct LoopSummary {
   llvm::SmallVector<LoopRow> rows;
   int64_t totalOps = 0;
 };
+
+/// The interpreter calls one operation made to one function, merged.
+struct CallRow {
+  FileLineColLoc fileLoc;
+  Location loc;
+  llvm::StringRef callee;
+  int64_t cacheHits = 0;
+  int64_t interpreted = 0;
+  int64_t cpuNanos = 0;
+  int64_t maxCPUNanos = 0;
+};
+
+/// The interpreter calls to one function, merged over the operations that made
+/// them.
+struct CalleeRow {
+  llvm::StringRef callee;
+  int64_t callSites = 0;
+  int64_t cacheHits = 0;
+  int64_t interpreted = 0;
+  int64_t cpuNanos = 0;
+  int64_t maxCPUNanos = 0;
+};
+
+struct CallSummary {
+  llvm::SmallVector<CalleeRow> callees;
+  llvm::SmallVector<CallRow> rows;
+  int64_t cacheHits = 0;
+  int64_t interpreted = 0;
+  int64_t cpuNanos = 0;
+};
 } // namespace
+
+/// The rows each interpreter table of the text report lists. A large compile
+/// makes calls from thousands of places; the JSON report lists them all.
+static constexpr size_t kMaxTextCallRows = 20;
+
+int64_t M::KGEN::getThreadCPUNanos() {
+  timespec time;
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time);
+  return int64_t(time.tv_sec) * 1'000'000'000 + time.tv_nsec;
+}
 
 void M::KGEN::enableElaborationStats() {
   CollectorState &state = getCollectorState();
@@ -70,18 +111,48 @@ llvm::SmallVector<ElaborationStatsPart> M::KGEN::takeElaborationStats() {
   return std::move(state.parts);
 }
 
+static double nanosToSeconds(int64_t nanos) { return double(nanos) / 1e9; }
+
+/// The symbol name without its parameter and argument lists. The report keys
+/// rows by location, so those lists only add noise.
+static llvm::StringRef getBaseName(StringAttr symbol) {
+  return symbol.getValue().take_until(
+      [](char c) { return c == '[' || c == '('; });
+}
+
+static void printLocation(llvm::raw_ostream &os, FileLineColLoc fileLoc,
+                          Location loc) {
+  if (fileLoc) {
+    os << fileLoc.getFilename().getValue() << ':' << fileLoc.getLine() << ':'
+       << fileLoc.getColumn();
+    return;
+  }
+  loc.print(os);
+}
+
+static void writeLocationJSON(llvm::json::OStream &json, FileLineColLoc fileLoc,
+                              Location loc) {
+  if (fileLoc) {
+    json.attribute("file", fileLoc.getFilename().getValue());
+    json.attribute("line", int64_t(fileLoc.getLine()));
+    json.attribute("column", int64_t(fileLoc.getColumn()));
+    return;
+  }
+  std::string text;
+  llvm::raw_string_ostream textOS(text);
+  loc.print(textOS);
+  json.attribute("location", text);
+}
+
 /// Groups `records` by loop and generator, sorted by the operations produced.
-static Summary summarize(llvm::ArrayRef<ComptimeForRecord> records) {
+static LoopSummary summarizeLoops(llvm::ArrayRef<ComptimeForRecord> records) {
   llvm::MapVector<std::pair<Location, StringAttr>, LoopRow> groups;
-  Summary summary;
+  LoopSummary summary;
   for (const ComptimeForRecord &record : records) {
-    auto [it, inserted] = groups.try_emplace(
-        std::make_pair(record.loc, record.generator),
-        LoopRow{record.loc->findInstanceOf<FileLineColLoc>(), record.loc,
-                // The location identifies the loop, so the parameter and
-                // argument lists in the symbol name only add noise.
-                record.generator.getValue().take_until(
-                    [](char c) { return c == '[' || c == '('; })});
+    auto [it, inserted] =
+        groups.try_emplace(std::make_pair(record.loc, record.generator),
+                           LoopRow{record.loc->findInstanceOf<FileLineColLoc>(),
+                                   record.loc, getBaseName(record.generator)});
     LoopRow &row = it->second;
     ++row.instances;
     row.minIterations = std::min(row.minIterations, record.iterations);
@@ -98,13 +169,64 @@ static Summary summarize(llvm::ArrayRef<ComptimeForRecord> records) {
   return summary;
 }
 
-void M::KGEN::reportElaborationStats(bool isOffload,
-                                     const CompilationOptions &options,
-                                     std::vector<ComptimeForRecord> records) {
+template <typename RowT>
+static void sortByCPUTime(llvm::SmallVectorImpl<RowT> &rows) {
+  llvm::stable_sort(rows, [](const RowT &lhs, const RowT &rhs) {
+    return std::make_pair(lhs.cpuNanos, lhs.cacheHits) >
+           std::make_pair(rhs.cpuNanos, rhs.cacheHits);
+  });
+}
+
+/// Groups `calls` by callee, and by location and callee, each sorted by CPU
+/// time. A callee's instantiations share a row, as one operation in a generic
+/// function calls a different one for each instantiation of its own.
+static CallSummary summarizeCalls(llvm::ArrayRef<InterpreterCallRecord> calls) {
+  llvm::MapVector<std::pair<Location, llvm::StringRef>, CallRow> groups;
+  CallSummary summary;
+  for (const InterpreterCallRecord &call : calls) {
+    llvm::StringRef callee = getBaseName(call.callee);
+    auto [it, inserted] = groups.try_emplace(
+        std::make_pair(call.loc, callee),
+        CallRow{call.loc->findInstanceOf<FileLineColLoc>(), call.loc, callee});
+    CallRow &row = it->second;
+    if (!call.cpuNanos) {
+      ++row.cacheHits;
+      ++summary.cacheHits;
+      continue;
+    }
+    ++row.interpreted;
+    row.cpuNanos += *call.cpuNanos;
+    row.maxCPUNanos = std::max(row.maxCPUNanos, *call.cpuNanos);
+    ++summary.interpreted;
+    summary.cpuNanos += *call.cpuNanos;
+  }
+  llvm::MapVector<llvm::StringRef, CalleeRow> callees;
+  for (auto &[key, row] : groups) {
+    CalleeRow &callee =
+        callees.try_emplace(row.callee, CalleeRow{row.callee}).first->second;
+    ++callee.callSites;
+    callee.cacheHits += row.cacheHits;
+    callee.interpreted += row.interpreted;
+    callee.cpuNanos += row.cpuNanos;
+    callee.maxCPUNanos = std::max(callee.maxCPUNanos, row.maxCPUNanos);
+    summary.rows.push_back(std::move(row));
+  }
+  for (auto &[name, callee] : callees)
+    summary.callees.push_back(callee);
+  sortByCPUTime(summary.callees);
+  sortByCPUTime(summary.rows);
+  return summary;
+}
+
+void M::KGEN::reportElaborationStats(
+    bool isOffload, const CompilationOptions &options,
+    std::vector<ComptimeForRecord> comptimeForRecords,
+    std::optional<std::vector<InterpreterCallRecord>> interpreterCalls) {
   std::string label = (isOffload ? "offload " : "host ") + options.targetTriple;
   if (!options.targetCpu.empty())
     label += " " + options.targetCpu;
-  ElaborationStatsPart part{std::move(label), std::move(records)};
+  ElaborationStatsPart part{std::move(label), std::move(comptimeForRecords),
+                            std::move(interpreterCalls)};
 
   CollectorState &state = getCollectorState();
   {
@@ -120,13 +242,13 @@ void M::KGEN::reportElaborationStats(bool isOffload,
   printElaborationStats(llvm::errs(), part);
 }
 
-void M::KGEN::printElaborationStats(llvm::raw_ostream &os,
-                                    const ElaborationStatsPart &part) {
-  Summary summary = summarize(part.records);
+static void printComptimeFors(llvm::raw_ostream &os,
+                              llvm::ArrayRef<ComptimeForRecord> records) {
+  LoopSummary summary = summarizeLoops(records);
   os << llvm::formatv(
       "comptime for: {0:N} loops, {1:N} instantiations, {2:N} ops produced "
       "(after elaboration, before inlining)\n",
-      summary.rows.size(), part.records.size(), summary.totalOps);
+      summary.rows.size(), records.size(), summary.totalOps);
   if (summary.rows.empty())
     return;
 
@@ -137,13 +259,60 @@ void M::KGEN::printElaborationStats(llvm::raw_ostream &os,
       iterations = std::to_string(row.minIterations) + "-" + iterations;
     os << llvm::formatv("{0,15:N}  {1,9:N}  {2,11}  {3,8:N}  ", row.resultOps,
                         row.instances, iterations, row.bodyOps);
-    if (row.fileLoc) {
-      os << row.fileLoc.getFilename().getValue() << ':' << row.fileLoc.getLine()
-         << ':' << row.fileLoc.getColumn();
-    } else {
-      row.loc.print(os);
-    }
+    printLocation(os, row.fileLoc, row.loc);
     os << "  @" << row.generator << '\n';
+  }
+}
+
+static void printInterpreterCalls(llvm::raw_ostream &os,
+                                  llvm::ArrayRef<InterpreterCallRecord> calls) {
+  CallSummary summary = summarizeCalls(calls);
+  os << llvm::formatv("interpreter: {0:N} calls, {1:N} cache hits, {2:N} "
+                      "interpreted in {3:F4} s CPU\n",
+                      calls.size(), summary.cacheHits, summary.interpreted,
+                      nanosToSeconds(summary.cpuNanos));
+  if (summary.rows.empty())
+    return;
+
+  auto printMoreRows = [&](size_t rows) {
+    if (rows > kMaxTextCallRows) {
+      os << llvm::formatv("... {0:N} more rows; --timing-json lists them all\n",
+                          rows - kMaxTextCallRows);
+    }
+  };
+
+  os << "\nBy callee, each function's calls summed over all its call sites:\n"
+        "          CPU s  interpreted  cache hits     max s  call sites  "
+        "callee\n";
+  for (const CalleeRow &row :
+       llvm::ArrayRef(summary.callees).take_front(kMaxTextCallRows)) {
+    os << llvm::formatv(
+        "{0,15:F4}  {1,11:N}  {2,10:N}  {3,8:F4}  {4,10:N}  @{5}\n",
+        nanosToSeconds(row.cpuNanos), row.interpreted, row.cacheHits,
+        nanosToSeconds(row.maxCPUNanos), row.callSites, row.callee);
+  }
+  printMoreRows(summary.callees.size());
+
+  os << "\nBy call site, one operation's calls to one function:\n"
+        "          CPU s  interpreted  cache hits     max s  call site  "
+        "callee\n";
+  for (const CallRow &row :
+       llvm::ArrayRef(summary.rows).take_front(kMaxTextCallRows)) {
+    os << llvm::formatv("{0,15:F4}  {1,11:N}  {2,10:N}  {3,8:F4}  ",
+                        nanosToSeconds(row.cpuNanos), row.interpreted,
+                        row.cacheHits, nanosToSeconds(row.maxCPUNanos));
+    printLocation(os, row.fileLoc, row.loc);
+    os << "  @" << row.callee << '\n';
+  }
+  printMoreRows(summary.rows.size());
+}
+
+void M::KGEN::printElaborationStats(llvm::raw_ostream &os,
+                                    const ElaborationStatsPart &part) {
+  printComptimeFors(os, part.comptimeForRecords);
+  if (part.interpreterCalls) {
+    os << '\n';
+    printInterpreterCalls(os, *part.interpreterCalls);
   }
 }
 
@@ -152,26 +321,18 @@ void M::KGEN::writeElaborationStatsJSON(
   llvm::json::OStream json(os, /*IndentSize=*/2);
   json.array([&] {
     for (const ElaborationStatsPart &part : parts) {
-      Summary summary = summarize(part.records);
+      LoopSummary loops = summarizeLoops(part.comptimeForRecords);
       json.object([&] {
         json.attribute("pipeline", part.label);
         json.attributeObject("comptime_for", [&] {
-          json.attribute("loop_count", int64_t(summary.rows.size()));
-          json.attribute("instantiation_count", int64_t(part.records.size()));
-          json.attribute("ops_produced", summary.totalOps);
+          json.attribute("loop_count", int64_t(loops.rows.size()));
+          json.attribute("instantiation_count",
+                         int64_t(part.comptimeForRecords.size()));
+          json.attribute("ops_produced", loops.totalOps);
           json.attributeArray("loops", [&] {
-            for (const LoopRow &row : summary.rows) {
+            for (const LoopRow &row : loops.rows) {
               json.object([&] {
-                if (row.fileLoc) {
-                  json.attribute("file", row.fileLoc.getFilename().getValue());
-                  json.attribute("line", int64_t(row.fileLoc.getLine()));
-                  json.attribute("column", int64_t(row.fileLoc.getColumn()));
-                } else {
-                  std::string text;
-                  llvm::raw_string_ostream textOS(text);
-                  row.loc.print(textOS);
-                  json.attribute("location", text);
-                }
+                writeLocationJSON(json, row.fileLoc, row.loc);
                 json.attribute("generator", row.generator);
                 json.attribute("instances", row.instances);
                 json.attributeObject("iterations", [&] {
@@ -180,6 +341,41 @@ void M::KGEN::writeElaborationStatsJSON(
                 });
                 json.attribute("body_ops", row.bodyOps);
                 json.attribute("ops_produced", row.resultOps);
+              });
+            }
+          });
+        });
+        if (!part.interpreterCalls)
+          return;
+        CallSummary calls = summarizeCalls(*part.interpreterCalls);
+        json.attributeObject("interpreter", [&] {
+          json.attribute("call_count", int64_t(part.interpreterCalls->size()));
+          json.attribute("cache_hit_count", calls.cacheHits);
+          json.attribute("interpreted_count", calls.interpreted);
+          json.attribute("cpu_seconds", nanosToSeconds(calls.cpuNanos));
+          json.attributeArray("callees", [&] {
+            for (const CalleeRow &row : calls.callees) {
+              json.object([&] {
+                json.attribute("callee", row.callee);
+                json.attribute("call_sites", row.callSites);
+                json.attribute("cache_hits", row.cacheHits);
+                json.attribute("interpreted", row.interpreted);
+                json.attribute("cpu_seconds", nanosToSeconds(row.cpuNanos));
+                json.attribute("max_cpu_seconds",
+                               nanosToSeconds(row.maxCPUNanos));
+              });
+            }
+          });
+          json.attributeArray("calls", [&] {
+            for (const CallRow &row : calls.rows) {
+              json.object([&] {
+                writeLocationJSON(json, row.fileLoc, row.loc);
+                json.attribute("callee", row.callee);
+                json.attribute("cache_hits", row.cacheHits);
+                json.attribute("interpreted", row.interpreted);
+                json.attribute("cpu_seconds", nanosToSeconds(row.cpuNanos));
+                json.attribute("max_cpu_seconds",
+                               nanosToSeconds(row.maxCPUNanos));
               });
             }
           });

@@ -42,6 +42,32 @@ using namespace KGEN;
 // IR Interpreter
 //===----------------------------------------------------------------------===//
 
+namespace {
+/// Records the interpreter call it spans, with the CPU time of the calling
+/// thread, when `--elaboration-stats` is on.
+class InterpreterCallTimer {
+public:
+  InterpreterCallTimer(Elaborator &elaborator, std::optional<Location> loc,
+                       FuncOp func)
+      : elaborator(elaborator), loc(loc), func(func) {
+    if (elaborator.getOptions().printStats)
+      start = getThreadCPUNanos();
+  }
+  ~InterpreterCallTimer() {
+    if (start) {
+      elaborator.recordInterpreterCall(loc.value_or(func.getLoc()), func,
+                                       getThreadCPUNanos() - *start);
+    }
+  }
+
+private:
+  Elaborator &elaborator;
+  std::optional<Location> loc;
+  FuncOp func;
+  std::optional<int64_t> start;
+};
+} // namespace
+
 ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   InstantiatedOpInterface inst = elaborator->lookupInstantiatedOp(symbol);
   FuncOp func = cast<FuncOp>(inst);
@@ -55,6 +81,7 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   if constexpr (KGEN::kIsTracingEnabled)
     auto ts = InterpreterTimeTraceScope("Launch interpreter",
                                         mlir::debugString(errorLoc));
+  InterpreterCallTimer timer(*elaborator, errorLoc, func);
 
   // Evaluate the function body.
   SmallVector<Attribute> arguments;
@@ -79,6 +106,7 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
   if constexpr (KGEN::kIsTracingEnabled)
     auto ts = InterpreterTimeTraceScope("Launch interpreter",
                                         mlir::debugString(errorLoc));
+  InterpreterCallTimer timer(*elaborator, errorLoc, func);
 
   // Evaluate the function body.
   SmallVector<Attribute> arguments;
@@ -332,8 +360,11 @@ FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
       op.getContext(), op.getOperands().drop_front());
   TypedAttr &cached =
       elaborator->lookupCachedInterpretation(func, operandsAttr);
-  if (cached)
+  if (cached) {
+    elaborator->recordInterpreterCall(*errorLoc, func,
+                                      /*cpuNanos=*/std::nullopt);
     return cached;
+  }
 
   // Concretize symbols within the operands before invoking the function.
   ErrorTreeOr<Attribute> operandsOr =

@@ -857,7 +857,9 @@ ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
   // Attempt to lookup a cached value. This returns a thread local cached value.
   auto operandsAttr = cast<ParameterExprArrayAttr>(value);
   TypedAttr &cached = lookupCachedInterpretation(func, operandsAttr);
-  if (!cached) {
+  if (cached) {
+    recordInterpreterCall(op.getLoc(), func, /*cpuNanos=*/std::nullopt);
+  } else {
     ErrorTreeOr<Attribute> operandsOr =
         concretizeSymbolsWithin(operandsAttr, inode, op.getLoc());
     if (operandsOr.isError()) {
@@ -1577,6 +1579,7 @@ void Elaborator::processImplNodeTask(ImplNode *inode) {
     if (!inode->parent->getIsError())
       g.numWorkItems.fetch_add(1);
     completeImplNodeProcessing(inode);
+    flushInterpreterCalls();
   }
   // Signal the worklist that the work is complete.
   if (!inode->parent->getIsError())
@@ -3032,7 +3035,8 @@ LogicalResult Elaborator::run(
 
   if (config.printStats) {
     reportElaborationStats(target.isGPU(), options,
-                           std::move(comptimeForStats.get()));
+                           std::move(comptimeForStats.get()),
+                           std::move(interpreterCalls.get()));
   }
 
   return success(!failed);

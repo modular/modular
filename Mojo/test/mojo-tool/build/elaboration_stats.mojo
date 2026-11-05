@@ -29,7 +29,12 @@
 # CHECK_TEXT: Elaboration statistics (--elaboration-stats): host
 # CHECK_TEXT: comptime for: {{[0-9,]+}} loops, {{[0-9,]+}} instantiations, {{[0-9,]+}} ops produced
 # CHECK_TEXT: ops produced instances iterations body ops loop
-# CHECK_TEXT: {{[0-9]+}} 1 4 {{[0-9]+}} {{.*}}elaboration_stats.mojo:[[@LINE+22]]:{{[0-9]+}} @{{.*}}main
+# CHECK_TEXT: {{[0-9]+}} 1 4 {{[0-9]+}} {{.*}}elaboration_stats.mojo:[[@LINE+44]]:{{[0-9]+}} @{{.*}}main
+# CHECK_TEXT: interpreter: {{[0-9,]+}} calls, {{[0-9,]+}} cache hits, {{[0-9,]+}} interpreted in {{[0-9.]+}} s CPU
+# CHECK_TEXT: By callee, each function's calls summed over all its call sites:
+# CHECK_TEXT-NEXT: CPU s interpreted cache hits max s call sites callee
+# CHECK_TEXT: By call site, one operation's calls to one function:
+# CHECK_TEXT-NEXT: CPU s interpreted cache hits max s call site callee
 
 # CHECK_QUIET-NOT: Elaboration statistics
 # CHECK_QUIET-NOT: Execution time report
@@ -41,12 +46,29 @@
 # CHECK_JSON: "loop_count":
 # CHECK_JSON: "loops": [
 # CHECK_JSON: "file": "{{.*}}elaboration_stats.mojo"
-# CHECK_JSON-NEXT: "line": [[@LINE+10]],
+# CHECK_JSON-NEXT: "line": [[@LINE+27]],
 # CHECK_JSON: "generator": "{{.*}}main"
 # CHECK_JSON: "iterations": {
 # CHECK_JSON-NEXT: "min": 4,
 # CHECK_JSON-NEXT: "max": 4
-# CHECK_JSON: }
+# CHECK_JSON: "interpreter": {
+# CHECK_JSON-NEXT: "call_count":
+# CHECK_JSON-NEXT: "cache_hit_count":
+# CHECK_JSON-NEXT: "interpreted_count":
+# CHECK_JSON-NEXT: "cpu_seconds":
+# CHECK_JSON-NEXT: "callees": [
+# CHECK_JSON: "callee":
+# CHECK_JSON-NEXT: "call_sites":
+# CHECK_JSON-NEXT: "cache_hits":
+# CHECK_JSON-NEXT: "interpreted":
+# CHECK_JSON-NEXT: "cpu_seconds":
+# CHECK_JSON-NEXT: "max_cpu_seconds":
+# CHECK_JSON: "calls": [
+# CHECK_JSON: "callee":
+# CHECK_JSON-NEXT: "cache_hits":
+# CHECK_JSON-NEXT: "interpreted":
+# CHECK_JSON-NEXT: "cpu_seconds":
+# CHECK_JSON-NEXT: "max_cpu_seconds":
 
 
 def main():

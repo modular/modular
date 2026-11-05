@@ -517,7 +517,8 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
     Option<"printStats", "print-stats", "bool", "false",
            "Print to stderr what elaboration produced: each `comptime for` "
            "loop with its iteration count and the operations its unrolled "
-           "iterations hold.">
+           "iterations hold, and the interpreter calls for comptime values "
+           "with their cache hits and the CPU time to interpret the rest.">
   ];
 }
 
