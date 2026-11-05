@@ -116,6 +116,11 @@ This version is still a work in progress.
   parameter. Pass it as an argument, `span.binary_search_by(cmp)`, which also
   lets it capture the value being searched for.
 
+- `QuickBench.run()` in `std.benchmark` now takes a single closure with no
+  arguments in place of its eleven overloads for functions of 0 to 10
+  arguments. Capture the inputs instead of passing them separately:
+  `qb.run(lambda () {x} -> Float32: exp(x), bench_id=BenchId("exp"))`.
+
 - `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
   now raise an `Error` instead of aborting when the string is empty. They also
   raise when the string holds more than one codepoint; previously they
