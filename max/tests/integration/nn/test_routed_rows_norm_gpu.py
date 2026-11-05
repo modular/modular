@@ -49,7 +49,7 @@ def _build_graph(top_k: int) -> Graph:
 
         def finalize(out_dtype: DType) -> TensorValue:
             return ops.custom(
-                "mo.routed_rows_rms_norm_finalize",
+                "norm.routed_rows_rms_norm_finalize",
                 device=gpu,
                 values=[x, w, offsets, restore, router_weight, eps],
                 out_types=[
@@ -58,7 +58,7 @@ def _build_graph(top_k: int) -> Graph:
             )[0].tensor
 
         routed = ops.custom(
-            "mo.routed_rows_rms_norm",
+            "norm.routed_rows_rms_norm",
             device=gpu,
             values=[x, w, offsets, eps],
             out_types=[x.type],

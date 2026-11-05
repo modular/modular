@@ -20,7 +20,7 @@ covers the whole static buffer and every row past it returns at once; rows
 past it are left unwritten. The body is `rms_norm`'s, on the same launch, so
 the routed rows match `mo.reduce.rms_norm` of the scaled input bit for bit.
 
-`mo.routed_rows_rms_norm_finalize` folds that norm into `mo.moe.finalize`
+`norm.routed_rows_rms_norm_finalize` folds that norm into `moe.finalize`
 (`nn.routed_rows_finalize`): each token sums its routed rows' norms by router
 weight, and a slot whose row is past the routed count adds nothing.
 """
@@ -48,9 +48,9 @@ from nn.routed_rows_finalize import (
 from .monoids import ReduceSum
 
 
-@extensibility.register("mo.routed_rows_rms_norm")
+@extensibility.register("norm.routed_rows_rms_norm")
 struct RoutedRowsRMSNorm:
-    """Registers the `mo.routed_rows_rms_norm` graph op."""
+    """Registers the `norm.routed_rows_rms_norm` graph op."""
 
     @staticmethod
     def execute[
@@ -83,7 +83,9 @@ struct RoutedRowsRMSNorm:
         Raises:
             Error: If the launch fails.
         """
-        comptime assert is_gpu[target](), "mo.routed_rows_rms_norm is GPU only"
+        comptime assert is_gpu[
+            target
+        ](), "norm.routed_rows_rms_norm is GPU only"
         comptime cols = Int(input.static_spec.shape_tuple[1])
         comptime assert cols != UNKNOWN_VALUE, "the hidden size must be static"
         comptime accum = get_accum_type[dtype]()
@@ -178,9 +180,9 @@ def _in[T: DType](t: InputTensor[dtype=T, ...]) -> In[T]:
     )
 
 
-@extensibility.register("mo.routed_rows_rms_norm_finalize")
+@extensibility.register("norm.routed_rows_rms_norm_finalize")
 struct RoutedRowsRMSNormFinalize:
-    """Registers the `mo.routed_rows_rms_norm_finalize` graph op."""
+    """Registers the `norm.routed_rows_rms_norm_finalize` graph op."""
 
     @staticmethod
     def execute[
@@ -220,7 +222,7 @@ struct RoutedRowsRMSNormFinalize:
         """
         comptime assert is_gpu[
             target
-        ](), "mo.routed_rows_rms_norm_finalize is GPU only"
+        ](), "norm.routed_rows_rms_norm_finalize is GPU only"
         comptime assert (
             Int(input.static_spec.shape_tuple[1]) == HIDDEN
         ), "the hidden size must be 4096"

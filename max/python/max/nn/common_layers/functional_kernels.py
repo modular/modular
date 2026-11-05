@@ -80,10 +80,16 @@ from max.nn.legacy.kernels import (
     moe_create_indices as _moe_create_indices,
 )
 from max.nn.legacy.kernels import (
+    moe_create_indices_packed as _moe_create_indices_packed,
+)
+from max.nn.legacy.kernels import (
     moe_finalize as _moe_finalize,
 )
 from max.nn.legacy.kernels import (
     moe_router_group_limited as _moe_router_group_limited,
+)
+from max.nn.legacy.kernels import (
+    moe_single_group_router_packed as _moe_single_group_router_packed,
 )
 from max.nn.legacy.kernels import (
     mtp_eh_norm as _mtp_eh_norm,
@@ -274,6 +280,8 @@ fused_silu_quantized = F.functional(_fused_silu_quantized)
 # Routing decisions must match the placement of the (replicated) router
 # scores so every device agrees on expert assignment under TP/EP.
 moe_router_group_limited = F.functional(_moe_router_group_limited)
+moe_single_group_router_packed = F.functional(_moe_single_group_router_packed)
+moe_create_indices_packed = F.functional(_moe_create_indices_packed)
 mtp_eh_norm = F.functional(_mtp_eh_norm)
 
 

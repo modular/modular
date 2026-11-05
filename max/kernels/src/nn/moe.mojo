@@ -1544,6 +1544,7 @@ def single_group_router_kernel[
     *,
     ExpertIndicesEngine: TensorEngine,
     ExpertWeightsEngine: TensorEngine,
+    packed: Bool = False,
 ](
     expert_indices: TileTensor[
         mut=True,
@@ -1561,6 +1562,7 @@ def single_group_router_kernel[
     ],
     num_tokens: Int32,
     routed_scaling_factor: Float32,
+    packed_p: Optional[MutPointer[Scalar[scores_type], MutAnyOrigin]],
     scores_input_fn: ScoresInputFnType,
     bias_input_fn: BiasInputFnType,
 ):
@@ -1574,6 +1576,8 @@ def single_group_router_kernel[
     Scores and the selection bias are read only through `scores_input_fn`
     and `bias_input_fn`, closures that load the value at a
     `(token, expert)` index, so the bias may differ per token.
+    With `packed`, each token's ids, as `scores_type`, then its weights
+    are also written to its `[2 * n_experts_per_tok]` row of `packed_p`.
     """
 
     comptime assert expert_indices.flat_rank == 2
@@ -1700,6 +1704,11 @@ def single_group_router_kernel[
             if lane < n_experts_per_tok:
                 expert_indices.store((token_idx, lane), selected)
                 expert_weights[token_idx, lane] = weight
+                comptime if packed:
+                    var out = packed_p.unsafe_value()
+                    var row = token_idx * 2 * n_experts_per_tok
+                    out[row + lane] = selected.cast[scores_type]()
+                    out[row + n_experts_per_tok + lane] = weight
 
 
 @__llvm_metadata(
@@ -1954,6 +1963,7 @@ def single_group_router[
     n_experts_per_tok: Int,
     norm_weights: Bool,
     target: StaticString,
+    packed: Bool = False,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
@@ -1962,6 +1972,7 @@ def single_group_router[
     expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
+    packed_p: Optional[MutPointer[Scalar[scores_type], MutAnyOrigin]] = None,
 ) raises:
     """Launch the single-group MoE router on GPU, loading scores via a lambda.
 
@@ -1978,6 +1989,7 @@ def single_group_router[
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
         target: The target device to run the kernel on.
+        packed: Also write `packed_p` (Muse Spark's decode routing).
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
@@ -1990,6 +2002,8 @@ def single_group_router[
         expert_bias: Per-expert correction bias used for selection only.
         routed_scaling_factor: Scalar multiplied into every output weight.
         context: The device context.
+        packed_p: With `packed`, the `[num_tokens, 2 * n_experts_per_tok]`
+            output of each token's ids, as `scores_type`, then its weights.
     """
 
     def load_bias[
@@ -2007,6 +2021,7 @@ def single_group_router[
         n_experts_per_tok,
         norm_weights,
         target,
+        packed=packed,
     ](
         expert_indices,
         expert_weight,
@@ -2015,6 +2030,7 @@ def single_group_router[
         load_bias,
         routed_scaling_factor,
         context,
+        packed_p,
     )
 
 
@@ -2122,6 +2138,7 @@ def single_group_router[
     n_experts_per_tok: Int,
     norm_weights: Bool,
     target: StaticString,
+    packed: Bool = False,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
@@ -2130,6 +2147,7 @@ def single_group_router[
     bias_input_fn: BiasInputFnType,
     routed_scaling_factor: Float32,
     context: DeviceContext,
+    packed_p: Optional[MutPointer[Scalar[scores_type], MutAnyOrigin]] = None,
 ) raises:
     """Launch the single-group MoE router on GPU, loading scores and the
     selection bias via lambdas.
@@ -2149,6 +2167,7 @@ def single_group_router[
             applying routed_scaling_factor. An all-zero selection keeps
             zero weights.
         target: The target device to run the kernel on.
+        packed: Also write `packed_p` (Muse Spark's decode routing).
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
@@ -2163,6 +2182,8 @@ def single_group_router[
             device, so it must copy what it captures.
         routed_scaling_factor: Scalar multiplied into every output weight.
         context: The device context.
+        packed_p: With `packed`, the `[num_tokens, 2 * n_experts_per_tok]`
+            output of each token's ids, as `scores_type`, then its weights.
     """
     comptime assert is_gpu[
         target
@@ -2196,6 +2217,7 @@ def single_group_router[
             BiasInputFnType=BiasInputFnType,
             ExpertIndicesEngine=expert_indices.Engine,
             ExpertWeightsEngine=expert_weight.Engine,
+            packed=packed,
         ]
 
         gpu_ctx.enqueue_function[kernel](
@@ -2203,6 +2225,7 @@ def single_group_router[
             expert_weight,
             Int32(num_tokens),
             routed_scaling_factor,
+            packed_p,
             host_args=(scores_input_fn, bias_input_fn),
             grid_dim=ceildiv(num_tokens, tokens_per_block),
             block_dim=num_threads,

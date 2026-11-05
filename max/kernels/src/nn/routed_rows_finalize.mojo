@@ -18,7 +18,7 @@ the rows below the routed count `offsets[last]` are this device's:
     out[t] = sum_k [row_k routed] * w[t, k]
                    * bf16(rms_norm(bf16(x_k * (1 + gamma))))
 
-in float32, k in order, with `mo.routed_rows_rms_norm`'s roundings, then
+in float32, k in order, with `norm.routed_rows_rms_norm`'s roundings, then
 stored as `out_dtype`: float32, or bf16 rounded once from the float32 sum.
 Persistent CTAs take tokens cta, cta + G, ...: a load lane bulk-copies the
 token's `top_k` rows into a ring slot, routed or not (every restore value

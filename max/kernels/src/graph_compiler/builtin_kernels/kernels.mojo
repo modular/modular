@@ -87,6 +87,7 @@ from nn.mhc import (
     mhc_post_block_size,
     mhc_pre,
 )
+from nn.moe_indices_packed import PackedIndicesArgs, moe_indices_packed
 from nn.moe import (
     eplb_remap,
     moe_create_indices,
@@ -2341,6 +2342,63 @@ struct Struct_moe_create_indices_with_slots:
         )
 
 
+@extensibility.register("moe.create.indices.packed")
+struct Struct_moe_create_indices_packed:
+    """Registers the `moe.create.indices.packed` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        top_k: Int,
+        expert_offset: Int,
+        local_experts: Int,
+        target: StaticString,
+    ](
+        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offset: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        weights: OutputTensor[dtype=DType.float32, rank=2, ...],
+        routing: InputTensor[dtype=DType.float32, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "moe.create.indices.packed is GPU only"
+        moe_indices_packed[top_k, local_experts](
+            PackedIndicesArgs(
+                routing.unsafe_ptr()
+                .unsafe_mut_cast[False]()
+                .unsafe_origin_cast[ImmUntrackedOrigin](),
+                token_expert_order.unsafe_ptr().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
+                expert_start_indices.unsafe_ptr().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
+                restore_token_order.unsafe_ptr().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
+                expert_ids.unsafe_ptr().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
+                expert_usage_stats.unsafe_ptr().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
+                scales_offset.unsafe_ptr().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
+                weights.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+                Int64(routing.dim_size[0]()),
+                Int64(expert_offset),
+            ),
+            context,
+        )
+
+
 @extensibility.register("moe.single.group.router.eplb")
 struct Struct_moe_single_group_router_eplb:
     """Registers the `moe.single.group.router.eplb` graph op with the graph compiler.
@@ -2484,6 +2542,61 @@ struct Struct_moe_single_group_router:
             expert_bias.to_tile_tensor().as_imm(),
             routed_scaling_factor,
             context,
+        )
+
+
+@extensibility.register("moe.single.group.router.packed")
+struct Struct_moe_single_group_router_packed:
+    """Registers the `moe.single.group.router.packed` graph op.
+
+    The single-group router that also writes each token's ids, as
+    `scores_type`, then its weights to one `[tokens, 2 * top_k]` row of
+    `packed`, the routing an allgather replicates.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        scores_type: DType,
+        bias_type: DType,
+        //,
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        norm_weights: Bool,
+        target: StaticString,
+    ](
+        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
+        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
+        packed: OutputTensor[dtype=scores_type, rank=2, ...],
+        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
+        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        routed_scaling_factor: Float32,
+        context: DeviceContext,
+    ) raises:
+        @inline(.always)
+        def scores_input_fn[
+            width: Int
+        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
+            comptime assert (
+                coords.rank == 2
+            ), "the expert-scores lambda contract is rank 2"
+            return expert_scores._lambda_load[width=width](coords)
+
+        single_group_router[
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights=norm_weights,
+            target=target,
+            packed=True,
+        ](
+            expert_indices.to_tile_tensor[.int64](),
+            expert_weights.to_tile_tensor[.int64](),
+            expert_scores.runtime_layout(),
+            scores_input_fn,
+            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            routed_scaling_factor,
+            context,
+            packed.to_tile_tensor[.int64]().as_unsafe_any_origin().ptr,
         )
 
 

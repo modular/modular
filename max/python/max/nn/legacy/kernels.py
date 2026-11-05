@@ -7469,6 +7469,67 @@ def moe_create_indices_with_slots(
     return tuple(r.tensor for r in results)
 
 
+def moe_create_indices_packed(
+    routing: TensorValue,
+    top_k: int,
+    *,
+    expert_offset: int,
+    local_experts: int,
+) -> tuple[TensorValue, ...]:
+    """Builds :func:`moe_create_indices` from packed routing rows.
+
+    Covers one device's experts.
+
+    Args:
+        routing: ``[tokens, 2 * top_k]`` float32, each token's expert ids
+            then their weights, as :func:`moe_single_group_router_packed`
+            writes them.
+        top_k: Experts per token.
+        expert_offset: Global id of the first local expert.
+        local_experts: Experts held locally. Slots of other experts sort
+            last, into one trailing group.
+
+    Returns:
+        ``token_expert_order``, ``expert_start_indices``,
+        ``restore_token_order``, ``expert_ids`` and ``expert_usage_stats``
+        as :func:`moe_create_indices` over ``local_experts + 1`` groups, then
+        the groups' ``scales_offset`` and the ``[tokens, top_k]`` weights.
+    """
+    if routing.dtype != DType.float32 or routing.shape[1] != 2 * top_k:
+        raise ValueError(
+            f"expected float32 routing of shape [tokens, {2 * top_k}], got"
+            f" {routing.dtype} {routing.shape}"
+        )
+    device = routing.device
+    tokens = routing.shape[0]
+    slots = tokens * top_k
+    groups = local_experts + 1
+
+    def out(dtype: DType, *shape: Any) -> TensorType:
+        return TensorType(dtype=dtype, shape=list(shape), device=device)
+
+    results = ops.custom(
+        "moe.create.indices.packed",
+        device=device,
+        values=[routing],
+        out_types=[
+            out(DType.uint32, slots),  # token_expert_order
+            out(DType.uint32, groups + 1),  # expert_start_indices
+            out(DType.uint32, slots),  # restore_token_order
+            out(DType.int32, groups),  # expert_ids
+            out(DType.uint32, 2),  # expert_usage_stats
+            out(DType.uint32, groups),  # scales_offset
+            out(DType.float32, tokens, top_k),  # weights
+        ],
+        parameters={
+            "top_k": top_k,
+            "expert_offset": expert_offset,
+            "local_experts": local_experts,
+        },
+    )
+    return tuple(r.tensor for r in results)
+
+
 def moe_router_group_limited(
     expert_scores: TensorValue,
     expert_bias: TensorValue,
@@ -7675,6 +7736,53 @@ def moe_router_group_limited(
     )
 
     return (results[0].tensor, results[1].tensor)
+
+
+def moe_single_group_router_packed(
+    expert_scores: TensorValue,
+    expert_bias: TensorValue,
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    routed_scaling_factor: float,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Routes with one group and also writes the packed routing rows.
+
+    :func:`moe_router_group_limited` with one group and normalized weights.
+
+    Returns:
+        ``expert_indices`` and ``expert_weights`` as
+        :func:`moe_router_group_limited`, then ``[num_tokens, 2 *
+        n_experts_per_tok]`` rows of each token's indices, as the scores'
+        dtype, then its weights: what :func:`moe_create_indices_packed`
+        reads, in one launch.
+    """
+    tokens, device = expert_scores.shape[0], expert_scores.device
+    results = ops.custom(
+        "moe.single.group.router.packed",
+        device=device,
+        values=[
+            expert_scores,
+            expert_bias,
+            ops.constant(
+                routed_scaling_factor, DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(DType.int32, [tokens, n_experts_per_tok], device),
+            TensorType(
+                expert_scores.dtype, [tokens, n_experts_per_tok], device
+            ),
+            TensorType(
+                expert_scores.dtype, [tokens, 2 * n_experts_per_tok], device
+            ),
+        ],
+        parameters={
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "norm_weights": True,
+        },
+    )
+    return (results[0].tensor, results[1].tensor, results[2].tensor)
 
 
 def moe_router_image_bias(
