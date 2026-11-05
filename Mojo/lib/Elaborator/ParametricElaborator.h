@@ -104,7 +104,8 @@ public:
 
   /// Lookup an existing concrete function.
   InstantiatedOpInterface lookupInstantiatedOp(StringAttr name) {
-    InstantiatedOpInterface localResult = (*tlInsts)[name];
+    // This has to be a reference because it is reassigned below.
+    InstantiatedOpInterface &localResult = (*tlInsts)[name];
     if (!localResult) {
       localResult =
           concreteNodes.read([name](auto &map) { return map.at(name)->inst; });
