@@ -88,7 +88,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 1
-#define M_DRIVER_CAPI_VERSION_MINOR 2
+#define M_DRIVER_CAPI_VERSION_MINOR 3
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -699,6 +699,21 @@ M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag, uint64_t value);
 M_DRIVER_API M_DriverStatus
 M_DriverStreamWaitFlag(const M_DriverStream *stream,
                        const M_DriverCompletionFlag *flag, uint64_t value);
+
+/// Writes to `*out` the value a `mo.wait_host_value` graph payload takes for
+/// `flag` (payload[0]), so a graph can gate on a flag this interface created.
+///
+/// The value is the address of the driver's own flag object, not of the
+/// `M_DriverCompletionFlag` handle; the graph op rebuilds the flag from it, so
+/// passing the handle's address instead corrupts memory. It equals what Mach's
+/// transitional shim `m_ext_alloc_completion_flag` returns.
+///
+/// Opaque: never dereference it. It stays valid while `flag` is alive, so keep
+/// the flag alive for as long as any graph that holds this value can run.
+/// Every flag this interface can create has a graph handle, including in a HAL
+/// device context build.
+M_DRIVER_API M_DriverStatus M_DriverCompletionFlagGraphHandle(
+    const M_DriverCompletionFlag *flag, uint64_t *out);
 
 //===----------------------------------------------------------------------===//
 // Buffers, host memory registration, and copies

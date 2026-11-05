@@ -1042,6 +1042,17 @@ M_DriverStatus M_DriverStreamWaitFlag(const M_DriverStream *stream,
                        "M_DriverStreamWaitFlag");
 }
 
+M_DriverStatus
+M_DriverCompletionFlagGraphHandle(const M_DriverCompletionFlag *flag,
+                                  uint64_t *out) {
+  if (out != nullptr)
+    *out = 0;
+  if (flag == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag or out is null");
+  *out = reinterpret_cast<uint64_t>(flag->flag.getPointer());
+  return succeed();
+}
+
 //===----------------------------------------------------------------------===//
 // Buffers, host memory registration, and copies
 //===----------------------------------------------------------------------===//

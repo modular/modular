@@ -105,7 +105,7 @@ TEST(DriverCApi, VersionMatchesTheHeader) {
                 (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MINOR) << 16) |
                 static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_PATCH));
   EXPECT_EQ(version >> 24, 1u);
-  EXPECT_EQ((version >> 16) & 0xffu, 2u);
+  EXPECT_EQ((version >> 16) & 0xffu, 3u);
   EXPECT_EQ(version & 0xffffu, 0u);
 
   // The query returns no status, so it leaves the message of an earlier
@@ -1660,6 +1660,48 @@ TEST(DriverCApi, AdoptedRecordingContextReportsCapture) {
       << lastError();
   EXPECT_TRUE(capturing);
 #endif
+}
+
+// `mo.wait_host_value` rebuilds the driver's flag object from the handle, so
+// the test reads it back as one rather than through the C interface.
+TEST(DriverCApi, FlagGraphHandleIsTheDriverFlag) {
+  uint64_t handle = 1;
+  EXPECT_EQ(M_DriverCompletionFlagGraphHandle(nullptr, &handle),
+            M_DRIVER_INVALID_ARGUMENT);
+  EXPECT_EQ(handle, 0u);
+
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK);
+  M_DriverCompletionFlag *flag = nullptr;
+  const M_DriverStatus created =
+      M_DriverCompletionFlagCreate(device.get(), &flag);
+  if (MODULAR_HAL_DEVICE_CONTEXT && created == M_DRIVER_NOT_SUPPORTED)
+    GTEST_SKIP() << "no HAL completion flags on this backend: " << lastError();
+  ASSERT_EQ(created, M_DRIVER_OK) << lastError();
+
+  EXPECT_EQ(M_DriverCompletionFlagGraphHandle(flag, nullptr),
+            M_DRIVER_INVALID_ARGUMENT);
+  ASSERT_EQ(M_DriverCompletionFlagGraphHandle(flag, &handle), M_DRIVER_OK)
+      << lastError();
+  ASSERT_NE(handle, 0u);
+  auto *driverFlag = reinterpret_cast<CompletionFlag *>(handle);
+
+  ASSERT_EQ(M_DriverCompletionFlagSignal(flag, 7), M_DRIVER_OK);
+  EXPECT_EQ(driverFlag->load(), 7u);
+
+  ErrorOr<DeviceContextRef> shared =
+      DeviceContext::getOrCreate(Device::gpuAPI, 0);
+  ASSERT_FALSE(shared.isError()) << shared.getError();
+  ErrorOr<DeviceStreamRef> stream = (*shared)->stream();
+  ASSERT_FALSE(stream.isError()) << stream.getError();
+  ErrorOrSuccess waited = (*stream)->enqueueWaitOnFlag(*driverFlag, 7);
+  ASSERT_FALSE(waited.isError()) << waited.getError();
+  ErrorOrSuccess synced = (*stream)->synchronize();
+  ASSERT_FALSE(synced.isError()) << synced.getError();
+
+  EXPECT_EQ(M_DriverCompletionFlagDestroy(flag), M_DRIVER_OK);
 }
 
 } // namespace M::Driver
