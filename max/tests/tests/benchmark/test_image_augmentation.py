@@ -40,6 +40,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SampledRequest,
     SessionMessage,
 )
+from tests.benchmark.benchmark_fakes import make_session
 
 
 def _dist(param: str | float) -> BaseDistribution:
@@ -166,18 +167,6 @@ def test_augment_request_samples_picks_the_exact_share() -> None:
     assert with_images == 600
 
 
-def _make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
-    messages: list[SessionMessage] = []
-    for i in range(num_user_turns):
-        messages.append(
-            SessionMessage(source="user", content=f"turn {i}", num_tokens=10)
-        )
-        messages.append(
-            SessionMessage(source="assistant", content="", num_tokens=5)
-        )
-    return ChatSession(id=session_id, messages=messages)
-
-
 def _sessions_with_images(samples: ChatSamples) -> int:
     return sum(
         1
@@ -189,7 +178,7 @@ def _sessions_with_images(samples: ChatSamples) -> int:
 @pytest.mark.parametrize("seed", range(20))
 def test_a_small_fraction_still_picks_its_share_of_sessions(seed: int) -> None:
     # 0.0677 * 40 = 2.7: two or three sessions on every seed, never none.
-    samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(40)])
+    samples = ChatSamples(chat_sessions=[make_session(i) for i in range(40)])
     augment_samples_with_images(
         samples,
         fraction=0.0677,
@@ -206,7 +195,7 @@ def test_fractional_shares_round_to_the_right_mean() -> None:
     picked = []
     for seed in range(200):
         samples = ChatSamples(
-            chat_sessions=[_make_session(i, num_user_turns=1) for i in range(4)]
+            chat_sessions=[make_session(i, num_user_turns=1) for i in range(4)]
         )
         augment_samples_with_images(
             samples,
@@ -230,7 +219,7 @@ def test_a_session_that_cannot_carry_images_is_replaced() -> None:
         messages=[SessionMessage(source="assistant", content="", num_tokens=5)],
     )
     samples = ChatSamples(
-        chat_sessions=[no_user] + [_make_session(i) for i in range(1, 4)]
+        chat_sessions=[no_user] + [make_session(i) for i in range(1, 4)]
     )
     augment_samples_with_images(
         samples,
@@ -250,8 +239,8 @@ def _user_turns(session: ChatSession) -> int:
 
 def test_image_sessions_are_cut_to_the_drawn_turn_count() -> None:
     samples = ChatSamples(
-        chat_sessions=[_make_session(i, num_user_turns=6) for i in range(4)]
-        + [_make_session(4, num_user_turns=2)]
+        chat_sessions=[make_session(i, num_user_turns=6) for i in range(4)]
+        + [make_session(4, num_user_turns=2)]
     )
     augment_samples_with_images(
         samples,
@@ -271,7 +260,7 @@ def test_image_sessions_are_cut_to_the_drawn_turn_count() -> None:
 
 def test_sessions_without_images_keep_their_length() -> None:
     samples = ChatSamples(
-        chat_sessions=[_make_session(i, num_user_turns=6) for i in range(4)]
+        chat_sessions=[make_session(i, num_user_turns=6) for i in range(4)]
     )
     augment_samples_with_images(
         samples,
@@ -288,7 +277,7 @@ def test_sessions_without_images_keep_their_length() -> None:
 
 
 def test_a_rejected_session_is_not_cut() -> None:
-    samples = ChatSamples(chat_sessions=[_make_session(0, num_user_turns=6)])
+    samples = ChatSamples(chat_sessions=[make_session(0, num_user_turns=6)])
     augment_samples_with_images(
         samples,
         fraction=1.0,
@@ -303,7 +292,7 @@ def test_a_rejected_session_is_not_cut() -> None:
 
 
 def test_augment_chat_samples_first_turn_only() -> None:
-    samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(10)])
+    samples = ChatSamples(chat_sessions=[make_session(i) for i in range(10)])
     augment_samples_with_images(
         samples,
         fraction=1.0,
@@ -320,7 +309,7 @@ def test_augment_chat_samples_first_turn_only() -> None:
 
 
 def test_augment_chat_samples_last_turn_only() -> None:
-    samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(10)])
+    samples = ChatSamples(chat_sessions=[make_session(i) for i in range(10)])
     augment_samples_with_images(
         samples,
         fraction=1.0,
@@ -337,7 +326,7 @@ def test_augment_chat_samples_last_turn_only() -> None:
 
 
 def test_augment_chat_samples_every_turn() -> None:
-    samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(5)])
+    samples = ChatSamples(chat_sessions=[make_session(i) for i in range(5)])
     augment_samples_with_images(
         samples,
         fraction=1.0,
@@ -358,7 +347,7 @@ def test_augment_chat_samples_skips_unmeasurable_sessions() -> None:
     """A session whose images would push it past max_chat_len sends no
     measured turns, so it must come back untouched -- attaching anyway would
     leave num_tokens and the --dry-run tables describing an unsent request."""
-    samples = ChatSamples(chat_sessions=[_make_session(0)])
+    samples = ChatSamples(chat_sessions=[make_session(0)])
     before = samples.chat_sessions[0].messages[0].num_tokens
 
     augment_samples_with_images(
@@ -377,7 +366,7 @@ def test_augment_chat_samples_skips_unmeasurable_sessions() -> None:
 
 
 def test_augment_chat_samples_counts_sessions_that_still_fit() -> None:
-    samples = ChatSamples(chat_sessions=[_make_session(0)])
+    samples = ChatSamples(chat_sessions=[make_session(0)])
     augment_samples_with_images(
         samples,
         fraction=1.0,
@@ -394,7 +383,7 @@ def test_sends_no_measured_turns_accounts_for_warmup_prefix() -> None:
     """With --warmup-multiturn the first measured turn is at
     prefix_turns * 2 and carries the whole prefix, so a budget check that
     only looks at messages[0] and [1] passes a session the driver abandons."""
-    session = _make_session(0, num_user_turns=4)
+    session = make_session(0, num_user_turns=4)
     session.prefix_turns = 3
     # Each prefix turn costs 15; three of them exhaust a budget of 40 before
     # any measured turn is reached, even though messages[0] + [1] is only 15.
@@ -403,7 +392,7 @@ def test_sends_no_measured_turns_accounts_for_warmup_prefix() -> None:
 
 
 def test_sends_no_measured_turns_allows_prefix_that_fits() -> None:
-    session = _make_session(0, num_user_turns=4)
+    session = make_session(0, num_user_turns=4)
     session.prefix_turns = 1
     assert not _sends_no_measured_turns(session, max_chat_len=10**6)
 
@@ -412,7 +401,7 @@ def test_sends_no_measured_turns_charges_run_prefix_to_first_turn() -> None:
     """--force-unique-runs prepends a per-run prefix to the first measured
     turn, so a session sitting just under the budget without it is abandoned
     with it."""
-    session = _make_session(0, num_user_turns=2)
+    session = make_session(0, num_user_turns=2)
     first_turn = session.messages[0].num_tokens + session.messages[1].num_tokens
     assert not _sends_no_measured_turns(session, max_chat_len=first_turn)
     assert _sends_no_measured_turns(
@@ -423,7 +412,7 @@ def test_sends_no_measured_turns_charges_run_prefix_to_first_turn() -> None:
 def test_sends_no_measured_turns_ignores_run_prefix_behind_warmup() -> None:
     """The driver only charges the run prefix at content_idx 0, so a warmup
     prefix ahead of the first measured turn means it never applies."""
-    session = _make_session(0, num_user_turns=4)
+    session = make_session(0, num_user_turns=4)
     session.prefix_turns = 1
     assert not _sends_no_measured_turns(
         session, max_chat_len=10**6, run_prefix_len=10**6
@@ -435,7 +424,7 @@ def test_augment_chat_samples_excludes_warmup_session_over_budget(
 ) -> None:
     """The end-to-end path, not just the helper: a prefixed session the driver
     will abandon must be reported as unmeasurable, not counted as augmented."""
-    session = _make_session(0, num_user_turns=4)
+    session = make_session(0, num_user_turns=4)
     session.prefix_turns = 3
     samples = ChatSamples(chat_sessions=[session])
 
@@ -563,7 +552,7 @@ def test_augment_samples_skips_chat_judge() -> None:
     """chat_judge_session_driver sends text-only messages, so augmenting a
     chat-judge workload would report images the server never receives."""
     samples = ChatJudgeChatSamples(
-        chat_sessions=[_make_session(i) for i in range(5)]
+        chat_sessions=[make_session(i) for i in range(5)]
     )
     before = [
         [m.num_tokens for m in session.messages]
@@ -613,7 +602,7 @@ def test_selection_is_seeded_independently_of_the_global_stream() -> None:
         for _ in range(global_draws):
             random.random()
         samples = ChatSamples(
-            chat_sessions=[_make_session(i) for i in range(40)]
+            chat_sessions=[make_session(i) for i in range(40)]
         )
         augment_samples_with_images(
             samples,
@@ -639,7 +628,7 @@ def test_distinct_seeds_pick_distinct_sessions() -> None:
     picked: list[list[int | None]] = []
     for seed in (7, 8):
         samples = ChatSamples(
-            chat_sessions=[_make_session(i) for i in range(40)]
+            chat_sessions=[make_session(i) for i in range(40)]
         )
         augment_samples_with_images(
             samples,
@@ -670,7 +659,7 @@ def test_logs_the_sampled_per_request_shares(
     sampled population -- the identity a multi-modal workload is built on, so
     a run states it rather than leaving it to be re-derived by hand.
     """
-    samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(4)])
+    samples = ChatSamples(chat_sessions=[make_session(i) for i in range(4)])
     with caplog.at_level(logging.INFO):
         augment_samples_with_images(
             samples,
