@@ -67,12 +67,13 @@ class PartialRotaryEmbedding(RotaryEmbedding):
         # the device on every step, which device graph capture rejects.
         if self._freqs_cis is None:
             n = self.head_dim
+            # float32, not float64: Metal has no float64 `log` for the powf.
             iota = F.arange(
-                0, n, step=2, dtype=DType.float64, device=self.device
+                0, n, step=2, dtype=DType.float32, device=self.device
             )
             rotated = 2 * (int(self.partial_rotary_factor * n) // 2)
-            kept = F.cast(iota < rotated, DType.float64)
-            inv_freqs = F.cast(kept / (self.theta ** (iota / n)), DType.float32)
+            kept = F.cast(iota < rotated, DType.float32)
+            inv_freqs = kept / (self.theta ** (iota / n))
             t = F.arange(
                 0, self.max_seq_len * 2, dtype=DType.float32, device=self.device
             )
