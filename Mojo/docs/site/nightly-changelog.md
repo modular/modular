@@ -77,6 +77,10 @@ This version is still a work in progress.
 
 - `List.insert`
 - `List.clear`
+- `Pointer.__init__(to=)`
+- `Pointer.__eq__`
+- `Pointer.__ne__`
+- `Pointer.unsafe_bitcast`
 
 ## Library performance improvements
 

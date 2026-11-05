@@ -665,7 +665,7 @@ def mgp_device_graph_stable_tensor[
     var ptr = (
         addr.ptr.unsafe_bitcast[Scalar[dtype]]()
         .unsafe_origin_cast[MutUntrackedOrigin]()
-        .unsafe_mut_cast[target_mut=True]()
+        .unsafe_mut_cast[True]()
     )
     comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
