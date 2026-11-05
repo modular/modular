@@ -147,6 +147,8 @@ _EXTRA_CONSTRAINTS = {
     # (`.vgpr_spill_count`, `ds_bpermute`, `s_barrier` counts). Nothing in it
     # needs to run on the GPU, but the assertions only mean anything for AMD.
     "test_topk_warp_isa_amd.mojo": ["//:amd_gpu"],
+    # The row-split top-k tier is routed on gfx950 (MI355X) only.
+    "test_topk_split_amd.mojo": ["//:mi355_gpu"],
     "test_cudnn_bindings.mojo": ["//:nvidia_gpu"],
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
