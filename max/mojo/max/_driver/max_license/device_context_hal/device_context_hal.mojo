@@ -4795,6 +4795,13 @@ struct DeviceBuffer[dtype: DType](
             ) if addr == 0 else ctx._context[].wrap_memory(
                 addr, byte_size, owning=owning
             )
+            # The plugin may give the wrapped region an address of its own.
+            # If it can't report one, keep the address we were given.
+            if addr != 0:
+                try:
+                    addr = ctx._context[].memory_get_address(buffer)
+                except:
+                    pass
             self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
             self._ctx = ctx.assert_default_target()
             self._inner = ArcPointer(

@@ -108,6 +108,7 @@ const char *MojoHAL_DeviceContext_getAttribute(int32_t *out_value,
                                                MojoHALContextBox *ctx,
                                                int32_t attr);
 const char *MojoHAL_DeviceBuffer_createSubBuffer(MojoHALBufferBox **out_buf,
+                                                 void **out_ptr,
                                                  MojoHALBufferBox *parent,
                                                  uint64_t byteOffset,
                                                  uint64_t byteSize);
@@ -522,18 +523,20 @@ ErrorOr<DeviceBufferRef> DeviceBuffer::createSubBuffer(size_t byteOffset,
   // re-slice directly; Host boxes carry a Mojo HostBuffer, whose export
   // returns the same kind of DeviceBuffer view over the pinned host region.
   MojoHALBufferBox *buf = nullptr;
+  // The plugin may give a device view an address of its own.
+  void *ptr = static_cast<char *>(ptr_) + byteOffset;
   const char *err = kind_ == BoxKind::Host
                         ? MojoHAL_HostBuffer_createSubBuffer(
                               &buf, mojoBox_, byteOffset, byteSize)
                         : MojoHAL_DeviceBuffer_createSubBuffer(
-                              &buf, mojoBox_, byteOffset, byteSize);
+                              &buf, &ptr, mojoBox_, byteOffset, byteSize);
   if (err)
     return takeError(err);
   // Sub-buffer boxes are plain Mojo DeviceBuffer views regardless of what
   // backs the parent; `parent_` keeps the parent box (and any mapping) alive.
-  return DeviceBufferRef::take(new DeviceBuffer(
-      buf, static_cast<char *>(ptr_) + byteOffset, byteSize, isHost_,
-      BoxKind::Device, context_.copy(), DeviceBufferRef::copy(this)));
+  return DeviceBufferRef::take(
+      new DeviceBuffer(buf, ptr, byteSize, isHost_, BoxKind::Device,
+                       context_.copy(), DeviceBufferRef::copy(this)));
 }
 
 void *DeviceBuffer::releasePtr() {
