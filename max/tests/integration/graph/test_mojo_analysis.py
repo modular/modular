@@ -337,25 +337,23 @@ def test_variadic_ins_outs_valid(
     session.load(graph)
 
 
-def test_variadic_size_0_invalid(kernel_verification_ops_path: Path) -> None:
+def test_variadic_size_0_valid(kernel_verification_ops_path: Path) -> None:
+    # A `TensorTuple` variadic may bind no operands.
     tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
-        "test_variadic_size_0_invalid",
+        "test_variadic_size_0_valid",
         input_types=[tensor_type],
         output_types=[tensor_type],
     )
     with graph:
         graph._import_kernels([kernel_verification_ops_path])
-        with pytest.raises(ValueError) as err:
+        graph.output(
             ops.custom(
                 "variadic_add",
                 device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
-            )
-        assert (
-            "Could not provide all input arguments to op 'variadic_add': missing operands starting from argument named 'input'"
-            in str(err.value)
+            )[0]
         )
 
 
