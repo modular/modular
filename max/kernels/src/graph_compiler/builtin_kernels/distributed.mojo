@@ -2175,7 +2175,7 @@ struct DistributedAllGatherGatedResidualRMSNorm:
 
         comptime InputTensorType = TileTensor[
             dtype,
-            TileLayout[
+            Layout[
                 shape_types=DynamicCoord[.int64, 2].element_types,
                 stride_types=DynamicCoord[.int64, 2].element_types,
             ],
