@@ -22,7 +22,7 @@
 // CHECK: } -> !mgp.tensor<2x3xf32, <"gpu", 0>>
 // CHECK: mef.output %{{.*}}, %[[STAGING]] : !mef.chain, !mgp.tensor<2x3xf32, <"gpu", 0>>
 
-mgp.model @dg device_graph : mof devices [#M.device_ref<"gpu", 0>]
+mgp.model @dg device_graph devices [#M.device_ref<"gpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
@@ -73,7 +73,7 @@ mgp.model @dg device_graph : mof devices [#M.device_ref<"gpu", 0>]
 // CHECK: fusionInfo = #{{b[0-9]*}}
 // CHECK: mgp.device_graph.staging.yield
 
-mgp.model @dg_guard device_graph : mof devices [#M.device_ref<"gpu", 0>]
+mgp.model @dg_guard device_graph devices [#M.device_ref<"gpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
@@ -111,7 +111,7 @@ mgp.model @dg_guard device_graph : mof devices [#M.device_ref<"gpu", 0>]
 // CHECK: mogg.routine.async
 // CHECK-NOT: mgp.device_graph.staging
 
-mgp.model @not_dg : mof devices [#M.device_ref<"gpu", 0>]
+mgp.model @not_dg devices [#M.device_ref<"gpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
@@ -141,7 +141,7 @@ mgp.model @not_dg : mof devices [#M.device_ref<"gpu", 0>]
 // CHECK: } -> !mgp.tensor<2x3xf32, <"gpu", 0>, mut>
 // CHECK: mef.output %{{.*}}, %[[STAGING]] : !mef.chain, !mgp.tensor<2x3xf32, <"gpu", 0>, mut>
 
-mgp.model @dg_mut_input device_graph : mof devices [#M.device_ref<"gpu", 0>]
+mgp.model @dg_mut_input device_graph devices [#M.device_ref<"gpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
@@ -168,7 +168,7 @@ mgp.model @dg_mut_input device_graph : mof devices [#M.device_ref<"gpu", 0>]
 // CHECK: mgp.device_graph.staging.yield %[[A]] : !mgp.tensor<2x3xf32, <"gpu", 0>>
 // CHECK: } -> !mgp.tensor<2x3xf32, <"gpu", 0>>
 
-mgp.model @dg_host_input device_graph : mof devices [#M.device_ref<"gpu", 0>]
+mgp.model @dg_host_input device_graph devices [#M.device_ref<"gpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
@@ -199,7 +199,7 @@ mgp.model @dg_host_input device_graph : mof devices [#M.device_ref<"gpu", 0>]
 // CHECK: mgp.device_graph.staging.yield %[[B]] : !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
 // CHECK: } -> !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
 
-mgp.model @dg_stable_create device_graph : mof devices [#M.device_ref<"gpu", 0>]
+mgp.model @dg_stable_create device_graph devices [#M.device_ref<"gpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
@@ -234,7 +234,7 @@ mgp.model @dg_stable_create device_graph : mof devices [#M.device_ref<"gpu", 0>]
 // CHECK: mgp.device_graph.staging.yield %[[B]] : !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
 // CHECK: } -> !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
 
-mgp.model @dg_stable_create_input device_graph : mof devices [#M.device_ref<"gpu", 0>]
+mgp.model @dg_stable_create_input device_graph devices [#M.device_ref<"gpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1

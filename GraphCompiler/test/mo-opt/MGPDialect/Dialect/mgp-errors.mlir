@@ -74,7 +74,7 @@ func.func @dtype_invalid(%x : !mgp.tensor_spec<5x10xinvalid>) {}
 }, {
   ^bb0(%ch: !mef.chain, %ctx: !mgp.context, %x: tensor<3xf32>):
     mef.output %ch, %x : !mef.chain, tensor<3xf32>
-}) {frameworkName = "tf", devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<3xf32>) -> (tensor<3xf32>), sym_name = "badSetupArgs"} : () -> ()
+}) {devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<3xf32>) -> (tensor<3xf32>), sym_name = "badSetupArgs"} : () -> ()
 
 // -----
 
@@ -87,7 +87,7 @@ func.func @dtype_invalid(%x : !mgp.tensor_spec<5x10xinvalid>) {}
 }, {
   ^bb0(%ch: !mef.chain, %ctx: !mgp.context, %x: tensor<3xf32>):
     mef.output %ch, %x : !mef.chain, tensor<3xf32>
-}) {frameworkName = "tf", devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<3xf32>) -> (tensor<3xf32>), sym_name = "badSetupResults"} : () -> ()
+}) {devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<3xf32>) -> (tensor<3xf32>), sym_name = "badSetupResults"} : () -> ()
 
 // -----
 
@@ -100,7 +100,7 @@ func.func @dtype_invalid(%x : !mgp.tensor_spec<5x10xinvalid>) {}
 }, {
   ^bb0(%ch: !mef.chain, %x: tensor<3xf32>, %ctx: !mgp.context):
     mef.output %ch, %x : !mef.chain, tensor<3xf32>
-}) {frameworkName = "tf", devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<3xf32>) -> (tensor<3xf32>), sym_name = "badExecuteArgs"} : () -> ()
+}) {devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<3xf32>) -> (tensor<3xf32>), sym_name = "badExecuteArgs"} : () -> ()
 
 // -----
 
@@ -113,7 +113,7 @@ func.func @dtype_invalid(%x : !mgp.tensor_spec<5x10xinvalid>) {}
 }, {
   ^bb0(%ch: !mef.chain, %ctx: !mgp.context, %cpu: !mgp.device_context<<"cpu", 0>>, %x: tensor<3xf32>):
     mef.output %ch, %x : !mef.chain, tensor<3xf32>
-}) {frameworkName = "tf", devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<4xf32>) -> (tensor<3xf32>), sym_name = "badExecuteArgs2"} : () -> ()
+}) {devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<4xf32>) -> (tensor<3xf32>), sym_name = "badExecuteArgs2"} : () -> ()
 
 // -----
 
@@ -126,11 +126,11 @@ func.func @dtype_invalid(%x : !mgp.tensor_spec<5x10xinvalid>) {}
   ^bb0(%ch: !mef.chain, %ctx: !mgp.context, %weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %x: tensor<3xf32>):
     // expected-error@+1 {{'mef.output' op expected 1 operands, but given 2}}
     mef.output %ch, %x : !mef.chain, tensor<3xf32>
-}) {frameworkName = "tf", devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<3xf32>) -> (), sym_name = "badExecuteResults"} : () -> ()
+}) {devices = [#M.device_ref<"cpu", 0>], inputOutputTypes = (tensor<3xf32>) -> (), sym_name = "badExecuteResults"} : () -> ()
 
 // -----
 
-mgp.model @mismatchedContextType : tf devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @mismatchedContextType devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch = grt.chain.create ()
   %unk = mef.opaque "bogus" [] () : ()->!mef.unknown
   %ctx = mgp.context.create 1
@@ -143,22 +143,11 @@ mgp.model @mismatchedContextType : tf devices [#M.device_ref<"cpu", 0>] init (%w
 
 // -----
 
-// expected-error@+1 {{'mgp.model' op attribute 'frameworkName' failed to satisfy constraint: string attribute must be a recognized framework name.}}
-mgp.model @invalidExecuteArgType : bogus devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
-  %ch = grt.chain.create ()
-  %ctx = mgp.context.create 1
-  mef.output %ch, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
-} execute (%ch: !mef.chain, %ctx: !mgp.context, %weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %x: index) -> (!mef.chain, index) {
-  mef.output %ch, %x : !mef.chain, index
-}
-
-// -----
-
 //
 // mgp.guard
 //
 
-mgp.model @guardOpWrongNResults : bogus devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @guardOpWrongNResults devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch = grt.chain.create ()
   %ctx = mgp.context.create 1
   mef.output %ch, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -222,7 +211,7 @@ func.func @bulk_slice_device_context_mismatch(%base: !mgp.buffer<<"gpu", 0>>, %o
 //
 
 // subgraph model for call tests
-mgp.model @call_target_model subgraph : tf devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @call_target_model subgraph devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch = grt.chain.create ()
   %ctx = mgp.context.create 1
   mef.output %ch, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -239,7 +228,7 @@ func.func @call_operand_type_mismatch(%ch: !mef.chain, %ctx: !mgp.context, %weig
 
 // -----
 
-mgp.model @call_target_model subgraph : tf devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @call_target_model subgraph devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch = grt.chain.create ()
   %ctx = mgp.context.create 1
   mef.output %ch, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -266,7 +255,7 @@ func.func @call_symbol_not_found(%ch: !mef.chain, %ctx: !mgp.context, %weights: 
 // -----
 
 // expected-error@+1 {{expected exactly one mgp.context_create op in the 'init' block, but found 0}}
-mgp.model @zero_context_create_ops : tf devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @zero_context_create_ops devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch = grt.chain.create ()
   // Missing mgp.context.create
   mef.output %ch, %weights, %cpu : !mef.chain, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -277,7 +266,7 @@ mgp.model @zero_context_create_ops : tf devices [#M.device_ref<"cpu", 0>] init (
 // -----
 
 // expected-error@+1 {{expected exactly one mgp.context_create op in the 'init' block, but found 2}}
-mgp.model @multiple_context_create_ops : tf devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @multiple_context_create_ops devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch = grt.chain.create ()
   %ctx1 = mgp.context.create 1
   %ctx2 = mgp.context.create 1 // Second context create

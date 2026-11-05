@@ -50,13 +50,10 @@ namespace M::MGP {
 /// LowerableToMGPInterface implementers and built up as ops are lowered.
 class MOGraphLoweringState {
 public:
-  MOGraphLoweringState(M::MO::GraphOp graph,
-                       llvm::StringRef compiledFrameworkLabel,
-                       size_t minimumCpuAlignment,
+  MOGraphLoweringState(M::MO::GraphOp graph, size_t minimumCpuAlignment,
                        mlir::SymbolTable &moduleSymbolTable)
-      : graph(graph), common(compiledFrameworkLabel, minimumCpuAlignment),
-        init(graph.getContext()), execute(graph.getContext()),
-        moduleSymbolTable(moduleSymbolTable) {
+      : graph(graph), common(minimumCpuAlignment), init(graph.getContext()),
+        execute(graph.getContext()), moduleSymbolTable(moduleSymbolTable) {
     builderContext.hostDevice = M::getHostDevice(graph);
 
     typeConverter.addConversion(
@@ -116,15 +113,10 @@ public:
 
   /// Common state used by both the init and execute phases.
   struct CommonState {
-    explicit CommonState(llvm::StringRef compiledFrameworkLabel,
-                         size_t minimumCpuAlignment)
-        : compiledFrameworkLabel(compiledFrameworkLabel),
-          minimumCpuAlignment(minimumCpuAlignment) {}
+    explicit CommonState(size_t minimumCpuAlignment)
+        : minimumCpuAlignment(minimumCpuAlignment) {}
 
     MGP::ModelOp modelOp;
-
-    /// The name of the target framework, e.g. "mgp", "tf", etc.
-    llvm::StringRef compiledFrameworkLabel;
 
     /// For all CPU buffers, constant and allocated.
     size_t minimumCpuAlignment;
@@ -213,10 +205,6 @@ public:
   mlir::SymbolTable &getModuleSymbolTable() { return moduleSymbolTable; }
 
   void setModelOp(MGP::ModelOp modelOp) { common.modelOp = modelOp; }
-
-  llvm::StringRef getCompiledFrameworkLabel() {
-    return common.compiledFrameworkLabel;
-  }
 
   size_t getMinimumCpuAlignment() { return common.minimumCpuAlignment; }
 

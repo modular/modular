@@ -14,7 +14,7 @@
 // 1 full-attention block); one linear block is required to trigger the
 // fusion duplication. Weights are placeholders; no weight data is needed.
 
-// CHECK-LABEL: mgp.model @qwen3_5 :
+// CHECK-LABEL: mgp.model @qwen3_5
 // CHECK:       } execute
 // CHECK-NOT:   host_to_device
 // CHECK:       mef.output

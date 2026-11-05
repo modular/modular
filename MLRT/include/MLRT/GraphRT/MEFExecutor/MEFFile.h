@@ -18,7 +18,6 @@
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
-#include "Support/ML/CompiledFrameworkLabel.h"
 #include "Support/ReferenceCounted.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -53,7 +52,7 @@ public:
 
   /// This method inspects the contents of the MEF file to make an educated
   /// guess of what it contains, allowing for better QoI and usability of tools.
-  CompiledFrameworkLabel sniffFileContents() const;
+  const char *sniffFileContents() const;
 
   /// Open a MEF file and install its primitives.
   static ErrorOr<RCRef<MEFFile>> open(BufferRef buffer,

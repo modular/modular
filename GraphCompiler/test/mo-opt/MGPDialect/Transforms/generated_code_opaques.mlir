@@ -6,7 +6,7 @@ module {
   kgen.extern.generator  @"MOGGTests::MyCustomInt::__init__(MOGGTests::MyCustomInt=&,::Int)"(index, !kgen.pointer<struct<(index) memoryOnly>> byref_result) -> !kgen.none
   kgen.extern.generator  @"MOGGTests::MyCustomInt::__moveinit__(MOGGTests::MyCustomInt=&,MOGGTests::MyCustomInt)"(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem, !kgen.pointer<struct<(index) memoryOnly>> byref_result) -> !kgen.none
   kgen.extern.generator  @"MOGGTests::MyCustomInt::__del__(MOGGTests::MyCustomInt)"(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none
-  mgp.model @graph : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+  mgp.model @graph devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
     %0 = grt.chain.create ()
     %1 = mgp.context.create 2
     %3 = mgp.runtime.create %0, %1[1]
