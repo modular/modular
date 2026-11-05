@@ -224,6 +224,59 @@ _SPLITK_OPS = ["argmax", "argmin", "reduce_max", "rms_norm_spelled"]
 
 GPU_SPLITK_SPECS = [_spec(op, DType.float32, -1, "gpu") for op in _SPLITK_OPS]
 
+
+@dataclass(frozen=True)
+class RmsNormSpec:
+    """One compiled ``ops.rms_norm`` graph for the edge-case shapes."""
+
+    dtype: DType
+    """Element type of the input and the weight."""
+
+    rank: int
+    """Rank of the input."""
+
+    multiply_before_cast: bool
+    """Whether the weight multiplies before the cast back to ``dtype``."""
+
+    device: str
+    """``"cpu"`` or ``"gpu"``."""
+
+    static_cols: int | None = None
+    """The row width when the graph knows it, symbolic otherwise."""
+
+    @property
+    def name(self) -> str:
+        order = "mul_cast" if self.multiply_before_cast else "cast_mul"
+        cols = f"_c{self.static_cols}" if self.static_cols else ""
+        return (
+            f"rms_norm_{_DTYPE_TAGS[self.dtype]}_rank{self.rank}{cols}"
+            f"_{order}_{self.device}"
+        )
+
+
+# Non-zero, so a dropped or misplaced offset changes the result.
+RMS_NORM_WEIGHT_OFFSET = 1.0
+
+# rms_norm compiles to a generated rowwise kernel. Rank 2 covers both
+# `multiply_before_cast` branches in both precisions; ranks 1 and 5 check the
+# row indexing. On a GPU, a static row width keeps the row in registers when
+# the SIMD width divides it (4096) and streams it otherwise (2050, 557).
+RMS_NORM_SPECS = (
+    [
+        RmsNormSpec(dtype, 2, multiply_before_cast, device)
+        for device in _BOTH_DEVICES
+        for dtype in (DType.float32, DType.bfloat16)
+        for multiply_before_cast in (False, True)
+    ]
+    + [RmsNormSpec(DType.float32, 1, False, d) for d in _BOTH_DEVICES]
+    + [RmsNormSpec(DType.bfloat16, 5, True, d) for d in _BOTH_DEVICES]
+    + [
+        RmsNormSpec(DType.bfloat16, 3, True, "gpu", static_cols=4096),
+        RmsNormSpec(DType.bfloat16, 3, False, "gpu", static_cols=2050),
+        RmsNormSpec(DType.float32, 3, False, "gpu", static_cols=557),
+    ]
+)
+
 SPECS_BY_NAME: dict[str, RowwiseSpec] = {
     spec.name: spec
     for spec in (
@@ -281,6 +334,35 @@ def build_graph(spec: RowwiseSpec) -> Graph:
             graph.output(
                 build_reduction(spec.op, x, spec.axis, weights=weights)
             )
+    return graph
+
+
+def build_rms_norm_graph(spec: RmsNormSpec) -> Graph:
+    """Builds ``spec``'s ``ops.rms_norm`` graph with symbolic dimensions.
+
+    Args:
+        spec: The parametrization to build.
+
+    Returns:
+        The constructed :class:`~max.graph.Graph`, ready to compile.
+    """
+    dims: list[str | int] = [f"d{i}" for i in range(spec.rank)]
+    if spec.static_cols:
+        dims[-1] = spec.static_cols
+    device = _DEVICE_REFS[spec.device]
+    x_t = TensorType(spec.dtype, dims, device=device)
+    w_t = TensorType(spec.dtype, dims[-1:], device=device)
+    with Graph(spec.name, input_types=[x_t, w_t]) as graph:
+        x, w = (inp.tensor for inp in graph.inputs)
+        graph.output(
+            ops.rms_norm(
+                x,
+                w,
+                epsilon=RMS_NORM_EPS,
+                weight_offset=RMS_NORM_WEIGHT_OFFSET,
+                multiply_before_cast=spec.multiply_before_cast,
+            )
+        )
     return graph
 
 

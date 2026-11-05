@@ -11,4 +11,6 @@ mo.graph @rms_norm() -> !mo.tensor<[3, 2], f32> {
 }
 
 // CHECK-MT: 'rms_norm' returned tensor<3x2xf32> [1.6957{{[0-9]*}}e+00, 4.6563{{[0-9]*}}e+00, 3.9333{{[0-9]*}}e+00, 6.3758{{[0-9]*}}e+00, 5.9958{{[0-9]*}}e+00, 8.2815{{[0-9]*}}e+00]
-// CHECK-IR: "mgp.generic.execute"{{.*}}dSummary = {{.*}}mo.composite.reduce.rms_norm{{.*}}mo.add{{.*}}
+// rms_norm decomposes, and the residual add joins its map phase: one rowwise
+// kernel.
+// CHECK-IR: "mgp.generic.execute"{{.*}}dSummary = "Rowwise({{.*}}mo.reduce.add{{.*}}Elementwise(mo.mul, mo.mul, mo.add)))"

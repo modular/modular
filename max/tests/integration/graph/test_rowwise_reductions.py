@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Correctness tests for the row-wise reduction ops (Row API).
 
-Covers every non-composite reduction routed through MAX's own Mojo Row API:
+Covers every reduction that runs as a Mojo Row API kernel:
 the pure reductions (``reduce_sum/max/min/mean/product``, ``argmax``,
 ``argmin``, ``reduce_min_and_max``) and the last-axis norm-type ops
 (``softmax``, ``logsoftmax``, ``layer_norm``, ``rms_norm``,
@@ -23,6 +23,9 @@ across a few small column counts (even + odd), on the inner axis and -- for the
 pure arbitrary-axis reductions -- on a non-inner axis, in bfloat16, float16 and
 float32 where precision makes it meaningful, plus a CPU-only 8-byte-element
 group (see :data:`WIDE_CPU_SPECS`) for what only the widest element can reach.
+``rms_norm`` also runs on edge-case shapes (:data:`RMS_NORM_SPECS`): no rows,
+odd, many and long rows, ranks 1 and 5, static row widths, and both
+``multiply_before_cast`` orders with a weight offset.
 
 Every case runs on both the CPU and the GPU -- the GPU is where the cooperative
 tiers, the cross-thread combine and the split-K path live, so it is the priority
@@ -54,9 +57,13 @@ from _rowwise_reduction_specs import (
     GPU_SUBWORD_SPECS,
     INNER_SPECS,
     NONINNER_SPECS,
+    RMS_NORM_SPECS,
+    RMS_NORM_WEIGHT_OFFSET,
     WIDE_CPU_SPECS,
+    RmsNormSpec,
     RowwiseSpec,
     build_graph,
+    build_rms_norm_graph,
 )
 from max.driver import CPU, Buffer
 from max.dtype import DType
@@ -390,3 +397,55 @@ def test_rowwise_inner_gpu_splitk(
     _reference_and_check(
         spec.op, spec.dtype, model, x, -1, inputs, f"cols={_SPLITK_COLS}"
     )
+
+
+# Shapes for the rms_norm graphs, by input rank: no rows, short and odd rows,
+# widths on either side of powers of two, many rows, and few long rows, which
+# take the GPU split-K tier (rows of at least 224 KB) and the CPU split-axis
+# tier (rows of at least 262144 elements).
+_RMS_NORM_SHAPES: dict[int, list[tuple[int, ...]]] = {
+    1: [(5,), (557,), (8193,)],
+    2: [
+        (0, 128),
+        (2, 5),
+        (2, 55),
+        (7, 557),
+        (2, 8191),
+        (2, 8192),
+        (2, 8193),
+        (2, 16384),
+        (2, 16385),
+        (3001, 128),
+        (24576, 256),
+        (1, 65536),
+        (3, 100003),
+        (16, 262144),
+        (1, 262147),
+        (2, 524288),
+    ],
+    5: [(3, 4, 10, 20, 8), (1, 5, 6, 10, 128)],
+}
+# Outer dims for a static row width: several rows per block, and a row count
+# that doesn't divide the block.
+_RMS_NORM_STATIC_OUTER = [(3, 41), (1, 513)]
+
+
+def _rms_norm_shapes(spec: RmsNormSpec) -> list[tuple[int, ...]]:
+    if spec.static_cols:
+        return [(*outer, spec.static_cols) for outer in _RMS_NORM_STATIC_OUTER]
+    return _RMS_NORM_SHAPES[spec.rank]
+
+
+@pytest.mark.parametrize("spec", RMS_NORM_SPECS, ids=lambda s: s.name)
+def test_rms_norm_edges(session: InferenceSession, spec: RmsNormSpec) -> None:
+    model = session.load(build_rms_norm_graph(spec))
+    for shape in _rms_norm_shapes(spec):
+        torch.manual_seed(0)
+        x = torch.randn(shape).to(_torch_dtype(spec.dtype))
+        weight = _make_weight(1, shape[-1], spec.dtype)
+        got = _read_f32(_feed(model, [x, weight])[0])
+        xf = x.to(torch.float32)
+        ms = xf.pow(2).mean(dim=-1, keepdim=True)
+        scale = weight.to(torch.float32) + RMS_NORM_WEIGHT_OFFSET
+        ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * scale).numpy()
+        _assert_close(got, ref, "rms_norm", spec.dtype, f"shape={shape}")

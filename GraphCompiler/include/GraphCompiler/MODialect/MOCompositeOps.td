@@ -46,7 +46,9 @@ def MOComposite_ReduceRMSNormOp : MO_CompositeOp<"reduce.rms_norm", [
     Computes `input / sqrt(mean(input^2) + epsilon) * (weight + weight_offset)`.
 
     A composite: MO patterns fuse it with its neighbors (a residual add,
-    RoPE, an allreduce, a quantize).
+    RoPE, an allreduce, a quantize). A target that registers a kernel for it
+    runs that kernel; elsewhere `mo-tmp-decompose-composites` replaces it with
+    the ops it is made of.
 
     `epsilon` and `weight_offset` are compile-time constants: targets that
     need scalar constants as attributes cannot take them as operands.
