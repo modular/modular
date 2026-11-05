@@ -87,6 +87,7 @@ _IGNORED_SUFFIXES = {
     ".otf",
     ".png",
     ".rs",
+    ".safetensors",
     ".ttf",
     ".webp",
     ".woff",

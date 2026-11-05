@@ -34,6 +34,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.model_config import (
     KimiK3Config,
 )
 from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
+from max.pipelines.speculative import SpeculativeConfig
 
 _HIDDEN_SIZE = 1024
 _NUM_ATTENTION_HEADS = 8
@@ -286,6 +287,28 @@ def test_decompressed_cache_has_no_mla_prefill_window(
 
     assert not config.mla_latent_cache
     assert config.mla_prefill_scratch_bytes(_MAX_LENGTH) == 0
+
+
+def test_a_non_dspark_speculative_config_sizes_the_plain_leaf(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """An eagle config keeps initializing, over a decode-sized leaf.
+
+    Only DSpark block-drafts through this tower; any other speculative
+    method runs the plain cache sizing rather than failing at KV-cache
+    time with a message about sizing. The leaf's draft width stays zero
+    and its per-step accounting stays one draft row per step.
+    """
+    _, pipeline_config, model_config = configs
+    pipeline_config.speculative = SpeculativeConfig(speculative_method="eagle")
+
+    config = KimiK3Config.initialize(
+        pipeline_config, model_config, max_seq_len=_MAX_LENGTH
+    )
+
+    assert config.attn_kv_params.num_draft_tokens == 0
+    assert config.attn_kv_params.num_draft_tokens_per_step == 1
+    assert config.attn_kv_params.speculative_method == "eagle"
 
 
 def test_max_seq_len_uses_the_requested_length_within_bound(
