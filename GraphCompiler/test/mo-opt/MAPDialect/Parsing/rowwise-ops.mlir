@@ -1,7 +1,8 @@
 // RUN: mo-opt %s | FileCheck %s
 // RUN: mo-opt %s | mo-opt
 
-// Round-trip map.iter.rowwise, map.iter.rowwise.body and map.iter.reduce.
+// Round-trip map.iter.rowwise, map.iter.rowwise.body, map.iter.reduce and
+// map.iter.map.
 
 !DType = !lit.struct<@std::@builtin::@dtype::@DType>
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
@@ -167,6 +168,101 @@ mo.graph @rowwiseChain(%x: !mo.tensor<[8, 128], f32>, %buf: !mo.buffer<[8, 1], f
     map.store %buf[%row] = %acc : !mo.buffer<[8, 1], f32>
   } {hasWriteEffect = true}
   mo.output
+}
+
+// A normalize-shaped kernel: a fold, a row-scalar op on its result, then a
+// map phase that scales each element by it and by `gamma`, read through a
+// broadcast, and stores per element.
+// CHECK-LABEL: mo.graph @mapPhase
+// CHECK:         [[RESULT5:%[^ ]+]] = map.iter.rowwise<[8, 128], axis = 1>
+// CHECK-NEXT:    inputs  ([[X5:%[^ :,]+]]: !mo.tensor<[8, 128], f32>, [[G5:%[^ :,]+]]: !mo.tensor<[128], f32>)
+// CHECK-NEXT:    outputs ([[OUT5:%[^ :,]+]]: !mo.tensor<[8, 128], f32>)
+// CHECK-NEXT:    row     ([[ROW5:%[^ :,]+]]: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+// CHECK-NEXT:   %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum index ([[I5:%[^ :,]+]]: !map.index<2>) -> f32 {
+// CHECK:        }
+// CHECK-NEXT:   [[S5:%[^ ]+]] = map.call.elementwise @builtin_kernels.elementwise.Mul([[ROW5]], %acc, %acc) : !map.index<2>, f32, f32 -> f32
+// CHECK-NEXT:   map.iter.map index ([[J5:%[^ :,]+]]: !map.index<2>) {
+// CHECK-NEXT:     [[XV5:%[^ ]+]] = map.load [[X5]][[[J5]]] : !mo.tensor<[8, 128], f32>
+// CHECK-NEXT:     [[GI5:%[^ ]+]] = map.index.broadcast<#map.index.broadcast.spec<[128] -> [8, 128]>> ([[J5]]) : !map.index<2> -> !map.index<1>
+// CHECK-NEXT:     [[GV5:%[^ ]+]] = map.load [[G5]][[[GI5]]] : !mo.tensor<[128], f32>
+// CHECK-NEXT:     [[N5:%[^ ]+]] = map.call.elementwise @builtin_kernels.elementwise.Mul([[J5]], [[XV5]], [[S5]]) : !map.index<2>, f32, f32 -> f32
+// CHECK-NEXT:     [[Y5:%[^ ]+]] = map.call.elementwise @builtin_kernels.elementwise.Mul([[J5]], [[N5]], [[GV5]]) : !map.index<2>, f32, f32 -> f32
+// CHECK-NEXT:     map.store [[OUT5]][[[J5]]] = [[Y5]] : !mo.tensor<[8, 128], f32>
+// CHECK-NEXT:   }
+// CHECK-NEXT: }
+// CHECK-NEXT:   mo.output [[RESULT5]] : !mo.tensor<[8, 128], f32>
+mo.graph @mapPhase(%x: !mo.tensor<[8, 128], f32>, %gamma: !mo.tensor<[128], f32>)
+    -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>, %gamma: !mo.tensor<[128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>)
+      -> !mo.tensor<[8, 128], f32>
+  {
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum
+        index (%i: !map.index<2>) -> f32 {
+      %xv = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      %sq = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %xv, %xv)
+                : !map.index<2>, f32, f32 -> f32
+      map.yield %sq : f32
+    }
+    %s = map.call.elementwise @builtin_kernels.elementwise.Mul(%row, %acc, %acc)
+             : !map.index<2>, f32, f32 -> f32
+    map.iter.map index (%i: !map.index<2>) {
+      %xv = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      %gi = map.index.broadcast<#map.index.broadcast.spec<[128] -> [8, 128]>> (%i)
+                : !map.index<2> -> !map.index<1>
+      %gv = map.load %gamma[%gi] : !mo.tensor<[128], f32>
+      %n = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %xv, %s)
+               : !map.index<2>, f32, f32 -> f32
+      %y = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %n, %gv)
+               : !map.index<2>, f32, f32 -> f32
+      map.store %out[%i] = %y : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}
+
+// A map phase on a non-inner symbolic axis, next to a per-row output, in the
+// outlined form.
+// CHECK-LABEL: mo.graph @mapPhaseBody
+// CHECK:           map.iter.rowwise.body<[M, N], axis = 0>
+// CHECK-NEXT:        row ([[ROW6:%[^ :,]+]]: !map.index<2>)
+// CHECK-NEXT:        capturing ([[X60:%[^ ,]+]] = {{.*}} : !mo.tensor<[M, N], f32>, [[OUT60:%[^ ,]+]] = {{.*}} : !mo.tensor<[M, N], f32>, [[SUM60:%[^ ,]+]] = {{.*}} : !mo.tensor<[1, N], f32>) {
+// CHECK-NEXT:      [[ACC6:%[^ ]+]] = map.iter.reduce @builtin_kernels.monoids.ReduceSum
+// CHECK:           map.store [[SUM60]][[[ROW6]]] = [[ACC6]] : !mo.tensor<[1, N], f32>
+// CHECK-NEXT:      map.iter.map index ([[J6:%[^ :,]+]]: !map.index<2>) {
+// CHECK-NEXT:        [[XV6:%[^ ]+]] = map.load [[X60]][[[J6]]] : !mo.tensor<[M, N], f32>
+// CHECK-NEXT:        [[Y6:%[^ ]+]] = map.call.elementwise @builtin_kernels.elementwise.Mul([[J6]], [[XV6]], [[ACC6]]) : !map.index<2>, f32, f32 -> f32
+// CHECK-NEXT:        map.store [[OUT60]][[[J6]]] = [[Y6]] : !mo.tensor<[M, N], f32>
+// CHECK-NEXT:      }
+// CHECK-NEXT:    }
+mo.graph @mapPhaseBody<M, N>(%x: !mo.tensor<[M, N], f32>)
+    -> (!mo.tensor<[M, N], f32>, !mo.tensor<[1, N], f32>) {
+  %r, %sum = map.iter.opaque
+      inputs (%x : !mo.tensor<[M, N], f32>)
+      outputs (%out : !mo.tensor<[M, N], f32>,
+               %outSum : !mo.tensor<[1, N], f32>) {
+    map.iter.rowwise.body<[M, N], axis = 0>
+        row (%row: !map.index<2>)
+        capturing (%x0 = %x : !mo.tensor<[M, N], f32>,
+                   %out0 = %out : !mo.tensor<[M, N], f32>,
+                   %sum0 = %outSum : !mo.tensor<[1, N], f32>) {
+      %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum
+          index (%i: !map.index<2>) -> f32 {
+        %xv = map.load %x0[%i] : !mo.tensor<[M, N], f32>
+        map.yield %xv : f32
+      }
+      map.store %sum0[%row] = %acc : !mo.tensor<[1, N], f32>
+      map.iter.map index (%i: !map.index<2>) {
+        %xv = map.load %x0[%i] : !mo.tensor<[M, N], f32>
+        %y = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %xv, %acc)
+                 : !map.index<2>, f32, f32 -> f32
+        map.store %out0[%i] = %y : !mo.tensor<[M, N], f32>
+      }
+    }
+  } {device = #M.device_ref<"cpu", 0>}
+  mo.output %r, %sum : !mo.tensor<[M, N], f32>, !mo.tensor<[1, N], f32>
 }
 
 }

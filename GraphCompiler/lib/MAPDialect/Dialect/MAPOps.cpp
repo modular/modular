@@ -963,6 +963,55 @@ static LogicalResult verifyRowIndex(Operation *op, MOSH::ShapeAttr shape,
   return mlir::success();
 }
 
+// Whether `shape` is `full` with dimension `axis` set to 1.
+static bool isPerRowShape(MOSH::ShapeAttr shape, MOSH::ShapeAttr full,
+                          int64_t axis) {
+  if (shape.getRank() != full.getRank() ||
+      MOSH::ShapeAttr::getStaticDim(shape[axis]) != 1)
+    return false;
+  for (int64_t d = 0, e = full.getRank(); d < e; ++d)
+    if (d != axis && shape[d] != full[d])
+      return false;
+  return true;
+}
+
+// A store in a map phase writes a per-element tensor; one outside the phases
+// writes a per-row tensor at the row index. Folds check their own bodies.
+static LogicalResult verifyRowwiseStores(RowwiseOpInterface rowwise) {
+  Operation *op = rowwise.getOperation();
+  MOSH::ShapeAttr shape = rowwise.getShape();
+  int64_t axis = rowwise.getAxis();
+  BlockArgument row = rowwise.getRowArg();
+  WalkResult result = op->getRegion(0).walk([&](StoreOp store) {
+    Operation *phase = store->getParentOp();
+    while (phase != op && !isa<RowwisePhaseOpInterface>(phase))
+      phase = phase->getParentOp();
+    if (isa<IterReduceOp>(phase))
+      return WalkResult::advance();
+    MOSH::ShapeAttr target =
+        MO::castFromTensorLike(store.getTensor().getType()).getShape();
+    if (isa<IterMapOp>(phase)) {
+      if (target == shape)
+        return WalkResult::advance();
+      store.emitOpError() << "in a map phase must write a tensor of the "
+                             "rowwise shape";
+      return WalkResult::interrupt();
+    }
+    if (target == shape) {
+      store.emitOpError() << "of a tensor of the rowwise shape must be in a "
+                             "map phase";
+      return WalkResult::interrupt();
+    }
+    if (!isPerRowShape(target, shape, axis) || store.getIndex() != row) {
+      store.emitOpError() << "outside a map phase must write a per-row "
+                             "tensor at the row index";
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return mlir::failure(result.wasInterrupted());
+}
+
 ParseResult IterRowwiseOp::parse(OpAsmParser &parser, OperationState &state) {
   if (parseRowwiseShapeAndAxis(parser, state, getShapeAttrName(state.name),
                                getAxisAttrName(state.name)))
@@ -1102,18 +1151,17 @@ LogicalResult IterRowwiseOp::verify() {
   for (auto [i, result] : llvm::enumerate(results.take_front(numOutputs))) {
     MOSH::ShapeAttr resultShape =
         llvm::cast<MO::TensorType>(result.getType()).getShape();
-    bool perElement = resultShape == shape;
-    bool perRow = resultShape.getRank() == shape.getRank() &&
-                  MOSH::ShapeAttr::getStaticDim(resultShape[axis]) == 1;
-    for (int64_t d = 0, e = shape.getRank(); perRow && d < e; ++d)
-      perRow = d == axis || resultShape[d] == shape[d];
-    if (!perElement && !perRow)
+    if (resultShape != shape && !isPerRowShape(resultShape, shape, axis))
       return emitOpError() << "result " << i
                            << " must have the rowwise shape, or that shape "
                               "with dimension "
                            << axis << " set to 1; got " << result.getType();
   }
   return mlir::success();
+}
+
+LogicalResult IterRowwiseOp::verifyRegions() {
+  return verifyRowwiseStores(*this);
 }
 
 Block::BlockArgListType IterRowwiseOp::getInputBlockArgs() {
@@ -1265,7 +1313,11 @@ LogicalResult IterRowwiseBodyOp::verify() {
                          << " block arguments (the row, then one per "
                             "capture), got "
                          << body.getNumArguments();
-  return verifyRowIndex(*this, getShape(), getAxis(), body.getArgument(0));
+  return verifyRowIndex(*this, getShape(), getAxis(), getRowArg());
+}
+
+LogicalResult IterRowwiseBodyOp::verifyRegions() {
+  return verifyRowwiseStores(*this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1332,6 +1384,26 @@ YieldOp IterReduceOp::getYield() {
   return body.empty() ? YieldOp() : llvm::dyn_cast<YieldOp>(body.back());
 }
 
+// A phase's body has one `map.index` argument of the rowwise's rank.
+static LogicalResult verifyPhaseIndex(RowwisePhaseOpInterface phase) {
+  Operation *op = phase.getOperation();
+  Block &body = op->getRegion(0).front();
+  if (body.getNumArguments() != 1)
+    return op->emitOpError() << "body expects exactly one block argument (the "
+                                "index), got "
+                             << body.getNumArguments();
+  MOSH::ShapeAttr shape =
+      llvm::cast<RowwiseOpInterface>(op->getParentOp()).getShape();
+  auto indexTy = llvm::dyn_cast<MAP::IndexType>(phase.getIndexArg().getType());
+  if (!indexTy)
+    return op->emitOpError() << "index block argument must be map.index<N>";
+  if (indexTy.getRank() != shape.getRank())
+    return op->emitOpError()
+           << "index rank " << indexTy.getRank()
+           << " does not match the rowwise shape rank " << shape.getRank();
+  return mlir::success();
+}
+
 LogicalResult IterReduceOp::verify() {
   if (getNumResults() == 0)
     return emitOpError() << "must have at least one result";
@@ -1340,24 +1412,10 @@ LogicalResult IterReduceOp::verify() {
       return emitOpError() << "result " << i << " must be a scalar, got "
                            << type;
 
-  Block &body = getBody().front();
-  if (body.getNumArguments() != 1)
-    return emitOpError() << "body expects exactly one block argument (the "
-                            "index), got "
-                         << body.getNumArguments();
-  Operation *parent = (*this)->getParentOp();
-  MOSH::ShapeAttr shape =
-      llvm::isa<IterRowwiseOp>(parent)
-          ? llvm::cast<IterRowwiseOp>(parent).getShape()
-          : llvm::cast<IterRowwiseBodyOp>(parent).getShape();
-  auto indexTy = llvm::dyn_cast<IndexType>(getIndexArg().getType());
-  if (!indexTy)
-    return emitOpError() << "index block argument must be map.index<N>";
-  if (indexTy.getRank() != shape.getRank())
-    return emitOpError() << "index rank " << indexTy.getRank()
-                         << " does not match the rowwise shape rank "
-                         << shape.getRank();
+  if (failed(verifyPhaseIndex(*this)))
+    return mlir::failure();
 
+  Block &body = getBody().front();
   if (!getYield())
     return emitOpError() << "body must end with a map.yield of the "
                             "contribution";
@@ -1410,6 +1468,43 @@ IterReduceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
              << "parameter " << ref.getName() << " but have types "
              << it->second.second << " and " << type;
   }
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// map.iter.map
+//===----------------------------------------------------------------------===//
+
+ParseResult IterMapOp::parse(OpAsmParser &parser, OperationState &state) {
+  SmallVector<OpAsmParser::Argument> indexArgInfo;
+  if (parser.parseKeyword("index") || parseBlockArgList(parser, indexArgInfo))
+    return mlir::failure();
+  if (indexArgInfo.size() != 1)
+    return parser.emitError(parser.getCurrentLocation(),
+                            "'map.iter.map' expects exactly one index "
+                            "argument");
+  if (parser.parseRegion(*state.addRegion(), indexArgInfo))
+    return mlir::failure();
+  return parser.parseOptionalAttrDict(state.attributes);
+}
+
+void IterMapOp::print(OpAsmPrinter &p) {
+  p << " index ";
+  printBlockArgList(p, getBody().front().getArguments());
+  p << " ";
+  p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
+  p.printOptionalAttrDict(getOperation()->getAttrs());
+}
+
+LogicalResult IterMapOp::verify() {
+  if (failed(verifyPhaseIndex(*this)))
+    return mlir::failure();
+  WalkResult stores = getBody().walk([&](StoreOp store) {
+    return store.getIndex() == getIndexArg() ? WalkResult::advance()
+                                             : WalkResult::interrupt();
+  });
+  if (stores.wasInterrupted())
+    return emitOpError() << "must store at its own index";
   return mlir::success();
 }
 
