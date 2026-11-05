@@ -738,6 +738,19 @@ cc_import(
         "//:hal_device_context_enabled": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    deps = [":Driver/MojoRuntimeBindings.cc"],
+)
+
+# The Mojo toolchain links libHALDeviceContextMojo.so against this library. A
+# cc_shared_library ships only the runtime libraries it links itself, so the
+# shared library carrying the HAL exports links this one too.
+cc_import(
+    name = "Driver/MojoRuntimeBindings.cc",
+    shared_library = ":Driver/MojoRuntimeBindings",
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 # HAL replacement for the DeviceContext C++ API: a pure shim over the Mojo HAL
