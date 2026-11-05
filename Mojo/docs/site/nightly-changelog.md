@@ -232,6 +232,22 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- `mojo build` and `mojo run` can now report what elaboration produced, to
+  show which compile-time code makes a compile slow. `--elaboration-stats`
+  lists each `comptime for` loop with its iteration count and the operations
+  its unrolled iterations produced. It also lists the calls that compile-time
+  evaluation made to the interpreter, summed by function and by call site,
+  with their cache hits and the CPU time spent interpreting. The
+  report has one part for each pipeline that elaborated: the host and each
+  accelerator target. This option is hidden; use `--help-hidden` to list it.
+
+  Like the timing reports, the report prints as text to stderr by default.
+  `--timing-json` prints it as JSON instead, under an `elaboration` key, and
+  `--timing-file` writes it to a file instead of stderr. If the compilation
+  hits the cache, elaboration is skipped and nothing is reported. Clear
+  compilation cache or point `MODULAR_CACHE_DIR` at an empty directory
+  to get a full report.
+
 ## Removed
 
 - Legacy closures are removed. The `capturing` function effect and the
