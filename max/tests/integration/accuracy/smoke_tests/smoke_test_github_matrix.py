@@ -140,6 +140,7 @@ MODELS: Mapping[str, set[str]] = {
     "Qwen/Qwen3.6-27B": _1xB200,
     "Qwen/Qwen3.8-27B": NIGHTLY | _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
     "Qwen/Qwen3.8-27B__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
+    "RadixArk/GLM-5.3-NVFP4__mtp_dpep": NIGHTLY | VARIANT | MACH | _8xB200,
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": NIGHTLY | VARIANT | _8xB200,
     "RadixArk/Qwen3.8-27B-NVFP4": NIGHTLY | _1xB200,
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": NIGHTLY | VARIANT | _1xB200,

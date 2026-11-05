@@ -193,6 +193,7 @@ def test_mach_models_run_only_on_mach() -> None:
     }
     # Pins the Mach-only nightly 8xB200 set; widen it only deliberately.
     assert mach_only == {
+        "RadixArk/GLM-5.3-NVFP4__mtp_dpep",
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark",
     }
