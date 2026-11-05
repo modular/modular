@@ -4813,12 +4813,10 @@ def _k_cache_to_buffer[
     comptime assert cache_offsets.flat_rank == 1
 
     @inline(.always)
-    def copy_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) {var}:
-        comptime assert rank == 2, "rank should be equal to 2"
+    def copy_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        comptime assert idx.rank == 2, "rank should be equal to 2"
 
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0])
 
         # KERN-3412: `length` can exceed the plan's real total. Past it, a
         # gather would read the shared null page through the LUT sentinel,
@@ -4828,7 +4826,7 @@ def _k_cache_to_buffer[
             buffer_row_offsets[buffer_row_offsets.num_elements() - 1]
         )
         if global_token_idx >= real_total_rows:
-            buffer.store(Coord(idx), SIMD[dtype, width](0))
+            buffer.store(idx, SIMD[dtype, width](0))
             return
 
         var batch_idx: Int = get_batch_from_row_offsets(
@@ -4841,7 +4839,7 @@ def _k_cache_to_buffer[
             + Int(cache_offsets[batch_idx])
         )
 
-        var head_dim_idx = idx[1]
+        var head_dim_idx = Int(idx[1])
 
         var cache_val = rebind[SIMD[dtype, width]](
             k_cache.load[width=width](
@@ -4849,7 +4847,7 @@ def _k_cache_to_buffer[
             ).cast[dtype]()
         )
 
-        buffer.store(Coord(idx), cache_val)
+        buffer.store(idx, cache_val)
 
     var launch_shape = Coord(Int(length), Int(buffer.dim[1]()))
     comptime target_simd_width = simd_width_of[dtype, target=context.target]()
@@ -4857,7 +4855,7 @@ def _k_cache_to_buffer[
     def copy_fn_unified[
         width: Int, alignment: Int = 1
     ](idx: Coord) {var copy_fn}:
-        copy_fn[width, idx.rank, alignment](coord_to_index_list(idx))
+        copy_fn[width, alignment](idx)
 
     _elementwise_impl_gpu[
         simd_width=target_simd_width,

@@ -345,7 +345,7 @@ def warp_specialize_gemm_with_multicasting[
         a_device: Input `A` tensor on device with shape `(M, K)`.
         b_device: Input `B` tensor on device with shape `(N, K)`.
         epilogue_fn: Stores each output element. Signature:
-            `def[dtype, width, *, alignment](IndexList[2], SIMD)`, with
+            `def[dtype, width, *, alignment](Coord, SIMD)`, with
             coordinates in the `(M, N)` output.
         ctx: Device context used to enqueue the kernel.
     """

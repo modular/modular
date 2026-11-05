@@ -957,7 +957,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         a_device: LHS TileTensor of shape (M, K).
         b_device: RHS TileTensor of shape (N, K) (transposed).
         epilogue_fn: Stores each output value. Signature:
-            `def[dtype, width, *, alignment](IndexList[2], SIMD)`, with
+            `def[dtype, width, *, alignment](Coord, SIMD)`, with
             coordinates in the (M, N) output.
         ctx: Device context used to create TMA descriptors and enqueue the
             kernel.

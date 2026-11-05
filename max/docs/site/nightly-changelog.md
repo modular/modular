@@ -377,6 +377,19 @@ This version is still a work in progress.
   Prefer to accept generic `DeviceContext` as input instead of restricting an
   implementation to the default parameter values.
 
+- The `load_fn`, `compute_fn` and `compute_finalize_fn` callbacks of
+  `stencil()` and `stencil_gpu()` in `max.algorithm` now take a `Coord`
+  instead of an `IndexList[rank]`. `map_fn` still takes and returns
+  `IndexList`. The coordinate holds the same values as before:
+
+  ```mojo
+  # was: def load_fn[...](point: IndexList[rank, ...]) -> ...
+  def load_fn[simd_width: Int, dtype: DType](point: Coord) -> SIMD[
+      dtype, simd_width
+  ]:
+      return input.load[width=simd_width](point)
+  ```
+
 ## Tools
 
 - Added the ability to install `max-serve` and `max-benchmark` as Conda extras,
