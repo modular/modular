@@ -215,6 +215,10 @@ This version is still a work in progress.
   def fill(buf: Optional[MutPointer[Byte, _]]): ...
   ```
 
+- The `StringSlice`, `ImmStringSpan`, and `ImmStringSlice` aliases are
+  deprecated. Use `StringSpan` instead. `StringSpan` is always immutable, so
+  the `Imm` variants are redundant.
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and

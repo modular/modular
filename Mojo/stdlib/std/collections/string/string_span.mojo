@@ -53,18 +53,31 @@ from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
 
 
+@deprecated(use=StringSpan)
 comptime StringSlice = StringSpan
-"""Provides a compatibility alias for `StringSpan`."""
+"""Deprecated: The former name of `StringSpan`.
 
+Use `StringSpan` instead.
+"""
+
+
+@deprecated(use=StringSpan)
 comptime ImmStringSpan[origin: ImmOrigin] = StringSpan[origin]
-"""Provides read-only access to the string data it views.
+"""Deprecated: An immutable `StringSpan`.
+
+`StringSpan` is always immutable. Use `StringSpan` instead.
 
 Parameters:
     origin: The origin of the string data.
 """
 
-comptime ImmStringSlice = ImmStringSpan
-"""Provides a compatibility alias for `ImmStringSpan`."""
+
+@deprecated(use=StringSpan)
+comptime ImmStringSlice = StringSpan
+"""Deprecated: The former name of `ImmStringSpan`.
+
+Use `StringSpan` instead.
+"""
 
 comptime StaticString = StringSpan[ImmStaticOrigin]
 """An immutable static string span.
