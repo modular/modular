@@ -129,7 +129,7 @@ def test_max_grid_dim_matches_per_dimension_queries() raises:
 def test_named_queries_on_cpu() raises:
     # A CPU driver answers these however it likes, or not at all; the call
     # must only come back as an `Int` or an error.
-    var cpu = DeviceContext(api="cpu")
+    var cpu = DeviceContext.cpu()
     _ = _try_query[_multiprocessor_count](cpu)
     _ = _try_query[_max_threads_per_block](cpu)
     _ = _try_query[_max_shared_memory_per_block](cpu)
