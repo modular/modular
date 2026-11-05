@@ -346,3 +346,6 @@ This version is still a work in progress.
 
 - Fixed rejection of negative integer and floating-point literals in `match`
   patterns.
+
+- A `comptime if conforms_to(T, Deinitable)` guard now correctly refines `T`
+  and deinits it after its last use.

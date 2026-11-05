@@ -391,6 +391,14 @@ TriBool isPropositionImplied(ConstraintAttr proposition,
                              ArrayRef<ConstraintAttr> assumptions,
                              ParameterEvaluator &evaluator);
 
+/// Visit each `TypeConformsToTraitAttr` found in a constraint proposition.
+/// Canonical AND is already flattened to a single n-ary node, so a single
+/// top-level loop over its operands is sufficient. OR / NOT are not visited
+/// since they are not definite knowledge.
+void forEachConformsToInProposition(
+    TypedAttr proposition,
+    llvm::function_ref<void(TypeConformsToTraitAttr)> callback);
+
 /// Given a type expression and a set of assumptions, compute the effective
 /// trait bound implied by any `conforms_to(type, Trait)` constraints. Returns a
 /// null TraitType if no refinements apply.
