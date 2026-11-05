@@ -185,7 +185,7 @@ def run_max_indexer(
     qr: torch.Tensor,
     input_row_offsets: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
-    mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
+    mask_variant: MHAMaskVariant,
     rope_dim: int = qk_rope_head_dim,
 ) -> torch.Tensor:
     device = Accelerator()
@@ -366,7 +366,12 @@ def test_indexer_no_mask(
 ) -> None:
     total_seq_len = batch_size * seq_len
     max_output = run_max_indexer(
-        x, qr, input_row_offsets, state_dict, rope_dim=rope_dim
+        x,
+        qr,
+        input_row_offsets,
+        state_dict,
+        MHAMaskVariant.NULL_MASK,
+        rope_dim=rope_dim,
     )
     torch_output = run_torch_indexer(x, qr, state_dict, rope_dim=rope_dim)
 

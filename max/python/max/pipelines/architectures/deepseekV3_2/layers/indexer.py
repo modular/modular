@@ -700,7 +700,7 @@ class Indexer(Module, Shardable):
         input_row_offsets: TensorValue,
         indexer_k_collection: PagedCacheValues,
         layer_idx: TensorValue,
-        mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
+        mask_variant: MHAMaskVariant,
         *,
         tail: BufferValue | None = None,
         slot_idx: TensorValue | None = None,

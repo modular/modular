@@ -204,7 +204,7 @@ class Indexer(
         indexer_k_collection: PagedCacheValues,
         layer_idx: Tensor,
         mla_collection: PagedCacheValues,
-        mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
+        mask_variant: MHAMaskVariant,
     ) -> Tensor:
         """Runs the indexer over the activations and the normed queries.
 
