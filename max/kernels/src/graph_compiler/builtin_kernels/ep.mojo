@@ -3160,7 +3160,6 @@ struct Struct_ep_combine_async_mx:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
         *,
         mx_min_tokens: Int,
     ](
@@ -3189,7 +3188,6 @@ struct Struct_ep_combine_async_mx:
             max_token_per_rank: Most tokens per GPU (inferred).
             n_gpus_per_node: GPUs per node (inferred).
             n_nodes: Physical nodes (inferred).
-            target: Compile-time device target.
             mx_min_tokens: Smallest `total_tokens` sent as MXFP8.
 
         Args:
@@ -3231,7 +3229,6 @@ struct Struct_ep_combine_async_mx:
                 max_token_per_rank,
                 n_gpus_per_node,
                 n_nodes,
-                target,
                 mx_msg=mx_msg,
             ](
                 atomic_counters_tile,
@@ -3264,7 +3261,6 @@ struct Struct_ep_combine_wait_mx:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         n_nodes: Int,
-        target: StaticString,
         *,
         mx_min_tokens: Int,
     ](
@@ -3290,7 +3286,6 @@ struct Struct_ep_combine_wait_mx:
             max_token_per_rank: Most tokens any GPU can receive.
             n_gpus_per_node: GPUs per physical node.
             n_nodes: Physical nodes.
-            target: Compile-time device target.
             mx_min_tokens: Smallest `total_tokens` sent as MXFP8.
 
         Args:
@@ -3359,7 +3354,6 @@ struct Struct_ep_combine_wait_mx:
                 max_token_per_rank,
                 n_gpus_per_node,
                 n_nodes,
-                target,
                 mx_msg=mx_msg,
             ](
                 num_tokens,
