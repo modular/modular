@@ -1471,6 +1471,62 @@ IterReduceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return mlir::success();
 }
 
+static bool isStaticOne(Attribute dim) {
+  return MOSH::ShapeAttr::getStaticDim(dim) == 1;
+}
+
+// numpy broadcast: `in`'s missing leading dims are dropped, its size-1 dims
+// pinned.
+std::optional<SmallVector<int64_t>>
+BroadcastIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
+  ViewSignatureAttr signature = getSpec().getSignature();
+  MOSH::ShapeAttr in = signature.getIn(), out = signature.getOut();
+  int64_t lead = out.getRank() - in.getRank();
+  SmallVector<int64_t> result;
+  for (int64_t d = 0, e = in.getRank(); d < e; ++d) {
+    if (in[d] == out[d + lead])
+      result.push_back(dims[d + lead]);
+    else if (isStaticOne(in[d]))
+      result.push_back(kPinnedCoordinate);
+    else
+      return std::nullopt;
+  }
+  return result;
+}
+
+// Only a reshape that adds or drops unit dims maps coordinates one to one.
+std::optional<SmallVector<int64_t>>
+ReshapeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
+  ViewSignatureAttr signature = getSpec().getSignature();
+  MOSH::ShapeAttr in = signature.getIn(), out = signature.getOut();
+  auto nonUnitDims = [](MOSH::ShapeAttr shape) {
+    SmallVector<int64_t> dims;
+    for (int64_t d = 0, e = shape.getRank(); d < e; ++d)
+      if (!isStaticOne(shape[d]))
+        dims.push_back(d);
+    return dims;
+  };
+  SmallVector<int64_t> inDims = nonUnitDims(in), outDims = nonUnitDims(out);
+  if (inDims.size() != outDims.size())
+    return std::nullopt;
+  SmallVector<int64_t> result(in.getRank(), kPinnedCoordinate);
+  for (auto [inDim, outDim] : llvm::zip(inDims, outDims)) {
+    if (in[inDim] != out[outDim])
+      return std::nullopt;
+    result[inDim] = dims[outDim];
+  }
+  return result;
+}
+
+std::optional<SmallVector<int64_t>>
+TransposeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
+  ArrayRef<int64_t> perm = getSpec().getPerm();
+  SmallVector<int64_t> result(perm.size());
+  for (auto [i, p] : llvm::enumerate(perm))
+    result[p] = dims[i];
+  return result;
+}
+
 //===----------------------------------------------------------------------===//
 // map.iter.map
 //===----------------------------------------------------------------------===//

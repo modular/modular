@@ -313,10 +313,7 @@ static ElementwiseCallOperands resolveElementwiseCall(CallElementwiseOp op,
       Value()};
   for (Value arg : op.getArgs())
     call.inputs.push_back(state.mapping.lookup(arg));
-  const MOGG::KernelDeclFunctionAdaptor &fn = *call.adaptor.elementwiseFunction;
-  if (!fn.inputArguments.empty() &&
-      fn.inputArguments.back().isOpaqueWithTypeName(
-          MOGG::kMojoInternalDpsIndexListTypeQualifiedName))
+  if (call.adaptor.elementwiseFunction->takesIndexList())
     call.index = state.mapping.lookup(op.getIndex());
   return call;
 }

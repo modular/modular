@@ -283,6 +283,22 @@ def MAP_IndexTransformOpInterface : OpInterface<"IndexTransformOpInterface"> {
       (ins "::mlir::OpBuilder &":$builder, "::mlir::Value":$tensor,
            "const ::mlir::IRMapping &":$outerValues)
     >,
+    InterfaceMethod<
+      [{Tracks which loop dimension each coordinate of an index is.
+
+        `dims[k]` is the loop dimension coordinate `k` of `getIndex()` equals,
+        or `kPinnedCoordinate` when the coordinate is always 0. Returns the
+        same for the index this op produces, or nullopt when one of its
+        coordinates isn't a single loop dimension (say, a reshape that merges
+        two). For a loop over [M, N] and its index, dims = [0, 1]:
+
+          broadcast [M, 1] -> [M, N]:  [0, kPinnedCoordinate]
+          broadcast [N] -> [M, N]:     [1]
+          transpose, perm [1, 0]:      [1, 0]}],
+      "std::optional<::llvm::SmallVector<int64_t>>", "mapLoopDims",
+      (ins "::llvm::ArrayRef<int64_t>":$dims), [{}],
+      "return std::nullopt;"
+    >,
   ];
 }
 

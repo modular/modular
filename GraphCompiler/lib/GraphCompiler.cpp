@@ -342,6 +342,7 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
     pm.addNestedPass<GraphOp>(MAP::createFuseMutableLoads());
   pm.addNestedPass<GraphOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GraphOp>(mlir::createCSEPass());
+  pm.addNestedPass<GraphOp>(MAP::createReductionLoopInvariantCodeMotion());
 
   // After fusion settles, give every fused-output epilogue a real store pointer
   // (plus a pre-cast accumulation buffer for mixed-precision accumulation).

@@ -873,11 +873,8 @@ LogicalResult declVerifyElementwiseFunction(KernelDeclOp decl,
        i < inputsCount; ++i) {
     // The last argument might be an IndexList. Skip it — it is an
     // elementwise-only concept.
-    if (i + 1 == inputsCount &&
-        elemwiseFn.inputArguments[i].isOpaqueWithTypeName(
-            MOGG::kMojoInternalDpsIndexListTypeQualifiedName)) {
+    if (i + 1 == inputsCount && elemwiseFn.takesIndexList())
       continue;
-    }
     ++operandsCount;
     if (!elemwiseFn.inputArguments[i].isScalarType())
       return decl->emitError() << "Elementwise kernels must have SIMD operands";

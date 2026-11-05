@@ -495,6 +495,14 @@ struct KernelDeclFunctionAdaptor {
   static KernelDeclFunctionAdaptor
   synthesizeExecuteFromElementwise(KGEN::LIT::FnTypeGeneratorType sig);
 
+  /// Whether the last input is the element's `IndexList`, which an
+  /// elementwise function takes when its result depends on the position.
+  bool takesIndexList() const {
+    return !inputArguments.empty() &&
+           inputArguments.back().isOpaqueWithTypeName(
+               kMojoInternalDpsIndexListTypeQualifiedName);
+  }
+
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {
     os << nesting << "(\n";

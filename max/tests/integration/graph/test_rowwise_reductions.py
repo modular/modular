@@ -156,7 +156,7 @@ def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
         return (3e-3, 6e-2, 5e-3) if half else (1e-4, 1e-3, 0.0)
     if op == "logsoftmax":
         return (5e-2, 6e-2, 5e-3) if half else (1e-3, 1e-3, 0.0)
-    if op in ("layer_norm", "rms_norm"):
+    if op in ("layer_norm", "rms_norm", "rms_norm_spelled"):
         return (4e-2, 6e-2, 1e-2) if half else (2e-3, 2e-3, 0.0)
     raise ValueError(f"no tolerance for {op!r}")
 
@@ -258,6 +258,10 @@ def _reference_and_check(
         weight = weights[0].to(torch.float32)
         ms = xf.pow(2).mean(dim=-1, keepdim=True)
         ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * weight).numpy()
+    elif op == "rms_norm_spelled":
+        gamma = weights[0].to(torch.float32)
+        ms = xf.pow(2).mean(dim=axis, keepdim=True)
+        ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * gamma).numpy()
     else:
         raise ValueError(f"no reference for {op!r}")
     _assert_close(got, ref, op, dtype, label)
@@ -291,6 +295,10 @@ def _fused_inputs(
         shape = (rows, 1) if axis == -1 else (1, cols)
         torch.manual_seed(1)
         return [torch.randn(shape).to(_torch_dtype(dtype))]
+    if op == "rms_norm_spelled":
+        if axis == -1:
+            return [_make_weight(1, cols, dtype)]
+        return [_make_weight(1, rows, dtype).reshape(rows, 1)]
     raise ValueError(f"no inputs for {op!r}")
 
 
@@ -360,6 +368,11 @@ def test_rowwise_inner_gpu_splitk(
 ) -> None:
     model = session.load(build_graph(spec))
     x = _make_input(spec.op, _SPLITK_ROWS, _SPLITK_COLS, spec.dtype)
+    inputs = (
+        _fused_inputs(spec.op, _SPLITK_ROWS, _SPLITK_COLS, -1, spec.dtype)
+        if spec.op in FUSED_OPS
+        else []
+    )
     _reference_and_check(
-        spec.op, spec.dtype, model, x, -1, [], f"cols={_SPLITK_COLS}"
+        spec.op, spec.dtype, model, x, -1, inputs, f"cols={_SPLITK_COLS}"
     )

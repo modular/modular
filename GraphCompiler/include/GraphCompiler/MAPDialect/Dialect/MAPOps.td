@@ -951,7 +951,8 @@ def MAP_SliceStrideOp : MAP_Op<"index.slice.stride", [
 
 def MAP_BroadcastIndexOp : MAP_Op<"index.broadcast", [
   Pure,
-  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, ["createStridedView"]>,
+  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
+    "createStridedView", "mapLoopDims"]>,
 ]> {
   let summary = "Project an output-shape index to the input-shape index for a broadcast view";
   let description = [{
@@ -1027,7 +1028,8 @@ def MAP_BroadcastStrideOp : MAP_Op<"index.broadcast.stride", [
 
 def MAP_TransposeIndexOp : MAP_Op<"index.transpose", [
   Pure,
-  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, ["createStridedView"]>,
+  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
+    "createStridedView", "mapLoopDims"]>,
 ]> {
   let summary = "Project an output-shape index to the input-shape index for a transpose view";
   let description = [{
@@ -1115,7 +1117,8 @@ def MAP_TransposeStrideOp : MAP_Op<"index.transpose.stride", [
 
 def MAP_ReshapeIndexOp : MAP_Op<"index.reshape", [
   Pure,
-  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, ["createStridedView"]>,
+  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
+    "createStridedView", "mapLoopDims"]>,
   DeclareOpInterfaceMethods<MAP_DynamicShapeIndexOpInterface>,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
 ]> {

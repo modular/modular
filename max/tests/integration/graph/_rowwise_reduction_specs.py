@@ -29,7 +29,11 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from test_common.reduction_graphs import PURE_REDUCTIONS, build_reduction
+from test_common.reduction_graphs import (
+    PURE_REDUCTIONS,
+    RMS_NORM_EPS,
+    build_reduction,
+)
 
 
 @dataclass(frozen=True)
@@ -116,8 +120,9 @@ _INNER_CASES = (
 # Fused graphs: a reduction with the elementwise ops around it, which the graph
 # compiler fuses into one rowwise kernel. `sum_plus_bias` adds a per-row input
 # to the sum, which the kernel loads once per row; on the non-inner axis the
-# GPU's tiled tier holds one output per lane.
-FUSED_OPS = ("sum_plus_bias",)
+# GPU's tiled tier holds one output per lane. `rms_norm_spelled` is rms_norm
+# written as graph ops, which fuses into a fold and a per-element phase.
+FUSED_OPS = ("sum_plus_bias", "rms_norm_spelled")
 _FUSED_CASES = [
     (op, dtype) for op in FUSED_OPS for dtype in (DType.float32, DType.bfloat16)
 ]
@@ -211,8 +216,9 @@ GPU_SUBWORD_SPECS = [
 # into the field the emit reads, so a finish that skips it returns a
 # real-but-not-extreme index -- a wrong answer that still looks like a plausible
 # one. reduce_max rides the same call with an exactly representable result, so
-# it pins the non-arg monoids on that path too.
-_SPLITK_OPS = ["argmax", "argmin", "reduce_max"]
+# it pins the non-arg monoids on that path too. rms_norm_spelled splits its row
+# across blocks and writes every element in the last pass.
+_SPLITK_OPS = ["argmax", "argmin", "reduce_max", "rms_norm_spelled"]
 
 GPU_SPLITK_SPECS = [_spec(op, DType.float32, -1, "gpu") for op in _SPLITK_OPS]
 
@@ -254,6 +260,13 @@ def build_graph(spec: RowwiseSpec) -> Graph:
         input_types = [x_t, w_t]
     elif spec.op == "sum_plus_bias":
         input_types = [x_t, row_t]
+    elif spec.op == "rms_norm_spelled":
+        # Gamma along the reduced axis.
+        gamma_shape = ["c"] if spec.axis == -1 else ["r", 1]
+        input_types = [
+            x_t,
+            TensorType(spec.dtype, gamma_shape, device=spec.device),
+        ]
     else:
         input_types = [x_t]
 
@@ -275,4 +288,9 @@ def _build_fused(
     if op == "sum_plus_bias":
         (bias,) = inputs
         return ops.sum(x, axis=axis) + bias
+    if op == "rms_norm_spelled":
+        (gamma,) = inputs
+        xf = ops.cast(x, DType.float32)
+        inv = ops.rsqrt(ops.mean(xf * xf, axis=axis) + RMS_NORM_EPS)
+        return ops.cast(xf * inv * ops.cast(gamma, DType.float32), x.dtype)
     raise ValueError(f"unknown fused graph {op!r}")

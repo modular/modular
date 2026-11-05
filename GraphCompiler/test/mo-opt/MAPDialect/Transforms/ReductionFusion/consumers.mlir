@@ -76,14 +76,18 @@ mo.graph @sinksPastInput(%x: !mo.tensor<[8, 128], f32>, %b: !mo.tensor<[8, 1], f
   mo.output %y : !mo.tensor<[8, 1], f32>
 }
 
-// The consumer's other input depends on the rowwise through another kernel,
-// a cycle: it stays out.
+// The consumer's other input depends on the first rowwise through another
+// kernel, a cycle: it stays out of it. The second rowwise, a max over axis 0,
+// takes it as a map phase, since it reads that max at its own row.
 // CHECK-LABEL: mo.graph @cycle
 // CHECK:       %[[R5:.*]] = map.iter.rowwise<[8, 128], axis = 1>
+// CHECK-NOT:     map.iter.map
 // CHECK:       %[[T:.*]] = map.iter.rowwise<[8, 1], axis = 0>
 // CHECK-NEXT:  inputs  (%[[R5]]: !mo.tensor<[8, 1], f32>)
-// CHECK:       map.iter.elementwise<[8, 1]>
-// CHECK:       inputs  (%[[R5]]: !mo.tensor<[8, 1], f32>, %{{.*}}: !mo.tensor<[8, 1], f32>)
+// CHECK:         %[[MAX:.*]] = map.iter.reduce @builtin_kernels.monoids.ReduceMax
+// CHECK:         map.iter.map index
+// CHECK:           map.call.elementwise @builtin_kernels.elementwise.Div({{.*}}, %[[MAX]])
+// CHECK-NOT:   map.iter.elementwise
 mo.graph @cycle(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %r = mo.reduce.add(%x) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
   %t = mo.reduce.max(%r) : (!mo.tensor<[8, 1], f32>) -> !mo.tensor<[1, 1], f32>
@@ -92,10 +96,12 @@ mo.graph @cycle(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   mo.output %y : !mo.tensor<[8, 1], f32>
 }
 
-// A consumer over the full row space is a later step: it stays out.
+// A consumer over the full row space becomes a map phase (see
+// full-row-consumers.mlir).
 // CHECK-LABEL: mo.graph @fullRow
 // CHECK:       %[[R6:.*]] = map.iter.rowwise<[8, 128], axis = 1>
-// CHECK:       map.iter.elementwise<[8, 128]>
+// CHECK:         map.iter.map index
+// CHECK-NOT:   map.iter.elementwise
 mo.graph @fullRow(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
   %r = mo.reduce.add(%x) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
   %rb = mo.static.broadcast_to(%r) : !mo.tensor<[8, 1], f32> -> !mo.tensor<[8, 128], f32>
