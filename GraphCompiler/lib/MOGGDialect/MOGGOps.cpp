@@ -1932,14 +1932,16 @@ static FailureOr<DeclarativeCall> prepareDeclarativeCall(
   SmallVector<Value> operandValues(outputs.begin(), outputs.end());
   llvm::append_range(operandValues, inputs);
   for (Value value : operandValues) {
-    if (!isa<MOGG::TensorType, MOGG::ScalarType>(value.getType())) {
+    if (!isa<MOGG::TensorType, MOGG::BufferType, MOGG::ScalarType>(
+            value.getType())) {
       op->emitOpError()
-          << "a declarative launch passes only tensors and scalars to the "
-             "device, but got "
+          << "a declarative launch passes only tensors, buffers and scalars "
+             "to the device, but got "
           << value.getType();
       return failure();
     }
-    call.isTensor.push_back(isa<MOGG::TensorType>(value.getType()));
+    call.isTensor.push_back(
+        isa<MOGG::TensorType, MOGG::BufferType>(value.getType()));
   }
   call.values = std::move(operandValues);
 

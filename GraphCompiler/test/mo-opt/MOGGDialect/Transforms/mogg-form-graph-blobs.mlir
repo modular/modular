@@ -278,3 +278,76 @@ mo.graph @read_in_branch(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32
   }
   mo.output %c, %r : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
+
+// Members that update a buffer in place join a blob under its chain, as a KV
+// cache store and the attention reading the cache do. The blob takes the buffer
+// once, waits on what its members' chains wait on from outside, and returns one
+// chain. The blob runs its members in order, so the join ordering the second
+// store after the first goes away.
+// CHECK-LABEL: mo.graph @buffer_chain
+// CHECK:       %[[CH:.*]] = mo.chain.create()
+// CHECK-NEXT:  %[[R:.*]]:4 = mogg.routine (%{{.*}}, %{{.*}} : !mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>) chain(%[[CH]]) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.chain)
+// CHECK:         mogg.graph_blob {
+// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarativeInplace inputs({{.*}} : !mogg.tensor, !mogg.buffer)
+// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarativeInplace inputs({{.*}} : !mogg.tensor, !mogg.buffer)
+// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative inputs
+// CHECK-NOT:   mo.chain.create
+// CHECK:       mo.output %[[R]]#2
+mo.graph @buffer_chain(%a: !mo.tensor<[2, 2], f32>, %cache: !mo.buffer<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
+  %ch0 = mo.chain.create()
+  %b, %ch1 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%a, %cache, %ch0) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %ch2 = mo.chain.create(%ch1, %ch0) : !mo.chain, !mo.chain
+  %c, %ch3 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%b, %cache, %ch2) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %d = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%c) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  mo.output %d : !mo.tensor<[2, 2], f32>
+}
+
+// A kernel with `execute` that updates the buffer between two members reads
+// the first one's chain, so the blob ends there and neither side has two
+// members.
+// CHECK-LABEL: mo.graph @buffer_write_between
+// CHECK-NOT:   mogg.graph_blob
+// CHECK:       mo.output
+mo.graph @buffer_write_between(%a: !mo.tensor<[2, 2], f32>, %cache: !mo.buffer<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.chain) {
+  %ch0 = mo.chain.create()
+  %b, %ch1 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%a, %cache, %ch0) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %ch2 = mo.custom [symbol = "map_lower_inplace_copy", device = #M.device_ref<"gpu", 0>](%cache, %b, %ch1) : (!mo.buffer<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.chain) -> !mo.chain
+  %c, %ch3 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%b, %cache, %ch2) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  mo.output %c, %ch3 : !mo.tensor<[2, 2], f32>, !mo.chain
+}
+
+// When the members wait on several chains from outside the blob, the blob waits
+// on a new join of them, placed before it. Here the join between the members
+// also orders the second store after an independent write to another buffer.
+// CHECK-LABEL: mo.graph @buffer_chain_outside_waits
+// CHECK:       %[[CH:.*]] = mo.chain.create()
+// CHECK:       %[[COPY:.*]] = mogg.routine
+// CHECK:       %[[WAIT:.*]] = mo.chain.create(%[[CH]], %[[COPY]]
+// CHECK-NEXT:  %[[R:.*]]:3 = mogg.routine ({{.*}}) chain(%[[WAIT]])
+// CHECK:         mogg.graph_blob {
+// CHECK:       mo.output %[[R]]#1
+mo.graph @buffer_chain_outside_waits(%a: !mo.tensor<[2, 2], f32>, %cache: !mo.buffer<[2, 2], f32>, %other: !mo.buffer<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
+  %ch0 = mo.chain.create()
+  %b, %ch1 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%a, %cache, %ch0) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %chx = mo.custom [symbol = "map_lower_inplace_copy", device = #M.device_ref<"gpu", 0>](%other, %a, %ch0) : (!mo.buffer<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.chain) -> !mo.chain
+  %ch2 = mo.chain.create(%ch1, %chx) : !mo.chain, !mo.chain
+  %c, %ch3 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%b, %cache, %ch2) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  mo.output %c : !mo.tensor<[2, 2], f32>
+}
+
+// A member's chain that the graph returns becomes the blob's chain, and a join
+// between the members that the graph also returns reads the blob's chain. The
+// join stays where it was, before the blob: a graph region allows that.
+// CHECK-LABEL: mo.graph @buffer_chain_returned
+// CHECK:       %[[CH:.*]] = mo.chain.create()
+// CHECK-NEXT:  %[[JOIN:.*]] = mo.chain.create(%[[R:[0-9]+]]#2, %[[CH]]
+// CHECK-NEXT:  %[[R]]:3 = mogg.routine ({{.*}}) chain(%[[CH]])
+// CHECK:         mogg.graph_blob {
+// CHECK:       mo.output %[[R]]#1, %[[JOIN]], %[[R]]#2
+mo.graph @buffer_chain_returned(%a: !mo.tensor<[2, 2], f32>, %cache: !mo.buffer<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.chain, !mo.chain) {
+  %ch0 = mo.chain.create()
+  %b, %ch1 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%a, %cache, %ch0) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %ch2 = mo.chain.create(%ch1, %ch0) : !mo.chain, !mo.chain
+  %c, %ch3 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%b, %cache, %ch2) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  mo.output %c, %ch2, %ch3 : !mo.tensor<[2, 2], f32>, !mo.chain, !mo.chain
+}

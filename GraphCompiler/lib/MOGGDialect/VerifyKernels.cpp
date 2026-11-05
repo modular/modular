@@ -711,16 +711,14 @@ LogicalResult declVerifyHasEntryPoint(KernelDeclOp decl,
 }
 
 // Whether the generated launch can pass `operand` to a declarative entry point:
-// a trait-bound tensor crosses as its `TileTensor` projection and is rebuilt on
-// the device, and a scalar crosses as is.
+// a trait-bound tensor/buffer crosses as its `TileTensor` projection and is
+// rebuilt on the device, while a scalar crosses as-is.
 static bool isDeclarativeOperand(const KernelDeclOperandAdaptor &operand) {
   if (std::holds_alternative<KernelDeclScalarAdaptor>(operand.underlyingType))
     return true;
   const auto *tensor =
       std::get_if<KernelDeclTensorAdaptor>(&operand.underlyingType);
-  // TODO(GEX-4429): Accept mutable inputs, which reach the launch as buffers.
-  return tensor && tensor->traitContract && !tensor->traitContract->fused &&
-         tensor->traitContract->role != TensorArgRole::mutableInput;
+  return tensor && tensor->traitContract && !tensor->traitContract->fused;
 }
 
 // `execute_device` and `execute_configuration` come as a pair over the same
@@ -777,8 +775,8 @@ LogicalResult declVerifyDeclarative(KernelDeclOp decl,
     for (auto [i, operand] : llvm::enumerate(operands)) {
       if (!isDeclarativeOperand(*operand)) {
         return error() << "'" << function << "' operand " << i
-                       << " must be a trait-bound tensor (not fused or a "
-                          "mutable input) or a scalar";
+                       << " must be a trait-bound tensor (not fused) or a "
+                          "scalar";
       }
     }
     return success();

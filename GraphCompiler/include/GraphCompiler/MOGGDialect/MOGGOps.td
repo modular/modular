@@ -1400,7 +1400,7 @@ def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
   }];
   let arguments = (ins
     FlatSymbolRefAttr:$callee,
-    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$inputs,
+    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Buffer, MOGG_Scalar]>>:$inputs,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$outputs,
     MOGG_Context:$device_context,
     OptionalAttr<DictionaryAttr>:$kernel_param
