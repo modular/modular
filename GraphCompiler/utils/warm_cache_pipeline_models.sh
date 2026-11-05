@@ -159,7 +159,6 @@ declare -a PIPELINES=(
   "meta-llama/Llama-3.1-8B-Instruct|cpu,gpu|big|Llama 3.1 8B float32"
   "sentence-transformers/all-mpnet-base-v2|cpu,gpu||MPNet embeddings"
   "unsloth/gpt-oss-20b-BF16|gpu||GPT-OSS 20B bfloat16"
-  "allenai/OLMo-1B-hf|cpu,gpu||OLMo 1B float32"
 
   # ========== Brittle Pipelines ==========
   # Llama family

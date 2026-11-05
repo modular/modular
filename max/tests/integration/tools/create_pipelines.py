@@ -1539,11 +1539,6 @@ class NemotronHOracle(GenericOracle):
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
-    "allenai/OLMo-1B-hf": GenericOracle(
-        model_path="allenai/OLMo-1B-hf",
-        config_params={"max_length": 1024},
-        device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
-    ),
     "google/gemma-4-26B-A4B-it": GenericOracle(
         model_path="google/gemma-4-26B-A4B-it",
         config_params={

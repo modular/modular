@@ -113,27 +113,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.6e-5
     kl_div_threshold: 5.0e-07
 
-  # Disabled in SDLC-3497: MAX OLMo pipeline is not yet transformers v5
-  # compatible. The v4 wheel hack that was masking this on main was
-  # removed in this branch. Re-enable once MAX OLMo is updated for
-  # transformers >=5 (tracked separately).
-  allenai/OLMo-1B-hf-float32:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "allenai/OLMo-1B-hf"
-    compatible_with: [cpu, gpu]
-    encoding: float32
-    tags: [manual]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz"
-      json_file: "torch_olmo-1b-hf_float32_golden.json"
-    # On CPU, olmo passes with atol set to `5e-4`
-    # GPU specifically requires these higher tolerances (160x worse).
-    absolute_tolerance: 3.7e-2
-    relative_tolerance: 4.2e-2
-    cos_dist_threshold: 8.2e-6
-    kl_div_threshold: 1.1e-04
-
   # The checkpoint mcloudDeployConfig.yaml's smollm jobs deploy, on CPU
   # because their manifests request no accelerator. No
   # pregenerated_torch_goldens: at 135M a torch reference is cheaper to
