@@ -107,7 +107,6 @@ build --remote_timeout=10m
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
 build --remote_cache_async
-build --experimental_remote_cache_lease_extension=true
 build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
@@ -116,7 +115,7 @@ build --rewind_lost_inputs
 
 # Local disk cache, tools/bazel opts developers in
 build:disk-cache --disk_cache=~/.cache/bazel-disk-cache
-build:disk-cache --experimental_disk_cache_gc_max_size=100G
+build:disk-cache --disk_cache_gc_max_size=100G
 
 # Include full test log in failed tests
 build --test_output=errors
@@ -140,9 +139,6 @@ test --test_env=MODULAR_RUNNING_TESTS=true
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY=true
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE=0
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT=100
-
-# Allow --modify_execution_info to be passed any number of times
-common --incompatible_modify_execution_info_additive
 
 # Reduce the impact of transitions on rebuilding C++ files
 build --modify_execution_info=CppArchive=+supports-path-mapping
