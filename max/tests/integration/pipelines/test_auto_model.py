@@ -36,6 +36,7 @@ from max.pipelines import (
     AutoTokenizer,
     PipelineArgs,
     PipelineConfig,
+    PipelineRuntimeConfig,
 )
 from max.pipelines.architectures.llama3_modulev3 import Llama3Decoder
 from max.pipelines.lib import (
@@ -392,7 +393,9 @@ def test_overlap_architecture_gets_a_synchronous_pipeline(
 ) -> None:
     serve_config = PipelineConfig.from_args(
         PipelineArgs(
-            model_path=model_path, device_specs=[DeviceSpec.accelerator()]
+            model_path=model_path,
+            device_specs=[DeviceSpec.accelerator()],
+            runtime=PipelineRuntimeConfig(prefer_module_v3=False),
         )
     )
     assert serve_config.runtime.enable_overlap_scheduler is True
@@ -425,16 +428,23 @@ def test_signature_defaults(
     assert config.runtime.device_graph_capture is False
     assert config.runtime.enable_overlap_scheduler is False
     assert config.runtime.force is False
-    assert config.runtime.prefer_module_v3 is False
+    assert config.runtime.prefer_module_v3 is True
 
 
+@pytest.mark.parametrize("prefer_module_v3", [False, True])
 def test_prefer_module_v3_reaches_the_config(
-    model_path: str, built_configs: list[PipelineConfig]
+    model_path: str,
+    built_configs: list[PipelineConfig],
+    prefer_module_v3: bool,
 ) -> None:
     with pytest.raises(_StopBeforeBuild):
-        AutoModel(model_path, devices="cpu", prefer_module_v3=True)
+        AutoModel(
+            model_path,
+            devices="cpu",
+            prefer_module_v3=prefer_module_v3,
+        )
     [config] = built_configs
-    assert config.runtime.prefer_module_v3 is True
+    assert config.runtime.prefer_module_v3 is prefer_module_v3
 
 
 def test_prefer_module_v3_loads_and_generates(model_path: str) -> None:
@@ -578,7 +588,11 @@ def test_rejects_an_embeddings_model(
     built_configs: list[PipelineConfig],
 ) -> None:
     with pytest.raises(ValueError) as error:
-        AutoModel(_local_or_repo(EMBEDDINGS_REPO_ID), devices="cpu")
+        AutoModel(
+            _local_or_repo(EMBEDDINGS_REPO_ID),
+            devices="cpu",
+            prefer_module_v3=False,
+        )
     message = str(error.value)
     assert "AutoModel runs text and image generation models" in message
     assert "MPNetForMaskedLM for embeddings generation" in message

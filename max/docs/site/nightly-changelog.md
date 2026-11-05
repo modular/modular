@@ -55,6 +55,11 @@ This version is still a work in progress.
 
 ## Inference server
 
+- `max serve`, `max generate`, `AutoModel`, and `AutoPipeline` now prefer
+  ModuleV3 when an architecture has both ModuleV3 and graph API
+  implementations. Pass `--no-prefer-module-v3` on the command line or
+  `prefer_module_v3=False` to use the graph API implementation.
+
 - Serving metric names now use `max.*` instead of `maxserve.*`. Batch
   instruments use `max.batch.*`, such as `max.batch.size`. Prometheus
   exposes the corresponding `max_*` families. Update collector allowlists,

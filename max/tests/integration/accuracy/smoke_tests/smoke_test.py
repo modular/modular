@@ -181,6 +181,7 @@ class RecipeConfig(BaseModel):
     class Runtime(BaseModel):
         model_config = ConfigDict(extra="ignore")
 
+        prefer_module_v3: bool = False
         ep_size: int | None = None
         enable_chunked_prefill: bool | None = None
 
@@ -513,7 +514,15 @@ def get_server_cmd(
     # CUDA graph capture and fails Hy4's engine start.
     if "hy4" in model.casefold():
         VLLM += ["--enforce-eager"]
-    MAX = ["serve", "--pretty-print-config"]
+    MAX = [
+        "serve",
+        "--pretty-print-config",
+        (
+            "--prefer-module-v3"
+            if recipe is not None and recipe.runtime.prefer_module_v3
+            else "--no-prefer-module-v3"
+        ),
+    ]
     # A smoke test is where an eager or host-transfer footgun should surface,
     # so validate each request too and not just initialization. max-ci only:
     # the flag is newer than the wheels the ``max`` framework installs.

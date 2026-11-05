@@ -27,6 +27,7 @@ model:
   max_length: 4096
 
 runtime:
+  prefer_module_v3: false
   max_batch_size: 32
   # An 8192-token CE batch does not fit on 2x B200: per device, weights
   # (~79 GiB) + Jenga KV floor (37.8 GiB) + prefill arena (38.5 GiB) is

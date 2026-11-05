@@ -19,6 +19,7 @@ batch_size=64
 max_length=131072
 
 extra_pipelines_args=(
+  --no-prefer-module-v3
   --ep-size 8
   --speculative-method mtp
   --num-speculative-tokens 3

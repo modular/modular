@@ -524,6 +524,7 @@ def _pipeline(
                 device_graph_capture=speculative,
                 # The plain run reports the logits behind each token.
                 disable_overlap=not speculative,
+                prefer_module_v3=False,
             ),
             speculative=(
                 SpeculativeConfig(

@@ -365,6 +365,7 @@ modular_py_test(
     ignore_extra_deps = [
         # Resolves SmolLM2 by name at runtime.
         "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
     ],
     tags = [
         "gpu",
@@ -375,6 +376,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
