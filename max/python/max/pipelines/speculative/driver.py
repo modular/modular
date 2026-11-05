@@ -573,6 +573,9 @@ def gather_variable_rows(
         h, input_row_offsets, return_n_logits, mesh
     )
     if data_parallel_degree > 1:
+        # Joining per-device rows is replica order only while each replica is
+        # one device. The ModuleV3 GLM-5.x and DeepSeek-V3.2 configs reject a
+        # DP x TP mesh today; allowing one needs a gather over replicas.
         variable_h = F.allgather(variable_h, tensor_axis=0)
     return variable_h, _variable_row_offsets(variable_h, return_n_logits, mesh)
 
