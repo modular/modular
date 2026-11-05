@@ -405,6 +405,8 @@ public:
   CompletionFlag(const CompletionFlag &) = delete;
   CompletionFlag &operator=(const CompletionFlag &) = delete;
 
+  // TODO(DRIV-688): make private once the extension backs the flag; the HAL
+  // Mojo wait reads it.
   uint64_t devicePtr() const { return devicePtr_; }
 
   void reset();
@@ -442,7 +444,7 @@ public:
   /// Stalls this stream until `event` has been reached.
   ErrorOrSuccess enqueueWaitForEvent(DeviceEvent &event);
 
-  /// Stalls the stream until the flag's slot holds `value`.
+  /// Stalls the stream until the flag's slot is at least `value`.
   ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
                                    uint64_t value) const;
 

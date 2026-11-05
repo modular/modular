@@ -702,8 +702,8 @@ struct RawDriver(Movable):
     def queue_wait_value64(
         self, queue: QueueHandle, device_address: UInt64, value: UInt64
     ) raises HALError:
-        """Enqueues a wait until the 64-bit slot at `device_address` equals
-        `value` (e.g. cuStreamWaitValue64 with EQ semantics)."""
+        """Enqueues a wait until the 64-bit slot at `device_address` is at
+        least `value` (cuStreamWaitValue64 with GEQ semantics)."""
         var status = self._raw.base.queue_wait_value64.get()(
             queue, device_address, value
         )

@@ -104,7 +104,7 @@ TEST(DriverCApi, VersionMatchesTheHeader) {
                 (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MINOR) << 16) |
                 static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_PATCH));
   EXPECT_EQ(version >> 24, 1u);
-  EXPECT_EQ((version >> 16) & 0xffu, 1u);
+  EXPECT_EQ((version >> 16) & 0xffu, 2u);
   EXPECT_EQ(version & 0xffffu, 0u);
 
   // The query returns no status, so it leaves the message of an earlier
@@ -1290,6 +1290,63 @@ TEST(DriverCApi, AcceleratorTimedEventsMeasureADuration) {
 
   M_DriverEventDestroy(start);
   M_DriverEventDestroy(end);
+}
+
+//===----------------------------------------------------------------------===//
+// Completion flags
+//===----------------------------------------------------------------------===//
+
+TEST(DriverCApi, CpuRefusesCompletionFlags) {
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverCPUDeviceCreate(0, device.receive()), M_DRIVER_OK);
+  M_DriverCompletionFlag *flag = nullptr;
+  EXPECT_NE(M_DriverCompletionFlagCreate(device.get(), &flag), M_DRIVER_OK);
+  EXPECT_EQ(flag, nullptr);
+}
+
+TEST(DriverCApi, AcceleratorStreamWaitsForFlag) {
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK);
+  StreamHandle stream;
+  ASSERT_EQ(M_DriverStreamCreate(device.get(), stream.receive()), M_DRIVER_OK);
+  M_DriverCompletionFlag *flag = nullptr;
+  const M_DriverStatus created =
+      M_DriverCompletionFlagCreate(device.get(), &flag);
+  if (MODULAR_HAL_DEVICE_CONTEXT && created == M_DRIVER_NOT_SUPPORTED)
+    GTEST_SKIP() << "no HAL completion flags on this backend: " << lastError();
+  ASSERT_EQ(created, M_DRIVER_OK) << lastError();
+
+  // A flag waited on from another backend's stream is refused.
+  DeviceHandle cpu;
+  ASSERT_EQ(M_DriverCPUDeviceCreate(0, cpu.receive()), M_DRIVER_OK);
+  StreamHandle cpuStream;
+  ASSERT_EQ(M_DriverStreamCreate(cpu.get(), cpuStream.receive()), M_DRIVER_OK);
+  EXPECT_EQ(M_DriverStreamWaitFlag(cpuStream.get(), flag, 1),
+            M_DRIVER_INVALID_ARGUMENT);
+
+  // Already past the target.
+  ASSERT_EQ(M_DriverCompletionFlagSignal(flag, 5), M_DRIVER_OK);
+  ASSERT_EQ(M_DriverStreamWaitFlag(stream.get(), flag, 3), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
+      << lastError();
+
+  // Gated until the host signals.
+  ASSERT_EQ(M_DriverStreamWaitFlag(stream.get(), flag, 9), M_DRIVER_OK)
+      << lastError();
+  M_DriverEvent *done = nullptr;
+  ASSERT_EQ(M_DriverStreamRecordNewEvent(stream.get(), &done), M_DRIVER_OK)
+      << lastError();
+  bool ready = true;
+  ASSERT_EQ(M_DriverEventIsReady(done, &ready), M_DRIVER_OK) << lastError();
+  EXPECT_FALSE(ready) << "the stream ran past an unsatisfied wait";
+  ASSERT_EQ(M_DriverCompletionFlagSignal(flag, 9), M_DRIVER_OK);
+  EXPECT_EQ(M_DriverEventSynchronize(done), M_DRIVER_OK) << lastError();
+
+  M_DriverEventDestroy(done);
+  EXPECT_EQ(M_DriverCompletionFlagDestroy(flag), M_DRIVER_OK);
 }
 
 //===----------------------------------------------------------------------===//

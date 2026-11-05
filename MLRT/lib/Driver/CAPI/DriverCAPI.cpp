@@ -171,6 +171,13 @@ struct M_DriverBuffer {
   M::Driver::DeviceBufferRef buffer;
 };
 
+struct M_DriverCompletionFlag {
+  M::Driver::CompletionFlagRef flag;
+  /// The context the flag was created on, so a wait from another backend's
+  /// stream is refused rather than misread.
+  M::Driver::DeviceContextRef ctx;
+};
+
 namespace {
 
 /// A context of this interface's own, for calls that order nothing against
@@ -244,6 +251,15 @@ M_DriverStatus mixedBackends(const char *what) {
   message += ": the handles belong to different backends";
   return fail(M_DRIVER_INVALID_ARGUMENT, message);
 }
+
+#if MODULAR_HAL_DEVICE_CONTEXT
+/// Only the CUDA and HIP HAL plugins can wait on a flag.
+// TODO(DRIV-688): Metal, once its plugin gets the completion-flag extension.
+bool halSupportsCompletionFlags(const DeviceContext &context) {
+  const Device::API api = context.device().api();
+  return api == Device::cudaAPI || api == Device::hipAPI;
+}
+#endif
 
 } // namespace
 
@@ -889,6 +905,68 @@ M_DriverStatus M_DriverEventElapsedTimeMs(const M_DriverEvent *start,
     return fail(elapsed, "M_DriverEventElapsedTimeMs");
   *out_ms = static_cast<double>(elapsed.get());
   return succeed();
+}
+
+//===----------------------------------------------------------------------===//
+// Completion flags
+//===----------------------------------------------------------------------===//
+
+M_DriverStatus M_DriverCompletionFlagCreate(const M_DriverDevice *device,
+                                            M_DriverCompletionFlag **out) {
+  if (device == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device or out is null");
+  *out = nullptr;
+#if MODULAR_HAL_DEVICE_CONTEXT
+  if (!halSupportsCompletionFlags(contextOf(*device)))
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverCompletionFlagCreate: a HAL device context build "
+                "supports completion flags on CUDA and HIP devices only");
+#endif
+  ErrorOr<M::Driver::CompletionFlagRef> flag =
+      contextOf(*device).allocateCompletionFlag();
+  if (flag.isError())
+    return fail(flag, "M_DriverCompletionFlagCreate");
+  *out = new M_DriverCompletionFlag{flag.takeValue(), device->ctx};
+  return succeed();
+}
+
+M_DriverStatus M_DriverCompletionFlagDestroy(M_DriverCompletionFlag *flag) {
+  if (flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  delete flag;
+  return succeed();
+}
+
+M_DriverStatus M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag,
+                                            uint64_t value) {
+  if (flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  flag->flag->signal(value);
+  return succeed();
+}
+
+M_DriverStatus M_DriverStreamWaitFlag(const M_DriverStream *stream,
+                                      const M_DriverCompletionFlag *flag,
+                                      uint64_t value) {
+  if (stream == nullptr || flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or flag is null");
+  if (!sameApi(*stream->ctx, *flag->ctx))
+    return mixedBackends("M_DriverStreamWaitFlag");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  if (!halSupportsCompletionFlags(*stream->ctx))
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverStreamWaitFlag: a HAL device context build supports "
+                "completion flags on CUDA and HIP streams only");
+#endif
+  if (isExternal(*stream))
+    return reportIfError(
+        stream->external->enqueueWaitOnFlag(*flag->flag, value),
+        "M_DriverStreamWaitFlag");
+  ErrorOr<DeviceStreamRef> queue = stream->ctx->stream();
+  if (queue.isError())
+    return fail(queue, "M_DriverStreamWaitFlag");
+  return reportIfError((*queue)->enqueueWaitOnFlag(*flag->flag, value),
+                       "M_DriverStreamWaitFlag");
 }
 
 //===----------------------------------------------------------------------===//

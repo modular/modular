@@ -276,8 +276,8 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
     def wait_value64(
         mut self, device_address: UInt64, value: UInt64
     ) raises HALError:
-        """Enqueues a wait until the 64-bit slot at `device_address` equals
-        `value`. Runs after all previous Stream ops."""
+        """Enqueues a wait until the 64-bit slot at `device_address` is at
+        least `value`. Runs after all previous Stream ops."""
         self._chain_wait()
         self._queue[].wait_value64(device_address, value)
         self._chain_signal()

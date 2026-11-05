@@ -123,6 +123,18 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
                                      const M_DriverEvent *, double *) =
       M_DriverEventElapsedTimeMs;
 
+  // Completion flags.
+  M_DriverStatus (*completion_flag_create)(const M_DriverDevice *,
+                                           M_DriverCompletionFlag **) =
+      M_DriverCompletionFlagCreate;
+  M_DriverStatus (*completion_flag_destroy)(M_DriverCompletionFlag *) =
+      M_DriverCompletionFlagDestroy;
+  M_DriverStatus (*completion_flag_signal)(M_DriverCompletionFlag *, uint64_t) =
+      M_DriverCompletionFlagSignal;
+  M_DriverStatus (*stream_wait_flag)(const M_DriverStream *,
+                                     const M_DriverCompletionFlag *, uint64_t) =
+      M_DriverStreamWaitFlag;
+
   // Buffers.
   M_DriverStatus (*buffer_allocate)(const M_DriverDevice *, uint64_t, bool,
                                     M_DriverBuffer **) = M_DriverBufferAllocate;
@@ -193,6 +205,8 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          stream_record_new_event != NULL && event_create != NULL &&
          event_destroy != NULL && event_synchronize != NULL &&
          event_is_ready != NULL && event_elapsed_ms != NULL &&
+         completion_flag_create != NULL && completion_flag_destroy != NULL &&
+         completion_flag_signal != NULL && stream_wait_flag != NULL &&
          buffer_allocate != NULL && buffer_from_pointer != NULL &&
          buffer_destroy != NULL && buffer_pointer != NULL &&
          buffer_byte_size != NULL && buffer_is_host != NULL &&

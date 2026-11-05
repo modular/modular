@@ -88,7 +88,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 1
-#define M_DRIVER_CAPI_VERSION_MINOR 1
+#define M_DRIVER_CAPI_VERSION_MINOR 2
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -158,6 +158,7 @@ typedef struct M_DriverStream M_DriverStream;
 typedef struct M_DriverEvent M_DriverEvent;
 typedef struct M_DriverBuffer M_DriverBuffer;
 typedef struct M_DriverMapping M_DriverMapping;
+typedef struct M_DriverCompletionFlag M_DriverCompletionFlag;
 
 //===----------------------------------------------------------------------===//
 // Devices
@@ -579,6 +580,48 @@ M_DRIVER_API M_DriverStatus M_DriverEventIsReady(const M_DriverEvent *event,
 /// Mirrors `max._core.driver.DeviceEvent.elapsed_time`.
 M_DRIVER_API M_DriverStatus M_DriverEventElapsedTimeMs(
     const M_DriverEvent *start, const M_DriverEvent *end, double *out_ms);
+
+//===----------------------------------------------------------------------===//
+// Completion flags
+//===----------------------------------------------------------------------===//
+
+/// A 64-bit value the host signals and a stream waits on. CUDA, HIP and Metal
+/// only; the CPU device fails with `M_DRIVER_RUNTIME_ERROR`. A HAL device
+/// context build supports CUDA and HIP only, and reports
+/// `M_DRIVER_NOT_SUPPORTED` for any other device.
+
+/// Allocates a flag on `device`, holding 0.
+M_DRIVER_API M_DriverStatus M_DriverCompletionFlagCreate(
+    const M_DriverDevice *device, M_DriverCompletionFlag **out);
+
+/// Releases a flag handle. Keep it until every wait on it has completed: on
+/// CUDA and HIP, dropping a flag with a wait still pending deadlocks the
+/// waiting stream, because nothing can signal the flag any more.
+M_DRIVER_API M_DriverStatus
+M_DriverCompletionFlagDestroy(M_DriverCompletionFlag *flag);
+
+/// Stores `value` in the flag with release ordering. The value must not
+/// decrease: Metal ignores a lower value, and this interface has no reset.
+///
+/// Signal from a thread that does not first block on a stream waiting on the
+/// flag (see `M_DriverStreamWaitFlag`); otherwise the signal never comes.
+M_DRIVER_API M_DriverStatus
+M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag, uint64_t value);
+
+/// Orders work after this call on `stream` to start only once `flag` holds at
+/// least `value`. Keep values below 2^63: HIP compares them as signed. Does
+/// not block the host. A flag from another backend than `stream` is
+/// `M_DRIVER_INVALID_ARGUMENT`.
+///
+/// While the wait is pending, the thread that signals the flag must not block
+/// on `stream` first, or neither side makes progress. That rules out
+/// `M_DriverStreamSynchronize`, a device-to-host copy into pageable memory, a
+/// large host-to-device copy from pageable memory, and destroying the flag.
+/// Stage copies through a pinned host buffer (`M_DriverBufferAllocate` with
+/// `pinned_host`), or signal from another thread.
+M_DRIVER_API M_DriverStatus
+M_DriverStreamWaitFlag(const M_DriverStream *stream,
+                       const M_DriverCompletionFlag *flag, uint64_t value);
 
 //===----------------------------------------------------------------------===//
 // Buffers, host memory registration, and copies

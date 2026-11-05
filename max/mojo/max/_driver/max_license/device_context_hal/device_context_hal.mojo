@@ -1065,6 +1065,27 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def stream(self) -> DeviceStreamBase[Self.target]:
         return DeviceStreamBase[Self.target](self)
 
+    def allocate_completion_flag(self) raises -> CompletionFlag:
+        """Allocates a `CompletionFlag`, initialized to 0, on this device.
+
+        Returns:
+            The new flag.
+
+        Raises:
+            Always, until the HAL supports completion flags.
+        """
+        # TODO(DRIV-688): allocate through the completion-flag extension.
+        raise Error("completion flags are not supported by the HAL yet")
+
+    def supports_flag_wait(self) -> Bool:
+        """Returns whether this device supports completion flags.
+
+        Returns:
+            False until the HAL supports completion flags.
+        """
+        # TODO(DRIV-688): true once Mojo can allocate flags under the HAL.
+        return False
+
     @doc_hidden
     def _hal_stream(
         self,
@@ -4029,14 +4050,15 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         flag: CompletionFlag,
         value: UInt64,
     ) raises:
-        """Stalls the stream until a host-visible flag reaches a given value.
+        """Stalls the stream until `flag` holds at least `value`.
 
-        Corresponds to CUDA's `cuStreamWaitValue64` on the slot owned by
-        `flag`.
+        While the wait is pending, the thread that signals `flag` must not
+        block on this stream first: no `synchronize`, no copy into or out of
+        pageable host memory, and don't drop the flag.
 
         Args:
-            flag: A non-owning handle to a ``M::Driver::CompletionFlag``.
-            value: The 64-bit value to wait for.
+            flag: A ``M::Driver::CompletionFlag``.
+            value: The 64-bit value to wait for. Keep values below 2^63.
 
         Raises:
             If the underlying device does not support stream memory ops,
@@ -6240,8 +6262,7 @@ struct DevicePointer[
 struct CompletionFlag(ImplicitlyCopyable):
     """Host-visible completion flag.
 
-    This struct is intentionally non-owning: it wraps the raw address of a
-    ``M::Driver::CompletionFlag`` created by the C++ driver layer.
+    Holds a reference to a C++ ``M::Driver::CompletionFlag``.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -6254,9 +6275,23 @@ struct CompletionFlag(ImplicitlyCopyable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @doc_hidden
+    def __init__(out self, *, copy: Self):
+        """Copies a flag by incrementing its reference count.
+
+        Args:
+            copy: The flag to copy.
+        """
+        external_call["AsyncRT_CompletionFlag_retain", NoneType](copy._handle)
+        self._handle = copy._handle
+
+    def __deinit__(deinit self):
+        """Releases this flag's reference."""
+        external_call["AsyncRT_CompletionFlag_release", NoneType](self._handle)
+
     @inline(.always)
     def __init__(out self, *, unsafe_from_address: Int):
-        """Constructs a non-owning handle from an integer address.
+        """Wraps the C++ flag at an integer address, taking a reference.
 
         Intended for graph-op execute methods that extract a packed
         pointer from a payload buffer (mirroring how
@@ -6273,6 +6308,42 @@ struct CompletionFlag(ImplicitlyCopyable):
         self._handle = OpaquePointer[MutUntrackedOrigin](
             unsafe_from_address=unsafe_from_address
         )
+        external_call["AsyncRT_CompletionFlag_retain", NoneType](self._handle)
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    @inline(.always)
+    def signal(self, value: UInt64):
+        """Stores ``value`` in the flag with release ordering.
+
+        Args:
+            value: The value to store.
+        """
+        external_call["AsyncRT_CompletionFlag_signal", NoneType](
+            self._handle, value
+        )
+
+    @inline(.always)
+    def load(self) -> UInt64:
+        """Loads the flag's value with acquire ordering.
+
+        Returns:
+            The value the flag holds.
+        """
+        return external_call["AsyncRT_CompletionFlag_load", UInt64](
+            self._handle
+        )
+
+    @inline(.always)
+    def reset(self):
+        """Stores 0 in the flag.
+
+        Don't reset while a stream is still waiting on the flag, and don't
+        signal a lower value without a reset.
+        """
+        external_call["AsyncRT_CompletionFlag_reset", NoneType](self._handle)
 
 
 struct DeviceContextArray[

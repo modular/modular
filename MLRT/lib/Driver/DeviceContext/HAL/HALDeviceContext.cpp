@@ -1410,10 +1410,35 @@ using M::AsyncRT::CPUDevice;
 using M::Driver::DeviceBuffer;
 using M::Driver::DeviceBufferRef;
 
-// Backs the HAL Mojo `DeviceStream.wait_for_host_value`.
+// Backs the HAL Mojo `DeviceStream.wait_for_flag`.
 MODULAR_EXPORT uint64_t
 AsyncRT_CompletionFlag_devicePtr(M::Driver::CompletionFlag *flag) {
   return flag->devicePtr();
+}
+
+MODULAR_EXPORT void
+AsyncRT_CompletionFlag_retain(M::Driver::CompletionFlag *flag) {
+  M::Driver::CompletionFlagRef::lowLevelAddRef(flag);
+}
+
+MODULAR_EXPORT void
+AsyncRT_CompletionFlag_release(M::Driver::CompletionFlag *flag) {
+  M::Driver::CompletionFlagRef::lowLevelDropRef(flag);
+}
+
+MODULAR_EXPORT void
+AsyncRT_CompletionFlag_signal(M::Driver::CompletionFlag *flag, uint64_t value) {
+  flag->signal(value);
+}
+
+MODULAR_EXPORT uint64_t
+AsyncRT_CompletionFlag_load(M::Driver::CompletionFlag *flag) {
+  return flag->load();
+}
+
+MODULAR_EXPORT void
+AsyncRT_CompletionFlag_reset(M::Driver::CompletionFlag *flag) {
+  flag->reset();
 }
 
 // Backs the HAL Mojo `DeviceBuffer.take_handle()`, so `takeRCRef` consumers

@@ -301,7 +301,7 @@ M_driver_status_t M_driver_queue::waitValue64(uint64_t device_address,
   M_driver_driver &driver = context.getDevice().getDriver();
   if (hipError_t r = driver.hip().hipStreamWaitValue64(
           stream, reinterpret_cast<hipDeviceptr_t>(device_address), value,
-          hipStreamWaitValueEq, /*mask=*/~0ULL);
+          hipStreamWaitValueGte, /*mask=*/~0ULL);
       r != hipSuccess)
     return hipErrorStatus(&driver, r, "hipStreamWaitValue64");
   return M_DRIVER_STATUS_SUCCESS;
