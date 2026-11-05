@@ -7401,6 +7401,30 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         return self.device().is_host_unified()
 
+    def is_graph_capturing(self) raises -> Bool:
+        """Returns whether work enqueued on this context is only recorded.
+
+        True while the context's own stream is captured into a device graph,
+        and always for a graph builder's `recording_context()`. Capture on a
+        stream from `create_stream()` does not show here.
+
+        Returns:
+            True if work enqueued on this context now would only be recorded.
+
+        Raises:
+            If the runtime binding reports an error.
+        """
+        var result = False
+        # const char *AsyncRT_DeviceContext_isGraphCapturing(bool *result,
+        #     const DeviceContext *ctx)
+        _checked(
+            external_call["AsyncRT_DeviceContext_isGraphCapturing", _CString[]](
+                Pointer(to=result), self._handle
+            ),
+            location=call_location(),
+        )
+        return result
+
     @staticmethod
     @inline(.always)
     def number_of_devices(*, var api: String = Self._default_api()) -> Int:

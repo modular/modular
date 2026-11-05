@@ -422,6 +422,9 @@ public:
   DeviceContext &backendContext() override;
   const DeviceContext &backendContext() const override;
 
+  /// Always true: everything enqueued here records into the graph.
+  bool isGraphCapturing() const override { return true; }
+
   // Returns a stream which records operations into the recording device graph.
   //
   // This is not implemented for all backends; the operation forwards to

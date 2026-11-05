@@ -1095,6 +1095,25 @@ TEST_F(GPUDeviceContextTest, CreatedStreamEventOrdering) {
   EXPECT_EQ(memcmp(dstHostBuf->ptr(), checkData.data(), allocLen), 0);
 }
 
+TEST_F(GPUDeviceContextTest, RunningStreamsAreNotCapturing) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  ASSIGN_NO_ERR(DeviceStreamRef, sideStream, ctx->createStream());
+  ASSIGN_NO_ERR(DeviceContextRef, sideView,
+                ctx->selectStream(ctx->numStreams() - 1));
+
+  // Work in flight must not read as capture.
+  const size_t len = 1024 * 1024;
+  ASSIGN_NO_ERR(DeviceBufferRef, devBuf, ctx->enqueueCreateBuffer(len));
+  EXPECT_NO_ERR(ctx->enqueueSetMemory(*devBuf, 0, 1));
+  ASSIGN_NO_ERR(DeviceBufferRef, sideBuf, sideView->enqueueCreateBuffer(len));
+  EXPECT_NO_ERR(sideView->enqueueSetMemory(*sideBuf, 0, 1));
+
+  EXPECT_FALSE(ctx->isGraphCapturing());
+  EXPECT_FALSE(sideView->isGraphCapturing());
+  EXPECT_NO_ERR(ctx->synchronize());
+  EXPECT_NO_ERR(sideView->synchronize());
+}
+
 TEST_F(GPUDeviceContextTest, BasicEvent) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 

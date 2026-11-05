@@ -109,6 +109,27 @@ TEST_F(GraphCaptureTest, BeginAndEndCapture) {
   EXPECT_TRUE(graph);
 }
 
+// A pool stream's capture shows through the view that runs it, not the base
+// context.
+TEST_F(GraphCaptureTest, IsGraphCapturingTracksCapture) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->createStream());
+  ASSIGN_NO_ERR(DeviceContextRef, view,
+                ctx->selectStream(ctx->numStreams() - 1));
+  ASSIGN_NO_ERR(DeviceStreamRef, viewStream, view->stream());
+  ASSERT_EQ(viewStream->ptr(), stream->ptr());
+
+  EXPECT_FALSE(view->isGraphCapturing());
+
+  EXPECT_NO_ERR(stream->beginCapture());
+  EXPECT_TRUE(view->isGraphCapturing());
+  EXPECT_FALSE(ctx->isGraphCapturing());
+
+  ASSIGN_NO_ERR(DeviceGraphRef, graph, stream->endCapture());
+  EXPECT_FALSE(view->isGraphCapturing());
+}
+
 TEST_F(GraphCaptureTest, DoubleBeginCaptureErrors) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx,
                 DeviceContext::create(Device::gpuAPI, /*id=*/0));
@@ -168,6 +189,7 @@ TEST_F(GraphCaptureTest, CPUDeviceReturnsNotSupported) {
 
   EXPECT_ERR(stream->beginCapture());
   EXPECT_ERR(stream->endCapture());
+  EXPECT_FALSE(ctx->isGraphCapturing());
 }
 
 TEST_F(GraphCaptureTest, ReplayOnCPUStreamErrors) {

@@ -686,6 +686,21 @@ M_DriverStatus M_DriverStreamSynchronize(const M_DriverStream *stream) {
   return reportIfError(stream->ctx->synchronize(), "M_DriverStreamSynchronize");
 }
 
+M_DriverStatus M_DriverStreamIsCapturing(const M_DriverStream *stream,
+                                         bool *out) {
+  if (stream == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or out is null");
+  *out = false;
+  // The context beside a native queue runs its own stream, not the adopted
+  // one, so it cannot say whether that queue is capturing.
+  if (isExternal(*stream))
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverStreamIsCapturing: the stream was created from a "
+                "native handle, and no context of ours runs that queue");
+  *out = stream->ctx->isGraphCapturing();
+  return succeed();
+}
+
 /// Waits on `event` at `stream`, whichever kind of queue `stream` is.
 M_DriverStatus waitOnEvent(const M_DriverStream &stream,
                            const DeviceEventRef &event, const char *what) {

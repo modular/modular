@@ -88,7 +88,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 1
-#define M_DRIVER_CAPI_VERSION_MINOR 0
+#define M_DRIVER_CAPI_VERSION_MINOR 1
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -461,6 +461,17 @@ M_DRIVER_API M_DriverStatus M_DriverStreamDevice(const M_DriverStream *stream,
 /// Mirrors `max._core.driver.DeviceQueue.synchronize`.
 M_DRIVER_API M_DriverStatus
 M_DriverStreamSynchronize(const M_DriverStream *stream);
+
+/// Writes to `*out` whether `stream` is capturing into a device graph, which
+/// means work enqueued on it is recorded and runs only when the graph
+/// replays. A caller whose work must run now, such as a host callback with
+/// side effects, checks this first and takes another path.
+///
+/// Backends without capture always report false, and so does a failed driver
+/// query. A stream adopted from a native handle returns
+/// `M_DRIVER_NOT_SUPPORTED`, because no context of ours runs that queue.
+M_DRIVER_API M_DriverStatus
+M_DriverStreamIsCapturing(const M_DriverStream *stream, bool *out);
 
 /// Orders all work after this call on `stream` to start only once `other`'s
 /// work enqueued so far has completed. This is the vendor-agnostic way to

@@ -639,6 +639,12 @@ public:
   /// an error.
   ErrorOr<DeviceContextRef> selectStream(unsigned streamId);
 
+  /// Always false: the HAL backend has no stream capture.
+  bool isGraphCapturing() const {
+    // TODO(DRIV-687): answer from the queue once the HAL has stream capture.
+    return false;
+  }
+
   /// Creates an event recorded on this context's stream.
   ErrorOr<DeviceEventRef> enqueueEvent();
   /// Records an existing event on this context's stream.

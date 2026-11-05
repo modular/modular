@@ -378,6 +378,14 @@ MODULAR_EXPORT const char *AsyncRT_DeviceStream_enqueueWaitOnHostValue(
   return checkSuccess(stream->enqueueWaitOnHostValue(*flag, value));
 }
 
+MODULAR_EXPORT const char *
+AsyncRT_DeviceContext_isGraphCapturing(bool *result, DeviceContext *ctx) {
+  TRACY_ZONE_SCOPED_NC("AsyncRT_DeviceContext_isGraphCapturing",
+                       TRACY_COLOR_GRAY);
+  *result = ctx->isGraphCapturing();
+  return nullptr;
+}
+
 MODULAR_EXPORT uint64_t AsyncRT_CompletionFlag_devicePtr(CompletionFlag *flag) {
   return flag->devicePtr();
 }

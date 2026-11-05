@@ -2725,6 +2725,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         return self.device().is_host_unified()
 
+    def is_graph_capturing(self) raises -> Bool:
+        """Returns whether work enqueued on this context is only recorded.
+
+        Returns:
+            False: the HAL has no stream capture.
+
+        Raises:
+            Never; raises to match the legacy signature.
+        """
+        # TODO(DRIV-687): answer from the queue once the HAL has stream capture.
+        return False
+
 
 struct Device[target: CompilationTarget, origin: ImmOrigin](
     TrivialRegisterPassable

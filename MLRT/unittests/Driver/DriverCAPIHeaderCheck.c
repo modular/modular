@@ -95,6 +95,8 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
       M_DriverStreamDevice;
   M_DriverStatus (*stream_synchronize)(const M_DriverStream *) =
       M_DriverStreamSynchronize;
+  M_DriverStatus (*stream_is_capturing)(const M_DriverStream *, bool *) =
+      M_DriverStreamIsCapturing;
   M_DriverStatus (*stream_wait_for)(
       const M_DriverStream *, const M_DriverStream *) = M_DriverStreamWaitFor;
   M_DriverStatus (*stream_wait_for_device)(const M_DriverStream *,
@@ -185,18 +187,19 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          stream_from_context != NULL && stream_from_native != NULL &&
          stream_destroy != NULL && stream_native_handle != NULL &&
          stream_context_handle != NULL && stream_device != NULL &&
-         stream_synchronize != NULL && stream_wait_for != NULL &&
-         stream_wait_for_device != NULL && stream_wait_for_event != NULL &&
-         stream_record_event != NULL && stream_record_new_event != NULL &&
-         event_create != NULL && event_destroy != NULL &&
-         event_synchronize != NULL && event_is_ready != NULL &&
-         event_elapsed_ms != NULL && buffer_allocate != NULL &&
-         buffer_from_pointer != NULL && buffer_destroy != NULL &&
-         buffer_pointer != NULL && buffer_byte_size != NULL &&
-         buffer_is_host != NULL && memory_register != NULL &&
-         mapping_destroy != NULL && mapping_destroy_sync != NULL &&
-         mapping_pointer != NULL && mapping_byte_size != NULL &&
-         copy_host_to_device != NULL && copy_device_to_host != NULL &&
-         copy_batch != NULL && copy_device_to_device != NULL &&
-         copy_peer_to_peer != NULL && copy_peer_to_peer_unordered != NULL;
+         stream_synchronize != NULL && stream_is_capturing != NULL &&
+         stream_wait_for != NULL && stream_wait_for_device != NULL &&
+         stream_wait_for_event != NULL && stream_record_event != NULL &&
+         stream_record_new_event != NULL && event_create != NULL &&
+         event_destroy != NULL && event_synchronize != NULL &&
+         event_is_ready != NULL && event_elapsed_ms != NULL &&
+         buffer_allocate != NULL && buffer_from_pointer != NULL &&
+         buffer_destroy != NULL && buffer_pointer != NULL &&
+         buffer_byte_size != NULL && buffer_is_host != NULL &&
+         memory_register != NULL && mapping_destroy != NULL &&
+         mapping_destroy_sync != NULL && mapping_pointer != NULL &&
+         mapping_byte_size != NULL && copy_host_to_device != NULL &&
+         copy_device_to_host != NULL && copy_batch != NULL &&
+         copy_device_to_device != NULL && copy_peer_to_peer != NULL &&
+         copy_peer_to_peer_unordered != NULL;
 }

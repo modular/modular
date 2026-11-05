@@ -44,6 +44,10 @@
 #define MODULAR_HAL_DEVICE_CONTEXT 0
 #endif
 
+#if !MODULAR_HAL_DEVICE_CONTEXT
+#include "MLRT/Driver/DeviceContext/DeviceGraphBuilder.h"
+#endif
+
 using namespace capi_test;
 
 namespace {
@@ -100,7 +104,7 @@ TEST(DriverCApi, VersionMatchesTheHeader) {
                 (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MINOR) << 16) |
                 static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_PATCH));
   EXPECT_EQ(version >> 24, 1u);
-  EXPECT_EQ((version >> 16) & 0xffu, 0u);
+  EXPECT_EQ((version >> 16) & 0xffu, 1u);
   EXPECT_EQ(version & 0xffffu, 0u);
 
   // The query returns no status, so it leaves the message of an earlier
@@ -718,6 +722,51 @@ TEST(DriverCApi, StreamCreateValidatesItsArguments) {
   EXPECT_EQ(M_DriverStreamCreate(nullptr, &noDevice),
             M_DRIVER_INVALID_ARGUMENT);
   EXPECT_EQ(noDevice, nullptr);
+  EXPECT_FALSE(lastError().empty());
+}
+
+TEST(DriverCApi, FreshStreamsAreNotCapturing) {
+  bool capturing = true;
+  EXPECT_EQ(M_DriverStreamIsCapturing(nullptr, &capturing),
+            M_DRIVER_INVALID_ARGUMENT);
+
+  DeviceHandle cpu;
+  ASSERT_TRUE(makeCpuDevice(cpu));
+  StreamHandle cpuStream;
+  ASSERT_EQ(M_DriverStreamCreate(cpu.get(), cpuStream.receive()), M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(M_DriverStreamIsCapturing(cpuStream.get(), nullptr),
+            M_DRIVER_INVALID_ARGUMENT);
+  ASSERT_EQ(M_DriverStreamIsCapturing(cpuStream.get(), &capturing), M_DRIVER_OK)
+      << lastError();
+  EXPECT_FALSE(capturing);
+
+  if (M_DriverAcceleratorCount() == 0)
+    return;
+  DeviceHandle accelerator;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, accelerator.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  StreamHandle stream;
+  ASSERT_EQ(M_DriverStreamCreate(accelerator.get(), stream.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  capturing = true;
+  ASSERT_EQ(M_DriverStreamIsCapturing(stream.get(), &capturing), M_DRIVER_OK)
+      << lastError();
+  EXPECT_FALSE(capturing);
+
+  // No context of ours runs an adopted native queue, so nothing can answer.
+  void *native = nullptr;
+  ASSERT_EQ(M_DriverStreamNativeHandle(stream.get(), &native), M_DRIVER_OK);
+  StreamHandle adopted;
+  if (native == nullptr ||
+      M_DriverStreamFromNativeHandle(accelerator.get(), native,
+                                     adopted.receive()) != M_DRIVER_OK)
+    return;
+  EXPECT_EQ(M_DriverStreamIsCapturing(adopted.get(), &capturing),
+            M_DRIVER_NOT_SUPPORTED);
+  EXPECT_FALSE(capturing);
   EXPECT_FALSE(lastError().empty());
 }
 
@@ -1452,6 +1501,82 @@ TEST(DriverCApi, EventCreateLeavesAPendingErrorInPlace) {
   EXPECT_FALSE(lastError().empty());
   ASSERT_EQ(M_DriverDeviceSynchronize(device.get()), M_DRIVER_OK)
       << lastError();
+#endif
+}
+
+// Capture is not in the C interface, so the test begins it through the
+// driver on a context it then adopts as a stream.
+TEST(DriverCApi, AdoptedStreamReportsCapture) {
+#if MODULAR_HAL_DEVICE_CONTEXT
+  GTEST_SKIP() << "the HAL device context has no stream capture";
+#else
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "stream capture needs an accelerator";
+
+  ErrorOr<DeviceContextRef> created = DeviceContext::create(Device::gpuAPI, 0);
+  ASSERT_FALSE(created.isError()) << created.getError();
+  DeviceContextRef context = created.takeValue();
+  if (context->device().api() != Device::cudaAPI &&
+      context->device().api() != Device::hipAPI)
+    GTEST_SKIP() << "stream capture is implemented for CUDA and HIP only";
+  ErrorOr<DeviceStreamRef> base = context->stream();
+  ASSERT_FALSE(base.isError()) << base.getError();
+  DeviceStreamRef driverStream = base.takeValue();
+
+  StreamHandle adopted;
+  ASSERT_EQ(
+      M_DriverStreamFromContextHandle(context.getPointer(), adopted.receive()),
+      M_DRIVER_OK)
+      << lastError();
+
+  bool capturing = true;
+  ASSERT_EQ(M_DriverStreamIsCapturing(adopted.get(), &capturing), M_DRIVER_OK)
+      << lastError();
+  EXPECT_FALSE(capturing);
+
+  ErrorOrSuccess begun = driverStream->beginCapture();
+  ASSERT_FALSE(begun.isError()) << begun.getError();
+  ASSERT_EQ(M_DriverStreamIsCapturing(adopted.get(), &capturing), M_DRIVER_OK)
+      << lastError();
+  EXPECT_TRUE(capturing);
+
+  ErrorOr<DeviceGraphRef> graph = driverStream->endCapture();
+  ASSERT_FALSE(graph.isError()) << graph.getError();
+  ASSERT_EQ(M_DriverStreamIsCapturing(adopted.get(), &capturing), M_DRIVER_OK)
+      << lastError();
+  EXPECT_FALSE(capturing);
+#endif
+}
+
+TEST(DriverCApi, AdoptedRecordingContextReportsCapture) {
+#if MODULAR_HAL_DEVICE_CONTEXT
+  GTEST_SKIP() << "the HAL device context has no graph builder";
+#else
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "graph building needs an accelerator";
+
+  ErrorOr<DeviceContextRef> created = DeviceContext::create(Device::gpuAPI, 0);
+  ASSERT_FALSE(created.isError()) << created.getError();
+  DeviceContextRef context = created.takeValue();
+  if (context->device().api() != Device::cudaAPI &&
+      context->device().api() != Device::hipAPI)
+    GTEST_SKIP() << "graph building is implemented for CUDA and HIP only";
+  ErrorOr<DeviceGraphBuilderRef> builder = context->createGraphBuilder();
+  ASSERT_FALSE(builder.isError()) << builder.getError();
+  ErrorOr<DeviceGraphNode> root = (*builder)->addEmpty(/*dependencies=*/{});
+  ASSERT_FALSE(root.isError()) << root.getError();
+  ErrorOr<DeviceContextRef> recording = (*builder)->recordingContext(*root);
+  ASSERT_FALSE(recording.isError()) << recording.getError();
+
+  StreamHandle adopted;
+  ASSERT_EQ(M_DriverStreamFromContextHandle((*recording).getPointer(),
+                                            adopted.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  bool capturing = false;
+  ASSERT_EQ(M_DriverStreamIsCapturing(adopted.get(), &capturing), M_DRIVER_OK)
+      << lastError();
+  EXPECT_TRUE(capturing);
 #endif
 }
 
