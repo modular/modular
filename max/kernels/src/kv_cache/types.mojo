@@ -160,6 +160,23 @@ def create_flat_scale_tma_tile[
     ](ctx, scale_tensor)
 
 
+def _check_tma_block_count(total_blocks: Int) raises:
+    """Refuses a split descriptor whose block coordinate leaves 32 bits.
+
+    A TMA coordinate is signed 32-bit, and `OOBFill.NONE` turns a negative
+    block into a silently zero-filled tile. This is the split descriptors'
+    counterpart of the flat one's row span check.
+
+    Args:
+        total_blocks: Blocks the descriptor spans.
+    """
+    if total_blocks >= 1 << 31:
+        raise Error(
+            t"paged KV pool of {total_blocks} blocks exceeds the signed 32-bit"
+            t" TMA block coordinate"
+        )
+
+
 @inline(.always)
 def create_paged_scale_tma_tile[
     dtype: DType, BOX: Int
@@ -204,6 +221,7 @@ def create_paged_scale_tma_tile[
     Returns:
         The TMA descriptor.
     """
+    _check_tma_block_count(total_blocks)
     var scale_tensor = TileTensor(
         ptr,
         InternalLayout(
@@ -226,12 +244,15 @@ def create_flat_kv_tma_tile[
     rows: Int,
     heads: Int,
     depth: Int,
-) raises -> TMATensorTile[dtype, coord[1, BN, 1, BK]]:
+    out res: SplitLastDimTMATensorTile[
+        dtype, coord[1, BN, 1, BK], swizzle_mode
+    ],
+) raises:
     """Builds the one-block form of the split KV descriptor.
 
     A contiguous or ragged buffer has no blocks, so it declares a single one
     spanning every row and is addressed at block 0 -- which is what
-    `MHAOperand.kv_tma_coords` returns by default. The rank matches
+    `MHAOperand.kv_tma_coords` returns by default. The type matches
     `PagedKVCache.create_paged_tma_tile` so a consumer that takes either needs
     one code path rather than two.
 
@@ -251,6 +272,9 @@ def create_flat_kv_tma_tile[
     Returns:
         The TMA descriptor.
     """
+    comptime assert (
+        BK % swizzle_granularity[dtype, swizzle_mode]()
+    ) == 0, "BK must be a multiple of swizzle granularity"
     var kv_tensor = TileTensor(
         ptr,
         InternalLayout(
@@ -258,10 +282,11 @@ def create_flat_kv_tma_tile[
             Coord(rows * heads * depth, heads * depth, depth, Idx[1]),
         ),
     )
-    return create_tensor_tile[
-        coord[1, BN, 1, BK],
+    res = create_tensor_tile[
+        res.tile_shape,
         swizzle_mode=swizzle_mode,
-        __desc_shape=coord[1, BN, 1, BK],
+        __tile_shape=res.tile_shape,
+        __desc_shape=res.desc_shape,
     ](ctx, kv_tensor)
 
 
@@ -1824,8 +1849,8 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
         pool_row_tokens: Int = 1,
-    ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype, coord[1, BN, 1, BK]
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
+        Self.dtype, coord[1, BN, 1, BK], swizzle_mode
     ]:
         """Creates the split `(block, row_in_block)` TMA tile for this cache.
 
@@ -1834,6 +1859,9 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         row, and that product spans the whole allocation rather than this
         cache's share of it, so it leaves the signed 32-bit TMA coordinate on
         a large pool.
+
+        Its box is one swizzle span deep, as the flat descriptor's is, so a
+        row wider than the swizzle is copied a span at a time.
 
         `pool_row_tokens > 1` views each run of that many token rows as one
         row, for a key spread over consecutive tokens (GLM-5.3-Flash's
@@ -2354,6 +2382,29 @@ struct ContinuousBatchingKVCache[
         return block_idx * self._stride() + tok_idx
 
     @inline(.always)
+    def kv_tma_coords(
+        self, batch_idx: UInt32, tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The `(row_in_block, block)` coordinate of a token's KV tile.
+
+        What :meth:`create_paged_tma_tile` is addressed by. A batch entry's
+        sequence is one whole block, so the row is the token. The trait's
+        flat default folds the block into the row, past that descriptor's
+        rows for every block but the first.
+
+        Args:
+            batch_idx: Batch entry whose lookup table is read.
+            tok_idx: Token within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        return (
+            Int32(tok_idx),
+            Int32(self.lookup_table.load((Int(batch_idx),))[0]),
+        )
+
+    @inline(.always)
     def scale_row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Not supported: this cache carries no quantization scales."""
         comptime assert False, (
@@ -2383,9 +2434,13 @@ struct ContinuousBatchingKVCache[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
         pool_row_tokens: Int = 1,
-    ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype, coord[1, BN, 1, BK]
-    ]:
+    ](
+        self,
+        ctx: DeviceContext,
+        out res: SplitLastDimTMATensorTile[
+            Self.dtype, coord[1, BN, 1, BK], swizzle_mode
+        ],
+    ) raises:
         """Builds the split descriptor over this cache's blocks.
 
         The continuous cache is `[num_blocks, num_layers, seq_len, num_heads,
@@ -2422,10 +2477,11 @@ struct ContinuousBatchingKVCache[
                 Coord(block_pitch, heads * depth, depth, Idx[1]),
             ),
         )
-        return create_tensor_tile[
-            coord[1, BN, 1, BK],
+        res = create_tensor_tile[
+            res.tile_shape,
             swizzle_mode=swizzle_mode,
-            __desc_shape=coord[1, BN, 1, BK],
+            __tile_shape=res.tile_shape,
+            __desc_shape=res.desc_shape,
         ](ctx, kv_tensor)
 
     @inline(.always)
@@ -3421,9 +3477,13 @@ struct PagedKVCache[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
         pool_row_tokens: Int = 1,
-    ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype, coord[1, BN, 1, BK]
-    ]:
+    ](
+        self,
+        ctx: DeviceContext,
+        out res: SplitLastDimTMATensorTile[
+            Self.dtype, coord[1, BN, 1, BK], swizzle_mode
+        ],
+    ) raises:
         """Builds a `total_blocks x page_size x heads x depth` KV descriptor.
 
         The split counterpart of :meth:`create_tma_tile`, addressed by
@@ -3477,6 +3537,7 @@ struct PagedKVCache[
             " page"
         )
         var total_blocks = Int(self.blocks.dim[0]())
+        _check_tma_block_count(total_blocks)
         var block_pitch = Int(self.blocks.dynamic_stride(0))
         comptime heads = Self.kv_params.num_heads
         comptime depth = Self.kv_params.head_size * pool_row_tokens
@@ -3487,10 +3548,11 @@ struct PagedKVCache[
                 Coord(block_pitch, heads * depth, depth, Idx[1]),
             ),
         )
-        return create_tensor_tile[
-            coord[1, BN, 1, BK],
+        res = create_tensor_tile[
+            res.tile_shape,
             swizzle_mode=swizzle_mode,
-            __desc_shape=coord[1, BN, 1, BK],
+            __tile_shape=res.tile_shape,
+            __desc_shape=res.desc_shape,
         ](ctx, kv_tensor)
 
     @inline(.always)
