@@ -50,11 +50,7 @@ from max.pipelines.architectures.glm5_next.state_cache import (
     state_regions,
     with_verify_ring,
 )
-from max.pipelines.speculative.gated_delta_rollback import (
-    accepted_lengths,
-    accepted_row_plan,
-    replay_conv_pools,
-)
+from max.pipelines.speculative.gated_delta_rollback import accepted_lengths
 
 HIDDEN = 256
 HEADS = 2
@@ -247,23 +243,14 @@ def _run_spec_against_decode(
             verify_width=verify_width,
         )
         num_drafts = ops.constant(NUM_DRAFTS, DType.int64, device=gpu)
-        row_indices, replay_offsets = accepted_row_plan(
-            offsets_v, accepted_v, num_drafts, x_v.shape[0], gpu
-        )
-        replay_conv_pools(
-            [captures],
-            [conv],
-            [conv_rows],
-            row_indices,
-            replay_offsets,
-            [],
-            verify_width,
-        )
         fold_kda_state_pools(
             [rec],
             [rec_rows],
             [ring],
             [ring_rows],
+            [conv],
+            [conv_rows],
+            [captures],
             accepted_lengths(offsets_v, accepted_v, num_drafts),
             [offsets_v],
             [],

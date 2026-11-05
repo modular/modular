@@ -67,6 +67,33 @@ modular_py_test(
     ],
 )
 
+modular_eager_py_test(
+    name = "kda_decode_conv_raw_tests_gpu",
+    size = "enormous",
+    srcs = ["test_kda_decode_conv_raw.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
 modular_py_test(
     name = "memory_planner_tests_cpu",
     srcs = ["test_memory_planner.py"],

@@ -19,6 +19,7 @@ another.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal, cast
 
 from max.driver import accelerator_api, accelerator_architecture_name
@@ -39,6 +40,7 @@ __all__ = [
     "STATE_LAYOUT",
     "KdaBetaMode",
     "KdaGateMode",
+    "KdaInputMode",
     "KdaStateLayout",
     "amd_kda_chunk_eligible",
     "amd_kda_chunk_workspace_bytes",
@@ -58,6 +60,9 @@ KdaGateMode = Literal["original", "safe"]
 
 KdaBetaMode = Literal["logits", "probability"]
 """Whether the kernel applies the sigmoid to ``beta_logits`` itself."""
+
+KdaInputMode = Literal["activated", "conv_raw"]
+"""Whether ``q``/``k``/``v`` arrive activated or as the conv's raw output."""
 
 KdaStateLayout = Literal["K_FIRST", "V_FIRST"]
 """Pool axis order: ``[N, HV, K, V]`` or ``[N, HV, V, K]``."""
@@ -467,6 +472,7 @@ def _check_shapes(
     state_pool: BufferValue,
     state_indices: TensorValue,
     state_layout: KdaStateLayout,
+    input_mode: KdaInputMode = "activated",
 ) -> None:
     """Rejects the shape combinations the kernel would read out-of-bounds on."""
     _check_rank(3, q=q, k=k, v=v, raw_gate=raw_gate)
@@ -494,15 +500,35 @@ def _check_shapes(
     # the kernel reads out of bounds on.
     _check_same_dim("the key-head axis", q=num_key_heads, k=k.shape[1])
     _check_same_dim("the key-head width", q=key_head_dim, k=k.shape[2])
-    _check_same_dim(
-        "the value-head axis",
-        v=num_value_heads,
-        raw_gate=raw_gate.shape[1],
-        beta_logits=beta_logits.shape[1],
-        a_log=a_log.shape[0],
-        dt_bias=dt_bias.shape[0],
-        state_pool=state_pool.shape[1],
-    )
+    if input_mode == "conv_raw":
+        # `a_log` is the per-channel `[HV, K]` parameter, packed flat for the
+        # op's rank-1 slot by `kda_decode`, so it is checked against the flat
+        # channel count here and stays out of the head-axis agreement below.
+        expected_a_log = num_value_heads * key_head_dim
+        if a_log.shape[0] != expected_a_log:
+            raise ValueError(
+                "expected conv_raw a_log to hold num_value_heads *"
+                f" key_head_dim = {expected_a_log} entries, was"
+                f" {a_log.shape[0]}"
+            )
+        _check_same_dim(
+            "the value-head axis",
+            v=num_value_heads,
+            raw_gate=raw_gate.shape[1],
+            beta_logits=beta_logits.shape[1],
+            dt_bias=dt_bias.shape[0],
+            state_pool=state_pool.shape[1],
+        )
+    else:
+        _check_same_dim(
+            "the value-head axis",
+            v=num_value_heads,
+            raw_gate=raw_gate.shape[1],
+            beta_logits=beta_logits.shape[1],
+            a_log=a_log.shape[0],
+            dt_bias=dt_bias.shape[0],
+            state_pool=state_pool.shape[1],
+        )
     _check_same_dim(
         "the key-head width",
         q=key_head_dim,
@@ -595,8 +621,14 @@ def _kda_recurrence(
     state_layout: KdaStateLayout,
     use_computebound: bool = False,
     pin_fma: bool = False,
+    input_mode: KdaInputMode = "activated",
+    activation_dtype: DType | None = None,
 ) -> TensorValue:
     """Shared implementation for ``kda_decode`` and ``kda_chunk``."""
+    if op_name != "kda_decode" and input_mode != "activated":
+        raise ValueError(
+            f"{op_name}: input_mode is a kda_decode axis, got {input_mode!r}"
+        )
     _check_dtypes(
         q,
         k,
@@ -621,6 +653,7 @@ def _kda_recurrence(
         state_pool,
         state_indices,
         state_layout,
+        input_mode,
     )
     total_tokens, num_value_heads, value_head_dim = v.shape
     parameters: dict[str, bool | int | str | DType] = {
@@ -632,6 +665,13 @@ def _kda_recurrence(
         parameters["use_computebound"] = use_computebound
     else:
         parameters["pin_fma"] = pin_fma
+        if input_mode != "activated":
+            parameters["input_mode"] = input_mode
+            parameters["activation_dtype"] = (
+                activation_dtype
+                if activation_dtype is not None
+                else DType.float32
+            )
     results = ops.inplace_custom(
         op_name,
         v.device,
@@ -676,6 +716,8 @@ def kda_decode(
     beta_mode: KdaBetaMode = "logits",
     state_layout: KdaStateLayout = "K_FIRST",
     pin_fma: bool = False,
+    input_mode: KdaInputMode = "activated",
+    activation_dtype: DType | None = None,
 ) -> TensorValue:
     """Runs the KDA recurrence, mutating ``state_pool`` in place.
 
@@ -683,6 +725,18 @@ def kda_decode(
     ``1 / sqrt(key_head_dim)`` inside the kernel, so pass them raw. The gate
     and beta activations are folded in too, selected by ``gate_mode`` and
     ``beta_mode``.
+
+    Under ``input_mode="conv_raw"`` the kernel also folds the pre-decode
+    elementwise passes: ``q``/``k``/``v`` arrive as the conv's raw fp32
+    output (the kernel applies SiLU, rounds to ``activation_dtype``, and
+    folds the safe gate's fp32 per-channel pre-activation
+    ``(raw_gate + dt_bias) * exp(a_log)``), and ``a_log`` is the
+    per-channel ``[num_value_heads, key_head_dim]`` parameter, packed flat
+    here for the op's rank-1 slot. The op routes on the shapes it holds: a
+    decode-shaped batch (one token per sequence) runs that fused prologue,
+    while any other batch first runs one in-op activation launch and then
+    continues on the chunk pipeline or the token-serial kernel, exactly as
+    an ``"activated"`` call would.
 
     Args:
         q: ``[total_tokens, num_key_heads, key_head_dim]``.
@@ -705,6 +759,12 @@ def kda_decode(
         pin_fma: Whether to spell every multiply-add as an explicit ``fma``,
             so the speculative verify and fold kernels reproduce this one bit
             for bit. Always on for NVIDIA; slower on AMD.
+        input_mode: "conv_raw" folds SiLU, the model-dtype rounding and the
+            safe gate's pre-activation into the kernel; needs
+            ``gate_mode="safe"`` and fp32 q/k/v. Default keeps the activated
+            operand convention.
+        activation_dtype: The model dtype the fused SiLU result rounds to;
+            required by ``input_mode="conv_raw"``.
 
     Returns:
         ``[total_tokens, num_value_heads, value_head_dim]``.
@@ -714,6 +774,31 @@ def kda_decode(
             extents disagree. The kernel's own shape guards are
             ``debug_assert``, so they are absent from a production build.
     """
+    if input_mode == "conv_raw":
+        if gate_mode != "safe":
+            raise ValueError(
+                "kda_decode: input_mode 'conv_raw' folds the safe gate's"
+                " pre-activation, so gate_mode must be 'safe', got"
+                f" {gate_mode!r}"
+            )
+        if activation_dtype is None:
+            raise ValueError(
+                "kda_decode: input_mode 'conv_raw' needs activation_dtype,"
+                " the model dtype the fused SiLU result rounds to"
+            )
+        if q.dtype != DType.float32:
+            raise ValueError(
+                "kda_decode: input_mode 'conv_raw' takes the conv's raw fp32"
+                f" q/k/v, but q is {q.dtype}"
+            )
+        _check_rank(2, a_log=a_log)
+        if not all(isinstance(d, StaticDim) for d in a_log.shape):
+            raise ValueError(
+                "kda_decode: input_mode 'conv_raw' packs the per-channel"
+                " [num_value_heads, key_head_dim] a_log flat, so its"
+                f" extents must be static, was {list(a_log.shape)}"
+            )
+        a_log = ops.reshape(a_log, [int(a_log.shape[0]) * int(a_log.shape[1])])
     return _kda_recurrence(
         "kda_decode",
         q,
@@ -731,6 +816,8 @@ def kda_decode(
         beta_mode=beta_mode,
         state_layout=state_layout,
         pin_fma=pin_fma,
+        input_mode=input_mode,
+        activation_dtype=activation_dtype,
     )
 
 
@@ -976,6 +1063,9 @@ def kda_state_fold(
     num_accepted: TensorValue,
     row_offsets: TensorValue,
     verify_width: TensorValue,
+    conv_pool: BufferValue | None = None,
+    conv_row_ids: TensorValue | None = None,
+    qkv_windows: Sequence[TensorValue] | None = None,
     *,
     state_layout: KdaStateLayout = "K_FIRST",
 ) -> None:
@@ -986,6 +1076,16 @@ def kda_state_fold(
     ``num_accepted[b] == 0`` is left unchanged, and a row longer than
     ``RING_LEN`` was committed by the verify itself and is skipped. Nothing
     runs at a verify width of zero.
+
+    Given ``conv_pool``, ``conv_row_ids`` and ``qkv_windows``, the same launch
+    also places every request's conv window at its accepted length from
+    ``qkv_windows``, the conv inputs the verify captured. The windows are
+    stacked into one tensor here, one graph op for every layer; at a verify
+    width of zero that stack still runs, copying windows the verify left
+    unwritten, and nothing reads the result. Given none of the three, the
+    launch folds the ring only and leaves the conv pool to the caller, which
+    is what a rollback that replays the conv itself does; that launch is a
+    different op, ``kda_state_fold_no_conv``.
 
     ``num_accepted[b]`` must not exceed the row's length in ``row_offsets``:
     past it the ring holds no record of this verify. The kernel clamps a
@@ -1003,10 +1103,56 @@ def kda_state_fold(
             ``cu_seqlens`` :func:`kda_verify_ring` ran over.
         verify_width: The operand
             :func:`~max.nn._graph_ops.state_space.verify_width_operand` returns.
+        conv_pool: ``[conv_rows, conv_dim, kernel_size - 1]`` conv window
+            pool, placed in place. Optional, with the two below: without all
+            three the conv pool is left alone.
+        conv_row_ids: ``[num_layers, batch_size]`` conv pool rows. Optional;
+            give it together with ``conv_pool`` and ``qkv_windows``, or none of
+            the three.
+        qkv_windows: One ``[window_rows, conv_dim]`` float32 conv input per
+            layer, the copies the verify's conv kernel kept; ``window_rows``
+            must span ``row_offsets``' rows. Optional, with the two above.
         state_layout: Pool axis order; must match how the pool was allocated.
+
+    Raises:
+        ValueError: If only some of ``conv_pool``, ``conv_row_ids`` and
+            ``qkv_windows`` are given, if ``qkv_windows`` is empty, or if its
+            elements disagree on shape or device.
     """
     _check_dtype(DType.float32, ring=ring)
     _check_rank(4, ring=ring)
+    if conv_pool is None and conv_row_ids is None and qkv_windows is None:
+        ops.inplace_custom(
+            "kda_state_fold_no_conv",
+            state_pool.device,
+            [
+                state_pool,
+                ring,
+                state_row_ids.cast(DType.uint32),
+                ring_row_ids.cast(DType.uint32),
+                num_accepted.cast(DType.uint32),
+                row_offsets.cast(DType.uint32),
+                verify_width,
+            ],
+            parameters={"state_layout": state_layout},
+        )
+        return
+    if conv_pool is None or conv_row_ids is None or qkv_windows is None:
+        raise ValueError(
+            "kda_state_fold's conv window placement needs conv_pool,"
+            " conv_row_ids and qkv_windows together, or none of them"
+        )
+    _check_rank(3, conv_pool=conv_pool)
+    if not qkv_windows:
+        raise ValueError("kda_state_fold needs one conv window per layer")
+    windows = list(qkv_windows)
+    first = windows[0]
+    _check_dtype(DType.float32, qkv_window=first)
+    _check_rank(2, qkv_window=first)
+    if any(w.shape != first.shape or w.device != first.device for w in windows):
+        raise ValueError(
+            "kda_state_fold's conv windows must share one shape and device"
+        )
     ops.inplace_custom(
         "kda_state_fold",
         state_pool.device,
@@ -1017,6 +1163,9 @@ def kda_state_fold(
             ring_row_ids.cast(DType.uint32),
             num_accepted.cast(DType.uint32),
             row_offsets.cast(DType.uint32),
+            conv_pool,
+            conv_row_ids.cast(DType.uint32),
+            ops.stack(windows, axis=0),
             verify_width,
         ],
         parameters={"state_layout": state_layout},
